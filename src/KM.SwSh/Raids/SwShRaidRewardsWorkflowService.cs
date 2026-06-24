@@ -665,19 +665,7 @@ public sealed class SwShRaidRewardsWorkflowService
         ICollection<ValidationDiagnostic> diagnostics,
         SwShRaidRewardWorkflowKind kind)
     {
-        var englishNames = ResolveWorkflowFile(project, EnglishItemNamePath);
-        if (englishNames is not null)
-        {
-            return englishNames;
-        }
-
-        var fallback = project.FileGraph.Entries
-            .Where(entry =>
-                entry.RelativePath.StartsWith(MessageRootPath + "/", StringComparison.OrdinalIgnoreCase)
-                && entry.RelativePath.EndsWith("/common/itemname.dat", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
-            .Select(entry => ResolveWorkflowFile(project, entry.RelativePath))
-            .FirstOrDefault(source => source is not null);
+        var fallback = ResolveCommonTextSource(project, "itemname.dat");
 
         if (fallback is null)
         {
@@ -689,28 +677,40 @@ public sealed class SwShRaidRewardsWorkflowService
             return null;
         }
 
-        diagnostics.Add(CreateDiagnostic(
-            kind,
-            DiagnosticSeverity.Warning,
-            "English item names are not available; using another available item name table.",
-            file: fallback.GraphEntry.RelativePath,
-            expected: EnglishItemNamePath));
-
         return fallback;
     }
 
     private static WorkflowFileSource? ResolveSpeciesNamesSource(OpenedProject project)
     {
-        var englishNames = ResolveWorkflowFile(project, EnglishSpeciesNamePath);
-        if (englishNames is not null)
+        return ResolveCommonTextSource(project, "monsname.dat");
+    }
+
+    private static WorkflowFileSource? ResolveCommonTextSource(
+        OpenedProject project,
+        string fileName)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var preferred = ResolveWorkflowFile(project, SwShGameTextLanguage.CommonMessagePath(language, fileName));
+        if (preferred is not null)
         {
-            return englishNames;
+            return preferred;
+        }
+
+        if (!string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
+        {
+            var english = ResolveWorkflowFile(
+                project,
+                SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName));
+            if (english is not null)
+            {
+                return english;
+            }
         }
 
         return project.FileGraph.Entries
             .Where(entry =>
                 entry.RelativePath.StartsWith(MessageRootPath + "/", StringComparison.OrdinalIgnoreCase)
-                && entry.RelativePath.EndsWith("/common/monsname.dat", StringComparison.OrdinalIgnoreCase))
+                && entry.RelativePath.EndsWith($"/common/{fileName}", StringComparison.OrdinalIgnoreCase))
             .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
             .Select(entry => ResolveWorkflowFile(project, entry.RelativePath))
             .FirstOrDefault(source => source is not null);

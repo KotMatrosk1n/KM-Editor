@@ -22,7 +22,8 @@ public sealed record ProjectPathsDto
         string? OutputRootPath,
         string? SaveFilePath,
         string? ScarletVioletSupportFolderPath,
-        ProjectGameDto? SelectedGame)
+        ProjectGameDto? SelectedGame,
+        string? GameTextLanguage = null)
     {
         this.BaseRomFsPath = BaseRomFsPath;
         this.BaseExeFsPath = BaseExeFsPath;
@@ -30,6 +31,7 @@ public sealed record ProjectPathsDto
         this.SaveFilePath = SaveFilePath;
         this.ScarletVioletSupportFolderPath = ScarletVioletSupportFolderPath;
         this.SelectedGame = SelectedGame;
+        this.GameTextLanguage = GameTextLanguage;
     }
 
     public ProjectPathsDto(
@@ -70,6 +72,8 @@ public sealed record ProjectPathsDto
     public string? ScarletVioletSupportFolderPath { get; init; }
 
     public ProjectGameDto? SelectedGame { get; init; }
+
+    public string? GameTextLanguage { get; init; }
 }
 
 public sealed record OpenProjectRequest(ProjectPathsDto Paths);

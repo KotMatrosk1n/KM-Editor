@@ -608,11 +608,15 @@ public sealed class SwShEncountersWorkflowService
             return null;
         }
 
-        var language = languages.Contains(PreferredLanguage, StringComparer.OrdinalIgnoreCase)
-            ? PreferredLanguage
-            : languages[0];
+        var preferredLanguage = SwShGameTextLanguage.Resolve(project.Paths);
+        var language = languages.Contains(preferredLanguage, StringComparer.OrdinalIgnoreCase)
+            ? preferredLanguage
+            : languages.Contains(PreferredLanguage, StringComparer.OrdinalIgnoreCase)
+                ? PreferredLanguage
+                : languages[0];
 
-        if (!string.Equals(language, PreferredLanguage, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(language, PreferredLanguage, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(preferredLanguage, PreferredLanguage, StringComparison.OrdinalIgnoreCase))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,

@@ -34,6 +34,13 @@ public sealed class SvCacheManager
     private const string MetadataDirectoryName = "metadata";
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly IReadOnlyList<string> WarmupTextLanguages =
+    [
+        SvGameTextLanguage.English,
+        "Spanish",
+        "French",
+        "German",
+    ];
 
     private readonly string cacheRoot;
     private readonly object syncRoot = new();
@@ -53,63 +60,7 @@ public sealed class SvCacheManager
         return options;
     }
 
-    public static IReadOnlyList<string> WarmupVirtualPaths { get; } =
-    [
-        SvDataPaths.PersonalArray,
-        SvDataPaths.MoveDataArray,
-        SvDataPaths.ItemDataArray,
-        SvDataPaths.FriendlyShopLineupDataArray,
-        SvDataPaths.ShopWazaMachineDataArray,
-        SvDataPaths.VisibleItemScenePaldeaScarlet,
-        SvDataPaths.VisibleItemScenePaldeaViolet,
-        SvDataPaths.VisibleItemSceneKitakamiScarlet,
-        SvDataPaths.VisibleItemSceneKitakamiViolet,
-        SvDataPaths.VisibleItemSceneBlueberryScarlet,
-        SvDataPaths.VisibleItemSceneBlueberryViolet,
-        SvDataPaths.TrainerDataArray,
-        SvDataPaths.WildEncounterArray,
-        SvDataPaths.FixedSymbolTableArray,
-        SvDataPaths.EventBattlePokemonArray,
-        SvDataPaths.EventAddPokemonArray,
-        SvDataPaths.EventTradeListArray,
-        SvDataPaths.EventTradePokemonArray,
-        SvDataPaths.TeraRaidEnemyPaldea1,
-        SvDataPaths.TeraRaidEnemyPaldea2,
-        SvDataPaths.TeraRaidEnemyPaldea3,
-        SvDataPaths.TeraRaidEnemyPaldea4,
-        SvDataPaths.TeraRaidEnemyPaldea5,
-        SvDataPaths.TeraRaidEnemyPaldea6,
-        SvDataPaths.TeraRaidEnemyKitakami1,
-        SvDataPaths.TeraRaidEnemyKitakami2,
-        SvDataPaths.TeraRaidEnemyKitakami3,
-        SvDataPaths.TeraRaidEnemyKitakami4,
-        SvDataPaths.TeraRaidEnemyKitakami5,
-        SvDataPaths.TeraRaidEnemyKitakami6,
-        SvDataPaths.TeraRaidEnemyBlueberry1,
-        SvDataPaths.TeraRaidEnemyBlueberry2,
-        SvDataPaths.TeraRaidEnemyBlueberry3,
-        SvDataPaths.TeraRaidEnemyBlueberry4,
-        SvDataPaths.TeraRaidEnemyBlueberry5,
-        SvDataPaths.TeraRaidEnemyBlueberry6,
-        SvDataPaths.TeraRaidEnemyDelivery,
-        SvDataPaths.TeraRaidFixedRewardItemArray,
-        SvDataPaths.TeraRaidLotteryRewardItemArray,
-        SvDataPaths.HiddenItemDataTableArray,
-        SvDataPaths.HiddenItemDataTableSu1Array,
-        SvDataPaths.HiddenItemDataTableSu2Array,
-        SvDataPaths.HiddenItemDataTableLcArray,
-        SvDataPaths.RummagingItemDataTableArray,
-        SvDataPaths.EnglishItemNames,
-        SvDataPaths.EnglishMoveNames,
-        SvDataPaths.EnglishPokemonNames,
-        SvDataPaths.EnglishAbilityNames,
-        SvDataPaths.EnglishPlaceNames,
-        SvDataPaths.EnglishPlaceNameKeys,
-        SvDataPaths.EnglishTrainerNames,
-        SvDataPaths.EnglishTrainerNameKeys,
-        SvDataPaths.EnglishTrainerTypes,
-        SvDataPaths.EnglishTrainerTypeKeys,
-    ];
+    public static IReadOnlyList<string> WarmupVirtualPaths { get; } = CreateWarmupVirtualPaths();
 
     public SvCacheSettings GetSettings()
     {
@@ -117,6 +68,77 @@ public sealed class SvCacheManager
         {
             EnsureRoot();
             return ReadSettings();
+        }
+    }
+
+    private static IReadOnlyList<string> CreateWarmupVirtualPaths()
+    {
+        return new[]
+            {
+                SvDataPaths.PersonalArray,
+                SvDataPaths.MoveDataArray,
+                SvDataPaths.ItemDataArray,
+                SvDataPaths.FriendlyShopLineupDataArray,
+                SvDataPaths.ShopWazaMachineDataArray,
+                SvDataPaths.VisibleItemScenePaldeaScarlet,
+                SvDataPaths.VisibleItemScenePaldeaViolet,
+                SvDataPaths.VisibleItemSceneKitakamiScarlet,
+                SvDataPaths.VisibleItemSceneKitakamiViolet,
+                SvDataPaths.VisibleItemSceneBlueberryScarlet,
+                SvDataPaths.VisibleItemSceneBlueberryViolet,
+                SvDataPaths.TrainerDataArray,
+                SvDataPaths.WildEncounterArray,
+                SvDataPaths.FixedSymbolTableArray,
+                SvDataPaths.EventBattlePokemonArray,
+                SvDataPaths.EventAddPokemonArray,
+                SvDataPaths.EventTradeListArray,
+                SvDataPaths.EventTradePokemonArray,
+                SvDataPaths.TeraRaidEnemyPaldea1,
+                SvDataPaths.TeraRaidEnemyPaldea2,
+                SvDataPaths.TeraRaidEnemyPaldea3,
+                SvDataPaths.TeraRaidEnemyPaldea4,
+                SvDataPaths.TeraRaidEnemyPaldea5,
+                SvDataPaths.TeraRaidEnemyPaldea6,
+                SvDataPaths.TeraRaidEnemyKitakami1,
+                SvDataPaths.TeraRaidEnemyKitakami2,
+                SvDataPaths.TeraRaidEnemyKitakami3,
+                SvDataPaths.TeraRaidEnemyKitakami4,
+                SvDataPaths.TeraRaidEnemyKitakami5,
+                SvDataPaths.TeraRaidEnemyKitakami6,
+                SvDataPaths.TeraRaidEnemyBlueberry1,
+                SvDataPaths.TeraRaidEnemyBlueberry2,
+                SvDataPaths.TeraRaidEnemyBlueberry3,
+                SvDataPaths.TeraRaidEnemyBlueberry4,
+                SvDataPaths.TeraRaidEnemyBlueberry5,
+                SvDataPaths.TeraRaidEnemyBlueberry6,
+                SvDataPaths.TeraRaidEnemyDelivery,
+                SvDataPaths.TeraRaidFixedRewardItemArray,
+                SvDataPaths.TeraRaidLotteryRewardItemArray,
+                SvDataPaths.HiddenItemDataTableArray,
+                SvDataPaths.HiddenItemDataTableSu1Array,
+                SvDataPaths.HiddenItemDataTableSu2Array,
+                SvDataPaths.HiddenItemDataTableLcArray,
+                SvDataPaths.RummagingItemDataTableArray,
+            }
+            .Concat(CreateWarmupTextPaths())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IEnumerable<string> CreateWarmupTextPaths()
+    {
+        foreach (var language in WarmupTextLanguages)
+        {
+            yield return SvDataPaths.ItemNames(language);
+            yield return SvDataPaths.MoveNames(language);
+            yield return SvDataPaths.PokemonNames(language);
+            yield return SvDataPaths.AbilityNames(language);
+            yield return SvDataPaths.PlaceNames(language);
+            yield return SvDataPaths.PlaceNameKeys(language);
+            yield return SvDataPaths.TrainerNames(language);
+            yield return SvDataPaths.TrainerNameKeys(language);
+            yield return SvDataPaths.TrainerTypes(language);
+            yield return SvDataPaths.TrainerTypeKeys(language);
         }
     }
 

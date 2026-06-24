@@ -75,6 +75,31 @@ public sealed class SwShTextWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadUsesSelectedLanguageWhenAvailable()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/story.dat",
+            CreateTextTable("English line."));
+        temp.WriteBaseRomFsFile(
+            "bin/message/French/common/story.dat",
+            CreateTextTable("Ligne francaise."));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with
+        {
+            GameTextLanguage = "fr",
+            OutputRootPath = null,
+        });
+
+        var workflow = new SwShTextWorkflowService().Load(project);
+
+        var entry = Assert.Single(workflow.Entries);
+        Assert.Equal("French", entry.Language);
+        Assert.Equal("Ligne francaise.", entry.Value);
+        Assert.Empty(workflow.Diagnostics);
+    }
+
+    [Fact]
     public void LoadFallsBackToFirstAvailableLanguageWhenEnglishIsMissing()
     {
         using var temp = TemporarySwShProject.Create();

@@ -475,7 +475,7 @@ internal sealed class SvTeraRaidsEditSessionService
         {
             var overlayDiagnostics = new List<ValidationDiagnostic>();
             var dataSet = teraRaidsWorkflowService.LoadDataSet(project, overlayDiagnostics);
-            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics);
+            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
             var abilityResolver = SvTeraRaidsWorkflowService.SvTeraRaidAbilityResolver.Load(
                 project,
                 fileSource,

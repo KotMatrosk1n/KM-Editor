@@ -361,27 +361,27 @@ public sealed class SwShPokemonWorkflowService
 
         var pokemonNames = LoadOptionalTextTable(
             project,
-            EnglishPokemonNamePath,
+            "pokelist.dat",
             "Pokemon names",
             diagnostics);
         var speciesNames = LoadOptionalTextTable(
             project,
-            EnglishSpeciesNamePath,
+            "monsname.dat",
             "Pokemon species names",
             diagnostics);
         var itemNames = LoadOptionalTextTable(
             project,
-            EnglishItemNamePath,
+            "itemname.dat",
             "Item names",
             diagnostics);
         var abilityNames = LoadOptionalTextTable(
             project,
-            EnglishAbilityNamePath,
+            "tokusei.dat",
             "Ability names",
             diagnostics);
         var moveNames = LoadOptionalTextTable(
             project,
-            EnglishMoveNamePath,
+            "wazaname.dat",
             "Move names",
             diagnostics);
         var itemRecords = LoadOptionalItemRecords(project, diagnostics);
@@ -603,17 +603,18 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyList<string> LoadOptionalTextTable(
         OpenedProject project,
-        string relativePath,
+        string fileName,
         string label,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var source = ResolveWorkflowFile(project, relativePath);
+        var relativePath = ResolveCommonTextPath(project, fileName);
+        var source = relativePath is null ? null : ResolveWorkflowFile(project, relativePath);
         if (source is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 $"{label} are not available; numeric fallback labels will be shown.",
-                expected: relativePath));
+                expected: $"romfs/bin/message/{{language}}/common/{fileName}"));
             return [];
         }
 
@@ -642,6 +643,33 @@ public sealed class SwShPokemonWorkflowService
         }
 
         return [];
+    }
+
+    private static string? ResolveCommonTextPath(OpenedProject project, string fileName)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var preferred = SwShGameTextLanguage.CommonMessagePath(language, fileName);
+        if (ResolveWorkflowFile(project, preferred) is not null)
+        {
+            return preferred;
+        }
+
+        if (!string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
+        {
+            var english = SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName);
+            if (ResolveWorkflowFile(project, english) is not null)
+            {
+                return english;
+            }
+        }
+
+        return project.FileGraph.Entries
+            .Where(entry =>
+                entry.RelativePath.StartsWith("romfs/bin/message/", StringComparison.OrdinalIgnoreCase)
+                && entry.RelativePath.EndsWith($"/common/{fileName}", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => entry.RelativePath)
+            .FirstOrDefault();
     }
 
     private static SwShPokemonWorkflow CreateWorkflow(

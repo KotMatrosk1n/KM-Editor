@@ -37,7 +37,7 @@ public sealed class SwShPokemonAbilityOptionResolver
 
         return new SwShPokemonAbilityOptionResolver(
             LoadPersonalRecords(project),
-            LoadEnglishAbilityNames(project));
+            LoadAbilityNames(project));
     }
 
     public IReadOnlyList<SwShAbilitySlotOption> CreateOptions(
@@ -153,9 +153,9 @@ public sealed class SwShPokemonAbilityOptionResolver
         }
     }
 
-    private static IReadOnlyList<string> LoadEnglishAbilityNames(OpenedProject project)
+    private static IReadOnlyList<string> LoadAbilityNames(OpenedProject project)
     {
-        var source = ResolveWorkflowFile(project, SwShPokemonWorkflowService.EnglishAbilityNamePath);
+        var source = ResolveWorkflowFile(project, ResolveCommonTextPath(project, "tokusei.dat"));
         if (source is null)
         {
             return [];
@@ -180,6 +180,27 @@ public sealed class SwShPokemonAbilityOptionResolver
         {
             return [];
         }
+    }
+
+    private static string ResolveCommonTextPath(OpenedProject project, string fileName)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var preferred = SwShGameTextLanguage.CommonMessagePath(language, fileName);
+        if (ResolveWorkflowFile(project, preferred) is not null)
+        {
+            return preferred;
+        }
+
+        if (!string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
+        {
+            var english = SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName);
+            if (ResolveWorkflowFile(project, english) is not null)
+            {
+                return english;
+            }
+        }
+
+        return preferred;
     }
 
     private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)

@@ -467,7 +467,7 @@ internal sealed class SvTradePokemonEditSessionService
             var overlayDiagnostics = new List<ValidationDiagnostic>();
             var tradeListSource = fileSource.Read(project, SvDataPaths.EventTradeListArray);
             var tradePokemonSource = fileSource.Read(project, SvDataPaths.EventTradePokemonArray);
-            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics);
+            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
             var abilityResolver = SvTradePokemonWorkflowService.SvTradeAbilityResolver.Load(
                 project,
                 fileSource,

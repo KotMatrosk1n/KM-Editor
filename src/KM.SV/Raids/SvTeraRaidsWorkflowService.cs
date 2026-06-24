@@ -285,7 +285,7 @@ internal sealed class SvTeraRaidsWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var abilityResolver = SvTeraRaidAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             dataSet = LoadDataSet(project, diagnostics);

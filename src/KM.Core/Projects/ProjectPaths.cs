@@ -10,6 +10,8 @@ public sealed record ProjectPaths(
     string? ScarletVioletSupportFolderPath,
     ProjectGame? SelectedGame)
 {
+    public string? GameTextLanguage { get; init; }
+
     public ProjectPaths(
         string? BaseRomFsPath,
         string? BaseExeFsPath,

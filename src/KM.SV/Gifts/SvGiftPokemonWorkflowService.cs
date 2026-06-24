@@ -199,7 +199,7 @@ internal sealed class SvGiftPokemonWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var abilityResolver = SvGiftAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.EventAddPokemonArray);

@@ -300,7 +300,7 @@ internal sealed class SvMovesWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, SvDataPaths.MoveDataArray);
             moves = LoadRecords(source, labels).ToArray();
         }

@@ -184,13 +184,13 @@ internal sealed class SvPlacementWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(SvWorkflowSupport.Error(
                 $"Placement labels could not be loaded: {exception.Message}",
-                "romfs/message/dat/English"));
+                "romfs/message/dat/{language}"));
         }
 
         var abilityResolver = SvPlacementAbilityResolver.Load(project, fileSource, labels, diagnostics);
