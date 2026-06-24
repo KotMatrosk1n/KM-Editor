@@ -2418,6 +2418,22 @@
     "Academy inventory": "Ассортимент академии",
     "Picnic goods": "Товары для пикника",
     "Kitakami inventory": "Ассортимент Китаками",
-    "Blueberry Academy inventory": "Ассортимент Академии Блуберри"
+    "Blueberry Academy inventory": "Ассортимент Академии Блуберри",
+    "Pokemon Legends Z-A": "Pokemon Legends Z-A",
+    "Pokemon Legends Z-A Editor": "Редактор Pokemon Legends Z-A",
+    "Pokemon Legends Z-A Support Folder (Optional)": "Папка поддержки Pokemon Legends Z-A (необязательно)",
+    "Z-A Data Cache": "Кэш данных Z-A",
+    "Pokemon Legends Z-A Data Cache": "Кэш данных Pokemon Legends Z-A",
+    "Controls how aggressively Z-A Trinity data is cached between editor loads.": "Управляет тем, насколько активно данные Trinity для Z-A кэшируются между загрузками редактора.",
+    "Z-A cache mode": "Режим кэша Z-A",
+    "Persistent Z-A Data Cache warmup is off in Minimal mode.": "Постоянный прогрев кэша данных Z-A отключен в минимальном режиме.",
+    "Clear Z-A Cache?": "Очистить кэш Z-A?",
+    "This removes cached Pokemon Legends Z-A Trinity data that is not reserved for the currently active Z-A project. The next Z-A validation can rebuild it.": "Это удалит кэшированные данные Trinity для Pokemon Legends Z-A, которые не зарезервированы за текущим активным проектом Z-A. Следующая проверка Z-A сможет создать их заново.",
+    "Pokemon Legends Z-A game dump is not available yet.": "Дамп игры Pokemon Legends Z-A пока недоступен.",
+    "Implemented Pokemon Legends Z-A game dump workflow": "Реализованный рабочий процесс дампа Pokemon Legends Z-A",
+    "Pokemon Legends Z-A support folder is not configured. Set it in Project Setup to enable Z-A data editors.": "Папка поддержки Pokemon Legends Z-A не настроена. Укажите её в Project Setup, чтобы включить редакторы данных Z-A.",
+    "Building Pokemon Legends Z-A cache metadata.": "Создаются метаданные кэша Pokemon Legends Z-A.",
+    "Building Pokemon Legends Z-A decompressed payload cache.": "Создается кэш распакованных данных Pokemon Legends Z-A.",
+    "Pokemon Legends Z-A cache is idle.": "Кэш Pokemon Legends Z-A бездействует."
   }
 }

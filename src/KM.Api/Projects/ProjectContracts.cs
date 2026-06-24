@@ -11,6 +11,7 @@ public enum ProjectGameDto
     Shield,
     Scarlet,
     Violet,
+    ZA,
 }
 
 public sealed record ProjectPathsDto
@@ -23,7 +24,8 @@ public sealed record ProjectPathsDto
         string? SaveFilePath,
         string? ScarletVioletSupportFolderPath,
         ProjectGameDto? SelectedGame,
-        string? GameTextLanguage = null)
+        string? GameTextLanguage = null,
+        string? PokemonLegendsZASupportFolderPath = null)
     {
         this.BaseRomFsPath = BaseRomFsPath;
         this.BaseExeFsPath = BaseExeFsPath;
@@ -32,6 +34,7 @@ public sealed record ProjectPathsDto
         this.ScarletVioletSupportFolderPath = ScarletVioletSupportFolderPath;
         this.SelectedGame = SelectedGame;
         this.GameTextLanguage = GameTextLanguage;
+        this.PokemonLegendsZASupportFolderPath = PokemonLegendsZASupportFolderPath;
     }
 
     public ProjectPathsDto(
@@ -71,6 +74,8 @@ public sealed record ProjectPathsDto
 
     public string? ScarletVioletSupportFolderPath { get; init; }
 
+    public string? PokemonLegendsZASupportFolderPath { get; init; }
+
     public ProjectGameDto? SelectedGame { get; init; }
 
     public string? GameTextLanguage { get; init; }
@@ -97,6 +102,7 @@ public enum ProjectPathRoleDto
     OutputRoot,
     SaveFile,
     ScarletVioletSupportFolder,
+    PokemonLegendsZASupportFolder,
 }
 
 public enum ProjectPathStatusDto

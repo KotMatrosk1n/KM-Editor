@@ -16,6 +16,7 @@ public static class ProjectGameMetadata
         new(ProjectGame.Shield, "Pokemon Shield", 0x01008DB008C2C000, UsesTrinityRomFs: false),
         new(ProjectGame.Scarlet, "Pokemon Scarlet", 0x0100A3D008C5C000, UsesTrinityRomFs: true),
         new(ProjectGame.Violet, "Pokemon Violet", 0x01008F6008C5E000, UsesTrinityRomFs: true),
+        new(ProjectGame.ZA, "Pokemon Legends Z-A", 0x0100F43008C44000, UsesTrinityRomFs: true),
     ];
 
     public static IReadOnlyList<ProjectGameInfo> All => GameInfos;
@@ -34,6 +35,16 @@ public static class ProjectGameMetadata
     public static bool IsSwordShield(ProjectGame? game)
     {
         return game is null or ProjectGame.Sword or ProjectGame.Shield;
+    }
+
+    public static bool IsScarletViolet(ProjectGame? game)
+    {
+        return game is ProjectGame.Scarlet or ProjectGame.Violet;
+    }
+
+    public static bool IsPokemonLegendsZA(ProjectGame? game)
+    {
+        return game is ProjectGame.ZA;
     }
 
     public static string FormatRecognizedGameList()

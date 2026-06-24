@@ -25,6 +25,7 @@ public static class ProjectBridgeMapper
             ToCore(paths.SelectedGame))
         {
             GameTextLanguage = paths.GameTextLanguage,
+            PokemonLegendsZASupportFolderPath = paths.PokemonLegendsZASupportFolderPath,
         };
     }
 
@@ -228,6 +229,7 @@ public static class ProjectBridgeMapper
             ProjectGame.Shield => ProjectGameDto.Shield,
             ProjectGame.Scarlet => ProjectGameDto.Scarlet,
             ProjectGame.Violet => ProjectGameDto.Violet,
+            ProjectGame.ZA => ProjectGameDto.ZA,
             _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
         };
     }
@@ -252,6 +254,7 @@ public static class ProjectBridgeMapper
             ProjectGameDto.Shield => ProjectGame.Shield,
             ProjectGameDto.Scarlet => ProjectGame.Scarlet,
             ProjectGameDto.Violet => ProjectGame.Violet,
+            ProjectGameDto.ZA => ProjectGame.ZA,
             null => null,
             _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
         };
@@ -266,6 +269,7 @@ public static class ProjectBridgeMapper
             ProjectPathRole.OutputRoot => ProjectPathRoleDto.OutputRoot,
             ProjectPathRole.SaveFile => ProjectPathRoleDto.SaveFile,
             ProjectPathRole.ScarletVioletSupportFolder => ProjectPathRoleDto.ScarletVioletSupportFolder,
+            ProjectPathRole.PokemonLegendsZASupportFolder => ProjectPathRoleDto.PokemonLegendsZASupportFolder,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, null),
         };
     }

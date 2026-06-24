@@ -2418,6 +2418,22 @@
     "Academy inventory": "Akademieinventar",
     "Picnic goods": "Picknickwaren",
     "Kitakami inventory": "Kitakami-Inventar",
-    "Blueberry Academy inventory": "Blaubeer-Akademie-Inventar"
+    "Blueberry Academy inventory": "Blaubeer-Akademie-Inventar",
+    "Pokemon Legends Z-A": "Pokemon Legends Z-A",
+    "Pokemon Legends Z-A Editor": "Pokemon Legends Z-A Editor",
+    "Pokemon Legends Z-A Support Folder (Optional)": "Pokemon Legends Z-A Supportordner (optional)",
+    "Z-A Data Cache": "Z-A Datencache",
+    "Pokemon Legends Z-A Data Cache": "Pokemon Legends Z-A Datencache",
+    "Controls how aggressively Z-A Trinity data is cached between editor loads.": "Steuert, wie aggressiv Z-A Trinity Daten zwischen Editorladungen zwischengespeichert werden.",
+    "Z-A cache mode": "Z-A Cachemodus",
+    "Persistent Z-A Data Cache warmup is off in Minimal mode.": "Das persistente Aufwärmen des Z-A Datencaches ist im Minimalmodus deaktiviert.",
+    "Clear Z-A Cache?": "Z-A Cache löschen?",
+    "This removes cached Pokemon Legends Z-A Trinity data that is not reserved for the currently active Z-A project. The next Z-A validation can rebuild it.": "Dies entfernt zwischengespeicherte Pokemon Legends Z-A Trinity Daten, die nicht für das aktuell aktive Z-A Projekt reserviert sind. Die nächste Z-A Validierung kann sie neu aufbauen.",
+    "Pokemon Legends Z-A game dump is not available yet.": "Der Pokemon Legends Z-A Game Dump ist noch nicht verfügbar.",
+    "Implemented Pokemon Legends Z-A game dump workflow": "Implementierter Pokemon Legends Z-A Game Dump Workflow",
+    "Pokemon Legends Z-A support folder is not configured. Set it in Project Setup to enable Z-A data editors.": "Der Pokemon Legends Z-A Supportordner ist nicht konfiguriert. Legen Sie ihn in Project Setup fest, um Z-A Dateneditoren zu aktivieren.",
+    "Building Pokemon Legends Z-A cache metadata.": "Pokemon Legends Z-A Cachemetadaten werden erstellt.",
+    "Building Pokemon Legends Z-A decompressed payload cache.": "Cache für dekomprimierte Pokemon Legends Z-A Daten wird erstellt.",
+    "Pokemon Legends Z-A cache is idle.": "Der Pokemon Legends Z-A Cache ist inaktiv."
   }
 }

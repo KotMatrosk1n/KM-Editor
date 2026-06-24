@@ -7,6 +7,7 @@
     <Project Path="src/KM.SV/KM.SV.csproj" />
     <Project Path="src/KM.SwSh/KM.SwSh.csproj" />
     <Project Path="src/KM.Tools/KM.Tools.csproj" />
+    <Project Path="src/KM.ZA/KM.ZA.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/KM.Core.Tests/KM.Core.Tests.csproj" />

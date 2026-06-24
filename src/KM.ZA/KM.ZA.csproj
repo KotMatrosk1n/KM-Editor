@@ -1,0 +1,18 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Google.FlatBuffers" Version="25.2.10" />
+    <PackageReference Include="SharpCompress" Version="0.49.1" />
+
+    <ProjectReference Include="..\KM.Core\KM.Core.csproj" />
+    <ProjectReference Include="..\KM.Formats\KM.Formats.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

@@ -9,7 +9,7 @@ namespace KM.Core.Projects;
 public sealed class ProjectValidator
 {
     private const int NpdmTitleIdOffset = 0x290;
-    private const int NpdmMinimumTitleIdLength = NpdmTitleIdOffset + sizeof(ulong);
+    private const int NpdmMinimumTitleIdLength = sizeof(ulong);
 
     private readonly ProjectFileGraphBuilder fileGraphBuilder;
 
@@ -37,6 +37,9 @@ public sealed class ProjectValidator
         var scarletVioletSupportFolder = ValidateOptionalScarletVioletSupportFolder(
             paths.ScarletVioletSupportFolderPath,
             paths.SelectedGame);
+        var pokemonLegendsZASupportFolder = ValidateOptionalPokemonLegendsZASupportFolder(
+            paths.PokemonLegendsZASupportFolderPath,
+            paths.SelectedGame);
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
@@ -49,6 +52,7 @@ public sealed class ProjectValidator
             outputRoot.ToResult(),
             saveFile.ToResult(),
             scarletVioletSupportFolder.ToResult(),
+            pokemonLegendsZASupportFolder.ToResult(),
         };
         var diagnostics = pathResults.SelectMany(result => result.Diagnostics).ToArray();
         var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot);
@@ -279,6 +283,61 @@ public sealed class ProjectValidator
         return draft;
     }
 
+    private static PathValidationDraft ValidateOptionalPokemonLegendsZASupportFolder(
+        string? path,
+        ProjectGame? selectedGame)
+    {
+        var draft = new PathValidationDraft(ProjectPathRole.PokemonLegendsZASupportFolder, path, isRequired: false);
+
+        if (selectedGame is not ProjectGame.ZA)
+        {
+            draft.Status = string.IsNullOrWhiteSpace(path)
+                ? ProjectPathStatus.NotSet
+                : ProjectPathStatus.Valid;
+            return draft;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            draft.Status = ProjectPathStatus.NotSet;
+            return draft;
+        }
+
+        if (File.Exists(path))
+        {
+            draft.Status = ProjectPathStatus.WrongKind;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Pokemon Legends Z-A support path must be a folder.",
+                expected: "Folder containing the required compression support file");
+            return draft;
+        }
+
+        if (!Directory.Exists(path))
+        {
+            draft.Status = ProjectPathStatus.Missing;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Pokemon Legends Z-A support folder does not exist; Z-A data editors are disabled until it is configured.",
+                expected: "Existing support folder");
+            return draft;
+        }
+
+        var requiredFilePath = Path.Combine(path, CreateScarletVioletSupportFileName());
+        if (!File.Exists(requiredFilePath))
+        {
+            draft.Status = ProjectPathStatus.Missing;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Pokemon Legends Z-A support file was not found in the selected folder; Z-A data editors are disabled until it is configured.",
+                expected: "Folder containing the required compression support file");
+            return draft;
+        }
+
+        draft.Status = ProjectPathStatus.Valid;
+        return draft;
+    }
+
     private static void AddBasePathSafetyDiagnostics(PathValidationDraft baseRomFs, PathValidationDraft baseExeFs)
     {
         if (!baseRomFs.IsValid || !baseExeFs.IsValid)
@@ -406,15 +465,14 @@ public sealed class ProjectValidator
                 return;
             }
 
-            var titleId = BinaryPrimitives.ReadUInt64LittleEndian(
-                npdm.AsSpan(NpdmTitleIdOffset, sizeof(ulong)));
-            var detectedGame = DetectGame(titleId);
+            var (detectedGame, titleId) = DetectGameFromNpdm(npdm);
             if (detectedGame is null)
             {
+                var titleIdLabel = titleId is null ? "not found" : $"0x{titleId.Value:X16}";
                 baseExeFs.Status = ProjectPathStatus.Unsafe;
                 baseExeFs.AddDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Base ExeFS title id 0x{titleId:X16} is not recognized as {ProjectGameMetadata.FormatRecognizedGameList()}.",
+                    $"Base ExeFS title id {titleIdLabel} is not recognized as {ProjectGameMetadata.FormatRecognizedGameList()}.",
                     expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
                 return;
             }
@@ -424,14 +482,14 @@ public sealed class ProjectValidator
                 baseExeFs.Status = ProjectPathStatus.Unsafe;
                 baseExeFs.AddDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Selected {FormatGame(selectedGame)}, but Base ExeFS contains {FormatGame(detectedGame.Value)} title id 0x{titleId:X16}.",
+                    $"Selected {FormatGame(selectedGame)}, but Base ExeFS contains {FormatGame(detectedGame.Value)} title id 0x{titleId!.Value:X16}.",
                     expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
                 return;
             }
 
             baseExeFs.AddDiagnostic(
                 DiagnosticSeverity.Info,
-                $"Base ExeFS matches selected {FormatGame(selectedGame)} title id 0x{titleId:X16}.",
+                $"Base ExeFS matches selected {FormatGame(selectedGame)} title id 0x{titleId!.Value:X16}.",
                 expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
         }
         catch (IOException exception)
@@ -491,6 +549,33 @@ public sealed class ProjectValidator
     private static ProjectGame? DetectGame(ulong titleId)
     {
         return ProjectGameMetadata.DetectByTitleId(titleId);
+    }
+
+    private static (ProjectGame? Game, ulong? TitleId) DetectGameFromNpdm(byte[] npdm)
+    {
+        ulong? firstTitleId = null;
+        if (npdm.Length >= NpdmTitleIdOffset + sizeof(ulong))
+        {
+            firstTitleId = BinaryPrimitives.ReadUInt64LittleEndian(
+                npdm.AsSpan(NpdmTitleIdOffset, sizeof(ulong)));
+            var legacyGame = DetectGame(firstTitleId.Value);
+            if (legacyGame is not null)
+            {
+                return (legacyGame, firstTitleId.Value);
+            }
+        }
+
+        for (var offset = 0; offset <= npdm.Length - sizeof(ulong); offset += 4)
+        {
+            var titleId = BinaryPrimitives.ReadUInt64LittleEndian(npdm.AsSpan(offset, sizeof(ulong)));
+            var detectedGame = DetectGame(titleId);
+            if (detectedGame is not null)
+            {
+                return (detectedGame, titleId);
+            }
+        }
+
+        return (null, firstTitleId);
     }
 
     private static ulong GetTitleId(ProjectGame game)

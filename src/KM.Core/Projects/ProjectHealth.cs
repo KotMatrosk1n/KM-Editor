@@ -20,6 +20,7 @@ public enum ProjectPathRole
     OutputRoot,
     SaveFile,
     ScarletVioletSupportFolder,
+    PokemonLegendsZASupportFolder,
 }
 
 public enum ProjectPathStatus

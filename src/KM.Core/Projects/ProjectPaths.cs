@@ -12,6 +12,8 @@ public sealed record ProjectPaths(
 {
     public string? GameTextLanguage { get; init; }
 
+    public string? PokemonLegendsZASupportFolderPath { get; init; }
+
     public ProjectPaths(
         string? BaseRomFsPath,
         string? BaseExeFsPath,

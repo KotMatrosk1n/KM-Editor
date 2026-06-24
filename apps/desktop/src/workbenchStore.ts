@@ -84,6 +84,7 @@ export type ProjectPathDraft = {
   baseExeFsPath: string;
   baseRomFsPath: string;
   outputRootPath: string;
+  pokemonLegendsZASupportFolderPath: string;
   saveFilePath: string;
   scarletVioletSupportFolderPath: string;
   selectedGame: ProjectGame | null;
@@ -1196,6 +1197,7 @@ function loadProjectPathDraft(): ProjectPathDraft {
         typeof parsedValue.baseRomFsPath === 'string' ? parsedValue.baseRomFsPath : '',
       outputRootPath:
         typeof parsedValue.outputRootPath === 'string' ? parsedValue.outputRootPath : '',
+      pokemonLegendsZASupportFolderPath: typeof parsedValue.pokemonLegendsZASupportFolderPath === 'string' ? parsedValue.pokemonLegendsZASupportFolderPath : '',
       saveFilePath: typeof parsedValue.saveFilePath === 'string' ? parsedValue.saveFilePath : '',
       scarletVioletSupportFolderPath: typeof parsedValue.scarletVioletSupportFolderPath === 'string' ? parsedValue.scarletVioletSupportFolderPath : '',
       selectedGame: null
@@ -1231,6 +1233,7 @@ function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
     const swordPaths = coerceProjectPathDraftValues(parsedValue.sword);
     const scarletPaths = coerceProjectPathDraftValues(parsedValue.scarlet);
     const violetPaths = coerceProjectPathDraftValues(parsedValue.violet);
+    const zaPaths = coerceProjectPathDraftValues(parsedValue.za);
 
     if (shieldPaths) {
       cache.shield = shieldPaths;
@@ -1248,6 +1251,10 @@ function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
       cache.violet = violetPaths;
     }
 
+    if (zaPaths) {
+      cache.za = zaPaths;
+    }
+
     return cache;
   } catch {
     return {};
@@ -1261,7 +1268,7 @@ function saveProjectPathDraft(draftPaths: ProjectPathDraft) {
 
   try {
     const persistentDraftPaths = {
-      baseExeFsPath: draftPaths.baseExeFsPath, baseRomFsPath: draftPaths.baseRomFsPath, outputRootPath: draftPaths.outputRootPath, saveFilePath: draftPaths.saveFilePath, scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
+      baseExeFsPath: draftPaths.baseExeFsPath, baseRomFsPath: draftPaths.baseRomFsPath, outputRootPath: draftPaths.outputRootPath, pokemonLegendsZASupportFolderPath: draftPaths.pokemonLegendsZASupportFolderPath, saveFilePath: draftPaths.saveFilePath, scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
     };
     window.localStorage.setItem(projectPathDraftStorageKey, JSON.stringify(persistentDraftPaths));
   } catch {
@@ -1298,6 +1305,7 @@ function createEmptyProjectPathDraftValues(): ProjectPathDraftValues {
     baseExeFsPath: '',
     baseRomFsPath: '',
     outputRootPath: '',
+    pokemonLegendsZASupportFolderPath: '',
     saveFilePath: '',
     scarletVioletSupportFolderPath: ''
   };
@@ -1315,6 +1323,7 @@ function coerceProjectPathDraftValues(
     baseRomFsPath: typeof draftPaths.baseRomFsPath === 'string' ? draftPaths.baseRomFsPath : '',
     outputRootPath:
       typeof draftPaths.outputRootPath === 'string' ? draftPaths.outputRootPath : '',
+    pokemonLegendsZASupportFolderPath: typeof draftPaths.pokemonLegendsZASupportFolderPath === 'string' ? draftPaths.pokemonLegendsZASupportFolderPath : '',
     saveFilePath: typeof draftPaths.saveFilePath === 'string' ? draftPaths.saveFilePath : '',
     scarletVioletSupportFolderPath: typeof draftPaths.scarletVioletSupportFolderPath === 'string' ? draftPaths.scarletVioletSupportFolderPath : ''
   };
@@ -1325,6 +1334,7 @@ function toProjectPathDraftValues(draftPaths: ProjectPathDraft): ProjectPathDraf
     baseExeFsPath: draftPaths.baseExeFsPath,
     baseRomFsPath: draftPaths.baseRomFsPath,
     outputRootPath: draftPaths.outputRootPath,
+    pokemonLegendsZASupportFolderPath: draftPaths.pokemonLegendsZASupportFolderPath,
     saveFilePath: draftPaths.saveFilePath,
     scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
   };

@@ -149,6 +149,9 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'gameDump'
 ]);
 
+const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
+]);
+
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer', 'gameDump']);
 
 export const scarletVioletAdvancedEditorSectionIds = new Set<WorkbenchSection>([
@@ -266,6 +269,10 @@ function getGameWorkflowSectionIds(game: ProjectGame | null | undefined) {
     return scarletVioletWorkflowSectionIds;
   }
 
+  if (isPokemonLegendsZAGame(game)) {
+    return pokemonLegendsZAWorkflowSectionIds;
+  }
+
   if (game === 'sword' || game === 'shield') {
     return swordShieldWorkflowSectionIds;
   }
@@ -275,6 +282,14 @@ function getGameWorkflowSectionIds(game: ProjectGame | null | undefined) {
 
 export function isScarletVioletGame(game: ProjectGame | null | undefined) {
   return game === 'scarlet' || game === 'violet';
+}
+
+export function isPokemonLegendsZAGame(game: ProjectGame | null | undefined) {
+  return game === 'za';
+}
+
+export function isTrinityCacheGame(game: ProjectGame | null | undefined) {
+  return isScarletVioletGame(game) || isPokemonLegendsZAGame(game);
 }
 
 export function isWorkflowSupportedForGame(
@@ -379,7 +394,8 @@ export function getLoadedWorkflowStateForSection(
 export function isWorkflowSection(section: WorkbenchSection) {
   return (
     swordShieldWorkflowSectionIds.has(section) ||
-    scarletVioletWorkflowSectionIds.has(section)
+    scarletVioletWorkflowSectionIds.has(section) ||
+    pokemonLegendsZAWorkflowSectionIds.has(section)
   );
 }
 

@@ -218,6 +218,10 @@ import {
   type SvCacheStatus
 } from './bridge/svCacheContracts';
 import {
+  type ZaCacheMode,
+  type ZaCacheStatus
+} from './bridge/zaCacheContracts';
+import {
   createGameScopedProjectBridge,
   isStaleProjectScopeError
 } from './bridge/gameScopedProjectBridge';
@@ -239,7 +243,7 @@ import {
   useWorkbenchStore
 } from './workbenchStore';
 import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
-import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
@@ -291,6 +295,8 @@ import { getSectionWikiUrl } from './wikiLinks';
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 export type EditorUiFamily = 'swsh' | 'sv';
+type TrinityCacheMode = SvCacheMode | ZaCacheMode;
+type TrinityCacheStatus = SvCacheStatus | ZaCacheStatus;
 
 const textControlInserts = [
   {
@@ -395,6 +401,12 @@ const gameDefinitions = {
     label: 'Pokemon Violet',
     title: 'Pokemon Violet Editor',
     titleId: '01008F6008C5E000'
+  },
+  za: {
+    icon: Sparkle,
+    label: 'Pokemon Legends Z-A',
+    title: 'Pokemon Legends Z-A Editor',
+    titleId: '0100F43008C44000'
   }
 } as const satisfies Record<
   ProjectGame,
@@ -406,7 +418,7 @@ const gameDefinitions = {
   }
 >;
 
-const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet'] as const satisfies readonly ProjectGame[];
+const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet', 'za'] as const satisfies readonly ProjectGame[];
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -667,12 +679,12 @@ const modMergerModeOptions: Array<{
 
 const svCacheModeOptions: Array<{
   description: string;
-  id: SvCacheMode;
+  id: TrinityCacheMode;
   label: string;
   recommended?: boolean;
 }> = [
   {
-    description: 'Turns off persistent S/V data caching and uses the least disk space.',
+    description: 'Turns off persistent Trinity data caching and uses the least disk space.',
     id: 'minimal',
     label: 'Minimal'
   },
@@ -683,7 +695,7 @@ const svCacheModeOptions: Array<{
     recommended: true
   },
   {
-    description: 'Keeps decompressed S/V payloads for the fastest repeated editor loads.',
+    description: 'Keeps decompressed Trinity payloads for the fastest repeated editor loads.',
     id: 'performance',
     label: 'Performance'
   }
@@ -702,7 +714,7 @@ const pathFields: Array<{
   kind: 'directory' | 'file';
   label: string;
   role: ProjectPathRole;
-  scope?: 'scarletViolet';
+  scope?: 'scarletViolet' | 'pokemonLegendsZA';
 }> = [
   {
     field: 'baseRomFsPath',
@@ -734,6 +746,13 @@ const pathFields: Array<{
     label: 'oo2core_8_win64.dll Folder (Optional)',
     role: 'scarletVioletSupportFolder',
     scope: 'scarletViolet'
+  },
+  {
+    field: 'pokemonLegendsZASupportFolderPath',
+    kind: 'directory',
+    label: 'Pokemon Legends Z-A Support Folder (Optional)',
+    role: 'pokemonLegendsZASupportFolder',
+    scope: 'pokemonLegendsZA'
   }
 ];
 type ProjectPathField = (typeof pathFields)[number];
@@ -1863,7 +1882,7 @@ export function App({
   const [dynamaxAdventureApplyResult, setDynamaxAdventureApplyResult] =
     useState<ApplyResult | null>(null);
   const [workProgress, setWorkProgress] = useState<WorkProgressState | null>(null);
-  const [svCacheStatus, setSvCacheStatus] = useState<SvCacheStatus | null>(null);
+  const [svCacheStatus, setSvCacheStatus] = useState<TrinityCacheStatus | null>(null);
   const [isSvCacheWarming, setIsSvCacheWarming] = useState(false);
   const [isSvCacheRefreshing, setIsSvCacheRefreshing] = useState(false);
   const [svCacheRefreshTick, setSvCacheRefreshTick] = useState(0);
@@ -2344,7 +2363,7 @@ export function App({
   }, [activeSection, activeSectionCanStayMounted, setActiveSection]);
 
   useEffect(() => {
-    if (!isScarletVioletGame(selectedGame)) {
+    if (!isTrinityCacheGame(selectedGame)) {
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
       setIsSvCacheRefreshing(false);
@@ -2356,7 +2375,11 @@ export function App({
 
     let isDisposed = false;
 
-    void bridge.getSvCacheStatus({ paths: null })
+    const getCacheStatus = isPokemonLegendsZAGame(selectedGame)
+      ? bridge.getZaCacheStatus
+      : bridge.getSvCacheStatus;
+
+    void getCacheStatus({ paths: null })
       .then((response) => {
         if (!isDisposed) {
           setSvCacheStatus(response.status);
@@ -2375,7 +2398,7 @@ export function App({
 
   const startSvCacheWarmup = useCallback(
     async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
-      if (!isScarletVioletGame(paths.selectedGame) || !hasValidScarletVioletSupportFolder(health)) {
+      if (!isTrinityCacheGame(paths.selectedGame) || !hasValidTrinitySupportFolder(paths.selectedGame, health)) {
         return;
       }
 
@@ -2383,7 +2406,9 @@ export function App({
       svCacheWarmupRunRef.current = runId;
 
       try {
-        const initialStatus = await bridge.getSvCacheStatus({ paths });
+        const initialStatus = isPokemonLegendsZAGame(paths.selectedGame)
+          ? await bridge.getZaCacheStatus({ paths })
+          : await bridge.getSvCacheStatus({ paths });
         if (svCacheWarmupRunRef.current !== runId) {
           return;
         }
@@ -2403,7 +2428,9 @@ export function App({
             return;
           }
 
-          const response = await bridge.warmupSvCacheStep({ paths, stepIndex });
+          const response = isPokemonLegendsZAGame(paths.selectedGame)
+            ? await bridge.warmupZaCacheStep({ paths, stepIndex })
+            : await bridge.warmupSvCacheStep({ paths, stepIndex });
           if (svCacheWarmupRunRef.current !== runId) {
             return;
           }
@@ -2424,21 +2451,27 @@ export function App({
   );
 
   const handleChangeSvCacheMode = useCallback(
-    async (mode: SvCacheMode) => {
+    async (mode: TrinityCacheMode) => {
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
 
-      const paths = isScarletVioletGame(selectedGame)
+      const paths = isTrinityCacheGame(selectedGame)
         ? toProjectPaths(draftPathsRef.current)
         : null;
       const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
 
       try {
-        const response = await bridge.updateSvCacheSettings({
+        const response = isPokemonLegendsZAGame(selectedGame)
+          ? await bridge.updateZaCacheSettings({
+              maxCacheSizeBytes,
+              mode,
+              paths
+            })
+          : await bridge.updateSvCacheSettings({
           maxCacheSizeBytes,
           mode,
           paths
-        });
+            });
         setSvCacheStatus(response.status);
         if (paths && health) {
           void startSvCacheWarmup(paths, health);
@@ -2452,17 +2485,23 @@ export function App({
 
   const handleChangeSvCacheLimit = useCallback(
     async (maxCacheSizeBytes: number) => {
-      const paths = isScarletVioletGame(selectedGame)
+      const paths = isTrinityCacheGame(selectedGame)
         ? toProjectPaths(draftPathsRef.current)
         : null;
       const mode = svCacheStatus?.settings.mode ?? 'balanced';
 
       try {
-        const response = await bridge.updateSvCacheSettings({
+        const response = isPokemonLegendsZAGame(selectedGame)
+          ? await bridge.updateZaCacheSettings({
+              maxCacheSizeBytes,
+              mode,
+              paths
+            })
+          : await bridge.updateSvCacheSettings({
           maxCacheSizeBytes,
           mode,
           paths
-        });
+            });
         setSvCacheStatus(response.status);
       } catch (error) {
         setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2472,14 +2511,16 @@ export function App({
   );
 
   const handleRefreshSvCacheStatus = useCallback(async () => {
-    if (!isScarletVioletGame(selectedGame)) {
+    if (!isTrinityCacheGame(selectedGame)) {
       return;
     }
 
     const paths = toProjectPaths(draftPathsRef.current);
     setIsSvCacheRefreshing(true);
     try {
-      const response = await bridge.getSvCacheStatus({ paths });
+      const response = isPokemonLegendsZAGame(selectedGame)
+        ? await bridge.getZaCacheStatus({ paths })
+        : await bridge.getSvCacheStatus({ paths });
       setSvCacheStatus(response.status);
       setSvCacheRefreshTick((currentTick) => currentTick + 1);
     } catch (error) {
@@ -2496,10 +2537,12 @@ export function App({
     setIsSvCacheClearing(true);
 
     try {
-      const activePaths = isScarletVioletGame(selectedGame)
+      const activePaths = isTrinityCacheGame(selectedGame)
         ? toProjectPaths(draftPathsRef.current)
         : null;
-      const response = await bridge.clearSvCache({ activePaths });
+      const response = isPokemonLegendsZAGame(selectedGame)
+        ? await bridge.clearZaCache({ activePaths })
+        : await bridge.clearSvCache({ activePaths });
       setSvCacheStatus(response.status);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -8634,6 +8677,12 @@ export function App({
       {isSvCacheClearConfirmOpen ? (
         <SvCacheClearConfirmationModal
           cacheSizeLabel={formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0)}
+          cacheTitle={isPokemonLegendsZAGame(selectedGame) ? 'Z-A Cache' : 'S/V Cache'}
+          description={
+            isPokemonLegendsZAGame(selectedGame)
+              ? 'This removes cached Pokemon Legends Z-A Trinity data that is not reserved for the currently active Z-A project. The next Z-A validation can rebuild it.'
+              : 'This removes cached Scarlet/Violet Trinity data that is not reserved for the currently active S/V project. The next S/V validation can rebuild it.'
+          }
           isClearing={isSvCacheClearing}
           onCancel={() => setIsSvCacheClearConfirmOpen(false)}
           onConfirm={() => void handleConfirmClearSvCache()}
@@ -8861,21 +8910,30 @@ function HealthSection({
   pendingEditCount: number;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedGame: ProjectGame;
-  svCacheStatus: SvCacheStatus | null;
+  svCacheStatus: TrinityCacheStatus | null;
 }) {
   const outputRootPath = draftPaths.outputRootPath.trim();
   const gameDefinition = gameDefinitions[selectedGame];
   const GameIcon = gameDefinition.icon;
-  const visiblePathFields = pathFields.filter(
-    (pathField) => pathField.scope !== 'scarletViolet' || isScarletVioletGame(selectedGame)
-  );
+  const visiblePathFields = pathFields.filter((pathField) => {
+    if (!pathField.scope) {
+      return true;
+    }
+
+    if (pathField.scope === 'scarletViolet') {
+      return isScarletVioletGame(selectedGame);
+    }
+
+    return isPokemonLegendsZAGame(selectedGame);
+  });
   const canShowSvCacheProgress = Boolean(
     health &&
-      isScarletVioletGame(selectedGame) &&
+      isTrinityCacheGame(selectedGame) &&
       health.canOpenEditableWorkflows &&
-      hasValidScarletVioletSupportFolder(health) &&
+      hasValidTrinitySupportFolder(selectedGame, health) &&
       svCacheStatus
   );
+  const cacheTitle = getTrinityCacheTitle(selectedGame);
 
   return (
     <>
@@ -9010,7 +9068,11 @@ function HealthSection({
         </div>
 
         {canShowSvCacheProgress && svCacheStatus ? (
-          <SvCacheProgressPanel isWarming={isSvCacheWarming} status={svCacheStatus} />
+          <SvCacheProgressPanel
+            cacheTitle={cacheTitle}
+            isWarming={isSvCacheWarming}
+            status={svCacheStatus}
+          />
         ) : null}
       </section>
 
@@ -9041,11 +9103,13 @@ function HealthSection({
 }
 
 function SvCacheProgressPanel({
+  cacheTitle,
   isWarming,
   status
 }: {
+  cacheTitle: string;
   isWarming: boolean;
-  status: SvCacheStatus;
+  status: TrinityCacheStatus;
 }) {
   const isMinimal = status.settings.mode === 'minimal';
   const percent = Math.max(0, Math.min(100, status.progressPercent));
@@ -9059,7 +9123,7 @@ function SvCacheProgressPanel({
           ? 'Partially built'
           : 'Ready to build';
   const message = isMinimal
-    ? 'Persistent S/V cache warmup is off in Minimal mode.'
+    ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
     : status.message;
 
   return (
@@ -9067,13 +9131,13 @@ function SvCacheProgressPanel({
       <div className="sv-cache-progress-header">
         <div>
           <Layers aria-hidden="true" size={18} />
-          <strong>S/V Data Cache</strong>
+          <strong>{cacheTitle}</strong>
         </div>
         <span className="status-pill status-pill-info">{phaseLabel}</span>
       </div>
       {!isMinimal ? (
         <div
-          aria-label="S/V data cache build progress"
+          aria-label={`${cacheTitle} build progress`}
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={percent}
@@ -27830,14 +27894,14 @@ function SettingsSection({
   isSvCacheRefreshing: boolean;
   isSvCacheWarming: boolean;
   onChangeSvCacheLimit: (maxCacheSizeBytes: number) => void;
-  onChangeSvCacheMode: (mode: SvCacheMode) => void;
+  onChangeSvCacheMode: (mode: TrinityCacheMode) => void;
   onCheckForUpdates: () => void;
   onClearSvCache: () => void;
   onRefreshSvCacheStatus: () => void;
   selectedGame: ProjectGame;
   status: UpdateCheckStatus;
   svCacheRefreshTick: number;
-  svCacheStatus: SvCacheStatus | null;
+  svCacheStatus: TrinityCacheStatus | null;
 }) {
   const isBusy =
     status.kind === 'checking' ||
@@ -27849,7 +27913,16 @@ function SettingsSection({
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
   const cacheSizeLabel = formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0);
   const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
-  const canShowSvCacheSettings = isScarletVioletGame(selectedGame);
+  const canShowSvCacheSettings = isTrinityCacheGame(selectedGame);
+  const cacheTitle = isPokemonLegendsZAGame(selectedGame)
+    ? 'Pokemon Legends Z-A Data Cache'
+    : 'Scarlet/Violet Data Cache';
+  const cacheModeLabel = isPokemonLegendsZAGame(selectedGame)
+    ? 'Z-A cache mode'
+    : 'S/V cache mode';
+  const cacheDescription = isPokemonLegendsZAGame(selectedGame)
+    ? 'Controls how aggressively Z-A Trinity data is cached between editor loads.'
+    : 'Controls how aggressively S/V Trinity data is cached between editor loads.';
   const { language, setLanguage, t } = useLocalization();
   const languageKeyByCode: Record<LanguageCode, string> = {
     de: 'german',
@@ -27908,12 +27981,12 @@ function SettingsSection({
           <div className="settings-subsection-heading">
             <Layers aria-hidden="true" size={18} />
             <div>
-              <h3 id="sv-cache-settings-heading">Scarlet/Violet Data Cache</h3>
-              <p>Controls how aggressively S/V Trinity data is cached between editor loads.</p>
+              <h3 id="sv-cache-settings-heading">{cacheTitle}</h3>
+              <p>{cacheDescription}</p>
             </div>
           </div>
 
-          <div className="sv-cache-mode-options" role="radiogroup" aria-label="S/V cache mode">
+          <div className="sv-cache-mode-options" role="radiogroup" aria-label={cacheModeLabel}>
             {svCacheModeOptions.map((option) => {
               const isSelected = option.id === activeCacheMode;
 
@@ -28394,11 +28467,15 @@ function SupportSearchConfirmationModal({
 
 function SvCacheClearConfirmationModal({
   cacheSizeLabel,
+  cacheTitle,
+  description,
   isClearing,
   onCancel,
   onConfirm
 }: {
   cacheSizeLabel: string;
+  cacheTitle: string;
+  description: string;
   isClearing: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -28413,12 +28490,9 @@ function SvCacheClearConfirmationModal({
       >
         <div className="panel-heading">
           <Trash2 aria-hidden="true" size={18} />
-          <h2 id="sv-cache-clear-confirmation-heading">Clear S/V Cache?</h2>
+          <h2 id="sv-cache-clear-confirmation-heading">Clear {cacheTitle}?</h2>
         </div>
-        <p className="modal-copy">
-          This removes cached Scarlet/Violet Trinity data that is not reserved for the currently
-          active S/V project. The next S/V validation can rebuild it.
-        </p>
+        <p className="modal-copy">{description}</p>
         <p className="modal-copy modal-copy-muted">Current cache size: {cacheSizeLabel}</p>
         <div className="modal-actions">
           <button
@@ -34856,6 +34930,9 @@ function toProjectPaths(draftPaths: ProjectPathDraft) {
     baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
     gameTextLanguage: currentGameTextLanguage,
     outputRootPath: normalizeDraftPath(draftPaths.outputRootPath),
+    pokemonLegendsZASupportFolderPath: isPokemonLegendsZAGame(draftPaths.selectedGame)
+      ? normalizeDraftPath(draftPaths.pokemonLegendsZASupportFolderPath)
+      : null,
     saveFilePath: normalizeDraftPath(draftPaths.saveFilePath),
     scarletVioletSupportFolderPath: isScarletVioletGame(draftPaths.selectedGame)
       ? normalizeDraftPath(draftPaths.scarletVioletSupportFolderPath)
@@ -34911,7 +34988,7 @@ function formatByteSize(value: number) {
   return `${size.toLocaleString(undefined, { maximumFractionDigits })} ${units[unitIndex]}`;
 }
 
-function formatSvCacheModeLabel(mode: SvCacheMode) {
+function formatSvCacheModeLabel(mode: TrinityCacheMode) {
   return svCacheModeOptions.find((option) => option.id === mode)?.label ?? mode;
 }
 
@@ -34919,6 +34996,27 @@ function hasValidScarletVioletSupportFolder(health: ProjectHealth) {
   return health.paths.some(
     (path) => path.role === 'scarletVioletSupportFolder' && path.status === 'valid'
   );
+}
+
+function hasValidPokemonLegendsZASupportFolder(health: ProjectHealth) {
+  return health.paths.some(
+    (path) => path.role === 'pokemonLegendsZASupportFolder' && path.status === 'valid'
+  );
+}
+
+function hasValidTrinitySupportFolder(
+  game: ProjectGame | null | undefined,
+  health: ProjectHealth
+) {
+  return isPokemonLegendsZAGame(game)
+    ? hasValidPokemonLegendsZASupportFolder(health)
+    : hasValidScarletVioletSupportFolder(health);
+}
+
+function getTrinityCacheTitle(game: ProjectGame | null | undefined) {
+  return isPokemonLegendsZAGame(game)
+    ? 'Z-A Data Cache'
+    : 'S/V Data Cache';
 }
 
 function normalizeDraftPath(path: string) {
