@@ -215,6 +215,15 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.Items.ZaItemRecord>(workflow.Items, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.Placement,
+                "Placement",
+                "Spawner transform placement rows and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadPlacement(paths);
+                    return new GameDumpCategoryData<KM.ZA.Placement.ZaPlacedObjectRecord>(workflow.Objects, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.Shops,
                 "Shops",
                 "Shop inventories, prices, currencies, unlock conditions, and provenance.",

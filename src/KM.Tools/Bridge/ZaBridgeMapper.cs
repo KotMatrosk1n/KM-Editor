@@ -6,6 +6,7 @@ using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.ModMerger;
 using KM.Api.Moves;
+using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.StaticEncounters;
@@ -19,6 +20,7 @@ using KM.ZA.Gifts;
 using KM.ZA.Items;
 using KM.ZA.ModMerger;
 using KM.ZA.Moves;
+using KM.ZA.Placement;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
 using KM.ZA.StaticEncounters;
@@ -109,6 +111,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+    }
+
+    public static LoadPlacementWorkflowResponse ToDto(ZaPlacementWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
     }
 
     public static LoadGiftPokemonWorkflowResponse ToDto(ZaGiftPokemonWorkflow workflow)
@@ -229,6 +238,26 @@ public static class ZaBridgeMapper
 
         return new UpdateTrainerFieldsResponse(
             ToTrainersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePlacementObjectFieldResponse ToDto(ZaPlacementEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePlacementObjectFieldResponse(
+            ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePlacementObjectFieldsResponse ToPlacementObjectFieldsDto(ZaPlacementEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePlacementObjectFieldsResponse(
+            ToPlacementWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -464,6 +493,20 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PlacementWorkflowDto ToPlacementWorkflowDto(ZaPlacementWorkflow workflow)
+    {
+        return new PlacementWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Objects.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new PlacementWorkflowStatsDto(
+                workflow.Stats.TotalObjectCount,
+                workflow.Stats.TotalAreaCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            workflow.Categories.Select(ToDto).ToArray());
     }
 
     private static GiftPokemonWorkflowDto ToGiftPokemonWorkflowDto(ZaGiftPokemonWorkflow workflow)
@@ -1382,6 +1425,85 @@ public static class ZaBridgeMapper
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
         };
+    }
+
+    private static PlacedObjectRecordDto ToDto(ZaPlacedObjectRecord placedObject)
+    {
+        return new PlacedObjectRecordDto(
+            placedObject.ObjectId,
+            placedObject.ObjectType,
+            placedObject.Label,
+            placedObject.Map,
+            placedObject.ArchiveMember,
+            placedObject.ZoneIndex,
+            placedObject.ObjectIndex,
+            placedObject.ChanceIndex,
+            placedObject.ItemId,
+            placedObject.ItemName,
+            placedObject.ItemHash,
+            placedObject.Quantity,
+            placedObject.Chance,
+            placedObject.X,
+            placedObject.Y,
+            placedObject.Z,
+            placedObject.RotationY,
+            placedObject.ScriptId,
+            ToDto(placedObject.Provenance),
+            placedObject.CategoryId,
+            placedObject.CategoryLabel,
+            placedObject.Fields.Select(ToDto).ToArray());
+    }
+
+    private static PlacementFieldValueDto ToDto(ZaPlacementFieldValue field)
+    {
+        return new PlacementFieldValueDto(
+            field.Field,
+            field.Label,
+            field.Group,
+            field.Value,
+            field.DisplayValue,
+            field.IsReadOnly,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Description,
+            field.Options?.Select(ToDto).ToArray());
+    }
+
+    private static PlacementEditableFieldDto ToDto(ZaPlacementEditableField field)
+    {
+        return new PlacementEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray(),
+            field.Group,
+            field.IsReadOnly,
+            field.Description);
+    }
+
+    private static PlacementEditableFieldOptionDto ToDto(ZaPlacementEditableFieldOption option)
+    {
+        return new PlacementEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static PlacementCategoryDto ToDto(ZaPlacementCategory category)
+    {
+        return new PlacementCategoryDto(
+            category.Id,
+            category.Label,
+            category.Description,
+            category.ObjectCount);
+    }
+
+    private static PlacementProvenanceDto ToDto(ZaPlacementProvenance provenance)
+    {
+        return new PlacementProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static TrainerAiFlagStateDto ToDto(ZaTrainerAiFlagState flag)
