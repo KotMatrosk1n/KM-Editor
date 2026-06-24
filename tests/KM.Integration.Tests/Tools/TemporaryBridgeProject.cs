@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Projects;
+using KM.Formats.ZA;
 
 namespace KM.Integration.Tests.Tools;
 
@@ -24,13 +25,16 @@ internal sealed class TemporaryBridgeProject : IDisposable
 
     public string? ScarletVioletSupportFolderPath { get; private set; }
 
+    public string? PokemonLegendsZASupportFolderPath { get; private set; }
+
     public ProjectPathsDto Paths => new(
         BaseRomFsPath,
         BaseExeFsPath,
         OutputRootPath,
         SaveFilePath: null,
         ScarletVioletSupportFolderPath,
-        SelectedGame: null);
+        SelectedGame: null,
+        PokemonLegendsZASupportFolderPath: PokemonLegendsZASupportFolderPath);
 
     public static TemporaryBridgeProject Create()
     {
@@ -80,6 +84,18 @@ internal sealed class TemporaryBridgeProject : IDisposable
         ScarletVioletSupportFolderPath = Directory.CreateDirectory(Path.Combine(RootPath, "sv-support")).FullName;
         File.WriteAllBytes(Path.Combine(ScarletVioletSupportFolderPath, string.Concat("oo2", "core", "_8_", "win", "64", ".dll")), []);
         return ScarletVioletSupportFolderPath;
+    }
+
+    public string EnsurePokemonLegendsZASupportFolder()
+    {
+        if (PokemonLegendsZASupportFolderPath is not null)
+        {
+            return PokemonLegendsZASupportFolderPath;
+        }
+
+        PokemonLegendsZASupportFolderPath = Directory.CreateDirectory(Path.Combine(RootPath, "za-support")).FullName;
+        File.WriteAllBytes(Path.Combine(PokemonLegendsZASupportFolderPath, ZaCompressionRuntime.RequiredFileName), []);
+        return PokemonLegendsZASupportFolderPath;
     }
 
     public void Dispose()

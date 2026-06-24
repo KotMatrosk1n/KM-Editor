@@ -97,6 +97,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "items" && workflow.Label == "Items");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "shops" && workflow.Label == "Shops");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "typeChart" && workflow.Label == "Type Chart");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "modMerger" && workflow.Label == "Mod Merger");
     }
 
@@ -388,6 +389,7 @@ public sealed class PokemonLegendsZABridgeTests
         WriteGiftPokemonFixture(temp);
         WriteTradePokemonFixture(temp);
         WriteStaticEncounterFixture(temp);
+        temp.WriteBaseExeFsFile("main", ZaTypeChartBridgeFixtures.CreateCompatibleMain());
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
 
@@ -399,7 +401,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var categories = load.Payload!.Workflow.Categories;
-        Assert.Equal(["pokemon", "trainers", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
+        Assert.Equal(["pokemon", "trainers", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "items", "shops", "typeChart"], categories.Select(category => category.Id).ToArray());
         Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
 
         var destinationFolder = Path.Combine(temp.RootPath, "dump");
@@ -416,6 +418,7 @@ public sealed class PokemonLegendsZABridgeTests
                     new GameDumpSelectionDto("giftPokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("tradePokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("typeChart", GameDumpFormatDto.Json),
                 ]),
             "request-za-game-dump-run");
 
@@ -446,6 +449,9 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "tradePokemon" && file.RelativePath == Path.Combine("Trade Pokemon", "tradePokemon.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "typeChart" && file.RelativePath == Path.Combine("Type Chart", "typeChart.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
         Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
         Assert.Contains("Rival Aria", File.ReadAllText(Path.Combine(destinationFolder, "Trainers", "trainers.json")));
@@ -453,6 +459,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains("main_init_poke_1", File.ReadAllText(Path.Combine(destinationFolder, "Gift Pokemon", "giftPokemon.json")));
         Assert.Contains("sub_tradepoke_bulbasaur", File.ReadAllText(Path.Combine(destinationFolder, "Trade Pokemon", "tradePokemon.json")));
         Assert.Contains("Friendly Shop", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
+        Assert.Contains("attackTypeIndex", File.ReadAllText(Path.Combine(destinationFolder, "Type Chart", "typeChart.json")));
         Assert.Contains("Pokemon Legends Z-A", File.ReadAllText(Path.Combine(destinationFolder, "manifest.json")));
     }
 
@@ -1083,8 +1090,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(PokemonLegendsZATitleId));
         temp.WriteBaseRomFsFile("arc/data.trpfd", []);
         temp.WriteBaseRomFsFile("arc/data.trpfs", []);
-        var supportFolder = Directory.CreateDirectory(Path.Combine(temp.RootPath, "za-support")).FullName;
-        File.WriteAllBytes(Path.Combine(supportFolder, ZaCompressionRuntime.RequiredFileName), []);
+        temp.EnsurePokemonLegendsZASupportFolder();
         return temp;
     }
 
@@ -1093,7 +1099,7 @@ public sealed class PokemonLegendsZABridgeTests
         return temp.Paths with
         {
             SelectedGame = ProjectGameDto.ZA,
-            PokemonLegendsZASupportFolderPath = Path.Combine(temp.RootPath, "za-support"),
+            PokemonLegendsZASupportFolderPath = temp.PokemonLegendsZASupportFolderPath,
         };
     }
 

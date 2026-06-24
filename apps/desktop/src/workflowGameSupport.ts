@@ -160,6 +160,7 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'moves',
   'items',
   'shops',
+  'typeChart',
   'modMerger',
   'gameDump'
 ]);
