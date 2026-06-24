@@ -72,7 +72,7 @@ function translateDiagnosticDetail(
   value: string,
   translateLiteral: DiagnosticTranslator
 ) {
-  if (label === 'Field') {
+  if (label === 'Field' || label === 'Expected') {
     return translateLiteral(value);
   }
 

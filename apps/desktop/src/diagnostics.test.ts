@@ -53,7 +53,7 @@ describe('diagnostics', () => {
     };
 
     expect(formatDiagnosticMessage(diagnostic, (literal) => translateLiteralForLanguage('es', literal))).toBe(
-      'Selected files must match on both sides. Área: Fusionador de mods. Archivo: romfs/bin/appli/shop/bin/shop_data.bin. Campo: Archivos seleccionados. Esperado: Select matching RomFS files on both sides.'
+      'Selected files must match on both sides. Área: Fusionador de mods. Archivo: romfs/bin/appli/shop/bin/shop_data.bin. Campo: Archivos seleccionados. Esperado: Selecciona archivos RomFS coincidentes en ambos lados.'
     );
   });
 });

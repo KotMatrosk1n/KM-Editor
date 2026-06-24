@@ -551,8 +551,8 @@ describe('App', () => {
     expect(within(navigation).getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Moves' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Items' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Text' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Placement' })).toBeInTheDocument();
-    expect(within(navigation).queryByRole('button', { name: 'Text' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     expect(
