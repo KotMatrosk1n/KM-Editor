@@ -4780,6 +4780,7 @@ export function createMockProjectBridge(
           raidRewardsWorkflowSummary,
           raidBonusRewardsWorkflowSummary,
           placementWorkflowSummary,
+          behaviorWorkflowSummary,
           flagworkSaveWorkflowSummary,
           bagHookWorkflowSummary,
           catchCapWorkflowSummary,

@@ -81,6 +81,7 @@ describe('S/V support setup', () => {
       paths: {
         baseExeFsPath: null,
         baseRomFsPath: null,
+        gameTextLanguage: 'en',
         outputRootPath: null,
         saveFilePath: null,
         scarletVioletSupportFolderPath: supportFolderPath,
