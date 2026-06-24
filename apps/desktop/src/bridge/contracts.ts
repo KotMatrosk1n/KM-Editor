@@ -222,7 +222,7 @@ export const apiErrorSchema = z.strictObject({
 export const projectGameSchema = z.enum(['sword', 'shield', 'scarlet', 'violet']);
 export type ProjectGame = z.infer<typeof projectGameSchema>;
 export const projectPathsSchema = z.strictObject({
-  baseExeFsPath: z.string().nullable(), baseRomFsPath: z.string().nullable(), outputRootPath: z.string().nullable(), saveFilePath: z.string().nullable(), scarletVioletSupportFolderPath: z.string().nullable().optional(), selectedGame: projectGameSchema.nullable().default(null)
+  baseExeFsPath: z.string().nullable(), baseRomFsPath: z.string().nullable(), gameTextLanguage: z.string().nullable().optional(), outputRootPath: z.string().nullable(), saveFilePath: z.string().nullable(), scarletVioletSupportFolderPath: z.string().nullable().optional(), selectedGame: projectGameSchema.nullable().default(null)
 });
 
 export const openProjectRequestSchema = z.strictObject({

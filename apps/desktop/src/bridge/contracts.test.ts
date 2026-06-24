@@ -170,6 +170,7 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
+            gameTextLanguage: 'es',
             outputRootPath: null,
             saveFilePath: null,
             selectedGame: 'shield'
@@ -179,6 +180,7 @@ describe('bridge contracts', () => {
     });
 
     expect(parsed.command).toBe('project.open');
+    expect(parsed.payload.paths.gameTextLanguage).toBe('es');
     expect(parsed.payload.paths.selectedGame).toBe('shield');
   });
 

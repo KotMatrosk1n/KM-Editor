@@ -113,6 +113,27 @@ public sealed class SwShItemsWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadUsesSelectedLanguageItemNamesWhenAvailable()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteBaseItems(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/Spanish/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames("Ninguno", "Pocion", "Antidoto"));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with
+        {
+            GameTextLanguage = "es",
+            OutputRootPath = null,
+        });
+
+        var workflow = new SwShItemsWorkflowService().Load(project);
+
+        Assert.Equal("Pocion", workflow.Items[1].Name);
+        Assert.Empty(workflow.Diagnostics);
+    }
+
+    [Fact]
     public void LoadReadsMachineMoveLinkageAndMoveOptions()
     {
         using var temp = TemporarySwShProject.Create();

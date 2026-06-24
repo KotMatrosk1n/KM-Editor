@@ -374,7 +374,7 @@ internal sealed class SvGiftPokemonEditSessionService
         {
             var overlayDiagnostics = new List<ValidationDiagnostic>();
             var source = fileSource.Read(project, SvDataPaths.EventAddPokemonArray);
-            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics);
+            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
             var abilityResolver = SvGiftPokemonWorkflowService.SvGiftAbilityResolver.Load(
                 project,
                 fileSource,

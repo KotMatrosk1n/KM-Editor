@@ -286,9 +286,9 @@ public sealed class SwShMovesWorkflowService
             return CreateWorkflow(summary, [], sourceFileCount: 0, diagnostics);
         }
 
-        var moveNames = LoadOptionalTextTable(project, EnglishMoveNamePath, "Move names", diagnostics);
-        var moveDescriptions = LoadOptionalTextTable(project, EnglishMoveDescriptionPath, "Move descriptions", diagnostics);
-        var typeNames = LoadOptionalTextTable(project, EnglishTypeNamePath, "Type names", diagnostics);
+        var moveNames = LoadOptionalTextTable(project, "wazaname.dat", "Move names", diagnostics);
+        var moveDescriptions = LoadOptionalTextTable(project, "wazainfo.dat", "Move descriptions", diagnostics);
+        var typeNames = LoadOptionalTextTable(project, "typename.dat", "Type names", diagnostics);
         var moves = new List<SwShMoveRecord>();
         var parsedSourceFileCount = 0;
 
@@ -475,17 +475,18 @@ public sealed class SwShMovesWorkflowService
 
     private static IReadOnlyList<string> LoadOptionalTextTable(
         OpenedProject project,
-        string relativePath,
+        string fileName,
         string label,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        var relativePath = ResolveCommonTextPath(project, fileName);
         var source = ResolveWorkflowFile(project, relativePath);
         if (source is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 $"{label} are not available; numeric fallback labels will be shown.",
-                expected: relativePath));
+                expected: $"romfs/bin/message/{{language}}/common/{fileName}"));
             return [];
         }
 
@@ -514,6 +515,27 @@ public sealed class SwShMovesWorkflowService
         }
 
         return [];
+    }
+
+    private static string ResolveCommonTextPath(OpenedProject project, string fileName)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var preferred = SwShGameTextLanguage.CommonMessagePath(language, fileName);
+        if (ResolveWorkflowFile(project, preferred) is not null)
+        {
+            return preferred;
+        }
+
+        if (!string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
+        {
+            var english = SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName);
+            if (ResolveWorkflowFile(project, english) is not null)
+            {
+                return english;
+            }
+        }
+
+        return preferred;
     }
 
     internal static SwShMoveEditableField? GetEditableField(string? field)

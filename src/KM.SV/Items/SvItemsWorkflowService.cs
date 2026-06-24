@@ -127,7 +127,7 @@ internal sealed class SvItemsWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, SvDataPaths.ItemDataArray);
             tmCatalog = SvTechnicalMachineCatalog.Read(source.Bytes, labels).ToArray();
             items = LoadRecords(source, labels, tmCatalog).ToArray();

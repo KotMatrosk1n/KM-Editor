@@ -58,4 +58,29 @@ public static class SvDataPaths
     public const string EnglishTrainerNameKeys = "message/dat/English/common/trname.tbl";
     public const string EnglishTrainerTypes = "message/dat/English/common/trtype.dat";
     public const string EnglishTrainerTypeKeys = "message/dat/English/common/trtype.tbl";
+
+    public static string ItemNames(string language) => CommonMessage(language, "itemname.dat");
+
+    public static string MoveNames(string language) => CommonMessage(language, "wazaname.dat");
+
+    public static string PokemonNames(string language) => CommonMessage(language, "monsname.dat");
+
+    public static string AbilityNames(string language) => CommonMessage(language, "tokusei.dat");
+
+    public static string PlaceNames(string language) => CommonMessage(language, "place_name.dat");
+
+    public static string PlaceNameKeys(string language) => CommonMessage(language, "place_name.tbl");
+
+    public static string TrainerNames(string language) => CommonMessage(language, "trname.dat");
+
+    public static string TrainerNameKeys(string language) => CommonMessage(language, "trname.tbl");
+
+    public static string TrainerTypes(string language) => CommonMessage(language, "trtype.dat");
+
+    public static string TrainerTypeKeys(string language) => CommonMessage(language, "trtype.tbl");
+
+    private static string CommonMessage(string language, string fileName)
+    {
+        return $"message/dat/{language}/common/{fileName}";
+    }
 }

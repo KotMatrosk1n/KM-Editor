@@ -41,7 +41,7 @@ internal static class SwShWorkflowDependencyValidator
             return summary;
         }
 
-        var dependencies = GetDependencies(summary.Id);
+        var dependencies = GetDependencies(project, summary.Id);
         if (dependencies.Count == 0)
         {
             return summary;
@@ -62,33 +62,33 @@ internal static class SwShWorkflowDependencyValidator
             : summary with { Diagnostics = diagnostics };
     }
 
-    private static IReadOnlyList<WorkflowDependency> GetDependencies(string workflowId)
+    private static IReadOnlyList<WorkflowDependency> GetDependencies(OpenedProject project, string workflowId)
     {
         return workflowId switch
         {
             SwShWorkflowIds.Items =>
             [
                 File("item data", SwShItemsWorkflowService.ItemDataPath),
-                File("item names", SwShItemsWorkflowService.EnglishItemNamePath),
-                File("move names for TM/TR labels", SwShItemsWorkflowService.EnglishMoveNamePath),
+                AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
+                AnyFile("move names for TM/TR labels", CommonMessageFiles(project, "wazaname.dat")),
             ],
             SwShWorkflowIds.Pokemon =>
             [
                 File("personal data", SwShPokemonWorkflowService.PersonalDataPath),
                 File("learnset data", SwShPokemonWorkflowService.LearnsetDataPath),
                 Prefix("evolution data", SwShPokemonWorkflowService.EvolutionDataDirectory),
-                File("Pokemon display names", SwShPokemonWorkflowService.EnglishPokemonNamePath),
-                File("species names", SwShPokemonWorkflowService.EnglishSpeciesNamePath),
-                File("item names", SwShPokemonWorkflowService.EnglishItemNamePath),
-                File("ability names", SwShPokemonWorkflowService.EnglishAbilityNamePath),
-                File("move names", SwShPokemonWorkflowService.EnglishMoveNamePath),
+                AnyFile("Pokemon display names", CommonMessageFiles(project, "pokelist.dat")),
+                AnyFile("species names", CommonMessageFiles(project, "monsname.dat")),
+                AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
+                AnyFile("ability names", CommonMessageFiles(project, "tokusei.dat")),
+                AnyFile("move names", CommonMessageFiles(project, "wazaname.dat")),
             ],
             SwShWorkflowIds.Moves =>
             [
                 Prefix("move data", SwShMovesWorkflowService.MoveDataDirectory),
-                File("move names", SwShMovesWorkflowService.EnglishMoveNamePath),
-                File("move descriptions", SwShMovesWorkflowService.EnglishMoveDescriptionPath),
-                File("type names", SwShMovesWorkflowService.EnglishTypeNamePath),
+                AnyFile("move names", CommonMessageFiles(project, "wazaname.dat")),
+                AnyFile("move descriptions", CommonMessageFiles(project, "wazainfo.dat")),
+                AnyFile("type names", CommonMessageFiles(project, "typename.dat")),
             ],
             SwShWorkflowIds.Text =>
             [
@@ -99,12 +99,12 @@ internal static class SwShWorkflowDependencyValidator
                 Prefix("trainer data", SwShTrainersWorkflowService.TrainerDataRootPath),
                 Prefix("trainer teams", SwShTrainersWorkflowService.TrainerPokeRootPath),
                 Prefix("trainer classes", SwShTrainersWorkflowService.TrainerClassRootPath),
-                Prefix("trainer lookup text", EnglishCommonMessagePath),
+                AnyPrefix("trainer lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.GiftPokemon =>
             [
                 File("gift Pokemon data", SwShGiftPokemonWorkflowService.GiftPokemonDataPath),
-                Prefix("gift lookup text", EnglishCommonMessagePath),
+                AnyPrefix("gift lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.TradePokemon =>
             [
@@ -112,7 +112,7 @@ internal static class SwShWorkflowDependencyValidator
                     "trade Pokemon data",
                     SwShTradePokemonWorkflowService.TradePokemonDataPath,
                     SwShTradePokemonWorkflowService.LegacyTradePokemonDataPath),
-                Prefix("trade lookup text", EnglishCommonMessagePath),
+                AnyPrefix("trade lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.StaticEncounters =>
             [
@@ -120,17 +120,17 @@ internal static class SwShWorkflowDependencyValidator
                     "static encounter data",
                     SwShStaticEncountersWorkflowService.StaticEncounterDataPath,
                     SwShStaticEncountersWorkflowService.LegacyStaticEncounterDataPath),
-                Prefix("static encounter lookup text", EnglishCommonMessagePath),
+                AnyPrefix("static encounter lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.RentalPokemon =>
             [
                 File("rental Pokemon data", SwShRentalPokemonWorkflowService.RentalPokemonDataPath),
-                Prefix("rental lookup text", EnglishCommonMessagePath),
+                AnyPrefix("rental lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.DynamaxAdventures =>
             [
                 File("Dynamax Adventures Pokemon data", SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath),
-                Prefix("Dynamax Adventures lookup text", EnglishCommonMessagePath),
+                AnyPrefix("Dynamax Adventures lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.Shops =>
             [
@@ -139,38 +139,38 @@ internal static class SwShWorkflowDependencyValidator
                     SwShShopsWorkflowService.ShopDataPath,
                     SwShShopsWorkflowService.LegacyShopDataPath),
                 File("item data for inventory names and prices", SwShItemsWorkflowService.ItemDataPath),
-                File("item names", SwShItemsWorkflowService.EnglishItemNamePath),
+                AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
             ],
             SwShWorkflowIds.Encounters =>
             [
                 File("wild encounter data", SwShEncountersWorkflowService.WildDataPath),
-                File("species names", $"{EnglishCommonMessagePath}/monsname.dat"),
+                AnyFile("species names", CommonMessageFiles(project, "monsname.dat")),
             ],
             SwShWorkflowIds.RaidBattles =>
             [
                 File("raid battle data", SwShRaidRewardsWorkflowService.NestDataPath),
-                File("species names", $"{EnglishCommonMessagePath}/monsname.dat"),
+                AnyFile("species names", CommonMessageFiles(project, "monsname.dat")),
             ],
             SwShWorkflowIds.RaidRewards =>
             [
                 File("raid reward data", SwShRaidRewardsWorkflowService.NestDataPath),
-                File("item names", SwShRaidRewardsWorkflowService.EnglishItemNamePath),
+                AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
             ],
             SwShWorkflowIds.RaidBonusRewards =>
             [
                 File("raid bonus reward data", SwShRaidRewardsWorkflowService.NestDataPath),
-                File("item names", SwShRaidRewardsWorkflowService.EnglishItemNamePath),
+                AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
             ],
             SwShWorkflowIds.Placement =>
             [
                 File("placement data", SwShPlacementWorkflowService.PlacementDataPath),
                 File("item hash table", SwShPlacementWorkflowService.ItemHashPath),
-                File("item names", SwShPlacementWorkflowService.EnglishItemNamePath),
+                AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
             ],
             SwShWorkflowIds.Behavior =>
             [
                 File("behavior data", SwShBehaviorWorkflowService.BehaviorDataPath),
-                File("species names", SwShBehaviorWorkflowService.EnglishSpeciesNamePath),
+                AnyFile("species names", CommonMessageFiles(project, "monsname.dat")),
             ],
             SwShWorkflowIds.FlagworkSave =>
             [
@@ -361,6 +361,33 @@ internal static class SwShWorkflowDependencyValidator
     private static WorkflowDependency Prefix(string label, string relativePath)
     {
         return new WorkflowDependency(label, [new DependencyCandidate(DependencyKind.Prefix, relativePath)]);
+    }
+
+    private static WorkflowDependency AnyPrefix(string label, params string[] relativePaths)
+    {
+        return new WorkflowDependency(
+            label,
+            relativePaths
+                .Select(relativePath => new DependencyCandidate(DependencyKind.Prefix, relativePath))
+                .ToArray());
+    }
+
+    private static string[] CommonMessageFiles(OpenedProject project, string fileName)
+    {
+        return CommonMessagePrefixes(project)
+            .Select(prefix => $"{prefix}/{fileName}")
+            .ToArray();
+    }
+
+    private static string[] CommonMessagePrefixes(OpenedProject project)
+    {
+        return new[]
+            {
+                $"romfs/bin/message/{SwShGameTextLanguage.Resolve(project.Paths)}/common",
+                EnglishCommonMessagePath,
+            }
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

@@ -57,7 +57,7 @@ internal sealed class SvEncountersWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, SvDataPaths.WildEncounterArray);
             tables = LoadTables(source, labels, project.Paths.SelectedGame).ToArray();
         }

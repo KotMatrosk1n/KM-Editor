@@ -204,7 +204,7 @@ internal sealed class SvTradePokemonWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var abilityResolver = SvTradeAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             tradeListSource = fileSource.Read(project, SvDataPaths.EventTradeListArray);

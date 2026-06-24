@@ -543,7 +543,7 @@ public sealed class SwShBehaviorWorkflowService
         ICollection<ValidationDiagnostic> diagnostics,
         out int sourceFileCount)
     {
-        var source = ResolveWorkflowFile(project, EnglishSpeciesNamePath);
+        var source = ResolveCommonTextSource(project, "monsname.dat");
         if (source is null)
         {
             sourceFileCount = 0;
@@ -580,6 +580,37 @@ public sealed class SwShBehaviorWorkflowService
                 expected: "Readable Sword/Shield monsname.dat"));
             return [];
         }
+    }
+
+    private static WorkflowFileSource? ResolveCommonTextSource(
+        OpenedProject project,
+        string fileName)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var preferred = ResolveWorkflowFile(project, SwShGameTextLanguage.CommonMessagePath(language, fileName));
+        if (preferred is not null)
+        {
+            return preferred;
+        }
+
+        if (!string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
+        {
+            var english = ResolveWorkflowFile(
+                project,
+                SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName));
+            if (english is not null)
+            {
+                return english;
+            }
+        }
+
+        return project.FileGraph.Entries
+            .Where(entry =>
+                entry.RelativePath.StartsWith("romfs/bin/message/", StringComparison.OrdinalIgnoreCase)
+                && entry.RelativePath.EndsWith($"/common/{fileName}", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => ResolveWorkflowFile(project, entry.RelativePath))
+            .FirstOrDefault(source => source is not null);
     }
 
     private static string GetIndexedName(int index, IReadOnlyList<string> names, string fallbackPrefix)

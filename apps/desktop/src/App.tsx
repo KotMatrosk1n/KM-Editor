@@ -1363,6 +1363,8 @@ function selectTextFieldContents(field: HTMLInputElement | HTMLTextAreaElement) 
   }
 }
 
+let currentGameTextLanguage: LanguageCode = 'en';
+
 export function App({
   bridge: unscopedBridge = defaultProjectBridge,
   desktopServices = defaultDesktopServices
@@ -1371,7 +1373,8 @@ export function App({
   desktopServices?: DesktopServices;
 } = {}) {
   useSelectEditableFieldContents();
-  const { translateLiteral } = useLocalization();
+  const { language, translateLiteral } = useLocalization();
+  currentGameTextLanguage = language;
 
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const applyResult = useWorkbenchStore((state) => state.applyResult);
@@ -34851,6 +34854,7 @@ function toProjectPaths(draftPaths: ProjectPathDraft) {
   return {
     baseExeFsPath: normalizeDraftPath(draftPaths.baseExeFsPath),
     baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
+    gameTextLanguage: currentGameTextLanguage,
     outputRootPath: normalizeDraftPath(draftPaths.outputRootPath),
     saveFilePath: normalizeDraftPath(draftPaths.saveFilePath),
     scarletVioletSupportFolderPath: isScarletVioletGame(draftPaths.selectedGame)

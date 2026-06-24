@@ -59,23 +59,28 @@ internal sealed class SvTextLabelLookup
     public static SvTextLabelLookup Load(
         OpenedProject project,
         SvWorkflowFileSource fileSource,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        ProjectPaths? paths = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(fileSource);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
+        var language = paths is null
+            ? SvGameTextLanguage.English
+            : SvGameTextLanguage.Resolve(paths);
+
         return new SvTextLabelLookup(
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishItemNames, "item names", diagnostics),
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishMoveNames, "move names", diagnostics),
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishPokemonNames, "Pokemon names", diagnostics),
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishAbilityNames, "ability names", diagnostics),
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishPlaceNames, "place names", diagnostics),
-            TryLoadKeyIndices(project, fileSource, SvDataPaths.EnglishPlaceNameKeys, "place name keys", diagnostics),
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishTrainerNames, "trainer names", diagnostics),
-            TryLoadKeyIndices(project, fileSource, SvDataPaths.EnglishTrainerNameKeys, "trainer name keys", diagnostics),
-            TryLoadIndexedTable(project, fileSource, SvDataPaths.EnglishTrainerTypes, "trainer class names", diagnostics),
-            TryLoadKeyIndices(project, fileSource, SvDataPaths.EnglishTrainerTypeKeys, "trainer class keys", diagnostics));
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.ItemNames, "item names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.MoveNames, "move names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.PokemonNames, "Pokemon names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.AbilityNames, "ability names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.PlaceNames, "place names", diagnostics),
+            LoadKeyIndicesWithFallback(project, fileSource, language, SvDataPaths.PlaceNameKeys, "place name keys", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.TrainerNames, "trainer names", diagnostics),
+            LoadKeyIndicesWithFallback(project, fileSource, language, SvDataPaths.TrainerNameKeys, "trainer name keys", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.TrainerTypes, "trainer class names", diagnostics),
+            LoadKeyIndicesWithFallback(project, fileSource, language, SvDataPaths.TrainerTypeKeys, "trainer class keys", diagnostics));
     }
 
     public static SvTextLabelLookup None() => Empty;
@@ -122,7 +127,37 @@ internal sealed class SvTextLabelLookup
             ?? (string.IsNullOrWhiteSpace(key) ? "Trainer" : SvLabels.FormatRawNameForLookup(key));
     }
 
-    private static IReadOnlyList<string> TryLoadIndexedTable(
+    private static IReadOnlyList<string> LoadIndexedTableWithFallback(
+        OpenedProject project,
+        SvWorkflowFileSource fileSource,
+        string language,
+        Func<string, string> pathFactory,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        return TryLoadIndexedTable(project, fileSource, pathFactory(language), label, diagnostics)
+            ?? (string.Equals(language, SvGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : TryLoadIndexedTable(project, fileSource, pathFactory(SvGameTextLanguage.English), label, diagnostics))
+            ?? [];
+    }
+
+    private static IReadOnlyDictionary<string, int> LoadKeyIndicesWithFallback(
+        OpenedProject project,
+        SvWorkflowFileSource fileSource,
+        string language,
+        Func<string, string> pathFactory,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        return TryLoadKeyIndices(project, fileSource, pathFactory(language), label, diagnostics)
+            ?? (string.Equals(language, SvGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : TryLoadKeyIndices(project, fileSource, pathFactory(SvGameTextLanguage.English), label, diagnostics))
+            ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<string>? TryLoadIndexedTable(
         OpenedProject project,
         SvWorkflowFileSource fileSource,
         string path,
@@ -138,18 +173,18 @@ internal sealed class SvTextLabelLookup
         }
         catch (FileNotFoundException)
         {
-            return [];
+            return null;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
                 $"Scarlet/Violet {label} could not be loaded: {exception.Message}",
                 $"romfs/{path}"));
-            return [];
+            return null;
         }
     }
 
-    private static IReadOnlyDictionary<string, int> TryLoadKeyIndices(
+    private static IReadOnlyDictionary<string, int>? TryLoadKeyIndices(
         OpenedProject project,
         SvWorkflowFileSource fileSource,
         string path,
@@ -166,14 +201,14 @@ internal sealed class SvTextLabelLookup
         }
         catch (FileNotFoundException)
         {
-            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            return null;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
                 $"Scarlet/Violet {label} could not be loaded: {exception.Message}",
                 $"romfs/{path}"));
-            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            return null;
         }
     }
 

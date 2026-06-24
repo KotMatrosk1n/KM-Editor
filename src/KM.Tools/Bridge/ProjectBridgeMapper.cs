@@ -22,7 +22,10 @@ public static class ProjectBridgeMapper
             paths.OutputRootPath,
             paths.SaveFilePath,
             paths.ScarletVioletSupportFolderPath,
-            ToCore(paths.SelectedGame));
+            ToCore(paths.SelectedGame))
+        {
+            GameTextLanguage = paths.GameTextLanguage,
+        };
     }
 
     public static ProjectHealthDto ToDto(ProjectHealth health)

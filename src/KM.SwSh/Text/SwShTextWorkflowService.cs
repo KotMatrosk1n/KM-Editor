@@ -254,10 +254,14 @@ public sealed class SwShTextWorkflowService
             return Array.Empty<WorkflowFileSource>();
         }
 
+        var preferredLanguage = SwShGameTextLanguage.Resolve(project.Paths);
         var language = messageEntries.Any(entry =>
-            string.Equals(GetLanguage(entry.RelativePath), PreferredLanguage, StringComparison.OrdinalIgnoreCase))
-            ? PreferredLanguage
-            : messageEntries
+            string.Equals(GetLanguage(entry.RelativePath), preferredLanguage, StringComparison.OrdinalIgnoreCase))
+            ? preferredLanguage
+            : messageEntries.Any(entry =>
+                string.Equals(GetLanguage(entry.RelativePath), PreferredLanguage, StringComparison.OrdinalIgnoreCase))
+                ? PreferredLanguage
+                : messageEntries
                 .Select(entry => GetLanguage(entry.RelativePath))
                 .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
                 .Order(StringComparer.OrdinalIgnoreCase)
@@ -268,7 +272,8 @@ public sealed class SwShTextWorkflowService
             return Array.Empty<WorkflowFileSource>();
         }
 
-        if (!string.Equals(language, PreferredLanguage, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(language, PreferredLanguage, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(preferredLanguage, PreferredLanguage, StringComparison.OrdinalIgnoreCase))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,

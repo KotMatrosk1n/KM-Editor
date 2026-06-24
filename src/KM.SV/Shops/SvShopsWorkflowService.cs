@@ -116,7 +116,7 @@ internal sealed class SvShopsWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var itemWorkflow = itemsWorkflowService.Load(project);
             itemRecords = itemWorkflow.Items.ToArray();
             var itemLookup = itemRecords

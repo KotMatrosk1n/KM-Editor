@@ -293,7 +293,7 @@ internal sealed class SvPokemonWorkflowService
 
         try
         {
-            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.PersonalArray);
             pokemon = LoadRecords(source, labels, tmCatalog).ToArray();
