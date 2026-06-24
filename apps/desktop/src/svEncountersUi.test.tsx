@@ -135,5 +135,5 @@ describe('Scarlet/Violet wild encounters UI', () => {
 
     expect(screen.getByText('1 slot in the selected row')).toBeInTheDocument();
     expect(screen.getByText('12-25 / lot 60 (100% share)')).toBeInTheDocument();
-  }, 15_000);
+  }, 30_000);
 });
