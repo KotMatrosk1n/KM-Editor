@@ -1336,7 +1336,7 @@
     "Open Static Encounters": "Відкрийте статичні зустрічі",
     "Open Static Encounters from Workflows to load backend encounter data.": "Відкрийте Static Encounters із робочих процесів, щоб завантажити дані внутрішніх зустрічей.",
     "Open Text": "Відкрити текст",
-    "Open Text from Viewers to load backend message tables.": "Відкрийте Text from Viewers, щоб завантажити таблиці внутрішніх повідомлень.",
+    "Open Text from Editors to load backend message tables.": "Відкрийте Текст у редакторах, щоб завантажити таблиці повідомлень бекенда.",
     "Open Trade Pokemon from Workflows to load backend trade data.": "Відкрийте Trade Pokemon із Workflows, щоб завантажити серверні дані торгівлі.",
     "Open Trades": "Відкриті торги",
     "Open Trainers": "Відкрити трейнери",

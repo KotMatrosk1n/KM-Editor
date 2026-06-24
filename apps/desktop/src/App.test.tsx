@@ -291,6 +291,7 @@ describe('App', () => {
       paths: {
         baseExeFsPath: 'sword-exefs',
         baseRomFsPath: 'sword-romfs',
+        gameTextLanguage: 'en',
         outputRootPath: 'sword-output',
         saveFilePath: null,
         scarletVioletSupportFolderPath: null,
@@ -368,14 +369,16 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Viewers' }));
     expect(screen.getByRole('button', { name: 'Flagwork / Save' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Text' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Text' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Editors' }));
-    expect(screen.getByRole('button', { name: 'Pokemon' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Moves' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Items' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Placement' })).toBeInTheDocument();
+    expect(
+      within(navigation)
+        .getAllByRole('button')
+        .filter((button) => button.classList.contains('nav-child-button'))
+        .map((button) => button.textContent)
+        .slice(-7)
+    ).toEqual(['Pokemon', 'Trainers', 'Moves', 'Items', 'Placement', 'Behavior', 'Text']);
 
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     expect(screen.getByRole('button', { name: 'Wild Encounters' })).toBeInTheDocument();
@@ -763,6 +766,7 @@ describe('App', () => {
       paths: {
         baseExeFsPath: 'base-exefs',
         baseRomFsPath: 'base-romfs',
+        gameTextLanguage: 'en',
         outputRootPath: 'output',
         saveFilePath: null,
         scarletVioletSupportFolderPath: null,
@@ -2588,7 +2592,7 @@ describe('App', () => {
     expect(screen.getByText('Set Potion pouch to 4.')).toBeInTheDocument();
   });
 
-  it('opens Text from Viewers with editable text control helpers', async () => {
+  it('opens Text from Editors with editable text control helpers', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -2596,7 +2600,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Viewers' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Text' }));
 
     expect(
@@ -6102,6 +6106,7 @@ describe('App', () => {
       paths: {
         baseExeFsPath: 'C:\\SH\\exefs',
         baseRomFsPath: 'C:\\SH\\romfs',
+        gameTextLanguage: 'en',
         outputRootPath: null,
         saveFilePath: null,
         scarletVioletSupportFolderPath: null,

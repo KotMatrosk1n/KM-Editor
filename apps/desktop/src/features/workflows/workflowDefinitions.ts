@@ -60,12 +60,6 @@ export const workflowDefinitions: Array<{
     icon: Zap
   },
   {
-    id: 'text',
-    label: 'Text and Dialogue Map',
-    description: 'Text entries, dialogue references, and source provenance.',
-    icon: ListChecks
-  },
-  {
     id: 'trainers',
     label: 'Trainers',
     description: 'Trainer parties, classes, battle types, and source provenance.',
@@ -136,6 +130,12 @@ export const workflowDefinitions: Array<{
     label: 'Behavior',
     description: 'Symbol encounter behavior profiles, model anchors, collision radii, and source provenance.',
     icon: Activity
+  },
+  {
+    id: 'text',
+    label: 'Text and Dialogue Map',
+    description: 'Text entries, dialogue references, and source provenance.',
+    icon: ListChecks
   },
   {
     id: 'flagworkSave',

@@ -439,11 +439,6 @@ const sections: Array<{
     icon: Zap
   },
   {
-    id: 'text',
-    label: 'Text',
-    icon: ListChecks
-  },
-  {
     id: 'trainers',
     label: 'Trainers',
     icon: UsersRound
@@ -512,6 +507,11 @@ const sections: Array<{
     id: 'behavior',
     label: 'Behavior',
     icon: Activity
+  },
+  {
+    id: 'text',
+    label: 'Text',
+    icon: ListChecks
   },
   {
     id: 'flagworkSave',
@@ -625,7 +625,7 @@ const sections: Array<{
   }
 ];
 
-const viewerSectionIds = new Set<WorkbenchSection>(['flagworkSave', 'text']);
+const viewerSectionIds = new Set<WorkbenchSection>(['flagworkSave']);
 const primaryNavigationSections = sections.filter(
   (section) => section.id === 'health'
 );
@@ -12023,7 +12023,7 @@ function TextSection({
             />
           </div>
         ) : (
-          <p className="empty-copy">Open Text from Viewers to load backend message tables.</p>
+          <p className="empty-copy">Open Text from Editors to load backend message tables.</p>
         )}
       </section>
 

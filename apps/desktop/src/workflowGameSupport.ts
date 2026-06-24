@@ -54,11 +54,11 @@ export type WorkflowNavigationGroup = {
 };
 
 export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
-  { id: 'viewers', label: 'Viewers', sectionIds: ['flagworkSave', 'text'] },
+  { id: 'viewers', label: 'Viewers', sectionIds: ['flagworkSave'] },
   {
     id: 'editors',
     label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'moves', 'items', 'placement', 'behavior']
+    sectionIds: ['pokemon', 'trainers', 'moves', 'items', 'placement', 'behavior', 'text']
   },
   {
     id: 'encountersPokemonSources',

@@ -1336,7 +1336,7 @@
     "Open Static Encounters": "Offene statische Begegnungen",
     "Open Static Encounters from Workflows to load backend encounter data.": "Öffnen Sie statische Begegnungen aus Workflows, um Backend-Begegnungsdaten zu laden.",
     "Open Text": "Text öffnen",
-    "Open Text from Viewers to load backend message tables.": "Öffnen Sie „Text aus Viewern“, um Backend-Nachrichtentabellen zu laden.",
+    "Open Text from Editors to load backend message tables.": "Öffnen Sie Text über Editoren, um Backend-Nachrichtentabellen zu laden.",
     "Open Trade Pokemon from Workflows to load backend trade data.": "Öffnen Sie Trade Pokémon über Workflows, um Backend-Handelsdaten zu laden.",
     "Open Trades": "Offene Trades",
     "Open Trainers": "Offene Trainer",
