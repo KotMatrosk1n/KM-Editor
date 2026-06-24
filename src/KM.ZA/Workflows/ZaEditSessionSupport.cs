@@ -13,6 +13,7 @@ internal static class ZaEditSessionSupport
     public const string PokemonDomain = "workflow.pokemon";
     public const string ItemsDomain = "workflow.items";
     public const string MovesDomain = "workflow.moves";
+    public const string ShopsDomain = "workflow.shops";
 
     public static bool CanEdit(
         OpenedProject project,

@@ -16,10 +16,10 @@ public static class ZaDataPaths
     public const string RandomPopItemSpawnerDataArray = "world/ik_data/field/random_pop_item_spawner/random_pop_item_spawner_data/random_pop_item_spawner_data_array.bin";
     public const string BattleTrainerSpawnerDataArray = "world/ik_data/field/npc_spawner/za_battle_trainer_spawner_data/za_battle_trainer_spawner_data/za_battle_trainer_spawner_data_array.bin";
     public const string ShopItemArray = "world/exl/shop/shop/shop_item.bin";
-    public const string ShopItemLineupArray = "world/exl/shop/shop/shop_item_lineup.bin";
+    public const string ShopItemLineupArray = "world/exl/shop/shop_item_lineup/shop_item_lineup.bin";
     public const string ShopDressUpArray = "world/exl/shop/shop/shop_dressup.bin";
-    public const string ShopDressUpLineupArray = "world/exl/shop/shop/shop_dress_up_lineup.bin";
-    public const string ShopHairMakeLineupArray = "world/exl/shop/shop/shop_hair_make_lineup.bin";
+    public const string ShopDressUpLineupArray = "world/exl/shop/shop_dress_up_lineup/shop_dress_up_lineup.bin";
+    public const string ShopHairMakeLineupArray = "world/exl/shop/shop_hair_make_lineup/shop_hair_make_lineup.bin";
     public const string DressUpDataArray = "world/exl/dress_up_data/dress_up_data/dress_up_data.bin";
     public const string HairMakeDataArray = "world/exl/hair_make_data/hair_make_data/hair_make_data.bin";
 

@@ -4,11 +4,13 @@ using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
+using KM.Api.Shops;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Items;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
+using KM.ZA.Shops;
 using KM.ZA.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -81,6 +83,13 @@ public static class ZaBridgeMapper
         return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
     }
 
+    public static LoadShopsWorkflowResponse ToDto(ZaShopsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadShopsWorkflowResponse(ToShopsWorkflowDto(workflow));
+    }
+
     public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -127,6 +136,16 @@ public static class ZaBridgeMapper
 
         return new UpdateMoveFieldsResponse(
             ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateShopInventoryItemResponse ToDto(ZaShopsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateShopInventoryItemResponse(
+            ToShopsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -222,6 +241,22 @@ public static class ZaBridgeMapper
                 workflow.Stats.SourceFileCount,
                 workflow.Stats.ActiveFlagCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ShopsWorkflowDto ToShopsWorkflowDto(ZaShopsWorkflow workflow)
+    {
+        return new ShopsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Shops.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new ShopsWorkflowStatsDto(
+                workflow.Stats.TotalShopCount,
+                workflow.Stats.TotalInventoryItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            EditorFamily = "za",
+        };
     }
 
     private static PokemonRecordDto ToDto(ZaPokemonRecord pokemon)
@@ -541,6 +576,73 @@ public static class ZaBridgeMapper
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShopRecordDto ToDto(ZaShopRecord shop)
+    {
+        return new ShopRecordDto(
+            shop.ShopId,
+            shop.Name,
+            shop.Kind,
+            shop.InventoryLabel,
+            shop.InventoryIndex,
+            shop.InventoryCount,
+            shop.SourceHash,
+            shop.InventorySummary,
+            shop.Location,
+            shop.Currency,
+            shop.Inventory.Select(ToDto).ToArray(),
+            ToDto(shop.Provenance))
+        {
+            EditorFamily = "za",
+            CanEditInventoryOrder = shop.CanEditInventoryOrder,
+        };
+    }
+
+    private static ShopInventoryRecordDto ToDto(ZaShopInventoryRecord inventoryItem)
+    {
+        return new ShopInventoryRecordDto(
+            inventoryItem.Slot,
+            inventoryItem.ItemId,
+            inventoryItem.ItemName,
+            inventoryItem.Price,
+            inventoryItem.IsKnownItem,
+            inventoryItem.StockLimit)
+        {
+            FieldValues = inventoryItem.FieldValues,
+            FieldDisplayValues = inventoryItem.FieldDisplayValues,
+            SupportedFields = inventoryItem.SupportedFields,
+            PriceField = inventoryItem.PriceField,
+            CanEditPrice = inventoryItem.CanEditPrice,
+        };
+    }
+
+    private static ShopProvenanceDto ToDto(ZaShopProvenance provenance)
+    {
+        return new ShopProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShopEditableFieldDto ToDto(ZaShopEditableField field)
+    {
+        return new ShopEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static ShopEditableFieldOptionDto ToDto(ZaShopEditableFieldOption option)
+    {
+        return new ShopEditableFieldOptionDto(
+            option.Value,
+            option.Label,
+            option.ItemName,
+            option.Price);
     }
 
     private static ZaCacheModeDto ToDto(ZaCacheMode mode)
