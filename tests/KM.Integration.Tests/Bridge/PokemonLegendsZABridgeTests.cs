@@ -12,6 +12,7 @@ using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Shops;
+using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
@@ -65,7 +66,7 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZAProjectListsPokemonMovesItemsAndShopsWorkflows()
+    public void PokemonLegendsZAProjectListsPokemonTrainersMovesItemsAndShopsWorkflows()
     {
         using var temp = CreatePokemonLegendsZAProject();
         var dispatcher = new ProjectBridgeDispatcher();
@@ -78,6 +79,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(workflows);
         Assert.Contains(workflows.Payload!.Workflows, workflow => workflow.Id == "pokemon" && workflow.Label == "Pokemon Data");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "trainers" && workflow.Label == "Trainers");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "items" && workflow.Label == "Items");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "shops" && workflow.Label == "Shops");
@@ -206,6 +208,52 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAProjectLoadsTrainerData()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTrainerFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var trainers = Dispatch<LoadTrainersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTrainersWorkflow,
+            new LoadTrainersWorkflowRequest(CreatePaths(temp)),
+            "request-za-trainers");
+
+        AssertSuccess(trainers);
+        var workflow = trainers.Payload!.Workflow;
+        Assert.Equal("Trainers", workflow.Summary.Label);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        var trainer = Assert.Single(workflow.Trainers);
+        Assert.Equal("Rival Aria", trainer.Name);
+        Assert.Equal("Duelist", trainer.TrainerClass);
+        Assert.Equal("tr_battle_main_001", trainer.Location);
+        Assert.Equal("Mega Evolution", trainer.BattleType);
+        Assert.Equal(4, trainer.Money);
+        Assert.Equal(0, trainer.Gift);
+        Assert.Equal(26, trainer.ZaRank);
+        Assert.True(trainer.ZaMegaEvolution);
+        Assert.False(trainer.ZaLastHand);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Basic" && flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "High" && flag.Enabled);
+
+        var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(0, pokemon.Slot);
+        Assert.Equal(1, pokemon.SpeciesId);
+        Assert.Equal("Bulbasaur", pokemon.Species);
+        Assert.Equal(12, pokemon.Level);
+        Assert.Equal(4, pokemon.HeldItemId);
+        Assert.Equal("Poke Ball", pokemon.HeldItem);
+        Assert.Equal([33, 45, 0, 0], pokemon.MoveIds);
+        Assert.Equal("Tackle", pokemon.Moves[0]);
+        Assert.Equal("Growl", pokemon.Moves[1]);
+        Assert.Equal(2, pokemon.Ability);
+        Assert.Equal("Overgrow (Ability 1)", pokemon.AbilityLabel);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "rank" && field.Label == "Z-A rank");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "megaEvolution" && field.Label == "Mega Evolution");
+    }
+
+    [Fact]
     public void PokemonLegendsZAGameDumpWritesImplementedCategoryFiles()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -220,6 +268,7 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
+        WriteTrainerFixture(temp);
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
 
@@ -231,7 +280,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var categories = load.Payload!.Workflow.Categories;
-        Assert.Equal(["pokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
+        Assert.Equal(["pokemon", "trainers", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
         Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
 
         var destinationFolder = Path.Combine(temp.RootPath, "dump");
@@ -243,6 +292,7 @@ public sealed class PokemonLegendsZABridgeTests
                 destinationFolder,
                 [
                     new GameDumpSelectionDto("items", GameDumpFormatDto.TsvAndJson),
+                    new GameDumpSelectionDto("trainers", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
                 ]),
             "request-za-game-dump-run");
@@ -262,8 +312,12 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "shops" && file.RelativePath == Path.Combine("Shops", "shops.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "trainers" && file.RelativePath == Path.Combine("Trainers", "trainers.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
         Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
+        Assert.Contains("Rival Aria", File.ReadAllText(Path.Combine(destinationFolder, "Trainers", "trainers.json")));
         Assert.Contains("Friendly Shop", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
         Assert.Contains("Pokemon Legends Z-A", File.ReadAllText(Path.Combine(destinationFolder, "manifest.json")));
     }
@@ -496,6 +550,62 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("99999", firstCondition.Arguments(0));
     }
 
+    [Fact]
+    public void PokemonLegendsZATrainerEditWritesTrinityTrainerTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTrainerFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdateTrainerFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerFields,
+            new UpdateTrainerFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new TrainerFieldUpdateDto(0, null, "rank", "25"),
+                    new TrainerFieldUpdateDto(0, null, "megaEvolution", "0"),
+                    new TrainerFieldUpdateDto(0, 0, "level", "42"),
+                    new TrainerFieldUpdateDto(0, 0, "move1Id", "45"),
+                ]),
+            "request-za-trainer-update");
+        AssertSuccess(update);
+        var trainer = Assert.Single(update.Payload!.Workflow.Trainers);
+        Assert.Equal(25, trainer.ZaRank);
+        Assert.False(trainer.ZaMegaEvolution);
+        Assert.Equal("Trainer Battle", trainer.BattleType);
+        var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(42, pokemon.Level);
+        Assert.Equal(45, pokemon.MoveIds[0]);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-trainer-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.TrainerDataArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-trainer-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadTrainer(temp, 0);
+        Assert.Equal(25, written.Rank);
+        Assert.False(written.MegaEvolution);
+        var writtenPokemon = written.Pokemon1;
+        Assert.NotNull(writtenPokemon);
+        Assert.Equal(42, writtenPokemon!.Value.Level);
+        Assert.Equal(45, writtenPokemon.Value.Move1!.Value.MoveId);
+    }
+
     private static TemporaryBridgeProject CreatePokemonLegendsZAProject()
     {
         var temp = TemporaryBridgeProject.Create();
@@ -598,6 +708,86 @@ public sealed class PokemonLegendsZABridgeTests
         var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
         ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static void WriteTrainerFixture(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(ZaDataPaths.TrainerDataArray, CreateTrainerDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerNames("English"),
+            CreateTextTable(0, (0, "Rival Aria")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerTypes("English"),
+            CreateTextTable(1, (1, "Duelist")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonNames("English"),
+            CreateTextTable(1, (1, "Bulbasaur")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.AbilityNames("English"),
+            CreateTextTable(65, (34, "Chlorophyll"), (65, "Overgrow")));
+    }
+
+    private static byte[] CreateTrainerDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var trainer = CreateTrainer(builder);
+        var vector = ZaTrainerTable.CreateValueVector(builder, [trainer]);
+        var root = ZaTrainerTable.Create(builder, vector);
+        ZaTrainerTable.FinishBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<ZaTrainerRow> CreateTrainer(FlatBufferBuilder builder)
+    {
+        var trainerId = builder.CreateString("tr_battle_main_001");
+        var pokemon = CreateTrainerPokemon(builder);
+
+        return ZaTrainerRow.Create(
+            builder,
+            trainerIdOffset: trainerId,
+            trainerType: 1,
+            rank: 26,
+            moneyRate: 4,
+            megaEvolution: true,
+            pokemon1Offset: pokemon,
+            aiBasic: true,
+            aiHigh: true,
+            viewHorizontalAngle: 90,
+            viewVerticalAngle: 30,
+            viewRange: 12,
+            hearingRange: 8);
+    }
+
+    private static Offset<ZaTrainerPokemon> CreateTrainerPokemon(FlatBufferBuilder builder)
+    {
+        var move1 = ZaTrainerMove.Create(builder, 33);
+        var move2 = ZaTrainerMove.Create(builder, 45);
+        var ivs = ZaTrainerStats.Create(builder, hp: 31, atk: 31, def: 31, spAtk: 31, spDef: 31, agi: 31);
+        var evs = ZaTrainerStats.Create(builder, hp: 4, atk: 0, def: 0, spAtk: 0, spDef: 0, agi: 0);
+
+        return ZaTrainerPokemon.Create(
+            builder,
+            speciesId: 1,
+            formId: 0,
+            sex: 1,
+            item: 4,
+            level: 12,
+            ballId: 4,
+            move1Offset: move1,
+            move2Offset: move2,
+            nature: 4,
+            ability: 2,
+            ivsOffset: ivs,
+            evsOffset: evs);
     }
 
     private static byte[] CreateShopDataArray()
@@ -899,6 +1089,22 @@ public sealed class PokemonLegendsZABridgeTests
         }
 
         throw new InvalidOperationException($"Shop lineup {lineupId} was not written.");
+    }
+
+    private static ZaTrainerRow ReadTrainer(TemporaryBridgeProject temp, int trainerId)
+    {
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "world",
+            "ik_data",
+            "trainer",
+            "trdata",
+            "trdata_array.bin");
+        Assert.True(File.Exists(outputPath));
+        var table = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(File.ReadAllBytes(outputPath)));
+        var row = table.Value(trainerId);
+        Assert.NotNull(row);
+        return row!.Value;
     }
 
     private static byte[] CreateTextTable(int count, params (int Index, string Text)[] entries)

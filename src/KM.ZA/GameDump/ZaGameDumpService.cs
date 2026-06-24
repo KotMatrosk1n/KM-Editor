@@ -161,6 +161,15 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.Pokemon.ZaPokemonRecord>(workflow.Pokemon, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.Trainers,
+                "Trainers",
+                "Trainer records, ranks, AI flags, party Pokemon, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadTrainers(paths);
+                    return new GameDumpCategoryData<KM.ZA.Trainers.ZaTrainerRecord>(workflow.Trainers, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.Moves,
                 "Moves",
                 "Move stats, flags, secondary effects, and provenance.",

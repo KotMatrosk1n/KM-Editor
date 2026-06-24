@@ -5,12 +5,14 @@ using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
+using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Items;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
+using KM.ZA.Trainers;
 using KM.ZA.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -90,6 +92,13 @@ public static class ZaBridgeMapper
         return new LoadShopsWorkflowResponse(ToShopsWorkflowDto(workflow));
     }
 
+    public static LoadTrainersWorkflowResponse ToDto(ZaTrainersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+    }
+
     public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -146,6 +155,26 @@ public static class ZaBridgeMapper
 
         return new UpdateShopInventoryItemResponse(
             ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTrainerFieldResponse ToDto(ZaTrainersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTrainerFieldResponse(
+            ToTrainersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(ZaTrainersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTrainerFieldsResponse(
+            ToTrainersWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -257,6 +286,19 @@ public static class ZaBridgeMapper
         {
             EditorFamily = "za",
         };
+    }
+
+    private static TrainersWorkflowDto ToTrainersWorkflowDto(ZaTrainersWorkflow workflow)
+    {
+        return new TrainersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Trainers.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     private static PokemonRecordDto ToDto(ZaPokemonRecord pokemon)
@@ -643,6 +685,120 @@ public static class ZaBridgeMapper
             option.Label,
             option.ItemName,
             option.Price);
+    }
+
+    private static TrainerRecordDto ToDto(ZaTrainerRecord trainer)
+    {
+        return new TrainerRecordDto(
+            trainer.TrainerId,
+            trainer.Name,
+            trainer.TrainerClassId,
+            trainer.TrainerClass,
+            trainer.Location,
+            trainer.BattleTypeValue,
+            trainer.BattleType,
+            trainer.ItemIds,
+            trainer.Items,
+            trainer.AiFlags,
+            trainer.AiFlagStates.Select(ToDto).ToArray(),
+            trainer.CanTerastallize,
+            trainer.TeraTarget,
+            trainer.Heal,
+            trainer.Money,
+            trainer.Gift,
+            trainer.ClassBallId,
+            trainer.ClassBall,
+            trainer.CanEditClassBall,
+            trainer.ClassBallScope,
+            trainer.Team.Select(ToDto).ToArray(),
+            ToDto(trainer.Provenance))
+        {
+            ZaRank = trainer.Rank,
+            ZaMegaEvolution = trainer.MegaEvolution,
+            ZaLastHand = trainer.LastHand,
+        };
+    }
+
+    private static TrainerPokemonRecordDto ToDto(ZaTrainerPokemonRecord pokemon)
+    {
+        return new TrainerPokemonRecordDto(
+            pokemon.Slot,
+            pokemon.SpeciesId,
+            pokemon.Species,
+            pokemon.Form,
+            pokemon.Level,
+            pokemon.HeldItemId,
+            pokemon.HeldItem,
+            pokemon.MoveIds,
+            pokemon.Moves,
+            pokemon.Gender,
+            pokemon.GenderLabel,
+            pokemon.Ability,
+            pokemon.AbilityLabel,
+            pokemon.Nature,
+            pokemon.NatureLabel,
+            ToDto(pokemon.Evs),
+            pokemon.DynamaxLevel,
+            pokemon.CanGigantamax,
+            ToDto(pokemon.Ivs),
+            pokemon.Shiny,
+            pokemon.CanDynamax,
+            pokemon.TeraType,
+            pokemon.TeraTypeLabel)
+        {
+            AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static TrainerAiFlagStateDto ToDto(ZaTrainerAiFlagState flag)
+    {
+        return new TrainerAiFlagStateDto(
+            flag.Bit,
+            flag.Mask,
+            flag.Label,
+            flag.Description,
+            flag.Enabled);
+    }
+
+    private static TrainerPokemonStatsDto ToDto(ZaTrainerPokemonStatsRecord stats)
+    {
+        return new TrainerPokemonStatsDto(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
+    }
+
+    private static TrainerEditableFieldDto ToDto(ZaTrainerEditableField field)
+    {
+        return new TrainerEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static TrainerEditableFieldOptionDto ToDto(ZaTrainerEditableFieldOption option)
+    {
+        return new TrainerEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TrainerProvenanceDto ToDto(ZaTrainerProvenance provenance)
+    {
+        return new TrainerProvenanceDto(
+            provenance.SourceFile,
+            provenance.TeamSourceFile,
+            provenance.ClassSourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.TeamSourceLayer),
+            provenance.ClassSourceLayer is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassSourceLayer.Value),
+            ProjectBridgeMapper.ToDto(provenance.FileState),
+            ProjectBridgeMapper.ToDto(provenance.TeamFileState),
+            provenance.ClassFileState is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassFileState.Value));
     }
 
     private static ZaCacheModeDto ToDto(ZaCacheMode mode)
