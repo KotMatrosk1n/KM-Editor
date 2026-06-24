@@ -6,6 +6,7 @@ using Google.FlatBuffers;
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
+using KM.Api.GameDump;
 using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
@@ -202,6 +203,69 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflow.EditableFields, field => field.Field == "itemId" && field.Label == "Item");
         Assert.Contains(workflow.EditableFields, field => field.Field == "displayIndex" && field.Label == "Display order");
         Assert.Contains(workflow.EditableFields, field => field.Field == "zaConditionKind" && field.Label == "First condition");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAGameDumpWritesImplementedCategoryFiles()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadGameDumpWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadGameDumpWorkflow,
+            new LoadGameDumpWorkflowRequest(paths),
+            "request-za-game-dump-load");
+
+        AssertSuccess(load);
+        var categories = load.Payload!.Workflow.Categories;
+        Assert.Equal(["pokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
+        Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
+
+        var destinationFolder = Path.Combine(temp.RootPath, "dump");
+        var run = Dispatch<RunGameDumpResponse>(
+            dispatcher,
+            KmCommandNames.RunGameDump,
+            new RunGameDumpRequest(
+                paths,
+                destinationFolder,
+                [
+                    new GameDumpSelectionDto("items", GameDumpFormatDto.TsvAndJson),
+                    new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
+                ]),
+            "request-za-game-dump-run");
+
+        AssertSuccess(run);
+        Assert.True(
+            run.Payload!.Result.Succeeded,
+            string.Join(Environment.NewLine, run.Payload.Result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "items" && file.RelativePath == Path.Combine("Items", "items.tsv"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "items" && file.RelativePath == Path.Combine("Items", "items.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "shops" && file.RelativePath == Path.Combine("Shops", "shops.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
+        Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
+        Assert.Contains("Friendly Shop", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
+        Assert.Contains("Pokemon Legends Z-A", File.ReadAllText(Path.Combine(destinationFolder, "manifest.json")));
     }
 
     [Fact]

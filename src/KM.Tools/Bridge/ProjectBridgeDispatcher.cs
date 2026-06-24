@@ -82,6 +82,7 @@ using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
+using KM.ZA.GameDump;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
 using System.Globalization;
@@ -125,6 +126,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShRandomizerService randomizerService;
     private readonly SwShGameDumpService swShGameDumpService;
     private readonly SvGameDumpService svGameDumpService;
+    private readonly ZaGameDumpService zaGameDumpService;
     private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
     private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
@@ -168,6 +170,7 @@ public sealed class ProjectBridgeDispatcher
         SwShRandomizerService? randomizerService = null,
         SwShGameDumpService? swShGameDumpService = null,
         SvGameDumpService? svGameDumpService = null,
+        ZaGameDumpService? zaGameDumpService = null,
         SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
@@ -219,6 +222,7 @@ public sealed class ProjectBridgeDispatcher
         this.zaWorkflowService = zaWorkflowService ?? new ZaWorkflowService(this.projectWorkspaceService);
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
         this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
+        this.zaGameDumpService = zaGameDumpService ?? new ZaGameDumpService(this.zaWorkflowService);
     }
 
     public string Dispatch(string requestJson)
@@ -421,14 +425,7 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<LoadGameDumpWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var workflow = IsPokemonLegendsZA(paths)
-            ? new GameDumpWorkflow(
-                [],
-                [new ValidationDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    "Pokemon Legends Z-A game dump is not available yet.",
-                    File: null,
-                    Domain: "gameDump",
-                    Expected: "Implemented Pokemon Legends Z-A game dump workflow")])
+            ? zaGameDumpService.Load(paths)
             : IsScarletViolet(paths)
             ? svGameDumpService.Load(paths)
             : swShGameDumpService.Load(paths);
@@ -442,7 +439,9 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<RunGameDumpRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var selections = ProjectBridgeMapper.ToCore(request.Payload.Selections);
-        var result = IsScarletViolet(paths)
+        var result = IsPokemonLegendsZA(paths)
+            ? zaGameDumpService.Run(paths, request.Payload.DestinationFolder, selections)
+            : IsScarletViolet(paths)
             ? svGameDumpService.Run(paths, request.Payload.DestinationFolder, selections)
             : swShGameDumpService.Run(paths, request.Payload.DestinationFolder, selections);
         var response = new RunGameDumpResponse(ProjectBridgeMapper.ToDto(result));
@@ -2975,7 +2974,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
             KmCommandNames.WarmupZaCacheStep or
-            KmCommandNames.LoadGameDumpWorkflow;
+            KmCommandNames.LoadGameDumpWorkflow or
+            KmCommandNames.RunGameDump;
     }
 
     private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)

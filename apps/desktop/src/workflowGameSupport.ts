@@ -154,6 +154,7 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'moves',
   'items',
   'shops',
+  'gameDump'
 ]);
 
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer', 'gameDump']);
