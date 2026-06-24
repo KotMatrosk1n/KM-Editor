@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
+using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Workflows;
 
@@ -63,12 +65,39 @@ public static class ZaBridgeMapper
         return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
     }
 
+    public static LoadMovesWorkflowResponse ToDto(ZaMovesWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
+    }
+
     public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdatePokemonFieldResponse(
             ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateMoveFieldResponse ToDto(ZaMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateMoveFieldResponse(
+            ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateMoveFieldsResponse ToMoveFieldsDto(ZaMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateMoveFieldsResponse(
+            ToMovesWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -137,6 +166,20 @@ public static class ZaBridgeMapper
             workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
             workflow.LearnsetMoveOptions.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static MovesWorkflowDto ToMovesWorkflowDto(ZaMovesWorkflow workflow)
+    {
+        return new MovesWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Moves.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new MovesWorkflowStatsDto(
+                workflow.Stats.TotalMoveCount,
+                workflow.Stats.EnabledMoveCount,
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.ActiveFlagCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -288,6 +331,86 @@ public static class ZaBridgeMapper
             entry.MoveName,
             entry.Label,
             entry.CanLearn);
+    }
+
+    private static MoveRecordDto ToDto(ZaMoveRecord move)
+    {
+        return new MoveRecordDto(
+            move.MoveId,
+            move.Name,
+            move.Description,
+            move.Version,
+            move.CanUseMove,
+            move.Type,
+            move.TypeName,
+            move.Quality,
+            move.Category,
+            move.CategoryName,
+            move.Power,
+            move.Accuracy,
+            move.PP,
+            move.Priority,
+            move.CritStage,
+            move.MaxMovePower,
+            move.Target,
+            move.TargetName,
+            move.HitMin,
+            move.HitMax,
+            move.TurnMin,
+            move.TurnMax,
+            move.Inflict,
+            move.InflictName,
+            move.InflictPercent,
+            move.RawInflictCount,
+            move.Flinch,
+            move.EffectSequence,
+            move.Recoil,
+            move.RawHealing,
+            move.StatChanges.Select(ToDto).ToArray(),
+            move.Flags.Select(ToDto).ToArray(),
+            ToDto(move.Provenance));
+    }
+
+    private static MoveEditableFieldDto ToDto(ZaMoveEditableField field)
+    {
+        return new MoveEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static MoveEditableFieldOptionDto ToDto(ZaMoveEditableFieldOption option)
+    {
+        return new MoveEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static MoveStatChangeRecordDto ToDto(ZaMoveStatChangeRecord statChange)
+    {
+        return new MoveStatChangeRecordDto(
+            statChange.Slot,
+            statChange.Stat,
+            statChange.StatName,
+            statChange.Stage,
+            statChange.Percent);
+    }
+
+    private static MoveFlagRecordDto ToDto(ZaMoveFlagRecord flag)
+    {
+        return new MoveFlagRecordDto(
+            flag.Field,
+            flag.Label,
+            flag.Enabled);
+    }
+
+    private static MoveProvenanceDto ToDto(ZaMoveProvenance provenance)
+    {
+        return new MoveProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static ZaCacheModeDto ToDto(ZaCacheMode mode)

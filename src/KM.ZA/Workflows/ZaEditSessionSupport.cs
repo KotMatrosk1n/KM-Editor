@@ -11,6 +11,7 @@ namespace KM.ZA.Workflows;
 internal static class ZaEditSessionSupport
 {
     public const string PokemonDomain = "workflow.pokemon";
+    public const string MovesDomain = "workflow.moves";
 
     public static bool CanEdit(
         OpenedProject project,

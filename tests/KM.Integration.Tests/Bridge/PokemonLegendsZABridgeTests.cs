@@ -6,9 +6,11 @@ using Google.FlatBuffers;
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
+using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using KM.Formats.SwSh;
 using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
 using KM.Integration.Tests.Tools;
@@ -60,6 +62,57 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAProjectListsPokemonAndMovesWorkflows()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var workflows = Dispatch<ListWorkflowsResponse>(
+            dispatcher,
+            KmCommandNames.ListWorkflows,
+            new ListWorkflowsRequest(CreatePaths(temp)),
+            "request-za-workflows");
+
+        AssertSuccess(workflows);
+        Assert.Contains(workflows.Payload!.Workflows, workflow => workflow.Id == "pokemon" && workflow.Label == "Pokemon Data");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAProjectLoadsMoveData()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var moves = Dispatch<LoadMovesWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadMovesWorkflow,
+            new LoadMovesWorkflowRequest(CreatePaths(temp)),
+            "request-za-moves");
+
+        AssertSuccess(moves);
+        var workflow = moves.Payload!.Workflow;
+        Assert.Equal("Moves", workflow.Summary.Label);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        Assert.Equal(2, workflow.Moves.Count);
+        Assert.Equal(2, workflow.Stats.TotalMoveCount);
+        Assert.Equal(2, workflow.Stats.EnabledMoveCount);
+        var tackle = workflow.Moves.Single(move => move.MoveId == 33);
+        Assert.Equal("Tackle", tackle.Name);
+        Assert.Equal("Normal", tackle.TypeName);
+        Assert.Equal("Physical", tackle.CategoryName);
+        Assert.Equal(40, tackle.Power);
+        Assert.Equal(35, tackle.PP);
+        Assert.Equal("Opponent", tackle.TargetName);
+        Assert.Contains(tackle.Flags, flag => flag.Field == "makesContact" && flag.Enabled);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "power" && field.Label == "Power");
+    }
+
+    [Fact]
     public void PokemonLegendsZAPokemonEditWritesStandalonePersonalTable()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -100,6 +153,56 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(99, row!.Value.BaseStats!.Value.Hp);
     }
 
+    [Fact]
+    public void PokemonLegendsZAMoveEditWritesTrinityMoveTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdateMoveFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateMoveFields,
+            new UpdateMoveFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new MoveFieldUpdateDto(33, "power", "90"),
+                    new MoveFieldUpdateDto(33, "pp", "15"),
+                ]),
+            "request-za-move-update");
+        AssertSuccess(update);
+        var updatedMove = update.Payload!.Workflow.Moves.Single(move => move.MoveId == 33);
+        Assert.Equal(90, updatedMove.Power);
+        Assert.Equal(15, updatedMove.PP);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-move-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.MoveDataArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-move-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadMove(temp, 33);
+        Assert.Equal(90, written.Power);
+        Assert.Equal(15, written.Pp);
+        Assert.Equal(40, ReadMove(temp, 45).Pp);
+    }
+
     private static TemporaryBridgeProject CreatePokemonLegendsZAProject()
     {
         var temp = TemporaryBridgeProject.Create();
@@ -138,6 +241,73 @@ public sealed class PokemonLegendsZABridgeTests
         var root = ZaPersonalTable.End(builder);
         ZaPersonalTable.FinishBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateMoveDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var tackle = CreateMove(builder, moveId: 33, power: 40, pp: 35, makesContact: true);
+        var growl = CreateMove(
+            builder,
+            moveId: 45,
+            power: 0,
+            pp: 40,
+            makesContact: false,
+            category: 0,
+            stat1: 2,
+            stat1Stage: -1,
+            stat1Chance: 100,
+            stat2: -1);
+        var vector = ZaMoveDataArray.CreateValuesVector(builder, [tackle, growl]);
+        var root = ZaMoveDataArray.CreateZaMoveDataArray(builder, vector);
+        ZaMoveDataArray.FinishZaMoveDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<ZaMoveData> CreateMove(
+        FlatBufferBuilder builder,
+        ushort moveId,
+        byte power,
+        byte pp,
+        bool makesContact,
+        byte category = 1,
+        sbyte stat1 = 0,
+        sbyte stat2 = 0,
+        sbyte stat3 = 0,
+        sbyte stat1Stage = 0,
+        sbyte stat2Stage = 0,
+        sbyte stat3Stage = 0,
+        byte stat1Chance = 0,
+        byte stat2Chance = 0,
+        byte stat3Chance = 0)
+    {
+        ZaMoveData.StartZaMoveData(builder);
+        ZaMoveData.AddStatChanges(
+            builder,
+            ZaMoveStatChanges.CreateZaMoveStatChanges(
+                builder,
+                stat1,
+                stat2,
+                stat3,
+                stat1Stage,
+                stat2Stage,
+                stat3Stage,
+                stat1Chance,
+                stat2Chance,
+                stat3Chance));
+        ZaMoveData.AddRawTarget(builder, 3);
+        ZaMoveData.AddInflict(
+            builder,
+            ZaMoveInflict.CreateZaMoveInflict(builder, Condition: 0, Chance: 0, TurnMode: 0, TurnMin: 0, TurnMax: 0));
+        ZaMoveData.AddPp(builder, pp);
+        ZaMoveData.AddAccuracy(builder, 100);
+        ZaMoveData.AddPower(builder, power);
+        ZaMoveData.AddCategory(builder, category);
+        ZaMoveData.AddType(builder, 0);
+        ZaMoveData.AddCanUseMove(builder, true);
+        ZaMoveData.AddMoveId(builder, moveId);
+        ZaMoveData.AddFlagMakesContact(builder, makesContact);
+        return ZaMoveData.EndZaMoveData(builder);
     }
 
     private static Offset<ZaPersonal> CreatePersonal(
@@ -191,6 +361,37 @@ public sealed class PokemonLegendsZABridgeTests
         ZaPersonal.AddIsPresent(builder, present);
         ZaPersonal.AddSpecies(builder, ZaSpeciesInfo.Create(builder, species, form: 0, model: species, color: 3, bodyType: 1, height: 7, weight: 69, reserved: 0, reserved1: 0, reserved2: 0));
         return ZaPersonal.End(builder);
+    }
+
+    private static ZaMoveData ReadMove(TemporaryBridgeProject temp, int moveId)
+    {
+        var outputPath = Path.Combine(temp.OutputRootPath, "avalon", "data", "waza_array.bin");
+        Assert.True(File.Exists(outputPath));
+        var table = ZaMoveDataArray.GetRootAsZaMoveDataArray(new ByteBuffer(File.ReadAllBytes(outputPath)));
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            var row = table.Values(index);
+            if (row is not null && row.Value.MoveId == moveId)
+            {
+                return row.Value;
+            }
+        }
+
+        throw new InvalidOperationException($"Move {moveId} was not written.");
+    }
+
+    private static byte[] CreateTextTable(int count, params (int Index, string Text)[] entries)
+    {
+        var values = Enumerable.Repeat(string.Empty, count + 1).ToArray();
+        foreach (var entry in entries)
+        {
+            values[entry.Index] = entry.Text;
+        }
+
+        var lines = values
+            .Select(value => new SwShGameTextLine(value, Flags: 0))
+            .ToArray();
+        return SwShGameTextFile.Write(lines);
     }
 
     private static BridgeResponse<TPayload> Dispatch<TPayload>(
