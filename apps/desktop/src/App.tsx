@@ -287,7 +287,7 @@ import {
   ShinyRateSection,
   formatShinyRatePendingValue
 } from './features/shiny-rate/ShinyRateSection';
-import { SvOutputConfirmationModal } from './features/sv-output/SvOutputConfirmationModal';
+import { TrinityOutputConfirmationModal } from './features/trinity-output/TrinityOutputConfirmationModal';
 import { WorkflowsSection } from './features/workflows/WorkflowsSection';
 import {
   TypeChartSection,
@@ -1782,6 +1782,7 @@ export function App({
   const selectedGame = draftPaths.selectedGame;
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
   const isPokemonLegendsZAProject = isPokemonLegendsZAGame(selectedGame);
+  const supportsTrinityOutput = isScarletVioletProject || isPokemonLegendsZAProject;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
   const gameScopedWorkflows = useMemo(() =>
@@ -1940,8 +1941,8 @@ export function App({
   const [svCacheRefreshTick, setSvCacheRefreshTick] = useState(0);
   const [isSvCacheClearing, setIsSvCacheClearing] = useState(false);
   const [isSvCacheClearConfirmOpen, setIsSvCacheClearConfirmOpen] = useState(false);
-  const [svOutputConfirmation, setSvOutputConfirmation] =
-    useState<SvOutputConfirmationState | null>(null);
+  const [trinityOutputConfirmation, setTrinityOutputConfirmation] =
+    useState<TrinityOutputConfirmationState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
   const [dependencyWarning, setDependencyWarning] = useState<DependencyWarningState | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>({
@@ -5566,7 +5567,7 @@ export function App({
       let nextWorkflow = movesWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateMoveFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5680,7 +5681,7 @@ export function App({
       let nextWorkflow = trainersWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateTrainerFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5768,7 +5769,7 @@ export function App({
       let nextWorkflow = giftPokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateGiftPokemonFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5824,7 +5825,7 @@ export function App({
       let nextWorkflow = giftPokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateGiftPokemonFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5910,7 +5911,7 @@ export function App({
       let nextWorkflow = tradePokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateTradePokemonFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5966,7 +5967,7 @@ export function App({
       let nextWorkflow = tradePokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateTradePokemonFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -6539,7 +6540,7 @@ export function App({
       let nextWorkflow = encountersWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateEncounterSlotFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -6611,7 +6612,7 @@ export function App({
         0
       ));
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         setWorkProgress(createDeterminateWorkProgress(
           'Applying Encounter Copy',
           `Applying ${totalChanges} slot field updates`,
@@ -7025,7 +7026,7 @@ export function App({
       let nextWorkflow = placementWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updatePlacementObjectFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -7239,7 +7240,7 @@ export function App({
       let planToApply = visibleChangePlan;
 
       setWorkProgress(createDeterminateWorkProgress(
-        outputMode ? 'Preparing S/V Output' : 'Preparing Save',
+        outputMode ? 'Preparing Trinity Output' : 'Preparing Save',
         outputMode
           ? 'Creating the selected output package plan'
           : 'Checking pending edits and target files',
@@ -9016,10 +9017,10 @@ export function App({
               isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
               isSessionValidating={isSessionValidating}
-              isScarletVioletProject={isScarletVioletProject}
+              supportsTrinityOutput={supportsTrinityOutput}
               onCancelEditSession={handleCancelEditSession}
               onRemovePendingEdit={handleRemovePendingEdit}
-              onRequestSvOutput={(mode) => setSvOutputConfirmation({ mode })}
+              onRequestTrinityOutput={(mode) => setTrinityOutputConfirmation({ mode })}
               onSaveValidatedChanges={() => handleSaveValidatedChanges()}
               onValidateEditSession={handleValidateEditSession}
             />
@@ -9068,7 +9069,19 @@ export function App({
           onConfirm={() => void handleConfirmClearSvCache()}
         />
       ) : null}
-      {svOutputConfirmation ? <SvOutputConfirmationModal isApplying={isChangePlanApplying} mode={svOutputConfirmation.mode} onCancel={() => setSvOutputConfirmation(null)} onConfirm={() => { const mode = svOutputConfirmation.mode; setSvOutputConfirmation(null); void handleSaveValidatedChanges(mode); }} outputRootPath={draftPaths.outputRootPath} /> : null}
+      {trinityOutputConfirmation ? (
+        <TrinityOutputConfirmationModal
+          isApplying={isChangePlanApplying}
+          mode={trinityOutputConfirmation.mode}
+          onCancel={() => setTrinityOutputConfirmation(null)}
+          onConfirm={() => {
+            const mode = trinityOutputConfirmation.mode;
+            setTrinityOutputConfirmation(null);
+            void handleSaveValidatedChanges(mode);
+          }}
+          outputRootPath={draftPaths.outputRootPath}
+        />
+      ) : null}
       {exitPrompt ? (
         <ExitPromptModal
           kind={exitPrompt.kind}
@@ -28549,11 +28562,11 @@ function ChangesSection({
   isEditSessionValidated,
   isChangePlanApplying,
   isChangePlanCreating,
-  isScarletVioletProject,
+  supportsTrinityOutput,
   isSessionValidating,
   onCancelEditSession,
   onRemovePendingEdit,
-  onRequestSvOutput,
+  onRequestTrinityOutput,
   onSaveValidatedChanges,
   onValidateEditSession
 }: {
@@ -28566,11 +28579,11 @@ function ChangesSection({
   isEditSessionValidated: boolean;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
-  isScarletVioletProject: boolean;
+  supportsTrinityOutput: boolean;
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
   onRemovePendingEdit: (editIndex: number) => void;
-  onRequestSvOutput: (mode: ChangePlanOutputMode) => void;
+  onRequestTrinityOutput: (mode: ChangePlanOutputMode) => void;
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
 }) {
@@ -28619,13 +28632,13 @@ function ChangesSection({
               size={18}
             />
           </button>
-          {isScarletVioletProject ? (
+          {supportsTrinityOutput ? (
             <>
               <button
                 aria-busy={isChangePlanApplying || undefined}
                 className="primary-button"
                 disabled={!canSaveValidatedChanges}
-                onClick={() => onRequestSvOutput('standalone')}
+                onClick={() => onRequestTrinityOutput('standalone')}
                 type="button"
               >
                 <BusyActionContent
@@ -28640,7 +28653,7 @@ function ChangesSection({
                 aria-busy={isChangePlanApplying || undefined}
                 className="secondary-button"
                 disabled={!canSaveValidatedChanges}
-                onClick={() => onRequestSvOutput('trinityModManager')}
+                onClick={() => onRequestTrinityOutput('trinityModManager')}
                 type="button"
               >
                 <BusyActionContent
@@ -28655,7 +28668,7 @@ function ChangesSection({
                 aria-busy={isChangePlanApplying || undefined}
                 className="secondary-button"
                 disabled={!canSaveValidatedChanges}
-                onClick={() => onRequestSvOutput('trinityBypass')}
+                onClick={() => onRequestTrinityOutput('trinityBypass')}
                 type="button"
               >
                 <BusyActionContent
@@ -32103,7 +32116,7 @@ type WorkProgressState = {
   totalSteps?: number;
 };
 
-type SvOutputConfirmationState = { mode: ChangePlanOutputMode };
+type TrinityOutputConfirmationState = { mode: ChangePlanOutputMode };
 
 type ShopInventoryDraftChange = {
   field: string;

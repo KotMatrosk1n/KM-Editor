@@ -3,7 +3,7 @@
 import { GitMerge, Package, ShieldCheck, X } from 'lucide-react';
 import { type ChangePlanOutputMode } from '../../bridge/contracts';
 
-type SvOutputConfirmationModalProps = {
+type TrinityOutputConfirmationModalProps = {
   isApplying: boolean;
   mode: ChangePlanOutputMode;
   onCancel: () => void;
@@ -11,16 +11,16 @@ type SvOutputConfirmationModalProps = {
   outputRootPath: string | null;
 };
 
-export function SvOutputConfirmationModal({
+export function TrinityOutputConfirmationModal({
   isApplying,
   mode,
   onCancel,
   onConfirm,
   outputRootPath
-}: SvOutputConfirmationModalProps) {
+}: TrinityOutputConfirmationModalProps) {
   const isStandalone = mode === 'standalone';
   const isTrinityBypass = mode === 'trinityBypass';
-  const headingId = 'sv-output-confirmation-heading';
+  const headingId = 'trinity-output-confirmation-heading';
   const title = isStandalone
     ? 'Output as Standalone?'
     : isTrinityBypass
@@ -39,37 +39,37 @@ export function SvOutputConfirmationModal({
         {isStandalone ? (
           <>
             <p className="modal-copy">
-              KM Editor will write the edited Scarlet/Violet files under{' '}
-              <strong>{outputRootLabel}</strong> as standalone LayeredFS output.
+              KM Editor will write the edited files under <strong>{outputRootLabel}</strong> as
+              standalone LayeredFS output.
             </p>
             <p className="modal-copy modal-copy-muted">
               This will create or replace loose files under <code>romfs/</code> and patch{' '}
-              <code>romfs/arc/data.trpfd</code> so the output can be installed directly without
+              <span>the Trinity file index</span> so the output can be installed directly without
               Trinity Mod Manager.
             </p>
           </>
         ) : isTrinityBypass ? (
           <>
             <p className="modal-copy">
-              KM Editor will write the edited Scarlet/Violet files under{' '}
-              <strong>{outputRootLabel}</strong> as loose LayeredFS RomFS files for Trinity Bypass.
+              KM Editor will write the edited files under <strong>{outputRootLabel}</strong> as
+              loose LayeredFS RomFS files for Trinity Bypass.
             </p>
             <p className="modal-copy modal-copy-muted">
               This creates or replaces files under <code>romfs/</code> and does not patch{' '}
-              <code>romfs/arc/data.trpfd</code>. Use this only when Trinity Bypass is already
+              <span>the Trinity file index</span>. Use this only when Trinity Bypass is already
               installed for the selected game.
             </p>
           </>
         ) : (
           <>
             <p className="modal-copy">
-              KM Editor will write the edited Scarlet/Violet files under{' '}
-              <strong>{outputRootLabel}</strong> as a Trinity Mod Manager folder mod.
+              KM Editor will write the edited files under <strong>{outputRootLabel}</strong> as a
+              Trinity Mod Manager folder mod.
             </p>
             <p className="modal-copy modal-copy-muted">
               This writes RomFS-relative files such as <code>world/data/...</code> and does not
-              patch <code>romfs/arc/data.trpfd</code>. Run this folder through Trinity Mod Manager
-              before installing it in game or in an emulator.
+              patch <span>the Trinity file index</span>. Run this folder through Trinity Mod
+              Manager before installing it in game or in an emulator.
             </p>
           </>
         )}

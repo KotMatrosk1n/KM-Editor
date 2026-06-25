@@ -101,11 +101,17 @@ describe('LocalizationProvider', () => {
     expect(translateLiteralForLanguage('es', 'Output for Trinity Bypass?')).toBe(
       '¿Exportar para Trinity Bypass?'
     );
+    expect(translateLiteralForLanguage('es', 'KM Editor will write the edited files under')).toBe(
+      'KM Editor escribira los archivos editados bajo'
+    );
     expect(
       translateLiteralForLanguage('es', 'as loose LayeredFS RomFS files for Trinity Bypass.')
     ).toBe('como archivos RomFS sueltos de LayeredFS para Trinity Bypass.');
     expect(translateLiteralForLanguage('es', 'This creates or replaces files under')).toBe(
       'Esto crea o reemplaza archivos bajo'
+    );
+    expect(translateLiteralForLanguage('es', 'the Trinity file index')).toBe(
+      'el indice de archivos Trinity'
     );
     expect(translateLiteralForLanguage('es', 'the configured Output Root')).toBe(
       'la raíz de salida configurada'

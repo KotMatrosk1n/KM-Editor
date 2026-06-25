@@ -40,8 +40,8 @@ internal sealed class ZaTradePokemonEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = tradePokemonWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
@@ -73,7 +73,7 @@ internal sealed class ZaTradePokemonEditSessionService
 
         var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
         return new ZaTradePokemonEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
             updatedSession,
             diagnostics);
     }
@@ -89,8 +89,8 @@ internal sealed class ZaTradePokemonEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = tradePokemonWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
@@ -145,7 +145,7 @@ internal sealed class ZaTradePokemonEditSessionService
         }
 
         return new ZaTradePokemonEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
             updatedSession,
             diagnostics);
     }
@@ -359,17 +359,79 @@ internal sealed class ZaTradePokemonEditSessionService
             diagnostics);
     }
 
-    private static ZaTradePokemonWorkflow OverlayPendingEdits(
+    private ZaTradePokemonWorkflow OverlayPendingEdits(
+        OpenedProject project,
         ZaTradePokemonWorkflow workflow,
-        IEnumerable<PendingEdit> edits)
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic>? diagnostics = null)
     {
-        var updatedWorkflow = workflow;
-        foreach (var edit in edits)
+        var pendingEdits = edits
+            .Where(edit =>
+                string.Equals(edit.Domain, ZaEditSessionSupport.TradePokemonDomain, StringComparison.Ordinal)
+                && ZaTradePokemonWorkflowService.TryParseTradeRecordId(edit.RecordId, out _)
+                && int.TryParse(
+                    edit.NewValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out _))
+            .ToArray();
+
+        if (pendingEdits.Length == 0)
         {
-            updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
+            return workflow;
         }
 
-        return updatedWorkflow;
+        try
+        {
+            var overlayDiagnostics = new List<ValidationDiagnostic>();
+            var source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            var labels = ZaTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
+            var abilityResolver = ZaTradePokemonWorkflowService.ZaTradeAbilityResolver.Load(
+                project,
+                fileSource,
+                labels,
+                overlayDiagnostics);
+            var document = ZaPokemonDataDocument.Parse(source.Bytes);
+            foreach (var edit in pendingEdits)
+            {
+                ApplyEdit(document, edit, overlayDiagnostics);
+            }
+
+            if (overlayDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                if (diagnostics is not null)
+                {
+                    foreach (var diagnostic in overlayDiagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                    {
+                        diagnostics.Add(diagnostic);
+                    }
+                }
+
+                return workflow;
+            }
+
+            var overlaySource = source with { Bytes = document.Write() };
+            var tradesByIndex = ZaTradePokemonWorkflowService
+                .LoadRecords(overlaySource, labels, abilityResolver)
+                .ToDictionary(trade => trade.TradeIndex);
+
+            return workflow with
+            {
+                Trades = workflow.Trades
+                    .Select(trade => tradesByIndex.TryGetValue(trade.TradeIndex, out var updatedTrade) ? updatedTrade : trade)
+                    .ToArray(),
+            };
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException or OverflowException)
+        {
+            diagnostics?.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Trade Pokemon pending changes could not be previewed: {exception.Message}",
+                ZaEditSessionSupport.TradePokemonDomain,
+                file: $"romfs/{ZaDataPaths.PokemonDataArray}",
+                expected: "Readable Pokemon Legends Z-A trade Pokemon source"));
+            return workflow;
+        }
     }
 
     private static ZaTradePokemonWorkflow OverlayPendingEdit(ZaTradePokemonWorkflow workflow, PendingEdit edit)

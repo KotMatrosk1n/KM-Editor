@@ -83,6 +83,7 @@ using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
 using KM.SV.Text;
+using KM.ZA.Encounters;
 using KM.ZA.Gifts;
 using KM.ZA.GameDump;
 using KM.ZA.ModMerger;
@@ -923,6 +924,14 @@ public sealed class ProjectBridgeDispatcher
         }
         else
         {
+            if (!IsScarletViolet(paths))
+            {
+                return SerializeFailure(
+                    "bridge.gameMismatch",
+                    "Bridge command 'giftPokemon.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
+                    request.RequestId);
+            }
+
             var updates = request.Payload.Updates
                 .Select(update => new SvGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
                 .ToArray();
@@ -995,6 +1004,14 @@ public sealed class ProjectBridgeDispatcher
         }
         else
         {
+            if (!IsScarletViolet(paths))
+            {
+                return SerializeFailure(
+                    "bridge.gameMismatch",
+                    "Bridge command 'tradePokemon.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
+                    request.RequestId);
+            }
+
             var updates = request.Payload.Updates
                 .Select(update => new SvTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
                 .ToArray();
@@ -1286,6 +1303,29 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaUpdates = request.Payload.Updates
+                .Select(update => new ZaEncounterSlotFieldUpdate(
+                    update.TableId,
+                    update.Slot,
+                    update.Field,
+                    update.Value))
+                .ToArray();
+            var zaResponse = ZaBridgeMapper.ToEncounterSlotFieldsDto(
+                zaWorkflowService.UpdateEncounterSlotFields(paths, session, zaUpdates));
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                "Bridge command 'encounters.slots.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
         var updates = request.Payload.Updates
             .Select(update => new SvEncounterSlotFieldUpdate(
                 update.TableId,
@@ -1510,6 +1550,14 @@ public sealed class ProjectBridgeDispatcher
                 zaWorkflowService.UpdatePlacementObjectFields(paths, session, zaUpdates));
 
             return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                "Bridge command 'placement.objects.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
+                request.RequestId);
         }
 
         var updates = request.Payload.Updates

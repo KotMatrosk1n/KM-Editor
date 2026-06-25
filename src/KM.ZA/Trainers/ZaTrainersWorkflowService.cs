@@ -213,7 +213,7 @@ internal sealed class ZaTrainersWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<ZaTrainerRecord> LoadRecords(
+    internal static IEnumerable<ZaTrainerRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
         ZaTrainerAbilityResolver abilityResolver)

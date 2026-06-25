@@ -43,8 +43,8 @@ internal sealed class ZaTrainersEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = trainersWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
@@ -76,7 +76,7 @@ internal sealed class ZaTrainersEditSessionService
 
         var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
         return new ZaTrainersEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
             updatedSession,
             diagnostics);
     }
@@ -92,8 +92,8 @@ internal sealed class ZaTrainersEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = trainersWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
@@ -149,7 +149,7 @@ internal sealed class ZaTrainersEditSessionService
         }
 
         return new ZaTrainersEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
             updatedSession,
             diagnostics);
     }
@@ -428,15 +428,74 @@ internal sealed class ZaTrainersEditSessionService
             diagnostics);
     }
 
-    private static ZaTrainersWorkflow OverlayPendingEdits(ZaTrainersWorkflow workflow, IEnumerable<PendingEdit> edits)
+    private ZaTrainersWorkflow OverlayPendingEdits(
+        OpenedProject project,
+        ZaTrainersWorkflow workflow,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic>? diagnostics = null)
     {
-        var updatedWorkflow = workflow;
-        foreach (var edit in edits)
+        var pendingEdits = edits
+            .Where(edit =>
+                string.Equals(edit.Domain, ZaEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
+                && int.TryParse(
+                    edit.NewValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out _))
+            .ToArray();
+
+        if (pendingEdits.Length == 0)
         {
-            updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
+            return workflow;
         }
 
-        return updatedWorkflow;
+        try
+        {
+            var overlayDiagnostics = new List<ValidationDiagnostic>();
+            var source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
+            var labels = ZaTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
+            var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, overlayDiagnostics);
+            var rows = ReadRows(source.Bytes);
+            foreach (var edit in pendingEdits)
+            {
+                ApplyEdit(rows, edit, overlayDiagnostics);
+            }
+
+            if (overlayDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                if (diagnostics is not null)
+                {
+                    foreach (var diagnostic in overlayDiagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                    {
+                        diagnostics.Add(diagnostic);
+                    }
+                }
+
+                return workflow;
+            }
+
+            var overlaySource = source with { Bytes = WriteRows(rows) };
+            var trainersById = ZaTrainersWorkflowService
+                .LoadRecords(overlaySource, labels, abilityResolver)
+                .ToDictionary(trainer => trainer.TrainerId);
+
+            return workflow with
+            {
+                Trainers = workflow.Trainers
+                    .Select(trainer => trainersById.TryGetValue(trainer.TrainerId, out var updatedTrainer) ? updatedTrainer : trainer)
+                    .ToArray(),
+            };
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException or OverflowException)
+        {
+            diagnostics?.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Trainers pending changes could not be previewed: {exception.Message}",
+                ZaEditSessionSupport.TrainersDomain,
+                file: $"romfs/{ZaDataPaths.TrainerDataArray}",
+                expected: "Readable Pokemon Legends Z-A trainer source"));
+            return workflow;
+        }
     }
 
     private static ZaTrainersWorkflow OverlayPendingEdit(ZaTrainersWorkflow workflow, PendingEdit edit)
