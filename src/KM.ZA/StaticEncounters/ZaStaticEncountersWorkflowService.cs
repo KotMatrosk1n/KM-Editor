@@ -241,7 +241,7 @@ internal sealed class ZaStaticEncountersWorkflowService
         IReadOnlySet<string> wildEncounterIds)
     {
         return !string.IsNullOrWhiteSpace(id)
-            && !ZaGiftPokemonWorkflowService.IsGiftPokemonId(id)
+            && !ZaGiftPokemonWorkflowService.IsGiftPokemonSourceId(id)
             && !ZaTradePokemonWorkflowService.IsTradePokemonId(id)
             && !wildEncounterIds.Contains(id);
     }
@@ -270,7 +270,7 @@ internal sealed class ZaStaticEncountersWorkflowService
             ?? $"Ability mode {value.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    private IReadOnlySet<string> LoadWildEncounterIds(
+    internal IReadOnlySet<string> LoadWildEncounterIds(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics,
         out bool usedSpawnerSource)

@@ -58,7 +58,6 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = pokemon.Payload!.Workflow;
         Assert.Equal("Pokemon Data", workflow.Summary.Label);
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
-        Assert.Single(workflow.Pokemon);
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         Assert.Equal(1, bulbasaur.SpeciesId);
         Assert.Equal("Pokemon 1", bulbasaur.Name);
@@ -295,7 +294,7 @@ public sealed class PokemonLegendsZABridgeTests
         var gift = Assert.Single(workflow.Gifts);
         Assert.Equal("za", gift.EditorFamily);
         Assert.Equal(0, gift.GiftIndex);
-        Assert.Equal("main_init_poke_1", gift.EventLabel);
+        Assert.Equal("main_init_poke_1 + test_encount_init_poke_0", gift.EventLabel);
         Assert.Contains("Bulbasaur", gift.Label);
         Assert.Equal(1, gift.SpeciesId);
         Assert.Equal("Bulbasaur", gift.Species);
@@ -742,6 +741,7 @@ public sealed class PokemonLegendsZABridgeTests
                 [
                     new TrainerFieldUpdateDto(0, null, "rank", "25"),
                     new TrainerFieldUpdateDto(0, null, "megaEvolution", "0"),
+                    new TrainerFieldUpdateDto(0, 0, "speciesId", "2"),
                     new TrainerFieldUpdateDto(0, 0, "level", "42"),
                     new TrainerFieldUpdateDto(0, 0, "move1Id", "45"),
                 ]),
@@ -752,6 +752,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.False(trainer.ZaMegaEvolution);
         Assert.Equal("Trainer Battle", trainer.BattleType);
         var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(2, pokemon.SpeciesId);
+        Assert.Equal("Ivysaur", pokemon.Species);
         Assert.Equal(42, pokemon.Level);
         Assert.Equal(45, pokemon.MoveIds[0]);
 
@@ -777,6 +779,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.False(written.MegaEvolution);
         var writtenPokemon = written.Pokemon1;
         Assert.NotNull(writtenPokemon);
+        Assert.Equal(2, writtenPokemon!.Value.SpeciesId);
         Assert.Equal(42, writtenPokemon!.Value.Level);
         Assert.Equal(45, writtenPokemon.Value.Move1!.Value.MoveId);
     }
@@ -796,6 +799,7 @@ public sealed class PokemonLegendsZABridgeTests
                 paths,
                 Session: null,
                 [
+                    new GiftPokemonFieldUpdateDto(0, "species", "2"),
                     new GiftPokemonFieldUpdateDto(0, "level", "12"),
                     new GiftPokemonFieldUpdateDto(0, "heldItemId", "17"),
                     new GiftPokemonFieldUpdateDto(0, "move1Id", "45"),
@@ -804,6 +808,10 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-gift-pokemon-update");
         AssertSuccess(update);
         var gift = Assert.Single(update.Payload!.Workflow.Gifts);
+        Assert.Equal(2, gift.SpeciesId);
+        Assert.Equal("Ivysaur", gift.Species);
+        Assert.Contains("Ivysaur", gift.Label);
+        Assert.DoesNotContain("Bulbasaur", gift.Label);
         Assert.Equal(12, gift.Level);
         Assert.Equal(17, gift.HeldItemId);
         Assert.Equal(45, gift.Moves[0].MoveId);
@@ -827,13 +835,23 @@ public sealed class PokemonLegendsZABridgeTests
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
-        var written = ReadGiftPokemonData(temp, "main_init_poke_1");
-        Assert.Equal(12, written.MinLevel);
-        Assert.Equal(12, written.MaxLevel);
-        Assert.Equal(17, written.HoldItem!.Value.HoldItem);
-        Assert.Equal(45, written.WazaList!.Value.Waza1);
-        Assert.Equal(128, written.TalentScale);
-        Assert.Equal(31, written.TalentValue!.Value.Hp);
+        var writtenScene = ReadGiftPokemonData(temp, "main_init_poke_1");
+        Assert.Equal(2, writtenScene.DevNo);
+        Assert.Equal(12, writtenScene.MinLevel);
+        Assert.Equal(12, writtenScene.MaxLevel);
+        Assert.Equal(17, writtenScene.HoldItem!.Value.HoldItem);
+        Assert.Equal(45, writtenScene.WazaList!.Value.Waza1);
+        Assert.Equal(128, writtenScene.TalentScale);
+        Assert.Equal(31, writtenScene.TalentValue!.Value.Hp);
+
+        var writtenPlayable = ReadGiftPokemonData(temp, "test_encount_init_poke_0");
+        Assert.Equal(2, writtenPlayable.DevNo);
+        Assert.Equal(12, writtenPlayable.MinLevel);
+        Assert.Equal(12, writtenPlayable.MaxLevel);
+        Assert.Equal(17, writtenPlayable.HoldItem!.Value.HoldItem);
+        Assert.Equal(45, writtenPlayable.WazaList!.Value.Waza1);
+        Assert.Equal(128, writtenPlayable.TalentScale);
+        Assert.Equal(31, writtenPlayable.TalentValue!.Value.Hp);
 
         var ignored = ReadGiftPokemonData(temp, "wild_ignore");
         Assert.Equal(20, ignored.MinLevel);
@@ -855,6 +873,7 @@ public sealed class PokemonLegendsZABridgeTests
                 paths,
                 Session: null,
                 [
+                    new TradePokemonFieldUpdateDto(0, "species", "2"),
                     new TradePokemonFieldUpdateDto(0, "level", "18"),
                     new TradePokemonFieldUpdateDto(0, "heldItemId", "17"),
                     new TradePokemonFieldUpdateDto(0, "move1Id", "45"),
@@ -863,6 +882,10 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-trade-pokemon-update");
         AssertSuccess(update);
         var trade = Assert.Single(update.Payload!.Workflow.Trades);
+        Assert.Equal(2, trade.SpeciesId);
+        Assert.Equal("Ivysaur", trade.Species);
+        Assert.Contains("Ivysaur", trade.Label);
+        Assert.DoesNotContain("Bulbasaur", trade.Label);
         Assert.Equal(18, trade.Level);
         Assert.Equal(17, trade.HeldItemId);
         Assert.Equal(45, trade.Moves[0].MoveId);
@@ -887,6 +910,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
         var written = ReadGiftPokemonData(temp, "sub_tradepoke_bulbasaur");
+        Assert.Equal(2, written.DevNo);
         Assert.Equal(18, written.MinLevel);
         Assert.Equal(18, written.MaxLevel);
         Assert.Equal(17, written.HoldItem!.Value.HoldItem);
@@ -895,8 +919,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(31, written.TalentValue!.Value.Hp);
 
         var gift = ReadGiftPokemonData(temp, "main_init_poke_1");
-        Assert.Equal(5, gift.MinLevel);
-        Assert.Equal(5, gift.MaxLevel);
+        Assert.Equal(0, gift.MinLevel);
+        Assert.Equal(0, gift.MaxLevel);
     }
 
     [Fact]
@@ -1203,6 +1227,8 @@ public sealed class PokemonLegendsZABridgeTests
         var updatedEncounter = Assert.Single(moveUpdate.Payload!.Workflow.Encounters);
         Assert.Equal(1, updatedEncounter.SpeciesId);
         Assert.Equal("Bulbasaur", updatedEncounter.Species);
+        Assert.Contains("Bulbasaur", updatedEncounter.Label);
+        Assert.DoesNotContain("Ivysaur", updatedEncounter.Label);
         Assert.Equal(42, updatedEncounter.Level);
         Assert.Equal(45, updatedEncounter.Moves[0].MoveId);
 
@@ -1370,7 +1396,8 @@ public sealed class PokemonLegendsZABridgeTests
         var builder = new FlatBufferBuilder(1024);
         var empty = CreatePersonal(builder, species: 0, present: false, hp: 0, zaDexOrder: 0);
         var bulbasaur = CreatePersonal(builder, species: 1, present: true, hp: 45, zaDexOrder: 25);
-        var vector = ZaPersonalTable.CreateEntryVector(builder, [empty, bulbasaur]);
+        var ivysaur = CreatePersonal(builder, species: 2, present: true, hp: 60, zaDexOrder: 26);
+        var vector = ZaPersonalTable.CreateEntryVector(builder, [empty, bulbasaur, ivysaur]);
         ZaPersonalTable.Start(builder);
         ZaPersonalTable.AddEntry(builder, vector);
         var root = ZaPersonalTable.End(builder);
@@ -1456,7 +1483,7 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(1, (1, "Duelist")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(1, (1, "Bulbasaur")));
+            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1476,7 +1503,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(1, (1, "Bulbasaur")));
+            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1549,9 +1576,25 @@ public sealed class PokemonLegendsZABridgeTests
     private static byte[] CreatePokemonDataArray(bool signedDefaults = false, bool gameDefaultGift = false)
     {
         var builder = new FlatBufferBuilder(2048);
-        var gift = CreatePokemonData(
+        var giftScene = CreatePokemonData(
             builder,
             "main_init_poke_1",
+            level: 0,
+            heldItem: 0,
+            move1: -1,
+            move2: -1,
+            ivHp: -1,
+            ivAttack: -1,
+            sex: 0,
+            ivDefense: -1,
+            ivSpecialAttack: -1,
+            ivSpecialDefense: -1,
+            ivSpeed: -1,
+            talentScale: 127,
+            omitWazaList: true);
+        var giftPlayable = CreatePokemonData(
+            builder,
+            "test_encount_init_poke_0",
             level: gameDefaultGift ? 0 : 5,
             heldItem: 4,
             move1: signedDefaults ? -1 : 33,
@@ -1595,7 +1638,7 @@ public sealed class PokemonLegendsZABridgeTests
             ivAttack: 11,
             speciesId: 2,
             sex: signedDefaults ? -1 : 1);
-        var rootVector = ZaPokemonDataDb.CreateRootVector(builder, [gift, ignored, trade, staticEncounter]);
+        var rootVector = ZaPokemonDataDb.CreateRootVector(builder, [giftScene, ignored, trade, staticEncounter, giftPlayable]);
         var db = ZaPokemonDataDb.Create(builder, rootVector);
         var valuesVector = ZaPokemonDataDbArray.CreateValuesVector(builder, [db]);
         var root = ZaPokemonDataDbArray.Create(builder, valuesVector);

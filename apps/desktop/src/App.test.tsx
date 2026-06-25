@@ -731,6 +731,47 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Output for Trinity Bypass' })).toBeEnabled();
   });
 
+  it('shows Trinity output choices for Z-A editor changes', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+    const user = userEvent.setup();
+
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Output as Standalone' })).toBeEnabled()
+    );
+    expect(screen.getByRole('button', { name: 'Output for Trinity Mod Manager' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Output for Trinity Bypass' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
   it('installs and uninstalls the SwSh 60FPS Patch from Tools', async () => {
     const user = userEvent.setup();
     const baseBridge = createMockProjectBridge({}, true);

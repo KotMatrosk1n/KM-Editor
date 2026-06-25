@@ -53,6 +53,14 @@ internal sealed class ZaGiftPokemonWorkflowService
         "main10400_poke",
     ];
 
+    private static readonly IReadOnlyDictionary<string, string> StarterGameplayRowsBySceneRow =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["main_init_poke_1"] = "test_encount_init_poke_0",
+            ["main_init_poke_2"] = "test_encount_init_poke_1",
+            ["main_init_poke_3"] = "test_encount_init_poke_2",
+        };
+
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> GenderOptions =
     [
         new(-1, "Game default / random"),
@@ -202,6 +210,13 @@ internal sealed class ZaGiftPokemonWorkflowService
             && GiftIdPrefixes.Any(prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
+    internal static bool IsGiftPokemonSourceId(string? id)
+    {
+        return IsGiftPokemonId(id)
+            || (!string.IsNullOrWhiteSpace(id)
+                && StarterGameplayRowsBySceneRow.Values.Contains(id, StringComparer.OrdinalIgnoreCase));
+    }
+
     internal static string FormatGender(int value)
     {
         return GenderOptions.FirstOrDefault(option => option.Value == value)?.Label
@@ -226,21 +241,21 @@ internal sealed class ZaGiftPokemonWorkflowService
         ZaGiftAbilityResolver abilityResolver)
     {
         var document = ZaPokemonDataDocument.Parse(source.Bytes);
-        return document.Entries
-            .Where(entry => IsGiftPokemonId(entry.Id))
-            .Select((entry, giftIndex) => ToRecord(giftIndex, entry, source, labels, abilityResolver))
+        return CreateGiftSourceGroups(document)
+            .Select((group, giftIndex) => ToRecord(giftIndex, group, source, labels, abilityResolver))
             .ToArray();
     }
 
     private static ZaGiftPokemonEntry ToRecord(
         int giftIndex,
-        ZaPokemonDataEntry entry,
+        GiftSourceGroup group,
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
         ZaGiftAbilityResolver abilityResolver)
     {
+        var entry = group.DisplayEntry;
         var speciesId = entry.DevNo;
-        var eventLabel = entry.Id ?? string.Empty;
+        var eventLabel = group.Label;
         var isEgg = eventLabel.Contains("egg", StringComparison.OrdinalIgnoreCase);
         var speciesName = speciesId == 0 ? "None" : labels.Pokemon(speciesId);
         var abilitySet = abilityResolver.Resolve(speciesId, entry.FormNo);
@@ -284,6 +299,47 @@ internal sealed class ZaGiftPokemonWorkflowService
         {
             AbilityOptions = abilityOptions,
         };
+    }
+
+    internal static IReadOnlyList<ZaPokemonDataEntry> ResolveApplyTargets(
+        ZaPokemonDataDocument document,
+        int giftIndex)
+    {
+        var group = CreateGiftSourceGroups(document).ElementAtOrDefault(giftIndex);
+        return group is null ? Array.Empty<ZaPokemonDataEntry>() : group.ApplyEntries;
+    }
+
+    private static IReadOnlyList<GiftSourceGroup> CreateGiftSourceGroups(ZaPokemonDataDocument document)
+    {
+        var entriesById = document.Entries
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
+            .GroupBy(entry => entry.Id!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        return document.Entries
+            .Where(entry => IsGiftPokemonId(entry.Id))
+            .Select(entry => CreateGiftSourceGroup(entry, entriesById))
+            .ToArray();
+    }
+
+    private static GiftSourceGroup CreateGiftSourceGroup(
+        ZaPokemonDataEntry entry,
+        IReadOnlyDictionary<string, ZaPokemonDataEntry> entriesById)
+    {
+        if (entry.Id is { } sceneId
+            && StarterGameplayRowsBySceneRow.TryGetValue(sceneId, out var gameplayId)
+            && entriesById.TryGetValue(gameplayId, out var gameplayEntry))
+        {
+            return new GiftSourceGroup(
+                gameplayEntry,
+                [entry, gameplayEntry],
+                $"{sceneId} + {gameplayId}");
+        }
+
+        return new GiftSourceGroup(
+            entry,
+            [entry],
+            entry.Id ?? string.Empty);
     }
 
     private static IReadOnlyList<ZaGiftPokemonMoveRecord> ReadMoves(
@@ -603,4 +659,9 @@ internal sealed class ZaGiftPokemonWorkflowService
     {
         public static ZaGiftAbilitySet Empty { get; } = new("Ability 1", "Ability 2", "Hidden Ability");
     }
+
+    private sealed record GiftSourceGroup(
+        ZaPokemonDataEntry DisplayEntry,
+        IReadOnlyList<ZaPokemonDataEntry> ApplyEntries,
+        string Label);
 }

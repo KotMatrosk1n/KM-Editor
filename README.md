@@ -1,5 +1,14 @@
 # KM Editor
 
+[![Validation](https://github.com/KotMatrosk1n/KM-Editor/actions/workflows/validation.yml/badge.svg)](https://github.com/KotMatrosk1n/KM-Editor/actions/workflows/validation.yml)
+[![Desktop Release](https://github.com/KotMatrosk1n/KM-Editor/actions/workflows/desktop-release.yml/badge.svg)](https://github.com/KotMatrosk1n/KM-Editor/actions/workflows/desktop-release.yml)
+![Version](https://img.shields.io/badge/version-v1.8.0-blue)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
+![Built with](https://img.shields.io/badge/built%20with-.NET%2010%20%2B%20Tauri%202-512BD4)
+![Supported Games](https://img.shields.io/badge/supports-SwSh%20%7C%20SV-red)
+![Localization](https://img.shields.io/badge/localized-EN%20%7C%20ES%20%7C%20FR%20%7C%20DE%20%7C%20RU%20%7C%20UK-orange)
+![License](https://img.shields.io/badge/license-GPL--3.0--only-lightgrey)
+
 KM Editor is a desktop editor for Pokemon Sword, Pokemon Shield, Pokemon Scarlet, and Pokemon Violet mod projects.
 
 It works through a safer LayeredFS flow: choose a supported game, validate clean RomFS and ExeFS paths, inspect records with source provenance, stage edits, review the change plan, and apply only after validation. Your base dump stays clean, and the app tells you when something looks off before it writes output.
