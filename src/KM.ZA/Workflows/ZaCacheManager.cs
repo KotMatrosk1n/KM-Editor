@@ -35,12 +35,7 @@ public sealed class ZaCacheManager
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly IReadOnlyList<string> WarmupTextLanguages =
-    [
-        ZaGameTextLanguage.English,
-        "Spanish",
-        "French",
-        "German",
-    ];
+        ZaGameTextLanguage.SupportedMessageLanguages;
 
     private readonly string cacheRoot;
     private readonly object syncRoot = new();
@@ -109,8 +104,11 @@ public sealed class ZaCacheManager
             yield return ZaDataPaths.PokemonNames(language);
             yield return ZaDataPaths.AbilityNames(language);
             yield return ZaDataPaths.PlaceNames(language);
+            yield return ZaDataPaths.PlaceNameKeys(language);
             yield return ZaDataPaths.TrainerNames(language);
+            yield return ZaDataPaths.TrainerNameKeys(language);
             yield return ZaDataPaths.TrainerTypes(language);
+            yield return ZaDataPaths.TrainerTypeKeys(language);
         }
     }
 

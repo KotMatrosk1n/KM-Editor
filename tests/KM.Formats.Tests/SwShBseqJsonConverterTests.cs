@@ -31,6 +31,57 @@ public sealed class SwShBseqJsonConverterTests
     }
 
     [Fact]
+    public void CommandReferenceCoversHarvestedPbseqtoolMetadata()
+    {
+        Assert.Equal(385, SwShBseqCommandReference.Commands.Count);
+        Assert.Equal(32, SwShBseqCommandReference.GroupOptionHashes.Count);
+        Assert.Equal(
+            SwShBseqCommandReference.Commands.Count,
+            SwShBseqCommandReference.Commands.Select(command => command.Hash).Distinct().Count());
+        Assert.Equal(
+            SwShBseqCommandReference.GroupOptionHashes.Count,
+            SwShBseqCommandReference.GroupOptionHashes.Distinct().Count());
+
+        foreach (var command in SwShBseqCommandReference.Commands)
+        {
+            Assert.Same(command, SwShBseqCommandReference.CommandsByHash[command.Hash]);
+            Assert.Equal(command.PayloadLength, command.Parameters.Sum(parameter => parameter.ByteLength));
+            Assert.Equal(command.Hash, SwShBseqCommandReference.ParseCommandId(SwShBseqCommandReference.ToCommandId(command.Hash)));
+
+            Assert.True(SwShBseqCommandReference.TryGetCommand(command.Name, out var byName));
+            Assert.Same(command, byName);
+            foreach (var alias in command.Aliases)
+            {
+                Assert.True(SwShBseqCommandReference.TryGetCommand(alias, out var byAlias));
+                Assert.Same(command, byAlias);
+            }
+
+            foreach (var parameter in command.Parameters)
+            {
+                Assert.Contains(parameter.Name, parameter.Aliases);
+                Assert.True(parameter.ByteLength >= 0);
+            }
+        }
+
+        foreach (var groupOptionHash in SwShBseqCommandReference.GroupOptionHashes)
+        {
+            Assert.Equal(
+                groupOptionHash,
+                SwShBseqCommandReference.ParseCommandId(SwShBseqCommandReference.ToCommandId(groupOptionHash)));
+        }
+
+        Assert.True(SwShBseqCommandReference.TryGetCommand("SpecialChainAttackDefine", out var commandAlias));
+        Assert.Equal("SpecialChainAttakDefine", commandAlias.Name);
+
+        var shadowBoxSet = SwShBseqCommandReference.GetCommand(0x86DB5E4CC1E40197);
+        var relative = Assert.Single(
+            shadowBoxSet.Parameters,
+            parameter => parameter.Aliases.Contains("relative", StringComparer.Ordinal));
+        Assert.Equal("rerative", relative.Name);
+        Assert.Equal(SwShBseqParameterValueKind.Bool, relative.ValueKind);
+    }
+
+    [Fact]
     public void ExportToJsonDecodesKnownCommandParameters()
     {
         var bseq = CreateSpecialQuizResultBseq();
@@ -74,6 +125,20 @@ public sealed class SwShBseqJsonConverterTests
 
         Assert.Equal(5, SwShBseqFile.ReadInt32Parameter(imported, specialQuiz, 0));
         Assert.Equal(1, SwShBseqFile.ReadInt32Parameter(imported, specialQuiz, 1));
+    }
+
+    [Fact]
+    public void ImportFromJsonResolvesKnownCommandByNameWhenCommandIdIsOmitted()
+    {
+        var bseq = CreateSpecialQuizResultBseq();
+        var root = JsonNode.Parse(SwShBseqJsonConverter.ExportToJson(bseq))!.AsObject();
+        root.Remove("commandDefinitions");
+        var command = root["commands"]!.AsArray()[0]!.AsObject();
+        command.Remove("commandId");
+
+        var imported = SwShBseqJsonConverter.ImportFromJson(root.ToJsonString());
+
+        Assert.Equal(bseq, imported);
     }
 
     [Fact]
