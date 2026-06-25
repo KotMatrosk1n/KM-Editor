@@ -720,12 +720,14 @@ const svCacheModeOptions: Array<{
   }
 ];
 
+const defaultTrinityCacheLimitBytes = 512 * 1024 ** 2;
+
 const svCacheLimitOptions = [
+  { bytes: 128 * 1024 ** 2, label: '128 MB' },
+  { bytes: 256 * 1024 ** 2, label: '256 MB' },
+  { bytes: defaultTrinityCacheLimitBytes, label: '512 MB' },
   { bytes: 1 * 1024 ** 3, label: '1 GB' },
-  { bytes: 5 * 1024 ** 3, label: '5 GB' },
-  { bytes: 10 * 1024 ** 3, label: '10 GB' },
-  { bytes: 25 * 1024 ** 3, label: '25 GB' },
-  { bytes: 50 * 1024 ** 3, label: '50 GB' }
+  { bytes: 2 * 1024 ** 3, label: '2 GB' }
 ] as const;
 
 const pathFields: Array<{
@@ -2544,7 +2546,7 @@ export function App({
       const paths = isTrinityCacheGame(selectedGame)
         ? toProjectPaths(draftPathsRef.current)
         : null;
-      const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
+      const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
 
       try {
         const response = isPokemonLegendsZAGame(selectedGame)
@@ -28322,7 +28324,7 @@ function SettingsSection({
     status.kind === 'opening' ||
     status.kind === 'restarting';
   const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
-  const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
+  const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
   const cacheSizeLabel = formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0);
   const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
   const canShowSvCacheSettings = isTrinityCacheGame(selectedGame);

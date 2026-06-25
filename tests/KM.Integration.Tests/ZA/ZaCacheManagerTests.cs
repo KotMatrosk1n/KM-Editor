@@ -25,6 +25,23 @@ public sealed class ZaCacheManagerTests
     }
 
     [Fact]
+    public void SettingsClampToSupportedCacheSizeRange()
+    {
+        using var temp = TemporaryFolder.Create();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        Assert.Equal(512L * 1024 * 1024, cache.GetSettings().MaxCacheSizeBytes);
+
+        var low = cache.UpdateSettings(ZaCacheMode.Balanced, 64L * 1024 * 1024);
+
+        Assert.Equal(128L * 1024 * 1024, low.MaxCacheSizeBytes);
+
+        var high = cache.UpdateSettings(ZaCacheMode.Balanced, 5L * 1024 * 1024 * 1024);
+
+        Assert.Equal(2L * 1024 * 1024 * 1024, high.MaxCacheSizeBytes);
+    }
+
+    [Fact]
     public void PerformanceWarmupCachesTheDecompressedPayload()
     {
         using var temp = TemporaryFolder.Create();
