@@ -242,15 +242,14 @@ internal sealed class ZaTrainersWorkflowService
     {
         var aiFlags = PackAiFlags(trainer);
         var team = ReadTeam(trainer, labels, abilityResolver).ToArray();
-        var classId = ToSmallClassId(trainer.TrainerType);
-        var className = labels.TrainerTypeByIndex(classId) ?? "Trainer";
+        var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
         var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
             ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"
             : trainer.TrainerId!;
 
         return new ZaTrainerRecord(
             trainerId,
-            labels.TrainerName(trainer.TrainerId, trainerId),
+            labels.TrainerName(trainer.TrainerId, trainerId, className),
             classId,
             className,
             location,
@@ -549,8 +548,4 @@ internal sealed class ZaTrainersWorkflowService
             ?? $"Nature {value.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    private static int ToSmallClassId(ulong value)
-    {
-        return value <= int.MaxValue ? (int)value : 0;
-    }
 }

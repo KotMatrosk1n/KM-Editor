@@ -162,7 +162,7 @@ internal static class ZaLabels
             : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value.ToLowerInvariant());
     }
 
-    public static string FormatTrainerIdForLookup(string raw)
+    public static string FormatTrainerIdForLookup(string raw, string? trainerClass = null)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -180,14 +180,74 @@ internal static class ZaLabels
             var typeLabel = rankMatch.Groups["type"].Success
                 ? $" {FormatTrainerToken(rankMatch.Groups["type"].Value)}"
                 : string.Empty;
-            return string.Create(
-                CultureInfo.InvariantCulture,
-                $"Dimension Rank {rank}{typeLabel} {number}");
+            var label = string.IsNullOrWhiteSpace(trainerClass)
+                ? string.Create(CultureInfo.InvariantCulture, $"Dimension Rank {rank}{typeLabel} {number}")
+                : string.Create(CultureInfo.InvariantCulture, $"Rank {rank}{typeLabel} {number}");
+            return PrefixTrainerClass(label, trainerClass);
         }
 
+        var mainMissionMatch = Regex.Match(
+            raw,
+            @"^Ev_m(?<mission>\d+)_(?<step>\d+)(?:_(?<variant>[a-z0-9_]+))?$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (mainMissionMatch.Success)
+        {
+            var mission = mainMissionMatch.Groups["mission"].Value.PadLeft(2, '0');
+            var step = FormatNumberToken(mainMissionMatch.Groups["step"].Value);
+            var variant = mainMissionMatch.Groups["variant"].Success
+                ? $" {FormatTrainerTokenSequence(mainMissionMatch.Groups["variant"].Value)}"
+                : string.Empty;
+            return PrefixTrainerClass($"Mission {mission} Step {step}{variant}", trainerClass);
+        }
+
+        var sideMissionMatch = Regex.Match(
+            raw,
+            @"^Ev_sub_(?<mission>\d+)_(?<step>\d+)(?:_(?<variant>[a-z0-9_]+))?$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (sideMissionMatch.Success)
+        {
+            var mission = FormatNumberToken(sideMissionMatch.Groups["mission"].Value);
+            var step = FormatNumberToken(sideMissionMatch.Groups["step"].Value);
+            var variant = sideMissionMatch.Groups["variant"].Success
+                ? $" {FormatTrainerTokenSequence(sideMissionMatch.Groups["variant"].Value)}"
+                : string.Empty;
+            return PrefixTrainerClass($"Side Mission {mission} Step {step}{variant}", trainerClass);
+        }
+
+        var infiniteMatch = Regex.Match(
+            raw,
+            @"^za_inf(?<strong>_strong)?_(?<rest>[a-z0-9_]+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (infiniteMatch.Success)
+        {
+            var battleKind = infiniteMatch.Groups["strong"].Success
+                ? "Infinite Z-A Strong Battle"
+                : "Infinite Z-A Battle";
+            return PrefixTrainerClass(
+                $"{battleKind} {FormatTrainerTokenSequence(infiniteMatch.Groups["rest"].Value)}",
+                trainerClass);
+        }
+
+        return PrefixTrainerClass(FormatTrainerTokenSequence(raw), trainerClass);
+    }
+
+    private static string PrefixTrainerClass(string label, string? trainerClass)
+    {
+        if (string.IsNullOrWhiteSpace(trainerClass)
+            || string.Equals(trainerClass, "Trainer", StringComparison.OrdinalIgnoreCase)
+            || label.StartsWith(trainerClass, StringComparison.OrdinalIgnoreCase))
+        {
+            return label;
+        }
+
+        return $"{trainerClass} {label}";
+    }
+
+    private static string FormatTrainerTokenSequence(string value)
+    {
         return string.Join(
             " ",
-            raw.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            value.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(FormatTrainerToken));
     }
 
@@ -198,8 +258,15 @@ internal static class ZaLabels
             return label;
         }
 
+        return int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+            ? FormatNumberToken(token)
+            : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(token.ToLowerInvariant());
+    }
+
+    private static string FormatNumberToken(string token)
+    {
         return int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
             ? number.ToString(CultureInfo.InvariantCulture)
-            : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(token.ToLowerInvariant());
+            : token;
     }
 }
