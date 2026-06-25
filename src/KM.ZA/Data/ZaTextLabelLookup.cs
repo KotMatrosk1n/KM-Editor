@@ -19,7 +19,8 @@ internal sealed class ZaTextLabelLookup
         [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
         [],
-        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+        new Dictionary<ulong, int>());
 
     private readonly IReadOnlyList<string> itemNames;
     private readonly IReadOnlyList<string> moveNames;
@@ -31,6 +32,7 @@ internal sealed class ZaTextLabelLookup
     private readonly IReadOnlyDictionary<string, int> trainerNameIndices;
     private readonly IReadOnlyList<string> trainerTypes;
     private readonly IReadOnlyDictionary<string, int> trainerTypeIndices;
+    private readonly IReadOnlyDictionary<ulong, int> trainerTypeHashIndices;
 
     private ZaTextLabelLookup(
         IReadOnlyList<string> itemNames,
@@ -42,7 +44,8 @@ internal sealed class ZaTextLabelLookup
         IReadOnlyList<string> trainerNames,
         IReadOnlyDictionary<string, int> trainerNameIndices,
         IReadOnlyList<string> trainerTypes,
-        IReadOnlyDictionary<string, int> trainerTypeIndices)
+        IReadOnlyDictionary<string, int> trainerTypeIndices,
+        IReadOnlyDictionary<ulong, int> trainerTypeHashIndices)
     {
         this.itemNames = itemNames;
         this.moveNames = moveNames;
@@ -54,6 +57,7 @@ internal sealed class ZaTextLabelLookup
         this.trainerNameIndices = trainerNameIndices;
         this.trainerTypes = trainerTypes;
         this.trainerTypeIndices = trainerTypeIndices;
+        this.trainerTypeHashIndices = trainerTypeHashIndices;
     }
 
     public int ItemNameCount => itemNames.Count;
@@ -87,7 +91,8 @@ internal sealed class ZaTextLabelLookup
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.TrainerNames, "trainer names", diagnostics),
             LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.TrainerNameKeys, "trainer name keys", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.TrainerTypes, "trainer class names", diagnostics),
-            LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.TrainerTypeKeys, "trainer class keys", diagnostics));
+            LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.TrainerTypeKeys, "trainer class keys", diagnostics),
+            LoadKeyHashIndicesWithFallback(project, fileSource, language, ZaDataPaths.TrainerTypeKeys, "trainer class keys", diagnostics));
     }
 
     public string Item(int itemId) => GetIndexed(itemNames, itemId) ?? ZaLabels.Item(itemId);
@@ -117,12 +122,16 @@ internal sealed class ZaTextLabelLookup
             ?? GetKeyed(placeNames, placeNameIndices, $"PLACENAME_{key}_01");
     }
 
-    public string TrainerName(string? key, int trainerId)
+    public string TrainerName(string? key, int trainerId, string? trainerClass = null)
     {
-        return GetKeyed(trainerNames, trainerNameIndices, key)
-            ?? GetIndexed(trainerNames, trainerId)
+        return FirstUsable(
+                GetKeyed(trainerNames, trainerNameIndices, key),
+                string.IsNullOrWhiteSpace(key) || key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : GetKeyed(trainerNames, trainerNameIndices, $"TRNAME_{key}"))
+            ?? FirstUsable(GetIndexed(trainerNames, trainerId))
             ?? (!string.IsNullOrWhiteSpace(key) && !key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
-                ? ZaLabels.FormatTrainerIdForLookup(key)
+                ? ZaLabels.FormatTrainerIdForLookup(key, trainerClass)
                 : $"Trainer {trainerId}");
     }
 
@@ -141,6 +150,35 @@ internal sealed class ZaTextLabelLookup
     public string? TrainerTypeByIndex(int trainerTypeId)
     {
         return GetIndexed(trainerTypes, trainerTypeId);
+    }
+
+    public (int Id, string Name) TrainerTypeByHash(ulong primaryHash, ulong secondaryHash)
+    {
+        if (TryGetTrainerTypeByHash(primaryHash, out var trainerType))
+        {
+            return trainerType;
+        }
+
+        if (secondaryHash != primaryHash
+            && TryGetTrainerTypeByHash(secondaryHash, out trainerType))
+        {
+            return trainerType;
+        }
+
+        if (primaryHash <= int.MaxValue
+            && TryGetTrainerTypeByIndex((int)primaryHash, out trainerType))
+        {
+            return trainerType;
+        }
+
+        if (secondaryHash <= int.MaxValue
+            && secondaryHash != primaryHash
+            && TryGetTrainerTypeByIndex((int)secondaryHash, out trainerType))
+        {
+            return trainerType;
+        }
+
+        return (-1, "Trainer");
     }
 
     private static IReadOnlyList<string> LoadIndexedTableWithFallback(
@@ -171,6 +209,21 @@ internal sealed class ZaTextLabelLookup
                 ? null
                 : TryLoadKeyIndices(project, fileSource, pathFactory(ZaGameTextLanguage.English), label, diagnostics))
             ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyDictionary<ulong, int> LoadKeyHashIndicesWithFallback(
+        OpenedProject project,
+        ZaWorkflowFileSource fileSource,
+        string language,
+        Func<string, string> pathFactory,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        return TryLoadKeyHashIndices(project, fileSource, pathFactory(language), label, diagnostics)
+            ?? (string.Equals(language, ZaGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : TryLoadKeyHashIndices(project, fileSource, pathFactory(ZaGameTextLanguage.English), label, diagnostics))
+            ?? new Dictionary<ulong, int>();
     }
 
     private static IReadOnlyList<string>? TryLoadIndexedTable(
@@ -228,6 +281,34 @@ internal sealed class ZaTextLabelLookup
         }
     }
 
+    private static IReadOnlyDictionary<ulong, int>? TryLoadKeyHashIndices(
+        OpenedProject project,
+        ZaWorkflowFileSource fileSource,
+        string path,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            return SwShAhtbFile.Parse(fileSource.Read(project, path).Bytes)
+                .Entries
+                .Select((entry, index) => (entry.Hash, index))
+                .GroupBy(entry => entry.Hash)
+                .ToDictionary(group => group.Key, group => group.First().index);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                $"Pokemon Legends Z-A {label} could not be loaded: {exception.Message}",
+                $"romfs/{path}"));
+            return null;
+        }
+    }
+
     private static string? GetIndexed(IReadOnlyList<string> values, int index)
     {
         return index >= 0
@@ -248,5 +329,46 @@ internal sealed class ZaTextLabelLookup
         }
 
         return GetIndexed(values, index);
+    }
+
+    private bool TryGetTrainerTypeByHash(ulong hash, out (int Id, string Name) trainerType)
+    {
+        trainerType = default;
+        if (!trainerTypeHashIndices.TryGetValue(hash, out var index))
+        {
+            return false;
+        }
+
+        return TryGetTrainerTypeByIndex(index, out trainerType);
+    }
+
+    private bool TryGetTrainerTypeByIndex(int index, out (int Id, string Name) trainerType)
+    {
+        trainerType = default;
+        var name = GetIndexed(trainerTypes, index);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        trainerType = (index, name);
+        return true;
+    }
+
+    private static string? FirstUsable(params string?[] values)
+    {
+        return values.FirstOrDefault(value => !IsPlaceholderLabel(value));
+    }
+
+    private static bool IsPlaceholderLabel(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        return string.Equals(trimmed, "-", StringComparison.Ordinal)
+            || trimmed.All(character => character == '?');
     }
 }

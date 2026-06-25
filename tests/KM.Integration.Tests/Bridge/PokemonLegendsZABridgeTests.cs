@@ -276,6 +276,43 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZATrainerLabelsUseHashClassesAndReadableFallbackNames()
+    {
+        const ulong hyperspaceTrainerHash = 0xCB6F6D064E9E96A4;
+
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerDataArray,
+            CreateTrainerDataArray(
+                trainerId: "dim_rank_02_mizu_05",
+                trainerType: hyperspaceTrainerHash,
+                trainerType2: hyperspaceTrainerHash));
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerNames("English"),
+            CreateTextTable(0, (0, "???")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerTypes("English"),
+            CreateTextTable(0, (0, "Hyperspace Trainer")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerTypeKeys("English"),
+            CreateKeyTable((hyperspaceTrainerHash, "MSG_TRTYPE_DIM")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var trainers = Dispatch<LoadTrainersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTrainersWorkflow,
+            new LoadTrainersWorkflowRequest(CreatePaths(temp)),
+            "request-za-trainer-labels");
+
+        AssertSuccess(trainers);
+        var trainer = Assert.Single(trainers.Payload!.Workflow.Trainers);
+        Assert.Equal("Hyperspace Trainer Rank 2 Water 5", trainer.Name);
+        Assert.Equal(0, trainer.TrainerClassId);
+        Assert.Equal("Hyperspace Trainer", trainer.TrainerClass);
+    }
+
+    [Fact]
     public void PokemonLegendsZAProjectLoadsGiftPokemonData()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -1918,25 +1955,35 @@ public sealed class PokemonLegendsZABridgeTests
             holdItemOffset: holdItemOffset);
     }
 
-    private static byte[] CreateTrainerDataArray(bool signedDefaults = false)
+    private static byte[] CreateTrainerDataArray(
+        bool signedDefaults = false,
+        string trainerId = "tr_battle_main_001",
+        ulong trainerType = 1,
+        ulong trainerType2 = 0)
     {
         var builder = new FlatBufferBuilder(2048);
-        var trainer = CreateTrainer(builder, signedDefaults);
+        var trainer = CreateTrainer(builder, signedDefaults, trainerId, trainerType, trainerType2);
         var vector = ZaTrainerTable.CreateValueVector(builder, [trainer]);
         var root = ZaTrainerTable.Create(builder, vector);
         ZaTrainerTable.FinishBuffer(builder, root);
         return builder.SizedByteArray();
     }
 
-    private static Offset<ZaTrainerRow> CreateTrainer(FlatBufferBuilder builder, bool signedDefaults = false)
+    private static Offset<ZaTrainerRow> CreateTrainer(
+        FlatBufferBuilder builder,
+        bool signedDefaults = false,
+        string trainerIdValue = "tr_battle_main_001",
+        ulong trainerType = 1,
+        ulong trainerType2 = 0)
     {
-        var trainerId = builder.CreateString("tr_battle_main_001");
+        var trainerId = builder.CreateString(trainerIdValue);
         var pokemon = CreateTrainerPokemon(builder, signedDefaults);
 
         return ZaTrainerRow.Create(
             builder,
             trainerIdOffset: trainerId,
-            trainerType: 1,
+            trainerType: trainerType,
+            trainerType2: trainerType2 == 0 ? trainerType : trainerType2,
             rank: 26,
             moneyRate: 4,
             megaEvolution: true,
@@ -2358,6 +2405,14 @@ public sealed class PokemonLegendsZABridgeTests
             .Select(value => new SwShGameTextLine(value, Flags: 0))
             .ToArray();
         return SwShGameTextFile.Write(lines);
+    }
+
+    private static byte[] CreateKeyTable(params (ulong Hash, string Name)[] entries)
+    {
+        return new SwShAhtbFile(entries
+            .Select(entry => new SwShAhtbEntry(entry.Hash, entry.Name))
+            .ToArray())
+            .Write();
     }
 
     private static byte[] CreatePokemonNameTextTable()
