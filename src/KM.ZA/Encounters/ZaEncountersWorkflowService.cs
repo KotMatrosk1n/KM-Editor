@@ -21,6 +21,10 @@ internal sealed class ZaEncountersWorkflowService
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
     private const string GameVersionLabel = "Pokemon Legends ZA";
     private const string TableIdPrefix = "za-spawner";
+    private static readonly string[] EncounterDataIdSuffixes =
+    [
+        "_Alpha",
+    ];
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -45,7 +49,7 @@ internal sealed class ZaEncountersWorkflowService
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
-        ZaWorkflowFile? pokemonSource = null;
+        ZaWorkflowFile? encounterSource = null;
         ZaWorkflowFile? spawnerSource = null;
         var labels = ZaTextLabelLookup.None();
         var tables = Array.Empty<ZaEncounterTableRecord>();
@@ -53,15 +57,15 @@ internal sealed class ZaEncountersWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            pokemonSource = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
-            tables = LoadTables(spawnerSource, pokemonSource, labels).ToArray();
+            tables = LoadTables(spawnerSource, encounterSource, labels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
                 $"Wild Encounters could not be loaded: {exception.Message}",
-                $"romfs/{ZaDataPaths.PokemonSpawnerDataArray}"));
+                $"romfs/{ZaDataPaths.EncountDataArray}"));
         }
 
         var summary = ZaWorkflowSupport.CreateSummary(
@@ -78,7 +82,7 @@ internal sealed class ZaEncountersWorkflowService
             new ZaEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
-                new[] { pokemonSource, spawnerSource }.Count(source => source is not null)),
+                new[] { encounterSource, spawnerSource }.Count(source => source is not null)),
             diagnostics);
     }
 
@@ -118,22 +122,15 @@ internal sealed class ZaEncountersWorkflowService
 
     internal static string FormatEncounterSpeciesLabel(int speciesId, int form, string speciesName)
     {
-        if (speciesId == 0)
-        {
-            return "Empty";
-        }
-
-        return form == 0
-            ? speciesName
-            : string.Create(CultureInfo.InvariantCulture, $"{speciesName} (Form {form})");
+        return ZaLabels.PokemonWithForm(speciesId, form, speciesName);
     }
 
     private static IEnumerable<ZaEncounterTableRecord> LoadTables(
         ZaWorkflowFile spawnerSource,
-        ZaWorkflowFile pokemonSource,
+        ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels)
     {
-        var pokemonRows = ZaPokemonDataDocument.Parse(pokemonSource.Bytes)
+        var pokemonRows = ZaPokemonDataDocument.Parse(encounterSource.Bytes)
             .Entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
             .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
@@ -156,7 +153,7 @@ internal sealed class ZaEncountersWorkflowService
                     continue;
                 }
 
-                var slots = ReadSlots(spawner.Value, pokemonRows, pokemonSource, labels).ToArray();
+                var slots = ReadSlots(spawner.Value, pokemonRows, encounterSource, labels).ToArray();
                 if (slots.Length == 0)
                 {
                     continue;
@@ -181,7 +178,7 @@ internal sealed class ZaEncountersWorkflowService
     private static IEnumerable<ZaEncounterSlotRecord> ReadSlots(
         PokemonSpawnerData spawner,
         IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows,
-        ZaWorkflowFile pokemonSource,
+        ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels)
     {
         for (var slot = 0; slot < spawner.EncountDataInfoListLength; slot++)
@@ -192,16 +189,17 @@ internal sealed class ZaEncountersWorkflowService
                 continue;
             }
 
-            pokemonRows.TryGetValue(encounter.Value.EncountDataId ?? string.Empty, out var pokemon);
+            var encounterDataId = encounter.Value.EncountDataId ?? string.Empty;
+            var pokemon = ResolvePokemonRow(encounterDataId, pokemonRows);
             var speciesId = pokemon?.DevNo ?? 0;
             var form = pokemon?.FormNo ?? 0;
             yield return new ZaEncounterSlotRecord(
                 slot,
                 pokemon?.SourceIndex ?? -1,
-                encounter.Value.EncountDataId ?? string.Empty,
+                encounterDataId,
                 speciesId,
                 pokemon is null
-                    ? $"Missing data: {encounter.Value.EncountDataId ?? "unknown"}"
+                    ? FormatUnresolvedEncounterData(encounterDataId)
                     : FormatEncounterSpeciesLabel(speciesId, form, labels),
                 form,
                 pokemon?.MinLevel ?? 0,
@@ -210,10 +208,43 @@ internal sealed class ZaEncountersWorkflowService
                 FormatTimeCondition(encounter.Value.AppearedTimeCondition),
                 FormatWeatherCondition(encounter.Value.AppearedWeatherCondition, encounter.Value),
                 new ZaEncounterProvenance(
-                    pokemonSource.RelativePath,
-                    pokemonSource.SourceLayer,
-                    pokemonSource.FileState));
+                    encounterSource.RelativePath,
+                    encounterSource.SourceLayer,
+                    encounterSource.FileState));
         }
+    }
+
+    private static ZaPokemonDataEntry? ResolvePokemonRow(
+        string encounterDataId,
+        IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows)
+    {
+        if (string.IsNullOrWhiteSpace(encounterDataId))
+        {
+            return null;
+        }
+
+        if (pokemonRows.TryGetValue(encounterDataId, out var exactRow))
+        {
+            return exactRow;
+        }
+
+        foreach (var suffix in EncounterDataIdSuffixes)
+        {
+            if (encounterDataId.EndsWith(suffix, StringComparison.Ordinal)
+                && pokemonRows.TryGetValue(encounterDataId[..^suffix.Length], out var suffixedRow))
+            {
+                return suffixedRow;
+            }
+        }
+
+        return null;
+    }
+
+    private static string FormatUnresolvedEncounterData(string encounterDataId)
+    {
+        return string.IsNullOrWhiteSpace(encounterDataId)
+            ? "Unresolved encounter data"
+            : $"Unresolved encounter data ({encounterDataId})";
     }
 
     private static IReadOnlyList<ZaEncounterEditableField> CreateEditableFields(ZaTextLabelLookup labels)

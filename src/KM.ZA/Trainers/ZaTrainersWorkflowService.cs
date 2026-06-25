@@ -52,6 +52,7 @@ internal sealed class ZaTrainersWorkflowService
 
     private static readonly IReadOnlyList<ZaTrainerEditableFieldOption> GenderOptions =
     [
+        new(-1, "Game default / random"),
         new(0, "Random"),
         new(1, "Male"),
         new(2, "Female"),
@@ -59,6 +60,7 @@ internal sealed class ZaTrainersWorkflowService
 
     private static readonly IReadOnlyList<ZaTrainerEditableFieldOption> NatureOptions =
     [
+        new(-1, "Random / game default"),
         new(0, "Default (game behavior)"),
         new(1, "Hardy (neutral)"),
         new(2, "Lonely (+Atk, -Def)"),
@@ -134,21 +136,21 @@ internal sealed class ZaTrainersWorkflowService
         CreateField(LastHandField, "Last hand", 0, 1, BooleanOptions, "boolean"),
         CreateField(FormField, "Form", short.MinValue, short.MaxValue),
         CreateField(LevelField, "Level", 0, 100),
-        CreateField(GenderField, "Gender", 0, 2, GenderOptions),
-        CreateField(AbilityField, "Ability mode", 0, 4, CreateAbilityModeOptions(ZaTrainerAbilitySet.Empty)),
-        CreateField(NatureField, "Nature", 0, 25, NatureOptions),
+        CreateField(GenderField, "Gender", -1, 2, GenderOptions),
+        CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaTrainerAbilitySet.Empty)),
+        CreateField(NatureField, "Nature", -1, 25, NatureOptions),
         CreateField(EvHpField, "HP EV", 0, int.MaxValue),
         CreateField(EvAttackField, "Attack EV", 0, int.MaxValue),
         CreateField(EvDefenseField, "Defense EV", 0, int.MaxValue),
         CreateField(EvSpecialAttackField, "Sp. Atk EV", 0, int.MaxValue),
         CreateField(EvSpecialDefenseField, "Sp. Def EV", 0, int.MaxValue),
         CreateField(EvSpeedField, "Speed EV", 0, int.MaxValue),
-        CreateField(IvHpField, "HP IV", 0, int.MaxValue),
-        CreateField(IvAttackField, "Attack IV", 0, int.MaxValue),
-        CreateField(IvDefenseField, "Defense IV", 0, int.MaxValue),
-        CreateField(IvSpecialAttackField, "Sp. Atk IV", 0, int.MaxValue),
-        CreateField(IvSpecialDefenseField, "Sp. Def IV", 0, int.MaxValue),
-        CreateField(IvSpeedField, "Speed IV", 0, int.MaxValue),
+        CreateField(IvHpField, "HP IV", -1, int.MaxValue),
+        CreateField(IvAttackField, "Attack IV", -1, int.MaxValue),
+        CreateField(IvDefenseField, "Defense IV", -1, int.MaxValue),
+        CreateField(IvSpecialAttackField, "Sp. Atk IV", -1, int.MaxValue),
+        CreateField(IvSpecialDefenseField, "Sp. Def IV", -1, int.MaxValue),
+        CreateField(IvSpeedField, "Speed IV", -1, int.MaxValue),
         CreateField(ShinyField, "Shiny mode", 0, 1, ShinyModeOptions),
     ];
 
@@ -246,7 +248,7 @@ internal sealed class ZaTrainersWorkflowService
 
         return new ZaTrainerRecord(
             trainerId,
-            labels.TrainerNameByIndex(trainerId),
+            labels.TrainerName(trainer.TrainerId, trainerId),
             classId,
             className,
             location,
@@ -330,7 +332,7 @@ internal sealed class ZaTrainersWorkflowService
             itemId,
             itemId > 0 ? labels.Item(itemId) : null,
             moveIds,
-            moveIds.Select(move => move == 0 ? "None" : labels.Move(move)).ToArray(),
+            moveIds.Select(move => move <= 0 ? "None" : labels.Move(move)).ToArray(),
             pokemon.Sex,
             FormatGender(pokemon.Sex),
             pokemon.Ability,
@@ -505,6 +507,7 @@ internal sealed class ZaTrainersWorkflowService
             new(2, FormatAbilitySlot(abilities.Ability1, "Ability 1")),
             new(3, FormatAbilitySlot(abilities.Ability2, "Ability 2")),
             new(4, FormatAbilitySlot(abilities.HiddenAbility, "Hidden Ability")),
+            new(255, "Game default / random"),
         ];
     }
 
@@ -517,6 +520,7 @@ internal sealed class ZaTrainersWorkflowService
     {
         return value switch
         {
+            -1 => "Game default / random",
             0 => "Random",
             1 => "Male",
             2 => "Female",

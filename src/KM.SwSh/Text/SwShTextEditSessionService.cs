@@ -405,17 +405,6 @@ public sealed class SwShTextEditSessionService
             return false;
         }
 
-        if (!SwShTextWorkflowService.IsSafelyEditable(currentValue)
-            || !SwShTextWorkflowService.IsSafelyEditable(value))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Text lines with variable placeholders are read-only in this text editing slice.",
-                field: TextValueField,
-                expected: "Plain text without variable placeholders"));
-            return false;
-        }
-
         return true;
     }
 

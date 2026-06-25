@@ -9,6 +9,7 @@ using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
+using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
 using KM.Api.TypeChart;
 using KM.Api.Trainers;
@@ -27,6 +28,7 @@ using KM.ZA.StaticEncounters;
 using KM.ZA.TypeChart;
 using KM.ZA.Trainers;
 using KM.ZA.Trades;
+using KM.ZA.DumpImport;
 using KM.ZA.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -90,6 +92,24 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
+    }
+
+    public static LoadSpreadsheetImportWorkflowResponse ToDto(ZaDumpImportWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadSpreadsheetImportWorkflowResponse(ToSpreadsheetImportWorkflowDto(workflow));
+    }
+
+    public static PreviewSpreadsheetImportResponse ToDto(ZaDumpImportExecutionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new PreviewSpreadsheetImportResponse(
+            ToSpreadsheetImportWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            ToDto(result.Preview),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     public static LoadMovesWorkflowResponse ToDto(ZaMovesWorkflow workflow)
@@ -764,6 +784,83 @@ public static class ZaBridgeMapper
             cell.DefenseTypeIndex,
             cell.Effectiveness,
             cell.VanillaEffectiveness);
+    }
+
+    private static SpreadsheetImportWorkflowDto ToSpreadsheetImportWorkflowDto(
+        ZaDumpImportWorkflow workflow)
+    {
+        return new SpreadsheetImportWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Profiles.Select(ToDto).ToArray(),
+            new SpreadsheetImportWorkflowStatsDto(
+                workflow.Stats.TotalProfileCount,
+                workflow.Stats.TotalColumnCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportProfileRecordDto ToDto(ZaDumpImportProfileRecord profile)
+    {
+        return new SpreadsheetImportProfileRecordDto(
+            profile.ProfileId,
+            profile.Name,
+            profile.SourceKind,
+            profile.TargetWorkflow,
+            profile.Status,
+            profile.Description,
+            profile.Columns.Select(ToDto).ToArray(),
+            ToDto(profile.Provenance));
+    }
+
+    private static SpreadsheetImportColumnRecordDto ToDto(ZaDumpImportColumnRecord column)
+    {
+        return new SpreadsheetImportColumnRecordDto(
+            column.Column,
+            column.Header,
+            column.ValueKind,
+            column.IsRequired,
+            column.Description);
+    }
+
+    private static SpreadsheetImportProvenanceDto ToDto(ZaDumpImportProvenance provenance)
+    {
+        return new SpreadsheetImportProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static SpreadsheetImportPreviewDto ToDto(ZaDumpImportPreview preview)
+    {
+        return new SpreadsheetImportPreviewDto(
+            preview.ProfileId,
+            preview.SourcePath,
+            preview.TotalRowCount,
+            preview.AcceptedRowCount,
+            preview.RejectedRowCount,
+            preview.SkippedRowCount,
+            preview.Rows.Select(ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportRowPreviewRecordDto ToDto(ZaDumpImportRowPreviewRecord row)
+    {
+        return new SpreadsheetImportRowPreviewRecordDto(
+            row.RowNumber,
+            row.RecordId,
+            row.Status,
+            row.Summary,
+            row.Cells.Select(ToDto).ToArray(),
+            row.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportCellPreviewRecordDto ToDto(ZaDumpImportCellPreviewRecord cell)
+    {
+        return new SpreadsheetImportCellPreviewRecordDto(
+            cell.Header,
+            cell.Field,
+            cell.Value,
+            cell.Status,
+            cell.Message);
     }
 
     private static ZaModMergerWorkflowDto ToWorkflowDto(ZaModMergerWorkflow workflow)

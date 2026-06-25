@@ -43,6 +43,75 @@ public sealed class ZaCacheManagerTests
         Assert.Equal([0x7A, 0x0A], bytes);
     }
 
+    [Fact]
+    public void ClearRemovesActiveProjectCache()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(ZaCacheManager.WarmupVirtualPaths[0], [0x20])]);
+        var paths = temp.CreatePaths();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        cache.UpdateSettings(ZaCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.True(warmup.CacheSizeBytes > 0);
+
+        var cleared = cache.Clear(paths);
+
+        Assert.False(cleared.IsActiveProjectPreserved);
+        Assert.Equal(0, cleared.WarmupCompleted);
+        Assert.Equal(0, cleared.CacheSizeBytes);
+    }
+
+    [Fact]
+    public void ChangingCacheModeInvalidatesExistingProjectCache()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(ZaCacheManager.WarmupVirtualPaths[0], [0x30])]);
+        var paths = temp.CreatePaths();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        cache.UpdateSettings(ZaCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.True(warmup.CacheSizeBytes > 0);
+
+        cache.UpdateSettings(ZaCacheMode.Performance, 2L * 1024 * 1024 * 1024, paths);
+        var status = cache.GetStatus(paths);
+
+        Assert.Equal(ZaCacheMode.Performance, status.Settings.Mode);
+        Assert.Equal(0, status.WarmupCompleted);
+        Assert.Equal(0, status.CacheSizeBytes);
+    }
+
+    [Fact]
+    public void OutputRootChangesInvalidateCompletedProjectCache()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(ZaCacheManager.WarmupVirtualPaths[0], [0x40])]);
+        var paths = temp.CreatePaths();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        cache.UpdateSettings(ZaCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(1, warmup.WarmupCompleted);
+
+        File.WriteAllText(Path.Combine(temp.OutputRootPath, "romfs_override.bin"), "changed");
+        var changedStatus = cache.GetStatus(paths);
+
+        Assert.Equal(0, changedStatus.WarmupCompleted);
+        Assert.True(changedStatus.WarmupTotal > 0);
+    }
+
     private static void WriteSyntheticArchive(
         string romFsRoot,
         IReadOnlyList<(string VirtualPath, byte[] Bytes)> files)

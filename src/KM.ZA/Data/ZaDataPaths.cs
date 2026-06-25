@@ -9,6 +9,7 @@ public static class ZaDataPaths
     public const string ItemDataArray = "world/exl/item_data/item_data/item_data.bin";
     public const string TrainerDataArray = "world/ik_data/trainer/trdata/trdata_array.bin";
     public const string PokemonDataArray = "world/ik_data/field/pokemon/pokemon_data/pokemon_data/pokemon_data_array.bin";
+    public const string EncountDataArray = "world/ik_data/field/pokemon/encount_data/encount_data/encount_data_array.bin";
     public const string PokemonSpawnerDataArray = "world/ik_data/field/pokemon_spawner/pokemon_spawner_data/pokemon_spawner_data_array.bin";
     public const string PokemonSpawnerTransformArray = "world/ik_data/field/spawner_transform_data/pokemon_spawner_transform/pokemon_spawner_transform/pokemon_spawner_transform_array.bin";
     public const string ItemBallSpawnerDataArray = "world/ik_data/field/item_ball/item_ball_spawner_data/item_ball_spawner_data/item_ball_spawner_data_array.bin";
@@ -33,9 +34,15 @@ public static class ZaDataPaths
 
     public static string PlaceNames(string language) => CommonMessage(language, "place_name.dat");
 
+    public static string PlaceNameKeys(string language) => CommonMessage(language, "place_name.tbl");
+
     public static string TrainerNames(string language) => CommonMessage(language, "trname.dat");
 
+    public static string TrainerNameKeys(string language) => CommonMessage(language, "trname.tbl");
+
     public static string TrainerTypes(string language) => CommonMessage(language, "trtype.dat");
+
+    public static string TrainerTypeKeys(string language) => CommonMessage(language, "trtype.tbl");
 
     private static string CommonMessage(string language, string fileName)
     {

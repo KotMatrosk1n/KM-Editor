@@ -1831,6 +1831,49 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTextEditorSupportsBoundedSearchQueries(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        const string scriptPath = "message/dat/English/script/common_0025.dat";
+        temp.WriteBaseRomFsFile(
+            scriptPath,
+            CreateTextTable(2, (0, "Alpha script line"), (1, "Second script line")));
+        var paths = temp.Paths with { SelectedGame = game, GameTextLanguage = "en" };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+        var query = new TextWorkflowQueryDto("Second script", 0, 1);
+
+        var load = Dispatch<LoadTextWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(paths, query),
+            "request-sv-text-query-load");
+
+        AssertSuccess(load);
+        var entry = Assert.Single(load.Payload!.Workflow.Entries);
+        Assert.Equal($"romfs/{scriptPath}", entry.SourceFile);
+        Assert.Equal(1, entry.LineIndex);
+        Assert.Equal("Second script line", entry.Value);
+        Assert.Equal(1, load.Payload.Workflow.Stats.TotalTextEntryCount);
+
+        var update = Dispatch<UpdateTextEntryResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(paths, Session: null, entry.TextKey, "Renamed script line", Query: query),
+            "request-sv-text-query-update");
+
+        AssertSuccess(update);
+        var updatedEntry = Assert.Single(update.Payload!.Workflow.Entries);
+        Assert.Equal(entry.TextKey, updatedEntry.TextKey);
+        Assert.Equal("Renamed script line", updatedEntry.Value);
+        Assert.Contains(update.Payload.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.text" && edit.RecordId == entry.TextKey && edit.NewValue == "Renamed script line");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletTextEditorStagesAndAppliesMessageEdits(
         ProjectGameDto game,
         ulong titleId)
@@ -1838,7 +1881,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         const string scriptPath = "message/dat/English/script/common_0025.dat";
-        temp.WriteBaseRomFsFile(scriptPath, CreateTextTable(1, (0, "Original script line")));
+        temp.WriteBaseRomFsFile(scriptPath, CreateTextTable(1, (0, "[VAR 0100] Original script line")));
         var paths = temp.Paths with { SelectedGame = game, GameTextLanguage = "en" };
         var dispatcher = CreateDispatcherWithSvCache(temp);
         var load = Dispatch<LoadTextWorkflowResponse>(
@@ -1849,15 +1892,17 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(load);
         var entry = load.Payload!.Workflow.Entries.Single(entry =>
             entry.SourceFile == $"romfs/{scriptPath}" && entry.LineIndex == 0);
+        Assert.True(entry.CanEdit);
+        Assert.Null(entry.EditBlockedReason);
 
         var update = Dispatch<UpdateTextEntryResponse>(
             dispatcher,
             KmCommandNames.UpdateTextEntry,
-            new UpdateTextEntryRequest(paths, Session: null, entry.TextKey, "Updated script line"),
+            new UpdateTextEntryRequest(paths, Session: null, entry.TextKey, "[VAR 0100] Updated script line"),
             "request-sv-text-update");
         AssertSuccess(update);
         Assert.Contains(update.Payload!.Session.PendingEdits, edit =>
-            edit.Domain == "workflow.text" && edit.RecordId == entry.TextKey && edit.NewValue == "Updated script line");
+            edit.Domain == "workflow.text" && edit.RecordId == entry.TextKey && edit.NewValue == "[VAR 0100] Updated script line");
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -1883,7 +1928,7 @@ public sealed class ScarletVioletBridgeTests
         var outputText = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
             scriptPath.Replace('/', Path.DirectorySeparatorChar))));
-        Assert.Equal("Updated script line", Assert.Single(outputText.Lines).Text);
+        Assert.Equal("[VAR 0100] Updated script line", Assert.Single(outputText.Lines).Text);
     }
 
     [Theory]

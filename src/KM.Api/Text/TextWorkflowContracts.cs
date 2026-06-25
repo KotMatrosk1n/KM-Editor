@@ -7,7 +7,14 @@ using KM.Api.Workflows;
 
 namespace KM.Api.Text;
 
-public sealed record LoadTextWorkflowRequest(ProjectPathsDto Paths);
+public sealed record TextWorkflowQueryDto(
+    string? SearchText,
+    int? Offset,
+    int? Limit);
+
+public sealed record LoadTextWorkflowRequest(
+    ProjectPathsDto Paths,
+    TextWorkflowQueryDto? Query = null);
 
 public sealed record TextProvenanceDto(
     string SourceFile,
@@ -60,7 +67,8 @@ public sealed record UpdateTextEntryRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
     string TextKey,
-    string Value);
+    string Value,
+    TextWorkflowQueryDto? Query = null);
 
 public sealed record UpdateTextEntryResponse(
     TextWorkflowDto Workflow,

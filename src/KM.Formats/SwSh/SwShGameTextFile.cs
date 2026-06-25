@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 
 namespace KM.Formats.SwSh;
@@ -272,6 +273,12 @@ public sealed class SwShGameTextFile
                 continue;
             }
 
+            if (text[i] == '[' && TryAppendVariable(text, i, values, out var consumed))
+            {
+                i += consumed - 1;
+                continue;
+            }
+
             values.Add(text[i]);
         }
 
@@ -284,5 +291,60 @@ public sealed class SwShGameTextFile
         }
 
         return data;
+    }
+
+    private static bool TryAppendVariable(string text, int start, ICollection<ushort> values, out int consumed)
+    {
+        consumed = 0;
+        const string prefix = "[VAR ";
+        if (!text.AsSpan(start).StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var end = text.IndexOf(']', start + prefix.Length);
+        if (end < 0)
+        {
+            return false;
+        }
+
+        var body = text[(start + prefix.Length)..end];
+        var argumentStart = body.IndexOf('(', StringComparison.Ordinal);
+        var variableText = argumentStart < 0 ? body : body[..argumentStart];
+        if (!ushort.TryParse(variableText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var variable))
+        {
+            return false;
+        }
+
+        var arguments = new List<ushort>();
+        if (argumentStart >= 0)
+        {
+            if (!body.EndsWith(")", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var argumentText = body[(argumentStart + 1)..^1];
+            foreach (var argumentPart in argumentText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!ushort.TryParse(argumentPart, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var argument))
+                {
+                    return false;
+                }
+
+                arguments.Add(argument);
+            }
+        }
+
+        values.Add(VariableMarker);
+        values.Add(checked((ushort)(arguments.Count + 1)));
+        values.Add(variable);
+        foreach (var argument in arguments)
+        {
+            values.Add(argument);
+        }
+
+        consumed = end - start + 1;
+        return true;
     }
 }

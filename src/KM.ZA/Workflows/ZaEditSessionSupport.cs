@@ -56,7 +56,7 @@ internal static class ZaEditSessionSupport
                     "Pokemon Legends Z-A data edits require the support folder to be configured in Project Setup.",
                     domain,
                     field: "pokemonLegendsZASupportFolderPath",
-                    expected: "Configured Pokemon Legends Z-A support folder"));
+                    expected: "Folder containing oo2core_8_win64.dll"));
                 return false;
             }
 

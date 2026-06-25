@@ -36,7 +36,8 @@ public sealed class SvTextEditSessionService
         ProjectPaths paths,
         EditSession? session,
         string textKey,
-        string value)
+        string value,
+        SvTextWorkflowQuery? query = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(textKey);
@@ -44,7 +45,7 @@ public sealed class SvTextEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = textWorkflowService.Load(project);
+        var workflow = textWorkflowService.Load(project, query);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!CanEditText(project, workflow, diagnostics))
@@ -406,17 +407,6 @@ public sealed class SvTextEditSessionService
                 $"Text value must be {SvTextWorkflowService.MaximumTextLength} characters or fewer.",
                 field: TextValueField,
                 expected: "Safe text line length"));
-            return false;
-        }
-
-        if (!SvTextWorkflowService.IsSafelyEditable(currentValue)
-            || !SvTextWorkflowService.IsSafelyEditable(value))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Text lines with variable placeholders are read-only in this text editing slice.",
-                field: TextValueField,
-                expected: "Plain text without variable placeholders"));
             return false;
         }
 

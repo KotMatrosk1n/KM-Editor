@@ -48,11 +48,11 @@ internal static class ZaWorkflowSupport
     {
         return new ValidationDiagnostic(
             DiagnosticSeverity.Warning,
-            "Pokemon Legends Z-A support folder is not configured. Set it in Project Setup to enable Z-A data editors.",
+            "oo2core_8_win64.dll folder is not configured. Set it in Project Setup to enable Z-A data editors.",
             File: null,
             Domain: "za.editor",
             Field: "pokemonLegendsZASupportFolderPath",
-            Expected: "Configured Pokemon Legends Z-A support folder");
+            Expected: "Folder containing oo2core_8_win64.dll");
     }
 
     public static ValidationDiagnostic Error(string message, string? file = null, string? field = null, string? expected = null)

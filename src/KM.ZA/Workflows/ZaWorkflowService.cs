@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
@@ -35,6 +36,8 @@ public sealed class ZaWorkflowService
     private readonly ZaGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly ZaTradePokemonWorkflowService tradePokemonWorkflowService;
     private readonly ZaTypeChartWorkflowService typeChartWorkflowService;
+    private readonly ZaDumpImportWorkflowService dumpImportWorkflowService;
+    private readonly ZaDumpImportExecutionService dumpImportExecutionService;
     private readonly ZaModMergerWorkflowService modMergerWorkflowService;
     private readonly ZaItemsEditSessionService itemsEditSessionService;
     private readonly ZaPokemonEditSessionService pokemonEditSessionService;
@@ -66,6 +69,7 @@ public sealed class ZaWorkflowService
         giftPokemonWorkflowService = new ZaGiftPokemonWorkflowService(fileSource);
         tradePokemonWorkflowService = new ZaTradePokemonWorkflowService(fileSource);
         typeChartWorkflowService = new ZaTypeChartWorkflowService();
+        dumpImportWorkflowService = new ZaDumpImportWorkflowService(itemsWorkflowService);
         modMergerWorkflowService = new ZaModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new ZaItemsEditSessionService(
             this.projectWorkspaceService,
@@ -110,6 +114,11 @@ public sealed class ZaWorkflowService
         typeChartEditSessionService = new ZaTypeChartEditSessionService(
             this.projectWorkspaceService,
             typeChartWorkflowService);
+        dumpImportExecutionService = new ZaDumpImportExecutionService(
+            this.projectWorkspaceService,
+            itemsWorkflowService,
+            itemsEditSessionService,
+            dumpImportWorkflowService);
     }
 
     public ZaCacheStatus GetCacheStatus(ProjectPaths? paths = null)
@@ -159,6 +168,7 @@ public sealed class ZaWorkflowService
             itemsWorkflowService.CreateSummary(project),
             shopsWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
+            dumpImportWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
     }
@@ -185,6 +195,23 @@ public sealed class ZaWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return movesWorkflowService.Load(project);
+    }
+
+    public ZaDumpImportWorkflow LoadDumpImport(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return dumpImportWorkflowService.Load(project);
+    }
+
+    public ZaDumpImportExecutionResult PreviewDumpImport(
+        ProjectPaths paths,
+        string profileId,
+        string sourcePath,
+        EditSession? session)
+    {
+        return dumpImportExecutionService.Preview(paths, profileId, sourcePath, session);
     }
 
     public ZaShopsWorkflow LoadShops(ProjectPaths paths)

@@ -33,7 +33,7 @@ export function createSvCacheBridgeFixture(): Pick<
     clearSvCache: () => {
       svCacheStatus = createSvCacheStatusFixture({
         cacheSizeBytes: 0,
-        isActiveProjectPreserved: true,
+        isActiveProjectPreserved: false,
         message: 'S/V cache cleared.',
         progressPercent: 0,
         warmupCompleted: 0
@@ -94,7 +94,7 @@ export function createZaCacheBridgeFixture(): Pick<
     clearZaCache: () => {
       zaCacheStatus = createZaCacheStatusFixture({
         cacheSizeBytes: 0,
-        isActiveProjectPreserved: true,
+        isActiveProjectPreserved: false,
         message: 'Z-A cache cleared.',
         progressPercent: 0,
         warmupCompleted: 0

@@ -82,6 +82,7 @@ using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
+using KM.SV.Text;
 using KM.ZA.Gifts;
 using KM.ZA.GameDump;
 using KM.ZA.ModMerger;
@@ -718,7 +719,7 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<LoadTextWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadText(paths))
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadText(paths, ToSvTextWorkflowQuery(request.Payload.Query)))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadText(paths));
 
         return SerializeSuccess(response, request.RequestId);
@@ -736,7 +737,8 @@ public sealed class ProjectBridgeDispatcher
                 paths,
                 session,
                 request.Payload.TextKey,
-                request.Payload.Value))
+                request.Payload.Value,
+                ToSvTextWorkflowQuery(request.Payload.Query)))
             : SwShBridgeMapper.ToDto(textEditSessionService.UpdateEntry(
                 paths,
                 session,
@@ -744,6 +746,16 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private static SvTextWorkflowQuery? ToSvTextWorkflowQuery(TextWorkflowQueryDto? query)
+    {
+        return query is null
+            ? null
+            : new SvTextWorkflowQuery(
+                query.SearchText,
+                query.Offset ?? 0,
+                query.Limit ?? SvTextWorkflowService.DefaultQueryLimit);
     }
 
     private string DispatchLoadTrainersWorkflow(string requestJson)
@@ -2039,9 +2051,11 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadSpreadsheetImportWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadDumpImport(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadSpreadsheetImport(paths));
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadDumpImport(paths))
+            : IsScarletViolet(paths)
+                ? SvBridgeMapper.ToDto(svWorkflowService.LoadDumpImport(paths))
+                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadSpreadsheetImport(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2053,17 +2067,23 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.PreviewDumpImport(
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.PreviewDumpImport(
                 paths,
                 request.Payload.ProfileId,
                 request.Payload.SourcePath,
                 session))
-            : SwShBridgeMapper.ToDto(spreadsheetImportExecutionService.Preview(
-                paths,
-                request.Payload.ProfileId,
-                request.Payload.SourcePath,
-                session));
+            : IsScarletViolet(paths)
+                ? SvBridgeMapper.ToDto(svWorkflowService.PreviewDumpImport(
+                    paths,
+                    request.Payload.ProfileId,
+                    request.Payload.SourcePath,
+                    session))
+                : SwShBridgeMapper.ToDto(spreadsheetImportExecutionService.Preview(
+                    paths,
+                    request.Payload.ProfileId,
+                    request.Payload.SourcePath,
+                    session));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3177,6 +3197,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.StageTypeChartUninstall or
             KmCommandNames.StartEditSession or
             KmCommandNames.ValidateEditSession or
+            KmCommandNames.LoadSpreadsheetImportWorkflow or
+            KmCommandNames.PreviewSpreadsheetImport or
             KmCommandNames.CreateChangePlan or
             KmCommandNames.ApplyChangePlan or
             KmCommandNames.GetZaCacheStatus or

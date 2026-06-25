@@ -45,9 +45,29 @@ internal sealed class ZaShopsWorkflowService
         new(4, "have_item_whole_condition", "Have item condition"),
     ];
 
+    private static readonly IReadOnlyList<ConditionComparisonDefinition> ConditionComparisons =
+    [
+        new(0, "Always / present"),
+        new(1, "Equal to"),
+        new(2, "Not equal to"),
+        new(3, "Less than"),
+        new(4, "Less than or equal"),
+        new(5, "Greater than or equal"),
+        new(6, "Greater than"),
+    ];
+
     private static readonly IReadOnlyList<ZaShopEditableFieldOption> ConditionKindOptions =
         ConditionKinds
             .Select(kind => new ZaShopEditableFieldOption(kind.Value, $"{kind.Value.ToString(CultureInfo.InvariantCulture)} {kind.Label}", kind.Label, 0))
+            .ToArray();
+
+    private static readonly IReadOnlyList<ZaShopEditableFieldOption> ConditionComparisonOptions =
+        ConditionComparisons
+            .Select(comparison => new ZaShopEditableFieldOption(
+                comparison.Value,
+                $"{comparison.Value.ToString(CultureInfo.InvariantCulture)} {comparison.Label}",
+                comparison.Label,
+                0))
             .ToArray();
 
     private readonly ZaWorkflowFileSource fileSource;
@@ -373,7 +393,8 @@ internal sealed class ZaShopsWorkflowService
             [ConditionKindField] = firstCondition is null
                 ? FormatConditionKind(ConditionKinds[0].Token)
                 : FormatConditionKind(firstCondition.Condition),
-            [ConditionArgumentsField] = FormatConditionSummary(firstCondition),
+            [ConditionComparisonField] = FormatConditionComparison(firstCondition?.Comparison ?? 0),
+            [ConditionArgumentsField] = FormatConditionArguments(firstCondition, itemLookup),
         };
 
         return new ZaShopInventoryRecord(
@@ -478,7 +499,15 @@ internal sealed class ZaShopsWorkflowService
         return FormatIdentifier(master.MessageLabel);
     }
 
-    private static string FormatConditionSummary(ShopAppearCondition? condition)
+    private static string FormatConditionComparison(uint comparison)
+    {
+        return ConditionComparisons.FirstOrDefault(definition => definition.Value == (int)comparison)?.Label
+            ?? $"Comparison {comparison.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string FormatConditionArguments(
+        ShopAppearCondition? condition,
+        IReadOnlyDictionary<int, ZaItemRecord> itemLookup)
     {
         if (condition is null)
         {
@@ -489,9 +518,35 @@ internal sealed class ZaShopsWorkflowService
         var arguments = condition.Arguments.Count == 0
             ? string.Empty
             : string.Join(", ", condition.Arguments);
-        return string.IsNullOrEmpty(arguments)
-            ? $"{label} ({condition.Comparison.ToString(CultureInfo.InvariantCulture)})"
-            : $"{label} ({condition.Comparison.ToString(CultureInfo.InvariantCulture)}; {arguments})";
+
+        return ConditionTokenToValue(condition.Condition) switch
+        {
+            0 => "No arguments",
+            1 => string.IsNullOrEmpty(arguments) ? "Scenario phase value" : $"Scenario phase {arguments}",
+            2 => string.IsNullOrEmpty(arguments) ? "Flag value" : $"Flag {arguments}",
+            3 => string.IsNullOrEmpty(arguments) ? "Work value" : $"Work value {arguments}",
+            4 => FormatHaveItemArguments(condition.Arguments, itemLookup),
+            _ => string.IsNullOrEmpty(arguments) ? label : $"{label}: {arguments}",
+        };
+    }
+
+    private static string FormatHaveItemArguments(
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<int, ZaItemRecord> itemLookup)
+    {
+        if (arguments.Count == 0)
+        {
+            return "Item requirement";
+        }
+
+        if (int.TryParse(arguments[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var itemId)
+            && itemLookup.TryGetValue(itemId, out var item))
+        {
+            var quantitySuffix = arguments.Count > 1 ? $" x {string.Join(", ", arguments.Skip(1))}" : string.Empty;
+            return $"{item.Name} ({itemId.ToString(CultureInfo.InvariantCulture)}){quantitySuffix}";
+        }
+
+        return $"Item requirement {string.Join(", ", arguments)}";
     }
 
     private static string FormatIdentifier(string? value)
@@ -523,7 +578,7 @@ internal sealed class ZaShopsWorkflowService
             CreateField(ItemIdField, "Item", "integer", MinimumItemId, MaximumItemId, itemOptions),
             CreateField(DisplayIndexField, "Display order", "integer", 0, int.MaxValue),
             CreateField(ConditionKindField, "First condition", "integer", 0, 4, ConditionKindOptions),
-            CreateField(ConditionComparisonField, "Condition comparison", "integer", 0, int.MaxValue),
+            CreateField(ConditionComparisonField, "Condition comparison", "integer", 0, int.MaxValue, ConditionComparisonOptions),
             CreateField(ConditionArgumentsField, "Condition arguments", "text", null, null),
         ];
     }
@@ -582,6 +637,10 @@ internal sealed class ZaShopsWorkflowService
     private sealed record ConditionKindDefinition(
         int Value,
         string Token,
+        string Label);
+
+    private sealed record ConditionComparisonDefinition(
+        int Value,
         string Label);
 
     private sealed record ResolvedItem(

@@ -8,6 +8,14 @@ internal static class SvGameTextLanguage
 {
     public const string English = "English";
 
+    public static IReadOnlyList<string> SupportedMessageLanguages { get; } =
+    [
+        English,
+        "Spanish",
+        "French",
+        "German",
+    ];
+
     public static string Resolve(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);

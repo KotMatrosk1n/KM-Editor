@@ -211,7 +211,7 @@ internal sealed class ZaEncountersEditSessionService
             paths,
             session,
             ZaEditSessionSupport.EncountersDomain,
-            ZaDataPaths.PokemonDataArray,
+            ZaDataPaths.EncountDataArray,
             "Wild Encounters",
             validation.Diagnostics,
             outputMode);
@@ -251,7 +251,7 @@ internal sealed class ZaEncountersEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var workflow = encountersWorkflowService.Load(project);
-            var source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            var source = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             var document = ZaPokemonDataDocument.Parse(source.Bytes);
             foreach (var edit in session.PendingEdits)
             {
@@ -263,8 +263,8 @@ internal sealed class ZaEncountersEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PokemonDataArray, document.Write(), outputMode);
-            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PokemonDataArray, outputMode));
+            ZaWorkflowFileSource.Write(paths, ZaDataPaths.EncountDataArray, document.Write(), outputMode);
+            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.EncountDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
@@ -281,7 +281,7 @@ internal sealed class ZaEncountersEditSessionService
                 DiagnosticSeverity.Error,
                 $"Wild Encounters output could not be written: {exception.Message}",
                 ZaEditSessionSupport.EncountersDomain,
-                file: $"romfs/{ZaDataPaths.PokemonDataArray}",
+                file: $"romfs/{ZaDataPaths.EncountDataArray}",
                 expected: "Readable source and writable output root"));
         }
 
@@ -308,10 +308,10 @@ internal sealed class ZaEncountersEditSessionService
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Encounter slot is missing its linked Pokemon data row and cannot be edited.",
+                "Encounter slot is missing its linked encounter data row and cannot be edited.",
                 ZaEditSessionSupport.EncountersDomain,
                 field: "slot",
-                expected: "Encounter slot linked to Pokemon Data"));
+                expected: "Encounter slot linked to Encount Data"));
             return null;
         }
 
@@ -496,10 +496,10 @@ internal sealed class ZaEncountersEditSessionService
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending encounter edit target is not present in the source Pokemon Data array.",
+                "Pending encounter edit target is not present in the source encounter data array.",
                 ZaEditSessionSupport.EncountersDomain,
                 field: "slot",
-                expected: "Existing linked Pokemon Data encounter row"));
+                expected: "Existing linked encounter data row"));
             return;
         }
 

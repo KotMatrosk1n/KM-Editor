@@ -12,11 +12,13 @@ namespace KM.SV.Text;
 
 public sealed class SvTextWorkflowService
 {
-    public const string MessageRootPath = "message/dat";
+    public const string MessageRootPath = SvMessagePathResolver.MessageRootPath;
     public const string WorkflowLabel = "Text and Dialogue Map";
     public const string WorkflowDescription = "Text entries, dialogue references, and source provenance.";
     public const string TextValueField = "value";
     public const int MaximumTextLength = 4096;
+    public const int DefaultQueryLimit = 500;
+    public const int MaximumQueryLimit = 1000;
 
     private static readonly IReadOnlyList<SvTextEditableField> EditableFields =
     [
@@ -41,12 +43,13 @@ public sealed class SvTextWorkflowService
             WorkflowDescription);
     }
 
-    public SvTextWorkflow Load(OpenedProject project)
+    public SvTextWorkflow Load(OpenedProject project, SvTextWorkflowQuery? query = null)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         var summary = CreateSummary(project);
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
+        var normalizedQuery = NormalizeQuery(query);
         if (summary.Availability == SvWorkflowAvailability.Disabled)
         {
             return CreateWorkflow(
@@ -75,6 +78,8 @@ public sealed class SvTextWorkflowService
         var entries = new List<SvTextEntryRecord>();
         var dialogueReferences = new List<SvDialogueReferenceRecord>();
         var parsedSourceFileCount = 0;
+        var scannedTextEntryCount = 0;
+        var matchedTextEntryCount = 0;
 
         foreach (var source in textSources)
         {
@@ -89,29 +94,55 @@ public sealed class SvTextWorkflowService
                 for (var lineIndex = 0; lineIndex < textFile.Lines.Count; lineIndex++)
                 {
                     var line = textFile.Lines[lineIndex];
-                    var textId = entries.Count;
-                    var canEdit = IsSafelyEditable(line.Text);
+                    var textId = scannedTextEntryCount++;
                     var label = CreateTextLabel(context, lineIndex);
-                    var entry = new SvTextEntryRecord(
+                    if (normalizedQuery is not null)
+                    {
+                        if (!MatchesQuery(
+                            normalizedQuery.SearchText,
+                            textId,
+                            source.Language,
+                            sourceFile.RelativePath,
+                            context,
+                            label,
+                            lineIndex,
+                            line.Text))
+                        {
+                            continue;
+                        }
+
+                        if (matchedTextEntryCount++ < normalizedQuery.Offset)
+                        {
+                            continue;
+                        }
+
+                        if (entries.Count >= normalizedQuery.Limit)
+                        {
+                            break;
+                        }
+                    }
+
+                    AddTextRecord(
+                        entries,
+                        dialogueReferences,
                         textId,
-                        CreateTextKey(sourceFile.RelativePath, lineIndex),
-                        label,
-                        source.Language,
-                        sourceFile.RelativePath,
+                        source,
+                        sourceFile,
+                        context,
                         lineIndex,
                         line.Text,
-                        canEdit,
-                        canEdit ? null : "Variable placeholders are read-only in this text editing slice.",
+                        label,
                         provenance);
 
-                    entries.Add(entry);
-                    dialogueReferences.Add(new SvDialogueReferenceRecord(
-                        CreateDialogueId(context, lineIndex),
-                        label,
-                        textId,
-                        context,
-                        CreatePreview(line.Text),
-                        provenance));
+                    if (normalizedQuery is not null && entries.Count >= normalizedQuery.Limit)
+                    {
+                        break;
+                    }
+                }
+
+                if (normalizedQuery is not null && entries.Count >= normalizedQuery.Limit)
+                {
+                    break;
                 }
             }
             catch (InvalidDataException exception)
@@ -141,6 +172,80 @@ public sealed class SvTextWorkflowService
         }
 
         return CreateWorkflow(summary, entries, dialogueReferences, diagnostics, parsedSourceFileCount);
+    }
+
+    private static SvTextWorkflowQuery? NormalizeQuery(SvTextWorkflowQuery? query)
+    {
+        if (query is null)
+        {
+            return null;
+        }
+
+        var searchText = string.IsNullOrWhiteSpace(query.SearchText)
+            ? null
+            : query.SearchText.Trim();
+        return new SvTextWorkflowQuery(
+            searchText,
+            Math.Max(0, query.Offset),
+            Math.Clamp(query.Limit <= 0 ? DefaultQueryLimit : query.Limit, 1, MaximumQueryLimit));
+    }
+
+    private static bool MatchesQuery(
+        string? searchText,
+        int textId,
+        string language,
+        string sourceFile,
+        string context,
+        string label,
+        int lineIndex,
+        string value)
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        return sourceFile.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || textId.ToString(CultureInfo.InvariantCulture).Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || language.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || context.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || label.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || value.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || lineIndex.ToString(CultureInfo.InvariantCulture).Contains(searchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AddTextRecord(
+        ICollection<SvTextEntryRecord> entries,
+        ICollection<SvDialogueReferenceRecord> dialogueReferences,
+        int textId,
+        TextFileSource source,
+        SvWorkflowFile sourceFile,
+        string context,
+        int lineIndex,
+        string value,
+        string label,
+        SvTextProvenance provenance)
+    {
+        var entry = new SvTextEntryRecord(
+            textId,
+            CreateTextKey(sourceFile.RelativePath, lineIndex),
+            label,
+            source.Language,
+            sourceFile.RelativePath,
+            lineIndex,
+            value,
+            CanEdit: true,
+            EditBlockedReason: null,
+            provenance);
+
+        entries.Add(entry);
+        dialogueReferences.Add(new SvDialogueReferenceRecord(
+            CreateDialogueId(context, lineIndex),
+            label,
+            textId,
+            context,
+            CreatePreview(value),
+            provenance));
     }
 
     internal static string CreateTextKey(string sourceFile, int lineIndex)
@@ -201,11 +306,6 @@ public sealed class SvTextWorkflowService
         return true;
     }
 
-    internal static bool IsSafelyEditable(string value)
-    {
-        return !value.Contains("[VAR", StringComparison.Ordinal);
-    }
-
     internal static string CreatePreview(string value)
     {
         const int maxPreviewLength = 72;
@@ -258,7 +358,6 @@ public sealed class SvTextWorkflowService
     private IReadOnlyList<TextFileSource> ResolveMessageSources(OpenedProject project, string language)
     {
         return CreateMessageVirtualPathCandidates(project, language)
-            .Where(path => fileSource.Exists(project, path))
             .Order(StringComparer.OrdinalIgnoreCase)
             .Select(path => new TextFileSource(path, language))
             .ToArray();
@@ -270,7 +369,7 @@ public sealed class SvTextWorkflowService
 
         foreach (var packName in fileSource.ListBasePackNames(project))
         {
-            var virtualPath = TryCreateMessageDatPathFromPackName(packName, language);
+            var virtualPath = SvMessagePathResolver.TryCreateMessageDatPathFromPackName(packName, language);
             if (!string.IsNullOrWhiteSpace(virtualPath))
             {
                 candidates.Add(virtualPath);
@@ -319,54 +418,6 @@ public sealed class SvTextWorkflowService
                 candidates.Add(normalized);
             }
         }
-    }
-
-    private static string? TryCreateMessageDatPathFromPackName(string packName, string language)
-    {
-        const string packSuffix = ".trpak";
-
-        if (string.IsNullOrWhiteSpace(packName))
-        {
-            return null;
-        }
-
-        var normalized = packName.Replace('\\', '/').TrimStart('/');
-        var prefix = $"arc/messagedat{language}";
-        if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            || !normalized.EndsWith(packSuffix, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var tail = normalized[prefix.Length..^packSuffix.Length];
-        var folder = string.Empty;
-        var fileName = string.Empty;
-        if (tail.StartsWith("common", StringComparison.OrdinalIgnoreCase))
-        {
-            folder = "common";
-            fileName = tail["common".Length..];
-        }
-        else if (tail.StartsWith("script", StringComparison.OrdinalIgnoreCase))
-        {
-            folder = "script";
-            fileName = tail["script".Length..];
-        }
-
-        fileName = fileName.TrimStart('/', '\\');
-        if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(fileName))
-        {
-            return null;
-        }
-
-        if (fileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase)
-            || fileName.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase))
-        {
-            fileName = Path.GetFileNameWithoutExtension(fileName);
-        }
-
-        return string.IsNullOrWhiteSpace(fileName)
-            ? null
-            : $"{MessageRootPath}/{language}/{folder}/{fileName}.dat";
     }
 
     private static SvTextProvenance CreateProvenance(SvWorkflowFile file)

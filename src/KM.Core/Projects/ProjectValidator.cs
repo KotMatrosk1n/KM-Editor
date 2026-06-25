@@ -309,7 +309,7 @@ public sealed class ProjectValidator
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Pokemon Legends Z-A support path must be a folder.",
-                expected: "Folder containing the required compression support file");
+                expected: "Folder containing oo2core_8_win64.dll");
             return draft;
         }
 
@@ -318,8 +318,8 @@ public sealed class ProjectValidator
             draft.Status = ProjectPathStatus.Missing;
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Pokemon Legends Z-A support folder does not exist; Z-A data editors are disabled until it is configured.",
-                expected: "Existing support folder");
+                "oo2core_8_win64.dll folder does not exist; Z-A data editors are disabled until it is configured.",
+                expected: "Existing oo2core_8_win64.dll folder");
             return draft;
         }
 
@@ -329,8 +329,8 @@ public sealed class ProjectValidator
             draft.Status = ProjectPathStatus.Missing;
             draft.AddDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Pokemon Legends Z-A support file was not found in the selected folder; Z-A data editors are disabled until it is configured.",
-                expected: "Folder containing the required compression support file");
+                "oo2core_8_win64.dll was not found in the selected folder; Z-A data editors are disabled until it is configured.",
+                expected: "Folder containing oo2core_8_win64.dll");
             return draft;
         }
 

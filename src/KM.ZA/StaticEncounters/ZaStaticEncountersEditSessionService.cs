@@ -129,7 +129,7 @@ internal sealed class ZaStaticEncountersEditSessionService
             paths,
             session,
             ZaEditSessionSupport.StaticEncountersDomain,
-            ZaDataPaths.PokemonDataArray,
+            ZaDataPaths.EncountDataArray,
             "Static Encounters",
             validation.Diagnostics,
             outputMode);
@@ -168,7 +168,7 @@ internal sealed class ZaStaticEncountersEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var workflow = staticEncountersWorkflowService.Load(project);
-            var source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            var source = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             var document = ZaPokemonDataDocument.Parse(source.Bytes);
             foreach (var edit in session.PendingEdits)
             {
@@ -180,8 +180,8 @@ internal sealed class ZaStaticEncountersEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PokemonDataArray, document.Write(), outputMode);
-            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PokemonDataArray, outputMode));
+            ZaWorkflowFileSource.Write(paths, ZaDataPaths.EncountDataArray, document.Write(), outputMode);
+            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.EncountDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
@@ -196,7 +196,7 @@ internal sealed class ZaStaticEncountersEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 $"Static Encounters output could not be written: {exception.Message}",
-                file: $"romfs/{ZaDataPaths.PokemonDataArray}",
+                file: $"romfs/{ZaDataPaths.EncountDataArray}",
                 expected: "Readable source and writable output root"));
         }
 
@@ -556,7 +556,7 @@ internal sealed class ZaStaticEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending Static Encounters edit target is not present in the source Pokemon Data array.",
+                "Pending Static Encounters edit target is not present in the source encounter data array.",
                 field: "encounterIndex",
                 expected: "Existing source static encounter row"));
             return;
@@ -685,7 +685,12 @@ internal sealed class ZaStaticEncountersEditSessionService
     {
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"HP {ivs.HP} / Atk {ivs.Attack} / Def {ivs.Defense} / SpA {ivs.SpecialAttack} / SpD {ivs.SpecialDefense} / Spe {ivs.Speed}");
+            $"HP {FormatIvValue(ivs.HP)} / Atk {FormatIvValue(ivs.Attack)} / Def {FormatIvValue(ivs.Defense)} / SpA {FormatIvValue(ivs.SpecialAttack)} / SpD {FormatIvValue(ivs.SpecialDefense)} / Spe {FormatIvValue(ivs.Speed)}");
+    }
+
+    private static string FormatIvValue(int value)
+    {
+        return value == -1 ? "Random" : value.ToString(CultureInfo.InvariantCulture);
     }
 
     private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)

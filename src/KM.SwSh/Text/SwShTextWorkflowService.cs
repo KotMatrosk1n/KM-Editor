@@ -89,7 +89,6 @@ public sealed class SwShTextWorkflowService
                 {
                     var line = textFile.Lines[lineIndex];
                     var textId = entries.Count;
-                    var canEdit = IsSafelyEditable(line.Text);
                     var label = CreateTextLabel(context, lineIndex);
                     var entry = new SwShTextEntryRecord(
                         textId,
@@ -99,8 +98,8 @@ public sealed class SwShTextWorkflowService
                         source.Entry.RelativePath,
                         lineIndex,
                         line.Text,
-                        canEdit,
-                        canEdit ? null : "Variable placeholders are read-only in this text editing slice.",
+                        CanEdit: true,
+                        EditBlockedReason: null,
                         provenance);
 
                     entries.Add(entry);
@@ -213,11 +212,6 @@ public sealed class SwShTextWorkflowService
             CultureInfo.InvariantCulture,
             out lineIndex)
             && lineIndex >= 0;
-    }
-
-    internal static bool IsSafelyEditable(string value)
-    {
-        return !value.Contains("[VAR", StringComparison.Ordinal);
     }
 
     private static SwShTextWorkflow CreateWorkflow(
