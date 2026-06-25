@@ -132,7 +132,13 @@ public sealed class ZaCacheManager
             }
             else
             {
-                PruneIfNeeded(settings, TryCreateActiveProjectContext(activePaths)?.ProjectKey);
+                var activeContext = TryCreateActiveProjectContext(activePaths);
+                if (activeContext is not null)
+                {
+                    DeleteObsoleteProjectCaches(activeContext);
+                }
+
+                PruneIfNeeded(settings, activeContext?.ProjectKey);
             }
 
             return settings;
@@ -145,7 +151,13 @@ public sealed class ZaCacheManager
         {
             EnsureRoot();
             var settings = ReadSettings();
-            return CreateStatus(settings, TryCreateActiveProjectContext(paths), activeProjectPreserved: false);
+            var context = TryCreateActiveProjectContext(paths);
+            if (context is not null)
+            {
+                DeleteObsoleteProjectCaches(context);
+            }
+
+            return CreateStatus(settings, context, activeProjectPreserved: false);
         }
     }
 
@@ -178,6 +190,8 @@ public sealed class ZaCacheManager
                 return CreateStatus(settings, context, activeProjectPreserved: false);
             }
 
+            DeleteObsoleteProjectCaches(context);
+
             var safeStepIndex = Math.Clamp(stepIndex, 0, Math.Max(0, WarmupVirtualPaths.Count - 1));
             var virtualPath = WarmupVirtualPaths[safeStepIndex];
 
@@ -204,6 +218,7 @@ public sealed class ZaCacheManager
             EnsureRoot();
             var settings = ReadSettings();
             var context = CreateProjectContext(paths);
+            DeleteObsoleteProjectCaches(context);
             var normalizedVirtualPath = NormalizeVirtualPath(virtualPath);
 
             if (settings.Mode == ZaCacheMode.Performance
@@ -270,27 +285,12 @@ public sealed class ZaCacheManager
 
         if (File.Exists(indexPath))
         {
-            try
+            if (TryReadCacheIndexFile(indexPath, out var cached)
+                && cached.Source == context.Source
+                && cached.Index.SchemaVersion == ZaTrinityArchive.IndexSchemaVersion)
             {
-                var cached = JsonSerializer.Deserialize<ZaCacheIndexFile>(
-                    File.ReadAllBytes(indexPath),
-                    JsonOptions);
-                if (cached is not null
-                    && cached.CacheSchemaVersion == CacheSchemaVersion
-                    && cached.Source == context.Source
-                    && cached.Index.SchemaVersion == ZaTrinityArchive.IndexSchemaVersion)
-                {
-                    TouchProjectDirectory(context);
-                    return cached.Index;
-                }
-            }
-            catch (JsonException)
-            {
-                // Corrupt cache files are disposable and rebuilt below.
-            }
-            catch (IOException)
-            {
-                // Rebuild below.
+                TouchProjectDirectory(context);
+                return cached.Index;
             }
         }
 
@@ -308,6 +308,7 @@ public sealed class ZaCacheManager
     {
         var settings = ReadSettings();
         var context = CreateProjectContext(paths);
+        DeleteObsoleteProjectCaches(context);
         return settings.Mode == ZaCacheMode.Minimal
             ? ZaTrinityArchive.BuildIndex(context.RomFsRootPath)
             : GetOrBuildIndex(context);
@@ -475,6 +476,84 @@ public sealed class ZaCacheManager
             {
                 return;
             }
+        }
+    }
+
+    private void DeleteObsoleteProjectCaches(ZaCacheProjectContext activeContext)
+    {
+        if (!Directory.Exists(ProjectsPath))
+        {
+            return;
+        }
+
+        foreach (var directoryPath in Directory.EnumerateDirectories(ProjectsPath))
+        {
+            var directory = new DirectoryInfo(directoryPath);
+            if (string.Equals(directory.Name, activeContext.ProjectKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var indexPath = Path.Combine(directory.FullName, IndexFileName);
+            if (!TryReadCacheIndexFile(indexPath, out var cached)
+                || !HasSameProjectIdentity(cached.Source, activeContext.Source))
+            {
+                continue;
+            }
+
+            TryDeleteDirectory(directory.FullName);
+        }
+    }
+
+    private static bool HasSameProjectIdentity(
+        ZaCacheSourceFingerprint cached,
+        ZaCacheSourceFingerprint active)
+    {
+        return cached.CacheSchemaVersion == active.CacheSchemaVersion
+            && string.Equals(cached.ParserVersion, active.ParserVersion, StringComparison.Ordinal)
+            && string.Equals(cached.DecompressorVersion, active.DecompressorVersion, StringComparison.Ordinal)
+            && string.Equals(cached.SelectedGame, active.SelectedGame, StringComparison.Ordinal)
+            && cached.Descriptor == active.Descriptor
+            && cached.FileSystem == active.FileSystem
+            && cached.CompressionRuntime == active.CompressionRuntime;
+    }
+
+    private static bool TryReadCacheIndexFile(string indexPath, out ZaCacheIndexFile cacheIndex)
+    {
+        if (!File.Exists(indexPath))
+        {
+            cacheIndex = default!;
+            return false;
+        }
+
+        try
+        {
+            var cached = JsonSerializer.Deserialize<ZaCacheIndexFile>(
+                File.ReadAllBytes(indexPath),
+                JsonOptions);
+            if (cached is not null && cached.CacheSchemaVersion == CacheSchemaVersion)
+            {
+                cacheIndex = cached;
+                return true;
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            // Corrupt or inaccessible cache files are disposable and ignored here.
+        }
+
+        cacheIndex = default!;
+        return false;
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            DeleteDirectoryIfExists(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
         }
     }
 

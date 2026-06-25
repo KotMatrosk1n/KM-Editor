@@ -179,11 +179,13 @@ internal sealed class ZaTrainersWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
         var labels = ZaTextLabelLookup.None();
+        var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var trainers = Array.Empty<ZaTrainerRecord>();
 
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
             trainers = LoadRecords(source, labels, abilityResolver).ToArray();
@@ -205,7 +207,7 @@ internal sealed class ZaTrainersWorkflowService
         return new ZaTrainersWorkflow(
             summary,
             trainers,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, pokemonAvailability),
             new ZaTrainersWorkflowStats(
                 trainers.Length,
                 trainers.Sum(trainer => trainer.Team.Count),
@@ -424,9 +426,12 @@ internal sealed class ZaTrainersWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<ZaTrainerEditableField> CreateEditableFields(ZaTextLabelLookup labels)
+    private static IReadOnlyList<ZaTrainerEditableField> CreateEditableFields(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
     {
-        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var speciesOptions = CreateSpeciesOptions(labels, pokemonAvailability);
+        var speciesMaximumValue = Math.Max(labels.PokemonNameCount - 1, MaximumOptionValue(speciesOptions, 0));
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
         var fields = new List<ZaTrainerEditableField>();
@@ -435,7 +440,7 @@ internal sealed class ZaTrainersWorkflowService
         {
             if (field.Field == FormField)
             {
-                fields.Add(CreateField(SpeciesIdField, "Species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions));
+                fields.Add(CreateField(SpeciesIdField, "Species", 0, speciesMaximumValue, speciesOptions));
             }
 
             fields.Add(field);
@@ -451,6 +456,16 @@ internal sealed class ZaTrainersWorkflowService
         }
 
         return fields;
+    }
+
+    private static IReadOnlyList<ZaTrainerEditableFieldOption> CreateSpeciesOptions(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemonAvailability
+            .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
+            .Select(option => new ZaTrainerEditableFieldOption(option.Value, option.Label))
+            .ToArray();
     }
 
     private static IReadOnlyList<ZaTrainerEditableFieldOption> CreateIndexedOptions(

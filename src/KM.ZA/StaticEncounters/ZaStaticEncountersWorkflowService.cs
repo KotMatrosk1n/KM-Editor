@@ -56,11 +56,9 @@ internal sealed class ZaStaticEncountersWorkflowService
 
     private static readonly IReadOnlyList<ZaStaticEncounterEditableFieldOption> ShinyModeOptions =
     [
-        new(0, "Default / not forced"),
-        new(1, "Not shiny"),
-        new(2, "Forced shiny"),
-        new(536870911, "Game default / not forced"),
-        new(1073741823, "Wild default / not forced"),
+        new(ZaPokemonDataConstants.RareNotShiny, ZaPokemonDataConstants.RareNotShinyLabel),
+        new(ZaPokemonDataConstants.RareForcedShiny, ZaPokemonDataConstants.RareForcedShinyLabel),
+        new(ZaPokemonDataConstants.RareDefaultShinyRoll, ZaPokemonDataConstants.RareDefaultShinyRollLabel),
     ];
 
     private static readonly IReadOnlyList<ZaStaticEncounterEditableFieldOption> FlawlessIvCountOptions =
@@ -163,12 +161,14 @@ internal sealed class ZaStaticEncountersWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? encounterSource = null;
         var labels = ZaTextLabelLookup.None();
+        var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var encounters = Array.Empty<ZaStaticEncounterEntry>();
         var sourceFileCount = 0;
 
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             var wildIds = LoadWildEncounterIds(project, diagnostics, out var usedSpawnerSource);
             sourceFileCount = usedSpawnerSource ? 2 : 1;
@@ -191,7 +191,7 @@ internal sealed class ZaStaticEncountersWorkflowService
         return new ZaStaticEncountersWorkflow(
             summary,
             encounters,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, pokemonAvailability),
             new ZaStaticEncountersWorkflowStats(
                 encounters.Length,
                 encounters.Count(encounter => encounter.FlawlessIvCount is not null and not 0),
@@ -507,7 +507,11 @@ internal sealed class ZaStaticEncountersWorkflowService
 
     private static string FormatMove(int moveId, ZaTextLabelLookup labels)
     {
-        return FormatOption(moveId, moveId < 0 ? "Game default / none" : moveId == 0 ? "None" : labels.Move(moveId));
+        return FormatOption(moveId, moveId < 0
+            ? ZaPokemonDataConstants.MoveNoneLabel
+            : moveId == 0
+                ? ZaPokemonDataConstants.MoveAutoLabel
+                : labels.Move(moveId));
     }
 
     private static string FormatOption(int value, string label)
@@ -515,22 +519,31 @@ internal sealed class ZaStaticEncountersWorkflowService
         return $"{value.ToString(CultureInfo.InvariantCulture)} {label}";
     }
 
-    private static IReadOnlyList<ZaStaticEncounterEditableField> CreateEditableFields(ZaTextLabelLookup labels)
+    private static IReadOnlyList<ZaStaticEncounterEditableField> CreateEditableFields(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
     {
-        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var speciesOptions = CreateSpeciesOptions(labels, pokemonAvailability);
+        var speciesMaximumValue = Math.Max(labels.PokemonNameCount - 1, MaximumOptionValue(speciesOptions, 0));
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         var moveOptions = CreateMoveOptions(labels);
 
         return
         [
-            CreateField(SpeciesField, "Species", "Pokemon", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions),
+            CreateField(SpeciesField, "Species", "Pokemon", 0, speciesMaximumValue, speciesOptions),
             CreateField(FormField, "Form", "Pokemon", 0, short.MaxValue),
             CreateField(LevelField, "Level", "Pokemon", 0, 100),
             CreateField(HeldItemIdField, "Held item", "Pokemon", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
             CreateField(AbilityField, "Ability mode", "Pokemon", 0, 255, AbilityModeOptions),
             CreateField(NatureField, "Nature", "Pokemon", -1, 25, NatureOptions),
             CreateField(GenderField, "Gender", "Pokemon", -1, 2, GenderOptions),
-            CreateField(ShinyLockField, "Shiny mode", "Pokemon", 0, 1073741823, ShinyModeOptions),
+            CreateField(
+                ShinyLockField,
+                "Shiny mode",
+                "Pokemon",
+                ZaPokemonDataConstants.RareNotShiny,
+                ZaPokemonDataConstants.RareDefaultShinyRoll,
+                ShinyModeOptions),
             CreateField(Move0Field, "Move 1", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(Move1Field, "Move 2", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(Move2Field, "Move 3", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
@@ -573,8 +586,9 @@ internal sealed class ZaStaticEncountersWorkflowService
     {
         return
         [
-            new(-1, "-1 Game default / none"),
-            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true),
+            new(ZaPokemonDataConstants.MoveNone, FormatOption(ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNoneLabel)),
+            new(ZaPokemonDataConstants.MoveAuto, FormatOption(ZaPokemonDataConstants.MoveAuto, ZaPokemonDataConstants.MoveAutoLabel)),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false),
         ];
     }
 
@@ -583,6 +597,16 @@ internal sealed class ZaStaticEncountersWorkflowService
         int fallback)
     {
         return options.Count == 0 ? fallback : options.Max(option => option.Value);
+    }
+
+    private static IReadOnlyList<ZaStaticEncounterEditableFieldOption> CreateSpeciesOptions(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemonAvailability
+            .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
+            .Select(option => new ZaStaticEncounterEditableFieldOption(option.Value, option.Label))
+            .ToArray();
     }
 
     private static ZaStaticEncounterEditableField CreateField(

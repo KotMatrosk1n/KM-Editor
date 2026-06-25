@@ -131,6 +131,29 @@ internal static class ZaEditSessionSupport
         return parsedValue;
     }
 
+    public static bool ValidateOptionValue(
+        int value,
+        IEnumerable<int> allowedValues,
+        string domain,
+        string? field,
+        string message,
+        string expected,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (allowedValues.Contains(value))
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            domain,
+            field: field,
+            expected: expected));
+        return false;
+    }
+
     public static ChangePlan CreateSingleFileChangePlan(
         ProjectPaths paths,
         EditSession session,

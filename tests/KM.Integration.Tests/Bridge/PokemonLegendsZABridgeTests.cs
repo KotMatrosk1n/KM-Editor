@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text.Json;
 using Google.FlatBuffers;
 using KM.Api.Bridge;
@@ -37,6 +38,9 @@ public sealed class PokemonLegendsZABridgeTests
 {
     private const ulong PokemonLegendsZATitleId = 0x0100F43008C44000;
     private const int ZaNpdmTitleIdOffset = 0x480;
+    private const int ZaPokemonDataRareNotShiny = 0x1FFFFFFF;
+    private const int ZaPokemonDataRareForcedShiny = 0x2FFFFFFF;
+    private const int ZaPokemonDataRareDefaultShinyRoll = 0x3FFFFFFF;
     private const string ModMergerDataVirtualPath = "bin/mock/data.bin";
     private const string ModMergerDataOutputPath = "romfs/bin/mock/data.bin";
     private const string ModMergerDescriptorOutputPath = "romfs/arc/data.trpfd";
@@ -308,8 +312,23 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Adamant (+Atk, -Sp. Atk)", gift.NatureLabel);
         Assert.Equal(1, gift.Gender);
         Assert.Equal("Male", gift.GenderLabel);
-        Assert.Equal(2, gift.ShinyLock);
-        Assert.Equal("Forced shiny", gift.ShinyLockLabel);
+        Assert.Equal(ZaPokemonDataRareNotShiny, gift.ShinyLock);
+        Assert.Equal("Not shiny", gift.ShinyLockLabel);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "shinyLock").Options,
+            option => option.Value == ZaPokemonDataRareForcedShiny && option.Label == "Forced shiny");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "shinyLock").Options,
+            option => option.Value == ZaPokemonDataRareDefaultShinyRoll && option.Label == "Default shiny roll");
+        Assert.DoesNotContain(
+            workflow.EditableFields.Single(field => field.Field == "shinyLock").Options,
+            option => option.Label.Contains(ZaPokemonDataRareForcedShiny.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal));
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "move4Id").Options,
+            option => option.Value == -1 && option.Label == "-1 None");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "move4Id").Options,
+            option => option.Value == 0 && option.Label == "0 Game default / auto move");
         Assert.Equal(33, gift.Moves[0].MoveId);
         Assert.Equal("Tackle", gift.Moves[0].Move);
         Assert.Equal(45, gift.Moves[1].MoveId);
@@ -803,6 +822,8 @@ public sealed class PokemonLegendsZABridgeTests
                     new GiftPokemonFieldUpdateDto(0, "level", "12"),
                     new GiftPokemonFieldUpdateDto(0, "heldItemId", "17"),
                     new GiftPokemonFieldUpdateDto(0, "move1Id", "45"),
+                    new GiftPokemonFieldUpdateDto(0, "move4Id", "-1"),
+                    new GiftPokemonFieldUpdateDto(0, "shinyLock", ZaPokemonDataRareForcedShiny.ToString(CultureInfo.InvariantCulture)),
                     new GiftPokemonFieldUpdateDto(0, "ivHp", "31"),
                 ]),
             "request-za-gift-pokemon-update");
@@ -815,6 +836,10 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(12, gift.Level);
         Assert.Equal(17, gift.HeldItemId);
         Assert.Equal(45, gift.Moves[0].MoveId);
+        Assert.Equal(-1, gift.Moves[3].MoveId);
+        Assert.Null(gift.Moves[3].Move);
+        Assert.Equal(ZaPokemonDataRareForcedShiny, gift.ShinyLock);
+        Assert.Equal("Forced shiny", gift.ShinyLockLabel);
         Assert.Equal(31, gift.Ivs.HP);
         Assert.Contains("Fixed IVs", gift.IvSummary);
 
@@ -841,6 +866,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(12, writtenScene.MaxLevel);
         Assert.Equal(17, writtenScene.HoldItem!.Value.HoldItem);
         Assert.Equal(45, writtenScene.WazaList!.Value.Waza1);
+        Assert.Equal(-1, writtenScene.WazaList!.Value.Waza4);
+        Assert.Equal(ZaPokemonDataRareForcedShiny, writtenScene.Rare);
         Assert.Equal(128, writtenScene.TalentScale);
         Assert.Equal(31, writtenScene.TalentValue!.Value.Hp);
 
@@ -850,6 +877,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(12, writtenPlayable.MaxLevel);
         Assert.Equal(17, writtenPlayable.HoldItem!.Value.HoldItem);
         Assert.Equal(45, writtenPlayable.WazaList!.Value.Waza1);
+        Assert.Equal(-1, writtenPlayable.WazaList!.Value.Waza4);
+        Assert.Equal(ZaPokemonDataRareForcedShiny, writtenPlayable.Rare);
         Assert.Equal(128, writtenPlayable.TalentScale);
         Assert.Equal(31, writtenPlayable.TalentValue!.Value.Hp);
 
@@ -936,7 +965,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+            CreatePokemonNameTextTable());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1009,9 +1038,138 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(-1, staticEncounter.Moves[0].MoveId);
         Assert.Null(staticEncounter.Moves[0].Move);
         Assert.Equal("-1", staticEncounter.FieldValues["move0Id"]);
-        Assert.Equal("-1 Game default / none", staticEncounter.FieldDisplayValues["move0Id"]);
+        Assert.Equal("-1 None", staticEncounter.FieldDisplayValues["move0Id"]);
         Assert.Contains(staticEncounters.Payload.Workflow.EditableFields, field => field.Field == "gender" && field.MinimumValue == -1);
         Assert.Contains(staticEncounters.Payload.Workflow.EditableFields, field => field.Field == "move0Id" && field.MinimumValue == -1);
+    }
+
+    [Fact]
+    public void PokemonLegendsZANonPokemonSpeciesPickersExcludeUnavailablePokemon()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTrainerFixture(temp);
+        WriteStaticEncounterFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var trainers = Dispatch<LoadTrainersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTrainersWorkflow,
+            new LoadTrainersWorkflowRequest(paths),
+            "request-za-present-trainer-options");
+        AssertSuccess(trainers);
+        AssertZaSpeciesPickerOptions(trainers.Payload!.Workflow.EditableFields
+            .Single(field => field.Field == "speciesId").Options.Select(option => option.Value));
+
+        var encounters = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-present-wild-options");
+        AssertSuccess(encounters);
+        AssertZaSpeciesPickerOptions(encounters.Payload!.Workflow.EditableFields
+            .Single(field => field.Field == "speciesId").Options.Select(option => option.Value));
+
+        var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-za-present-static-options");
+        AssertSuccess(staticEncounters);
+        AssertZaSpeciesPickerOptions(staticEncounters.Payload!.Workflow.EditableFields
+            .Single(field => field.Field == "species").Options.Select(option => option.Value));
+
+        var gifts = Dispatch<LoadGiftPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadGiftPokemonWorkflow,
+            new LoadGiftPokemonWorkflowRequest(paths),
+            "request-za-present-gift-options");
+        AssertSuccess(gifts);
+        AssertZaSpeciesPickerOptions(gifts.Payload!.Workflow.EditableFields
+            .Single(field => field.Field == "species").Options.Select(option => option.Value));
+
+        var trades = Dispatch<LoadTradePokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTradePokemonWorkflow,
+            new LoadTradePokemonWorkflowRequest(paths),
+            "request-za-present-trade-options");
+        AssertSuccess(trades);
+        AssertZaSpeciesPickerOptions(trades.Payload!.Workflow.EditableFields
+            .Single(field => field.Field == "species").Options.Select(option => option.Value));
+    }
+
+    [Fact]
+    public void PokemonLegendsZAUnavailableSpeciesUpdatesAreRejectedOutsidePokemonEditor()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTrainerFixture(temp);
+        WriteStaticEncounterFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var trainerUpdate = Dispatch<UpdateTrainerFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerFields,
+            new UpdateTrainerFieldsRequest(
+                paths,
+                Session: null,
+                [new TrainerFieldUpdateDto(0, 0, "speciesId", "3")]),
+            "request-za-unavailable-trainer");
+        AssertSuccess(trainerUpdate);
+        AssertUnavailableZaSpeciesDiagnostic(trainerUpdate.Payload!.Diagnostics);
+
+        var giftUpdate = Dispatch<UpdateGiftPokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateGiftPokemonFields,
+            new UpdateGiftPokemonFieldsRequest(
+                paths,
+                Session: null,
+                [new GiftPokemonFieldUpdateDto(0, "species", "3")]),
+            "request-za-unavailable-gift");
+        AssertSuccess(giftUpdate);
+        AssertUnavailableZaSpeciesDiagnostic(giftUpdate.Payload!.Diagnostics);
+
+        var tradeUpdate = Dispatch<UpdateTradePokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonFields,
+            new UpdateTradePokemonFieldsRequest(
+                paths,
+                Session: null,
+                [new TradePokemonFieldUpdateDto(0, "species", "3")]),
+            "request-za-unavailable-trade");
+        AssertSuccess(tradeUpdate);
+        AssertUnavailableZaSpeciesDiagnostic(tradeUpdate.Payload!.Diagnostics);
+
+        var encounters = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-unavailable-wild-load");
+        AssertSuccess(encounters);
+        var table = Assert.Single(encounters.Payload!.Workflow.Tables);
+        var slot = Assert.Single(table.Slots);
+        var encounterUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(paths, Session: null, table.TableId, slot.Slot, "speciesId", "3"),
+            "request-za-unavailable-wild");
+        AssertSuccess(encounterUpdate);
+        AssertUnavailableZaSpeciesDiagnostic(encounterUpdate.Payload!.Diagnostics);
+
+        var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-za-unavailable-static-load");
+        AssertSuccess(staticEncounters);
+        var staticEncounter = Assert.Single(staticEncounters.Payload!.Workflow.Encounters);
+        var staticUpdate = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(paths, Session: null, staticEncounter.EncounterIndex, "species", "3"),
+            "request-za-unavailable-static");
+        AssertSuccess(staticUpdate);
+        AssertUnavailableZaSpeciesDiagnostic(staticUpdate.Payload!.Diagnostics);
     }
 
     [Fact]
@@ -1397,7 +1555,8 @@ public sealed class PokemonLegendsZABridgeTests
         var empty = CreatePersonal(builder, species: 0, present: false, hp: 0, zaDexOrder: 0);
         var bulbasaur = CreatePersonal(builder, species: 1, present: true, hp: 45, zaDexOrder: 25);
         var ivysaur = CreatePersonal(builder, species: 2, present: true, hp: 60, zaDexOrder: 26);
-        var vector = ZaPersonalTable.CreateEntryVector(builder, [empty, bulbasaur, ivysaur]);
+        var charmander = CreatePersonal(builder, species: 3, present: false, hp: 39, zaDexOrder: 0);
+        var vector = ZaPersonalTable.CreateEntryVector(builder, [empty, bulbasaur, ivysaur, charmander]);
         ZaPersonalTable.Start(builder);
         ZaPersonalTable.AddEntry(builder, vector);
         var root = ZaPersonalTable.End(builder);
@@ -1483,7 +1642,7 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(1, (1, "Duelist")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+            CreatePokemonNameTextTable());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1503,7 +1662,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateMoveDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+            CreatePokemonNameTextTable());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1524,20 +1683,22 @@ public sealed class PokemonLegendsZABridgeTests
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreatePokemonDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+            CreatePokemonNameTextTable());
     }
 
     private static void WriteStaticEncounterFixture(TemporaryBridgeProject temp)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreatePokemonDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
-            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+            CreatePokemonNameTextTable());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1750,7 +1911,7 @@ public sealed class PokemonLegendsZABridgeTests
             maxLevel: level,
             sex: sex,
             formNo: 0,
-            rare: 2,
+            rare: ZaPokemonDataRareNotShiny,
             tokusei: 2,
             seikaku: 4,
             talentScale: talentScale,
@@ -2204,6 +2365,11 @@ public sealed class PokemonLegendsZABridgeTests
         return SwShGameTextFile.Write(lines);
     }
 
+    private static byte[] CreatePokemonNameTextTable()
+    {
+        return CreateTextTable(3, (1, "Bulbasaur"), (2, "Ivysaur"), (3, "Charmander"));
+    }
+
     private static BridgeResponse<TPayload> Dispatch<TPayload>(
         ProjectBridgeDispatcher dispatcher,
         string command,
@@ -2223,5 +2389,23 @@ public sealed class PokemonLegendsZABridgeTests
     {
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
+    }
+
+    private static void AssertZaSpeciesPickerOptions(IEnumerable<int> optionValues)
+    {
+        var values = optionValues.ToArray();
+        Assert.Contains(0, values);
+        Assert.Contains(1, values);
+        Assert.Contains(2, values);
+        Assert.DoesNotContain(3, values);
+    }
+
+    private static void AssertUnavailableZaSpeciesDiagnostic(IEnumerable<ApiDiagnostic> diagnostics)
+    {
+        Assert.Contains(
+            diagnostics,
+            diagnostic =>
+                diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Pokemon species 3 is not available", StringComparison.Ordinal));
     }
 }
