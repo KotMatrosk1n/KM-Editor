@@ -1205,25 +1205,20 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflow.EditableFields, field => field.Field == "speciesId" && field.Label == "Species");
         Assert.DoesNotContain(workflow.EditableFields, field => field.Field == "probability");
 
-        var speciesUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+        var slotUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
             dispatcher,
-            KmCommandNames.UpdateEncounterSlotField,
-            new UpdateEncounterSlotFieldRequest(paths, Session: null, table.TableId, slot.Slot, "speciesId", "2"),
-            "request-za-encounters-species");
-        AssertSuccess(speciesUpdate);
-        var levelMinUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
-            dispatcher,
-            KmCommandNames.UpdateEncounterSlotField,
-            new UpdateEncounterSlotFieldRequest(paths, speciesUpdate.Payload!.Session, table.TableId, slot.Slot, "levelMin", "25"),
-            "request-za-encounters-level-min");
-        AssertSuccess(levelMinUpdate);
-        var levelMaxUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
-            dispatcher,
-            KmCommandNames.UpdateEncounterSlotField,
-            new UpdateEncounterSlotFieldRequest(paths, levelMinUpdate.Payload!.Session, table.TableId, slot.Slot, "levelMax", "30"),
-            "request-za-encounters-level-max");
-        AssertSuccess(levelMaxUpdate);
-        var updatedSlot = Assert.Single(levelMaxUpdate.Payload!.Workflow.Tables.Single().Slots);
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "speciesId", "2"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMin", "25"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMax", "30"),
+                ]),
+            "request-za-encounters-slot-fields");
+        AssertSuccess(slotUpdate);
+        var updatedSlot = Assert.Single(slotUpdate.Payload!.Workflow.Tables.Single().Slots);
         Assert.Equal(2, updatedSlot.SpeciesId);
         Assert.Equal("Ivysaur", updatedSlot.Species);
         Assert.Equal(25, updatedSlot.LevelMin);
@@ -1232,7 +1227,7 @@ public sealed class PokemonLegendsZABridgeTests
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, levelMaxUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            new CreateChangePlanRequest(paths, slotUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-encounters-plan");
         AssertSuccess(plan);
         Assert.True(plan.Payload!.ChangePlan.CanApply);
@@ -1241,7 +1236,7 @@ public sealed class PokemonLegendsZABridgeTests
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(paths, levelMaxUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            new ApplyChangePlanRequest(paths, slotUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-encounters-apply");
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
