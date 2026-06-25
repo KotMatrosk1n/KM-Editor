@@ -1341,6 +1341,70 @@ describe('App', () => {
     expect(screen.getByText('4 MB')).toHaveClass('sv-cache-size-value-refreshed');
   });
 
+  it('resumes S/V cache warmup from the current completed count', async () => {
+    const user = userEvent.setup();
+    const partialStatus = createSvCacheStatusFixture({
+      message: 'Building S/V cache.',
+      progressPercent: 22,
+      settings: {
+        maxCacheSizeBytes: 10 * 1024 ** 3,
+        mode: 'performance'
+      },
+      warmupCompleted: 813,
+      warmupTotal: 3708
+    });
+    const getSvCacheStatus = vi.fn(async () => ({ status: partialStatus }));
+    const warmupSvCacheStep = vi.fn(
+      async (_request: Parameters<ProjectBridge['warmupSvCacheStep']>[0]) => ({
+        status: createSvCacheStatusFixture({
+          progressPercent: 100,
+          settings: partialStatus.settings,
+          warmupCompleted: 3708,
+          warmupTotal: 3708
+        })
+      })
+    );
+    const validateProject = vi.fn(async (request) => ({
+      health: createHealthForValidatedPaths(
+        request.paths.baseRomFsPath ?? '',
+        request.paths.baseExeFsPath ?? '',
+        request.paths.outputRootPath ?? '',
+        request.paths.saveFilePath ?? null,
+        request.paths.scarletVioletSupportFolderPath ?? null
+      )
+    }));
+
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        baseExeFsPath: 'sv-exefs',
+        baseRomFsPath: 'sv-romfs',
+        outputRootPath: 'sv-output',
+        scarletVioletSupportFolderPath: 'sv-support',
+        selectedGame: 'scarlet'
+      }
+    }));
+
+    render(
+      <App
+        bridge={createMockProjectBridge({
+          getSvCacheStatus,
+          validateProject,
+          warmupSvCacheStep
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    await waitFor(() => expect(warmupSvCacheStep).toHaveBeenCalled());
+    expect(warmupSvCacheStep.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        stepIndex: 813
+      })
+    );
+  });
+
   it('validates and opens a read-only project shell state', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, false)} />);

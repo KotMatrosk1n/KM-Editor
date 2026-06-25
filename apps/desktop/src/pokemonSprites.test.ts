@@ -9,8 +9,18 @@ const bundledStaticSpriteIds = new Set(
   )
 );
 
+const bundledAnimatedSpriteIds = new Set(
+  Object.keys(import.meta.glob('../public/sprites/ani/*.gif', { eager: true })).map((filePath) =>
+    filePath.replace(/^.*\/([^/]+)\.gif$/, '$1')
+  )
+);
+
 function hasBundledStaticSprite(label: string) {
   return getPokemonSpriteIds(label).some((spriteId) => bundledStaticSpriteIds.has(spriteId));
+}
+
+function hasBundledAnimatedSprite(label: string) {
+  return getPokemonSpriteIds(label).some((spriteId) => bundledAnimatedSpriteIds.has(spriteId));
 }
 
 describe('Pokemon sprite ids', () => {
@@ -245,6 +255,32 @@ describe('Pokemon sprite ids', () => {
     expect(formatSpeciesFormLabel('Sawsbuck (Form 3)', 3, 586, 'sv')).toBe(
       'Sawsbuck (Winter Form)'
     );
+  });
+
+  it('uses Pokemon Legends Z-A mega form labels with bundled sprites', () => {
+    expect(formatSpeciesFormLabel('Charizard (Form 1)', 1, 6, 'za')).toBe(
+      'Charizard (Mega X)'
+    );
+    expect(formatSpeciesFormLabel('Charizard (Form 2)', 2, 6, 'za')).toBe(
+      'Charizard (Mega Y)'
+    );
+    expect(formatSpeciesFormLabel('Venusaur (Form 1)', 1, 3, 'za')).toBe(
+      'Venusaur (Mega)'
+    );
+    expect(formatSpeciesFormLabel('Lucario', 1, 448, 'za')).toBe('Lucario (Mega)');
+    expect(formatSpeciesFormLabel('Charizard (Form 1)', 1, 6, 'sv')).toBe(
+      'Charizard (Form 1)'
+    );
+
+    const labels = ['Charizard (Mega X)', 'Charizard (Mega Y)', 'Venusaur (Mega)', 'Lucario (Mega)'];
+    expect(getPokemonSpriteId('Charizard (Mega X)')).toBe('charizard-megax');
+    expect(getPokemonSpriteId('Charizard (Mega Y)')).toBe('charizard-megay');
+    expect(getPokemonSpriteId('Lucario (Mega)')).toBe('lucario-mega');
+
+    for (const label of labels) {
+      expect(hasBundledStaticSprite(label), label).toBe(true);
+      expect(hasBundledAnimatedSprite(label), label).toBe(true);
+    }
   });
 
   it('keeps unknown forms and Sword Shield form fallbacks unchanged', () => {

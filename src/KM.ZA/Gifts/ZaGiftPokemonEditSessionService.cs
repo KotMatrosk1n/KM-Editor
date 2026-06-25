@@ -595,7 +595,7 @@ internal sealed class ZaGiftPokemonEditSessionService
 
     private static void SetMove(ZaPokemonDataEntry row, int moveIndex, int moveId)
     {
-        row.WazaList = (row.WazaList ?? new ZaPokemonDataMovesRecord(0, 0, 0, 0))
+        row.WazaList = (row.WazaList ?? new ZaPokemonDataMovesRecord(-1, -1, -1, -1))
             .SetMove(moveIndex, moveId);
     }
 
@@ -603,15 +603,15 @@ internal sealed class ZaGiftPokemonEditSessionService
     {
         if (value <= 0)
         {
-            row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeRandom;
+            row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeGameDefaultRandom;
             row.TalentVNum = 0;
-            row.TalentValue = null;
+            row.TalentValue = ZaGiftPokemonWorkflowService.CreateRandomIvStats();
             return;
         }
 
-        row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeGuaranteedPerfectCount;
+        row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeFixedOrGuaranteed;
         row.TalentVNum = value;
-        row.TalentValue = null;
+        row.TalentValue = ZaGiftPokemonWorkflowService.CreateRandomIvStats();
     }
 
     private static void SetIv(
@@ -620,9 +620,9 @@ internal sealed class ZaGiftPokemonEditSessionService
         Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
     {
         _ = value;
-        row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeFixedValues;
+        row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeFixedOrGuaranteed;
         row.TalentVNum = 0;
-        row.TalentValue = update(row.TalentValue ?? ZaPokemonDataStatsRecord.Zero);
+        row.TalentValue = update(row.TalentValue ?? ZaGiftPokemonWorkflowService.CreateRandomIvStats());
     }
 
     private static string GetOptionLabel(

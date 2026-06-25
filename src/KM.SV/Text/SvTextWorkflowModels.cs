@@ -43,6 +43,11 @@ public sealed record SvTextEditableField(
     int? MinimumLength,
     int? MaximumLength);
 
+public sealed record SvTextWorkflowQuery(
+    string? SearchText,
+    int Offset,
+    int Limit);
+
 public sealed record SvTextWorkflow(
     SvWorkflowSummary Summary,
     IReadOnlyList<SvTextEntryRecord> Entries,

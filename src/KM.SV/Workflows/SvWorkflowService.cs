@@ -85,7 +85,7 @@ public sealed class SvWorkflowService
         fashionUnlockWorkflowService = new SvFashionUnlockWorkflowService();
         hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
         dumpImportWorkflowService = new SvDumpImportWorkflowService(itemsWorkflowService);
-        modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
+        modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService, this.cacheManager);
         itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
         movesEditSessionService = new SvMovesEditSessionService(this.projectWorkspaceService, fileSource, movesWorkflowService);
         textEditSessionService = new SvTextEditSessionService(this.projectWorkspaceService, fileSource, textWorkflowService);
@@ -190,12 +190,12 @@ public sealed class SvWorkflowService
         return movesWorkflowService.Load(project);
     }
 
-    public SvTextWorkflow LoadText(ProjectPaths paths)
+    public SvTextWorkflow LoadText(ProjectPaths paths, SvTextWorkflowQuery? query = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var project = projectWorkspaceService.Open(paths);
-        return textWorkflowService.Load(project);
+        return textWorkflowService.Load(project, query);
     }
 
     public SvPokemonWorkflow LoadPokemon(ProjectPaths paths)
@@ -381,9 +381,10 @@ public sealed class SvWorkflowService
         ProjectPaths paths,
         EditSession? session,
         string textKey,
-        string value)
+        string value,
+        SvTextWorkflowQuery? query = null)
     {
-        return textEditSessionService.UpdateEntry(paths, session, textKey, value);
+        return textEditSessionService.UpdateEntry(paths, session, textKey, value, query);
     }
 
     public SvPokemonEditResult UpdatePokemonField(

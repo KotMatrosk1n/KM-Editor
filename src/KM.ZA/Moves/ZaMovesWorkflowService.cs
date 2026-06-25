@@ -384,7 +384,6 @@ internal sealed class ZaMovesWorkflowService
     {
         var moveId = move.MoveId;
         var inflict = move.Inflict ?? default;
-        var statChanges = move.StatChanges ?? default;
         var flags = ToFlagRecords(move);
 
         return new ZaMoveRecord(
@@ -418,13 +417,29 @@ internal sealed class ZaMovesWorkflowService
             move.EffectSequence,
             move.Recoil,
             move.RawHealing,
-            [
-                new(1, statChanges.Stat1, FormatStat(statChanges.Stat1), statChanges.Stat1Stage, statChanges.Stat1Chance),
-                new(2, statChanges.Stat2, FormatStat(statChanges.Stat2), statChanges.Stat2Stage, statChanges.Stat2Chance),
-                new(3, statChanges.Stat3, FormatStat(statChanges.Stat3), statChanges.Stat3Stage, statChanges.Stat3Chance),
-            ],
+            ToStatChangeRecords(move.StatChanges),
             flags,
             new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+    }
+
+    private static IReadOnlyList<ZaMoveStatChangeRecord> ToStatChangeRecords(ZaMoveStatChanges? statChanges)
+    {
+        if (statChanges is not { } row)
+        {
+            return
+            [
+                new(1, 0, FormatStat(0), 0, 0),
+                new(2, 0, FormatStat(0), 0, 0),
+                new(3, 0, FormatStat(0), 0, 0),
+            ];
+        }
+
+        return
+        [
+            new(1, row.Stat1, FormatStat(row.Stat1), row.Stat1Stage, row.Stat1Chance),
+            new(2, row.Stat2, FormatStat(row.Stat2), row.Stat2Stage, row.Stat2Chance),
+            new(3, row.Stat3, FormatStat(row.Stat3), row.Stat3Stage, row.Stat3Chance),
+        ];
     }
 
     private static IReadOnlyList<ZaMoveFlagRecord> ToFlagRecords(ZaMoveData move)

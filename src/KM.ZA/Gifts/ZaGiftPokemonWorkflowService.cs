@@ -32,9 +32,14 @@ internal sealed class ZaGiftPokemonWorkflowService
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string FlawlessIvCountField = "flawlessIvCount";
 
-    internal const int TalentModeRandom = 0;
-    internal const int TalentModeGuaranteedPerfectCount = 1;
-    internal const int TalentModeFixedValues = 2;
+    internal const int TalentModeGameDefaultRandom = 127;
+    internal const int TalentModeFixedOrGuaranteed = 128;
+
+    private const int TalentModeScriptDefault = -1;
+    private const int TalentModeAlphaDefault = 255;
+    private const int LegacyTalentModeRandom = 0;
+    private const int LegacyTalentModeGuaranteedPerfectCount = 1;
+    private const int LegacyTalentModeFixedValues = 2;
 
     private const string WorkflowLabel = "Gift Pokemon";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A scripted gift Pokemon sources.";
@@ -50,6 +55,7 @@ internal sealed class ZaGiftPokemonWorkflowService
 
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> GenderOptions =
     [
+        new(-1, "Game default / random"),
         new(0, "Random"),
         new(1, "Male"),
         new(2, "Female"),
@@ -60,6 +66,8 @@ internal sealed class ZaGiftPokemonWorkflowService
         new(0, "Default / not forced"),
         new(1, "Not shiny"),
         new(2, "Forced shiny"),
+        new(536870911, "Game default / not forced"),
+        new(1073741823, "Wild default / not forced"),
     ];
 
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> FlawlessIvCountOptions =
@@ -75,6 +83,7 @@ internal sealed class ZaGiftPokemonWorkflowService
 
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> NatureOptions =
     [
+        new(-1, "Random / game default"),
         new(0, "Default (game behavior)"),
         new(1, "Hardy (neutral)"),
         new(2, "Lonely (+Atk, -Def)"),
@@ -281,13 +290,13 @@ internal sealed class ZaGiftPokemonWorkflowService
         ZaPokemonDataEntry entry,
         ZaTextLabelLookup labels)
     {
-        var moves = entry.WazaList?.Values ?? [0, 0, 0, 0];
+        var moves = entry.WazaList?.Values ?? [-1, -1, -1, -1];
         return moves
             .Take(4)
             .Select((moveId, index) => new ZaGiftPokemonMoveRecord(
                 index,
                 moveId,
-                moveId == 0 ? null : labels.Move(moveId),
+                moveId <= 0 ? null : labels.Move(moveId),
                 PointUps: 0))
             .ToArray();
     }
@@ -296,7 +305,7 @@ internal sealed class ZaGiftPokemonWorkflowService
     {
         if (entry.TalentValue is not { } talentValue)
         {
-            return new ZaGiftPokemonIvsRecord(0, 0, 0, 0, 0, 0);
+            return new ZaGiftPokemonIvsRecord(-1, -1, -1, -1, -1, -1);
         }
 
         return new ZaGiftPokemonIvsRecord(
@@ -310,42 +319,90 @@ internal sealed class ZaGiftPokemonWorkflowService
 
     private static int? ReadFlawlessIvCount(ZaPokemonDataEntry entry)
     {
-        return entry.TalentScale switch
+        var hasRandomIvValues = HasOnlyRandomIvs(entry.TalentValue);
+        if (IsGuaranteedPerfectCountMode(entry, hasRandomIvValues))
         {
-            TalentModeRandom => 0,
-            TalentModeGuaranteedPerfectCount => entry.TalentVNum,
-            TalentModeFixedValues => null,
-            _ => entry.TalentValue is null ? 0 : null,
-        };
+            return entry.TalentVNum;
+        }
+
+        return IsRandomIvMode(entry, hasRandomIvValues) ? 0 : null;
     }
 
     private static string FormatIvSummary(ZaPokemonDataEntry entry, ZaGiftPokemonIvsRecord ivs)
     {
-        return entry.TalentScale switch
+        var flawlessIvCount = ReadFlawlessIvCount(entry);
+        if (flawlessIvCount == 0)
         {
-            TalentModeRandom => "Random IVs",
-            TalentModeGuaranteedPerfectCount => entry.TalentVNum == 1
+            return "Random IVs";
+        }
+
+        if (flawlessIvCount > 0)
+        {
+            return flawlessIvCount == 1
                 ? "1 guaranteed perfect IV"
-                : $"{entry.TalentVNum.ToString(CultureInfo.InvariantCulture)} guaranteed perfect IVs",
-            TalentModeFixedValues => FormatFixedIvSummary(ivs),
-            _ => entry.TalentValue is null
-                ? $"Talent mode {entry.TalentScale.ToString(CultureInfo.InvariantCulture)}"
-                : FormatFixedIvSummary(ivs),
-        };
+                : $"{flawlessIvCount.Value.ToString(CultureInfo.InvariantCulture)} guaranteed perfect IVs";
+        }
+
+        return FormatFixedIvSummary(ivs);
+    }
+
+    internal static ZaPokemonDataStatsRecord CreateRandomIvStats()
+    {
+        return new ZaPokemonDataStatsRecord(-1, -1, -1, -1, -1, -1);
+    }
+
+    private static bool IsGuaranteedPerfectCountMode(
+        ZaPokemonDataEntry entry,
+        bool hasRandomIvValues)
+    {
+        return entry.TalentScale == LegacyTalentModeGuaranteedPerfectCount
+            || (hasRandomIvValues
+                && entry.TalentVNum > 0
+                && (entry.TalentScale == TalentModeFixedOrGuaranteed
+                    || entry.TalentScale == TalentModeScriptDefault));
+    }
+
+    private static bool IsRandomIvMode(
+        ZaPokemonDataEntry entry,
+        bool hasRandomIvValues)
+    {
+        return entry.TalentScale == LegacyTalentModeRandom
+            || entry.TalentScale == TalentModeGameDefaultRandom
+            || entry.TalentScale == TalentModeAlphaDefault
+            || (hasRandomIvValues
+                && (entry.TalentScale == TalentModeFixedOrGuaranteed
+                    || entry.TalentScale == TalentModeScriptDefault
+                    || entry.TalentScale == LegacyTalentModeFixedValues));
+    }
+
+    private static bool HasOnlyRandomIvs(ZaPokemonDataStatsRecord? ivs)
+    {
+        return ivs is null
+            || (ivs.HP == -1
+                && ivs.Attack == -1
+                && ivs.Defense == -1
+                && ivs.SpecialAttack == -1
+                && ivs.SpecialDefense == -1
+                && ivs.Speed == -1);
     }
 
     private static string FormatFixedIvSummary(ZaGiftPokemonIvsRecord ivs)
     {
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"Fixed IVs: HP {ivs.HP}, Atk {ivs.Attack}, Def {ivs.Defense}, SpA {ivs.SpecialAttack}, SpD {ivs.SpecialDefense}, Spe {ivs.Speed}");
+            $"Fixed IVs: HP {FormatIvValue(ivs.HP)}, Atk {FormatIvValue(ivs.Attack)}, Def {FormatIvValue(ivs.Defense)}, SpA {FormatIvValue(ivs.SpecialAttack)}, SpD {FormatIvValue(ivs.SpecialDefense)}, Spe {FormatIvValue(ivs.Speed)}");
+    }
+
+    private static string FormatIvValue(int value)
+    {
+        return value == -1 ? "Random" : value.ToString(CultureInfo.InvariantCulture);
     }
 
     private static IReadOnlyList<ZaGiftPokemonEditableField> CreateEditableFields(ZaTextLabelLookup labels)
     {
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var moveOptions = CreateMoveOptions(labels);
 
         return
         [
@@ -353,21 +410,21 @@ internal sealed class ZaGiftPokemonWorkflowService
             CreateField(FormField, "Form", 0, short.MaxValue),
             CreateField(LevelField, "Level", 0, 100),
             CreateField(HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
-            CreateField(AbilityField, "Ability mode", 0, 4, CreateAbilityModeOptions(ZaGiftAbilitySet.Empty)),
-            CreateField(NatureField, "Nature", 0, 25, NatureOptions),
-            CreateField(GenderField, "Gender", 0, 2, GenderOptions),
-            CreateField(ShinyLockField, "Shiny mode", 0, 2, ShinyModeOptions),
-            CreateField(Move1IdField, "Move 1", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move2IdField, "Move 2", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move3IdField, "Move 3", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move4IdField, "Move 4", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaGiftAbilitySet.Empty)),
+            CreateField(NatureField, "Nature", -1, 25, NatureOptions),
+            CreateField(GenderField, "Gender", -1, 2, GenderOptions),
+            CreateField(ShinyLockField, "Shiny mode", 0, 1073741823, ShinyModeOptions),
+            CreateField(Move1IdField, "Move 1", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move2IdField, "Move 2", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move3IdField, "Move 3", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move4IdField, "Move 4", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(FlawlessIvCountField, "IV preset", 0, 6, FlawlessIvCountOptions),
-            CreateField(IvHpField, "HP IV", 0, 31),
-            CreateField(IvAttackField, "Attack IV", 0, 31),
-            CreateField(IvDefenseField, "Defense IV", 0, 31),
-            CreateField(IvSpeedField, "Speed IV", 0, 31),
-            CreateField(IvSpecialAttackField, "Sp. Atk IV", 0, 31),
-            CreateField(IvSpecialDefenseField, "Sp. Def IV", 0, 31),
+            CreateField(IvHpField, "HP IV", -1, 31),
+            CreateField(IvAttackField, "Attack IV", -1, 31),
+            CreateField(IvDefenseField, "Defense IV", -1, 31),
+            CreateField(IvSpeedField, "Speed IV", -1, 31),
+            CreateField(IvSpecialAttackField, "Sp. Atk IV", -1, 31),
+            CreateField(IvSpecialDefenseField, "Sp. Def IV", -1, 31),
         ];
     }
 
@@ -381,6 +438,7 @@ internal sealed class ZaGiftPokemonWorkflowService
             new(2, FormatAbilitySlot(abilities.Ability1, "Ability 1")),
             new(3, FormatAbilitySlot(abilities.Ability2, "Ability 2")),
             new(4, FormatAbilitySlot(abilities.HiddenAbility, "Hidden Ability")),
+            new(255, "Game default / random"),
         ];
     }
 
@@ -393,6 +451,16 @@ internal sealed class ZaGiftPokemonWorkflowService
     private static string FormatAbilitySlot(string ability, string slot)
     {
         return string.Equals(ability, slot, StringComparison.Ordinal) ? slot : $"{ability} ({slot})";
+    }
+
+    private static IReadOnlyList<ZaGiftPokemonEditableFieldOption> CreateMoveOptions(
+        ZaTextLabelLookup labels)
+    {
+        return
+        [
+            new(-1, "-1 Game default / none"),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true),
+        ];
     }
 
     private static IReadOnlyList<ZaGiftPokemonEditableFieldOption> CreateIndexedOptions(
@@ -456,9 +524,11 @@ internal sealed class ZaGiftPokemonWorkflowService
             return $"Gift {giftNumber}: {species} Egg ({eventLabel})";
         }
 
-        var levelLabel = minLevel == maxLevel
-            ? $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)}"
-            : $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)} to {maxLevel.ToString(CultureInfo.InvariantCulture)}";
+        var levelLabel = minLevel == 0 && maxLevel == 0
+            ? "Game default level"
+            : minLevel == maxLevel
+                ? $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)}"
+                : $"Lv. {minLevel.ToString(CultureInfo.InvariantCulture)} to {maxLevel.ToString(CultureInfo.InvariantCulture)}";
         return $"Gift {giftNumber}: {species} {levelLabel} ({eventLabel})";
     }
 

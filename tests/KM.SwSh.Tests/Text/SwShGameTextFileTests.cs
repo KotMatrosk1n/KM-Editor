@@ -43,6 +43,47 @@ public sealed class SwShGameTextFileTests
         Assert.Equal("A\\c\\nB\\r\\nC", parsed.Lines[0].Text);
     }
 
+    [Fact]
+    public void WriteRoundTripsVariablePlaceholders()
+    {
+        var data = SwShGameTextFile.Write(new[]
+        {
+            new SwShGameTextLine("A[VAR 0102(0001,00FF)]B", Flags: 0),
+        });
+
+        var values = ReadDecryptedLineValues(data, lineIndex: 0);
+
+        Assert.Equal(
+            new ushort[]
+            {
+                'A',
+                0x0010,
+                0x0003,
+                0x0102,
+                0x0001,
+                0x00FF,
+                'B',
+                0x0000,
+            },
+            values);
+
+        var parsed = SwShGameTextFile.Parse(data);
+        Assert.Equal("A[VAR 0102(0001,00FF)]B", parsed.Lines[0].Text);
+    }
+
+    [Fact]
+    public void WriteKeepsEscapedVariablePlaceholderLiterals()
+    {
+        var data = SwShGameTextFile.Write(new[]
+        {
+            new SwShGameTextLine("A\\[VAR 0102(0001)]B", Flags: 0),
+        });
+
+        var parsed = SwShGameTextFile.Parse(data);
+
+        Assert.Equal("A\\[VAR 0102(0001)]B", parsed.Lines[0].Text);
+    }
+
     private static ushort[] ReadDecryptedLineValues(byte[] data, int lineIndex)
     {
         var sectionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C));

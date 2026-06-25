@@ -427,7 +427,7 @@ internal sealed class ZaPokemonWorkflowService
             speciesId,
             form,
             labels.Pokemon(speciesId),
-            form == 0 ? "Base" : $"Form {form}",
+            ZaLabels.PokemonFormLabel(speciesId, form),
             FormatType(entry.Type1),
             FormatType(entry.Type2),
             stats,

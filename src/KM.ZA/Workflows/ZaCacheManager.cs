@@ -80,6 +80,7 @@ public sealed class ZaCacheManager
                 ZaDataPaths.ItemDataArray,
                 ZaDataPaths.TrainerDataArray,
                 ZaDataPaths.PokemonDataArray,
+                ZaDataPaths.EncountDataArray,
                 ZaDataPaths.PokemonSpawnerDataArray,
                 ZaDataPaths.PokemonSpawnerTransformArray,
                 ZaDataPaths.ItemBallSpawnerDataArray,
@@ -118,11 +119,22 @@ public sealed class ZaCacheManager
         lock (syncRoot)
         {
             EnsureRoot();
+            var previousSettings = ReadSettings();
             var settings = new ZaCacheSettings(
                 mode,
                 ClampMaxCacheSize(maxCacheSizeBytes));
             WriteJsonAtomic(SettingsPath, settings);
-            PruneIfNeeded(settings, TryCreateActiveProjectContext(activePaths)?.ProjectKey);
+            if (previousSettings.Mode != settings.Mode)
+            {
+                DeleteDirectoryIfExists(ProjectsPath);
+                DeleteDirectoryIfExists(TempPath);
+                Directory.CreateDirectory(ProjectsPath);
+            }
+            else
+            {
+                PruneIfNeeded(settings, TryCreateActiveProjectContext(activePaths)?.ProjectKey);
+            }
+
             return settings;
         }
     }
@@ -144,29 +156,11 @@ public sealed class ZaCacheManager
             EnsureRoot();
             var settings = ReadSettings();
             var activeContext = TryCreateActiveProjectContext(activePaths);
-            var preservedActiveProject = false;
 
-            if (Directory.Exists(ProjectsPath))
-            {
-                foreach (var projectDirectory in Directory.EnumerateDirectories(ProjectsPath))
-                {
-                    if (activeContext is not null
-                        && string.Equals(
-                            Path.GetFileName(projectDirectory),
-                            activeContext.ProjectKey,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        preservedActiveProject = true;
-                        continue;
-                    }
-
-                    DeleteDirectoryIfExists(projectDirectory);
-                }
-            }
-
+            DeleteDirectoryIfExists(ProjectsPath);
             DeleteDirectoryIfExists(TempPath);
             Directory.CreateDirectory(ProjectsPath);
-            return CreateStatus(settings, activeContext, preservedActiveProject);
+            return CreateStatus(settings, activeContext, activeProjectPreserved: false);
         }
     }
 
@@ -396,7 +390,7 @@ public sealed class ZaCacheManager
         ZaCacheProjectContext? context,
         bool activeProjectPreserved)
     {
-        var cacheSize = GetDirectorySize(cacheRoot);
+        var cacheSize = GetCacheContentSize();
         var total = context is not null && settings.Mode != ZaCacheMode.Minimal
             ? WarmupVirtualPaths.Count
             : 0;
@@ -459,7 +453,7 @@ public sealed class ZaCacheManager
 
     private void PruneIfNeeded(ZaCacheSettings settings, string? activeProjectKey)
     {
-        var currentSize = GetDirectorySize(cacheRoot);
+        var currentSize = GetCacheContentSize();
         if (currentSize <= settings.MaxCacheSizeBytes || !Directory.Exists(ProjectsPath))
         {
             return;
@@ -476,7 +470,7 @@ public sealed class ZaCacheManager
             }
 
             DeleteDirectoryIfExists(directory.FullName);
-            currentSize = GetDirectorySize(cacheRoot);
+            currentSize = GetCacheContentSize();
             if (currentSize <= settings.MaxCacheSizeBytes)
             {
                 return;
@@ -531,7 +525,8 @@ public sealed class ZaCacheManager
             paths.SelectedGame.Value.ToString(),
             CreateFileStamp(descriptorPath),
             CreateFileStamp(fileSystemPath),
-            runtimePath is null ? null : CreateFileStamp(runtimePath));
+            runtimePath is null ? null : CreateFileStamp(runtimePath),
+            CreateDirectoryStamp(paths.OutputRootPath));
         var projectKey = CreateProjectKey(source);
         return new ZaCacheProjectContext(
             romFsRoot,
@@ -559,6 +554,93 @@ public sealed class ZaCacheManager
             fileInfo.FullName,
             fileInfo.Length,
             fileInfo.LastWriteTimeUtc);
+    }
+
+    private static ZaCacheDirectoryStamp? CreateDirectoryStamp(string? directoryPath)
+    {
+        if (string.IsNullOrWhiteSpace(directoryPath))
+        {
+            return null;
+        }
+
+        var fullPath = Path.GetFullPath(directoryPath);
+        var directoryInfo = new DirectoryInfo(fullPath);
+        if (!directoryInfo.Exists)
+        {
+            return new ZaCacheDirectoryStamp(
+                fullPath,
+                Exists: false,
+                FileCount: 0,
+                TotalSizeBytes: 0,
+                LastWriteTimeUtc: DateTime.MinValue,
+                ContentFingerprint: string.Empty,
+                InaccessibleEntryCount: 0);
+        }
+
+        long fileCount = 0;
+        long totalSize = 0;
+        var latestWriteTimeUtc = directoryInfo.LastWriteTimeUtc;
+        var inaccessibleEntryCount = 0;
+        var entries = new List<string>();
+
+        try
+        {
+            foreach (var childDirectoryPath in Directory.EnumerateDirectories(
+                fullPath,
+                "*",
+                SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var childDirectory = new DirectoryInfo(childDirectoryPath);
+                    var relativePath = Path.GetRelativePath(fullPath, childDirectory.FullName).Replace('\\', '/');
+                    latestWriteTimeUtc = latestWriteTimeUtc > childDirectory.LastWriteTimeUtc
+                        ? latestWriteTimeUtc
+                        : childDirectory.LastWriteTimeUtc;
+                    entries.Add($"d\0{relativePath}\0{childDirectory.LastWriteTimeUtc.Ticks}");
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    inaccessibleEntryCount++;
+                }
+            }
+
+            foreach (var filePath in Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    var relativePath = Path.GetRelativePath(fullPath, fileInfo.FullName).Replace('\\', '/');
+                    fileCount++;
+                    totalSize += fileInfo.Length;
+                    latestWriteTimeUtc = latestWriteTimeUtc > fileInfo.LastWriteTimeUtc
+                        ? latestWriteTimeUtc
+                        : fileInfo.LastWriteTimeUtc;
+                    entries.Add($"f\0{relativePath}\0{fileInfo.Length}\0{fileInfo.LastWriteTimeUtc.Ticks}");
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    inaccessibleEntryCount++;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            inaccessibleEntryCount++;
+        }
+
+        entries.Sort(StringComparer.OrdinalIgnoreCase);
+        var fingerprint = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', entries))))
+            .ToLowerInvariant();
+        return new ZaCacheDirectoryStamp(
+            fullPath,
+            Exists: true,
+            fileCount,
+            totalSize,
+            latestWriteTimeUtc,
+            fingerprint,
+            inaccessibleEntryCount);
     }
 
     private static string ResolveDefaultCacheRoot()
@@ -645,6 +727,11 @@ public sealed class ZaCacheManager
     private string ProjectsPath => Path.Combine(cacheRoot, ProjectsDirectoryName);
 
     private string TempPath => Path.Combine(cacheRoot, TempDirectoryName);
+
+    private long GetCacheContentSize()
+    {
+        return GetDirectorySize(ProjectsPath) + GetDirectorySize(TempPath);
+    }
 
     private static string NormalizeVirtualPath(string virtualPath)
     {
@@ -791,9 +878,19 @@ public sealed record ZaCacheSourceFingerprint(
     string SelectedGame,
     ZaCacheFileStamp Descriptor,
     ZaCacheFileStamp FileSystem,
-    ZaCacheFileStamp? CompressionRuntime);
+    ZaCacheFileStamp? CompressionRuntime,
+    ZaCacheDirectoryStamp? OutputRoot);
 
 public sealed record ZaCacheFileStamp(
     string FullPath,
     long Length,
     DateTime LastWriteTimeUtc);
+
+public sealed record ZaCacheDirectoryStamp(
+    string FullPath,
+    bool Exists,
+    long FileCount,
+    long TotalSizeBytes,
+    DateTime LastWriteTimeUtc,
+    string ContentFingerprint,
+    int InaccessibleEntryCount);

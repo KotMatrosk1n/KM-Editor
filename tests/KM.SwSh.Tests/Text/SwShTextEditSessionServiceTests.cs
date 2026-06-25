@@ -129,7 +129,7 @@ public sealed class SwShTextEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateEntryRejectsVariablePlaceholderLines()
+    public void UpdateEntryAllowsVariablePlaceholderLines()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile(
@@ -142,10 +142,12 @@ public sealed class SwShTextEditSessionServiceTests
             temp.Paths,
             session: null,
             textKey: "romfs/bin/message/English/common/story.dat#0",
-            value: "Replacement");
+            value: "Replacement [VAR 0100]");
 
-        Assert.False(result.Session.HasPendingChanges);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Session.HasPendingChanges);
+        Assert.Equal("Replacement [VAR 0100]", Assert.Single(result.Session.PendingEdits).NewValue);
+        Assert.Equal("Replacement [VAR 0100]", result.Workflow.Entries[0].Value);
     }
 
     [Fact]

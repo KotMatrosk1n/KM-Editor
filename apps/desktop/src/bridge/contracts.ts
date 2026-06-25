@@ -255,8 +255,15 @@ export const loadMovesWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
+export const textWorkflowQuerySchema = z.strictObject({
+  limit: z.number().int().positive().nullable().optional(),
+  offset: z.number().int().nonnegative().nullable().optional(),
+  searchText: z.string().nullable().optional()
+});
+
 export const loadTextWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
+  paths: projectPathsSchema,
+  query: textWorkflowQuerySchema.nullable().optional()
 });
 
 export const loadTrainersWorkflowRequestSchema = z.strictObject({
@@ -1119,16 +1126,16 @@ export const trainerProvenanceSchema = z.strictObject({
 });
 
 export const trainerPokemonStatsSchema = z.strictObject({
-  attack: z.number().int().nonnegative(),
-  defense: z.number().int().nonnegative(),
-  hp: z.number().int().nonnegative(),
-  specialAttack: z.number().int().nonnegative(),
-  specialDefense: z.number().int().nonnegative(),
-  speed: z.number().int().nonnegative()
+  attack: z.number().int(),
+  defense: z.number().int(),
+  hp: z.number().int(),
+  specialAttack: z.number().int(),
+  specialDefense: z.number().int(),
+  speed: z.number().int()
 });
 
 export const trainerPokemonRecordSchema = z.strictObject({
-  ability: z.number().int().nonnegative(),
+  ability: z.number().int(),
   abilityLabel: z.string(),
   abilityOptions: z.array(z.strictObject({ label: z.string(), value: z.number().int() })).default([]),
   canDynamax: z.boolean(),
@@ -1136,15 +1143,15 @@ export const trainerPokemonRecordSchema = z.strictObject({
   dynamaxLevel: z.number().int().nonnegative(),
   evs: trainerPokemonStatsSchema,
   form: z.number().int().nonnegative(),
-  gender: z.number().int().nonnegative(),
+  gender: z.number().int(),
   genderLabel: z.string(),
   heldItem: z.string().nullable(),
   heldItemId: z.number().int().nonnegative(),
   ivs: trainerPokemonStatsSchema,
   level: z.number().int().nonnegative(),
-  moveIds: z.array(z.number().int().nonnegative()),
+  moveIds: z.array(z.number().int()),
   moves: z.array(z.string()),
-  nature: z.number().int().nonnegative(),
+  nature: z.number().int(),
   natureLabel: z.string(),
   shiny: z.boolean(),
   slot: z.number().int().nonnegative(),
@@ -1226,7 +1233,7 @@ export const giftPokemonProvenanceSchema = z.strictObject({ fileState: projectFi
 
 export const giftPokemonIvsSchema = z.strictObject({ attack: z.number().int(), defense: z.number().int(), hp: z.number().int(), specialAttack: z.number().int(), specialDefense: z.number().int(), speed: z.number().int() });
 
-export const giftPokemonMoveSchema = z.strictObject({ move: z.string().nullable(), moveId: z.number().int().nonnegative(), pointUps: z.number().int().nonnegative(), slot: z.number().int().nonnegative() });
+export const giftPokemonMoveSchema = z.strictObject({ move: z.string().nullable(), moveId: z.number().int(), pointUps: z.number().int().nonnegative(), slot: z.number().int().nonnegative() });
 
 export const giftPokemonEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
@@ -1243,7 +1250,7 @@ export const giftPokemonEditableFieldSchema = z.strictObject({
 });
 
 export const giftPokemonRecordSchema = z.strictObject({
-  ability: z.number().int().nonnegative(),
+  ability: z.number().int(),
   abilityLabel: z.string(),
   abilityOptions: z.array(giftPokemonEditableFieldOptionSchema).default([]),
   ballItem: z.string(),
@@ -1254,7 +1261,7 @@ export const giftPokemonRecordSchema = z.strictObject({
   eventLabel: z.string().nullable().default(null),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int().nonnegative(),
-  gender: z.number().int().nonnegative(),
+  gender: z.number().int(),
   genderLabel: z.string(),
   giftIndex: z.number().int().nonnegative(),
   heldItem: z.string().nullable(),
@@ -1265,16 +1272,16 @@ export const giftPokemonRecordSchema = z.strictObject({
   label: z.string(),
   level: z.number().int().nonnegative(),
   moves: z.array(giftPokemonMoveSchema).default([]),
-  nature: z.number().int().nonnegative(),
+  nature: z.number().int(),
   natureLabel: z.string(),
   provenance: giftPokemonProvenanceSchema,
   scaleMode: z.number().int().nullable().default(null),
   scaleModeLabel: z.string().nullable().default(null),
   scaleValue: z.number().int().nullable().default(null),
-  shinyLock: z.number().int().nonnegative(),
+  shinyLock: z.number().int(),
   shinyLockLabel: z.string(),
   specialMove: z.string().nullable(),
-  specialMoveId: z.number().int().nonnegative(),
+  specialMoveId: z.number().int(),
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
   teraType: z.number().int().nullable().default(null),
@@ -1318,7 +1325,7 @@ export const tradePokemonIvsSchema = z.strictObject({
 
 export const tradePokemonMoveSchema = z.strictObject({
   move: z.string().nullable(),
-  moveId: z.number().int().nonnegative(),
+  moveId: z.number().int(),
   slot: z.number().int().nonnegative()
 });
 
@@ -1337,14 +1344,14 @@ export const tradePokemonEditableFieldSchema = z.strictObject({
 });
 
 export const tradePokemonRecordSchema = z.strictObject({
-  ability: z.number().int().nonnegative(),
+  ability: z.number().int(),
   abilityLabel: z.string(),
   abilityOptions: z.array(tradePokemonEditableFieldOptionSchema).default([]),
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean(),
   dynamaxLevel: z.number().int().nonnegative(),
-  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   eventLabel: z.string().nullable().default(null),
   field03: z.number().int().nonnegative(),
   flawlessIvCount: z.number().int().nullable(),
@@ -1365,18 +1372,18 @@ export const tradePokemonRecordSchema = z.strictObject({
   memoryIntensity: z.number().int().nonnegative(),
   memoryTextVariable: z.number().int().nonnegative(),
   moves: z.array(tradePokemonMoveSchema).default([]),
-  nature: z.number().int().nonnegative(),
+  nature: z.number().int(),
   natureLabel: z.string(),
   otGender: z.number().int().nonnegative(),
   otGenderLabel: z.string(),
   provenance: tradePokemonProvenanceSchema,
   relearnMoves: z.array(tradePokemonMoveSchema),
   requiredForm: z.number().int(),
-  requiredNature: z.number().int().nonnegative(),
+  requiredNature: z.number().int(),
   requiredNatureLabel: z.string(),
   requiredSpecies: z.string(),
   requiredSpeciesId: z.number().int().nonnegative(),
-  shinyLock: z.number().int().nonnegative(),
+  shinyLock: z.number().int(),
   shinyLockLabel: z.string(),
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
@@ -1399,7 +1406,7 @@ export const tradePokemonWorkflowStatsSchema = z.strictObject({
 export const tradePokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(tradePokemonEditableFieldSchema),
-  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   stats: tradePokemonWorkflowStatsSchema,
   summary: workflowSummarySchema,
   trades: z.array(tradePokemonRecordSchema)
@@ -1426,7 +1433,7 @@ export const staticEncounterStatsSchema = z.strictObject({
 
 export const staticEncounterMoveSchema = z.strictObject({
   move: z.string().nullable(),
-  moveId: z.number().int().nonnegative(),
+  moveId: z.number().int(),
   slot: z.number().int().nonnegative()
 });
 
@@ -1448,14 +1455,14 @@ export const staticEncounterEditableFieldSchema = z.strictObject({
 });
 
 export const staticEncounterRecordSchema = z.strictObject({
-  ability: z.number().int().nonnegative(),
+  ability: z.number().int(),
   abilityLabel: z.string(),
   abilityOptions: z.array(staticEncounterEditableFieldOptionSchema).default([]),
   canGigantamax: z.boolean(),
   categoryId: z.string().nullable().default(null),
   categoryLabel: z.string().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative(),
-  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   encounterId: z.string(),
   encounterIndex: z.number().int().nonnegative(),
   encounterScenario: z.number().int().nonnegative(),
@@ -1466,7 +1473,7 @@ export const staticEncounterRecordSchema = z.strictObject({
   fieldValues: z.record(z.string(), z.string()).default({}),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int().nonnegative(),
-  gender: z.number().int().nonnegative(),
+  gender: z.number().int(),
   genderLabel: z.string(),
   heldItem: z.string().nullable(),
   heldItemId: z.number().int().nonnegative(),
@@ -1475,10 +1482,10 @@ export const staticEncounterRecordSchema = z.strictObject({
   label: z.string(),
   level: z.number().int().nonnegative(),
   moves: z.array(staticEncounterMoveSchema),
-  nature: z.number().int().nonnegative(),
+  nature: z.number().int(),
   natureLabel: z.string(),
   provenance: staticEncounterProvenanceSchema,
-  shinyLock: z.number().int().nonnegative(),
+  shinyLock: z.number().int(),
   shinyLockLabel: z.string(),
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
@@ -1497,7 +1504,7 @@ export const staticEncountersWorkflowStatsSchema = z.strictObject({
 export const staticEncountersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(staticEncounterEditableFieldSchema),
-  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   encounters: z.array(staticEncounterRecordSchema),
   stats: staticEncountersWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -3247,6 +3254,7 @@ export const updateMoveFieldResponseSchema = z.strictObject({
 
 export const updateTextEntryRequestSchema = z.strictObject({
   paths: projectPathsSchema,
+  query: textWorkflowQuerySchema.nullable().optional(),
   session: editSessionSchema.nullable(),
   textKey: z.string(),
   value: z.string()
@@ -3737,6 +3745,7 @@ export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSc
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
 export type UpdateMoveFieldRequest = z.infer<typeof updateMoveFieldRequestSchema>;
 export type UpdateMoveFieldResponse = z.infer<typeof updateMoveFieldResponseSchema>;
+export type TextWorkflowQuery = z.infer<typeof textWorkflowQuerySchema>;
 export type LoadTextWorkflowRequest = z.infer<typeof loadTextWorkflowRequestSchema>;
 export type LoadTextWorkflowResponse = z.infer<typeof loadTextWorkflowResponseSchema>;
 export type LoadTrainersWorkflowRequest = z.infer<typeof loadTrainersWorkflowRequestSchema>;

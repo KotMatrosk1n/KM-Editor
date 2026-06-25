@@ -13,7 +13,7 @@ use tauri_plugin_shell::ShellExt;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 const WINDOW_CLOSE_REQUESTED_EVENT: &str = "km-editor://window-close-requested";
-const SUPPORT_SEARCH_PROGRESS_EVENT: &str = "km-editor://sv-support-search-progress";
+const SUPPORT_SEARCH_PROGRESS_EVENT: &str = "km-editor://support-file-search-progress";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -185,7 +185,7 @@ fn create_directory(path: String) -> Result<(), String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-async fn find_scarlet_violet_support_file(
+async fn find_support_file_folder(
     app_handle: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || find_support_file_blocking(&app_handle))
@@ -344,7 +344,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             project_bridge_once,
             create_directory,
-            find_scarlet_violet_support_file,
+            find_support_file_folder,
             open_path,
             set_close_guard_enabled,
             exit_app

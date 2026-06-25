@@ -69,7 +69,7 @@ export function createMockDesktopServices(overrides: Partial<DesktopServices> = 
     checkForNativeUpdate: async () => null,
     createDirectory: async () => undefined,
     exitApp: async () => undefined,
-    findScarletVioletSupportFolder: async () => null,
+    findSupportFileFolder: async () => null,
     isAvailable: true,
     openExternalUrl: async () => undefined,
     openPath: async () => undefined,

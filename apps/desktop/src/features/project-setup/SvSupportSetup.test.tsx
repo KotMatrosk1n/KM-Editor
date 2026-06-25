@@ -44,7 +44,7 @@ describe('S/V support setup', () => {
   it('asks permission, finds the optional support folder, and refreshes paths', async () => {
     const user = userEvent.setup();
     const supportFolderPath = 'C:\\Support';
-    const findScarletVioletSupportFolder = vi.fn(async () => supportFolderPath);
+    const findSupportFileFolder = vi.fn(async () => supportFolderPath);
     const validateProject = vi.fn(async (request) => ({
       health: createHealthForValidatedPaths(
         request.paths.baseRomFsPath ?? '',
@@ -59,11 +59,12 @@ describe('S/V support setup', () => {
     render(
       <App
         bridge={createMockProjectBridge({ listWorkflows, validateProject })}
-        desktopServices={createMockDesktopServices({ findScarletVioletSupportFolder })}
+        desktopServices={createMockDesktopServices({ findSupportFileFolder })}
       />
     );
 
     expect(screen.getByLabelText('oo2core_8_win64.dll Folder (Optional)')).toHaveValue('');
+    expect(screen.getAllByText('oo2core_8_win64.dll Folder (Optional)')).toHaveLength(2);
 
     await user.click(screen.getByRole('button', { name: 'Find oo2core_8_win64.dll' }));
     expect(
@@ -77,7 +78,7 @@ describe('S/V support setup', () => {
         supportFolderPath
       )
     );
-    expect(findScarletVioletSupportFolder).toHaveBeenCalledTimes(1);
+    expect(findSupportFileFolder).toHaveBeenCalledTimes(1);
     expect(validateProject).toHaveBeenCalledWith({
       paths: {
         baseExeFsPath: null,

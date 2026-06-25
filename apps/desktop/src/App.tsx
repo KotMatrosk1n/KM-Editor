@@ -196,6 +196,7 @@ import {
   type TeraRaidsWorkflow,
   type TextEditableField,
   type TextEntryRecord,
+  type TextWorkflowQuery,
   type TextWorkflow,
   type TypeChartSourceRecord,
   type TypeChartWorkflow,
@@ -423,6 +424,20 @@ const gameDefinitions = {
 >;
 
 const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet', 'za'] as const satisfies readonly ProjectGame[];
+const svTextWorkflowPageLimit = 500;
+
+function createTextWorkflowQuery(game: ProjectGame | null, searchText: string): TextWorkflowQuery | undefined {
+  if (!isScarletVioletGame(game)) {
+    return undefined;
+  }
+
+  const trimmedSearchText = searchText.trim();
+  return {
+    limit: svTextWorkflowPageLimit,
+    offset: 0,
+    searchText: trimmedSearchText.length > 0 ? trimmedSearchText : null
+  };
+}
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -754,12 +769,25 @@ const pathFields: Array<{
   {
     field: 'pokemonLegendsZASupportFolderPath',
     kind: 'directory',
-    label: 'Pokemon Legends Z-A Support Folder (Optional)',
+    label: 'oo2core_8_win64.dll Folder (Optional)',
     role: 'pokemonLegendsZASupportFolder',
     scope: 'pokemonLegendsZA'
   }
 ];
 type ProjectPathField = (typeof pathFields)[number];
+
+function isProjectPathFieldVisible(pathField: ProjectPathField, selectedGame: ProjectGame) {
+  if (!pathField.scope) {
+    return true;
+  }
+
+  if (pathField.scope === 'scarletViolet') {
+    return isScarletVioletGame(selectedGame);
+  }
+
+  return isPokemonLegendsZAGame(selectedGame);
+}
+
 type PokemonEvolutionDraftChange = {
   action: string;
   slot: number | null;
@@ -982,7 +1010,7 @@ const zaRankFieldName = 'rank';
 const zaMegaEvolutionFieldName = 'megaEvolution';
 const zaLastHandFieldName = 'lastHand';
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
-const supportSearchProgressEvent = 'km-editor://sv-support-search-progress';
+const supportSearchProgressEvent = 'km-editor://support-file-search-progress';
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
   classBallIdFieldName,
@@ -1752,6 +1780,8 @@ export function App({
   const selectedGame = draftPaths.selectedGame;
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
   const isPokemonLegendsZAProject = isPokemonLegendsZAGame(selectedGame);
+  const textWorkflowRef = useRef(textWorkflow);
+  textWorkflowRef.current = textWorkflow;
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
   const availableWorkflowSectionIds = useMemo(
@@ -2386,40 +2416,6 @@ export function App({
     setActiveSection('health');
   }, [activeSection, activeSectionCanStayMounted, setActiveSection]);
 
-  useEffect(() => {
-    if (!isTrinityCacheGame(selectedGame)) {
-      svCacheWarmupRunRef.current += 1;
-      setIsSvCacheWarming(false);
-      setIsSvCacheRefreshing(false);
-      setIsSvCacheClearing(false);
-      setIsSvCacheClearConfirmOpen(false);
-      setSvCacheStatus(null);
-      return;
-    }
-
-    let isDisposed = false;
-
-    const getCacheStatus = isPokemonLegendsZAGame(selectedGame)
-      ? bridge.getZaCacheStatus
-      : bridge.getSvCacheStatus;
-
-    void getCacheStatus({ paths: null })
-      .then((response) => {
-        if (!isDisposed) {
-          setSvCacheStatus(response.status);
-        }
-      })
-      .catch((error) => {
-        if (!isDisposed && !isStaleProjectScopeError(error)) {
-          setBridgeDiagnostics(toBridgeDiagnostics(error));
-        }
-      });
-
-    return () => {
-      isDisposed = true;
-    };
-  }, [bridge, selectedGame]);
-
   const startSvCacheWarmup = useCallback(
     async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
       if (!isTrinityCacheGame(paths.selectedGame) || !hasValidTrinitySupportFolder(paths.selectedGame, health)) {
@@ -2447,19 +2443,44 @@ export function App({
         }
 
         setIsSvCacheWarming(true);
-        for (let stepIndex = 0; stepIndex < initialStatus.status.warmupTotal; stepIndex += 1) {
+        let latestStatus = initialStatus.status;
+        let nextStepIndex = Math.max(
+          0,
+          Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
+        );
+        let remainingNoProgressAttempts = latestStatus.warmupTotal + 1;
+        while (
+          latestStatus.warmupCompleted < latestStatus.warmupTotal &&
+          remainingNoProgressAttempts > 0
+        ) {
           if (svCacheWarmupRunRef.current !== runId) {
             return;
           }
 
+          const previousCompleted = latestStatus.warmupCompleted;
+          const previousTotal = latestStatus.warmupTotal;
           const response = isPokemonLegendsZAGame(paths.selectedGame)
-            ? await bridge.warmupZaCacheStep({ paths, stepIndex })
-            : await bridge.warmupSvCacheStep({ paths, stepIndex });
+            ? await bridge.warmupZaCacheStep({ paths, stepIndex: nextStepIndex })
+            : await bridge.warmupSvCacheStep({ paths, stepIndex: nextStepIndex });
           if (svCacheWarmupRunRef.current !== runId) {
             return;
           }
 
-          setSvCacheStatus(response.status);
+          latestStatus = response.status;
+          setSvCacheStatus(latestStatus);
+          if (
+            latestStatus.warmupCompleted <= previousCompleted &&
+            latestStatus.warmupTotal === previousTotal
+          ) {
+            remainingNoProgressAttempts -= 1;
+            nextStepIndex = (nextStepIndex + 1) % Math.max(1, latestStatus.warmupTotal);
+          } else {
+            remainingNoProgressAttempts = latestStatus.warmupTotal + 1;
+            nextStepIndex = Math.max(
+              0,
+              Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
+            );
+          }
         }
       } catch (error) {
         if (!isStaleProjectScopeError(error)) {
@@ -2473,6 +2494,47 @@ export function App({
     },
     [bridge]
   );
+
+  useEffect(() => {
+    svCacheWarmupRunRef.current += 1;
+    setIsSvCacheWarming(false);
+
+    if (!isTrinityCacheGame(selectedGame)) {
+      setIsSvCacheWarming(false);
+      setIsSvCacheRefreshing(false);
+      setIsSvCacheClearing(false);
+      setIsSvCacheClearConfirmOpen(false);
+      setSvCacheStatus(null);
+      return;
+    }
+
+    if (health && hasValidTrinitySupportFolder(selectedGame, health)) {
+      void startSvCacheWarmup(toProjectPaths(draftPathsRef.current), health);
+      return;
+    }
+
+    let isDisposed = false;
+
+    const getCacheStatus = isPokemonLegendsZAGame(selectedGame)
+      ? bridge.getZaCacheStatus
+      : bridge.getSvCacheStatus;
+
+    void getCacheStatus({ paths: null })
+      .then((response) => {
+        if (!isDisposed) {
+          setSvCacheStatus(response.status);
+        }
+      })
+      .catch((error) => {
+        if (!isDisposed && !isStaleProjectScopeError(error)) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      });
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [bridge, health, selectedGame, startSvCacheWarmup]);
 
   const handleChangeSvCacheMode = useCallback(
     async (mode: TrinityCacheMode) => {
@@ -2492,9 +2554,9 @@ export function App({
               paths
             })
           : await bridge.updateSvCacheSettings({
-          maxCacheSizeBytes,
-          mode,
-          paths
+              maxCacheSizeBytes,
+              mode,
+              paths
             });
         setSvCacheStatus(response.status);
         if (paths && health) {
@@ -2522,9 +2584,9 @@ export function App({
               paths
             })
           : await bridge.updateSvCacheSettings({
-          maxCacheSizeBytes,
-          mode,
-          paths
+              maxCacheSizeBytes,
+              mode,
+              paths
             });
         setSvCacheStatus(response.status);
       } catch (error) {
@@ -2762,7 +2824,7 @@ export function App({
     }
   };
 
-  const handleRequestScarletVioletSupportSearch = () => {
+  const handleRequestSupportSearch = () => {
     if (!desktopServices.isAvailable) {
       setBridgeDiagnostics([
         {
@@ -2777,7 +2839,7 @@ export function App({
     setIsSupportSearchPermissionOpen(true);
   };
 
-  const handleConfirmScarletVioletSupportSearch = async () => {
+  const handleConfirmSupportSearch = async () => {
     setIsSupportSearchPermissionOpen(false);
     setIsSupportSearchRunning(true);
     setBridgeDiagnostics([]);
@@ -2791,7 +2853,7 @@ export function App({
         (event) => setWorkProgress(createSupportSearchWorkProgress(event.payload))
       );
 
-      const folderPath = await desktopServices.findScarletVioletSupportFolder();
+      const folderPath = await desktopServices.findSupportFileFolder();
 
       if (!folderPath) {
         setBridgeDiagnostics([
@@ -2804,12 +2866,15 @@ export function App({
         return;
       }
 
+      const supportFolderField: ProjectPathFieldName = isPokemonLegendsZAGame(selectedGame)
+        ? 'pokemonLegendsZASupportFolderPath'
+        : 'scarletVioletSupportFolderPath';
       const nextDraftPaths: ProjectPathDraft = {
         ...draftPathsRef.current,
-        scarletVioletSupportFolderPath: folderPath
+        [supportFolderField]: folderPath
       };
       const paths = toProjectPaths(nextDraftPaths);
-      setDraftPath('scarletVioletSupportFolderPath', folderPath);
+      setDraftPath(supportFolderField, folderPath);
       setProjectStatus('validating');
 
       const response = await bridge.validateProject({ paths });
@@ -3089,12 +3154,15 @@ export function App({
     }
   };
 
-  const handleOpenTextWorkflow = async () => {
+  const handleOpenTextWorkflow = async (searchTextOverride = textSearchText) => {
     setIsTextLoading(true);
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadTextWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadTextWorkflow({
+        paths: toProjectPaths(draftPaths),
+        query: createTextWorkflowQuery(selectedGame, searchTextOverride)
+      });
       setTextWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3102,6 +3170,40 @@ export function App({
       setIsTextLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isScarletVioletProject || activeSection !== 'text' || !textWorkflowRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsTextLoading(true);
+      setBridgeDiagnostics([]);
+      bridge.loadTextWorkflow({
+        paths: toProjectPaths(draftPathsRef.current),
+        query: createTextWorkflowQuery(selectedGame, textSearchText)
+      })
+        .then((response) => {
+          setTextWorkflow(response.workflow);
+        })
+        .catch((error) => {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        })
+        .finally(() => {
+          setIsTextLoading(false);
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    activeSection,
+    bridge,
+    isScarletVioletProject,
+    selectedGame,
+    setBridgeDiagnostics,
+    setTextWorkflow,
+    textSearchText
+  ]);
 
   const handleOpenTrainersWorkflow = async () => {
     setIsTrainersLoading(true);
@@ -5192,7 +5294,7 @@ export function App({
       let nextWorkflow = itemsWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame)) {
+      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateItemFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5276,7 +5378,10 @@ export function App({
       let nextWorkflow = pokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (changes.length > 0 && isScarletVioletGame(selectedGame)) {
+      if (
+        changes.length > 0 &&
+        (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame))
+      ) {
         const response = await bridge.updatePokemonFields({
           paths: toProjectPaths(draftPaths),
           session: editSession,
@@ -5509,6 +5614,7 @@ export function App({
     try {
       const response = await bridge.updateTextEntry({
         paths: toProjectPaths(draftPaths),
+        query: createTextWorkflowQuery(selectedGame, textSearchText),
         session: editSession,
         textKey,
         value
@@ -7270,7 +7376,10 @@ export function App({
     if (textWorkflow) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadTextWorkflow({ paths });
+          const response = await bridge.loadTextWorkflow({
+            paths,
+            query: createTextWorkflowQuery(selectedGame, textSearchText)
+          });
           setTextWorkflow(response.workflow);
         }
       );
@@ -7870,7 +7979,7 @@ export function App({
               onCreateOutputRootFolder={handleCreateOutputRootFolder}
               onOpenOutputRoot={handleOpenOutputRoot}
               onPickProjectPath={handlePickProjectPath}
-              onRequestScarletVioletSupportSearch={handleRequestScarletVioletSupportSearch}
+              onRequestSupportSearch={handleRequestSupportSearch}
               onSetDraftPath={setDraftPath}
               onValidateProject={handleValidateProject}
               pendingEditCount={pendingEditCount}
@@ -7955,6 +8064,20 @@ export function App({
           {activeSection === 'items' ? (
             isItemsLoading && !itemsWorkflow ? (
               <WorkflowLoadingPanel label="Items" />
+            ) : isPokemonLegendsZAProject ? (
+              <ZaItemsSection
+                onSearchChange={setItemSearchText}
+                onSelectItem={setSelectedItemId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateItemField={handleUpdateItemField}
+                onUpdateItemFields={handleUpdateItemFields}
+                searchText={itemSearchText}
+                selectedItemId={selectedItemId}
+                editSession={getEditSessionForSection('items')}
+                isEditStarting={isEditStarting}
+                isItemUpdating={isItemUpdating}
+                workflow={itemsWorkflow}
+              />
             ) : isScarletVioletProject ? (
               <SvItemsSection
                 onSearchChange={setItemSearchText}
@@ -8925,7 +9048,8 @@ export function App({
       {isSupportSearchPermissionOpen ? (
         <SupportSearchConfirmationModal
           onCancel={() => setIsSupportSearchPermissionOpen(false)}
-          onConfirm={() => void handleConfirmScarletVioletSupportSearch()}
+          onConfirm={() => void handleConfirmSupportSearch()}
+          selectedGame={selectedGame}
         />
       ) : null}
       {isSvCacheClearConfirmOpen ? (
@@ -9138,7 +9262,7 @@ function HealthSection({
   onCreateOutputRootFolder,
   onOpenOutputRoot,
   onPickProjectPath,
-  onRequestScarletVioletSupportSearch,
+  onRequestSupportSearch,
   onSetDraftPath,
   onValidateProject,
   pendingEditCount,
@@ -9158,7 +9282,7 @@ function HealthSection({
   onCreateOutputRootFolder: () => void;
   onOpenOutputRoot: () => void;
   onPickProjectPath: (pathField: ProjectPathField) => void;
-  onRequestScarletVioletSupportSearch: () => void;
+  onRequestSupportSearch: () => void;
   onSetDraftPath: (field: ProjectPathFieldName, value: string) => void;
   onValidateProject: () => void;
   pendingEditCount: number;
@@ -9169,17 +9293,9 @@ function HealthSection({
   const outputRootPath = draftPaths.outputRootPath.trim();
   const gameDefinition = gameDefinitions[selectedGame];
   const GameIcon = gameDefinition.icon;
-  const visiblePathFields = pathFields.filter((pathField) => {
-    if (!pathField.scope) {
-      return true;
-    }
-
-    if (pathField.scope === 'scarletViolet') {
-      return isScarletVioletGame(selectedGame);
-    }
-
-    return isPokemonLegendsZAGame(selectedGame);
-  });
+  const visiblePathFields = pathFields.filter((pathField) =>
+    isProjectPathFieldVisible(pathField, selectedGame)
+  );
   const canShowSvCacheProgress = Boolean(
     health &&
       isTrinityCacheGame(selectedGame) &&
@@ -9301,12 +9417,12 @@ function HealthSection({
               size={18}
             />
           </button>
-          {isScarletVioletGame(selectedGame) ? (
+          {isTrinityCacheGame(selectedGame) ? (
             <button
               aria-busy={isSupportSearchRunning || undefined}
               className="secondary-button"
               disabled={!isDesktopAvailable || isBusy || isSupportSearchRunning}
-              onClick={onRequestScarletVioletSupportSearch}
+              onClick={onRequestSupportSearch}
               title="Search local drives for oo2core_8_win64.dll and fill the folder."
               type="button"
             >
@@ -9450,6 +9566,10 @@ function SwShItemsSection(props: ItemsSectionPublicProps) {
 
 function SvItemsSection(props: ItemsSectionPublicProps) {
   return <ItemsSection {...props} editorFamily="sv" />;
+}
+
+function ZaItemsSection(props: ItemsSectionPublicProps) {
+  return <ItemsSection {...props} editorFamily="za" />;
 }
 
 function ItemsSection({
@@ -10130,6 +10250,11 @@ function SelectedPokemonSummaryCard({
 }) {
   const isContext = variant === 'context';
   const pokemonLabel = formatPokemonRecordName(pokemon, editorFamily);
+  const pokemonFormLabel = formatSpeciesFormOptionLabel(pokemon.form, {
+    gameFamily: editorFamily,
+    species: pokemon.name,
+    speciesId: pokemon.speciesId
+  });
 
   return (
     <div
@@ -10141,7 +10266,7 @@ function SelectedPokemonSummaryCard({
       <div className="pokemon-summary-main">
         <strong>{pokemonLabel}</strong>
         <span>
-          {pokemon.speciesId} / {pokemon.formLabel}
+          {pokemon.speciesId} / {pokemonFormLabel}
         </span>
       </div>
       <dl className="item-provenance-list pokemon-summary-metadata">
@@ -13912,7 +14037,8 @@ function getNatureStatEffects(
     return null;
   }
 
-  const normalizedNature = editorFamily === 'sv' && nature > 0 ? nature - 1 : nature;
+  const normalizedNature =
+    (editorFamily === 'sv' || editorFamily === 'za') && nature > 0 ? nature - 1 : nature;
   return effects[normalizedNature] ?? { up: null, down: null };
 }
 
@@ -15738,7 +15864,8 @@ function GiftPokemonSection({
     [filteredGifts, gifts, selectedGiftIndex]
   );
   const canEditGifts = workflow?.summary.availability === 'available';
-  const editorFamily = workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
+  const editorFamily: EditorUiFamily =
+    workflow?.editorFamily === 'za' ? 'za' : workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
   const pendingGiftIndexes = useMemo(() => getPendingGiftPokemonIndexes(editSession), [editSession]);
   const lockedGiftIndexes = useMemo(
     () => gifts.filter((gift) => gift.shinyLock !== 0).map((gift) => gift.giftIndex),
@@ -15834,7 +15961,7 @@ function GiftPokemonSection({
                     <span role="cell">
                       {formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
                     </span>
-                    <span role="cell">{gift.level}</span>
+                    <span role="cell">{formatGiftPokemonLevel(gift, editorFamily)}</span>
                     <span role="cell">{gift.ivSummary}</span>
                     <span role="cell">{formatSourceLayer(gift.provenance.sourceLayer)}</span>
                   </button>
@@ -15974,7 +16101,7 @@ function SelectedGiftPokemonPanel({
         <>
           <PokemonSummaryCard
             name={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
-            subtitle={`Gift #${gift.giftIndex} | Lv. ${gift.level}`}
+            subtitle={`Gift #${gift.giftIndex} | ${formatGiftPokemonLevelSummary(gift, editorFamily)}`}
             title={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
           />
 
@@ -16255,7 +16382,8 @@ function TradePokemonSection({
 }) {
   const [isShinyLockConfirmationOpen, setIsShinyLockConfirmationOpen] = useState(false);
   const trades = workflow?.trades ?? [];
-  const editorFamily: EditorUiFamily = workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
+  const editorFamily: EditorUiFamily =
+    workflow?.editorFamily === 'za' ? 'za' : workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
   const filteredTrades = useMemo(
     () => filterTradePokemon(trades, searchText),
     [searchText, trades]
@@ -28710,11 +28838,15 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
 
 function SupportSearchConfirmationModal({
   onCancel,
-  onConfirm
+  onConfirm,
+  selectedGame
 }: {
   onCancel: () => void;
   onConfirm: () => void;
+  selectedGame: ProjectGame;
 }) {
+  const gameLabel = isPokemonLegendsZAGame(selectedGame) ? 'Z-A' : 'S/V';
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
@@ -28728,7 +28860,7 @@ function SupportSearchConfirmationModal({
           <h2 id="support-search-confirmation-heading">Search for oo2core_8_win64.dll?</h2>
         </div>
         <p className="modal-copy">
-          KM Editor will scan local filesystem roots to find oo2core_8_win64.dll for S/V
+          KM Editor will scan local filesystem roots to find oo2core_8_win64.dll for {gameLabel}
           project data. This can take a while on large drives.
         </p>
         <p className="modal-copy modal-copy-muted">
@@ -29112,8 +29244,8 @@ function PathStatusSection({
   health: ProjectHealth | null;
   selectedGame: ProjectGame;
 }) {
-  const visiblePathFields = pathFields.filter(
-    (pathField) => pathField.scope !== 'scarletViolet' || isScarletVioletGame(selectedGame)
+  const visiblePathFields = pathFields.filter((pathField) =>
+    isProjectPathFieldVisible(pathField, selectedGame)
   );
 
   return (
@@ -29915,6 +30047,7 @@ function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
       gift.speciesId.toString(),
       gift.form.toString(),
       gift.level.toString(),
+      formatGiftPokemonLevel(gift, gift.editorFamily === 'za' ? 'za' : gift.editorFamily === 'sv' ? 'sv' : 'swsh'),
       gift.isEgg ? 'egg' : '',
       gift.heldItem ?? 'None',
       gift.heldItemId.toString(),
@@ -30175,7 +30308,15 @@ function buildEncounterConditionTabs(
       table.location === selectedTable.location
     );
   });
-  const tablesByLabel = new Map(groupTables.map((table) => [table.encounterType, table]));
+  const tablesByLabel = new Map(
+    Array.from(new Set(groupTables.map((table) => table.encounterType))).map((label) => [
+      label,
+      getPreferredEncounterTable(
+        groupTables.filter((table) => table.encounterType === label),
+        selectedTable
+      )
+    ])
+  );
   const knownLabels = new Set<string>(encounterConditionLabels);
   const knownTabs = encounterConditionLabels.map((label) => {
     const table = tablesByLabel.get(label) ?? null;
@@ -30186,14 +30327,17 @@ function buildEncounterConditionTabs(
       tableId: table?.tableId ?? null
     };
   });
-  const extraTabs = groupTables
-    .filter((table) => !knownLabels.has(table.encounterType))
-    .map((table) => ({
-      isAvailable: true,
-      label: table.encounterType,
-      table,
-      tableId: table.tableId
-    }));
+  const extraTabs = Array.from(new Set(groupTables.map((table) => table.encounterType)))
+    .filter((label) => !knownLabels.has(label))
+    .map((label) => {
+      const table = tablesByLabel.get(label) ?? null;
+      return {
+        isAvailable: table !== null,
+        label,
+        table,
+        tableId: table?.tableId ?? null
+      };
+    });
 
   return [...knownTabs, ...extraTabs];
 }
@@ -32709,6 +32853,9 @@ function normalizePokemonSpriteName(name: string) {
     .replace(/\s*\((Female|Male)\)$/i, '-$1')
     .replace(/\s*\((Low Key)\)/i, '-Low-Key')
     .replace(/\s*\((Gigantamax|G-Max)\)$/i, '-Gmax')
+    .replace(/\s*\((Mega X)\)$/i, '-MegaX')
+    .replace(/\s*\((Mega Y)\)$/i, '-MegaY')
+    .replace(/\s*\((Mega)\)$/i, '-Mega')
     .replace(/\s*\((Regional Form \d+|Regional Form|Form \d+)\)$/i, '')
     .replace(/[()]/g, '')
     .replace(/\s+/g, '-');
@@ -32756,7 +32903,10 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     stat3Percent: 'Percent chance for stat-change slot 3 to apply.',
     stat3Stage: 'Stage delta for stat-change slot 3. Positive raises the stat; negative lowers it.',
     [itemUseFlags1FieldName]: 'Raw item use bitmask. Locked from direct editing; use the decoded PP restore, HP restore, and EV flag fields instead.',
-    [itemUseFlags2FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details; bits 5-7 remain unknown.'
+    [itemUseFlags2FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details; bits 5-7 remain unknown.',
+    zaConditionKind: 'Z-A shop unlock condition type for this inventory slot.',
+    zaConditionComparison: 'Comparison used by the selected Z-A shop unlock condition. Value 5 is greater than or equal.',
+    zaConditionArguments: 'Arguments for the selected Z-A condition. Scenario phase uses a phase value, flag condition uses a flag id, work value uses a work id, and have item uses item id plus optional count.'
   };
   const range =
     field.minimumValue === null || field.maximumValue === null
@@ -34171,7 +34321,19 @@ function formatGiftPokemonMoves(gift: GiftPokemonRecord) {
     .filter((move) => move.moveId > 0)
     .map((move) => move.move ?? `Move ${move.moveId}`);
 
-  return moves.length > 0 ? moves.join(' / ') : 'None';
+  if (moves.length > 0) {
+    return moves.join(' / ');
+  }
+
+  return gift.moves.some((move) => move.moveId < 0) ? 'Game default / none' : 'None';
+}
+
+function formatGiftPokemonLevel(gift: GiftPokemonRecord, editorFamily: EditorUiFamily) {
+  return editorFamily === 'za' && gift.level === 0 ? 'Game default' : gift.level.toString();
+}
+
+function formatGiftPokemonLevelSummary(gift: GiftPokemonRecord, editorFamily: EditorUiFamily) {
+  return editorFamily === 'za' && gift.level === 0 ? 'Game default level' : `Lv. ${gift.level}`;
 }
 
 function formatGiftPokemonScale(gift: GiftPokemonRecord) {
@@ -34281,6 +34443,7 @@ const alcremieSweetFormLabels = [
 ] as const;
 
 const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = [
+  ...createZaMegaFormLabelDefinitions(),
   createFormLabelDefinition(19, ['rattata'], [[1, 'Alolan']], 'Kanto'),
   createFormLabelDefinition(20, ['raticate'], [[1, 'Alolan']], 'Kanto'),
   createFormLabelDefinition(25, ['pikachu'], [
@@ -34670,6 +34833,103 @@ function createFormLabelDefinition(
   gameFamily: SpeciesFormGameFamily = 'both'
 ): SpeciesFormLabelDefinition {
   return { baseFormLabel, forms, gameFamily, speciesId, speciesNames };
+}
+
+function createZaMegaFormLabelDefinitions(): SpeciesFormLabelDefinition[] {
+  const singleMegaSpecies: Array<readonly [number, string]> = [
+    [3, 'venusaur'],
+    [9, 'blastoise'],
+    [15, 'beedrill'],
+    [18, 'pidgeot'],
+    [36, 'clefable'],
+    [65, 'alakazam'],
+    [71, 'victreebel'],
+    [80, 'slowbro'],
+    [94, 'gengar'],
+    [115, 'kangaskhan'],
+    [121, 'starmie'],
+    [127, 'pinsir'],
+    [130, 'gyarados'],
+    [142, 'aerodactyl'],
+    [149, 'dragonite'],
+    [154, 'meganium'],
+    [160, 'feraligatr'],
+    [181, 'ampharos'],
+    [208, 'steelix'],
+    [212, 'scizor'],
+    [214, 'heracross'],
+    [227, 'skarmory'],
+    [229, 'houndoom'],
+    [248, 'tyranitar'],
+    [254, 'sceptile'],
+    [257, 'blaziken'],
+    [260, 'swampert'],
+    [282, 'gardevoir'],
+    [302, 'sableye'],
+    [303, 'mawile'],
+    [306, 'aggron'],
+    [308, 'medicham'],
+    [310, 'manectric'],
+    [319, 'sharpedo'],
+    [323, 'camerupt'],
+    [334, 'altaria'],
+    [354, 'banette'],
+    [358, 'chimecho'],
+    [359, 'absol'],
+    [362, 'glalie'],
+    [373, 'salamence'],
+    [376, 'metagross'],
+    [380, 'latias'],
+    [381, 'latios'],
+    [384, 'rayquaza'],
+    [428, 'lopunny'],
+    [445, 'garchomp'],
+    [448, 'lucario'],
+    [460, 'abomasnow'],
+    [475, 'gallade'],
+    [478, 'froslass'],
+    [500, 'emboar'],
+    [530, 'excadrill'],
+    [531, 'audino'],
+    [609, 'chandelure'],
+    [623, 'golurk'],
+    [652, 'chesnaught'],
+    [655, 'delphox'],
+    [658, 'greninja'],
+    [670, 'floette'],
+    [701, 'hawlucha'],
+    [719, 'diancie'],
+    [740, 'crabominable'],
+    [780, 'drampa'],
+    [952, 'scovillain'],
+    [970, 'glimmora']
+  ];
+
+  return [
+    createFormLabelDefinition(
+      6,
+      ['charizard'],
+      [
+        [1, 'Mega X'],
+        [2, 'Mega Y']
+      ],
+      undefined,
+      'za'
+    ),
+    createFormLabelDefinition(
+      150,
+      ['mewtwo'],
+      [
+        [1, 'Mega X'],
+        [2, 'Mega Y']
+      ],
+      undefined,
+      'za'
+    ),
+    ...singleMegaSpecies.map(([speciesId, speciesName]) =>
+      createFormLabelDefinition(speciesId, [speciesName], [[1, 'Mega']], undefined, 'za')
+    )
+  ];
 }
 
 function createSpeciesFormLabelData(gameFamily: EditorUiFamily): SpeciesFormLabelData {

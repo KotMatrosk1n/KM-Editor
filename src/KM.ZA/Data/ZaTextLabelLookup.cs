@@ -83,16 +83,23 @@ internal sealed class ZaTextLabelLookup
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.PokemonNames, "Pokemon names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.AbilityNames, "ability names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.PlaceNames, "place names", diagnostics),
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+            LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.PlaceNameKeys, "place name keys", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.TrainerNames, "trainer names", diagnostics),
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+            LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.TrainerNameKeys, "trainer name keys", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.TrainerTypes, "trainer class names", diagnostics),
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
+            LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.TrainerTypeKeys, "trainer class keys", diagnostics));
     }
 
     public string Item(int itemId) => GetIndexed(itemNames, itemId) ?? ZaLabels.Item(itemId);
 
-    public string Move(int moveId) => GetIndexed(moveNames, moveId) ?? ZaLabels.Move(moveId);
+    public string Move(int moveId)
+    {
+        var indexed = GetIndexed(moveNames, moveId);
+        var fallback = ZaLabels.Move(moveId);
+        return string.Equals(indexed, $"Move {moveId.ToString(System.Globalization.CultureInfo.InvariantCulture)}", StringComparison.Ordinal)
+            ? fallback
+            : indexed ?? fallback;
+    }
 
     public string Pokemon(int speciesId) => GetIndexed(pokemonNames, speciesId) ?? ZaLabels.Pokemon(speciesId);
 
@@ -113,8 +120,9 @@ internal sealed class ZaTextLabelLookup
     public string TrainerName(string? key, int trainerId)
     {
         return GetKeyed(trainerNames, trainerNameIndices, key)
+            ?? GetIndexed(trainerNames, trainerId)
             ?? (!string.IsNullOrWhiteSpace(key) && !key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
-                ? key
+                ? ZaLabels.FormatTrainerIdForLookup(key)
                 : $"Trainer {trainerId}");
     }
 

@@ -39,6 +39,7 @@ import {
   loadRoyalCandyWorkflowResponseSchema,
   loadSpreadsheetImportWorkflowRequestSchema,
   loadSpreadsheetImportWorkflowResponseSchema,
+  loadStaticEncountersWorkflowResponseSchema,
   loadShopsWorkflowRequestSchema,
   loadShopsWorkflowResponseSchema,
   previewSpreadsheetImportRequestSchema,
@@ -3623,6 +3624,350 @@ describe('bridge contracts', () => {
               }
             ],
             writtenFiles: ['romfs/bin/pml/item/item.dat']
+          }
+        }
+      }).success
+    ).toBe(true);
+  });
+
+  it('accepts Pokemon Legends Z-A default and random sentinel values', () => {
+    const provenance = {
+      fileState: 'baseOnly',
+      sourceFile: 'romfs/world/ik_data/field/pokemon/pokemon_data/pokemon_data_array.bin',
+      sourceLayer: 'base'
+    } as const;
+    const randomIvs = {
+      attack: -1,
+      defense: -1,
+      hp: -1,
+      specialAttack: -1,
+      specialDefense: -1,
+      speed: -1
+    } as const;
+    const zeroStats = {
+      attack: 0,
+      defense: 0,
+      hp: 0,
+      specialAttack: 0,
+      specialDefense: 0,
+      speed: 0
+    } as const;
+    const trainerProvenance = {
+      classFileState: null,
+      classSourceFile: null,
+      classSourceLayer: null,
+      fileState: 'baseOnly',
+      sourceFile: 'romfs/avalon/data/trainer/trainer_array.bin',
+      sourceLayer: 'base',
+      teamFileState: 'baseOnly',
+      teamSourceFile: 'romfs/avalon/data/trainer/trainer_poke_array.bin',
+      teamSourceLayer: 'base'
+    } as const;
+
+    expect(
+      loadTrainersWorkflowResponseSchema.safeParse({
+        workflow: {
+          diagnostics: [],
+          editableFields: [
+            {
+              field: 'gender',
+              label: 'Gender',
+              maximumValue: 2,
+              minimumValue: -1,
+              options: [{ label: 'Game default / random', value: -1 }],
+              valueKind: 'integer'
+            },
+            {
+              field: 'move1Id',
+              label: 'Move 1',
+              maximumValue: 65535,
+              minimumValue: 0,
+              options: [{ label: '0 None', value: 0 }],
+              valueKind: 'integer'
+            }
+          ],
+          stats: {
+            sourceFileCount: 1,
+            totalPokemonCount: 1,
+            totalTrainerCount: 1
+          },
+          summary: {
+            availability: 'available',
+            description: 'Edit Pokemon Legends Z-A trainer data and trainer Pokemon.',
+            diagnostics: [],
+            id: 'trainers',
+            label: 'Trainers'
+          },
+          trainers: [
+            {
+              aiFlags: 0,
+              aiFlagStates: [],
+              battleType: 'Trainer Battle',
+              battleTypeValue: 0,
+              canEditClassBall: false,
+              canTerastallize: false,
+              classBall: null,
+              classBallId: null,
+              classBallScope: 'Class file missing',
+              gift: 0,
+              heal: false,
+              itemIds: [],
+              items: [],
+              location: 'tr_battle_main_001',
+              money: 0,
+              name: 'Dimension Rank Trainer',
+              provenance: trainerProvenance,
+              team: [
+                {
+                  ability: 255,
+                  abilityLabel: 'Game default / random',
+                  canDynamax: false,
+                  canGigantamax: false,
+                  dynamaxLevel: 0,
+                  evs: zeroStats,
+                  form: 0,
+                  gender: -1,
+                  genderLabel: 'Game default / random',
+                  heldItem: null,
+                  heldItemId: 0,
+                  ivs: randomIvs,
+                  level: 50,
+                  moveIds: [33, 0, 33, 45],
+                  moves: ['Tackle', 'None', 'Tackle', 'Growl'],
+                  nature: -1,
+                  natureLabel: 'Random / game default',
+                  shiny: false,
+                  slot: 0,
+                  species: 'Bulbasaur',
+                  speciesId: 1
+                }
+              ],
+              teraTarget: 'Disabled',
+              trainerClass: 'Pokemon Trainer',
+              trainerClassId: 1,
+              trainerId: 704,
+              zaLastHand: false,
+              zaMegaEvolution: false,
+              zaRank: 26
+            }
+          ]
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      loadGiftPokemonWorkflowResponseSchema.safeParse({
+        workflow: {
+          diagnostics: [],
+          editableFields: [],
+          editorFamily: 'za',
+          gifts: [
+            {
+              ability: 255,
+              abilityLabel: 'Game default / random',
+              ballItem: 'None',
+              ballItemId: 0,
+              canGigantamax: false,
+              dynamaxLevel: 0,
+              editorFamily: 'za',
+              eventLabel: 'main_init_poke_1',
+              flawlessIvCount: null,
+              form: 0,
+              gender: -1,
+              genderLabel: 'Game default / random',
+              giftIndex: 0,
+              heldItem: null,
+              heldItemId: 0,
+              isEgg: false,
+              ivSummary: 'Fixed IVs: HP Random',
+              ivs: randomIvs,
+              label: 'Gift 1: Chikorita Lv. 0',
+              level: 0,
+              moves: [
+                {
+                  move: null,
+                  moveId: -1,
+                  pointUps: 0,
+                  slot: 0
+                }
+              ],
+              nature: -1,
+              natureLabel: 'Random / game default',
+              provenance,
+              shinyLock: 536870911,
+              shinyLockLabel: 'Game default / not forced',
+              specialMove: null,
+              specialMoveId: -1,
+              species: 'Chikorita',
+              speciesId: 152
+            }
+          ],
+          stats: {
+            eggGiftCount: 0,
+            fixedIvGiftCount: 0,
+            sourceFileCount: 1,
+            totalGiftCount: 1
+          },
+          summary: {
+            availability: 'available',
+            description: 'Edit Pokemon Legends Z-A gift Pokemon.',
+            diagnostics: [],
+            id: 'giftPokemon',
+            label: 'Gift Pokemon'
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      loadTradePokemonWorkflowResponseSchema.safeParse({
+        workflow: {
+          diagnostics: [],
+          editableFields: [],
+          editorFamily: 'za',
+          stats: {
+            fixedIvTradeCount: 0,
+            sourceFileCount: 1,
+            totalTradeCount: 1
+          },
+          summary: {
+            availability: 'available',
+            description: 'Edit Pokemon Legends Z-A trade Pokemon.',
+            diagnostics: [],
+            id: 'tradePokemon',
+            label: 'Trade Pokemon'
+          },
+          trades: [
+            {
+              ability: 255,
+              abilityLabel: 'Game default / random',
+              ballItem: 'None',
+              ballItemId: 0,
+              canGigantamax: false,
+              dynamaxLevel: 0,
+              editorFamily: 'za',
+              eventLabel: 'sub_tradepoke_poligon2',
+              field03: 0,
+              flawlessIvCount: null,
+              form: 0,
+              gender: -1,
+              genderLabel: 'Game default / random',
+              hash0: '0x0000000000000000',
+              hash1: '0x0000000000000000',
+              hash2: '0x0000000000000000',
+              heldItem: 'Upgrade',
+              heldItemId: 252,
+              ivSummary: 'Fixed IVs: HP Random',
+              ivs: randomIvs,
+              label: 'Trade 3: Porygon Lv. 50',
+              level: 50,
+              memoryCode: 0,
+              memoryFeel: 0,
+              memoryIntensity: 0,
+              memoryTextVariable: 0,
+              moves: [
+                {
+                  move: null,
+                  moveId: -1,
+                  slot: 0
+                }
+              ],
+              nature: 15,
+              natureLabel: 'Naive (+Spe, -Sp. Def)',
+              otGender: 0,
+              otGenderLabel: 'Default',
+              provenance,
+              relearnMoves: [
+                {
+                  move: null,
+                  moveId: -1,
+                  slot: 0
+                }
+              ],
+              requiredForm: 0,
+              requiredNature: -1,
+              requiredNatureLabel: 'Random / game default',
+              requiredSpecies: 'Script linked',
+              requiredSpeciesId: 0,
+              shinyLock: 536870911,
+              shinyLockLabel: 'Game default / not forced',
+              species: 'Porygon',
+              speciesId: 137,
+              tradeIndex: 2,
+              trainerId: 0,
+              unknownRequirement: 0
+            }
+          ]
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      loadStaticEncountersWorkflowResponseSchema.safeParse({
+        workflow: {
+          diagnostics: [],
+          editableFields: [],
+          editorFamily: 'za',
+          encounters: [
+            {
+              ability: 255,
+              abilityLabel: 'Game default / random',
+              canGigantamax: false,
+              categoryId: 'encounterData',
+              categoryLabel: 'Encounter Data',
+              dynamaxLevel: 0,
+              editorFamily: 'za',
+              encounterId: 'ect_boss_0359_01',
+              encounterIndex: 0,
+              encounterScenario: 0,
+              encounterScenarioLabel: 'Scripted Pokemon',
+              evs: zeroStats,
+              flawlessIvCount: null,
+              form: 0,
+              fieldDisplayValues: {
+                gender: 'Game default / random',
+                move0Id: '-1 Game default / none'
+              },
+              fieldValues: {
+                gender: '-1',
+                move0Id: '-1'
+              },
+              gender: -1,
+              genderLabel: 'Game default / random',
+              heldItem: null,
+              heldItemId: 0,
+              ivSummary: 'Fixed IVs: HP Random',
+              ivs: randomIvs,
+              label: 'Static 001: Absol Lv. 25',
+              level: 25,
+              moves: [
+                {
+                  move: null,
+                  moveId: -1,
+                  slot: 0
+                }
+              ],
+              nature: -1,
+              natureLabel: 'Random / game default',
+              provenance,
+              shinyLock: 536870911,
+              shinyLockLabel: 'Game default / not forced',
+              species: 'Absol',
+              speciesId: 359
+            }
+          ],
+          stats: {
+            fixedIvEncounterCount: 0,
+            gigantamaxEncounterCount: 0,
+            sourceFileCount: 1,
+            totalEncounterCount: 1
+          },
+          summary: {
+            availability: 'available',
+            description: 'Edit Pokemon Legends Z-A static encounters.',
+            diagnostics: [],
+            id: 'staticEncounters',
+            label: 'Static Encounters'
           }
         }
       }).success

@@ -46,6 +46,7 @@ internal sealed class ZaTradePokemonWorkflowService
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> GenderOptions =
     [
+        new(-1, "Game default / random"),
         new(0, "Random"),
         new(1, "Male"),
         new(2, "Female"),
@@ -56,6 +57,8 @@ internal sealed class ZaTradePokemonWorkflowService
         new(0, "Default / not forced"),
         new(1, "Not shiny"),
         new(2, "Forced shiny"),
+        new(536870911, "Game default / not forced"),
+        new(1073741823, "Wild default / not forced"),
     ];
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> FlawlessIvCountOptions =
@@ -71,6 +74,7 @@ internal sealed class ZaTradePokemonWorkflowService
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> NatureOptions =
     [
+        new(-1, "Random / game default"),
         new(0, "Default (game behavior)"),
         new(1, "Hardy (neutral)"),
         new(2, "Lonely (+Atk, -Def)"),
@@ -280,7 +284,7 @@ internal sealed class ZaTradePokemonWorkflowService
             .Select((moveId, index) => new ZaTradePokemonMoveRecord(
                 index,
                 moveId,
-                moveId == 0 ? null : labels.Move(moveId),
+                moveId <= 0 ? null : labels.Move(moveId),
                 PointUps: 0))
             .ToArray();
     }
@@ -331,14 +335,19 @@ internal sealed class ZaTradePokemonWorkflowService
     {
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"Fixed IVs: HP {ivs.HP}, Atk {ivs.Attack}, Def {ivs.Defense}, SpA {ivs.SpecialAttack}, SpD {ivs.SpecialDefense}, Spe {ivs.Speed}");
+            $"Fixed IVs: HP {FormatIvValue(ivs.HP)}, Atk {FormatIvValue(ivs.Attack)}, Def {FormatIvValue(ivs.Defense)}, SpA {FormatIvValue(ivs.SpecialAttack)}, SpD {FormatIvValue(ivs.SpecialDefense)}, Spe {FormatIvValue(ivs.Speed)}");
+    }
+
+    private static string FormatIvValue(int value)
+    {
+        return value == -1 ? "Random" : value.ToString(CultureInfo.InvariantCulture);
     }
 
     private static IReadOnlyList<ZaTradePokemonEditableField> CreateEditableFields(ZaTextLabelLookup labels)
     {
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var moveOptions = CreateMoveOptions(labels);
 
         return
         [
@@ -346,21 +355,21 @@ internal sealed class ZaTradePokemonWorkflowService
             CreateField(FormField, "Form", 0, short.MaxValue),
             CreateField(LevelField, "Level", 0, 100),
             CreateField(HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
-            CreateField(AbilityField, "Ability mode", 0, 4, CreateAbilityModeOptions(ZaTradeAbilitySet.Empty)),
-            CreateField(NatureField, "Nature", 0, 25, NatureOptions),
-            CreateField(GenderField, "Gender", 0, 2, GenderOptions),
-            CreateField(ShinyLockField, "Shiny mode", 0, 2, ShinyModeOptions),
-            CreateField(Move1IdField, "Move 1", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move2IdField, "Move 2", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move3IdField, "Move 3", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move4IdField, "Move 4", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaTradeAbilitySet.Empty)),
+            CreateField(NatureField, "Nature", -1, 25, NatureOptions),
+            CreateField(GenderField, "Gender", -1, 2, GenderOptions),
+            CreateField(ShinyLockField, "Shiny mode", 0, 1073741823, ShinyModeOptions),
+            CreateField(Move1IdField, "Move 1", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move2IdField, "Move 2", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move3IdField, "Move 3", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move4IdField, "Move 4", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(FlawlessIvCountField, "IV preset", 0, 6, FlawlessIvCountOptions),
-            CreateField(IvHpField, "HP IV", 0, 31),
-            CreateField(IvAttackField, "Attack IV", 0, 31),
-            CreateField(IvDefenseField, "Defense IV", 0, 31),
-            CreateField(IvSpeedField, "Speed IV", 0, 31),
-            CreateField(IvSpecialAttackField, "Sp. Atk IV", 0, 31),
-            CreateField(IvSpecialDefenseField, "Sp. Def IV", 0, 31),
+            CreateField(IvHpField, "HP IV", -1, 31),
+            CreateField(IvAttackField, "Attack IV", -1, 31),
+            CreateField(IvDefenseField, "Defense IV", -1, 31),
+            CreateField(IvSpeedField, "Speed IV", -1, 31),
+            CreateField(IvSpecialAttackField, "Sp. Atk IV", -1, 31),
+            CreateField(IvSpecialDefenseField, "Sp. Def IV", -1, 31),
         ];
     }
 
@@ -374,6 +383,7 @@ internal sealed class ZaTradePokemonWorkflowService
             new(2, FormatAbilitySlot(abilities.Ability1, "Ability 1")),
             new(3, FormatAbilitySlot(abilities.Ability2, "Ability 2")),
             new(4, FormatAbilitySlot(abilities.HiddenAbility, "Hidden Ability")),
+            new(255, "Game default / random"),
         ];
     }
 
@@ -386,6 +396,16 @@ internal sealed class ZaTradePokemonWorkflowService
     private static string FormatAbilitySlot(string ability, string slot)
     {
         return string.Equals(ability, slot, StringComparison.Ordinal) ? slot : $"{ability} ({slot})";
+    }
+
+    private static IReadOnlyList<ZaTradePokemonEditableFieldOption> CreateMoveOptions(
+        ZaTextLabelLookup labels)
+    {
+        return
+        [
+            new(-1, "-1 Game default / none"),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true),
+        ];
     }
 
     private static IReadOnlyList<ZaTradePokemonEditableFieldOption> CreateIndexedOptions(

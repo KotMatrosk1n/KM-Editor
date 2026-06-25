@@ -42,12 +42,13 @@ internal sealed class ZaStaticEncountersWorkflowService
 
     private const string WorkflowLabel = "Static Encounters";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A scripted static encounter Pokemon sources.";
-    private const string CategoryId = "pokemonData";
-    private const string CategoryLabel = "Pokemon Data";
+    private const string CategoryId = "encounterData";
+    private const string CategoryLabel = "Encounter Data";
     private const string ScenarioLabel = "Scripted Pokemon";
 
     private static readonly IReadOnlyList<ZaStaticEncounterEditableFieldOption> GenderOptions =
     [
+        new(-1, "Game default / random"),
         new(0, "Random"),
         new(1, "Male"),
         new(2, "Female"),
@@ -58,6 +59,8 @@ internal sealed class ZaStaticEncountersWorkflowService
         new(0, "Default / not forced"),
         new(1, "Not shiny"),
         new(2, "Forced shiny"),
+        new(536870911, "Game default / not forced"),
+        new(1073741823, "Wild default / not forced"),
     ];
 
     private static readonly IReadOnlyList<ZaStaticEncounterEditableFieldOption> FlawlessIvCountOptions =
@@ -78,10 +81,12 @@ internal sealed class ZaStaticEncountersWorkflowService
         new(2, "Ability 1"),
         new(3, "Ability 2"),
         new(4, "Hidden Ability"),
+        new(255, "Game default / random"),
     ];
 
     private static readonly IReadOnlyList<ZaStaticEncounterEditableFieldOption> NatureOptions =
     [
+        new(-1, "Random / game default"),
         new(0, "Default (game behavior)"),
         new(1, "Hardy (neutral)"),
         new(2, "Lonely (+Atk, -Def)"),
@@ -156,7 +161,7 @@ internal sealed class ZaStaticEncountersWorkflowService
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
-        ZaWorkflowFile? pokemonSource = null;
+        ZaWorkflowFile? encounterSource = null;
         var labels = ZaTextLabelLookup.None();
         var encounters = Array.Empty<ZaStaticEncounterEntry>();
         var sourceFileCount = 0;
@@ -164,16 +169,16 @@ internal sealed class ZaStaticEncountersWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            pokemonSource = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
+            encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             var wildIds = LoadWildEncounterIds(project, diagnostics, out var usedSpawnerSource);
             sourceFileCount = usedSpawnerSource ? 2 : 1;
-            encounters = LoadRecords(pokemonSource, labels, wildIds).ToArray();
+            encounters = LoadRecords(encounterSource, labels, wildIds).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
                 $"Static Encounters could not be loaded: {exception.Message}",
-                $"romfs/{ZaDataPaths.PokemonDataArray}"));
+                $"romfs/{ZaDataPaths.EncountDataArray}"));
         }
 
         var summary = ZaWorkflowSupport.CreateSummary(
@@ -190,7 +195,7 @@ internal sealed class ZaStaticEncountersWorkflowService
             new ZaStaticEncountersWorkflowStats(
                 encounters.Length,
                 encounters.Count(encounter => encounter.FlawlessIvCount is not null and not 0),
-                pokemonSource is null ? 0 : sourceFileCount,
+                encounterSource is null ? 0 : sourceFileCount,
                 encounters.Length),
             diagnostics);
     }
@@ -339,7 +344,7 @@ internal sealed class ZaStaticEncountersWorkflowService
             entry.SourceIndex,
             CategoryId,
             CategoryLabel,
-            CreateDisplayLabel(encounterIndex, speciesName, entry.FormNo, entry.MinLevel, entry.Id ?? string.Empty, moves),
+            CreateDisplayLabel(encounterIndex, speciesId, speciesName, entry.FormNo, entry.MinLevel, entry.Id ?? string.Empty, moves),
             entry.Id ?? string.Empty,
             speciesId,
             speciesName,
@@ -383,7 +388,7 @@ internal sealed class ZaStaticEncountersWorkflowService
             .Select((moveId, index) => new ZaStaticEncounterMoveRecord(
                 index,
                 moveId,
-                moveId == 0 ? null : labels.Move(moveId)))
+                moveId <= 0 ? null : labels.Move(moveId)))
             .ToArray();
     }
 
@@ -433,7 +438,12 @@ internal sealed class ZaStaticEncountersWorkflowService
     {
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"HP {ivs.HP} / Atk {ivs.Attack} / Def {ivs.Defense} / SpA {ivs.SpecialAttack} / SpD {ivs.SpecialDefense} / Spe {ivs.Speed}");
+            $"HP {FormatIvValue(ivs.HP)} / Atk {FormatIvValue(ivs.Attack)} / Def {FormatIvValue(ivs.Defense)} / SpA {FormatIvValue(ivs.SpecialAttack)} / SpD {FormatIvValue(ivs.SpecialDefense)} / Spe {FormatIvValue(ivs.Speed)}");
+    }
+
+    private static string FormatIvValue(int value)
+    {
+        return value == -1 ? "Random" : value.ToString(CultureInfo.InvariantCulture);
     }
 
     private static IReadOnlyDictionary<string, string> CreateFieldValues(ZaPokemonDataEntry entry)
@@ -497,7 +507,7 @@ internal sealed class ZaStaticEncountersWorkflowService
 
     private static string FormatMove(int moveId, ZaTextLabelLookup labels)
     {
-        return FormatOption(moveId, moveId == 0 ? "None" : labels.Move(moveId));
+        return FormatOption(moveId, moveId < 0 ? "Game default / none" : moveId == 0 ? "None" : labels.Move(moveId));
     }
 
     private static string FormatOption(int value, string label)
@@ -509,7 +519,7 @@ internal sealed class ZaStaticEncountersWorkflowService
     {
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var moveOptions = CreateMoveOptions(labels);
 
         return
         [
@@ -517,21 +527,21 @@ internal sealed class ZaStaticEncountersWorkflowService
             CreateField(FormField, "Form", "Pokemon", 0, short.MaxValue),
             CreateField(LevelField, "Level", "Pokemon", 0, 100),
             CreateField(HeldItemIdField, "Held item", "Pokemon", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
-            CreateField(AbilityField, "Ability mode", "Pokemon", 0, 4, AbilityModeOptions),
-            CreateField(NatureField, "Nature", "Pokemon", 0, 25, NatureOptions),
-            CreateField(GenderField, "Gender", "Pokemon", 0, 2, GenderOptions),
-            CreateField(ShinyLockField, "Shiny mode", "Pokemon", 0, 2, ShinyModeOptions),
-            CreateField(Move0Field, "Move 1", "Moves", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move1Field, "Move 2", "Moves", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move2Field, "Move 3", "Moves", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
-            CreateField(Move3Field, "Move 4", "Moves", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(AbilityField, "Ability mode", "Pokemon", 0, 255, AbilityModeOptions),
+            CreateField(NatureField, "Nature", "Pokemon", -1, 25, NatureOptions),
+            CreateField(GenderField, "Gender", "Pokemon", -1, 2, GenderOptions),
+            CreateField(ShinyLockField, "Shiny mode", "Pokemon", 0, 1073741823, ShinyModeOptions),
+            CreateField(Move0Field, "Move 1", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move1Field, "Move 2", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move2Field, "Move 3", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            CreateField(Move3Field, "Move 4", "Moves", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(FlawlessIvCountField, "IV preset", "Stats", 0, 6, FlawlessIvCountOptions),
-            CreateField(IvHpField, "HP IV", "Stats", 0, 31),
-            CreateField(IvAttackField, "Attack IV", "Stats", 0, 31),
-            CreateField(IvDefenseField, "Defense IV", "Stats", 0, 31),
-            CreateField(IvSpecialAttackField, "Sp. Atk IV", "Stats", 0, 31),
-            CreateField(IvSpecialDefenseField, "Sp. Def IV", "Stats", 0, 31),
-            CreateField(IvSpeedField, "Speed IV", "Stats", 0, 31),
+            CreateField(IvHpField, "HP IV", "Stats", -1, 31),
+            CreateField(IvAttackField, "Attack IV", "Stats", -1, 31),
+            CreateField(IvDefenseField, "Defense IV", "Stats", -1, 31),
+            CreateField(IvSpecialAttackField, "Sp. Atk IV", "Stats", -1, 31),
+            CreateField(IvSpecialDefenseField, "Sp. Def IV", "Stats", -1, 31),
+            CreateField(IvSpeedField, "Speed IV", "Stats", -1, 31),
         ];
     }
 
@@ -556,6 +566,16 @@ internal sealed class ZaStaticEncountersWorkflowService
                     $"{value.ToString(CultureInfo.InvariantCulture)} {label}");
             })
             .ToArray();
+    }
+
+    private static IReadOnlyList<ZaStaticEncounterEditableFieldOption> CreateMoveOptions(
+        ZaTextLabelLookup labels)
+    {
+        return
+        [
+            new(-1, "-1 Game default / none"),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true),
+        ];
     }
 
     private static int MaximumOptionValue(
@@ -585,13 +605,14 @@ internal sealed class ZaStaticEncountersWorkflowService
 
     private static string CreateDisplayLabel(
         int encounterIndex,
+        int speciesId,
         string species,
         int form,
         int level,
         string eventLabel,
         IReadOnlyList<ZaStaticEncounterMoveRecord> moves)
     {
-        var speciesLabel = form == 0 ? species : $"{species} (Form {form.ToString(CultureInfo.InvariantCulture)})";
+        var speciesLabel = ZaLabels.PokemonWithForm(speciesId, form, species);
         var moveText = string.Join(", ", moves
             .Where(move => move.MoveId > 0 && !string.IsNullOrWhiteSpace(move.Move))
             .Take(2)

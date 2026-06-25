@@ -121,7 +121,7 @@ public sealed class SwShTextWorkflowServiceTests
     }
 
     [Fact]
-    public void LoadMarksVariablePlaceholderLinesReadOnly()
+    public void LoadMarksVariablePlaceholderLinesEditable()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile(
@@ -133,8 +133,8 @@ public sealed class SwShTextWorkflowServiceTests
         var workflow = new SwShTextWorkflowService().Load(project);
 
         var entry = Assert.Single(workflow.Entries);
-        Assert.False(entry.CanEdit);
-        Assert.Contains("Variable placeholders", entry.EditBlockedReason, StringComparison.Ordinal);
+        Assert.True(entry.CanEdit);
+        Assert.Null(entry.EditBlockedReason);
     }
 
     [Fact]
