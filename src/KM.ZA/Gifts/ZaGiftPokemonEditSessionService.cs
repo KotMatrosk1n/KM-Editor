@@ -307,6 +307,11 @@ internal sealed class ZaGiftPokemonEditSessionService
             return null;
         }
 
+        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
+        {
+            return null;
+        }
+
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.GiftPokemonDomain,
             $"Set {gift.Label} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -350,12 +355,37 @@ internal sealed class ZaGiftPokemonEditSessionService
             return;
         }
 
-        _ = ZaEditSessionSupport.TryParseInt(
+        var parsedValue = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.GiftPokemonDomain,
+            diagnostics);
+        if (parsedValue is not null)
+        {
+            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
+        }
+    }
+
+    private static bool ValidateSpeciesOption(
+        string? field,
+        int value,
+        ZaGiftPokemonEditableField editableField,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(field, ZaGiftPokemonWorkflowService.SpeciesField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return ZaEditSessionSupport.ValidateOptionValue(
+            value,
+            editableField.Options.Select(option => option.Value),
+            ZaEditSessionSupport.GiftPokemonDomain,
+            field,
+            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
+            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
             diagnostics);
     }
 
@@ -522,7 +552,7 @@ internal sealed class ZaGiftPokemonEditSessionService
         moves[moveIndex] = moves[moveIndex] with
         {
             MoveId = value,
-            Move = value == 0 ? null : GetOptionLabel(workflow, field, value, "Move"),
+            Move = value <= ZaPokemonDataConstants.MoveAuto ? null : GetOptionLabel(workflow, field, value, "Move"),
         };
 
         return gift with { Moves = moves };
@@ -658,7 +688,11 @@ internal sealed class ZaGiftPokemonEditSessionService
 
     private static void SetMove(ZaPokemonDataEntry row, int moveIndex, int moveId)
     {
-        row.WazaList = (row.WazaList ?? new ZaPokemonDataMovesRecord(-1, -1, -1, -1))
+        row.WazaList = (row.WazaList ?? new ZaPokemonDataMovesRecord(
+                ZaPokemonDataConstants.MoveNone,
+                ZaPokemonDataConstants.MoveNone,
+                ZaPokemonDataConstants.MoveNone,
+                ZaPokemonDataConstants.MoveNone))
             .SetMove(moveIndex, moveId);
     }
 

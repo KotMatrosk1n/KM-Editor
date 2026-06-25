@@ -246,6 +246,11 @@ internal sealed class ZaStaticEncountersEditSessionService
             return null;
         }
 
+        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
+        {
+            return null;
+        }
+
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.StaticEncountersDomain,
             $"Set {encounter.Label} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -313,12 +318,37 @@ internal sealed class ZaStaticEncountersEditSessionService
             return;
         }
 
-        _ = ZaEditSessionSupport.TryParseInt(
+        var parsedValue = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.StaticEncountersDomain,
+            diagnostics);
+        if (parsedValue is not null)
+        {
+            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
+        }
+    }
+
+    private static bool ValidateSpeciesOption(
+        string? field,
+        int value,
+        ZaStaticEncounterEditableField editableField,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(field, ZaStaticEncountersWorkflowService.SpeciesField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return ZaEditSessionSupport.ValidateOptionValue(
+            value,
+            editableField.Options.Select(option => option.Value),
+            ZaEditSessionSupport.StaticEncountersDomain,
+            field,
+            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
+            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
             diagnostics);
     }
 
@@ -587,7 +617,11 @@ internal sealed class ZaStaticEncountersEditSessionService
 
         updated = current
             .Select(move => move.Slot == slot
-                ? move with { MoveId = value, Move = value == 0 ? null : StripLeadingValue(displayValue) }
+                ? move with
+                {
+                    MoveId = value,
+                    Move = value <= ZaPokemonDataConstants.MoveAuto ? null : StripLeadingValue(displayValue),
+                }
                 : move)
             .ToArray();
         return true;

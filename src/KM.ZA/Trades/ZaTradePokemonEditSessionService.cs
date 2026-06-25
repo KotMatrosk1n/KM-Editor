@@ -307,6 +307,11 @@ internal sealed class ZaTradePokemonEditSessionService
             return null;
         }
 
+        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
+        {
+            return null;
+        }
+
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.TradePokemonDomain,
             $"Set {trade.Label} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -350,12 +355,37 @@ internal sealed class ZaTradePokemonEditSessionService
             return;
         }
 
-        _ = ZaEditSessionSupport.TryParseInt(
+        var parsedValue = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.TradePokemonDomain,
+            diagnostics);
+        if (parsedValue is not null)
+        {
+            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
+        }
+    }
+
+    private static bool ValidateSpeciesOption(
+        string? field,
+        int value,
+        ZaTradePokemonEditableField editableField,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(field, ZaTradePokemonWorkflowService.SpeciesField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return ZaEditSessionSupport.ValidateOptionValue(
+            value,
+            editableField.Options.Select(option => option.Value),
+            ZaEditSessionSupport.TradePokemonDomain,
+            field,
+            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
+            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
             diagnostics);
     }
 
@@ -522,7 +552,7 @@ internal sealed class ZaTradePokemonEditSessionService
         moves[moveIndex] = moves[moveIndex] with
         {
             MoveId = value,
-            Move = value == 0 ? null : GetOptionLabel(workflow, field, value, "Move"),
+            Move = value <= ZaPokemonDataConstants.MoveAuto ? null : GetOptionLabel(workflow, field, value, "Move"),
         };
 
         return trade with { Moves = moves };

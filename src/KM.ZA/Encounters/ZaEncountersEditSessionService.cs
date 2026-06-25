@@ -327,6 +327,11 @@ internal sealed class ZaEncountersEditSessionService
             return null;
         }
 
+        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
+        {
+            return null;
+        }
+
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.EncountersDomain,
             CreateSummary(table, slot, editableField, parsedValue.Value),
@@ -370,12 +375,37 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        _ = ZaEditSessionSupport.TryParseInt(
+        var parsedValue = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.EncountersDomain,
+            diagnostics);
+        if (parsedValue is not null)
+        {
+            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
+        }
+    }
+
+    private static bool ValidateSpeciesOption(
+        string? field,
+        int value,
+        ZaEncounterEditableField editableField,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(field, ZaEncountersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return ZaEditSessionSupport.ValidateOptionValue(
+            value,
+            editableField.Options.Select(option => option.Value),
+            ZaEditSessionSupport.EncountersDomain,
+            field,
+            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
+            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
             diagnostics);
     }
 

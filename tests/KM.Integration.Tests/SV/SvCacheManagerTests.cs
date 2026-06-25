@@ -122,12 +122,15 @@ public sealed class SvCacheManagerTests
         var warmup = cache.WarmupStep(paths, stepIndex: 0);
 
         Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.Equal(1, CountProjectCacheDirectories(temp));
 
         File.WriteAllText(Path.Combine(temp.OutputRootPath, "romfs_override.bin"), "changed");
         var changedStatus = cache.GetStatus(paths);
 
         Assert.Equal(0, changedStatus.WarmupCompleted);
         Assert.True(changedStatus.WarmupTotal > 0);
+        Assert.Equal(0, changedStatus.CacheSizeBytes);
+        Assert.Equal(0, CountProjectCacheDirectories(temp));
     }
 
     [Fact]
@@ -261,6 +264,14 @@ public sealed class SvCacheManagerTests
         }
 
         return -1;
+    }
+
+    private static int CountProjectCacheDirectories(TemporaryFolder temp)
+    {
+        var projectsPath = Path.Combine(temp.CacheRootPath, "projects");
+        return Directory.Exists(projectsPath)
+            ? Directory.GetDirectories(projectsPath).Length
+            : 0;
     }
 
     private static void WriteSyntheticArchive(

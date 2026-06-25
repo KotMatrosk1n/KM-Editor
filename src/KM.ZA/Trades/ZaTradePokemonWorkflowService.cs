@@ -54,11 +54,9 @@ internal sealed class ZaTradePokemonWorkflowService
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> ShinyModeOptions =
     [
-        new(0, "Default / not forced"),
-        new(1, "Not shiny"),
-        new(2, "Forced shiny"),
-        new(536870911, "Game default / not forced"),
-        new(1073741823, "Wild default / not forced"),
+        new(ZaPokemonDataConstants.RareNotShiny, ZaPokemonDataConstants.RareNotShinyLabel),
+        new(ZaPokemonDataConstants.RareForcedShiny, ZaPokemonDataConstants.RareForcedShinyLabel),
+        new(ZaPokemonDataConstants.RareDefaultShinyRoll, ZaPokemonDataConstants.RareDefaultShinyRollLabel),
     ];
 
     private static readonly IReadOnlyList<ZaTradePokemonEditableFieldOption> FlawlessIvCountOptions =
@@ -128,11 +126,13 @@ internal sealed class ZaTradePokemonWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
         var labels = ZaTextLabelLookup.None();
+        var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var trades = Array.Empty<ZaTradePokemonEntry>();
 
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTradeAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
             trades = LoadRecords(source, labels, abilityResolver).ToArray();
@@ -154,7 +154,7 @@ internal sealed class ZaTradePokemonWorkflowService
         return new ZaTradePokemonWorkflow(
             summary,
             trades,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, pokemonAvailability),
             new ZaTradePokemonWorkflowStats(
                 trades.Length,
                 trades.Count(trade => !string.Equals(trade.IvSummary, "Random IVs", StringComparison.Ordinal)),
@@ -343,22 +343,30 @@ internal sealed class ZaTradePokemonWorkflowService
         return value == -1 ? "Random" : value.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static IReadOnlyList<ZaTradePokemonEditableField> CreateEditableFields(ZaTextLabelLookup labels)
+    private static IReadOnlyList<ZaTradePokemonEditableField> CreateEditableFields(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
     {
-        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var speciesOptions = CreateSpeciesOptions(labels, pokemonAvailability);
+        var speciesMaximumValue = Math.Max(labels.PokemonNameCount - 1, MaximumOptionValue(speciesOptions, 0));
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         var moveOptions = CreateMoveOptions(labels);
 
         return
         [
-            CreateField(SpeciesField, "Species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions),
+            CreateField(SpeciesField, "Species", 0, speciesMaximumValue, speciesOptions),
             CreateField(FormField, "Form", 0, short.MaxValue),
             CreateField(LevelField, "Level", 0, 100),
             CreateField(HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
             CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaTradeAbilitySet.Empty)),
             CreateField(NatureField, "Nature", -1, 25, NatureOptions),
             CreateField(GenderField, "Gender", -1, 2, GenderOptions),
-            CreateField(ShinyLockField, "Shiny mode", 0, 1073741823, ShinyModeOptions),
+            CreateField(
+                ShinyLockField,
+                "Shiny mode",
+                ZaPokemonDataConstants.RareNotShiny,
+                ZaPokemonDataConstants.RareDefaultShinyRoll,
+                ShinyModeOptions),
             CreateField(Move1IdField, "Move 1", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(Move2IdField, "Move 2", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(Move3IdField, "Move 3", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
@@ -403,9 +411,25 @@ internal sealed class ZaTradePokemonWorkflowService
     {
         return
         [
-            new(-1, "-1 Game default / none"),
-            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true),
+            new(ZaPokemonDataConstants.MoveNone, FormatOption(ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNoneLabel)),
+            new(ZaPokemonDataConstants.MoveAuto, FormatOption(ZaPokemonDataConstants.MoveAuto, ZaPokemonDataConstants.MoveAutoLabel)),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false),
         ];
+    }
+
+    private static IReadOnlyList<ZaTradePokemonEditableFieldOption> CreateSpeciesOptions(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemonAvailability
+            .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
+            .Select(option => new ZaTradePokemonEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string FormatOption(int value, string label)
+    {
+        return $"{value.ToString(CultureInfo.InvariantCulture)} {label}";
     }
 
     private static IReadOnlyList<ZaTradePokemonEditableFieldOption> CreateIndexedOptions(

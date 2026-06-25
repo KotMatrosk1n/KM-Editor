@@ -52,11 +52,13 @@ internal sealed class ZaEncountersWorkflowService
         ZaWorkflowFile? encounterSource = null;
         ZaWorkflowFile? spawnerSource = null;
         var labels = ZaTextLabelLookup.None();
+        var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var tables = Array.Empty<ZaEncounterTableRecord>();
 
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
             tables = LoadTables(spawnerSource, encounterSource, labels).ToArray();
@@ -78,7 +80,7 @@ internal sealed class ZaEncountersWorkflowService
         return new ZaEncountersWorkflow(
             summary,
             tables,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, pokemonAvailability),
             new ZaEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
@@ -247,9 +249,14 @@ internal sealed class ZaEncountersWorkflowService
             : $"Unresolved encounter data ({encounterDataId})";
     }
 
-    private static IReadOnlyList<ZaEncounterEditableField> CreateEditableFields(ZaTextLabelLookup labels)
+    private static IReadOnlyList<ZaEncounterEditableField> CreateEditableFields(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
     {
-        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var speciesOptions = CreateSpeciesOptions(labels, pokemonAvailability);
+        var speciesMaximumValue = Math.Max(
+            labels.PokemonNameCount - 1,
+            speciesOptions.Count > 0 ? speciesOptions.Max(option => option.Value) : 0);
         return
         [
             new(
@@ -257,7 +264,7 @@ internal sealed class ZaEncountersWorkflowService
                 "Species",
                 "integer",
                 0,
-                speciesOptions.Count > 0 ? speciesOptions.Max(option => option.Value) : ushort.MaxValue,
+                speciesMaximumValue,
                 speciesOptions),
             new(FormField, "Form", "integer", 0, short.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(LevelMinField, "Min Level", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
@@ -285,6 +292,16 @@ internal sealed class ZaEncountersWorkflowService
                     value,
                     $"{value.ToString(CultureInfo.InvariantCulture)} {label}");
             })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ZaEncounterEditableFieldOption> CreateSpeciesOptions(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemonAvailability
+            .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
+            .Select(option => new ZaEncounterEditableFieldOption(option.Value, option.Label))
             .ToArray();
     }
 

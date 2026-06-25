@@ -71,11 +71,9 @@ internal sealed class ZaGiftPokemonWorkflowService
 
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> ShinyModeOptions =
     [
-        new(0, "Default / not forced"),
-        new(1, "Not shiny"),
-        new(2, "Forced shiny"),
-        new(536870911, "Game default / not forced"),
-        new(1073741823, "Wild default / not forced"),
+        new(ZaPokemonDataConstants.RareNotShiny, ZaPokemonDataConstants.RareNotShinyLabel),
+        new(ZaPokemonDataConstants.RareForcedShiny, ZaPokemonDataConstants.RareForcedShinyLabel),
+        new(ZaPokemonDataConstants.RareDefaultShinyRoll, ZaPokemonDataConstants.RareDefaultShinyRollLabel),
     ];
 
     private static readonly IReadOnlyList<ZaGiftPokemonEditableFieldOption> FlawlessIvCountOptions =
@@ -145,11 +143,13 @@ internal sealed class ZaGiftPokemonWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
         var labels = ZaTextLabelLookup.None();
+        var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var gifts = Array.Empty<ZaGiftPokemonEntry>();
 
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaGiftAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
             gifts = LoadRecords(source, labels, abilityResolver).ToArray();
@@ -171,7 +171,7 @@ internal sealed class ZaGiftPokemonWorkflowService
         return new ZaGiftPokemonWorkflow(
             summary,
             gifts,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, pokemonAvailability),
             new ZaGiftPokemonWorkflowStats(
                 gifts.Length,
                 gifts.Count(gift => gift.IsEgg),
@@ -346,7 +346,8 @@ internal sealed class ZaGiftPokemonWorkflowService
         ZaPokemonDataEntry entry,
         ZaTextLabelLookup labels)
     {
-        var moves = entry.WazaList?.Values ?? [-1, -1, -1, -1];
+        var moves = entry.WazaList?.Values ??
+            [ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNone];
         return moves
             .Take(4)
             .Select((moveId, index) => new ZaGiftPokemonMoveRecord(
@@ -454,22 +455,30 @@ internal sealed class ZaGiftPokemonWorkflowService
         return value == -1 ? "Random" : value.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static IReadOnlyList<ZaGiftPokemonEditableField> CreateEditableFields(ZaTextLabelLookup labels)
+    private static IReadOnlyList<ZaGiftPokemonEditableField> CreateEditableFields(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
     {
-        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var speciesOptions = CreateSpeciesOptions(labels, pokemonAvailability);
+        var speciesMaximumValue = Math.Max(labels.PokemonNameCount - 1, MaximumOptionValue(speciesOptions, 0));
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         var moveOptions = CreateMoveOptions(labels);
 
         return
         [
-            CreateField(SpeciesField, "Species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions),
+            CreateField(SpeciesField, "Species", 0, speciesMaximumValue, speciesOptions),
             CreateField(FormField, "Form", 0, short.MaxValue),
             CreateField(LevelField, "Level", 0, 100),
             CreateField(HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
             CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaGiftAbilitySet.Empty)),
             CreateField(NatureField, "Nature", -1, 25, NatureOptions),
             CreateField(GenderField, "Gender", -1, 2, GenderOptions),
-            CreateField(ShinyLockField, "Shiny mode", 0, 1073741823, ShinyModeOptions),
+            CreateField(
+                ShinyLockField,
+                "Shiny mode",
+                ZaPokemonDataConstants.RareNotShiny,
+                ZaPokemonDataConstants.RareDefaultShinyRoll,
+                ShinyModeOptions),
             CreateField(Move1IdField, "Move 1", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(Move2IdField, "Move 2", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             CreateField(Move3IdField, "Move 3", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
@@ -514,9 +523,25 @@ internal sealed class ZaGiftPokemonWorkflowService
     {
         return
         [
-            new(-1, "-1 Game default / none"),
-            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true),
+            new(ZaPokemonDataConstants.MoveNone, FormatOption(ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNoneLabel)),
+            new(ZaPokemonDataConstants.MoveAuto, FormatOption(ZaPokemonDataConstants.MoveAuto, ZaPokemonDataConstants.MoveAutoLabel)),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false),
         ];
+    }
+
+    private static IReadOnlyList<ZaGiftPokemonEditableFieldOption> CreateSpeciesOptions(
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemonAvailability
+            .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
+            .Select(option => new ZaGiftPokemonEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string FormatOption(int value, string label)
+    {
+        return $"{value.ToString(CultureInfo.InvariantCulture)} {label}";
     }
 
     private static IReadOnlyList<ZaGiftPokemonEditableFieldOption> CreateIndexedOptions(
