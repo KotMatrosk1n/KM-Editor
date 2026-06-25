@@ -115,6 +115,33 @@ public sealed class SvModMergerWorkflowServiceTests
         Assert.Equal("singleSource", stagedFile.MergeKind);
     }
 
+    [Fact]
+    public void StageReadsDirectRomFsRootAndSkipsBundledDescriptor()
+    {
+        using var temp = CreateScarletProject([0, 0, 0]);
+        var modRoot = Path.Combine(temp.RootPath, "direct-root-mod");
+        WriteModSourceFile(modRoot, DataVirtualPath, [7, 0, 0]);
+        WriteModSourceFile(modRoot, SvTrinityDescriptorPatcher.DescriptorVirtualPath, [0xFD]);
+        var service = new SvModMergerWorkflowService();
+
+        var stage = service.Stage(
+            ToCorePaths(temp),
+            [new SvModMergerSourceRequest(modRoot)]);
+
+        AssertNoErrors(stage.Diagnostics);
+        var source = Assert.Single(stage.Workflow.Sources);
+        Assert.Equal("ready", source.Status);
+        Assert.Equal(2, source.FileCount);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.File == DescriptorOutputPath
+                && diagnostic.Message.Contains("source descriptor was skipped", StringComparison.OrdinalIgnoreCase));
+        var stagedFile = Assert.Single(stage.Preview.Files);
+        Assert.Equal(DataOutputPath, stagedFile.RelativePath);
+        Assert.Equal("singleSource", stagedFile.MergeKind);
+    }
+
     private static TemporaryBridgeProject CreateScarletProject(byte[] baseBytes)
     {
         var temp = TemporaryBridgeProject.Create();
@@ -144,6 +171,13 @@ public sealed class SvModMergerWorkflowServiceTests
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllBytes(path, bytes);
         return root;
+    }
+
+    private static void WriteModSourceFile(string root, string relativePath, byte[] bytes)
+    {
+        var path = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, bytes);
     }
 
     private static void CreateZipMod(string zipPath, string entryPath, byte[] bytes)
