@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using Google.FlatBuffers;
-using KM.Formats.SV;
-using KM.Formats.SV.Trinity;
+using KM.Formats.ZA;
+using KM.Formats.ZA.Trinity;
 using Xunit;
 
-namespace KM.Formats.Tests.SV;
+namespace KM.Formats.Tests.ZA;
 
-public sealed class SvTrinityDescriptorPatcherTests
+public sealed class ZaTrinityDescriptorPatcherTests
 {
     [Fact]
     public void CreateLayeredDescriptorRemovesHashesForLooseRomFsFiles()
@@ -15,7 +15,7 @@ public sealed class SvTrinityDescriptorPatcherTests
         using var temp = TemporaryFolder.Create();
         var baseRomFs = Path.Combine(temp.Path, "base", "romfs");
         var outputRoot = Path.Combine(temp.Path, "output");
-        var layeredItem = Path.Combine(outputRoot, "romfs", "world", "data", "item", "itemdata", "itemdata_array.bin");
+        var layeredItem = Path.Combine(outputRoot, "romfs", "world", "exl", "item_data", "item_data", "item_data.bin");
         Directory.CreateDirectory(Path.Combine(baseRomFs, "arc"));
         Directory.CreateDirectory(Path.GetDirectoryName(layeredItem)!);
         File.WriteAllBytes(layeredItem, [0x01]);
@@ -23,16 +23,16 @@ public sealed class SvTrinityDescriptorPatcherTests
             Path.Combine(baseRomFs, "arc", "data.trpfd"),
             CreateDescriptor(
                 [
-                    "world/data/item/itemdata/itemdata_array.bin",
+                    "world/exl/item_data/item_data/item_data.bin",
                     "avalon/data/personal_array.bin",
                 ]));
 
-        var patched = SvTrinityDescriptorPatcher.CreateLayeredDescriptor(Path.Combine(temp.Path, "base"), outputRoot);
+        var patched = ZaTrinityDescriptorPatcher.CreateLayeredDescriptor(Path.Combine(temp.Path, "base"), outputRoot);
         var descriptor = FileDescriptor.GetRootAsFileDescriptor(new ByteBuffer(patched));
 
         Assert.Equal(1, descriptor.FileHashesLength);
         Assert.Equal(1, descriptor.FilesLength);
-        Assert.Equal(SvTrinityPathHasher.HashPath("avalon/data/personal_array.bin"), descriptor.FileHashes(0));
+        Assert.Equal(ZaTrinityPathHasher.HashPath("avalon/data/personal_array.bin"), descriptor.FileHashes(0));
         Assert.Equal("pack/test.trpak", descriptor.PackNames(0));
         Assert.Equal((ulong)2, descriptor.Packs(0)!.Value.FileCount);
     }
@@ -48,27 +48,27 @@ public sealed class SvTrinityDescriptorPatcherTests
             Path.Combine(baseRomFs, "arc", "data.trpfd"),
             CreateDescriptor(
                 [
-                    "world/data/item/itemdata/itemdata_array.bin",
+                    "world/exl/item_data/item_data/item_data.bin",
                     "avalon/data/personal_array.bin",
-                    "message/dat/English/common/itemname.dat",
-                    SvTrinityDescriptorPatcher.DescriptorVirtualPath,
+                    "world/ik/data/field/pokemon/encount_data/encount_data/encount_data_array.bin",
+                    ZaTrinityDescriptorPatcher.DescriptorVirtualPath,
                     "bin/packed-only.bin",
                 ]));
 
-        WriteLayeredFile(outputRomFs, "world/data/item/itemdata/itemdata_array.bin");
+        WriteLayeredFile(outputRomFs, "world/exl/item_data/item_data/item_data.bin");
         WriteLayeredFile(outputRomFs, "avalon/data/personal_array.bin");
-        WriteLayeredFile(outputRomFs, "message/dat/English/common/itemname.dat");
-        WriteLayeredFile(outputRomFs, SvTrinityDescriptorPatcher.DescriptorVirtualPath);
+        WriteLayeredFile(outputRomFs, "world/ik/data/field/pokemon/encount_data/encount_data/encount_data_array.bin");
+        WriteLayeredFile(outputRomFs, ZaTrinityDescriptorPatcher.DescriptorVirtualPath);
 
-        var patched = SvTrinityDescriptorPatcher.CreateLayeredDescriptor(Path.Combine(temp.Path, "base"), Path.Combine(temp.Path, "output"));
+        var patched = ZaTrinityDescriptorPatcher.CreateLayeredDescriptor(Path.Combine(temp.Path, "base"), Path.Combine(temp.Path, "output"));
         var hashes = ReadHashes(patched);
 
         Assert.Equal(2, hashes.Count);
-        Assert.DoesNotContain(SvTrinityPathHasher.HashPath("world/data/item/itemdata/itemdata_array.bin"), hashes);
-        Assert.DoesNotContain(SvTrinityPathHasher.HashPath("avalon/data/personal_array.bin"), hashes);
-        Assert.DoesNotContain(SvTrinityPathHasher.HashPath("message/dat/English/common/itemname.dat"), hashes);
-        Assert.Contains(SvTrinityPathHasher.HashPath(SvTrinityDescriptorPatcher.DescriptorVirtualPath), hashes);
-        Assert.Contains(SvTrinityPathHasher.HashPath("bin/packed-only.bin"), hashes);
+        Assert.DoesNotContain(ZaTrinityPathHasher.HashPath("world/exl/item_data/item_data/item_data.bin"), hashes);
+        Assert.DoesNotContain(ZaTrinityPathHasher.HashPath("avalon/data/personal_array.bin"), hashes);
+        Assert.DoesNotContain(ZaTrinityPathHasher.HashPath("world/ik/data/field/pokemon/encount_data/encount_data/encount_data_array.bin"), hashes);
+        Assert.Contains(ZaTrinityPathHasher.HashPath(ZaTrinityDescriptorPatcher.DescriptorVirtualPath), hashes);
+        Assert.Contains(ZaTrinityPathHasher.HashPath("bin/packed-only.bin"), hashes);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class SvTrinityDescriptorPatcherTests
     {
         var descriptor = CreateDescriptorWithMismatchedVectors();
         var exception = Assert.Throws<InvalidDataException>(
-            () => SvTrinityDescriptorPatcher.RemoveFileHashes(descriptor, new HashSet<ulong>()));
+            () => ZaTrinityDescriptorPatcher.RemoveFileHashes(descriptor, new HashSet<ulong>()));
 
         Assert.Contains("hashes", exception.Message, StringComparison.Ordinal);
         Assert.Contains("file entries", exception.Message, StringComparison.Ordinal);
@@ -89,7 +89,7 @@ public sealed class SvTrinityDescriptorPatcherTests
         var packNames = FileDescriptor.CreatePackNamesVector(builder, [packName]);
         var fileHashes = FileDescriptor.CreateFileHashesVector(
             builder,
-            virtualPaths.Select(SvTrinityPathHasher.HashPath).ToArray());
+            virtualPaths.Select(ZaTrinityPathHasher.HashPath).ToArray());
         var fileEntries = virtualPaths
             .Select(_ => FileDescriptorEntry.CreateFileDescriptorEntry(builder, pack_index: 0))
             .ToArray();
@@ -128,8 +128,8 @@ public sealed class SvTrinityDescriptorPatcherTests
         var fileHashes = FileDescriptor.CreateFileHashesVector(
             builder,
             [
-                SvTrinityPathHasher.HashPath("world/data/item/itemdata/itemdata_array.bin"),
-                SvTrinityPathHasher.HashPath("avalon/data/personal_array.bin"),
+                ZaTrinityPathHasher.HashPath("world/exl/item_data/item_data/item_data.bin"),
+                ZaTrinityPathHasher.HashPath("avalon/data/personal_array.bin"),
             ]);
         var fileEntry = FileDescriptorEntry.CreateFileDescriptorEntry(builder, pack_index: 0);
         var files = FileDescriptor.CreateFilesVector(builder, [fileEntry]);
@@ -153,7 +153,7 @@ public sealed class SvTrinityDescriptorPatcherTests
         {
             var path = System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(),
-                "km-sv-descriptor-tests",
+                "km-za-descriptor-tests",
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(path);
             return new TemporaryFolder(path);

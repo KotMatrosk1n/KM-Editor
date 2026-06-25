@@ -10,6 +10,12 @@ public static class ScarletVioletKnownRomFsFiles
         "Spanish",
         "French",
         "German",
+        "Italian",
+        "JPN",
+        "JPN_KANJI",
+        "Korean",
+        "Simp_Chinese",
+        "Trad_Chinese",
     ];
 
     private static readonly IReadOnlyList<string> KnownMessageFiles =

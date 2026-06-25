@@ -719,7 +719,8 @@ public sealed class ZaModMergerWorkflowService
         if (string.Equals(first, "exefs", StringComparison.OrdinalIgnoreCase)
             || string.Equals(first, "atmosphere", StringComparison.OrdinalIgnoreCase)
             || string.Equals(first, "contents", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(first, "sdcard", StringComparison.OrdinalIgnoreCase))
+            || string.Equals(first, "sdcard", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(first, "switch", StringComparison.OrdinalIgnoreCase))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
