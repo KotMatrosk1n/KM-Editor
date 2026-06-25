@@ -12,7 +12,7 @@ import {
   createNativeUpdate,
   createWrongGameHealth
 } from './testSupport/appTestFixtures';
-import { createSvCacheStatusFixture } from './testSupport/svCacheTestFixtures';
+import { createSvCacheStatusFixture, createZaCacheStatusFixture } from './testSupport/svCacheTestFixtures';
 import {
   type BagHookWorkflow,
   type BehaviorWorkflow,
@@ -1260,7 +1260,7 @@ describe('App', () => {
     expect(
       within(screen.getByLabelText('Maximum cache size')).getAllByRole('option')
         .map((option) => option.textContent)
-    ).toEqual(['1 GB', '5 GB', '10 GB', '25 GB', '50 GB']);
+    ).toEqual(['128 MB', '256 MB', '512 MB', '1 GB', '2 GB']);
 
     await user.click(screen.getByRole('radio', { name: /Performance/ }));
 
@@ -1282,6 +1282,61 @@ describe('App', () => {
         selectedGame: 'scarlet'
       })
     });
+  });
+
+  it('updates Z-A cache settings through the Z-A cache bridge', async () => {
+    const user = userEvent.setup();
+    const getZaCacheStatus = vi.fn(async () => ({
+      status: createZaCacheStatusFixture()
+    }));
+    const updateZaCacheSettings = vi.fn(async (request: Parameters<ProjectBridge['updateZaCacheSettings']>[0]) => ({
+      status: createZaCacheStatusFixture({
+        settings: {
+          maxCacheSizeBytes: request.maxCacheSizeBytes,
+          mode: request.mode
+        }
+      })
+    }));
+    const updateSvCacheSettings = vi.fn();
+
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        selectedGame: 'za'
+      }
+    }));
+
+    render(
+      <App
+        bridge={createMockProjectBridge({
+          getZaCacheStatus,
+          updateSvCacheSettings,
+          updateZaCacheSettings
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pokemon Legends Z-A Data Cache' })
+    ).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByLabelText('Maximum cache size'),
+      (256 * 1024 ** 2).toString()
+    );
+
+    expect(updateZaCacheSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxCacheSizeBytes: 256 * 1024 ** 2,
+        mode: 'balanced',
+        paths: expect.objectContaining({
+          selectedGame: 'za'
+        })
+      })
+    );
+    expect(updateSvCacheSettings).not.toHaveBeenCalled();
   });
 
   it('shows refresh feedback when the S/V cache size stays the same', async () => {
@@ -1347,7 +1402,7 @@ describe('App', () => {
       message: 'Building S/V cache.',
       progressPercent: 22,
       settings: {
-        maxCacheSizeBytes: 10 * 1024 ** 3,
+        maxCacheSizeBytes: 512 * 1024 ** 2,
         mode: 'performance'
       },
       warmupCompleted: 813,

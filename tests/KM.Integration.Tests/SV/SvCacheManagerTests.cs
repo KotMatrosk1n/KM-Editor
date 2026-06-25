@@ -42,6 +42,23 @@ public sealed class SvCacheManagerTests
     }
 
     [Fact]
+    public void SettingsClampToSupportedCacheSizeRange()
+    {
+        using var temp = TemporaryFolder.Create();
+        var cache = new SvCacheManager(temp.CacheRootPath);
+
+        Assert.Equal(512L * 1024 * 1024, cache.GetSettings().MaxCacheSizeBytes);
+
+        var low = cache.UpdateSettings(SvCacheMode.Balanced, 64L * 1024 * 1024);
+
+        Assert.Equal(128L * 1024 * 1024, low.MaxCacheSizeBytes);
+
+        var high = cache.UpdateSettings(SvCacheMode.Balanced, 5L * 1024 * 1024 * 1024);
+
+        Assert.Equal(2L * 1024 * 1024 * 1024, high.MaxCacheSizeBytes);
+    }
+
+    [Fact]
     public void BalancedWarmupWritesMetadataAndClearRemovesActiveProjectCache()
     {
         using var temp = TemporaryFolder.Create();

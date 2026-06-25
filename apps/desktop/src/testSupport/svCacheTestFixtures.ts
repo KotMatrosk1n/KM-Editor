@@ -14,7 +14,7 @@ export function createSvCacheStatusFixture(
     phase: 'Ready',
     progressPercent: 100,
     settings: {
-      maxCacheSizeBytes: 10 * 1024 ** 3,
+      maxCacheSizeBytes: 512 * 1024 ** 2,
       mode: 'balanced'
     },
     warmupCompleted: 3,
@@ -75,7 +75,7 @@ export function createZaCacheStatusFixture(
     phase: 'Ready',
     progressPercent: 100,
     settings: {
-      maxCacheSizeBytes: 10 * 1024 ** 3,
+      maxCacheSizeBytes: 512 * 1024 ** 2,
       mode: 'balanced'
     },
     warmupCompleted: 2,

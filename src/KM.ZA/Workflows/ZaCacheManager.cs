@@ -23,9 +23,9 @@ public sealed class ZaCacheManager
     public const string ParserVersion = "za-cache-parser-v1";
     public const string DecompressorVersion = "za-cache-decompressor-v1";
 
-    private const long DefaultMaxCacheSizeBytes = 10L * 1024 * 1024 * 1024;
-    private const long MinimumMaxCacheSizeBytes = 512L * 1024 * 1024;
-    private const long MaximumMaxCacheSizeBytes = 500L * 1024 * 1024 * 1024;
+    private const long DefaultMaxCacheSizeBytes = 512L * 1024 * 1024;
+    private const long MinimumMaxCacheSizeBytes = 128L * 1024 * 1024;
+    private const long MaximumMaxCacheSizeBytes = 2L * 1024 * 1024 * 1024;
     private const string SettingsFileName = "settings.json";
     private const string ProjectsDirectoryName = "projects";
     private const string TempDirectoryName = "tmp";
