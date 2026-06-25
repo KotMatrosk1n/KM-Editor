@@ -59,6 +59,38 @@ const swshFeatureFilters = new Map([
   ['Workflows', 'WorkflowService|ParsedDataCache'],
 ]);
 
+const zaFeatureFilters = new Map([
+  [
+    'Data',
+    'PokemonLegendsZAProjectLoadsPokemonData|PokemonLegendsZAProjectLoadsGiftPokemonData|PokemonLegendsZAProjectLoadsTradePokemonData|PokemonLegendsZAProjectLoadsGameDefaultGiftPokemonSentinels|PokemonLegendsZALoadsSignedDefaultPokemonDataFields',
+  ],
+  ['DumpImport', 'PokemonLegendsZAGameDumpWritesImplementedCategoryFiles'],
+  ['Encounters', 'PokemonLegendsZAWildEncountersEditWritesTrinityEncountDataTable'],
+  ['ExeFs', 'PokemonLegendsZATypeChart'],
+  ['GameDump', 'PokemonLegendsZAGameDumpWritesImplementedCategoryFiles'],
+  [
+    'Gifts',
+    'PokemonLegendsZAProjectLoadsGiftPokemonData|PokemonLegendsZAProjectLoadsGameDefaultGiftPokemonSentinels|PokemonLegendsZAGiftPokemonEditWritesTrinityPokemonDataTable|PokemonLegendsZAUnavailableSpeciesUpdatesAreRejectedOutsidePokemonEditor',
+  ],
+  ['Items', 'PokemonLegendsZAProjectLoadsItemData|PokemonLegendsZAItemEditWritesTrinityItemTable'],
+  ['ModMerger', 'PokemonLegendsZAModMergerStagesAndAppliesTrinityRomFsMods'],
+  ['Moves', 'PokemonLegendsZAProjectLoadsMoveData|PokemonLegendsZAMoveEditWritesTrinityMoveTable'],
+  ['Placement', 'PokemonLegendsZAPlacementEditWritesSpawnerTransformTable'],
+  [
+    'Pokemon',
+    'PokemonLegendsZAProjectLoadsPokemonData|PokemonLegendsZAPokemonEditWritesStandalonePersonalTable|PokemonLegendsZANonPokemonSpeciesPickersExcludeUnavailablePokemon|PokemonLegendsZAUnavailableSpeciesUpdatesAreRejectedOutsidePokemonEditor',
+  ],
+  ['Shops', 'PokemonLegendsZAProjectLoadsShopData|PokemonLegendsZAShopEditWritesTrinityLineupTable'],
+  ['StaticEncounters', 'PokemonLegendsZAStaticEncountersEditWritesTrinityEncountDataTable'],
+  ['Trainers', 'PokemonLegendsZAProjectLoadsTrainerData|PokemonLegendsZATrainerEditWritesTrinityTrainerTable'],
+  [
+    'Trades',
+    'PokemonLegendsZAProjectLoadsTradePokemonData|PokemonLegendsZATradePokemonEditWritesTrinityPokemonDataTable|PokemonLegendsZAUnavailableSpeciesUpdatesAreRejectedOutsidePokemonEditor',
+  ],
+  ['TypeChart', 'PokemonLegendsZATypeChart'],
+  ['Workflows', 'PokemonLegendsZA|ZaCacheManagerTests'],
+]);
+
 const appFeatureFilters = new Map([
   ['dynamax-adventures', 'Dynamax Adventures'],
   ['fairy-gym-boosts', 'Fairy Gym Boosts'],
@@ -250,6 +282,11 @@ function mapChangedFile(file) {
     return;
   }
 
+  if (file.startsWith('src/KM.ZA/') || file.startsWith('tests/KM.Integration.Tests/ZA/')) {
+    mapZaChange(file);
+    return;
+  }
+
   if (file.startsWith('src/KM.Api/') || file.startsWith('src/KM.Tools/') || file.startsWith('tests/KM.Integration.Tests/')) {
     mapIntegrationChange(file);
     return;
@@ -327,6 +364,29 @@ function mapSwShChange(file) {
   }
 
   add('swsh-tests', 'Run all Sword and Shield tests', dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj'));
+}
+
+function mapZaChange(file) {
+  const changedTestFilter = testFilterForChangedTest(file);
+  if (changedTestFilter) {
+    add(`za-test:${changedTestFilter}`, `Run changed Pokemon Legends Z-A test ${changedTestFilter}`, dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', changedTestFilter));
+    return;
+  }
+
+  if (file.includes('ZaCacheManager')) {
+    add('za-cache-tests', 'Run Pokemon Legends Z-A cache manager tests', dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', 'FullyQualifiedName~ZaCacheManagerTests'));
+    return;
+  }
+
+  const feature = getPathPartAfter(file, file.startsWith('src/KM.ZA/') ? 'src/KM.ZA/' : 'tests/KM.Integration.Tests/ZA/');
+  const filterText = zaFeatureFilters.get(feature);
+
+  if (filterText) {
+    add(`za-feature:${feature}`, `Run Pokemon Legends Z-A ${feature} tests`, dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', expandFilter(filterText)));
+    return;
+  }
+
+  add('za-integration-tests', 'Run Pokemon Legends Z-A integration tests', dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', 'FullyQualifiedName~PokemonLegendsZA|FullyQualifiedName~ZaCacheManagerTests'));
 }
 
 function mapIntegrationChange(file) {

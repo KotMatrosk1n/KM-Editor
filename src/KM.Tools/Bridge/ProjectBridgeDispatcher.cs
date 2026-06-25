@@ -3040,7 +3040,10 @@ public sealed class ProjectBridgeDispatcher
             && !IsScarletViolet(selectedGame)
             && !((command is KmCommandNames.UpdateItemFields or KmCommandNames.UpdateTrainerFields)
                 && IsPokemonLegendsZA(selectedGame))
-            && !(command is KmCommandNames.UpdateGiftPokemonFields or KmCommandNames.UpdateTradePokemonFields
+            && !(command is
+                    KmCommandNames.UpdateGiftPokemonFields or
+                    KmCommandNames.UpdateTradePokemonFields or
+                    KmCommandNames.UpdateEncounterSlotFields
                 && IsPokemonLegendsZA(selectedGame))
             && !(command is KmCommandNames.UpdatePlacementObjectFields
                 && IsPokemonLegendsZA(selectedGame))
@@ -3233,6 +3236,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateTradePokemonFields or
             KmCommandNames.LoadEncountersWorkflow or
             KmCommandNames.UpdateEncounterSlotField or
+            KmCommandNames.UpdateEncounterSlotFields or
             KmCommandNames.LoadStaticEncountersWorkflow or
             KmCommandNames.UpdateStaticEncounterField or
             KmCommandNames.LoadMovesWorkflow or
