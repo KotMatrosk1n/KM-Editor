@@ -149,6 +149,7 @@ internal static class SwShFpsRomFsTestFixtures
         const ulong commandHash = 0x1122334455667788;
         var data = new byte[0x50];
         Encoding.ASCII.GetBytes("SESD").CopyTo(data, 0);
+        WriteU32(data, 0x04, 4);
         WriteU32(data, 0x0C, frameCount);
         WriteU32(data, 0x10, 0);
         WriteU32(data, 0x14, 1);
@@ -167,6 +168,7 @@ internal static class SwShFpsRomFsTestFixtures
         const int commandCount = 22;
         var data = new byte[0x24 + commandCount * 20 + 20];
         Encoding.ASCII.GetBytes("SESD").CopyTo(data, 0);
+        WriteU32(data, 0x04, 4);
         WriteU32(data, 0x0C, 5342);
         WriteU32(data, 0x10, 0);
         WriteU32(data, 0x14, 1);

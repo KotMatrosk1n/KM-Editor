@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Formats.SwSh;
 using System.Buffers.Binary;
 
 namespace KM.SwSh.FairyGymBoosts;
@@ -8,12 +9,6 @@ internal static class SwShFairyGymBoostsBseqPatcher
 {
     private const int SlotCount = 3;
     private const int SlotSize = 8;
-    private const int PayloadLength = SlotCount * SlotSize;
-
-    private static readonly byte[] CommandHashBytes =
-    [
-        0x30, 0xB0, 0x56, 0xB8, 0x7A, 0x22, 0x77, 0x69,
-    ];
 
     public static IReadOnlyList<SwShFairyGymBoostAnswerSlot> ReadAnswerSlots(byte[] data)
     {
@@ -56,41 +51,25 @@ internal static class SwShFairyGymBoostsBseqPatcher
 
     private static int FindPayloadOffset(byte[] data)
     {
-        if (data.Length < CommandHashBytes.Length + PayloadLength)
+        var file = SwShBseqFile.Parse(data);
+        var command = file.GetSingleCommand(
+            SwShBseqKnownCommands.SpecialQuizResult,
+            SwShBseqKnownCommands.SpecialQuizResultName);
+        if (command.PayloadLength != SwShBseqKnownCommands.SpecialQuizResultPayloadLength)
         {
-            throw new InvalidDataException("File is too small to contain the Fairy Gym boost command payload.");
+            throw new InvalidDataException("Fairy Gym boost command payload has an unexpected size.");
         }
 
-        var payloadOffsets = new List<int>();
-        for (var index = 0; index <= data.Length - CommandHashBytes.Length; index++)
+        if (!IsSupportedPayload(data, command.PayloadOffset))
         {
-            if (!data.AsSpan(index, CommandHashBytes.Length).SequenceEqual(CommandHashBytes))
-            {
-                continue;
-            }
-
-            var payloadOffset = index + CommandHashBytes.Length;
-            if (IsSupportedPayload(data, payloadOffset))
-            {
-                payloadOffsets.Add(payloadOffset);
-            }
+            throw new InvalidDataException("Fairy Gym boost command payload has unsupported answer slot values.");
         }
 
-        return payloadOffsets.Count switch
-        {
-            1 => payloadOffsets[0],
-            0 => throw new InvalidDataException("Fairy Gym boost command payload was not found."),
-            _ => throw new InvalidDataException("Fairy Gym boost command payload is ambiguous."),
-        };
+        return command.PayloadOffset;
     }
 
     private static bool IsSupportedPayload(byte[] data, int payloadOffset)
     {
-        if (payloadOffset < 0 || payloadOffset + PayloadLength > data.Length)
-        {
-            return false;
-        }
-
         for (var slotIndex = 0; slotIndex < SlotCount; slotIndex++)
         {
             var slotOffset = payloadOffset + (slotIndex * SlotSize);

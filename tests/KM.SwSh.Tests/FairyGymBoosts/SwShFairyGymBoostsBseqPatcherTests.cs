@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Formats.SwSh;
 using KM.SwSh.FairyGymBoosts;
 using System.Buffers.Binary;
+using System.Text;
 using Xunit;
 
 namespace KM.SwSh.Tests.FairyGymBoosts;
 
 public sealed class SwShFairyGymBoostsBseqPatcherTests
 {
+    private const int PayloadOffset = 0x38;
+
     [Fact]
     public void ApplySelectionsWritesOnlyRequestedAnswerSlots()
     {
@@ -46,19 +50,26 @@ public sealed class SwShFairyGymBoostsBseqPatcherTests
         int effectTwo,
         int resultTwo)
     {
-        var data = new byte[0x200];
-        var hashOffset = 0x80;
-        var payloadOffset = hashOffset + CommandHashBytes.Length;
-        CommandHashBytes.AsSpan().CopyTo(data.AsSpan(hashOffset));
-        WriteSlot(data, payloadOffset, answerChoice: 1, effectOne, resultOne);
-        WriteSlot(data, payloadOffset, answerChoice: 2, effectTwo, resultTwo);
-        WriteSlot(data, payloadOffset, answerChoice: 3, effectId: 0, resultValue: 0);
+        var data = new byte[0x54];
+        Encoding.ASCII.GetBytes("SESD").CopyTo(data, 0x00);
+        WriteU32(data, 0x04, SwShBseqFile.ExpectedVersion);
+        WriteU32(data, 0x0C, 1);
+        WriteU32(data, 0x10, 0);
+        WriteU32(data, 0x14, 1);
+        WriteU64(data, 0x18, SwShBseqKnownCommands.SpecialQuizResult);
+        WriteU32(data, 0x20, SwShBseqKnownCommands.SpecialQuizResultPayloadLength);
+
+        WriteU64(data, 0x30, SwShBseqKnownCommands.SpecialQuizResult);
+        WriteSlot(data, PayloadOffset, answerChoice: 1, effectOne, resultOne);
+        WriteSlot(data, PayloadOffset, answerChoice: 2, effectTwo, resultTwo);
+        WriteSlot(data, PayloadOffset, answerChoice: 3, effectId: 0, resultValue: 0);
+        WriteU32(data, 0x50, 0xFFFFFFFF);
         return data;
     }
 
     private static (int EffectId, int ResultValue) ReadSlot(byte[] data, int answerChoice)
     {
-        var offset = 0x80 + CommandHashBytes.Length + ((answerChoice - 1) * 8);
+        var offset = PayloadOffset + ((answerChoice - 1) * 8);
         return (
             BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, sizeof(int))),
             BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset + sizeof(int), sizeof(int))));
@@ -76,8 +87,13 @@ public sealed class SwShFairyGymBoostsBseqPatcherTests
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset + sizeof(int), sizeof(int)), resultValue);
     }
 
-    private static readonly byte[] CommandHashBytes =
-    [
-        0x30, 0xB0, 0x56, 0xB8, 0x7A, 0x22, 0x77, 0x69,
-    ];
+    private static void WriteU32(byte[] data, int offset, uint value)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, sizeof(uint)), value);
+    }
+
+    private static void WriteU64(byte[] data, int offset, ulong value)
+    {
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(offset, sizeof(ulong)), value);
+    }
 }
