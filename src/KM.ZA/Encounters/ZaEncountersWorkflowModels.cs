@@ -24,6 +24,8 @@ public sealed record ZaEncounterSlotRecord(
     int Weight,
     string? TimeOfDay,
     string Weather,
+    bool IsAlpha,
+    string EncounterKind,
     ZaEncounterProvenance PokemonProvenance);
 
 public sealed record ZaEncounterTableRecord(

@@ -42,7 +42,10 @@ public sealed record EncounterSlotRecordDto(
     int LevelMax,
     int Weight,
     string? TimeOfDay,
-    string Weather);
+    string Weather,
+    string? EncounterDataId = null,
+    string? EncounterKind = null,
+    bool IsAlpha = false);
 
 public sealed record EncounterTableRecordDto(
     string TableId,

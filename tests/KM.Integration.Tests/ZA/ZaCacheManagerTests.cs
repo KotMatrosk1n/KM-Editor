@@ -118,9 +118,13 @@ public sealed class ZaCacheManagerTests
         var cache = new ZaCacheManager(temp.CacheRootPath);
 
         cache.UpdateSettings(ZaCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
-        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+        ZaCacheStatus warmup = null!;
+        for (var stepIndex = 0; stepIndex < ZaCacheManager.WarmupVirtualPaths.Count; stepIndex++)
+        {
+            warmup = cache.WarmupStep(paths, stepIndex);
+        }
 
-        Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.Equal(ZaCacheManager.WarmupVirtualPaths.Count, warmup.WarmupCompleted);
         Assert.Equal(1, CountProjectCacheDirectories(temp));
 
         File.WriteAllText(Path.Combine(temp.OutputRootPath, "romfs_override.bin"), "changed");

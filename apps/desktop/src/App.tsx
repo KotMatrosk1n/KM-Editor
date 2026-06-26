@@ -20835,12 +20835,17 @@ function SelectedEncounterPanel({
               <>
                 <div className="encounter-slot-tabs" aria-label="Encounter slot list">
                   {displayedEncounterSlots.map((slot) => {
-                    const slotLabel = formatSpeciesFormLabel(
+                    const slotLabel = formatEncounterSlotSpeciesLabel(slot, editorFamily);
+                    const slotSpriteLabel = formatSpeciesFormLabel(
                       slot.species,
                       slot.form,
                       slot.speciesId,
                       editorFamily
                     );
+                    const slotBadge = formatEncounterSlotBadge(slot, {
+                      isScarletViolet: isSvEncounterTable,
+                      isPokemonLegendsZA: isZaEncounterTable
+                    });
 
                     return (
                       <button
@@ -20850,9 +20855,12 @@ function SelectedEncounterPanel({
                         onClick={() => onSelectSlot(slot.slot)}
                         type="button"
                       >
-                        <PokemonSprite className="slot-tab-sprite" name={slotLabel} preferStatic />
-                        <strong>{isSvEncounterTable ? `#${slot.speciesId}` : `#${slot.slot}`}</strong>
+                        <PokemonSprite className="slot-tab-sprite" name={slotSpriteLabel} preferStatic />
+                        <strong>{slotBadge}</strong>
                         <span>{slotLabel}</span>
+                        {isZaEncounterTable && slot.isAlpha ? (
+                          <span className="slot-tab-pill">Alpha</span>
+                        ) : null}
                         <small>
                           {formatEncounterSlotWeightSummary(
                             slot,
@@ -20875,14 +20883,21 @@ function SelectedEncounterPanel({
                   <div>
                     <dt>Species</dt>
                     <dd>
-                      {formatSpeciesFormLabel(
-                        encounterSlot.species,
-                        encounterSlot.form,
-                        encounterSlot.speciesId,
-                        editorFamily
-                      )}
+                      {formatEncounterSlotSpeciesLabel(encounterSlot, editorFamily)}
                     </dd>
                   </div>
+                  {isZaEncounterTable ? (
+                    <div>
+                      <dt>Encounter type</dt>
+                      <dd>{encounterSlot.encounterKind ?? (encounterSlot.isAlpha ? 'Alpha' : 'Wild')}</dd>
+                    </div>
+                  ) : null}
+                  {isZaEncounterTable && encounterSlot.encounterDataId ? (
+                    <div>
+                      <dt>Encounter data</dt>
+                      <dd>{encounterSlot.encounterDataId}</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt>Levels</dt>
                     <dd>
@@ -30605,11 +30620,7 @@ function parseTrailingInteger(value: string | null | undefined) {
 function formatZaEncounterZonePreview(tables: EncounterTableRecord[]) {
   const species = Array.from(
     new Set(
-      tables.flatMap((table) =>
-        table.slots.map((slot) =>
-          formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId, 'za')
-        )
-      )
+      tables.flatMap((table) => table.slots.map((slot) => formatEncounterSlotSpeciesLabel(slot, 'za')))
     )
   );
   if (species.length === 0) {
@@ -30619,6 +30630,25 @@ function formatZaEncounterZonePreview(tables: EncounterTableRecord[]) {
   const preview = species.slice(0, 4).join(', ');
   const additionalCount = species.length - 4;
   return additionalCount > 0 ? `${preview} + ${additionalCount} more` : preview;
+}
+
+function formatEncounterSlotSpeciesLabel(
+  slot: EncounterSlotRecord,
+  editorFamily: EditorUiFamily
+) {
+  const label = formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId, editorFamily);
+  return editorFamily === 'za' && slot.isAlpha ? `${label} Alpha` : label;
+}
+
+function formatEncounterSlotBadge(
+  slot: EncounterSlotRecord,
+  context: { isScarletViolet: boolean; isPokemonLegendsZA: boolean }
+) {
+  if (context.isScarletViolet || context.isPokemonLegendsZA) {
+    return `#${slot.speciesId}`;
+  }
+
+  return `#${slot.slot}`;
 }
 
 function formatZaEncounterSpawnerCount(count: number) {

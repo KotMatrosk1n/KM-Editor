@@ -1801,7 +1801,10 @@ export const encounterProvenanceSchema = z.strictObject({
 });
 
 export const encounterSlotRecordSchema = z.strictObject({
+  encounterDataId: z.string().nullable().optional(),
+  encounterKind: z.string().nullable().optional(),
   form: z.number().int().nonnegative(),
+  isAlpha: z.boolean().optional(),
   levelMax: z.number().int().nonnegative(),
   levelMin: z.number().int().nonnegative(),
   slot: z.number().int().nonnegative(),

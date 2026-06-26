@@ -30,6 +30,7 @@ public sealed class ZaCacheManager
     private const string ProjectsDirectoryName = "projects";
     private const string TempDirectoryName = "tmp";
     private const string IndexFileName = "index.json";
+    private const string OutputRootStampFileName = "output-root.json";
     private const string PayloadDirectoryName = "payloads";
     private const string MetadataDirectoryName = "metadata";
 
@@ -153,6 +154,7 @@ public sealed class ZaCacheManager
             if (context is not null)
             {
                 DeleteObsoleteProjectCaches(context);
+                InvalidateCompletedCacheIfOutputRootChanged(settings, paths!, context);
             }
 
             return CreateStatus(settings, context, activeProjectPreserved: false);
@@ -202,6 +204,7 @@ public sealed class ZaCacheManager
             }
 
             PruneIfNeeded(settings, context.ProjectKey);
+            WriteCompletedOutputRootStampIfReady(settings, paths, context);
             return CreateStatus(settings, context, activeProjectPreserved: false);
         }
     }
@@ -429,6 +432,58 @@ public sealed class ZaCacheManager
             activeProjectPreserved);
     }
 
+    private void InvalidateCompletedCacheIfOutputRootChanged(
+        ZaCacheSettings settings,
+        ProjectPaths paths,
+        ZaCacheProjectContext context)
+    {
+        if (settings.Mode == ZaCacheMode.Minimal || !IsWarmupComplete(settings, context))
+        {
+            return;
+        }
+
+        var currentStamp = CreateDirectoryStamp(paths.OutputRootPath);
+        var stampPath = GetOutputRootStampPath(context);
+        if (!TryReadOutputRootStamp(stampPath, out var storedStamp))
+        {
+            WriteOutputRootStamp(context, currentStamp);
+            return;
+        }
+
+        if (storedStamp == currentStamp)
+        {
+            return;
+        }
+
+        DeleteDirectoryIfExists(context.ProjectDirectory);
+    }
+
+    private void WriteCompletedOutputRootStampIfReady(
+        ZaCacheSettings settings,
+        ProjectPaths paths,
+        ZaCacheProjectContext context)
+    {
+        if (settings.Mode == ZaCacheMode.Minimal || !IsWarmupComplete(settings, context))
+        {
+            return;
+        }
+
+        var currentStamp = CreateDirectoryStamp(paths.OutputRootPath);
+        var stampPath = GetOutputRootStampPath(context);
+        if (TryReadOutputRootStamp(stampPath, out var storedStamp) && storedStamp == currentStamp)
+        {
+            return;
+        }
+
+        WriteOutputRootStamp(context, currentStamp);
+    }
+
+    private bool IsWarmupComplete(ZaCacheSettings settings, ZaCacheProjectContext context)
+    {
+        return WarmupVirtualPaths.Count > 0
+            && CountCompletedWarmupEntries(settings, context) >= WarmupVirtualPaths.Count;
+    }
+
     private int CountCompletedWarmupEntries(ZaCacheSettings settings, ZaCacheProjectContext context)
     {
         var completed = 0;
@@ -544,6 +599,43 @@ public sealed class ZaCacheManager
         return false;
     }
 
+    private static bool TryReadOutputRootStamp(string stampPath, out ZaCacheDirectoryStamp? stamp)
+    {
+        if (!File.Exists(stampPath))
+        {
+            stamp = null;
+            return false;
+        }
+
+        try
+        {
+            var cached = JsonSerializer.Deserialize<ZaCacheOutputRootStampFile>(
+                File.ReadAllBytes(stampPath),
+                JsonOptions);
+            if (cached is not null && cached.CacheSchemaVersion == CacheSchemaVersion)
+            {
+                stamp = cached.OutputRoot;
+                return true;
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+        }
+
+        stamp = null;
+        return false;
+    }
+
+    private void WriteOutputRootStamp(ZaCacheProjectContext context, ZaCacheDirectoryStamp? stamp)
+    {
+        var stampFile = new ZaCacheOutputRootStampFile(
+            CacheSchemaVersion,
+            context.Source,
+            stamp);
+        WriteJsonAtomic(GetOutputRootStampPath(context), stampFile);
+        TouchProjectDirectory(context);
+    }
+
     private static void TryDeleteDirectory(string path)
     {
         try
@@ -603,7 +695,7 @@ public sealed class ZaCacheManager
             CreateFileStamp(descriptorPath),
             CreateFileStamp(fileSystemPath),
             runtimePath is null ? null : CreateFileStamp(runtimePath),
-            CreateDirectoryStamp(paths.OutputRootPath));
+            OutputRoot: null);
         var projectKey = CreateProjectKey(source);
         return new ZaCacheProjectContext(
             romFsRoot,
@@ -851,6 +943,11 @@ public sealed class ZaCacheManager
         return Path.Combine(GetMetadataDirectory(context), $"{GetVirtualPathKey(virtualPath)}.json");
     }
 
+    private static string GetOutputRootStampPath(ZaCacheProjectContext context)
+    {
+        return Path.Combine(context.ProjectDirectory, OutputRootStampFileName);
+    }
+
     private static void TouchProjectDirectory(ZaCacheProjectContext context)
     {
         Directory.CreateDirectory(context.ProjectDirectory);
@@ -913,6 +1010,11 @@ public sealed class ZaCacheManager
         int CacheSchemaVersion,
         ZaCacheSourceFingerprint Source,
         ZaTrinityArchiveIndex Index);
+
+    private sealed record ZaCacheOutputRootStampFile(
+        int CacheSchemaVersion,
+        ZaCacheSourceFingerprint Source,
+        ZaCacheDirectoryStamp? OutputRoot);
 
     private sealed record ZaCachePayloadMetadata(
         int CacheSchemaVersion,
