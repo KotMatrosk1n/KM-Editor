@@ -62,6 +62,8 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = pokemon.Payload!.Workflow;
         Assert.Equal("Pokemon Data", workflow.Summary.Label);
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        Assert.Equal(3, workflow.Stats.TotalPokemonCount);
+        Assert.Equal(2, workflow.Stats.PresentPokemonCount);
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         Assert.Equal(1, bulbasaur.SpeciesId);
         Assert.Equal("Pokemon 1", bulbasaur.Name);
@@ -78,6 +80,9 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(1, Assert.Single(bulbasaur.Evolutions).Species);
         var tmGroup = bulbasaur.Compatibility.Single(group => group.GroupId == "tm");
         Assert.Contains(tmGroup.Entries, entry => entry.MoveId == 45 && entry.CanLearn);
+        var unavailablePokemon = workflow.Pokemon.Single(row => row.PersonalId == 3);
+        Assert.Equal(3, unavailablePokemon.SpeciesId);
+        Assert.False(unavailablePokemon.DexPresence.IsPresentInGame);
     }
 
     [Fact]
