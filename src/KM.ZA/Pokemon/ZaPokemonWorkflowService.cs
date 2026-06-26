@@ -318,7 +318,7 @@ internal sealed class ZaPokemonWorkflowService
         for (var index = 0; index < table.EntryLength; index++)
         {
             var entry = table.Entry(index);
-            if (entry is null || !entry.Value.IsPresent)
+            if (entry is null || (entry.Value.Species?.Species ?? 0) <= 0)
             {
                 continue;
             }
