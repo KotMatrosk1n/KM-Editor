@@ -1899,12 +1899,27 @@ public sealed class PokemonLegendsZABridgeTests
         var spawners = includeAlphaAndRawSpawners
             ? new[]
             {
-                CreateSpawner(builder, "za_wild_spawner_001", "wild_ignore", "a0102_w01", weight: 35),
+                CreateSpawner(
+                    builder,
+                    "za_wild_spawner_001",
+                    "wild_ignore",
+                    "a0102_w01",
+                    weight: 35,
+                    appearanceObjectName: "wild_spawn_001"),
                 CreateSpawner(builder, "id_spn_outzone_a0201_A459", "wild_ignore_Alpha", "a0102_w01", weight: 65),
                 CreateSpawner(builder, "zdm406_v00_700", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "zdm406_v00_701", "wild_ignore", zoneId: null, weight: 100),
             }
-            : [CreateSpawner(builder, "za_wild_spawner_001", "wild_ignore", "a0102_w01", weight: 35)];
+            :
+            [
+                CreateSpawner(
+                    builder,
+                    "za_wild_spawner_001",
+                    "wild_ignore",
+                    "a0102_w01",
+                    weight: 35,
+                    appearanceObjectName: "wild_spawn_001"),
+            ];
         var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, spawners);
         var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
         var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);
@@ -1918,7 +1933,8 @@ public sealed class PokemonLegendsZABridgeTests
         string spawnerName,
         string encounterDataId,
         string? zoneId,
-        int weight)
+        int weight,
+        string? appearanceObjectName = null)
     {
         var encounterId = builder.CreateString(encounterDataId);
         var encounter = EncountDataInfo.CreateEncountDataInfo(
@@ -1931,7 +1947,7 @@ public sealed class PokemonLegendsZABridgeTests
             appearedTimeCondition: 4,
             appearedWeatherCondition: 2);
         var encounters = PokemonSpawnerData.CreateEncountDataInfoListVector(builder, [encounter]);
-        var objectName = builder.CreateString($"{spawnerName}_object");
+        var objectName = builder.CreateString(appearanceObjectName ?? $"{spawnerName}_object");
         var appearance = CreateSpawnerAppearance(builder, objectName, zoneId);
         var appearances = PokemonSpawnerData.CreateAppearanceSpawnerObjectInfoListVector(builder, [appearance]);
         var spawnerId = builder.CreateString(spawnerName);
