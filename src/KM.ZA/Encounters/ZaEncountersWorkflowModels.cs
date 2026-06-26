@@ -34,7 +34,11 @@ public sealed record ZaEncounterTableRecord(
     string GameVersion,
     string ArchiveMember,
     IReadOnlyList<ZaEncounterSlotRecord> Slots,
-    ZaEncounterProvenance Provenance);
+    ZaEncounterProvenance Provenance,
+    string? LocationKey = null,
+    int? LocationSort = null,
+    string? TableLabel = null,
+    string? TableDetails = null);
 
 public sealed record ZaEncounterEditableField(
     string Field,

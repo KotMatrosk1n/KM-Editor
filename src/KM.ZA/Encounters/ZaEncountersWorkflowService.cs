@@ -21,10 +21,35 @@ internal sealed class ZaEncountersWorkflowService
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
     private const string GameVersionLabel = "Pokemon Legends ZA";
     private const string TableIdPrefix = "za-spawner";
+    private const string WildZonePlaceNamePrefix = "wild_";
     private static readonly string[] EncounterDataIdSuffixes =
     [
         "_Alpha",
     ];
+    private static readonly IReadOnlyDictionary<string, int> WildZoneNumbers =
+        new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["a0102_w01"] = 1,
+            ["a0103_w01"] = 2,
+            ["a0403_w01"] = 3,
+            ["a0402_w01"] = 4,
+            ["a0202_w02"] = 5,
+            ["a0502_w01"] = 6,
+            ["a0303_w01"] = 7,
+            ["a0503_w01"] = 8,
+            ["a0301_w02"] = 9,
+            ["a0202_w01"] = 10,
+            ["a0502_w02"] = 11,
+            ["a0201_w01"] = 12,
+            ["a0401_w01"] = 13,
+            ["a0301_w01"] = 14,
+            ["a0501_w01"] = 15,
+            ["a0203_w01"] = 16,
+            ["a0101_w01"] = 17,
+            ["a0302_w01"] = 18,
+            ["a0501_w02"] = 19,
+            ["a0601_w01"] = 20,
+        };
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -139,6 +164,7 @@ internal sealed class ZaEncountersWorkflowService
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
         var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
+        var tableCountsByLocation = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
         {
             var db = table.Values(groupIndex);
@@ -161,9 +187,12 @@ internal sealed class ZaEncountersWorkflowService
                     continue;
                 }
 
+                var locationKey = FormatLocationKey(spawner.Value);
+                var location = FormatLocation(locationKey, labels);
+                var tableNumber = NextTableNumber(tableCountsByLocation, locationKey);
                 yield return new ZaEncounterTableRecord(
                     CreateTableId(groupIndex, spawnerIndex),
-                    FormatLocation(spawner.Value),
+                    location,
                     FormatArea(spawner.Value),
                     FormatEncounterType(spawner.Value),
                     GameVersionLabel,
@@ -172,7 +201,11 @@ internal sealed class ZaEncountersWorkflowService
                     new ZaEncounterProvenance(
                         spawnerSource.RelativePath,
                         spawnerSource.SourceLayer,
-                        spawnerSource.FileState));
+                        spawnerSource.FileState),
+                    locationKey,
+                    GetLocationSort(locationKey),
+                    FormatTableLabel(locationKey, tableNumber, spawner.Value.Id),
+                    FormatTableDetails(slots));
             }
         }
     }
@@ -310,7 +343,7 @@ internal sealed class ZaEncountersWorkflowService
         return string.Create(CultureInfo.InvariantCulture, $"{TableIdPrefix}:{groupIndex}:{spawnerIndex}");
     }
 
-    private static string FormatLocation(PokemonSpawnerData spawner)
+    private static string FormatLocationKey(PokemonSpawnerData spawner)
     {
         var objectInfo = FirstAppearanceObject(spawner);
         var zoneInfo = objectInfo?.ZoneInfo;
@@ -327,6 +360,92 @@ internal sealed class ZaEncountersWorkflowService
         }
 
         return string.IsNullOrWhiteSpace(spawner.Id) ? "Unknown Z-A Area" : spawner.Id;
+    }
+
+    private static string FormatLocation(string locationKey, ZaTextLabelLookup labels)
+    {
+        if (WildZoneNumbers.TryGetValue(locationKey, out var zoneNumber))
+        {
+            return labels.PlaceName($"{WildZonePlaceNamePrefix}{locationKey}")
+                ?? $"Wild Zone {zoneNumber.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return labels.PlaceName(locationKey) ?? FormatRawSpawnerId(locationKey);
+    }
+
+    private static int NextTableNumber(IDictionary<string, int> tableCountsByLocation, string locationKey)
+    {
+        tableCountsByLocation.TryGetValue(locationKey, out var current);
+        var next = current + 1;
+        tableCountsByLocation[locationKey] = next;
+        return next;
+    }
+
+    private static int? GetLocationSort(string locationKey)
+    {
+        return WildZoneNumbers.TryGetValue(locationKey, out var zoneNumber)
+            ? zoneNumber
+            : null;
+    }
+
+    private static bool IsNumberedWildZone(string locationKey)
+    {
+        return WildZoneNumbers.ContainsKey(locationKey);
+    }
+
+    private static string FormatTableLabel(string locationKey, int tableNumber, string? spawnerId)
+    {
+        if (IsNumberedWildZone(locationKey))
+        {
+            return $"Spawner {tableNumber.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return string.IsNullOrWhiteSpace(spawnerId)
+            ? $"Spawner {tableNumber.ToString(CultureInfo.InvariantCulture)}"
+            : FormatRawSpawnerId(spawnerId);
+    }
+
+    private static string FormatRawSpawnerId(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("id_spn_", StringComparison.Ordinal))
+        {
+            trimmed = trimmed["id_spn_".Length..];
+        }
+
+        return trimmed
+            .Replace('_', ' ')
+            .Trim();
+    }
+
+    private static string FormatTableDetails(IReadOnlyList<ZaEncounterSlotRecord> slots)
+    {
+        if (slots.Count == 0)
+        {
+            return "No slots";
+        }
+
+        var species = slots
+            .Select(slot => slot.Species)
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Distinct(StringComparer.Ordinal)
+            .Take(3)
+            .ToArray();
+        var speciesLabel = species.Length == 0 ? "No species" : string.Join(", ", species);
+        var additionalCount = slots
+            .Select(slot => slot.Species)
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Distinct(StringComparer.Ordinal)
+            .Skip(3)
+            .Count();
+        if (additionalCount > 0)
+        {
+            speciesLabel = $"{speciesLabel} + {additionalCount.ToString(CultureInfo.InvariantCulture)} more";
+        }
+
+        var slotLabel = slots.Count == 1 ? "slot" : "slots";
+        var weightTotal = slots.Sum(slot => slot.Weight);
+        return $"{speciesLabel} - {slots.Count.ToString(CultureInfo.InvariantCulture)} {slotLabel} - total {weightTotal.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static string FormatArea(PokemonSpawnerData spawner)

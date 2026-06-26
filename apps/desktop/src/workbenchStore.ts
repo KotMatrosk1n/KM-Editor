@@ -9,6 +9,7 @@ import {
   type ChangePlan,
   type DynamaxAdventuresWorkflow,
   type EditSession,
+  type EncounterTableRecord,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
   type FashionUnlockWorkflow,
@@ -323,6 +324,59 @@ function resolveSelectedPokemonPersonalId(
     pokemonWorkflow.pokemon[0]?.personalId ??
     null
   );
+}
+
+function resolveSelectedEncounterTableId(
+  encountersWorkflow: EncountersWorkflow,
+  currentSelectedEncounterTableId: string | null
+) {
+  return encountersWorkflow.tables.some(
+    (table) => table.tableId === currentSelectedEncounterTableId
+  )
+    ? currentSelectedEncounterTableId
+    : (resolveDefaultEncounterTable(encountersWorkflow.tables)?.tableId ?? null);
+}
+
+function resolveDefaultEncounterTable(tables: EncounterTableRecord[]) {
+  if (!tables.some(isPokemonLegendsZAEncounterTable)) {
+    return tables[0] ?? null;
+  }
+
+  return [...tables].sort(compareEncounterTablesForDefaultSelection)[0] ?? null;
+}
+
+function compareEncounterTablesForDefaultSelection(
+  left: EncounterTableRecord,
+  right: EncounterTableRecord
+) {
+  const leftZa = isPokemonLegendsZAEncounterTable(left);
+  const rightZa = isPokemonLegendsZAEncounterTable(right);
+  if (leftZa && rightZa) {
+    const locationSort =
+      (left.locationSort ?? Number.MAX_SAFE_INTEGER) -
+      (right.locationSort ?? Number.MAX_SAFE_INTEGER);
+    if (locationSort !== 0) {
+      return locationSort;
+    }
+
+    const labelSort =
+      (parseTrailingInteger(left.tableLabel) ?? Number.MAX_SAFE_INTEGER) -
+      (parseTrailingInteger(right.tableLabel) ?? Number.MAX_SAFE_INTEGER);
+    if (labelSort !== 0) {
+      return labelSort;
+    }
+  }
+
+  return left.tableId.localeCompare(right.tableId);
+}
+
+function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
+  return table.gameVersion === 'Pokemon Legends ZA' || table.locationKey != null;
+}
+
+function parseTrailingInteger(value: string | null | undefined) {
+  const match = value?.match(/(\d+)$/);
+  return match ? Number.parseInt(match[1]!, 10) : null;
 }
 
 function isPlaceholderPokemonRecord(pokemon: Pick<PokemonWorkflow['pokemon'][number], 'name' | 'personalId'>) {
@@ -892,11 +946,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setEncountersWorkflow: (encountersWorkflow) =>
     set((state) => {
-      const selectedEncounterTableId = encountersWorkflow.tables.some(
-        (table) => table.tableId === state.selectedEncounterTableId
-      )
-        ? state.selectedEncounterTableId
-        : (encountersWorkflow.tables[0]?.tableId ?? null);
+      const selectedEncounterTableId = resolveSelectedEncounterTableId(
+        encountersWorkflow,
+        state.selectedEncounterTableId
+      );
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'encounters'),

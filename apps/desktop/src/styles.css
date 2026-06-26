@@ -5364,6 +5364,7 @@ h2 {
 .encounter-inspector > .panel-heading,
 .encounter-inspector > .item-provenance-list,
 .encounter-inspector > .sv-encounter-browser,
+.encounter-inspector > .za-encounter-spawner-browser,
 .encounter-inspector > .sv-encounter-navigator,
 .encounter-inspector > .encounter-edit-form,
 .encounter-inspector > .empty-copy {
@@ -5384,6 +5385,7 @@ h2 {
 }
 
 .sv-encounter-browser,
+.za-encounter-spawner-browser,
 .sv-encounter-navigator {
   display: grid;
   gap: 12px;
@@ -5413,7 +5415,8 @@ h2 {
   font-weight: 800;
 }
 
-.sv-encounter-condition-table {
+.sv-encounter-condition-table,
+.za-encounter-spawner-table {
   display: grid;
   min-width: 0;
   max-height: 264px;
@@ -5445,6 +5448,38 @@ h2 {
   text-align: left;
 }
 
+.za-encounter-spawner-row {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.7fr)
+    minmax(68px, 0.35fr)
+    minmax(240px, 1.4fr)
+    minmax(96px, 0.55fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 640px;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--color-text-soft);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #26344d;
+  text-align: left;
+}
+
+.za-encounter-spawner-row:last-child {
+  border-bottom: 0;
+}
+
+button.za-encounter-spawner-row {
+  cursor: pointer;
+}
+
+button.za-encounter-spawner-row:hover {
+  color: var(--color-text);
+  background: rgb(108 92 231 / 12%);
+}
+
 .sv-encounter-condition-row:last-child {
   border-bottom: 0;
 }
@@ -5458,7 +5493,8 @@ button.sv-encounter-condition-row:hover {
   background: rgb(108 92 231 / 12%);
 }
 
-.sv-encounter-condition-heading {
+.sv-encounter-condition-heading,
+.za-encounter-spawner-heading {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -5470,13 +5506,15 @@ button.sv-encounter-condition-row:hover {
   text-transform: uppercase;
 }
 
-.sv-encounter-condition-row-selected {
+.sv-encounter-condition-row-selected,
+.za-encounter-spawner-row-selected {
   color: var(--color-text);
   background: linear-gradient(135deg, #2f2a90, var(--color-accent));
   box-shadow: inset 3px 0 0 var(--color-gold);
 }
 
-.sv-encounter-condition-row span {
+.sv-encounter-condition-row span,
+.za-encounter-spawner-row span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
