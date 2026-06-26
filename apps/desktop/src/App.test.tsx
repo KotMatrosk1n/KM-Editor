@@ -4698,6 +4698,125 @@ describe('App', () => {
     expect(screen.getByText('sword:hidden:2:8877665544332211:1')).toBeInTheDocument();
   });
 
+  it('groups Legends Z-A wild encounters by numbered wild zone and switches spawners', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+    const user = userEvent.setup();
+    const makeZaTable = (
+      tableId: string,
+      location: string,
+      locationKey: string,
+      locationSort: number,
+      tableLabel: string,
+      speciesId: number,
+      species: string
+    ): EncounterTableRecord => ({
+      archiveMember: 'romfs/world/ik_data/field/pokemon_spawner/pokemon_spawner_data/pokemon_spawner_data_array.bin',
+      area: 'Pokemon Spawner',
+      encounterType: 'Wild Pokemon',
+      gameVersion: 'Pokemon Legends ZA',
+      location,
+      locationKey,
+      locationSort,
+      provenance: {
+        fileState: 'baseOnly',
+        sourceFile: 'romfs/world/ik_data/field/pokemon_spawner/pokemon_spawner_data/pokemon_spawner_data_array.bin',
+        sourceLayer: 'base'
+      },
+      slots: [
+        {
+          form: 0,
+          levelMax: 12,
+          levelMin: 8,
+          slot: 0,
+          species,
+          speciesId,
+          timeOfDay: 'Any time',
+          weather: 'Any weather',
+          weight: 100
+        }
+      ],
+      tableDetails: `${species} - 1 slot - total 100`,
+      tableId,
+      tableLabel
+    });
+    const workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [],
+      stats: {
+        sourceFileCount: 2,
+        totalSlotCount: 3,
+        totalTableCount: 3
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Wild Encounters'
+      },
+      tables: [
+        makeZaTable('za-spawner:0:1', 'Wild Zone 1', 'a0102_w01', 1, 'Spawner 2', 2, 'Ivysaur'),
+        makeZaTable('za-spawner:0:0', 'Wild Zone 1', 'a0102_w01', 1, 'Spawner 1', 1, 'Bulbasaur'),
+        makeZaTable('za-spawner:0:2', 'Wild Zone 2', 'a0103_w01', 2, 'Spawner 1', 4, 'Charmander')
+      ]
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () => Promise.resolve({ workflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    const encounterTable = await screen.findByRole('table', { name: 'Encounter tables' });
+    expect(within(encounterTable).getAllByRole('row')).toHaveLength(3);
+    expect(
+      within(encounterTable)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent)
+    ).toEqual(['Wild Zone', 'Spawners', 'Preview']);
+    expect(within(encounterTable).getByText('Wild Zone 1')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Wild Zone 2')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('2 spawners')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Bulbasaur, Ivysaur')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Symbol' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Hidden' })).not.toBeInTheDocument();
+
+    const spawnerTable = await screen.findByRole('table', { name: 'Z-A zone spawners' });
+    const spawnerOneRow = within(spawnerTable).getByText('Spawner 1').closest('button');
+    const spawnerTwoRow = within(spawnerTable).getByText('Spawner 2').closest('button');
+    expect(spawnerOneRow).toHaveAttribute('aria-pressed', 'true');
+    expect(spawnerTwoRow).not.toBeNull();
+    await user.click(spawnerTwoRow!);
+
+    expect(screen.getAllByText('Ivysaur').length).toBeGreaterThan(0);
+    expect(within(spawnerTable).getByText('Spawner 2').closest('button')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
   it('copies the selected symbol encounter table into hidden encounters after confirmation', async () => {
     const user = userEvent.setup();
     const speciesNames = new Map([

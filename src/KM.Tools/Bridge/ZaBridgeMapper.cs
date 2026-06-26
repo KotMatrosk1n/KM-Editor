@@ -585,7 +585,11 @@ public static class ZaBridgeMapper
             table.GameVersion,
             table.ArchiveMember,
             table.Slots.Select(ToDto).ToArray(),
-            ToDto(table.Provenance));
+            ToDto(table.Provenance),
+            table.LocationKey,
+            table.LocationSort,
+            table.TableLabel,
+            table.TableDetails);
     }
 
     private static EncounterSlotRecordDto ToDto(ZaEncounterSlotRecord slot)

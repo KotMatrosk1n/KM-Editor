@@ -20312,10 +20312,9 @@ function EncountersSection({
     () => filterEncounterTables(allTables, searchText),
     [allTables, searchText]
   );
-  const selectedTable =
-    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
-    filteredTables[0] ??
-    null;
+  const selectedTableFromId =
+    workflow?.tables.find((table) => table.tableId === selectedTableId) ?? null;
+  const selectedTable = selectedTableFromId ?? getDefaultEncounterTable(filteredTables);
   const tableRows = useMemo(
     () => buildEncounterTableRows(filteredTables, selectedTable),
     [filteredTables, selectedTable]
@@ -20398,9 +20397,15 @@ function EncountersSection({
           <div className="encounters-layout">
             <div className="encounters-table" role="table" aria-label="Encounter tables">
               <div className="encounters-row encounters-row-heading" role="row">
-                <span role="columnheader">Location</span>
-                <span role="columnheader">Game</span>
-                <span role="columnheader">Areas</span>
+                <span role="columnheader">
+                  {editorFamily === 'za' ? 'Wild Zone' : 'Location'}
+                </span>
+                <span role="columnheader">
+                  {editorFamily === 'za' ? 'Spawners' : 'Game'}
+                </span>
+                <span role="columnheader">
+                  {editorFamily === 'za' ? 'Preview' : 'Areas'}
+                </span>
               </div>
               {tableRows.map((tableRow) => (
                 <button
@@ -20417,7 +20422,11 @@ function EncountersSection({
                   type="button"
                 >
                   <span role="cell">{tableRow.location}</span>
-                  <span role="cell">{tableRow.gameVersion}</span>
+                  <span role="cell">
+                    {editorFamily === 'za'
+                      ? formatZaEncounterSpawnerCount(tableRow.tableIds.length)
+                      : tableRow.gameVersion}
+                  </span>
                   <span role="cell">{tableRow.areaLabel}</span>
                 </button>
               ))}
@@ -20633,11 +20642,14 @@ function SelectedEncounterPanel({
       ? 'No matching destination conditions or slots are available to copy.'
       : undefined;
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
+  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
   const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
   const displayedEncounterSlots = table
     ? isSvEncounterTable
       ? table.slots
-      : table.slots.slice(0, 10)
+      : isZaEncounterTable
+        ? table.slots
+        : table.slots.slice(0, 10)
     : [];
   const encounterWeightTotal = displayedEncounterSlots.reduce(
     (total, slot) => total + slot.weight,
@@ -20670,8 +20682,14 @@ function SelectedEncounterPanel({
             </div>
             {!svEncounterFacets ? (
               <div>
-                <dt>Table</dt>
-                <dd>{table.tableId}</dd>
+                <dt>{isZaEncounterTable ? 'Spawner' : 'Table'}</dt>
+                <dd>{isZaEncounterTable ? table.tableLabel ?? table.tableId : table.tableId}</dd>
+              </div>
+            ) : null}
+            {isZaEncounterTable && table.locationKey ? (
+              <div>
+                <dt>Zone ID</dt>
+                <dd>{table.locationKey}</dd>
               </div>
             ) : null}
             <div>
@@ -20699,9 +20717,16 @@ function SelectedEncounterPanel({
               tables={tables}
             />
           ) : null}
+          {isZaEncounterTable ? (
+            <ZaEncounterSpawnerBrowser
+              onSelectTable={onSelectTable}
+              table={table}
+              tables={tables}
+            />
+          ) : null}
 
           <div className="encounter-edit-form">
-            {!isSvEncounterTable && areaTabs.length > 0 ? (
+            {!isSvEncounterTable && !isZaEncounterTable && areaTabs.length > 0 ? (
               <div
                 className="encounter-area-tabs"
                 role="tablist"
@@ -20734,7 +20759,7 @@ function SelectedEncounterPanel({
               </div>
             ) : null}
 
-            {!isSvEncounterTable && conditionTabs.length > 0 ? (
+            {!isSvEncounterTable && !isZaEncounterTable && conditionTabs.length > 0 ? (
               <div
                 className="encounter-condition-tabs"
                 role="tablist"
@@ -20767,7 +20792,7 @@ function SelectedEncounterPanel({
               </div>
             ) : null}
 
-            {!isSvEncounterTable && areaCopyTargetArea ? (
+            {!isSvEncounterTable && !isZaEncounterTable && areaCopyTargetArea ? (
               <div className="encounter-area-copy-actions">
                 <button
                   className="secondary-button"
@@ -21142,6 +21167,71 @@ function SvEncounterConditionBrowser({
             <span role="cell">{row.flag}</span>
             <span role="cell">{row.slotCount}</span>
             <span role="cell">{row.totalWeight}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ZaEncounterSpawnerBrowser({
+  onSelectTable,
+  table,
+  tables
+}: {
+  onSelectTable: (tableId: string | null) => void;
+  table: EncounterTableRecord;
+  tables: EncounterTableRecord[];
+}) {
+  const spawnerRows = useMemo(
+    () => buildZaEncounterSpawnerRows(table, tables),
+    [table, tables]
+  );
+  const selectedRow =
+    spawnerRows.find((row) => row.tableId === table.tableId) ?? spawnerRows[0] ?? null;
+  const slotCount = spawnerRows.reduce((total, row) => total + row.slotCount, 0);
+
+  if (!selectedRow) {
+    return null;
+  }
+
+  return (
+    <section className="za-encounter-spawner-browser" aria-label="Legends Z-A wild zone spawners">
+      <div className="sv-encounter-browser-summary">
+        <span>{table.location}</span>
+        <span>{formatZaEncounterSpawnerCount(spawnerRows.length)}</span>
+        <span>
+          {slotCount} {slotCount === 1 ? 'slot' : 'slots'} in this zone
+        </span>
+      </div>
+
+      <div className="za-encounter-spawner-table" role="table" aria-label="Z-A zone spawners">
+        <div className="za-encounter-spawner-row za-encounter-spawner-heading" role="row">
+          <span role="columnheader">Spawner</span>
+          <span role="columnheader">Slots</span>
+          <span role="columnheader">Preview</span>
+          <span role="columnheader">Source</span>
+        </div>
+        {spawnerRows.map((row) => (
+          <button
+            aria-pressed={row.tableId === table.tableId}
+            className={`za-encounter-spawner-row ${
+              row.tableId === table.tableId ? 'za-encounter-spawner-row-selected' : ''
+            }`}
+            key={row.tableId}
+            onClick={() => {
+              if (row.tableId !== table.tableId) {
+                onSelectTable(row.tableId);
+              }
+            }}
+            role="row"
+            title={`${row.label}: ${row.details}`}
+            type="button"
+          >
+            <span role="cell">{row.label}</span>
+            <span role="cell">{row.slotCount}</span>
+            <span role="cell">{row.details}</span>
+            <span role="cell">{row.sourceLayer}</span>
           </button>
         ))}
       </div>
@@ -30423,26 +30513,116 @@ function buildEncounterTableRows(
     tablesByZoneKey.set(zoneKey, [...(tablesByZoneKey.get(zoneKey) ?? []), table]);
   }
 
-  return Array.from(tablesByZoneKey.entries()).map(([zoneKey, groupTables]) => {
+  const rows = Array.from(tablesByZoneKey.entries()).map(([zoneKey, groupTables]) => {
+    const isZaGroup = groupTables.some(isPokemonLegendsZAEncounterTable);
+    const orderedGroupTables = isZaGroup
+      ? [...groupTables].sort(compareZaEncounterSpawnerTables)
+      : groupTables;
     const table =
       selectedTable &&
       getEncounterTableZoneKey(selectedTable) === zoneKey &&
-      groupTables.some((groupTable) => groupTable.tableId === selectedTable.tableId)
+      orderedGroupTables.some((groupTable) => groupTable.tableId === selectedTable.tableId)
         ? selectedTable
-        : getPreferredEncounterTable(groupTables) ?? groupTables[0]!;
-    const areaLabel = sortEncounterAreaLabels(
-      Array.from(new Set(groupTables.map((groupTable) => groupTable.area)))
-    ).join(' / ');
+        : getPreferredEncounterTable(orderedGroupTables) ?? orderedGroupTables[0]!;
+    const areaLabel = isZaGroup
+      ? formatZaEncounterZonePreview(orderedGroupTables)
+      : sortEncounterAreaLabels(
+          Array.from(new Set(orderedGroupTables.map((groupTable) => groupTable.area)))
+        ).join(' / ');
 
     return {
       areaLabel,
       gameVersion: table.gameVersion,
       location: table.location,
       table,
-      tableIds: groupTables.map((groupTable) => groupTable.tableId),
+      tableIds: orderedGroupTables.map((groupTable) => groupTable.tableId),
       zoneKey
     };
   });
+
+  return rows.some((row) => row.table.locationSort != null)
+    ? rows.sort((left, right) => compareEncounterTableRows(left, right))
+    : rows;
+}
+
+function getDefaultEncounterTable(tables: EncounterTableRecord[]) {
+  if (!tables.some(isPokemonLegendsZAEncounterTable)) {
+    return tables[0] ?? null;
+  }
+
+  return buildEncounterTableRows(tables, null)[0]?.table ?? null;
+}
+
+function compareEncounterTableRows(left: EncounterTableListRow, right: EncounterTableListRow) {
+  const leftSort = getEncounterTableLocationSort(left.table);
+  const rightSort = getEncounterTableLocationSort(right.table);
+  if (leftSort !== rightSort) {
+    return leftSort - rightSort;
+  }
+
+  return left.location.localeCompare(right.location);
+}
+
+function getEncounterTableLocationSort(table: EncounterTableRecord) {
+  return table.locationSort ?? Number.MAX_SAFE_INTEGER;
+}
+
+function buildZaEncounterSpawnerRows(
+  selectedTable: EncounterTableRecord,
+  tables: EncounterTableRecord[]
+): ZaEncounterSpawnerRow[] {
+  const selectedZoneKey = getEncounterTableZoneKey(selectedTable);
+  return tables
+    .filter((table) => getEncounterTableZoneKey(table) === selectedZoneKey)
+    .sort(compareZaEncounterSpawnerTables)
+    .map((table) => ({
+      details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
+      label: table.tableLabel ?? table.tableId,
+      slotCount: table.slots.length,
+      sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
+      tableId: table.tableId
+    }));
+}
+
+function compareZaEncounterSpawnerTables(
+  left: EncounterTableRecord,
+  right: EncounterTableRecord
+) {
+  const leftNumber = parseTrailingInteger(left.tableLabel);
+  const rightNumber = parseTrailingInteger(right.tableLabel);
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+
+  return left.tableId.localeCompare(right.tableId);
+}
+
+function parseTrailingInteger(value: string | null | undefined) {
+  const match = value?.match(/(\d+)$/);
+  return match ? Number.parseInt(match[1]!, 10) : null;
+}
+
+function formatZaEncounterZonePreview(tables: EncounterTableRecord[]) {
+  const species = Array.from(
+    new Set(
+      tables.flatMap((table) =>
+        table.slots.map((slot) =>
+          formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId, 'za')
+        )
+      )
+    )
+  );
+  if (species.length === 0) {
+    return 'No species';
+  }
+
+  const preview = species.slice(0, 4).join(', ');
+  const additionalCount = species.length - 4;
+  return additionalCount > 0 ? `${preview} + ${additionalCount} more` : preview;
+}
+
+function formatZaEncounterSpawnerCount(count: number) {
+  return count === 1 ? '1 spawner' : `${count} spawners`;
 }
 
 function createEncounterAreaCopyRequest(
@@ -30635,7 +30815,11 @@ function getEncounterTableZoneKey(table: EncounterTableRecord) {
     return getSvEncounterLocationKey(table);
   }
 
-  return [table.gameVersion, table.location].join(':');
+  return [table.gameVersion, table.locationKey ?? table.location].join(':');
+}
+
+function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
+  return table.gameVersion === 'Pokemon Legends ZA' || table.locationKey != null;
 }
 
 function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
@@ -32083,6 +32267,14 @@ type EncounterTableListRow = {
   table: EncounterTableRecord;
   tableIds: string[];
   zoneKey: string;
+};
+
+type ZaEncounterSpawnerRow = {
+  details: string;
+  label: string;
+  sourceLayer: string;
+  slotCount: number;
+  tableId: string;
 };
 
 type EncounterSlotFieldUpdate = {

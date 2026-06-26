@@ -1229,7 +1229,11 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
         var table = Assert.Single(workflow.Tables);
         Assert.Equal("Pokemon Legends ZA", table.GameVersion);
-        Assert.Equal("zone01 day", table.Location);
+        Assert.Equal("Wild Zone 1", table.Location);
+        Assert.Equal("a0102_w01", table.LocationKey);
+        Assert.Equal(1, table.LocationSort);
+        Assert.Equal("Spawner 1", table.TableLabel);
+        Assert.Contains("Bulbasaur", table.TableDetails);
         Assert.EndsWith(ZaDataPaths.PokemonSpawnerDataArray, table.Provenance.SourceFile, StringComparison.Ordinal);
         var slot = Assert.Single(table.Slots);
         Assert.Equal(1, slot.SpeciesId);
@@ -1312,7 +1316,7 @@ public sealed class PokemonLegendsZABridgeTests
         var pokemonSpawner = workflow.Objects.Single(placedObject => placedObject.Label == "wild_spawn_001");
         Assert.Equal("pokemonSpawners", pokemonSpawner.CategoryId);
         Assert.Equal("Pokemon Spawner", pokemonSpawner.ObjectType);
-        Assert.Equal("zone01 day", pokemonSpawner.Map);
+        Assert.Equal("a0102_w01", pokemonSpawner.Map);
         Assert.Equal(1, pokemonSpawner.X);
         Assert.Equal(45, pokemonSpawner.RotationY);
         Assert.EndsWith(ZaDataPaths.PokemonSpawnerTransformArray, pokemonSpawner.Provenance.SourceFile, StringComparison.Ordinal);
@@ -1720,6 +1724,12 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
             CreatePokemonNameTextTable());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PlaceNames("English"),
+            CreateTextTable(0, (0, "Wild Zone 1")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PlaceNameKeys("English"),
+            CreateKeyTable((0, "PLACENAME_wild_a0102_w01")));
     }
 
     private static void WriteStaticEncounterFixture(TemporaryBridgeProject temp)
@@ -1853,8 +1863,8 @@ public sealed class PokemonLegendsZABridgeTests
             appearedTimeCondition: 4,
             appearedWeatherCondition: 2);
         var encounters = PokemonSpawnerData.CreateEncountDataInfoListVector(builder, [encounter]);
-        var zoneId = builder.CreateString("zone01");
-        var variationId = builder.CreateString("day");
+        var zoneId = builder.CreateString("a0102_w01");
+        var variationId = builder.CreateString(string.Empty);
         var zone = ZoneInfo.CreateZoneInfo(builder, zoneId, variationId);
         var objectName = builder.CreateString("wild_spawn_001");
         var appearance = AppearanceSpawnerObjectInfo.CreateAppearanceSpawnerObjectInfo(

@@ -52,7 +52,11 @@ public sealed record EncounterTableRecordDto(
     string GameVersion,
     string ArchiveMember,
     IReadOnlyList<EncounterSlotRecordDto> Slots,
-    EncounterProvenanceDto Provenance);
+    EncounterProvenanceDto Provenance,
+    string? LocationKey = null,
+    int? LocationSort = null,
+    string? TableLabel = null,
+    string? TableDetails = null);
 
 public sealed record EncounterEditableFieldDto(
     string Field,

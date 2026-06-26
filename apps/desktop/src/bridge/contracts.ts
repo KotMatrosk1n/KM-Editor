@@ -1818,8 +1818,12 @@ export const encounterTableRecordSchema = z.strictObject({
   encounterType: z.string(),
   gameVersion: z.string(),
   location: z.string(),
+  locationKey: z.string().nullable().optional(),
+  locationSort: z.number().int().nullable().optional(),
   provenance: encounterProvenanceSchema,
   slots: z.array(encounterSlotRecordSchema),
+  tableDetails: z.string().nullable().optional(),
+  tableLabel: z.string().nullable().optional(),
   tableId: z.string()
 });
 
