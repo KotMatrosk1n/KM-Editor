@@ -1,6 +1,6 @@
 # KM Editor
 
-![Version](https://img.shields.io/badge/version-v2.0.0-blue)
+![Version](https://img.shields.io/badge/version-v2.0.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
 ![Built with](https://img.shields.io/badge/built%20with-.NET%2010%20%2B%20Tauri%202-512BD4)
 ![Supported Games](https://img.shields.io/badge/supports-SwSh%20%7C%20SV%20%7C%20Z--A-red)
