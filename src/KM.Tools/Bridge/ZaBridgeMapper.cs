@@ -603,7 +603,10 @@ public static class ZaBridgeMapper
             slot.LevelMax,
             slot.Weight,
             slot.TimeOfDay,
-            slot.Weather);
+            slot.Weather,
+            slot.EncounterDataId,
+            slot.EncounterKind,
+            slot.IsAlpha);
     }
 
     private static EncounterProvenanceDto ToDto(ZaEncounterProvenance provenance)

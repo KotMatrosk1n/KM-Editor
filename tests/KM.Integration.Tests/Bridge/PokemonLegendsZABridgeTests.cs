@@ -1243,6 +1243,9 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(35, slot.Weight);
         Assert.Equal("Night", slot.TimeOfDay);
         Assert.Equal("Rain", slot.Weather);
+        Assert.Equal("wild_ignore", slot.EncounterDataId);
+        Assert.Equal("Wild", slot.EncounterKind);
+        Assert.False(slot.IsAlpha);
         Assert.Contains(workflow.EditableFields, field => field.Field == "speciesId" && field.Label == "Species");
         Assert.DoesNotContain(workflow.EditableFields, field => field.Field == "probability");
 
@@ -1287,6 +1290,43 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(25, written.MinLevel);
         Assert.Equal(30, written.MaxLevel);
         Assert.DoesNotContain(ZaDataPaths.PokemonDataArray, apply.Payload.ApplyResult.WrittenFiles);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAWildEncountersDescribeAlphaAndRawSpawnerLocations()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp, includeAlphaAndRawSpawners: true);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounters-alpha-raw-load");
+
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        Assert.Equal(4, workflow.Tables.Count);
+
+        var alphaTable = workflow.Tables.Single(table => table.Slots.Any(slot => slot.IsAlpha));
+        Assert.Equal("Wild Zone 1", alphaTable.Location);
+        Assert.Equal("Spawner 2", alphaTable.TableLabel);
+        Assert.Contains("Alpha", alphaTable.TableDetails);
+        var alphaSlot = Assert.Single(alphaTable.Slots);
+        Assert.True(alphaSlot.IsAlpha);
+        Assert.Equal("Alpha", alphaSlot.EncounterKind);
+        Assert.Equal("wild_ignore_Alpha", alphaSlot.EncounterDataId);
+        Assert.Equal(1, alphaSlot.SpeciesId);
+        Assert.Equal("Bulbasaur", alphaSlot.Species);
+
+        var rawTables = workflow.Tables.Where(table => table.LocationKey == "zdm406_v00").ToArray();
+        Assert.Equal(2, rawTables.Length);
+        Assert.All(rawTables, table => Assert.Equal("Dungeon ZDM406 V00", table.Location));
+        Assert.Contains(rawTables, table => table.TableLabel == "Dungeon ZDM406 V00 Spawn 700");
+        Assert.Contains(rawTables, table => table.TableLabel == "Dungeon ZDM406 V00 Spawn 701");
+        Assert.All(rawTables, table => Assert.Equal("Wild", Assert.Single(table.Slots).EncounterKind));
     }
 
     [Fact]
@@ -1715,12 +1755,16 @@ public sealed class PokemonLegendsZABridgeTests
         WriteGiftPokemonFixture(temp);
     }
 
-    private static void WriteWildEncounterFixture(TemporaryBridgeProject temp)
+    private static void WriteWildEncounterFixture(
+        TemporaryBridgeProject temp,
+        bool includeAlphaAndRawSpawners = false)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreatePokemonDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
-        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonSpawnerDataArray,
+            CreatePokemonSpawnerDataArray(includeAlphaAndRawSpawners));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
             CreatePokemonNameTextTable());
@@ -1849,41 +1893,74 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreatePokemonSpawnerDataArray()
+    private static byte[] CreatePokemonSpawnerDataArray(bool includeAlphaAndRawSpawners = false)
     {
-        var builder = new FlatBufferBuilder(2048);
-        var encounterId = builder.CreateString("wild_ignore");
+        var builder = new FlatBufferBuilder(4096);
+        var spawners = includeAlphaAndRawSpawners
+            ? new[]
+            {
+                CreateSpawner(builder, "za_wild_spawner_001", "wild_ignore", "a0102_w01", weight: 35),
+                CreateSpawner(builder, "id_spn_outzone_a0201_A459", "wild_ignore_Alpha", "a0102_w01", weight: 65),
+                CreateSpawner(builder, "zdm406_v00_700", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "zdm406_v00_701", "wild_ignore", zoneId: null, weight: 100),
+            }
+            : [CreateSpawner(builder, "za_wild_spawner_001", "wild_ignore", "a0102_w01", weight: 35)];
+        var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, spawners);
+        var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
+        var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);
+        var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
+        PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<PokemonSpawnerData> CreateSpawner(
+        FlatBufferBuilder builder,
+        string spawnerName,
+        string encounterDataId,
+        string? zoneId,
+        int weight)
+    {
+        var encounterId = builder.CreateString(encounterDataId);
         var encounter = EncountDataInfo.CreateEncountDataInfo(
             builder,
             encounterId,
-            weight: 35,
+            weight: weight,
             maxCount: 2,
             additionalLevel: 0,
             showMapIcon: 1,
             appearedTimeCondition: 4,
             appearedWeatherCondition: 2);
         var encounters = PokemonSpawnerData.CreateEncountDataInfoListVector(builder, [encounter]);
-        var zoneId = builder.CreateString("a0102_w01");
-        var variationId = builder.CreateString(string.Empty);
-        var zone = ZoneInfo.CreateZoneInfo(builder, zoneId, variationId);
-        var objectName = builder.CreateString("wild_spawn_001");
-        var appearance = AppearanceSpawnerObjectInfo.CreateAppearanceSpawnerObjectInfo(
-            builder,
-            objectNameOffset: objectName,
-            zoneInfoOffset: zone);
+        var objectName = builder.CreateString($"{spawnerName}_object");
+        var appearance = CreateSpawnerAppearance(builder, objectName, zoneId);
         var appearances = PokemonSpawnerData.CreateAppearanceSpawnerObjectInfoListVector(builder, [appearance]);
-        var spawnerId = builder.CreateString("za_wild_spawner_001");
-        var spawner = PokemonSpawnerData.CreatePokemonSpawnerData(
+        var spawnerId = builder.CreateString(spawnerName);
+        return PokemonSpawnerData.CreatePokemonSpawnerData(
             builder,
             spawnerId,
             appearanceSpawnerObjectInfoListOffset: appearances,
             encountDataInfoListOffset: encounters);
-        var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, [spawner]);
-        var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
-        var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);
-        var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
-        PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
-        return builder.SizedByteArray();
+    }
+
+    private static Offset<AppearanceSpawnerObjectInfo> CreateSpawnerAppearance(
+        FlatBufferBuilder builder,
+        StringOffset objectName,
+        string? zoneId)
+    {
+        if (string.IsNullOrWhiteSpace(zoneId))
+        {
+            return AppearanceSpawnerObjectInfo.CreateAppearanceSpawnerObjectInfo(
+                builder,
+                objectNameOffset: objectName);
+        }
+
+        var zoneIdOffset = builder.CreateString(zoneId);
+        var variationId = builder.CreateString(string.Empty);
+        var zone = ZoneInfo.CreateZoneInfo(builder, zoneIdOffset, variationId);
+        return AppearanceSpawnerObjectInfo.CreateAppearanceSpawnerObjectInfo(
+            builder,
+            objectNameOffset: objectName,
+            zoneInfoOffset: zone);
     }
 
     private static byte[] CreateSpawnerTransformArray(

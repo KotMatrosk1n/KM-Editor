@@ -5676,7 +5676,7 @@ button.sv-encounter-condition-row:hover {
 
 .slot-tab-button {
   display: grid;
-  grid-template-rows: 34px auto auto auto;
+  grid-template-rows: 34px auto auto auto auto;
   justify-items: start;
   gap: 2px;
   align-content: start;
@@ -5706,6 +5706,20 @@ button.sv-encounter-condition-row:hover {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.25;
+}
+
+.slot-tab-button .slot-tab-pill {
+  display: inline-flex;
+  width: auto;
+  padding: 2px 7px;
+  color: #ffe79a;
+  background: rgb(210 163 39 / 16%);
+  border: 1px solid rgb(210 163 39 / 46%);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .read-only-slot-grid {

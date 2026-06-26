@@ -21,6 +21,7 @@ import {
   type DynamaxAdventuresWorkflow,
   type EditSession,
   type EncountersWorkflow,
+  type EncounterSlotRecord,
   type EncounterTableRecord,
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
@@ -4718,7 +4719,8 @@ describe('App', () => {
       locationSort: number,
       tableLabel: string,
       speciesId: number,
-      species: string
+      species: string,
+      slotOverrides: Partial<EncounterSlotRecord> = {}
     ): EncounterTableRecord => ({
       archiveMember: 'romfs/world/ik_data/field/pokemon_spawner/pokemon_spawner_data/pokemon_spawner_data_array.bin',
       area: 'Pokemon Spawner',
@@ -4742,7 +4744,8 @@ describe('App', () => {
           speciesId,
           timeOfDay: 'Any time',
           weather: 'Any weather',
-          weight: 100
+          weight: 100,
+          ...slotOverrides
         }
       ],
       tableDetails: `${species} - 1 slot - total 100`,
@@ -4765,7 +4768,20 @@ describe('App', () => {
         label: 'Wild Encounters'
       },
       tables: [
-        makeZaTable('za-spawner:0:1', 'Wild Zone 1', 'a0102_w01', 1, 'Spawner 2', 2, 'Ivysaur'),
+        makeZaTable(
+          'za-spawner:0:1',
+          'Wild Zone 1',
+          'a0102_w01',
+          1,
+          'Spawner 2',
+          2,
+          'Ivysaur',
+          {
+            encounterDataId: 'wild_ivysaur_Alpha',
+            encounterKind: 'Alpha',
+            isAlpha: true
+          }
+        ),
         makeZaTable('za-spawner:0:0', 'Wild Zone 1', 'a0102_w01', 1, 'Spawner 1', 1, 'Bulbasaur'),
         makeZaTable('za-spawner:0:2', 'Wild Zone 2', 'a0103_w01', 2, 'Spawner 1', 4, 'Charmander')
       ]
@@ -4799,7 +4815,7 @@ describe('App', () => {
     expect(within(encounterTable).getByText('Wild Zone 1')).toBeInTheDocument();
     expect(within(encounterTable).getByText('Wild Zone 2')).toBeInTheDocument();
     expect(within(encounterTable).getByText('2 spawners')).toBeInTheDocument();
-    expect(within(encounterTable).getByText('Bulbasaur, Ivysaur')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Bulbasaur, Ivysaur Alpha')).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Symbol' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Hidden' })).not.toBeInTheDocument();
 
@@ -4810,7 +4826,13 @@ describe('App', () => {
     expect(spawnerTwoRow).not.toBeNull();
     await user.click(spawnerTwoRow!);
 
-    expect(screen.getAllByText('Ivysaur').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Ivysaur Alpha').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /#2Ivysaur AlphaAlpha/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /#0Ivysaur Alpha/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Encounter type')).toBeInTheDocument();
+    expect(screen.getAllByText('Alpha').length).toBeGreaterThan(0);
+    expect(screen.getByText('Encounter data')).toBeInTheDocument();
+    expect(screen.getByText('wild_ivysaur_Alpha')).toBeInTheDocument();
     expect(within(spawnerTable).getByText('Spawner 2').closest('button')).toHaveAttribute(
       'aria-pressed',
       'true'
