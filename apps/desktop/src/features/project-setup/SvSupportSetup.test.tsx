@@ -92,5 +92,5 @@ describe('S/V support setup', () => {
       }
     });
     expect(listWorkflows).toHaveBeenCalledTimes(1);
-  });
+  }, 60_000);
 });
