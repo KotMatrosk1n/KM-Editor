@@ -22,6 +22,9 @@ internal sealed class ZaPokemonWorkflowService
     private const string EvolutionArgumentKindSpecies = "species";
     private const string EvolutionArgumentKindValue = "value";
     private const string EvolutionArgumentKindType = "type";
+    private const int LearnsetDisplayLevelMask = 0x00FF;
+    private const int LearnsetMasteryLevelShift = 8;
+    private const int LearnsetMasteryLevelMask = 0xFF00;
 
     public const string HPField = "hp";
     public const string AttackField = "attack";
@@ -494,16 +497,43 @@ internal sealed class ZaPokemonWorkflowService
             }
 
             var rawLevel = learnedMove.Value.Level;
+            var level = DecodeLearnsetDisplayLevel(rawLevel);
             moves.Add(new ZaPokemonLearnsetMove(
                 index,
                 learnedMove.Value.Move,
                 labels.Move(learnedMove.Value.Move),
+                level,
                 rawLevel,
-                rawLevel,
-                rawLevel == 0 ? "Evolution or default" : null));
+                FormatLearnsetLevelLabel(rawLevel)));
         }
 
         return moves;
+    }
+
+    internal static int DecodeLearnsetDisplayLevel(int rawLevel)
+    {
+        return rawLevel & LearnsetDisplayLevelMask;
+    }
+
+    internal static int EncodeLearnsetRawLevel(int displayLevel, int? existingRawLevel)
+    {
+        return (existingRawLevel.GetValueOrDefault() & LearnsetMasteryLevelMask)
+            | (displayLevel & LearnsetDisplayLevelMask);
+    }
+
+    internal static string? FormatLearnsetLevelLabel(int rawLevel)
+    {
+        if (rawLevel == 0)
+        {
+            return "Evolution or default";
+        }
+
+        var masteryLevel = (rawLevel & LearnsetMasteryLevelMask) >> LearnsetMasteryLevelShift;
+        return masteryLevel > 0
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"Lv. {DecodeLearnsetDisplayLevel(rawLevel)} / Mastery Lv. {masteryLevel}")
+            : null;
     }
 
     private static IReadOnlyList<ZaPokemonCompatibilityGroup> ReadCompatibility(
