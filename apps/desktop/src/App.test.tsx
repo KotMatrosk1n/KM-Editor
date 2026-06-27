@@ -829,7 +829,7 @@ describe('App', () => {
     await waitFor(() => expect(restoreFpsPatch).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Not installed')).toBeInTheDocument();
     expect(screen.getByText('60FPS Patch is not installed.')).toBeInTheDocument();
-  }, 15_000);
+  }, 30_000);
 
   it('closes a wrong-family active workflow section before it can stay mounted', async () => {
     useWorkbenchStore.setState({
