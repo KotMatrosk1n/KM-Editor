@@ -722,13 +722,14 @@ internal sealed class ZaPokemonEditSessionService
             case AddAction:
             case UpsertAction:
                 var rawLevel = operation.RawLevel ?? operation.Level ?? 1;
+                var displayLevel = operation.Level ?? ZaPokemonWorkflowService.DecodeLearnsetDisplayLevel(rawLevel);
                 var row = new ZaPokemonLearnsetMove(
                     targetSlot,
                     operation.MoveId ?? 0,
                     ZaLabels.Move(operation.MoveId ?? 0),
+                    displayLevel,
                     rawLevel,
-                    rawLevel,
-                    rawLevel == 0 ? "Evolution or default" : null);
+                    ZaPokemonWorkflowService.FormatLearnsetLevelLabel(rawLevel));
                 if (targetSlot < learnset.Count)
                 {
                     learnset[targetSlot] = row;
@@ -1183,7 +1184,13 @@ internal sealed class ZaPokemonEditSessionService
     {
         var normalizedAction = action == AddAction ? AddAction : action.Trim();
         var targetSlot = normalizedAction == AddAction ? pokemon.Learnset.Count : slot ?? -1;
-        var operation = new LearnsetOperation(normalizedAction, targetSlot, moveId, level, level);
+        int? existingRawLevel = targetSlot >= 0 && targetSlot < pokemon.Learnset.Count
+            ? pokemon.Learnset[targetSlot].RawLevel
+            : null;
+        int? rawLevel = level is { } displayLevel
+            ? ZaPokemonWorkflowService.EncodeLearnsetRawLevel(displayLevel, existingRawLevel)
+            : null;
+        var operation = new LearnsetOperation(normalizedAction, targetSlot, moveId, level, rawLevel);
         ValidateLearnsetOperation(operation, pokemon, diagnostics);
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) ? null : operation;
     }
@@ -1223,12 +1230,13 @@ internal sealed class ZaPokemonEditSessionService
             return null;
         }
 
+        int? rawLevel = second >= 0 ? second : null;
         var operation = new LearnsetOperation(
             action,
             slot,
             first >= 0 ? first : null,
-            second >= 0 ? second : null,
-            second >= 0 ? second : null);
+            rawLevel is { } value ? ZaPokemonWorkflowService.DecodeLearnsetDisplayLevel(value) : null,
+            rawLevel);
         if (pokemon is not null)
         {
             ValidateLearnsetOperation(operation, pokemon, diagnostics);
@@ -1273,10 +1281,10 @@ internal sealed class ZaPokemonEditSessionService
             case AddAction:
             case UpsertAction:
                 if (operation.MoveId is null or < 0 or > ushort.MaxValue
-                    || operation.Level is null or < 0 or > ushort.MaxValue
+                    || operation.Level is null or < 0 or > byte.MaxValue
                     || operation.RawLevel is null or < 0 or > ushort.MaxValue)
                 {
-                    diagnostics.Add(OperationDiagnostic("Learnset upserts require a move ID and level.", "moveId/level"));
+                    diagnostics.Add(OperationDiagnostic("Learnset upserts require a move ID and a level from 0 to 255.", "moveId/level"));
                 }
 
                 if (operation.Action == UpsertAction && operation.Slot < 0)

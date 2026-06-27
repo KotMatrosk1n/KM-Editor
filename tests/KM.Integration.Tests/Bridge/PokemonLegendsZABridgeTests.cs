@@ -75,8 +75,11 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(34, bulbasaur.Abilities.HiddenAbility);
         Assert.Equal(25, bulbasaur.DexPresence.RegionalDexIndex);
         Assert.Equal("Z-A Dex Order", workflow.EditableFields.Single(field => field.Field == "regionalDexIndex").Label);
-        Assert.Equal(33, Assert.Single(bulbasaur.Learnset).MoveId);
-        Assert.Equal(1, Assert.Single(bulbasaur.Learnset).Level);
+        var learnedMove = Assert.Single(bulbasaur.Learnset);
+        Assert.Equal(33, learnedMove.MoveId);
+        Assert.Equal(1, learnedMove.Level);
+        Assert.Equal((int?)0x0A01, learnedMove.RawLevel);
+        Assert.Equal("Lv. 1 / Mastery Lv. 10", learnedMove.LevelLabel);
         Assert.Equal(1, Assert.Single(bulbasaur.Evolutions).Species);
         var tmGroup = bulbasaur.Compatibility.Single(group => group.GroupId == "tm");
         Assert.Contains(tmGroup.Entries, entry => entry.MoveId == 45 && entry.CanLearn);
@@ -596,6 +599,55 @@ public sealed class PokemonLegendsZABridgeTests
         var row = written.Entry(1);
         Assert.NotNull(row);
         Assert.Equal(99, row!.Value.BaseStats!.Value.Hp);
+    }
+
+    [Fact]
+    public void PokemonLegendsZALearnsetEditsPreservePackedMasteryLevel()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdatePokemonLearnsetResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonLearnset,
+            new UpdatePokemonLearnsetRequest(paths, Session: null, PersonalId: 1, Action: "upsert", Slot: 0, MoveId: 45, Level: 7),
+            "request-za-pokemon-learnset-update");
+        AssertSuccess(update);
+        var updatedMove = Assert.Single(update.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Learnset);
+        Assert.Equal(45, updatedMove.MoveId);
+        Assert.Equal(7, updatedMove.Level);
+        Assert.Equal((int?)0x0A07, updatedMove.RawLevel);
+        Assert.Equal("Lv. 7 / Mastery Lv. 10", updatedMove.LevelLabel);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-learnset-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-learnset-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "avalon", "data", "personal_array.bin");
+        var written = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(File.ReadAllBytes(outputPath)));
+        var row = written.Entry(1);
+        Assert.NotNull(row);
+        var learnedMove = row!.Value.LevelupMoves(0);
+        Assert.NotNull(learnedMove);
+        Assert.Equal(45, learnedMove!.Value.Move);
+        Assert.Equal(0x0A07, learnedMove.Value.Level);
     }
 
     [Fact]
@@ -2340,7 +2392,7 @@ public sealed class PokemonLegendsZABridgeTests
         ZaPersonal.StartLevelupMovesVector(builder, species == 0 ? 0 : 1);
         if (species != 0)
         {
-            ZaLevelUpMoveData.Create(builder, move: 33, level: 1);
+            ZaLevelUpMoveData.Create(builder, move: 33, level: 0x0A01);
         }
 
         var levelupMoves = builder.EndVector();
