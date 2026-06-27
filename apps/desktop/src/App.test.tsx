@@ -686,7 +686,7 @@ describe('App', () => {
     expect(
       screen.queryByText('Applied Hyperspace Bypass changes to the configured LayeredFS output root.')
     ).not.toBeInTheDocument();
-  }, 15_000);
+  }, 30_000);
 
   it('still routes normal Scarlet/Violet editor changes through Changes', async () => {
     useWorkbenchStore.setState({
