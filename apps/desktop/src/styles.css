@@ -2128,7 +2128,7 @@ h2 {
 
 .learnset-row {
   display: grid;
-  grid-template-columns: 24px 42px 64px minmax(0, 1fr) 54px;
+  grid-template-columns: 24px 42px minmax(64px, 88px) minmax(104px, 132px) minmax(0, 1fr) 54px;
   gap: 8px;
   align-items: center;
   min-height: 34px;
@@ -2148,7 +2148,7 @@ h2 {
 }
 
 .learnset-inline-row {
-  grid-template-columns: 24px 42px minmax(180px, 1fr) minmax(74px, 0.34fr) auto;
+  grid-template-columns: 24px 42px minmax(180px, 1fr) minmax(74px, 0.34fr) minmax(104px, 132px) auto;
   align-items: end;
   cursor: default;
 }
@@ -2197,6 +2197,30 @@ h2 {
 
 .learnset-inline-field input {
   min-height: 34px;
+}
+
+.learnset-level-cell,
+.learnset-mastery-cell {
+  color: var(--color-text);
+}
+
+.learnset-mastery-cell,
+.learnset-inline-metadata {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.learnset-row:hover .learnset-mastery-cell,
+.learnset-row-selected .learnset-mastery-cell {
+  color: rgb(232 238 255 / 84%);
+}
+
+.learnset-inline-metadata {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .learnset-inline-actions {

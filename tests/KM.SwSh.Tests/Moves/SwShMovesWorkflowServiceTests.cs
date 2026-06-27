@@ -97,9 +97,9 @@ public sealed class SwShMovesWorkflowServiceTests
             workflow.EditableFields,
             field => field.Field == SwShMovesWorkflowService.RawHealingField);
         Assert.Equal("Healing behavior", healingField.Label);
-        Assert.Contains(
-            healingField.Options,
-            option => option.Value == -2 && option.Label == "254 Half HP (-2 raw)");
+        Assert.Equal(-128, healingField.MinimumValue);
+        Assert.Equal(127, healingField.MaximumValue);
+        Assert.Empty(healingField.Options);
         Assert.Equal(
             "Stat Change 1: Stat",
             workflow.EditableFields.Single(field => field.Field == SwShMovesWorkflowService.Stat1Field).Label);

@@ -15,6 +15,7 @@ internal sealed class SvTextLabelLookup
         [],
         [],
         [],
+        [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
         [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
@@ -23,6 +24,7 @@ internal sealed class SvTextLabelLookup
 
     private readonly IReadOnlyList<string> itemNames;
     private readonly IReadOnlyList<string> moveNames;
+    private readonly IReadOnlyList<string> moveDescriptions;
     private readonly IReadOnlyList<string> pokemonNames;
     private readonly IReadOnlyList<string> abilityNames;
     private readonly IReadOnlyList<string> placeNames;
@@ -35,6 +37,7 @@ internal sealed class SvTextLabelLookup
     private SvTextLabelLookup(
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
+        IReadOnlyList<string> moveDescriptions,
         IReadOnlyList<string> pokemonNames,
         IReadOnlyList<string> abilityNames,
         IReadOnlyList<string> placeNames,
@@ -46,6 +49,7 @@ internal sealed class SvTextLabelLookup
     {
         this.itemNames = itemNames;
         this.moveNames = moveNames;
+        this.moveDescriptions = moveDescriptions;
         this.pokemonNames = pokemonNames;
         this.abilityNames = abilityNames;
         this.placeNames = placeNames;
@@ -73,6 +77,7 @@ internal sealed class SvTextLabelLookup
         return new SvTextLabelLookup(
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.ItemNames, "item names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.MoveNames, "move names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.MoveDescriptions, "move descriptions", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.PokemonNames, "Pokemon names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.AbilityNames, "ability names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, SvDataPaths.PlaceNames, "place names", diagnostics),
@@ -96,6 +101,8 @@ internal sealed class SvTextLabelLookup
     public string Item(int itemId) => GetIndexed(itemNames, itemId) ?? SvLabels.Item(itemId);
 
     public string Move(int moveId) => GetIndexed(moveNames, moveId) ?? SvLabels.Move(moveId);
+
+    public string? MoveDescription(int moveId) => GetIndexed(moveDescriptions, moveId);
 
     public string Pokemon(int speciesId) => GetIndexed(pokemonNames, speciesId) ?? SvLabels.Pokemon(speciesId);
 

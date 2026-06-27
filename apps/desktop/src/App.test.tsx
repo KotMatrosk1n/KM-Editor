@@ -1649,6 +1649,67 @@ describe('App', () => {
     expect(within(pokemonTable).queryByText('Fire')).not.toBeInTheDocument();
   });
 
+  it('shows Legends Z-A learnset mastery as a separate row field', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge();
+    const bridge = createMockProjectBridge({
+      loadPokemonWorkflow: async (request) => {
+        const response = await baseBridge.loadPokemonWorkflow(request);
+
+        return {
+          ...response,
+          workflow: {
+            ...response.workflow,
+            pokemon: response.workflow.pokemon.map((pokemon, pokemonIndex) =>
+              pokemonIndex === 0
+                ? {
+                    ...pokemon,
+                    learnset: pokemon.learnset.map((move, moveIndex) =>
+                      moveIndex === 0
+                        ? {
+                            ...move,
+                            level: 1,
+                            levelLabel: 'Lv. 1 / Mastery Lv. 10',
+                            rawLevel: 0x0a01
+                          }
+                        : move
+                    )
+                  }
+                : pokemon
+            )
+          }
+        };
+      }
+    });
+
+    render(<App bridge={bridge} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    const learnsetBlock = (await screen.findByRole('heading', { level: 4, name: 'Learnset' }))
+      .closest('.inspector-block') as HTMLElement | null;
+
+    expect(learnsetBlock).not.toBeNull();
+    expect(within(learnsetBlock!).getByText('Lv. 1')).toBeInTheDocument();
+    expect(within(learnsetBlock!).getByText('Mastery Lv. 10')).toBeInTheDocument();
+    expect(within(learnsetBlock!).queryByText(/Lv\. 1 \//)).not.toBeInTheDocument();
+  });
+
   it('uses SwSh Pokemon Data display names without appending frontend form fallbacks', async () => {
     const user = userEvent.setup();
     const baseBridge = createMockProjectBridge();

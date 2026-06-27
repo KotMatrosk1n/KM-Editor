@@ -166,7 +166,8 @@ internal sealed class ZaMovesWorkflowService
         "Speed",
         "Accuracy",
         "Evasion",
-        "All",
+        "Critical Hit Rate",
+        "All Stats",
     ];
 
     private static readonly IReadOnlyList<ZaMoveEditableFieldOption> BooleanOptions =
@@ -193,14 +194,6 @@ internal sealed class ZaMovesWorkflowService
             .Select(entry => new ZaMoveEditableFieldOption(entry.Key, $"{entry.Key:000} {entry.Value}"))
             .ToArray();
 
-    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> HealingOptions =
-    [
-        new(0, "000 None"),
-        new(-3, "253 Quarter HP (-3 raw)"),
-        new(-2, "254 Half HP (-2 raw)"),
-        new(-1, "255 Full HP (-1 raw)"),
-    ];
-
     private static readonly IReadOnlyList<ZaMoveEditableField> EditableFields =
     [
         Field(CanUseMoveField, "Can use move", "boolean", 0, 1, BooleanOptions),
@@ -223,7 +216,7 @@ internal sealed class ZaMovesWorkflowService
         Field(FlinchField, "Flinch chance (%)", "integer", byte.MinValue, byte.MaxValue),
         Field(EffectSequenceField, "Effect sequence ID", "integer", ushort.MinValue, ushort.MaxValue),
         Field(RecoilField, "Recoil/drain (%)", "integer", sbyte.MinValue, sbyte.MaxValue),
-        Field(RawHealingField, "Healing behavior", "integer", sbyte.MinValue, sbyte.MaxValue, HealingOptions),
+        Field(RawHealingField, "Healing behavior", "integer", sbyte.MinValue, sbyte.MaxValue),
         Field(Stat1Field, "Stat Change 1: Stat", "integer", sbyte.MinValue, sbyte.MaxValue, StatOptions),
         Field(Stat1StageField, "Stat Change 1: Stage Delta", "integer", sbyte.MinValue, sbyte.MaxValue),
         Field(Stat1PercentField, "Stat Change 1: Chance (%)", "integer", byte.MinValue, byte.MaxValue),
@@ -389,7 +382,7 @@ internal sealed class ZaMovesWorkflowService
         return new ZaMoveRecord(
             moveId,
             labels.Move(moveId),
-            Description: null,
+            labels.MoveDescription(moveId),
             Version: 0,
             move.CanUseMove,
             move.Type,

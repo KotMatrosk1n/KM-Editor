@@ -152,7 +152,8 @@ public sealed class SwShMovesWorkflowService
         "Speed",
         "Accuracy",
         "Evasion",
-        "All",
+        "Critical Hit Rate",
+        "All Stats",
     ];
 
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> TypeOptions =
@@ -177,14 +178,6 @@ public sealed class SwShMovesWorkflowService
         new SwShMoveEditableFieldOption(2, "002 Turn Count + Switch"),
         new SwShMoveEditableFieldOption(3, "003 Permanent + Switch"),
         new SwShMoveEditableFieldOption(4, "004 Turn Count + No Switch"),
-    ];
-
-    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> HealingOptions =
-    [
-        new SwShMoveEditableFieldOption(0, "000 None"),
-        new SwShMoveEditableFieldOption(-3, "253 Quarter HP (-3 raw)"),
-        new SwShMoveEditableFieldOption(-2, "254 Half HP (-2 raw)"),
-        new SwShMoveEditableFieldOption(-1, "255 Full HP (-1 raw)"),
     ];
 
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> StatOptions =
@@ -213,7 +206,7 @@ public sealed class SwShMovesWorkflowService
         CreateField(FlinchField, "Flinch chance (%)", "integer", MinimumByteValue, MaximumByteValue),
         CreateField(EffectSequenceField, "Effect sequence ID", "integer", MinimumByteValue, MaximumUnsignedShortValue),
         CreateField(RecoilField, "Recoil/drain (%)", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(RawHealingField, "Healing behavior", "integer", MinimumSignedByteValue, MaximumSignedByteValue, HealingOptions),
+        CreateField(RawHealingField, "Healing behavior", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
         CreateField(Stat1Field, "Stat Change 1: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
         CreateField(Stat1StageField, "Stat Change 1: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
         CreateField(Stat1PercentField, "Stat Change 1: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),

@@ -1792,6 +1792,57 @@ public sealed class ScarletVioletBridgeTests
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
     }
 
+    [Fact]
+    public void ScarletVioletProjectLoadsAncientPowerMoveEffects()
+    {
+        using var temp = CreateScarletVioletProject(ScarletTitleId);
+        WriteSvOutput(temp, SvDataPaths.MoveDataArray, CreateAncientPowerMoveDataArray());
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishMoveNames,
+            CreateTextTable(247, (246, "Ancient Power")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishMoveDescriptions,
+            CreateTextTable(247, (246, "The user attacks with a prehistoric power.")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var moves = Dispatch<LoadMovesWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadMovesWorkflow,
+            new LoadMovesWorkflowRequest(temp.Paths with { SelectedGame = ProjectGameDto.Scarlet }),
+            "request-sv-ancient-power");
+
+        AssertSuccess(moves);
+        var workflow = moves.Payload!.Workflow;
+        var ancientPower = Assert.Single(workflow.Moves);
+        Assert.Equal("Ancient Power", ancientPower.Name);
+        Assert.Equal("The user attacks with a prehistoric power.", ancientPower.Description);
+        Assert.Equal("Rock", ancientPower.TypeName);
+        Assert.Equal("Special", ancientPower.CategoryName);
+        Assert.Equal(60, ancientPower.Power);
+        Assert.Equal(100, ancientPower.Accuracy);
+        Assert.Equal(5, ancientPower.PP);
+        Assert.Contains(
+            ancientPower.StatChanges,
+            change => change.Slot == 1
+                && change.Stat == 9
+                && change.StatName == "All Stats"
+                && change.Stage == 1
+                && change.Percent == 10);
+        Assert.Contains(
+            ancientPower.StatChanges,
+            change => change.Slot == 2
+                && change.Stat == 0
+                && change.Stage == 0
+                && change.Percent == 0);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "stat1").Options,
+            option => option.Value == 9 && option.Label == "9 All Stats");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "stat1").Options,
+            option => option.Value == 8 && option.Label == "8 Critical Hit Rate");
+        Assert.Empty(workflow.EditableFields.Single(field => field.Field == "rawHealing").Options);
+    }
+
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletTextEditorLoadsAllMessageFiles(
@@ -2378,6 +2429,9 @@ public sealed class ScarletVioletBridgeTests
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishMoveNames,
             CreateTextTable(350, (33, "Tackle"), (36, "Take Down"), (45, "Growl"), (349, "Dragon Dance")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishMoveDescriptions,
+            CreateTextTable(350, (33, "A physical attack."), (45, "Lowers Defense.")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishAbilityNames,
             CreateTextTable(95, (34, "Chlorophyll"), (65, "Overgrow"), (66, "Blaze"), (94, "Solar Power")));
@@ -3102,12 +3156,33 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateAncientPowerMoveDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var ancientPower = CreateMove(
+            builder,
+            moveId: 246,
+            power: 60,
+            pp: 5,
+            makesContact: false,
+            type: 5,
+            category: 2,
+            stat1: 9,
+            stat1Stage: 1,
+            stat1Chance: 10);
+        var vector = global::SvMoveDataArray.CreateValuesVector(builder, [ancientPower]);
+        var root = global::SvMoveDataArray.CreateSvMoveDataArray(builder, vector);
+        global::SvMoveDataArray.FinishSvMoveDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static Offset<global::SvMoveData> CreateMove(
         FlatBufferBuilder builder,
         ushort moveId,
         byte power,
         byte pp,
         bool makesContact,
+        byte type = 0,
         byte category = 1,
         sbyte stat1 = 0,
         sbyte stat2 = 0,
@@ -3125,13 +3200,13 @@ public sealed class ScarletVioletBridgeTests
             global::SvMoveStatChanges.CreateSvMoveStatChanges(
                 builder,
                 stat1,
-                stat2,
-                stat3,
                 stat1Stage,
-                stat2Stage,
-                stat3Stage,
                 stat1Chance,
+                stat2,
+                stat2Stage,
                 stat2Chance,
+                stat3,
+                stat3Stage,
                 stat3Chance));
         global::SvMoveData.AddRawTarget(builder, 3);
         global::SvMoveData.AddInflict(
@@ -3141,7 +3216,7 @@ public sealed class ScarletVioletBridgeTests
         global::SvMoveData.AddAccuracy(builder, 100);
         global::SvMoveData.AddPower(builder, power);
         global::SvMoveData.AddCategory(builder, category);
-        global::SvMoveData.AddType(builder, 0);
+        global::SvMoveData.AddType(builder, type);
         global::SvMoveData.AddCanUseMove(builder, true);
         global::SvMoveData.AddMoveId(builder, moveId);
         global::SvMoveData.AddFlagMakesContact(builder, makesContact);

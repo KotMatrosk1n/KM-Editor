@@ -50,6 +50,7 @@ public static class SvDataPaths
     public const string VisibleItemSceneBlueberryViolet = "world/scene/parts/field/streaming_event/su2_world_item_/su2_world_item_1.trscn";
     public const string EnglishItemNames = "message/dat/English/common/itemname.dat";
     public const string EnglishMoveNames = "message/dat/English/common/wazaname.dat";
+    public const string EnglishMoveDescriptions = "message/dat/English/common/wazainfo.dat";
     public const string EnglishPokemonNames = "message/dat/English/common/monsname.dat";
     public const string EnglishAbilityNames = "message/dat/English/common/tokusei.dat";
     public const string EnglishPlaceNames = "message/dat/English/common/place_name.dat";
@@ -62,6 +63,8 @@ public static class SvDataPaths
     public static string ItemNames(string language) => CommonMessage(language, "itemname.dat");
 
     public static string MoveNames(string language) => CommonMessage(language, "wazaname.dat");
+
+    public static string MoveDescriptions(string language) => CommonMessage(language, "wazainfo.dat");
 
     public static string PokemonNames(string language) => CommonMessage(language, "monsname.dat");
 
