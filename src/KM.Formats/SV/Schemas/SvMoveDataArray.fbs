@@ -8,13 +8,13 @@ struct SvMoveInflict {
 
 struct SvMoveStatChanges {
     stat1: byte;
-    stat2: byte;
-    stat3: byte;
     stat1_stage: byte;
-    stat2_stage: byte;
-    stat3_stage: byte;
     stat1_chance: ubyte;
+    stat2: byte;
+    stat2_stage: byte;
     stat2_chance: ubyte;
+    stat3: byte;
+    stat3_stage: byte;
     stat3_chance: ubyte;
 }
 

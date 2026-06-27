@@ -102,6 +102,7 @@ public sealed class ZaCacheManager
         {
             yield return ZaDataPaths.ItemNames(language);
             yield return ZaDataPaths.MoveNames(language);
+            yield return ZaDataPaths.MoveDescriptions(language);
             yield return ZaDataPaths.PokemonNames(language);
             yield return ZaDataPaths.AbilityNames(language);
             yield return ZaDataPaths.PlaceNames(language);

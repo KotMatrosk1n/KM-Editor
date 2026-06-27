@@ -150,6 +150,57 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAProjectLoadsAncientPowerMoveEffects()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.MoveDataArray, CreateAncientPowerMoveDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(246, (246, "Ancient Power")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveDescriptions("English"),
+            CreateTextTable(246, (246, "The user attacks with a prehistoric power.")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var moves = Dispatch<LoadMovesWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadMovesWorkflow,
+            new LoadMovesWorkflowRequest(CreatePaths(temp)),
+            "request-za-ancient-power");
+
+        AssertSuccess(moves);
+        var workflow = moves.Payload!.Workflow;
+        var ancientPower = Assert.Single(workflow.Moves);
+        Assert.Equal("Ancient Power", ancientPower.Name);
+        Assert.Equal("The user attacks with a prehistoric power.", ancientPower.Description);
+        Assert.Equal("Rock", ancientPower.TypeName);
+        Assert.Equal("Special", ancientPower.CategoryName);
+        Assert.Equal(60, ancientPower.Power);
+        Assert.Equal(100, ancientPower.Accuracy);
+        Assert.Equal(5, ancientPower.PP);
+        Assert.Contains(
+            ancientPower.StatChanges,
+            change => change.Slot == 1
+                && change.Stat == 9
+                && change.StatName == "All Stats"
+                && change.Stage == 1
+                && change.Percent == 10);
+        Assert.Contains(
+            ancientPower.StatChanges,
+            change => change.Slot == 2
+                && change.Stat == 0
+                && change.Stage == 0
+                && change.Percent == 0);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "stat1").Options,
+            option => option.Value == 9 && option.Label == "9 All Stats");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "stat1").Options,
+            option => option.Value == 8 && option.Label == "8 Critical Hit Rate");
+        Assert.Empty(workflow.EditableFields.Single(field => field.Field == "rawHealing").Options);
+    }
+
+    [Fact]
     public void PokemonLegendsZAProjectLoadsItemData()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -1718,6 +1769,26 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateAncientPowerMoveDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var ancientPower = CreateMove(
+            builder,
+            moveId: 246,
+            power: 60,
+            pp: 5,
+            makesContact: false,
+            type: 5,
+            category: 2,
+            stat1: 9,
+            stat1Stage: 1,
+            stat1Chance: 10);
+        var vector = ZaMoveDataArray.CreateValuesVector(builder, [ancientPower]);
+        var root = ZaMoveDataArray.CreateZaMoveDataArray(builder, vector);
+        ZaMoveDataArray.FinishZaMoveDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static byte[] CreateItemDataArray()
     {
         var builder = new FlatBufferBuilder(2048);
@@ -2332,6 +2403,7 @@ public sealed class PokemonLegendsZABridgeTests
         byte power,
         byte pp,
         bool makesContact,
+        byte type = 0,
         byte category = 1,
         sbyte stat1 = 0,
         sbyte stat2 = 0,
@@ -2349,13 +2421,13 @@ public sealed class PokemonLegendsZABridgeTests
             ZaMoveStatChanges.CreateZaMoveStatChanges(
                 builder,
                 stat1,
-                stat2,
-                stat3,
                 stat1Stage,
-                stat2Stage,
-                stat3Stage,
                 stat1Chance,
+                stat2,
+                stat2Stage,
                 stat2Chance,
+                stat3,
+                stat3Stage,
                 stat3Chance));
         ZaMoveData.AddRawTarget(builder, 3);
         ZaMoveData.AddInflict(
@@ -2365,7 +2437,7 @@ public sealed class PokemonLegendsZABridgeTests
         ZaMoveData.AddAccuracy(builder, 100);
         ZaMoveData.AddPower(builder, power);
         ZaMoveData.AddCategory(builder, category);
-        ZaMoveData.AddType(builder, 0);
+        ZaMoveData.AddType(builder, type);
         ZaMoveData.AddCanUseMove(builder, true);
         ZaMoveData.AddMoveId(builder, moveId);
         ZaMoveData.AddFlagMakesContact(builder, makesContact);

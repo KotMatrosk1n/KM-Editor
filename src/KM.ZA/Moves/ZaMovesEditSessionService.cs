@@ -1155,13 +1155,13 @@ internal sealed class ZaMovesEditSessionService
             ZaMoveStatChanges.CreateZaMoveStatChanges(
                 builder,
                 Stat1,
-                Stat2,
-                Stat3,
                 Stat1Stage,
-                Stat2Stage,
-                Stat3Stage,
                 Stat1Chance,
+                Stat2,
+                Stat2Stage,
                 Stat2Chance,
+                Stat3,
+                Stat3Stage,
                 Stat3Chance);
     }
 }

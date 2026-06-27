@@ -15,6 +15,7 @@ internal sealed class ZaTextLabelLookup
         [],
         [],
         [],
+        [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
         [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
@@ -24,6 +25,7 @@ internal sealed class ZaTextLabelLookup
 
     private readonly IReadOnlyList<string> itemNames;
     private readonly IReadOnlyList<string> moveNames;
+    private readonly IReadOnlyList<string> moveDescriptions;
     private readonly IReadOnlyList<string> pokemonNames;
     private readonly IReadOnlyList<string> abilityNames;
     private readonly IReadOnlyList<string> placeNames;
@@ -37,6 +39,7 @@ internal sealed class ZaTextLabelLookup
     private ZaTextLabelLookup(
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
+        IReadOnlyList<string> moveDescriptions,
         IReadOnlyList<string> pokemonNames,
         IReadOnlyList<string> abilityNames,
         IReadOnlyList<string> placeNames,
@@ -49,6 +52,7 @@ internal sealed class ZaTextLabelLookup
     {
         this.itemNames = itemNames;
         this.moveNames = moveNames;
+        this.moveDescriptions = moveDescriptions;
         this.pokemonNames = pokemonNames;
         this.abilityNames = abilityNames;
         this.placeNames = placeNames;
@@ -84,6 +88,7 @@ internal sealed class ZaTextLabelLookup
         return new ZaTextLabelLookup(
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.ItemNames, "item names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.MoveNames, "move names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.MoveDescriptions, "move descriptions", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.PokemonNames, "Pokemon names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.AbilityNames, "ability names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.PlaceNames, "place names", diagnostics),
@@ -105,6 +110,8 @@ internal sealed class ZaTextLabelLookup
             ? fallback
             : indexed ?? fallback;
     }
+
+    public string? MoveDescription(int moveId) => GetIndexed(moveDescriptions, moveId);
 
     public string Pokemon(int speciesId) => GetIndexed(pokemonNames, speciesId) ?? ZaLabels.Pokemon(speciesId);
 

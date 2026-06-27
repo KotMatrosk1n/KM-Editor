@@ -11269,6 +11269,9 @@ function SelectedPokemonPanel({
                                 value={learnsetLevelDraft}
                               />
                             </label>
+                            <span className="learnset-inline-metadata">
+                              {displayMove.masteryLabel ?? ''}
+                            </span>
                             <div className="learnset-inline-actions">
                               <button
                                 aria-label="Move learnset row up"
@@ -11343,8 +11346,15 @@ function SelectedPokemonPanel({
                               <GripVertical size={15} />
                             </span>
                             <span>#{move.slot + 1}</span>
-                            <span>{displayMove.levelLabel ?? `Lv. ${displayMove.level}`}</span>
-                            <strong>{displayMove.moveName}</strong>
+                            <span className="learnset-level-cell">
+                              {displayMove.levelLabel ?? `Lv. ${displayMove.level}`}
+                            </span>
+                            {displayMove.masteryLabel ? (
+                              <span className="learnset-mastery-cell">{displayMove.masteryLabel}</span>
+                            ) : (
+                              <span aria-hidden="true" className="learnset-mastery-cell" />
+                            )}
+                            <strong className="learnset-move-name">{displayMove.moveName}</strong>
                             <span>{displayMove.moveId}</span>
                           </button>
                         )}
@@ -29687,10 +29697,13 @@ function getPokemonLearnsetDraftDisplay(
   const moveId = parseEditableIntegerDraft(moveIdDraft, moveOptions);
   const level = Number.parseInt(levelDraft, 10);
   const levelValue = Number.isInteger(level) ? level : move.level;
-  const levelLabel =
-    levelValue === move.level && levelDraft === move.level.toString()
-      ? move.levelLabel ?? null
-      : null;
+  const masteryLabel = getPokemonLearnsetMasteryLabel(move);
+  const levelLabel = getPokemonLearnsetPrimaryLevelLabel(
+    move,
+    levelValue,
+    levelDraft,
+    masteryLabel
+  );
   const moveOption = moveId === null
     ? undefined
     : moveOptions.find((option) => option.value === moveId);
@@ -29698,11 +29711,38 @@ function getPokemonLearnsetDraftDisplay(
   return {
     level: levelValue,
     levelLabel,
+    masteryLabel,
     moveId: moveId ?? move.moveId,
     moveName:
       moveOption?.label.replace(/^\d+\s+/, '') ??
       (moveId === move.moveId ? move.moveName : moveId === null ? moveIdDraft : `Move ${moveId}`)
   };
+}
+
+function getPokemonLearnsetMasteryLabel(move: PokemonLearnsetMove): string | null {
+  if (move.rawLevel !== null && move.rawLevel !== undefined) {
+    const masteryLevel = Math.floor(move.rawLevel / 256) & 0xff;
+    if (masteryLevel > 0) {
+      return `Mastery Lv. ${masteryLevel}`;
+    }
+  }
+
+  const match = move.levelLabel?.match(/\bMastery Lv\.?\s+(\d+)\b/i);
+  return match ? `Mastery Lv. ${match[1]}` : null;
+}
+
+function getPokemonLearnsetPrimaryLevelLabel(
+  move: PokemonLearnsetMove,
+  levelValue: number,
+  levelDraft: string,
+  masteryLabel: string | null
+): string | null {
+  if (levelValue !== move.level || levelDraft !== move.level.toString()) {
+    return null;
+  }
+
+  const levelLabel = move.levelLabel ?? null;
+  return levelLabel !== null && masteryLabel === null ? levelLabel : null;
 }
 
 function pokemonLearnsetDraftEqualsRecord(
@@ -33126,7 +33166,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     gift: 'Raw trainer gift/item ID. KM Editor treats this Gen 8 trainer field as unused/unknown, so confirm event scripts before treating it as a player reward.',
     inflictPercent: 'Percent chance to inflict the selected condition or secondary effect.',
     money: 'Prize payout stored as a trainer rate. Sword/Shield payout is rate x highest team level x 4; KM shows the derived cash amount.',
-    rawHealing: 'Move healing behavior. 253/254/255 are shown as signed raw values -3/-2/-1 for quarter, half, and full HP.',
+    rawHealing: 'Signed raw move healing behavior. Values vary by battle effect, so preserve the raw value unless the move has been verified in game.',
     rawInflictCount: 'Duration mode for the inflicted condition/effect. Sword/Shield exposes five known modes.',
     recoil: 'Recoil or drain-style percent. The sign and effect sequence determine the exact battle behavior.',
     specialMoveId: 'Gift table special move field.',
@@ -35485,14 +35525,7 @@ function formatMoveInflictDuration(rawInflictCount: number) {
 }
 
 function formatMoveHealingValue(rawHealing: number) {
-  const labels: Record<number, string> = {
-    [-3]: 'Quarter HP',
-    [-2]: 'Half HP',
-    [-1]: 'Full HP',
-    0: 'None'
-  };
-
-  return labels[rawHealing] ?? `${rawHealing} HP / special`;
+  return rawHealing === 0 ? 'None' : `Raw ${rawHealing}`;
 }
 
 function formatMoveActiveFlags(move: MoveRecord) {

@@ -28,6 +28,8 @@ public static class ZaDataPaths
 
     public static string MoveNames(string language) => CommonMessage(language, "wazaname.dat");
 
+    public static string MoveDescriptions(string language) => CommonMessage(language, "wazainfo.dat");
+
     public static string PokemonNames(string language) => CommonMessage(language, "monsname.dat");
 
     public static string AbilityNames(string language) => CommonMessage(language, "tokusei.dat");
