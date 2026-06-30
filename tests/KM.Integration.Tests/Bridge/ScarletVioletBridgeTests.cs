@@ -1891,6 +1891,98 @@ public sealed class ScarletVioletBridgeTests
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
     }
 
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletEvolutionItemParametersUseItemLabels(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(
+                2483,
+                (2, "Ultra Ball"),
+                (81, "Moon Stone"),
+                (2482, "Metal Alloy")));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-evolution-items");
+
+        AssertSuccess(pokemon);
+        var workflow = pokemon.Payload!.Workflow;
+        var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolution = Assert.Single(bulbasaur.Evolutions);
+        Assert.Equal(2, evolution.Argument);
+        Assert.Equal("Moon Stone", evolution.ArgumentValue);
+
+        var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
+
+        var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
+        Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletEvolutionConditionArgumentsUseNamedValues(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 31, evolutionParameter: 1));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-evolution-conditions");
+
+        AssertSuccess(pokemon);
+        var workflow = pokemon.Payload!.Workflow;
+        var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolution = Assert.Single(bulbasaur.Evolutions);
+        Assert.Equal(31, evolution.Method);
+        Assert.Equal("Level Up In Rain", evolution.MethodName);
+        Assert.Equal("Hisuian rain rule", evolution.ArgumentValue);
+
+        var pancham = workflow.EvolutionMethodOptions.Single(option => option.Value == 30);
+        Assert.Equal("none", pancham.ArgumentKind);
+        Assert.Contains("Dark-Type Teammate", pancham.Label, StringComparison.Ordinal);
+        Assert.Empty(pancham.ArgumentOptions);
+
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 31).ArgumentOptions,
+            option => option.Value == 1 && option.Label == "Hisuian rain rule");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 36).ArgumentOptions,
+            option => option.Value == 50 && option.Label == "Solgaleo branch");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 36).ArgumentOptions,
+            option => option.Value == 51 && option.Label == "Lunala branch");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 43).ArgumentOptions,
+            option => option.Value == 3 && option.Label == "3 critical hits");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 44).ArgumentOptions,
+            option => option.Value == 49 && option.Label == "49 HP lost");
+    }
+
     [Fact]
     public void ScarletVioletProjectLoadsAncientPowerMoveEffects()
     {
@@ -3393,11 +3485,24 @@ public sealed class ScarletVioletBridgeTests
         return global::SvMoveData.EndSvMoveData(builder);
     }
 
-    private static byte[] CreatePersonalArray()
+    private static byte[] CreatePersonalArray(
+        ushort evolutionCondition = 4,
+        ushort evolutionParameter = 0,
+        ushort evolutionSpecies = 2,
+        byte evolutionForm = 0)
     {
         var builder = new FlatBufferBuilder(2048);
         var empty = CreatePersonal(builder, species: 0, hp: 0, level: 0, evolutionLevel: 0);
-        var bulbasaur = CreatePersonal(builder, species: 1, hp: 45, level: 1, evolutionLevel: 16);
+        var bulbasaur = CreatePersonal(
+            builder,
+            species: 1,
+            hp: 45,
+            level: 1,
+            evolutionLevel: 16,
+            evolutionCondition: evolutionCondition,
+            evolutionParameter: evolutionParameter,
+            evolutionSpecies: evolutionSpecies,
+            evolutionForm: evolutionForm);
         var charmander = CreatePersonal(
             builder,
             species: 4,
@@ -3407,7 +3512,11 @@ public sealed class ScarletVioletBridgeTests
             learnedMoves: [(Move: (ushort)33, Level: 1)],
             ability1: 66,
             ability2: 66,
-            hiddenAbility: 94);
+            hiddenAbility: 94,
+            evolutionCondition: evolutionCondition,
+            evolutionParameter: evolutionParameter,
+            evolutionSpecies: evolutionSpecies,
+            evolutionForm: evolutionForm);
         var vector = global::personal_table.CreateEntryVector(builder, [empty, bulbasaur, charmander]);
         var root = global::personal_table.Createpersonal_table(builder, vector);
         global::personal_table.Finishpersonal_tableBuffer(builder, root);
@@ -3440,7 +3549,11 @@ public sealed class ScarletVioletBridgeTests
         IReadOnlyList<(ushort Move, ushort Level)>? learnedMoves = null,
         ushort ability1 = 65,
         ushort ability2 = 65,
-        ushort hiddenAbility = 34)
+        ushort hiddenAbility = 34,
+        ushort evolutionCondition = 4,
+        ushort evolutionParameter = 0,
+        ushort evolutionSpecies = 2,
+        byte evolutionForm = 0)
     {
         var tmMoves = global::personal.CreateTmMovesVector(builder, species == 0 ? [] : [(ushort)36]);
         var eggMoves = global::personal.CreateEggMovesVector(builder, []);
@@ -3466,13 +3579,13 @@ public sealed class ScarletVioletBridgeTests
             global::evo_data.Createevo_data(
                 builder,
                 Level: evolutionLevel,
-                Condition: 4,
-                Parameter: 0,
+                Condition: evolutionCondition,
+                Parameter: evolutionParameter,
                 Reserved3: 0,
                 Reserved4: 0,
                 Reserved5: 0,
-                Species: 2,
-                Form: 0);
+                Species: evolutionSpecies,
+                Form: evolutionForm);
         }
 
         var evolutions = builder.EndVector();

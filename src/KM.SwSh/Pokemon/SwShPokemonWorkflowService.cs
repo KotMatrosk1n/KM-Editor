@@ -277,15 +277,15 @@ public sealed class SwShPokemonWorkflowService
         CreateEvolutionMethod(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(34, "Level Up Female Form 1", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(35, "Unused", EvolutionArgumentKindNone, "None"),
-        CreateEvolutionMethod(36, "Level Up Version", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(36, "Level Up Version", EvolutionArgumentKindVersion, "Version branch"),
         CreateEvolutionMethod(37, "Level Up Version Day", EvolutionArgumentKindVersion, "Version"),
         CreateEvolutionMethod(38, "Level Up Version Night", EvolutionArgumentKindVersion, "Version"),
         CreateEvolutionMethod(39, "Level Up Summit", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(40, "Level Up Dusk", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(41, "Level Up Wormhole", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item"),
-        CreateEvolutionMethod(43, "Critical Hits In Battle", EvolutionArgumentKindVersion, "Version"),
-        CreateEvolutionMethod(44, "HP Lost In Battle", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(43, "Critical Hits In Battle", EvolutionArgumentKindValue, "Critical hits"),
+        CreateEvolutionMethod(44, "HP Lost In Battle", EvolutionArgumentKindValue, "HP lost"),
         CreateEvolutionMethod(45, "Spin", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(46, "Level Up Nature Amped", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(47, "Level Up Nature Low Key", EvolutionArgumentKindNone, "None"),
@@ -835,7 +835,7 @@ public sealed class SwShPokemonWorkflowService
             definition.Name,
             definition.ArgumentKind,
             definition.ArgumentLabel,
-            FormatEvolutionArgument(evolution.Argument, definition.ArgumentKind, itemNames, moveNames, speciesNames));
+            FormatEvolutionArgument(evolution.Argument, definition, itemNames, moveNames, speciesNames));
     }
 
     private static IReadOnlyList<SwShPokemonEvolutionMethodOption> CreateEvolutionMethodOptions(
@@ -889,27 +889,54 @@ public sealed class SwShPokemonWorkflowService
                 presentSpeciesIds,
                 CreateOption),
             EvolutionArgumentKindType => TypeOptions,
-            EvolutionArgumentKindValue or EvolutionArgumentKindVersion => ByteArgumentOptions,
+            EvolutionArgumentKindValue or EvolutionArgumentKindVersion => CreateEvolutionValueArgumentOptions(method),
             _ => [],
+        };
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionValueArgumentOptions(
+        EvolutionMethodDefinition method)
+    {
+        return method.Value switch
+        {
+            16 => CreateOptionList((170, "170 beauty")),
+            36 => CreateOptionList(
+                (44, "Solgaleo branch"),
+                (45, "Lunala branch")),
+            43 => CreateOptionList((3, "3 critical hits")),
+            44 => CreateOptionList((49, "49 HP lost")),
+            _ => ByteArgumentOptions,
         };
     }
 
     private static string FormatEvolutionArgument(
         int argument,
-        string argumentKind,
+        EvolutionMethodDefinition method,
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
         IReadOnlyList<string> speciesNames)
     {
-        return argumentKind switch
+        return method.ArgumentKind switch
         {
             EvolutionArgumentKindItem => GetIndexedName(argument, itemNames, "Item"),
             EvolutionArgumentKindMove => GetIndexedName(argument, moveNames, "Move"),
             EvolutionArgumentKindSpecies => GetIndexedName(argument, speciesNames, "Species"),
             EvolutionArgumentKindType => FormatType(argument),
-            EvolutionArgumentKindValue => argument.ToString(CultureInfo.InvariantCulture),
-            EvolutionArgumentKindVersion => argument.ToString(CultureInfo.InvariantCulture),
+            EvolutionArgumentKindValue or EvolutionArgumentKindVersion => FormatEvolutionValueArgument(argument, method),
             _ => "None",
+        };
+    }
+
+    private static string FormatEvolutionValueArgument(int argument, EvolutionMethodDefinition method)
+    {
+        return method.Value switch
+        {
+            16 when argument == 170 => "170 beauty",
+            36 when argument == 44 => "Solgaleo branch",
+            36 when argument == 45 => "Lunala branch",
+            43 when argument == 3 => "3 critical hits",
+            44 when argument == 49 => "49 HP lost",
+            _ => argument.ToString(CultureInfo.InvariantCulture),
         };
     }
 
@@ -1496,6 +1523,14 @@ public sealed class SwShPokemonWorkflowService
             .Select(value => CreateOption(
                 value,
                 value.ToString(CultureInfo.InvariantCulture)))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateOptionList(
+        params (int Value, string Label)[] values)
+    {
+        return values
+            .Select(value => CreateOption(value.Value, value.Label))
             .ToArray();
     }
 

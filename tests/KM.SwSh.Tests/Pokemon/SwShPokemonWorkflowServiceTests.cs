@@ -118,6 +118,69 @@ public sealed class SwShPokemonWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadNamesSpecialEvolutionConditionArguments()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/evolution/evo_001.bin",
+            CreateEvolutionFile(
+                (16, 170, 2, 0, 0),
+                (36, 44, 2, 0, 0),
+                (36, 45, 2, 0, 0),
+                (43, 3, 2, 0, 0),
+                (44, 49, 2, 0, 0)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        var pokemon = workflow.Pokemon[1];
+        Assert.Contains(
+            pokemon.Evolutions,
+            evolution => evolution.Method == 16
+                && evolution.ArgumentLabel == "Beauty"
+                && evolution.ArgumentValue == "170 beauty");
+        Assert.Contains(
+            pokemon.Evolutions,
+            evolution => evolution.Method == 36
+                && evolution.ArgumentLabel == "Version branch"
+                && evolution.ArgumentValue == "Solgaleo branch");
+        Assert.Contains(
+            pokemon.Evolutions,
+            evolution => evolution.Method == 36
+                && evolution.ArgumentValue == "Lunala branch");
+        Assert.Contains(
+            pokemon.Evolutions,
+            evolution => evolution.Method == 43
+                && evolution.ArgumentKind == "value"
+                && evolution.ArgumentLabel == "Critical hits"
+                && evolution.ArgumentValue == "3 critical hits");
+        Assert.Contains(
+            pokemon.Evolutions,
+            evolution => evolution.Method == 44
+                && evolution.ArgumentKind == "value"
+                && evolution.ArgumentLabel == "HP lost"
+                && evolution.ArgumentValue == "49 HP lost");
+
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 16).ArgumentOptions,
+            option => option.Value == 170 && option.Label == "170 beauty");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 36).ArgumentOptions,
+            option => option.Value == 44 && option.Label == "Solgaleo branch");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 36).ArgumentOptions,
+            option => option.Value == 45 && option.Label == "Lunala branch");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 43).ArgumentOptions,
+            option => option.Value == 3 && option.Label == "3 critical hits");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 44).ArgumentOptions,
+            option => option.Value == 49 && option.Label == "49 HP lost");
+    }
+
+    [Fact]
     public void LoadPrefersLayeredPersonalDataWhenOutputOverridesBase()
     {
         using var temp = TemporaryPokemonProject.Create();

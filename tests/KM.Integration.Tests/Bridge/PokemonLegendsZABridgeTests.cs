@@ -90,6 +90,88 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAEvolutionItemParametersUseItemLabels()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2, evolutionSpecies: 2));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(
+                2483,
+                (2, "Ultra Ball"),
+                (81, "Moon Stone"),
+                (2482, "Metal Alloy")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(CreatePaths(temp)),
+            "request-za-pokemon-evolution-items");
+
+        AssertSuccess(pokemon);
+        var workflow = pokemon.Payload!.Workflow;
+        var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolution = Assert.Single(bulbasaur.Evolutions);
+        Assert.Equal(2, evolution.Argument);
+        Assert.Equal("Moon Stone", evolution.ArgumentValue);
+
+        var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
+
+        var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
+        Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAEvolutionConditionArgumentsUseNamedValues()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 62, evolutionParameter: 20, evolutionSpecies: 904));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(CreatePaths(temp)),
+            "request-za-pokemon-evolution-conditions");
+
+        AssertSuccess(pokemon);
+        var workflow = pokemon.Payload!.Workflow;
+        var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolution = Assert.Single(bulbasaur.Evolutions);
+        Assert.Equal(62, evolution.Method);
+        Assert.Equal("Use Barb Barrage 20 Times", evolution.MethodName);
+        Assert.Equal("20 Barb Barrage uses", evolution.ArgumentValue);
+
+        var pancham = workflow.EvolutionMethodOptions.Single(option => option.Value == 30);
+        Assert.Equal("none", pancham.ArgumentKind);
+        Assert.Contains("Dark-Type Teammate", pancham.Label, StringComparison.Ordinal);
+        Assert.Empty(pancham.ArgumentOptions);
+
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 31).ArgumentOptions,
+            option => option.Value == 1 && option.Label == "Hisuian rain rule");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 36).ArgumentOptions,
+            option => option.Value == 44 && option.Label == "Solgaleo branch");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 36).ArgumentOptions,
+            option => option.Value == 45 && option.Label == "Lunala branch");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 43).ArgumentOptions,
+            option => option.Value == 3 && option.Label == "3 critical hits");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 44).ArgumentOptions,
+            option => option.Value == 49 && option.Label == "49 HP lost");
+    }
+
+    [Fact]
     public void PokemonLegendsZAProjectListsPokemonTrainersGiftTradeMovesItemsShopsAndModMergerWorkflows()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -1981,13 +2063,48 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreatePersonalArray()
+    private static byte[] CreatePersonalArray(
+        ushort evolutionCondition = 4,
+        ushort evolutionParameter = 0,
+        ushort evolutionSpecies = 1,
+        byte evolutionForm = 0,
+        ushort evolutionLevel = 16)
     {
         var builder = new FlatBufferBuilder(1024);
         var empty = CreatePersonal(builder, species: 0, present: false, hp: 0, zaDexOrder: 0);
-        var bulbasaur = CreatePersonal(builder, species: 1, present: true, hp: 45, zaDexOrder: 25);
-        var ivysaur = CreatePersonal(builder, species: 2, present: true, hp: 60, zaDexOrder: 26);
-        var charmander = CreatePersonal(builder, species: 3, present: false, hp: 39, zaDexOrder: 0);
+        var bulbasaur = CreatePersonal(
+            builder,
+            species: 1,
+            present: true,
+            hp: 45,
+            zaDexOrder: 25,
+            evolutionCondition,
+            evolutionParameter,
+            evolutionSpecies,
+            evolutionForm,
+            evolutionLevel);
+        var ivysaur = CreatePersonal(
+            builder,
+            species: 2,
+            present: true,
+            hp: 60,
+            zaDexOrder: 26,
+            evolutionCondition,
+            evolutionParameter,
+            evolutionSpecies,
+            evolutionForm,
+            evolutionLevel);
+        var charmander = CreatePersonal(
+            builder,
+            species: 3,
+            present: false,
+            hp: 39,
+            zaDexOrder: 0,
+            evolutionCondition,
+            evolutionParameter,
+            evolutionSpecies,
+            evolutionForm,
+            evolutionLevel);
         var vector = ZaPersonalTable.CreateEntryVector(builder, [empty, bulbasaur, ivysaur, charmander]);
         ZaPersonalTable.Start(builder);
         ZaPersonalTable.AddEntry(builder, vector);
@@ -2697,12 +2814,26 @@ public sealed class PokemonLegendsZABridgeTests
         ushort species,
         bool present,
         byte hp,
-        byte zaDexOrder)
+        byte zaDexOrder,
+        ushort evolutionCondition = 4,
+        ushort evolutionParameter = 0,
+        ushort evolutionSpecies = 1,
+        byte evolutionForm = 0,
+        ushort evolutionLevel = 16)
     {
         ZaPersonal.StartEvolutionsVector(builder, species == 0 ? 0 : 1);
         if (species != 0)
         {
-            ZaEvolutionData.Create(builder, level: 16, condition: 4, parameter: 0, reserved3: 0, reserved4: 0, reserved5: 0, species: 1, form: 0);
+            ZaEvolutionData.Create(
+                builder,
+                level: evolutionLevel,
+                condition: evolutionCondition,
+                parameter: evolutionParameter,
+                reserved3: 0,
+                reserved4: 0,
+                reserved5: 0,
+                species: evolutionSpecies,
+                form: evolutionForm);
         }
 
         var evolutions = builder.EndVector();
