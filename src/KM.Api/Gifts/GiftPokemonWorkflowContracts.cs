@@ -4,6 +4,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Gifts;
 
@@ -65,7 +66,9 @@ public sealed record GiftPokemonRecordDto(
     string GenderLabel,
     int ShinyLock,
     string ShinyLockLabel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? DynamaxLevel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanGigantamax,
     int SpecialMoveId,
     string? SpecialMove,
@@ -84,8 +87,10 @@ public sealed record GiftPokemonRecordDto(
     public IReadOnlyList<GiftPokemonMoveDto> Moves { get; init; } =
         Array.Empty<GiftPokemonMoveDto>();
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TeraType { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TeraTypeLabel { get; init; }
 
     public int? ScaleMode { get; init; }

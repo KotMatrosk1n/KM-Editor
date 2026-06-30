@@ -71,8 +71,6 @@ public sealed class SwShRentalPokemonWorkflowService
 
     private static readonly IReadOnlyList<SwShRentalPokemonEditableFieldOption> FormOptions =
     [
-        new(0, "Base"),
-        ..Enumerable.Range(1, 31).Select(value => new SwShRentalPokemonEditableFieldOption(value, $"Form {value}")),
     ];
 
     private static readonly IReadOnlyList<SwShRentalPokemonEditableFieldOption> NatureOptions =

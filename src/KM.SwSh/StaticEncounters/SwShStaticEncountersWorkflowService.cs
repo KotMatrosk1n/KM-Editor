@@ -89,8 +89,6 @@ public sealed class SwShStaticEncountersWorkflowService
 
     private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> FormOptions =
     [
-        new(0, "Base"),
-        ..Enumerable.Range(1, 31).Select(value => new SwShStaticEncounterEditableFieldOption(value, $"Form {value}")),
     ];
 
     private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> DynamaxLevelOptions =

@@ -242,6 +242,12 @@ describe('Pokemon sprite ids', () => {
   });
 
   it('uses Scarlet and Violet friendly form labels instead of duplicate generic labels', () => {
+    expect(formatSpeciesFormLabel('Growlithe (Form 1)', 1, 58, 'sv')).toBe(
+      'Growlithe (Hisuian)'
+    );
+    expect(formatSpeciesFormLabel('Castform (Form 2)', 2, 351, 'sv')).toBe(
+      'Castform (Rainy Form)'
+    );
     expect(formatSpeciesFormLabel('Lycanroc (Form 1)', 1, 745, 'sv')).toBe(
       'Lycanroc (Midnight Form)'
     );
@@ -264,8 +270,38 @@ describe('Pokemon sprite ids', () => {
     expect(formatSpeciesFormLabel('Charizard (Form 2)', 2, 6, 'za')).toBe(
       'Charizard (Mega Y)'
     );
+    expect(formatSpeciesFormLabel('Pikachu (Form 8)', 8, 25, 'za')).toBe(
+      'Pikachu (Starter)'
+    );
     expect(formatSpeciesFormLabel('Venusaur (Form 1)', 1, 3, 'za')).toBe(
       'Venusaur (Mega)'
+    );
+    expect(formatSpeciesFormLabel('Growlithe (Form 1)', 1, 58, 'za')).toBe(
+      'Growlithe (Hisuian)'
+    );
+    expect(formatSpeciesFormLabel('Castform (Form 3)', 3, 351, 'za')).toBe(
+      'Castform (Snowy Form)'
+    );
+    expect(formatSpeciesFormLabel('Raichu (Form 2)', 2, 26, 'za')).toBe(
+      'Raichu (Mega Kanto)'
+    );
+    expect(formatSpeciesFormLabel('Absol (Form 2)', 2, 359, 'za')).toBe(
+      'Absol (Mega Absol Z)'
+    );
+    expect(formatSpeciesFormLabel('Garchomp (Form 2)', 2, 445, 'za')).toBe(
+      'Garchomp (Mega Garchomp Z)'
+    );
+    expect(formatSpeciesFormLabel('Lucario (Form 2)', 2, 448, 'za')).toBe(
+      'Lucario (Mega Lucario Z)'
+    );
+    expect(formatSpeciesFormLabel('Floette (Form 5)', 5, 670, 'za')).toBe(
+      'Floette (Eternal Flower)'
+    );
+    expect(formatSpeciesFormLabel('Floette (Form 6)', 6, 670, 'za')).toBe(
+      'Floette (Mega)'
+    );
+    expect(formatSpeciesFormLabel('Tatsugiri (Form 4)', 4, 952, 'za')).toBe(
+      'Tatsugiri (Mega Droopy Form)'
     );
     expect(formatSpeciesFormLabel('Lucario', 1, 448, 'za')).toBe('Lucario (Mega)');
     expect(formatSpeciesFormLabel('Charizard (Form 1)', 1, 6, 'sv')).toBe(
@@ -283,11 +319,15 @@ describe('Pokemon sprite ids', () => {
     }
   });
 
-  it('keeps unknown forms and Sword Shield form fallbacks unchanged', () => {
+  it('keeps unknown forms generic and formats shared special forms', () => {
     expect(formatSpeciesFormLabel('Pokemon 999 (Form 7)', 7, 999, 'sv')).toBe(
       'Pokemon 999 (Form 7)'
     );
     expect(formatSpeciesFormLabel('Eevee', -1, 133, 'sv')).toBe('Eevee');
-    expect(formatSpeciesFormLabel('Eevee', 1, 133, 'swsh')).toBe('Eevee (Form 1)');
+    expect(formatSpeciesFormLabel('Pikachu', 8, 25, 'swsh')).toBe('Pikachu (World Cap)');
+    expect(formatSpeciesFormLabel('Pikachu (Form 9)', 9, 25, 'swsh')).toBe(
+      'Pikachu (World Cap)'
+    );
+    expect(formatSpeciesFormLabel('Eevee', 1, 133, 'swsh')).toBe('Eevee (Partner)');
   });
 });

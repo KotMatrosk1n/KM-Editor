@@ -30,7 +30,7 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
 
         var firstRental = workflow.Rentals[0];
         Assert.Equal(0, firstRental.RentalIndex);
-        Assert.Equal("Rental 001: Eevee (Form 1) Lv. 50 | Tackle, Growl", firstRental.Label);
+        Assert.Equal("Rental 001: Eevee (Partner) Lv. 50 | Tackle, Growl", firstRental.Label);
         Assert.Equal(133, firstRental.SpeciesId);
         Assert.Equal("Eevee", firstRental.Species);
         Assert.Equal(1, firstRental.Form);

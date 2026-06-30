@@ -4,6 +4,7 @@ using System.Globalization;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Pokemon;
 using KM.Core.Projects;
 using KM.SV.Data;
 using KM.SV.Workflows;
@@ -265,7 +266,7 @@ internal sealed class SvPokemonWorkflowService
         new(31, "Level Up In Rain", EvolutionArgumentKindValue, "Rain rule"),
         new(32, "Level Up Morning", EvolutionArgumentKindLevel, "Level"),
         new(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
-        new(34, "Level Up Female Form 1", EvolutionArgumentKindLevel, "Level"),
+        new(34, "Level Up Female Alternate Form", EvolutionArgumentKindLevel, "Level"),
         new(35, "Unused", EvolutionArgumentKindNone, "None"),
         new(36, "Level Up Version", EvolutionArgumentKindValue, "Version branch"),
         new(37, "Level Up Version Day", EvolutionArgumentKindValue, "Version"),
@@ -484,7 +485,14 @@ internal sealed class SvPokemonWorkflowService
             speciesId,
             form,
             labels.Pokemon(speciesId),
-            form == 0 ? "Base" : $"Form {form}",
+            form == 0
+                ? "Base"
+                : PokemonFormLabels.ResolveFormLabel(
+                    speciesId,
+                    labels.Pokemon(speciesId),
+                    form,
+                    PokemonFormLabelFamily.ScarletViolet)
+                    ?? $"Form {form.ToString(CultureInfo.InvariantCulture)}",
             FormatType(entry.Type1),
             FormatType(entry.Type2),
             stats,

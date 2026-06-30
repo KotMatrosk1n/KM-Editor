@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Pokemon;
 using KM.Core.Projects;
 using KM.SV.Placement;
 using KM.SV.Workflows;
@@ -468,7 +469,11 @@ internal sealed class SvStaticEncountersWorkflowService
     {
         var speciesLabel = speciesId == 0
             ? "None"
-            : form == 0 ? species : $"{species} (Form {form.ToString(CultureInfo.InvariantCulture)})";
+            : form == 0
+                ? species
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{species} ({PokemonFormLabels.ResolveFormLabel(speciesId, species, form, PokemonFormLabelFamily.ScarletViolet) ?? $"Form {form.ToString(CultureInfo.InvariantCulture)}"})");
         var moveText = string.Join(", ", moves
             .Where(move => move.MoveId > 0 && !string.IsNullOrWhiteSpace(move.Move))
             .Take(2)

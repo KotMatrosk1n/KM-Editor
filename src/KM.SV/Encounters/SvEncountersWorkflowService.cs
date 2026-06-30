@@ -3,6 +3,7 @@
 using System.Globalization;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
+using KM.Core.Pokemon;
 using KM.Core.Projects;
 using KM.SV.Data;
 using KM.SV.Workflows;
@@ -156,7 +157,9 @@ internal sealed class SvEncountersWorkflowService
 
         return form == 0
             ? speciesName
-            : string.Create(CultureInfo.InvariantCulture, $"{speciesName} (Form {form})");
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"{speciesName} ({PokemonFormLabels.ResolveFormLabel(speciesId, speciesName, form, PokemonFormLabelFamily.ScarletViolet) ?? $"Form {form.ToString(CultureInfo.InvariantCulture)}"})");
     }
 
     private static SvEncounterSlotRecord ToSlot(

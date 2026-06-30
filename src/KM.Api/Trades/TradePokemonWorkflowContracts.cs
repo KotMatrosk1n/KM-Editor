@@ -4,6 +4,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Trades;
 
@@ -58,7 +59,9 @@ public sealed record TradePokemonRecordDto(
     string GenderLabel,
     int ShinyLock,
     string ShinyLockLabel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? DynamaxLevel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanGigantamax,
     int RequiredSpeciesId,
     string RequiredSpecies,
@@ -87,7 +90,9 @@ public sealed record TradePokemonRecordDto(
     public string? EventLabel { get; init; }
     public IReadOnlyList<TradePokemonMoveRecordDto> Moves { get; init; } =
         Array.Empty<TradePokemonMoveRecordDto>();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TeraType { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? TeraTypeLabel { get; init; }
     public int? ScaleMode { get; init; }
     public string? ScaleModeLabel { get; init; }

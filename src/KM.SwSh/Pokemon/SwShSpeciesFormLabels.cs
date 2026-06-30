@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text;
+using KM.Core.Pokemon;
 
 namespace KM.SwSh.Pokemon;
 
@@ -129,7 +130,11 @@ internal static class SwShSpeciesFormLabels
     {
         return KnownFormLabels.TryGetValue((speciesId, localFormIndex), out var label)
             ? label
-            : null;
+            : PokemonFormLabels.ResolveFormLabel(
+                speciesId,
+                string.Empty,
+                localFormIndex,
+                PokemonFormLabelFamily.SwordShield);
     }
 
     internal static string ResolveRegionalFormLabel(int speciesId, int localFormIndex)
@@ -155,6 +160,7 @@ internal static class SwShSpeciesFormLabels
             [(25, 6)] = "Alola Cap",
             [(25, 7)] = "Partner Cap",
             [(25, 8)] = "World Cap",
+            [(25, 9)] = "World Cap",
             [(201, 26)] = "Question Mark",
             [(201, 27)] = "Exclamation Mark",
             [(421, 0)] = "Overcast Form",
