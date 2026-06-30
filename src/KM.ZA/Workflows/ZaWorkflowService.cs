@@ -14,6 +14,7 @@ using KM.ZA.Placement;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
 using KM.ZA.StaticEncounters;
+using KM.ZA.Text;
 using KM.ZA.TypeChart;
 using KM.ZA.Trainers;
 using KM.ZA.Trades;
@@ -28,6 +29,7 @@ public sealed class ZaWorkflowService
     private readonly ZaItemsWorkflowService itemsWorkflowService;
     private readonly ZaPokemonWorkflowService pokemonWorkflowService;
     private readonly ZaMovesWorkflowService movesWorkflowService;
+    private readonly ZaTextWorkflowService textWorkflowService;
     private readonly ZaShopsWorkflowService shopsWorkflowService;
     private readonly ZaTrainersWorkflowService trainersWorkflowService;
     private readonly ZaPlacementWorkflowService placementWorkflowService;
@@ -42,6 +44,7 @@ public sealed class ZaWorkflowService
     private readonly ZaItemsEditSessionService itemsEditSessionService;
     private readonly ZaPokemonEditSessionService pokemonEditSessionService;
     private readonly ZaMovesEditSessionService movesEditSessionService;
+    private readonly ZaTextEditSessionService textEditSessionService;
     private readonly ZaShopsEditSessionService shopsEditSessionService;
     private readonly ZaTrainersEditSessionService trainersEditSessionService;
     private readonly ZaPlacementEditSessionService placementEditSessionService;
@@ -61,6 +64,7 @@ public sealed class ZaWorkflowService
         itemsWorkflowService = new ZaItemsWorkflowService(fileSource);
         pokemonWorkflowService = new ZaPokemonWorkflowService(fileSource);
         movesWorkflowService = new ZaMovesWorkflowService(fileSource);
+        textWorkflowService = new ZaTextWorkflowService(fileSource);
         shopsWorkflowService = new ZaShopsWorkflowService(fileSource, itemsWorkflowService);
         trainersWorkflowService = new ZaTrainersWorkflowService(fileSource);
         placementWorkflowService = new ZaPlacementWorkflowService(fileSource);
@@ -83,6 +87,10 @@ public sealed class ZaWorkflowService
             this.projectWorkspaceService,
             fileSource,
             movesWorkflowService);
+        textEditSessionService = new ZaTextEditSessionService(
+            this.projectWorkspaceService,
+            fileSource,
+            textWorkflowService);
         shopsEditSessionService = new ZaShopsEditSessionService(
             this.projectWorkspaceService,
             fileSource,
@@ -165,6 +173,7 @@ public sealed class ZaWorkflowService
             giftPokemonWorkflowService.CreateSummary(project),
             tradePokemonWorkflowService.CreateSummary(project),
             movesWorkflowService.CreateSummary(project),
+            textWorkflowService.CreateSummary(project),
             itemsWorkflowService.CreateSummary(project),
             shopsWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
@@ -195,6 +204,14 @@ public sealed class ZaWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return movesWorkflowService.Load(project);
+    }
+
+    public ZaTextWorkflow LoadText(ProjectPaths paths, ZaTextWorkflowQuery? query = null)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return textWorkflowService.Load(project, query);
     }
 
     public ZaDumpImportWorkflow LoadDumpImport(ProjectPaths paths)
@@ -380,6 +397,16 @@ public sealed class ZaWorkflowService
         return movesEditSessionService.UpdateFields(paths, session, updates);
     }
 
+    public ZaTextEditResult UpdateTextEntry(
+        ProjectPaths paths,
+        EditSession? session,
+        string textKey,
+        string value,
+        ZaTextWorkflowQuery? query = null)
+    {
+        return textEditSessionService.UpdateEntry(paths, session, textKey, value, query);
+    }
+
     public ZaShopsEditResult UpdateShopInventoryItem(
         ProjectPaths paths,
         EditSession? session,
@@ -541,6 +568,7 @@ public sealed class ZaWorkflowService
         {
             ZaEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
+            ZaEditSessionDomain.Text => textEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
@@ -565,6 +593,7 @@ public sealed class ZaWorkflowService
         {
             ZaEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -590,6 +619,7 @@ public sealed class ZaWorkflowService
         {
             ZaEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
@@ -714,6 +744,7 @@ public sealed class ZaWorkflowService
             [ZaEditSessionSupport.PokemonDomain] => ZaEditSessionDomain.Pokemon,
             [ZaEditSessionSupport.ItemsDomain] => ZaEditSessionDomain.Items,
             [ZaEditSessionSupport.MovesDomain] => ZaEditSessionDomain.Moves,
+            [ZaEditSessionSupport.TextDomain] => ZaEditSessionDomain.Text,
             [ZaEditSessionSupport.ShopsDomain] => ZaEditSessionDomain.Shops,
             [ZaEditSessionSupport.TrainersDomain] => ZaEditSessionDomain.Trainers,
             [ZaEditSessionSupport.PlacementDomain] => ZaEditSessionDomain.Placement,
@@ -747,6 +778,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionSupport.PokemonDomain => ZaEditSessionDomain.Pokemon,
             ZaEditSessionSupport.ItemsDomain => ZaEditSessionDomain.Items,
             ZaEditSessionSupport.MovesDomain => ZaEditSessionDomain.Moves,
+            ZaEditSessionSupport.TextDomain => ZaEditSessionDomain.Text,
             ZaEditSessionSupport.ShopsDomain => ZaEditSessionDomain.Shops,
             ZaEditSessionSupport.TrainersDomain => ZaEditSessionDomain.Trainers,
             ZaEditSessionSupport.PlacementDomain => ZaEditSessionDomain.Placement,
@@ -765,6 +797,7 @@ public sealed class ZaWorkflowService
         return domain is ZaEditSessionDomain.Items
             or ZaEditSessionDomain.Pokemon
             or ZaEditSessionDomain.Moves
+            or ZaEditSessionDomain.Text
             or ZaEditSessionDomain.Shops
             or ZaEditSessionDomain.Trainers
             or ZaEditSessionDomain.Placement
@@ -792,6 +825,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.Items => ZaEditSessionSupport.ItemsDomain,
             ZaEditSessionDomain.Pokemon => ZaEditSessionSupport.PokemonDomain,
             ZaEditSessionDomain.Moves => ZaEditSessionSupport.MovesDomain,
+            ZaEditSessionDomain.Text => ZaEditSessionSupport.TextDomain,
             ZaEditSessionDomain.Shops => ZaEditSessionSupport.ShopsDomain,
             ZaEditSessionDomain.Trainers => ZaEditSessionSupport.TrainersDomain,
             ZaEditSessionDomain.Placement => ZaEditSessionSupport.PlacementDomain,
@@ -872,6 +906,7 @@ public sealed class ZaWorkflowService
         Items,
         Pokemon,
         Moves,
+        Text,
         Shops,
         Trainers,
         Placement,

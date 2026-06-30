@@ -28,6 +28,7 @@ public sealed class SwShTrainersWorkflowService
     public const string HealField = "heal";
     public const string MoneyField = "money";
     public const string GiftField = "gift";
+    internal const string PokemonCountField = "pokemonCount";
     public const string SpeciesIdField = "speciesId";
     public const string FormField = "form";
     public const string LevelField = "level";
@@ -599,7 +600,8 @@ public sealed class SwShTrainersWorkflowService
             || string.Equals(field, AiFlagsField, StringComparison.Ordinal)
             || string.Equals(field, HealField, StringComparison.Ordinal)
             || string.Equals(field, MoneyField, StringComparison.Ordinal)
-            || string.Equals(field, GiftField, StringComparison.Ordinal);
+            || string.Equals(field, GiftField, StringComparison.Ordinal)
+            || string.Equals(field, PokemonCountField, StringComparison.Ordinal);
     }
 
     internal static bool IsTrainerClassField(string? field)
@@ -684,7 +686,7 @@ public sealed class SwShTrainersWorkflowService
             CreateEditableFields(names),
             new SwShTrainersWorkflowStats(
                 trainers.Count,
-                trainers.Sum(trainer => trainer.Team.Count),
+                trainers.Sum(GetOccupiedPokemonCount),
                 sourceFileCount),
             diagnostics);
     }
@@ -697,10 +699,12 @@ public sealed class SwShTrainersWorkflowService
         }
 
         var trainerClassOptions = CreateIndexedOptions(names.TrainerClasses, "Class");
-        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
-            names.SpeciesNames,
-            names.PresentSpeciesIds,
-            (value, label) => new SwShTrainerEditableFieldOption(value, label));
+        var speciesOptions = new[] { new SwShTrainerEditableFieldOption(0, "0 None") }
+            .Concat(SwShSpeciesAvailability.CreateSpeciesOptions(
+                names.SpeciesNames,
+                names.PresentSpeciesIds,
+                (value, label) => new SwShTrainerEditableFieldOption(value, label)))
+            .ToArray();
         var itemOptions = CreateIndexedOptions(names.ItemNames, "Item");
         var moveOptions = SwShMoveAvailability.CreateMoveOptions(
             names.MoveNames,
@@ -1066,8 +1070,24 @@ public sealed class SwShTrainersWorkflowService
             classRecord is null ? null : FormatBall(classRecord.BallId),
             canEditClassBall,
             FormatClassBallScope(classSource, classRecord, classOwnership),
-            team.Select(pokemon => ToTrainerPokemonRecord(pokemon, names)).ToArray(),
+            CreateTrainerPokemonRecords(team, names),
             CreateProvenance(dataSource.Entry, pokeSource.Entry, classSource?.Entry));
+    }
+
+    private static IReadOnlyList<SwShTrainerPokemonRecord> CreateTrainerPokemonRecords(
+        IReadOnlyList<SwShTrainerPokemonTableRecord> team,
+        TrainerLookupTables names)
+    {
+        return Enumerable
+            .Range(1, SwShTrainerTeamFile.MaximumPartySize)
+            .Select(slot =>
+            {
+                var pokemon = team.FirstOrDefault(candidate => candidate.Slot == slot);
+                return pokemon is null
+                    ? CreateEmptyTrainerPokemonRecord(slot, names)
+                    : ToTrainerPokemonRecord(pokemon, names);
+            })
+            .ToArray();
     }
 
     private static SwShTrainerPokemonRecord ToTrainerPokemonRecord(
@@ -1105,6 +1125,42 @@ public sealed class SwShTrainersWorkflowService
         {
             AbilityOptions = CreateTrainerPokemonAbilityOptions(names, pokemon.SpeciesId, pokemon.Form),
         };
+    }
+
+    private static SwShTrainerPokemonRecord CreateEmptyTrainerPokemonRecord(
+        int slot,
+        TrainerLookupTables names)
+    {
+        return new SwShTrainerPokemonRecord(
+            slot,
+            0,
+            "None",
+            0,
+            SwShTrainerTeamFile.MinimumLevel,
+            0,
+            null,
+            [0, 0, 0, 0],
+            ["None", "None", "None", "None"],
+            0,
+            FormatTrainerPokemonGender(0),
+            0,
+            GetTrainerPokemonAbilityLabel(names, 0, 0, 0),
+            0,
+            FormatTrainerPokemonNature(0),
+            new SwShTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            0,
+            false,
+            new SwShTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            false,
+            true)
+        {
+            AbilityOptions = CreateTrainerPokemonAbilityOptions(names, 0, 0),
+        };
+    }
+
+    private static int GetOccupiedPokemonCount(SwShTrainerRecord trainer)
+    {
+        return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
     }
 
     private static SwShTrainerPokemonStatsRecord ToStatsRecord(SwShTrainerPokemonStats stats)

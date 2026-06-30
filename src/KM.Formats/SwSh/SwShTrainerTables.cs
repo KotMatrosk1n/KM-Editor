@@ -99,6 +99,7 @@ public enum SwShTrainerDataField
 {
     ClassId,
     BattleMode,
+    PokemonCount,
     Item1Id,
     Item2Id,
     Item3Id,
@@ -115,6 +116,7 @@ public sealed class SwShTrainerDataFile
     public const int Size = 0x14;
     public const int MaximumClassId = ushort.MaxValue;
     public const int MaximumBattleMode = 2;
+    public const int MaximumPokemonCount = 6;
     public const int MaximumItemId = ushort.MaxValue;
     public const int KnownAiFlagsMask = 0x1FFF;
     public const int MaximumAiFlags = KnownAiFlagsMask;
@@ -183,6 +185,10 @@ public sealed class SwShTrainerDataFile
                 case SwShTrainerDataField.BattleMode:
                     ValidateRange(edit.Value, 0, MaximumBattleMode, nameof(edits));
                     result[BattleModeOffset] = checked((byte)edit.Value);
+                    break;
+                case SwShTrainerDataField.PokemonCount:
+                    ValidateRange(edit.Value, 0, MaximumPokemonCount, nameof(edits));
+                    result[PokemonCountOffset] = checked((byte)edit.Value);
                     break;
                 case SwShTrainerDataField.Item1Id:
                     WriteUInt16Field(result, Item1Offset, edit.Value, MaximumItemId, nameof(edits));
@@ -304,6 +310,7 @@ public sealed class SwShTrainerTeamFile
 {
     public const string TrainerPokeRootRelativePath = "romfs/bin/trainer/trainer_poke";
     public const int RowSize = 0x20;
+    public const int MaximumPartySize = 6;
     public const int MaximumPokemonId = ushort.MaxValue;
     public const int MaximumFormId = ushort.MaxValue;
     public const int MinimumLevel = 1;
@@ -370,14 +377,23 @@ public sealed class SwShTrainerTeamFile
         return new SwShTrainerTeamFile(data.ToArray());
     }
 
-    public byte[] WriteEdits(IReadOnlyList<SwShTrainerPokemonEdit> edits)
+    public byte[] WriteEdits(IReadOnlyList<SwShTrainerPokemonEdit> edits, int? outputPokemonCount = null)
     {
         ArgumentNullException.ThrowIfNull(edits);
 
-        var result = data.ToArray();
+        var targetPokemonCount = outputPokemonCount ?? Records.Count;
+        ValidateRange(targetPokemonCount, 0, MaximumPartySize, nameof(outputPokemonCount));
+
+        var result = new byte[targetPokemonCount * RowSize];
+        data.AsSpan(0, Math.Min(data.Length, result.Length)).CopyTo(result);
+        for (var index = Records.Count; index < targetPokemonCount; index++)
+        {
+            InitializeDefaultRow(result, index * RowSize);
+        }
+
         foreach (var edit in edits)
         {
-            if (edit.Slot < 1 || edit.Slot > Records.Count)
+            if (edit.Slot < 1 || edit.Slot > targetPokemonCount)
             {
                 throw new ArgumentOutOfRangeException(nameof(edits), $"Trainer party slot {edit.Slot} is not present.");
             }
@@ -473,6 +489,14 @@ public sealed class SwShTrainerTeamFile
         }
 
         return result;
+    }
+
+    private static void InitializeDefaultRow(byte[] output, int rowOffset)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(rowOffset + LevelOffset), MinimumLevel);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            output.AsSpan(rowOffset + IvFlagsOffset),
+            1u << CanDynamaxFlagShift);
     }
 
     private SwShTrainerPokemonTableRecord ReadRecord(int rowIndex)

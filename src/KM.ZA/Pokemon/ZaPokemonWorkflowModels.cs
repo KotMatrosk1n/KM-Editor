@@ -67,7 +67,6 @@ public sealed record ZaPokemonPersonalDetails(
     int HatchedSpecies,
     int LocalFormIndex,
     bool IsRegionalForm,
-    bool CanNotDynamax,
     int RegionalDexIndex,
     int Form,
     int ArmorDexIndex,

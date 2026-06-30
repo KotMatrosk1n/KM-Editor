@@ -88,6 +88,7 @@ using KM.ZA.Gifts;
 using KM.ZA.GameDump;
 using KM.ZA.ModMerger;
 using KM.ZA.Placement;
+using KM.ZA.Text;
 using KM.ZA.Trades;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
@@ -719,7 +720,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadTextWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadText(paths, ToZaTextWorkflowQuery(request.Payload.Query)))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadText(paths, ToSvTextWorkflowQuery(request.Payload.Query)))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadText(paths));
 
@@ -733,7 +736,14 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateTextEntry(
+                paths,
+                session,
+                request.Payload.TextKey,
+                request.Payload.Value,
+                ToZaTextWorkflowQuery(request.Payload.Query)))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTextEntry(
                 paths,
                 session,
@@ -757,6 +767,16 @@ public sealed class ProjectBridgeDispatcher
                 query.SearchText,
                 query.Offset ?? 0,
                 query.Limit ?? SvTextWorkflowService.DefaultQueryLimit);
+    }
+
+    private static ZaTextWorkflowQuery? ToZaTextWorkflowQuery(TextWorkflowQueryDto? query)
+    {
+        return query is null
+            ? null
+            : new ZaTextWorkflowQuery(
+                query.SearchText,
+                query.Offset ?? 0,
+                query.Limit ?? ZaTextWorkflowService.DefaultQueryLimit);
     }
 
     private string DispatchLoadTrainersWorkflow(string requestJson)
@@ -3242,6 +3262,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or
+            KmCommandNames.LoadTextWorkflow or
+            KmCommandNames.UpdateTextEntry or
             KmCommandNames.LoadShopsWorkflow or
             KmCommandNames.UpdateShopInventoryItem or
             KmCommandNames.LoadTypeChartWorkflow or

@@ -11,6 +11,7 @@ using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
+using KM.Api.Text;
 using KM.Api.TypeChart;
 using KM.Api.Trainers;
 using KM.Api.Trades;
@@ -25,6 +26,7 @@ using KM.ZA.Placement;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
 using KM.ZA.StaticEncounters;
+using KM.ZA.Text;
 using KM.ZA.TypeChart;
 using KM.ZA.Trainers;
 using KM.ZA.Trades;
@@ -117,6 +119,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
+    }
+
+    public static LoadTextWorkflowResponse ToDto(ZaTextWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTextWorkflowResponse(ToTextWorkflowDto(workflow));
     }
 
     public static LoadShopsWorkflowResponse ToDto(ZaShopsWorkflow workflow)
@@ -228,6 +237,16 @@ public static class ZaBridgeMapper
 
         return new UpdateMoveFieldsResponse(
             ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTextEntryResponse ToDto(ZaTextEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTextEntryResponse(
+            ToTextWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -486,6 +505,20 @@ public static class ZaBridgeMapper
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    private static TextWorkflowDto ToTextWorkflowDto(ZaTextWorkflow workflow)
+    {
+        return new TextWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Entries.Select(ToDto).ToArray(),
+            workflow.DialogueReferences.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TextWorkflowStatsDto(
+                workflow.Stats.TotalTextEntryCount,
+                workflow.Stats.DialogueReferenceCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     private static ShopsWorkflowDto ToShopsWorkflowDto(ZaShopsWorkflow workflow)
     {
         return new ShopsWorkflowDto(
@@ -642,7 +675,7 @@ public static class ZaBridgeMapper
             workflow.EditableFields.Select(ToDto).ToArray(),
             new StaticEncountersWorkflowStatsDto(
                 workflow.Stats.TotalEncounterCount,
-                GigantamaxEncounterCount: 0,
+                null,
                 workflow.Stats.FixedIvEncounterCount,
                 workflow.Stats.SourceFileCount)
             {
@@ -677,8 +710,8 @@ public static class ZaBridgeMapper
             encounter.ShinyLockLabel,
             encounter.EncounterScenario,
             encounter.EncounterScenarioLabel,
-            DynamaxLevel: 0,
-            CanGigantamax: false,
+            null,
+            null,
             ToDto(encounter.Evs),
             ToDto(encounter.Ivs),
             encounter.FlawlessIvCount,
@@ -945,7 +978,7 @@ public static class ZaBridgeMapper
                 pokemon.Personal.HatchedSpecies,
                 pokemon.Personal.LocalFormIndex,
                 pokemon.Personal.IsRegionalForm,
-                pokemon.Personal.CanNotDynamax,
+                null,
                 pokemon.Personal.Form),
             pokemon.CatchRate,
             pokemon.EvolutionStage,
@@ -1204,6 +1237,50 @@ public static class ZaBridgeMapper
             ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
+    private static TextEntryRecordDto ToDto(ZaTextEntryRecord entry)
+    {
+        return new TextEntryRecordDto(
+            entry.TextId,
+            entry.TextKey,
+            entry.Label,
+            entry.Language,
+            entry.SourceFile,
+            entry.LineIndex,
+            entry.Value,
+            entry.CanEdit,
+            entry.EditBlockedReason,
+            ToDto(entry.Provenance));
+    }
+
+    private static TextEditableFieldDto ToDto(ZaTextEditableField field)
+    {
+        return new TextEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumLength,
+            field.MaximumLength);
+    }
+
+    private static DialogueReferenceRecordDto ToDto(ZaDialogueReferenceRecord reference)
+    {
+        return new DialogueReferenceRecordDto(
+            reference.DialogueId,
+            reference.Label,
+            reference.TextId,
+            reference.Context,
+            reference.Preview,
+            ToDto(reference.Provenance));
+    }
+
+    private static TextProvenanceDto ToDto(ZaTextProvenance provenance)
+    {
+        return new TextProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
     private static ShopRecordDto ToDto(ZaShopRecord shop)
     {
         return new ShopRecordDto(
@@ -1285,8 +1362,8 @@ public static class ZaBridgeMapper
             trainer.Items,
             trainer.AiFlags,
             trainer.AiFlagStates.Select(ToDto).ToArray(),
-            trainer.CanTerastallize,
-            trainer.TeraTarget,
+            null,
+            null,
             trainer.Heal,
             trainer.Money,
             trainer.Gift,
@@ -1328,8 +1405,8 @@ public static class ZaBridgeMapper
             gift.GenderLabel,
             gift.ShinyLock,
             gift.ShinyLockLabel,
-            0,
-            false,
+            null,
+            null,
             firstMove?.MoveId ?? 0,
             firstMove?.Move,
             new GiftPokemonIvsDto(
@@ -1519,13 +1596,13 @@ public static class ZaBridgeMapper
             pokemon.Nature,
             pokemon.NatureLabel,
             ToDto(pokemon.Evs),
-            pokemon.DynamaxLevel,
-            pokemon.CanGigantamax,
+            null,
+            null,
             ToDto(pokemon.Ivs),
             pokemon.Shiny,
-            pokemon.CanDynamax,
-            pokemon.TeraType,
-            pokemon.TeraTypeLabel)
+            null,
+            null,
+            null)
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
         };

@@ -53,7 +53,7 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal("4 Poke Ball", trainer.ClassBall);
         Assert.True(trainer.CanEditClassBall);
         Assert.Equal("Unique trainer class: Avery", trainer.ClassBallScope);
-        Assert.Equal(2, trainer.Team.Count);
+        Assert.Equal(6, trainer.Team.Count);
         Assert.Equal(810, trainer.Team[0].SpeciesId);
         Assert.Equal("Grookey", trainer.Team[0].Species);
         Assert.Equal(12, trainer.Team[0].Level);
@@ -74,6 +74,8 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal(new SwShTrainerPokemonStatsRecord(1, 2, 3, 5, 6, 4), trainer.Team[0].Ivs);
         Assert.True(trainer.Team[0].Shiny);
         Assert.False(trainer.Team[0].CanDynamax);
+        Assert.All(trainer.Team.Skip(2), pokemon => Assert.Equal(0, pokemon.SpeciesId));
+        Assert.All(trainer.Team.Skip(2), pokemon => Assert.Equal("None", pokemon.Species));
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.SourceLayer);
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.TeamSourceLayer);
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.ClassSourceLayer);
@@ -224,7 +226,7 @@ public sealed class SwShTrainersWorkflowServiceTests
         var speciesField = workflow.EditableFields.Single(field =>
             field.Field == SwShTrainersWorkflowService.SpeciesIdField);
         Assert.Contains(speciesField.Options, option => option.Value == 745 && option.Label == "745 Lycanroc");
-        Assert.Equal("Lycanroc", Assert.Single(workflow.Trainers).Team.Single().Species);
+        Assert.Equal("Lycanroc", Assert.Single(workflow.Trainers).Team.Single(pokemon => pokemon.SpeciesId > 0).Species);
     }
 
     internal static void WriteTrainerFixture(TemporarySwShProject temp)

@@ -34,13 +34,8 @@ public sealed record ZaTrainerPokemonRecord(
     int Nature,
     string NatureLabel,
     ZaTrainerPokemonStatsRecord Evs,
-    int DynamaxLevel,
-    bool CanGigantamax,
     ZaTrainerPokemonStatsRecord Ivs,
-    bool Shiny,
-    bool CanDynamax,
-    int? TeraType = null,
-    string? TeraTypeLabel = null)
+    bool Shiny)
 {
     public IReadOnlyList<ZaTrainerEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaTrainerEditableFieldOption>();
@@ -66,8 +61,6 @@ public sealed record ZaTrainerRecord(
     IReadOnlyList<string> Items,
     int AiFlags,
     IReadOnlyList<ZaTrainerAiFlagState> AiFlagStates,
-    bool CanTerastallize,
-    string TeraTarget,
     bool Heal,
     int Money,
     int Gift,

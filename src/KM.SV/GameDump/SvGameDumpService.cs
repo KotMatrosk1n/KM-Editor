@@ -178,6 +178,15 @@ public sealed class SvGameDumpService
                     var workflow = workflowService.LoadMoves(paths);
                     return new GameDumpCategoryData<KM.SV.Moves.SvMoveRecord>(workflow.Moves, workflow.Diagnostics);
                 }),
+            GameDumpWriter.CreateTextCategory(
+                SvWorkflowIds.Text,
+                "Text",
+                "Message text entries, dialogue contexts, languages, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadText(paths);
+                    return new GameDumpCategoryData<KM.SV.Text.SvTextEntryRecord>(workflow.Entries, workflow.Diagnostics);
+                }),
             GameDumpWriter.CreateTableCategory(
                 SvWorkflowIds.Trainers,
                 "Trainers",
@@ -195,6 +204,24 @@ public sealed class SvGameDumpService
                 {
                     var workflow = workflowService.LoadEncounters(paths);
                     return new GameDumpCategoryData<KM.SV.Encounters.SvEncounterTableRecord>(workflow.Tables, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
+                SvWorkflowIds.TeraRaids,
+                "Tera Raids",
+                "Tera Raid boss rows, reward table previews, battle settings, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadTeraRaids(paths);
+                    return new GameDumpCategoryData<KM.SV.Raids.SvTeraRaidEntry>(workflow.Raids, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
+                SvWorkflowIds.StaticEncounters,
+                "Static Encounters",
+                "Placed scripted Pokemon encounters, IVs, moves, shiny locks, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadStaticEncounters(paths);
+                    return new GameDumpCategoryData<KM.SV.StaticEncounters.SvStaticEncounterEntry>(workflow.Encounters, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
                 SvWorkflowIds.GiftPokemon,
@@ -222,6 +249,15 @@ public sealed class SvGameDumpService
                 {
                     var workflow = workflowService.LoadPlacement(paths);
                     return new GameDumpCategoryData<KM.SV.Placement.SvPlacedObjectRecord>(workflow.Objects, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
+                SvWorkflowIds.Shops,
+                "Shops",
+                "Shop inventories, item metadata, prices, unlock conditions, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadShops(paths);
+                    return new GameDumpCategoryData<KM.SV.Shops.SvShopRecord>(workflow.Shops, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
                 SvWorkflowIds.TypeChart,

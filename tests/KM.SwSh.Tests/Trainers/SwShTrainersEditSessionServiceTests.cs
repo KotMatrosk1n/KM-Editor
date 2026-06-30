@@ -426,6 +426,148 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
+    public void ApplyChangePlanAllowsClearingLastPartySlotAndShrinksTrainerCount()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 2,
+            field: SwShTrainersWorkflowService.SpeciesIdField,
+            value: "0");
+        var trainer = Assert.Single(update.Workflow.Trainers);
+
+        Assert.Empty(update.Diagnostics);
+        Assert.Equal(6, trainer.Team.Count);
+        Assert.Equal(0, trainer.Team[1].SpeciesId);
+        Assert.Equal("None", trainer.Team[1].Species);
+        Assert.Equal(SwShTrainerTeamFile.MinimumLevel, trainer.Team[1].Level);
+        Assert.Equal(0, trainer.Team[1].HeldItemId);
+        Assert.Equal([0, 0, 0, 0], trainer.Team[1].MoveIds);
+        Assert.Equal(new SwShTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0), trainer.Team[1].Evs);
+        Assert.Equal(new SwShTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0), trainer.Team[1].Ivs);
+        Assert.Equal(0, trainer.Team[1].Ability);
+        Assert.True(service.Validate(temp.Paths, update.Session).IsValid);
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        Assert.True(plan.CanApply);
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == "romfs/bin/trainer/trainer_data/trainer_010.bin");
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == "romfs/bin/trainer/trainer_poke/trainer_010.bin");
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var dataOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "trainer",
+            "trainer_data",
+            "trainer_010.bin");
+        var dataOutput = SwShTrainerDataFile.Parse(File.ReadAllBytes(dataOutputPath));
+        Assert.Equal(1, dataOutput.Record.PokemonCount);
+        var teamOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "trainer",
+            "trainer_poke",
+            "trainer_010.bin");
+        var teamOutput = SwShTrainerTeamFile.Parse(File.ReadAllBytes(teamOutputPath));
+        var row = Assert.Single(teamOutput.Records);
+        Assert.Equal(810, row.SpeciesId);
+    }
+
+    [Fact]
+    public void ApplyChangePlanAllowsFillingNextEmptyPartySlotAndExpandsTrainerCount()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 3,
+            field: SwShTrainersWorkflowService.SpeciesIdField,
+            value: "810");
+        var trainer = Assert.Single(update.Workflow.Trainers);
+
+        Assert.Empty(update.Diagnostics);
+        Assert.Equal(6, trainer.Team.Count);
+        Assert.Equal(810, trainer.Team[2].SpeciesId);
+        Assert.True(service.Validate(temp.Paths, update.Session).IsValid);
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var dataOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "trainer",
+            "trainer_data",
+            "trainer_010.bin");
+        var dataOutput = SwShTrainerDataFile.Parse(File.ReadAllBytes(dataOutputPath));
+        Assert.Equal(3, dataOutput.Record.PokemonCount);
+        var teamOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "trainer",
+            "trainer_poke",
+            "trainer_010.bin");
+        var teamOutput = SwShTrainerTeamFile.Parse(File.ReadAllBytes(teamOutputPath));
+        Assert.Equal(3, teamOutput.Records.Count);
+        Assert.Equal(810, teamOutput.Records[2].SpeciesId);
+        Assert.Equal(1, teamOutput.Records[2].Level);
+    }
+
+    [Fact]
+    public void UpdateFieldRejectsEditingEmptyPartySlotDetails()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 3,
+            field: SwShTrainersWorkflowService.Move1IdField,
+            value: "1");
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("slot is empty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UpdateFieldRejectsPartySlotGaps()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 4,
+            field: SwShTrainersWorkflowService.SpeciesIdField,
+            value: "810");
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("filled in order", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void ApplyChangePlanRejectsStaleReviewedPlan()
     {
         using var temp = CreateEditableProject();

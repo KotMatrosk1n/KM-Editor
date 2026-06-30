@@ -62,7 +62,6 @@ internal sealed class SvPokemonWorkflowService
     public const string HatchedSpeciesField = "hatchedSpecies";
     public const string LocalFormIndexField = "localFormIndex";
     public const string IsRegionalFormField = "isRegionalForm";
-    public const string CanNotDynamaxField = "canNotDynamax";
     public const string RegionalDexIndexField = "regionalDexIndex";
     public const string FormField = "form";
     public const string ArmorDexIndexField = "armorDexIndex";
@@ -443,7 +442,6 @@ internal sealed class SvPokemonWorkflowService
             eggSpecies,
             eggForm,
             IsRegionalForm: false,
-            entry.TypeChangeDisallowed,
             paldeaDexIndex,
             form,
             kitakamiDexIndex,

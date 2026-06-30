@@ -174,9 +174,13 @@ public sealed class SwShTrainersEditSessionService
 
         var project = projectWorkspaceService.Open(paths);
         var workflow = trainersWorkflowService.Load(project);
+        var applyEdits = session.PendingEdits
+            .Concat(CreateImpliedPokemonCountEdits(workflow, session.PendingEdits))
+            .ToArray();
+        var projectedWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var pendingOutputs = new List<TrainerOutput>();
 
-        foreach (var editGroup in session.PendingEdits.GroupBy(edit => GetTargetRelativePath(workflow, edit), StringComparer.OrdinalIgnoreCase))
+        foreach (var editGroup in applyEdits.GroupBy(edit => GetTargetRelativePath(workflow, edit), StringComparer.OrdinalIgnoreCase))
         {
             var targetRelativePath = editGroup.Key;
             if (string.IsNullOrWhiteSpace(targetRelativePath))
@@ -212,7 +216,11 @@ public sealed class SwShTrainersEditSessionService
                     ? WriteTrainerDataEdits(source, editGroup, diagnostics)
                     : SwShTrainersWorkflowService.IsTrainerClassField(firstField)
                         ? WriteTrainerClassEdits(source, editGroup, diagnostics)
-                        : WriteTrainerTeamEdits(source, editGroup, diagnostics);
+                        : WriteTrainerTeamEdits(
+                            source,
+                            editGroup,
+                            GetProjectedPokemonCount(projectedWorkflow, source.TrainerId),
+                            diagnostics);
 
                 if (output is not null)
                 {
@@ -428,7 +436,30 @@ public sealed class SwShTrainersEditSessionService
         }
 
         var pokemon = trainer.Team.First(candidate => candidate.Slot == slot);
-        TryParseEditableValue(edit.Field, edit.NewValue, diagnostics, pokemon.Evs);
+        if (pokemon.SpeciesId <= 0 && !string.Equals(edit.Field, SwShTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Trainer party slot is empty. Set a Pokemon species before editing slot details.",
+                field: edit.Field,
+                expected: "Occupied trainer party slot"));
+            return;
+        }
+
+        var parsedValue = TryParseEditableValue(edit.Field, edit.NewValue, diagnostics, pokemon.Evs);
+        if (parsedValue is not null)
+        {
+            ValidateTeamOrder(
+                trainer with
+                {
+                    Team = trainer.Team
+                        .Select(candidate => candidate.Slot == slot
+                            ? OverlayTrainerPokemonField(candidate, edit.Field!, parsedValue.Value)
+                            : candidate)
+                        .ToArray(),
+                },
+                diagnostics);
+        }
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -469,6 +500,16 @@ public sealed class SwShTrainersEditSessionService
                     $"Trainer {selectedTrainer.TrainerId} does not have party slot {slot.Value}.",
                     field: "slot",
                     expected: "Existing trainer party slot"));
+                return null;
+            }
+
+            if (pokemon.SpeciesId <= 0 && !string.Equals(normalizedField, SwShTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer party slot is empty. Set a Pokemon species before editing slot details.",
+                    field: normalizedField,
+                    expected: "Occupied trainer party slot"));
                 return null;
             }
 
@@ -540,6 +581,22 @@ public sealed class SwShTrainersEditSessionService
     {
         var parsedValue = TryParseEditableValue(field, value, diagnostics, pokemon.Evs);
         if (parsedValue is null)
+        {
+            return null;
+        }
+
+        var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        ValidateTeamOrder(
+            trainer with
+            {
+                Team = trainer.Team
+                    .Select(candidate => candidate.Slot == pokemon.Slot
+                        ? OverlayTrainerPokemonField(candidate, field, parsedValue.Value)
+                        : candidate)
+                    .ToArray(),
+            },
+            diagnostics);
+        if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) != errorCount)
         {
             return null;
         }
@@ -827,12 +884,17 @@ public sealed class SwShTrainersEditSessionService
         string field,
         int value)
     {
+        if (string.Equals(field, SwShTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal) && value == 0)
+        {
+            return CreateEmptyPokemonRecord(pokemon.Slot);
+        }
+
         return field switch
         {
             SwShTrainersWorkflowService.SpeciesIdField => pokemon with
             {
                 SpeciesId = value,
-                Species = $"Species {value}",
+                Species = value == 0 ? "None" : $"Species {value}",
             },
             SwShTrainersWorkflowService.FormField => pokemon with { Form = value },
             SwShTrainersWorkflowService.LevelField => pokemon with { Level = value },
@@ -880,6 +942,35 @@ public sealed class SwShTrainersEditSessionService
         };
     }
 
+    private static SwShTrainerPokemonRecord CreateEmptyPokemonRecord(int slot)
+    {
+        return new SwShTrainerPokemonRecord(
+            slot,
+            0,
+            "None",
+            0,
+            SwShTrainerTeamFile.MinimumLevel,
+            0,
+            null,
+            [0, 0, 0, 0],
+            ["None", "None", "None", "None"],
+            0,
+            SwShTrainersWorkflowService.FormatTrainerPokemonGender(0),
+            0,
+            SwShTrainersWorkflowService.FormatTrainerPokemonAbility(0),
+            0,
+            SwShTrainersWorkflowService.FormatTrainerPokemonNature(0),
+            new SwShTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            0,
+            false,
+            new SwShTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            false,
+            true)
+        {
+            AbilityOptions = Array.Empty<SwShTrainerEditableFieldOption>(),
+        };
+    }
+
     private static SwShTrainerPokemonRecord OverlayMove(
         SwShTrainerPokemonRecord pokemon,
         int moveIndex,
@@ -903,13 +994,42 @@ public sealed class SwShTrainersEditSessionService
         };
     }
 
+    private static void ValidateTeamOrder(
+        SwShTrainerRecord trainer,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var hasEmptySlot = false;
+        foreach (var pokemon in trainer.Team.OrderBy(candidate => candidate.Slot))
+        {
+            if (pokemon.SpeciesId <= 0)
+            {
+                hasEmptySlot = true;
+                continue;
+            }
+
+            if (hasEmptySlot)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer party slots must be filled in order. Fill the previous slot before adding this Pokemon, or clear later slots first.",
+                    field: SwShTrainersWorkflowService.SpeciesIdField,
+                    expected: "Contiguous trainer party slots"));
+                return;
+            }
+        }
+    }
+
     private static IReadOnlyList<PlannedFileWrite> CreatePlannedWrites(
         SwShTrainersWorkflow workflow,
         ProjectPaths paths,
         IReadOnlyList<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        return edits
+        var allEdits = edits
+            .Concat(CreateImpliedPokemonCountEdits(workflow, edits))
+            .ToArray();
+
+        return allEdits
             .GroupBy(edit => GetTargetRelativePath(workflow, edit), StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
@@ -955,6 +1075,64 @@ public sealed class SwShTrainersEditSessionService
             .Select(write => write!)
             .OrderBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static IReadOnlyList<PendingEdit> CreateImpliedPokemonCountEdits(
+        SwShTrainersWorkflow workflow,
+        IEnumerable<PendingEdit> edits)
+    {
+        var trainerIds = edits
+            .Where(edit => SwShTrainersWorkflowService.IsTrainerPokemonField(edit.Field))
+            .Select(edit => SwShTrainersWorkflowService.TryParseTeamRecordId(edit.RecordId, out var trainerId, out _)
+                ? trainerId
+                : -1)
+            .Where(trainerId => trainerId >= 0)
+            .Distinct()
+            .ToArray();
+        if (trainerIds.Length == 0)
+        {
+            return [];
+        }
+
+        var projectedWorkflow = OverlayPendingEdits(workflow, edits);
+        var pendingEdits = new List<PendingEdit>();
+        foreach (var trainerId in trainerIds)
+        {
+            var baseTrainer = workflow.Trainers.FirstOrDefault(trainer => trainer.TrainerId == trainerId);
+            var projectedTrainer = projectedWorkflow.Trainers.FirstOrDefault(trainer => trainer.TrainerId == trainerId);
+            if (baseTrainer is null || projectedTrainer is null)
+            {
+                continue;
+            }
+
+            var baseCount = GetOccupiedPokemonCount(baseTrainer);
+            var projectedCount = GetOccupiedPokemonCount(projectedTrainer);
+            if (baseCount == projectedCount)
+            {
+                continue;
+            }
+
+            pendingEdits.Add(new PendingEdit(
+                TrainersEditDomain,
+                $"Set {projectedTrainer.Name} Pokemon count to {projectedCount.ToString(CultureInfo.InvariantCulture)}.",
+                [new ProjectFileReference(projectedTrainer.Provenance.SourceLayer, projectedTrainer.Provenance.SourceFile)],
+                RecordId: projectedTrainer.TrainerId.ToString(CultureInfo.InvariantCulture),
+                Field: SwShTrainersWorkflowService.PokemonCountField,
+                NewValue: projectedCount.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        return pendingEdits;
+    }
+
+    private static int GetOccupiedPokemonCount(SwShTrainerRecord trainer)
+    {
+        return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
+    }
+
+    private static int? GetProjectedPokemonCount(SwShTrainersWorkflow projectedWorkflow, int trainerId)
+    {
+        var trainer = projectedWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
+        return trainer is null ? null : GetOccupiedPokemonCount(trainer);
     }
 
     private static string? GetTargetRelativePath(SwShTrainersWorkflow workflow, PendingEdit edit)
@@ -1068,6 +1246,7 @@ public sealed class SwShTrainersEditSessionService
     private static byte[]? WriteTrainerTeamEdits(
         SwShTrainersWorkflowService.WorkflowFileSource source,
         IEnumerable<PendingEdit> edits,
+        int? outputPokemonCount,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var teamFile = SwShTrainerTeamFile.Parse(File.ReadAllBytes(source.AbsolutePath));
@@ -1079,14 +1258,20 @@ public sealed class SwShTrainersEditSessionService
 
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             ? null
-            : teamFile.WriteEdits(pokemonEdits);
+            : teamFile.WriteEdits(
+                pokemonEdits
+                    .Where(edit => outputPokemonCount is null || edit.Slot <= outputPokemonCount.Value)
+                    .ToArray(),
+                outputPokemonCount);
     }
 
     private static SwShTrainerDataEdit? ToTrainerDataEdit(
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var value = TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+        var value = string.Equals(edit.Field, SwShTrainersWorkflowService.PokemonCountField, StringComparison.Ordinal)
+            ? TryParseImpliedPokemonCount(edit.NewValue, diagnostics)
+            : TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
         if (value is null)
         {
             return null;
@@ -1104,6 +1289,7 @@ public sealed class SwShTrainersEditSessionService
             SwShTrainersWorkflowService.HealField => SwShTrainerDataField.Heal,
             SwShTrainersWorkflowService.MoneyField => SwShTrainerDataField.Money,
             SwShTrainersWorkflowService.GiftField => SwShTrainerDataField.Gift,
+            SwShTrainersWorkflowService.PokemonCountField => SwShTrainerDataField.PokemonCount,
             _ => (SwShTrainerDataField?)null,
         };
 
@@ -1114,6 +1300,25 @@ public sealed class SwShTrainersEditSessionService
         }
 
         return new SwShTrainerDataEdit(field.Value, value.Value);
+    }
+
+    private static int? TryParseImpliedPokemonCount(
+        string? value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue)
+            || parsedValue < 0
+            || parsedValue > SwShTrainerDataFile.MaximumPokemonCount)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Trainer Pokemon count must match the contiguous party size.",
+                field: SwShTrainersWorkflowService.PokemonCountField,
+                expected: "Safe trainer Pokemon count"));
+            return null;
+        }
+
+        return parsedValue;
     }
 
     private static SwShTrainerClassEdit? ToTrainerClassEdit(

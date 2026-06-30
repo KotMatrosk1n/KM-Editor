@@ -9,6 +9,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.FashionUnlock;
+using KM.Api.GameDump;
 using KM.Api.Gifts;
 using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
@@ -1274,6 +1275,103 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTrainerEditorAllowsClearingAndFillingExposedPartySlots(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        using (var temp = CreateScarletVioletProject(titleId))
+        {
+            WriteScarletFixtures(temp);
+            var paths = temp.Paths with { SelectedGame = game };
+
+            var clear = Dispatch<UpdateTrainerFieldResponse>(
+                dispatcher,
+                KmCommandNames.UpdateTrainerField,
+                new UpdateTrainerFieldRequest(paths, Session: null, TrainerId: 0, Slot: 0, Field: "speciesId", Value: "0"),
+                "request-sv-trainer-clear-slot");
+            AssertSuccess(clear);
+            var emptySlot = clear.Payload!.Workflow.Trainers.Single().Team.Single(pokemon => pokemon.Slot == 0);
+            Assert.Equal(0, emptySlot.SpeciesId);
+            Assert.Equal("None", emptySlot.Species);
+            Assert.Equal([0, 0, 0, 0], emptySlot.MoveIds);
+            Assert.Equal(0, emptySlot.HeldItemId);
+            Assert.Equal(0, emptySlot.Evs.HP + emptySlot.Evs.Attack + emptySlot.Evs.Defense + emptySlot.Evs.SpecialAttack + emptySlot.Evs.SpecialDefense + emptySlot.Evs.Speed);
+            Assert.Equal(0, emptySlot.Ivs.HP + emptySlot.Ivs.Attack + emptySlot.Ivs.Defense + emptySlot.Ivs.SpecialAttack + emptySlot.Ivs.SpecialDefense + emptySlot.Ivs.Speed);
+
+            var clearSession = clear.Payload.Session;
+            Apply(dispatcher, paths, clearSession);
+
+            Assert.Null(ReadOptionalTrainerPokemon(temp, trainerId: 0, slot: 0));
+        }
+
+        using (var temp = CreateScarletVioletProject(titleId))
+        {
+            WriteScarletFixtures(temp);
+            var paths = temp.Paths with { SelectedGame = game };
+
+            var fillSession = UpdateTrainer(dispatcher, paths, trainerId: 0, slot: 1, field: "speciesId", value: "2");
+            Apply(dispatcher, paths, fillSession);
+
+            var pokemon = ReadOptionalTrainerPokemon(temp, trainerId: 0, slot: 1);
+            Assert.NotNull(pokemon);
+            Assert.Equal((global::pml.common.DevID)2, pokemon.Value.DevId);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTrainerEditorRejectsPartySlotGaps(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var response = Dispatch<UpdateTrainerFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerField,
+            new UpdateTrainerFieldRequest(paths, Session: null, TrainerId: 0, Slot: 2, Field: "speciesId", Value: "2"),
+            "request-sv-trainer-gap");
+
+        AssertSuccess(response);
+        Assert.False(response.Payload!.Session.HasPendingChanges);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("filled in order", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTrainerEditorRejectsEditingEmptyPartySlotDetails(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var response = Dispatch<UpdateTrainerFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerField,
+            new UpdateTrainerFieldRequest(paths, Session: null, TrainerId: 0, Slot: 1, Field: "move1Id", Value: "33"),
+            "request-sv-trainer-empty-slot-detail");
+
+        AssertSuccess(response);
+        Assert.False(response.Payload!.Session.HasPendingChanges);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("slot is empty", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletProjectExposesBasicEditorWorkflows(
         ProjectGameDto game,
         ulong titleId)
@@ -1676,7 +1774,8 @@ public sealed class ScarletVioletBridgeTests
         var trainer = Assert.Single(trainers.Payload!.Workflow.Trainers);
         Assert.Equal("Test Trainer", trainer.Name);
         Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
-        var trainerPokemon = Assert.Single(trainer.Team);
+        Assert.Equal(6, trainer.Team.Count);
+        var trainerPokemon = Assert.Single(trainer.Team, entry => entry.SpeciesId > 0);
         Assert.Equal("Bulbasaur", trainerPokemon.Species);
         Assert.Equal(new[] { "Tackle", "None", "None", "None" }, trainerPokemon.Moves);
         Assert.Equal("Random", trainerPokemon.GenderLabel);
@@ -1980,6 +2079,75 @@ public sealed class ScarletVioletBridgeTests
             temp.OutputRootPath,
             scriptPath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.Equal("[VAR 0100] Updated script line", Assert.Single(outputText.Lines).Text);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletGameDumpWritesWorkflowParityCategoryFiles(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        temp.WriteBaseRomFsFile(
+            "message/dat/English/script/common_0025.dat",
+            CreateTextTable(1, (0, "Game dump S/V script line")));
+        var paths = temp.Paths with { SelectedGame = game, GameTextLanguage = "en" };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var load = Dispatch<LoadGameDumpWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadGameDumpWorkflow,
+            new LoadGameDumpWorkflowRequest(paths),
+            "request-sv-game-dump-load");
+
+        AssertSuccess(load);
+        Assert.Equal(
+            ["items", "pokemon", "moves", "text", "trainers", "encounters", "teraRaids", "staticEncounters", "giftPokemon", "tradePokemon", "placement", "shops", "typeChart"],
+            load.Payload!.Workflow.Categories.Select(category => category.Id).ToArray());
+        Assert.Contains(load.Payload.Workflow.Categories, category => category.Id == "text" && category.IsAvailable);
+        Assert.Contains(load.Payload.Workflow.Categories, category => category.Id == "teraRaids" && category.IsAvailable);
+        Assert.Contains(load.Payload.Workflow.Categories, category => category.Id == "staticEncounters" && category.IsAvailable);
+        Assert.Contains(load.Payload.Workflow.Categories, category => category.Id == "shops" && category.IsAvailable);
+
+        var destinationFolder = Path.Combine(temp.RootPath, "dump");
+        var run = Dispatch<RunGameDumpResponse>(
+            dispatcher,
+            KmCommandNames.RunGameDump,
+            new RunGameDumpRequest(
+                paths,
+                destinationFolder,
+                [
+                    new GameDumpSelectionDto("text", GameDumpFormatDto.TxtAndJson),
+                    new GameDumpSelectionDto("teraRaids", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("staticEncounters", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
+                ]),
+            "request-sv-game-dump-run");
+
+        AssertSuccess(run);
+        Assert.True(
+            run.Payload!.Result.Succeeded,
+            string.Join(Environment.NewLine, run.Payload.Result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "text" && file.RelativePath == Path.Combine("Text", "text.txt"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "text" && file.RelativePath == Path.Combine("Text", "text.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "teraRaids" && file.RelativePath == Path.Combine("Tera Raids", "teraRaids.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "staticEncounters" && file.RelativePath == Path.Combine("Static Encounters", "staticEncounters.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "shops" && file.RelativePath == Path.Combine("Shops", "shops.json"));
+        Assert.Contains("Game dump S/V script line", File.ReadAllText(Path.Combine(destinationFolder, "Text", "text.txt")));
+        Assert.Contains("Bulbasaur", File.ReadAllText(Path.Combine(destinationFolder, "Tera Raids", "teraRaids.json")));
+        Assert.Contains("eventBattle", File.ReadAllText(Path.Combine(destinationFolder, "Static Encounters", "staticEncounters.json")));
+        Assert.Contains("Master Ball", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
     }
 
     [Theory]
@@ -2894,22 +3062,26 @@ public sealed class ScarletVioletBridgeTests
             Nature: 0,
             NatureLabel: "Default (game behavior)",
             stats,
-            DynamaxLevel: 0,
-            CanGigantamax: false,
             stats,
             Shiny: false,
-            CanDynamax: true,
             TeraType: (int)teraType,
             TeraTypeLabel: SvTrainersWorkflowService.FormatTeraType(teraType));
     }
 
     private static global::PokeDataBattle ReadTrainerPokemon(TemporaryBridgeProject temp, int trainerId, int slot)
     {
+        var pokemon = ReadOptionalTrainerPokemon(temp, trainerId, slot);
+        Assert.NotNull(pokemon);
+        return pokemon.Value;
+    }
+
+    private static global::PokeDataBattle? ReadOptionalTrainerPokemon(TemporaryBridgeProject temp, int trainerId, int slot)
+    {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(
             new ByteBuffer(ReadSvOutput(temp, SvDataPaths.TrainerDataArray)));
         var trainer = table.Values(trainerId);
         Assert.NotNull(trainer);
-        var pokemon = slot switch
+        return slot switch
         {
             0 => trainer.Value.Poke1,
             1 => trainer.Value.Poke2,
@@ -2919,8 +3091,6 @@ public sealed class ScarletVioletBridgeTests
             5 => trainer.Value.Poke6,
             _ => null,
         };
-        Assert.NotNull(pokemon);
-        return pokemon.Value;
     }
 
     private static int ReadEncounterMinLevel(TemporaryBridgeProject temp, int index)

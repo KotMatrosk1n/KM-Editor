@@ -3705,7 +3705,6 @@ describe('bridge contracts', () => {
               battleType: 'Trainer Battle',
               battleTypeValue: 0,
               canEditClassBall: false,
-              canTerastallize: false,
               classBall: null,
               classBallId: null,
               classBallScope: 'Class file missing',
@@ -3721,9 +3720,6 @@ describe('bridge contracts', () => {
                 {
                   ability: 255,
                   abilityLabel: 'Game default / random',
-                  canDynamax: false,
-                  canGigantamax: false,
-                  dynamaxLevel: 0,
                   evs: zeroStats,
                   form: 0,
                   gender: -1,
@@ -3742,7 +3738,6 @@ describe('bridge contracts', () => {
                   speciesId: 1
                 }
               ],
-              teraTarget: 'Disabled',
               trainerClass: 'Pokemon Trainer',
               trainerClassId: 1,
               trainerId: 704,
@@ -3767,8 +3762,6 @@ describe('bridge contracts', () => {
               abilityLabel: 'Game default / random',
               ballItem: 'None',
               ballItemId: 0,
-              canGigantamax: false,
-              dynamaxLevel: 0,
               editorFamily: 'za',
               eventLabel: 'main_init_poke_1',
               flawlessIvCount: null,
@@ -3843,8 +3836,6 @@ describe('bridge contracts', () => {
               abilityLabel: 'Game default / random',
               ballItem: 'None',
               ballItemId: 0,
-              canGigantamax: false,
-              dynamaxLevel: 0,
               editorFamily: 'za',
               eventLabel: 'sub_tradepoke_poligon2',
               field03: 0,
@@ -3912,10 +3903,8 @@ describe('bridge contracts', () => {
             {
               ability: 255,
               abilityLabel: 'Game default / random',
-              canGigantamax: false,
               categoryId: 'encounterData',
               categoryLabel: 'Encounter Data',
-              dynamaxLevel: 0,
               editorFamily: 'za',
               encounterId: 'ect_boss_0359_01',
               encounterIndex: 0,
@@ -3958,7 +3947,6 @@ describe('bridge contracts', () => {
           ],
           stats: {
             fixedIvEncounterCount: 0,
-            gigantamaxEncounterCount: 0,
             sourceFileCount: 1,
             totalEncounterCount: 1
           },

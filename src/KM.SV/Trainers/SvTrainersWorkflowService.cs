@@ -222,7 +222,7 @@ internal sealed class SvTrainersWorkflowService
             CreateEditableFields(labels),
             new SvTrainersWorkflowStats(
                 trainers.Length,
-                trainers.Sum(trainer => trainer.Team.Count),
+                trainers.Sum(GetOccupiedPokemonCount),
                 source is null ? 0 : 1),
             diagnostics);
     }
@@ -315,11 +315,41 @@ internal sealed class SvTrainersWorkflowService
             var pokemon = slots[index];
             if (pokemon is null || (int)pokemon.Value.DevId == 0)
             {
+                yield return CreateEmptyPokemon(index);
                 continue;
             }
 
             yield return ToPokemon(index, pokemon.Value, labels, abilityResolver, moveResolver);
         }
+    }
+
+    private static SvTrainerPokemonRecord CreateEmptyPokemon(int slot)
+    {
+        var abilityOptions = CreateAbilityModeOptions(SvTrainerAbilitySet.Empty);
+        return new SvTrainerPokemonRecord(
+            slot,
+            0,
+            "None",
+            0,
+            1,
+            0,
+            null,
+            [0, 0, 0, 0],
+            ["None", "None", "None", "None"],
+            (int)global::SexType.DEFAULT,
+            FormatGender(global::SexType.DEFAULT),
+            (int)global::TokuseiType.RANDOM_12,
+            FormatAbilityMode(global::TokuseiType.RANDOM_12),
+            (int)global::SeikakuType.DEFAULT,
+            FormatNature(global::SeikakuType.DEFAULT),
+            new SvTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            new SvTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            Shiny: false,
+            TeraType: (int)global::GemType.DEFAULT,
+            TeraTypeLabel: FormatTeraType(global::GemType.DEFAULT))
+        {
+            AbilityOptions = abilityOptions,
+        };
     }
 
     private static SvTrainerPokemonRecord ToPokemon(
@@ -359,8 +389,6 @@ internal sealed class SvTrainersWorkflowService
                 evs?.SpAtk ?? 0,
                 evs?.SpDef ?? 0,
                 evs?.Agi ?? 0),
-            DynamaxLevel: 0,
-            CanGigantamax: false,
             new SvTrainerPokemonStatsRecord(
                 ivs?.Hp ?? 0,
                 ivs?.Atk ?? 0,
@@ -369,7 +397,6 @@ internal sealed class SvTrainersWorkflowService
                 ivs?.SpDef ?? 0,
                 ivs?.Agi ?? 0),
             pokemon.RareType == global::RareType.RARE,
-            CanDynamax: true,
             TeraType: (int)pokemon.GemType,
             TeraTypeLabel: FormatTeraType(pokemon.GemType))
         {
@@ -604,6 +631,11 @@ internal sealed class SvTrainersWorkflowService
     {
         return
             $"Slot {(pokemon.Slot + 1).ToString(CultureInfo.InvariantCulture)}: {pokemon.Species} ({pokemon.TeraTypeLabel ?? "Tera type set"}).";
+    }
+
+    private static int GetOccupiedPokemonCount(SvTrainerRecord trainer)
+    {
+        return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
     }
 
     private sealed class SvTrainerAbilityResolver
