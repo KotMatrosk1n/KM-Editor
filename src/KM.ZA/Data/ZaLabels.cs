@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using KM.Core.Pokemon;
 
 namespace KM.ZA.Data;
 
@@ -88,21 +89,142 @@ internal static class ZaLabels
             ["zimen"] = "Ground",
         };
 
-    private static readonly IReadOnlyDictionary<string, string> ZaMegaFormLabels = new Dictionary<string, string>
+    private static readonly IReadOnlyDictionary<string, string> ZaFormLabelsBySpeciesId = new Dictionary<string, string>
     {
         ["6:1"] = "Mega X",
         ["6:2"] = "Mega Y",
+        ["26:2"] = "Mega Kanto",
+        ["26:3"] = "Mega Alolan",
         ["150:1"] = "Mega X",
         ["150:2"] = "Mega Y",
+        ["359:2"] = "Mega Absol Z",
+        ["445:2"] = "Mega Garchomp Z",
+        ["448:2"] = "Mega Lucario Z",
+        ["670:6"] = "Mega",
+        ["952:3"] = "Mega Curly Form",
+        ["952:4"] = "Mega Droopy Form",
+        ["952:5"] = "Mega Stretchy Form",
     };
+
+    private static readonly IReadOnlyDictionary<string, string> ZaFormLabelsBySpeciesName =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Absol:2"] = "Mega Absol Z",
+            ["Baxcalibur:1"] = "Mega",
+            ["Darkrai:1"] = "Mega",
+            ["Dragalge:1"] = "Mega",
+            ["Eelektross:1"] = "Mega",
+            ["Falinks:1"] = "Mega",
+            ["Floette:6"] = "Mega",
+            ["Garchomp:2"] = "Mega Garchomp Z",
+            ["Glimmora:1"] = "Mega",
+            ["Golisopod:1"] = "Mega",
+            ["Greninja:3"] = "Mega",
+            ["Heatran:1"] = "Mega",
+            ["Lucario:2"] = "Mega Lucario Z",
+            ["Magearna:2"] = "Mega Normal Color",
+            ["Magearna:3"] = "Mega Original Color",
+            ["Malamar:1"] = "Mega",
+            ["Meowstic:2"] = "Mega Male",
+            ["Meowstic:3"] = "Mega Female",
+            ["Pyroar:1"] = "Mega",
+            ["Raichu:2"] = "Mega Kanto",
+            ["Raichu:3"] = "Mega Alolan",
+            ["Scrafty:1"] = "Mega",
+            ["Scolipede:1"] = "Mega",
+            ["Scovillain:1"] = "Mega",
+            ["Staraptor:1"] = "Mega",
+            ["Tatsugiri:3"] = "Mega Curly Form",
+            ["Tatsugiri:4"] = "Mega Droopy Form",
+            ["Tatsugiri:5"] = "Mega Stretchy Form",
+            ["Zeraora:1"] = "Mega",
+        };
 
     private static readonly IReadOnlySet<int> ZaSingleMegaSpecies = new HashSet<int>
     {
         3, 9, 15, 18, 36, 65, 71, 80, 94, 115, 121, 127, 130, 142, 149, 154, 160, 181, 208, 212,
         214, 227, 229, 248, 254, 257, 260, 282, 302, 303, 306, 308, 310, 319, 323, 334, 354, 358,
-        359, 362, 373, 376, 380, 381, 384, 428, 445, 448, 460, 475, 478, 500, 530, 531, 609, 623,
-        652, 655, 658, 670, 701, 719, 740, 780, 952, 970,
+        359, 362, 373, 376, 380, 381, 384, 398, 428, 445, 448, 460, 475, 478, 485, 491, 500, 530,
+        531, 545, 560, 604, 609, 623, 652, 655, 668, 687, 689, 691, 701, 719, 740, 768, 780, 807,
+        870, 939, 951, 967,
     };
+
+    private static readonly IReadOnlySet<string> ZaSingleMegaSpeciesNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Abomasnow",
+            "Aerodactyl",
+            "Aggron",
+            "Alakazam",
+            "Altaria",
+            "Ampharos",
+            "Audino",
+            "Banette",
+            "Barbaracle",
+            "Baxcalibur",
+            "Beedrill",
+            "Blastoise",
+            "Camerupt",
+            "Chandelure",
+            "Chesnaught",
+            "Chimecho",
+            "Clefable",
+            "Crabominable",
+            "Darkrai",
+            "Delphox",
+            "Diancie",
+            "Dragonite",
+            "Dragalge",
+            "Drampa",
+            "Eelektross",
+            "Emboar",
+            "Excadrill",
+            "Falinks",
+            "Feraligatr",
+            "Froslass",
+            "Gallade",
+            "Garchomp",
+            "Gardevoir",
+            "Gengar",
+            "Glalie",
+            "Glimmora",
+            "Golisopod",
+            "Golurk",
+            "Gyarados",
+            "Hawlucha",
+            "Heatran",
+            "Heracross",
+            "Houndoom",
+            "Kangaskhan",
+            "Latias",
+            "Latios",
+            "Lopunny",
+            "Lucario",
+            "Malamar",
+            "Manectric",
+            "Meganium",
+            "Metagross",
+            "Pidgeot",
+            "Pinsir",
+            "Pyroar",
+            "Rayquaza",
+            "Sableye",
+            "Salamence",
+            "Scizor",
+            "Scolipede",
+            "Scovillain",
+            "Scrafty",
+            "Sharpedo",
+            "Skarmory",
+            "Staraptor",
+            "Steelix",
+            "Swampert",
+            "Sceptile",
+            "Tyranitar",
+            "Venusaur",
+            "Victreebel",
+            "Zeraora",
+        };
 
     public static string Pokemon(int speciesId) => $"Pokemon {speciesId.ToString(CultureInfo.InvariantCulture)}";
 
@@ -120,17 +242,37 @@ internal static class ZaLabels
 
     public static string Bool(bool value) => value ? "Yes" : "No";
 
-    public static string PokemonFormLabel(int speciesId, int form)
+    public static string PokemonFormLabel(int speciesId, int form, string? speciesName = null)
     {
         if (form == 0)
         {
             return "Base";
         }
 
-        return ZaMegaFormLabels.TryGetValue($"{speciesId.ToString(CultureInfo.InvariantCulture)}:{form.ToString(CultureInfo.InvariantCulture)}", out var label)
-            ? label
-            : form == 1 && ZaSingleMegaSpecies.Contains(speciesId)
-                ? "Mega"
+        var key = $"{speciesId.ToString(CultureInfo.InvariantCulture)}:{form.ToString(CultureInfo.InvariantCulture)}";
+        if (ZaFormLabelsBySpeciesId.TryGetValue(key, out var label))
+        {
+            return label;
+        }
+
+        var speciesKey = string.IsNullOrWhiteSpace(speciesName)
+            ? null
+            : $"{speciesName}:{form.ToString(CultureInfo.InvariantCulture)}";
+        if (speciesKey is not null && ZaFormLabelsBySpeciesName.TryGetValue(speciesKey, out label))
+        {
+            return label;
+        }
+
+        if (form == 1
+            && (ZaSingleMegaSpecies.Contains(speciesId)
+                || (!string.IsNullOrWhiteSpace(speciesName) && ZaSingleMegaSpeciesNames.Contains(speciesName))))
+        {
+            return "Mega";
+        }
+
+        return !string.IsNullOrWhiteSpace(speciesName)
+            && PokemonFormLabels.ResolveFormLabel(speciesId, speciesName, form, PokemonFormLabelFamily.LegendsZA) is { } knownLabel
+                ? knownLabel
                 : $"Form {form.ToString(CultureInfo.InvariantCulture)}";
     }
 
@@ -146,7 +288,7 @@ internal static class ZaLabels
             return speciesName;
         }
 
-        return $"{speciesName} ({PokemonFormLabel(speciesId, form)})";
+        return $"{speciesName} ({PokemonFormLabel(speciesId, form, speciesName)})";
     }
 
     public static string FormatRawNameForLookup(string raw)

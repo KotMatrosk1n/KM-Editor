@@ -5297,7 +5297,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Raid Battles' })).toBeInTheDocument();
     expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
-    expect(screen.getByRole('option', { name: 'Slot 1: Eevee (Form 1)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Slot 1: Eevee (Partner)' })).toBeInTheDocument();
     expect(screen.getByText('Any Ability')).toBeInTheDocument();
     expect(
       screen.getByText('Matched: 2 rewards: Exp. Candy L, Rare Candy (drop:0:AABBCCDD00112233)')

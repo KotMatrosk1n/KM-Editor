@@ -275,7 +275,7 @@ public sealed class SwShPokemonWorkflowService
         CreateEvolutionMethod(31, "Level Up Weather", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(32, "Level Up Morning", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
-        CreateEvolutionMethod(34, "Level Up Female Form 1", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(34, "Level Up Female Alternate Form", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(35, "Unused", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(36, "Level Up Version", EvolutionArgumentKindVersion, "Version branch"),
         CreateEvolutionMethod(37, "Level Up Version Day", EvolutionArgumentKindVersion, "Version"),

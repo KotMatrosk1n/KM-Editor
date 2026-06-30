@@ -87,8 +87,6 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> FormOptions =
     [
-        new(0, "Base"),
-        ..Enumerable.Range(1, 31).Select(value => new SwShDynamaxAdventureEditableFieldOption(value, $"Form {value}")),
     ];
 
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> GuaranteedPerfectIvOptions =

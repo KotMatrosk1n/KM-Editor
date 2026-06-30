@@ -106,6 +106,7 @@ public sealed record PokemonPersonalDetailsDto(
     int HatchedSpecies,
     int LocalFormIndex,
     bool IsRegionalForm,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanNotDynamax,
     int Form);
 

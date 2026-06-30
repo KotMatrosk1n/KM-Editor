@@ -10319,9 +10319,7 @@ function SelectedPokemonSummaryCard({
 }
 
 function formatPokemonRecordName(pokemon: PokemonRecord, editorFamily: EditorUiFamily) {
-  return editorFamily === 'swsh'
-    ? pokemon.name
-    : formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
+  return formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
 }
 
 function SelectedPokemonPanel({
@@ -34716,7 +34714,7 @@ type SpeciesFormLabelDefinition = {
   speciesNames: readonly string[];
 };
 
-type SpeciesFormGameFamily = EditorUiFamily | 'both';
+type SpeciesFormGameFamily = EditorUiFamily | 'both' | readonly EditorUiFamily[];
 
 type SpeciesFormLabelData = {
   alternateSpeciesIds: Set<number>;
@@ -34760,8 +34758,13 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [5, 'Kalos Cap'],
     [6, 'Alola Cap'],
     [7, 'Partner Cap'],
-    [8, 'World Cap']
+    [8, 'World Cap'],
+    [9, 'World Cap']
   ]),
+  createFormLabelDefinition(25, ['pikachu'], [
+    [8, 'Starter'],
+    [9, 'World Cap']
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(26, ['raichu'], [[1, 'Alolan']], 'Kanto'),
   createFormLabelDefinition(27, ['sandshrew'], [[1, 'Alolan']], 'Kanto'),
   createFormLabelDefinition(28, ['sandslash'], [[1, 'Alolan']], 'Kanto'),
@@ -34788,6 +34791,7 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
   createFormLabelDefinition(105, ['marowak'], [[1, 'Alolan']], 'Kanto'),
   createFormLabelDefinition(110, ['weezing'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(122, ['mr mime'], [[1, 'Galarian']], 'Kanto'),
+  createFormLabelDefinition(133, ['eevee'], [[1, 'Partner']]),
   createFormLabelDefinition(144, ['articuno'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(145, ['zapdos'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(146, ['moltres'], [[1, 'Galarian']], 'Kanto'),
@@ -34796,6 +34800,35 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
   createFormLabelDefinition(222, ['corsola'], [[1, 'Galarian']], 'Johto'),
   createFormLabelDefinition(263, ['zigzagoon'], [[1, 'Galarian']], 'Hoenn'),
   createFormLabelDefinition(264, ['linoone'], [[1, 'Galarian']], 'Hoenn'),
+  createFormLabelDefinition(351, ['castform'], [
+    [0, 'Normal Form'],
+    [1, 'Sunny Form'],
+    [2, 'Rainy Form'],
+    [3, 'Snowy Form']
+  ]),
+  createFormLabelDefinition(382, ['kyogre'], [[1, 'Primal']]),
+  createFormLabelDefinition(383, ['groudon'], [[1, 'Primal']]),
+  createFormLabelDefinition(386, ['deoxys'], [
+    [0, 'Normal Forme'],
+    [1, 'Attack Forme'],
+    [2, 'Defense Forme'],
+    [3, 'Speed Forme']
+  ]),
+  createFormLabelDefinition(412, ['burmy'], [
+    [0, 'Plant Cloak'],
+    [1, 'Sandy Cloak'],
+    [2, 'Trash Cloak']
+  ]),
+  createFormLabelDefinition(413, ['wormadam'], [
+    [0, 'Plant Cloak'],
+    [1, 'Sandy Cloak'],
+    [2, 'Trash Cloak']
+  ]),
+  createFormLabelDefinition(414, ['mothim'], [
+    [0, 'Plant Cloak'],
+    [1, 'Sandy Cloak'],
+    [2, 'Trash Cloak']
+  ]),
   createFormLabelDefinition(421, ['cherrim'], [
     [0, 'Overcast Form'],
     [1, 'Sunshine Form']
@@ -34819,6 +34852,22 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [3, 'Frost'],
     [4, 'Fan'],
     [5, 'Mow']
+  ]),
+  createFormLabelDefinition(483, ['dialga'], [
+    [0, 'Normal Forme'],
+    [1, 'Origin Forme']
+  ], undefined, ['sv', 'za']),
+  createFormLabelDefinition(484, ['palkia'], [
+    [0, 'Normal Forme'],
+    [1, 'Origin Forme']
+  ], undefined, ['sv', 'za']),
+  createFormLabelDefinition(492, ['shaymin'], [
+    [0, 'Land Forme'],
+    [1, 'Sky Forme']
+  ], undefined, ['sv', 'za']),
+  createFormLabelDefinition(493, ['arceus'], createPokemonTypeFormLabels(), undefined, [
+    'sv',
+    'za'
   ]),
   createFormLabelDefinition(521, ['unfezant'], [
     [0, 'Male'],
@@ -34873,6 +34922,10 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [0, 'Ordinary Form'],
     [1, 'Resolute Form']
   ]),
+  createFormLabelDefinition(648, ['meloetta'], [
+    [0, 'Aria Forme'],
+    [1, 'Pirouette Forme']
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(678, ['meowstic'], [
     [0, 'Male'],
     [1, 'Female']
@@ -34985,51 +35038,126 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [1, 'Ice Rider'],
     [2, 'Shadow Rider']
   ]),
-  createFormLabelDefinition(58, ['growlithe'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
-  createFormLabelDefinition(59, ['arcanine'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
-  createFormLabelDefinition(100, ['voltorb'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
-  createFormLabelDefinition(101, ['electrode'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
+  createFormLabelDefinition(664, ['scatterbug'], createVivillonPatternLabels(), undefined, [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(665, ['spewpa'], createVivillonPatternLabels(), undefined, ['sv', 'za']),
+  createFormLabelDefinition(666, ['vivillon'], createVivillonPatternLabels(), undefined, [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(669, ['flabebe'], createFlowerColorLabels(), undefined, [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(
+    670,
+    ['floette'],
+    [...createFlowerColorLabels(), [5, 'Eternal Flower']],
+    undefined,
+    ['sv', 'za']
+  ),
+  createFormLabelDefinition(671, ['florges'], createFlowerColorLabels(), undefined, [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(676, ['furfrou'], [
+    [0, 'Natural Trim'],
+    [1, 'Heart Trim'],
+    [2, 'Star Trim'],
+    [3, 'Diamond Trim'],
+    [4, 'Debutante Trim'],
+    [5, 'Matron Trim'],
+    [6, 'Dandy Trim'],
+    [7, 'La Reine Trim'],
+    [8, 'Kabuki Trim'],
+    [9, 'Pharaoh Trim']
+  ], undefined, ['sv', 'za']),
+  createFormLabelDefinition(58, ['growlithe'], [[1, 'Hisuian']], 'Kantonian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(59, ['arcanine'], [[1, 'Hisuian']], 'Kantonian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(100, ['voltorb'], [[1, 'Hisuian']], 'Kantonian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(101, ['electrode'], [[1, 'Hisuian']], 'Kantonian', [
+    'sv',
+    'za'
+  ]),
   createFormLabelDefinition(128, ['tauros'], [
     [1, 'Paldean Combat Breed'],
     [2, 'Paldean Blaze Breed'],
     [3, 'Paldean Aqua Breed']
-  ], 'Kantonian', 'sv'),
-  createFormLabelDefinition(157, ['typhlosion'], [[1, 'Hisuian']], 'Johtonian', 'sv'),
-  createFormLabelDefinition(194, ['wooper'], [[1, 'Paldean']], 'Johtonian', 'sv'),
-  createFormLabelDefinition(211, ['qwilfish'], [[1, 'Hisuian']], 'Johtonian', 'sv'),
-  createFormLabelDefinition(215, ['sneasel'], [[1, 'Hisuian']], 'Johtonian', 'sv'),
-  createFormLabelDefinition(503, ['samurott'], [[1, 'Hisuian']], 'Unovan', 'sv'),
-  createFormLabelDefinition(549, ['lilligant'], [[1, 'Hisuian']], 'Unovan', 'sv'),
+  ], 'Kantonian', ['sv', 'za']),
+  createFormLabelDefinition(157, ['typhlosion'], [[1, 'Hisuian']], 'Johtonian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(194, ['wooper'], [[1, 'Paldean']], 'Johtonian', ['sv', 'za']),
+  createFormLabelDefinition(211, ['qwilfish'], [[1, 'Hisuian']], 'Johtonian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(215, ['sneasel'], [[1, 'Hisuian']], 'Johtonian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(503, ['samurott'], [[1, 'Hisuian']], 'Unovan', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(549, ['lilligant'], [[1, 'Hisuian']], 'Unovan', [
+    'sv',
+    'za'
+  ]),
   createFormLabelDefinition(550, ['basculin'], [
     [0, 'Red-Striped'],
     [1, 'Blue-Striped'],
     [2, 'White-Striped']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(585, ['deerling'], [
     [0, 'Spring Form'],
     [1, 'Summer Form'],
     [2, 'Autumn Form'],
     [3, 'Winter Form']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(586, ['sawsbuck'], [
     [0, 'Spring Form'],
     [1, 'Summer Form'],
     [2, 'Autumn Form'],
     [3, 'Winter Form']
-  ], undefined, 'sv'),
-  createFormLabelDefinition(570, ['zorua'], [[1, 'Hisuian']], 'Unovan', 'sv'),
-  createFormLabelDefinition(571, ['zoroark'], [[1, 'Hisuian']], 'Unovan', 'sv'),
-  createFormLabelDefinition(628, ['braviary'], [[1, 'Hisuian']], 'Unovan', 'sv'),
-  createFormLabelDefinition(705, ['sliggoo'], [[1, 'Hisuian']], 'Kalosian', 'sv'),
-  createFormLabelDefinition(706, ['goodra'], [[1, 'Hisuian']], 'Kalosian', 'sv'),
-  createFormLabelDefinition(713, ['avalugg'], [[1, 'Hisuian']], 'Kalosian', 'sv'),
-  createFormLabelDefinition(724, ['decidueye'], [[1, 'Hisuian']], 'Alolan', 'sv'),
+  ], undefined, ['sv', 'za']),
+  createFormLabelDefinition(570, ['zorua'], [[1, 'Hisuian']], 'Unovan', ['sv', 'za']),
+  createFormLabelDefinition(571, ['zoroark'], [[1, 'Hisuian']], 'Unovan', ['sv', 'za']),
+  createFormLabelDefinition(628, ['braviary'], [[1, 'Hisuian']], 'Unovan', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(705, ['sliggoo'], [[1, 'Hisuian']], 'Kalosian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(706, ['goodra'], [[1, 'Hisuian']], 'Kalosian', ['sv', 'za']),
+  createFormLabelDefinition(713, ['avalugg'], [[1, 'Hisuian']], 'Kalosian', [
+    'sv',
+    'za'
+  ]),
+  createFormLabelDefinition(724, ['decidueye'], [[1, 'Hisuian']], 'Alolan', [
+    'sv',
+    'za'
+  ]),
   createFormLabelDefinition(741, ['oricorio'], [
     [0, 'Baile Style'],
     [1, 'Pom-Pom Style'],
     [2, "Pa'u Style"],
     [3, 'Sensu Style']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(774, ['minior'], [
     [0, 'Red Meteor'],
     [1, 'Orange Meteor'],
@@ -35045,61 +35173,61 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [11, 'Blue Core'],
     [12, 'Indigo Core'],
     [13, 'Violet Core']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(901, ['ursaluna'], [[1, 'Bloodmoon']], 'Standard', 'sv'),
   createFormLabelDefinition(902, ['basculegion'], [
     [0, 'Male'],
     [1, 'Female']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(905, ['enamorus'], [
     [0, 'Incarnate Forme'],
     [1, 'Therian Forme']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(916, ['oinkologne'], [
     [0, 'Male'],
     [1, 'Female']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(917, ['dudunsparce'], [
     [0, 'Two-Segment Form'],
     [1, 'Three-Segment Form']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(934, ['palafin'], [
     [0, 'Zero Form'],
     [1, 'Hero Form']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(946, ['maushold'], [
     [0, 'Family of Four'],
     [1, 'Family of Three']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(952, ['tatsugiri'], [
     [0, 'Curly Form'],
     [1, 'Droopy Form'],
     [2, 'Stretchy Form']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(960, ['squawkabilly'], [
     [0, 'Green Plumage'],
     [1, 'Blue Plumage'],
     [2, 'Yellow Plumage'],
     [3, 'White Plumage']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(976, ['gimmighoul'], [
     [0, 'Chest Form'],
     [1, 'Roaming Form']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(998, ['koraidon'], [
     [0, 'Apex Build'],
     [1, 'Limited Build'],
     [2, 'Sprinting Build'],
     [3, 'Swimming Build'],
     [4, 'Gliding Build']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(999, ['miraidon'], [
     [0, 'Ultimate Mode'],
     [1, 'Low-Power Mode'],
     [2, 'Drive Mode'],
     [3, 'Aquatic Mode'],
     [4, 'Glide Mode']
-  ], undefined, 'sv'),
+  ], undefined, ['sv', 'za']),
   createFormLabelDefinition(1011, ['ogerpon'], [
     [0, 'Teal Mask'],
     [1, 'Wellspring Mask'],
@@ -35188,27 +35316,39 @@ function createZaMegaFormLabelDefinitions(): SpeciesFormLabelDefinition[] {
     [380, 'latias'],
     [381, 'latios'],
     [384, 'rayquaza'],
+    [398, 'staraptor'],
     [428, 'lopunny'],
     [445, 'garchomp'],
     [448, 'lucario'],
     [460, 'abomasnow'],
     [475, 'gallade'],
     [478, 'froslass'],
+    [485, 'heatran'],
+    [491, 'darkrai'],
     [500, 'emboar'],
     [530, 'excadrill'],
     [531, 'audino'],
+    [545, 'scolipede'],
+    [560, 'scrafty'],
+    [604, 'eelektross'],
     [609, 'chandelure'],
     [623, 'golurk'],
     [652, 'chesnaught'],
     [655, 'delphox'],
-    [658, 'greninja'],
-    [670, 'floette'],
+    [668, 'pyroar'],
+    [687, 'malamar'],
+    [689, 'barbaracle'],
+    [691, 'dragalge'],
     [701, 'hawlucha'],
     [719, 'diancie'],
     [740, 'crabominable'],
+    [768, 'golisopod'],
     [780, 'drampa'],
-    [952, 'scovillain'],
-    [970, 'glimmora']
+    [807, 'zeraora'],
+    [870, 'falinks'],
+    [939, 'scovillain'],
+    [951, 'baxcalibur'],
+    [967, 'glimmora']
   ];
 
   return [
@@ -35223,6 +35363,16 @@ function createZaMegaFormLabelDefinitions(): SpeciesFormLabelDefinition[] {
       'za'
     ),
     createFormLabelDefinition(
+      26,
+      ['raichu'],
+      [
+        [2, 'Mega Kanto'],
+        [3, 'Mega Alolan']
+      ],
+      undefined,
+      'za'
+    ),
+    createFormLabelDefinition(
       150,
       ['mewtwo'],
       [
@@ -35232,6 +35382,24 @@ function createZaMegaFormLabelDefinitions(): SpeciesFormLabelDefinition[] {
       undefined,
       'za'
     ),
+    createFormLabelDefinition(359, ['absol'], [[2, 'Mega Absol Z']], undefined, 'za'),
+    createFormLabelDefinition(445, ['garchomp'], [[2, 'Mega Garchomp Z']], undefined, 'za'),
+    createFormLabelDefinition(448, ['lucario'], [[2, 'Mega Lucario Z']], undefined, 'za'),
+    createFormLabelDefinition(658, ['greninja'], [[3, 'Mega']], undefined, 'za'),
+    createFormLabelDefinition(670, ['floette'], [[6, 'Mega']], undefined, 'za'),
+    createFormLabelDefinition(678, ['meowstic'], [
+      [2, 'Mega Male'],
+      [3, 'Mega Female']
+    ], undefined, 'za'),
+    createFormLabelDefinition(801, ['magearna'], [
+      [2, 'Mega Normal Color'],
+      [3, 'Mega Original Color']
+    ], undefined, 'za'),
+    createFormLabelDefinition(952, ['tatsugiri'], [
+      [3, 'Mega Curly Form'],
+      [4, 'Mega Droopy Form'],
+      [5, 'Mega Stretchy Form']
+    ], undefined, 'za'),
     ...singleMegaSpecies.map(([speciesId, speciesName]) =>
       createFormLabelDefinition(speciesId, [speciesName], [[1, 'Mega']], undefined, 'za')
     )
@@ -35240,7 +35408,10 @@ function createZaMegaFormLabelDefinitions(): SpeciesFormLabelDefinition[] {
 
 function createSpeciesFormLabelData(gameFamily: EditorUiFamily): SpeciesFormLabelData {
   const definitions = knownSpeciesFormLabelDefinitions.filter(
-    (definition) => definition.gameFamily === 'both' || definition.gameFamily === gameFamily
+    (definition) =>
+      definition.gameFamily === 'both' ||
+      definition.gameFamily === gameFamily ||
+      (Array.isArray(definition.gameFamily) && definition.gameFamily.includes(gameFamily))
   );
 
   return {
@@ -35310,7 +35481,7 @@ function createLetterFormLabels(): Array<readonly [number, string]> {
   });
 }
 
-function createSilvallyFormLabels(): Array<readonly [number, string]> {
+function createPokemonTypeFormLabels(): Array<readonly [number, string]> {
   return [
     'Normal Type',
     'Fighting Type',
@@ -35333,6 +35504,41 @@ function createSilvallyFormLabels(): Array<readonly [number, string]> {
   ].map((label, form) => [form, label] as const);
 }
 
+function createFlowerColorLabels(): Array<readonly [number, string]> {
+  return ['Red Flower', 'Yellow Flower', 'Orange Flower', 'Blue Flower', 'White Flower'].map(
+    (label, form) => [form, label] as const
+  );
+}
+
+function createVivillonPatternLabels(): Array<readonly [number, string]> {
+  return [
+    'Icy Snow Pattern',
+    'Polar Pattern',
+    'Tundra Pattern',
+    'Continental Pattern',
+    'Garden Pattern',
+    'Elegant Pattern',
+    'Meadow Pattern',
+    'Modern Pattern',
+    'Marine Pattern',
+    'Archipelago Pattern',
+    'High Plains Pattern',
+    'Sandstorm Pattern',
+    'River Pattern',
+    'Monsoon Pattern',
+    'Savanna Pattern',
+    'Sun Pattern',
+    'Ocean Pattern',
+    'Jungle Pattern',
+    'Fancy Pattern',
+    'Poke Ball Pattern'
+  ].map((label, form) => [form, label] as const);
+}
+
+function createSilvallyFormLabels(): Array<readonly [number, string]> {
+  return createPokemonTypeFormLabels();
+}
+
 export function formatSpeciesFormLabel(
   species: string,
   form: number,
@@ -35344,6 +35550,10 @@ export function formatSpeciesFormLabel(
   }
 
   const formLabel = resolveSpeciesFormLabel(species, form, speciesId, gameFamily);
+  if (form > 0 && formLabel === undefined && speciesHasNonGenericFormSuffix(species)) {
+    return species;
+  }
+
   const displaySpecies =
     formLabel === undefined ? species : stripTrailingGenericFormLabel(species, form);
   if (form === 0) {
@@ -35404,6 +35614,11 @@ function resolveSpeciesFormLabel(
 function speciesAlreadyIncludesFormLabel(species: string, formLabel: string) {
   const match = species.trim().match(/\(([^()]*)\)\s*$/);
   return match ? normalizeSpeciesName(match[1] ?? '') === normalizeSpeciesName(formLabel) : false;
+}
+
+function speciesHasNonGenericFormSuffix(species: string) {
+  const match = species.trim().match(/\(([^()]*)\)\s*$/);
+  return match ? !/^form\s+\d+$/i.test(match[1] ?? '') : false;
 }
 
 function normalizeSpeciesName(species: string) {

@@ -68,8 +68,6 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private static readonly IReadOnlyList<SwShRaidBattleEditableFieldOption> FormOptions =
     [
-        new(0, "Base"),
-        ..Enumerable.Range(1, 31).Select(value => new SwShRaidBattleEditableFieldOption(value, $"Form {value}")),
     ];
 
     private static readonly IReadOnlyList<SwShRaidBattleEditableField> BaseEditableFields =
@@ -484,7 +482,10 @@ public sealed class SwShRaidBattlesWorkflowService
             var formCount = lookupTables.PersonalRecords[speciesId].FormCount;
             for (var form = 1; form < formCount && form <= MaximumFormValue; form++)
             {
-                values.Add(form);
+                if (SwShSpeciesFormLabels.ResolveKnownFormLabel(speciesId, form) is not null)
+                {
+                    values.Add(form);
+                }
             }
         }
 

@@ -4,6 +4,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Trainers;
 
@@ -37,12 +38,17 @@ public sealed record TrainerPokemonRecordDto(
     int Nature,
     string NatureLabel,
     TrainerPokemonStatsDto Evs,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? DynamaxLevel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanGigantamax,
     TrainerPokemonStatsDto Ivs,
     bool Shiny,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanDynamax,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? TeraType = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? TeraTypeLabel = null)
 {
     public IReadOnlyList<TrainerEditableFieldOptionDto> AbilityOptions { get; init; } =
@@ -69,7 +75,9 @@ public sealed record TrainerRecordDto(
     IReadOnlyList<string> Items,
     int AiFlags,
     IReadOnlyList<TrainerAiFlagStateDto> AiFlagStates,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanTerastallize,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? TeraTarget,
     bool Heal,
     int Money,
@@ -81,8 +89,11 @@ public sealed record TrainerRecordDto(
     IReadOnlyList<TrainerPokemonRecordDto> Team,
     TrainerProvenanceDto Provenance)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? ZaRank { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ZaMegaEvolution { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ZaLastHand { get; init; }
 }
 

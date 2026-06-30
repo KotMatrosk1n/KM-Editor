@@ -98,8 +98,6 @@ public sealed class SwShTradePokemonWorkflowService
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableFieldOption> FormOptions =
     [
-        new(0, "Base"),
-        ..Enumerable.Range(1, 31).Select(value => new SwShTradePokemonEditableFieldOption(value, $"Form {value}")),
     ];
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableFieldOption> DynamaxLevelOptions =

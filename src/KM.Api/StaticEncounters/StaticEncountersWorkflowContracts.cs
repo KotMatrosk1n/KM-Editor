@@ -4,6 +4,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.StaticEncounters;
 
@@ -54,7 +55,9 @@ public sealed record StaticEncounterRecordDto(
     string ShinyLockLabel,
     int EncounterScenario,
     string EncounterScenarioLabel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? DynamaxLevel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     bool? CanGigantamax,
     StaticEncounterStatsDto Evs,
     StaticEncounterStatsDto Ivs,
@@ -96,6 +99,7 @@ public sealed record StaticEncounterEditableFieldOptionDto(
 
 public sealed record StaticEncountersWorkflowStatsDto(
     int TotalEncounterCount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? GigantamaxEncounterCount,
     int FixedIvEncounterCount,
     int SourceFileCount)
