@@ -197,6 +197,38 @@ internal sealed class SvPokemonWorkflowService
                 value.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
+    private static readonly IReadOnlyDictionary<int, int> EvolutionItemParameterItemIds = new Dictionary<int, int>
+    {
+        [1] = 80,
+        [2] = 81,
+        [3] = 82,
+        [4] = 83,
+        [5] = 84,
+        [6] = 85,
+        [7] = 107,
+        [8] = 108,
+        [9] = 110,
+        [49] = 326,
+        [50] = 327,
+        [52] = 849,
+        [79] = 1116,
+        [80] = 1117,
+        [81] = 1253,
+        [82] = 1254,
+        [83] = 1582,
+        [84] = 1592,
+        [85] = 2344,
+        [86] = 1861,
+        [88] = 1857,
+        [89] = 1858,
+        [93] = 109,
+        [94] = 2403,
+        [95] = 2404,
+        [96] = 2402,
+        [119] = 2482,
+        [1691] = 1691,
+    };
+
     private static readonly IReadOnlyList<EvolutionMethodDefinition> EvolutionMethods =
     [
         new(0, "None", EvolutionArgumentKindNone, "None"),
@@ -229,21 +261,21 @@ internal sealed class SvPokemonWorkflowService
         new(27, "Level Up Cold Area", EvolutionArgumentKindNone, "None"),
         new(28, "Level Up Inverted", EvolutionArgumentKindNone, "None"),
         new(29, "Level Up Affection 50 Move Type", EvolutionArgumentKindType, "Type"),
-        new(30, "Level Up Move Type", EvolutionArgumentKindType, "Type"),
-        new(31, "Level Up Weather", EvolutionArgumentKindLevel, "Level"),
+        new(30, "Level Up With Dark-Type Teammate", EvolutionArgumentKindNone, "None"),
+        new(31, "Level Up In Rain", EvolutionArgumentKindValue, "Rain rule"),
         new(32, "Level Up Morning", EvolutionArgumentKindLevel, "Level"),
         new(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
         new(34, "Level Up Female Form 1", EvolutionArgumentKindLevel, "Level"),
         new(35, "Unused", EvolutionArgumentKindNone, "None"),
-        new(36, "Level Up Version", EvolutionArgumentKindValue, "Version"),
+        new(36, "Level Up Version", EvolutionArgumentKindValue, "Version branch"),
         new(37, "Level Up Version Day", EvolutionArgumentKindValue, "Version"),
         new(38, "Level Up Version Night", EvolutionArgumentKindValue, "Version"),
         new(39, "Level Up Summit", EvolutionArgumentKindLevel, "Level"),
         new(40, "Level Up Dusk", EvolutionArgumentKindLevel, "Level"),
         new(41, "Level Up Wormhole", EvolutionArgumentKindLevel, "Level"),
         new(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item"),
-        new(43, "Critical Hits In Battle", EvolutionArgumentKindValue, "Count"),
-        new(44, "HP Lost In Battle", EvolutionArgumentKindValue, "HP"),
+        new(43, "Critical Hits In Battle", EvolutionArgumentKindValue, "Critical hits"),
+        new(44, "HP Lost In Battle", EvolutionArgumentKindValue, "HP lost"),
         new(45, "Spin", EvolutionArgumentKindNone, "None"),
         new(46, "Level Up Nature Amped", EvolutionArgumentKindNone, "None"),
         new(47, "Level Up Nature Low Key", EvolutionArgumentKindNone, "None"),
@@ -614,6 +646,7 @@ internal sealed class SvPokemonWorkflowService
         SvTextLabelLookup labels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
+        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(pokemon, labels);
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false);
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
 
@@ -632,7 +665,12 @@ internal sealed class SvPokemonWorkflowService
                     $"{value.ToString("000", CultureInfo.InvariantCulture)} {definition.Name}",
                     definition.ArgumentKind,
                     definition.ArgumentLabel,
-                    CreateEvolutionArgumentOptions(definition, itemOptions, moveOptions, speciesOptions));
+                    CreateEvolutionArgumentOptions(
+                        definition,
+                        itemOptions,
+                        evolutionItemOptions,
+                        moveOptions,
+                        speciesOptions));
             })
             .ToArray();
     }
@@ -691,12 +729,13 @@ internal sealed class SvPokemonWorkflowService
     private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionArgumentOptions(
         EvolutionMethodDefinition method,
         IReadOnlyList<SvPokemonEditableFieldOption> itemOptions,
+        IReadOnlyList<SvPokemonEditableFieldOption> evolutionItemOptions,
         IReadOnlyList<SvPokemonEditableFieldOption> moveOptions,
         IReadOnlyList<SvPokemonEditableFieldOption> speciesOptions)
     {
         return method.ArgumentKind switch
         {
-            EvolutionArgumentKindItem => itemOptions,
+            EvolutionArgumentKindItem => IsEvolutionItemParameterMethod(method.Value) ? evolutionItemOptions : itemOptions,
             EvolutionArgumentKindMove => moveOptions,
             EvolutionArgumentKindSpecies => speciesOptions,
             EvolutionArgumentKindType => TypeOptions,
@@ -705,11 +744,38 @@ internal sealed class SvPokemonWorkflowService
         };
     }
 
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionItemArgumentOptions(
+        IReadOnlyList<SvPokemonRecord> pokemon,
+        SvTextLabelLookup labels)
+    {
+        return EvolutionItemParameterItemIds.Keys
+            .Concat(pokemon
+                .SelectMany(record => record.Evolutions)
+                .Where(evolution => IsEvolutionItemParameterMethod(evolution.Method) && evolution.Argument > 0)
+                .Select(evolution => evolution.Argument))
+            .Distinct()
+            .OrderBy(value => value)
+            .Prepend(0)
+            .Select(value => new SvPokemonEditableFieldOption(
+                value,
+                $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels)}"))
+            .ToArray();
+    }
+
     private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionValueArgumentOptions(
         EvolutionMethodDefinition method)
     {
         return method.Value switch
         {
+            16 => CreateOptionList((170, "170 beauty")),
+            31 => CreateOptionList(
+                (0, "Standard rain rule"),
+                (1, "Hisuian rain rule")),
+            36 => CreateOptionList(
+                (50, "Solgaleo branch"),
+                (51, "Lunala branch")),
+            43 => CreateOptionList((3, "3 critical hits")),
+            44 => CreateOptionList((49, "49 HP lost")),
             50 => CreateOptionList((1000, "1000 steps")),
             54 => CreateOptionList((999, "999 coins")),
             55 => CreateOptionList((3, "3 leader wins")),
@@ -729,7 +795,11 @@ internal sealed class SvPokemonWorkflowService
     {
         return method.ArgumentKind switch
         {
-            EvolutionArgumentKindItem => argument == 0 ? "None" : labels.Item(argument),
+            EvolutionArgumentKindItem => IsEvolutionItemParameterMethod(method.Value)
+                ? FormatEvolutionItemArgument(argument, labels)
+                : argument == 0
+                    ? "None"
+                    : labels.Item(argument),
             EvolutionArgumentKindMove => argument == 0 ? "None" : labels.Move(argument),
             EvolutionArgumentKindSpecies => argument == 0 ? "None" : labels.Pokemon(argument),
             EvolutionArgumentKindType => FormatType(argument),
@@ -738,10 +808,34 @@ internal sealed class SvPokemonWorkflowService
         };
     }
 
+    private static string FormatEvolutionItemArgument(int argument, SvTextLabelLookup labels)
+    {
+        if (argument == 0)
+        {
+            return "None";
+        }
+
+        return EvolutionItemParameterItemIds.TryGetValue(argument, out var itemId)
+            ? labels.Item(itemId)
+            : labels.Item(argument);
+    }
+
+    private static bool IsEvolutionItemParameterMethod(int method)
+    {
+        return method is 8 or 17 or 18 or 19 or 20 or 42;
+    }
+
     private static string FormatEvolutionValueArgument(int argument, EvolutionMethodDefinition method)
     {
         return method.Value switch
         {
+            16 when argument == 170 => "170 beauty",
+            31 when argument == 0 => "Standard rain rule",
+            31 when argument == 1 => "Hisuian rain rule",
+            36 when argument == 50 => "Solgaleo branch",
+            36 when argument == 51 => "Lunala branch",
+            43 when argument == 3 => "3 critical hits",
+            44 when argument == 49 => "49 HP lost",
             50 when argument == 1000 => "1000 steps",
             54 when argument == 999 => "999 coins",
             55 when argument == 3 => "3 leader wins",
