@@ -210,7 +210,7 @@ internal sealed class ZaTrainersWorkflowService
             CreateEditableFields(labels, pokemonAvailability),
             new ZaTrainersWorkflowStats(
                 trainers.Length,
-                trainers.Sum(trainer => trainer.Team.Count),
+                trainers.Sum(GetOccupiedPokemonCount),
                 source is null ? 0 : 1),
             diagnostics);
     }
@@ -260,8 +260,6 @@ internal sealed class ZaTrainersWorkflowService
             aiFlags,
             CreateAiStates(trainer),
             false,
-            "Not used",
-            false,
             trainer.MoneyRate,
             0,
             null,
@@ -304,11 +302,41 @@ internal sealed class ZaTrainersWorkflowService
             var pokemon = slots[index];
             if (pokemon is null || pokemon.Value.SpeciesId == 0)
             {
+                yield return CreateEmptyPokemon(index, abilityResolver);
                 continue;
             }
 
             yield return ToPokemon(index, pokemon.Value, labels, abilityResolver);
         }
+    }
+
+    private static ZaTrainerPokemonRecord CreateEmptyPokemon(
+        int slot,
+        ZaTrainerAbilityResolver abilityResolver)
+    {
+        var abilityOptions = CreateAbilityModeOptions(ZaTrainerAbilitySet.Empty);
+        return new ZaTrainerPokemonRecord(
+            slot,
+            0,
+            "None",
+            0,
+            1,
+            0,
+            null,
+            [0, 0, 0, 0],
+            ["None", "None", "None", "None"],
+            -1,
+            FormatGender(-1),
+            0,
+            abilityResolver.FormatAbilityMode(0, ZaTrainerAbilitySet.Empty),
+            -1,
+            FormatNature(-1),
+            new ZaTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            new ZaTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            false)
+        {
+            AbilityOptions = abilityOptions,
+        };
     }
 
     private static ZaTrainerPokemonRecord ToPokemon(
@@ -348,8 +376,6 @@ internal sealed class ZaTrainersWorkflowService
                 evs?.SpAtk ?? 0,
                 evs?.SpDef ?? 0,
                 evs?.Agi ?? 0),
-            0,
-            false,
             new ZaTrainerPokemonStatsRecord(
                 ivs?.Hp ?? 0,
                 ivs?.Atk ?? 0,
@@ -357,8 +383,7 @@ internal sealed class ZaTrainersWorkflowService
                 ivs?.SpAtk ?? 0,
                 ivs?.SpDef ?? 0,
                 ivs?.Agi ?? 0),
-            pokemon.RareType == 2,
-            false)
+            pokemon.RareType == 2)
         {
             AbilityOptions = abilityOptions,
         };
@@ -390,6 +415,11 @@ internal sealed class ZaTrainersWorkflowService
             | (trainer.AiWeak ? 1 << 5 : 0)
             | (trainer.AiItem ? 1 << 6 : 0)
             | (trainer.AiChange ? 1 << 7 : 0);
+    }
+
+    private static int GetOccupiedPokemonCount(ZaTrainerRecord trainer)
+    {
+        return trainer.Team.Count(pokemon => pokemon.SpeciesId > 0);
     }
 
     private static IReadOnlyList<ZaTrainerAiFlagState> CreateAiStates(ZaTrainerRow trainer)

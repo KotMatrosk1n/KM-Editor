@@ -54,8 +54,8 @@ public sealed record StaticEncounterRecordDto(
     string ShinyLockLabel,
     int EncounterScenario,
     string EncounterScenarioLabel,
-    int DynamaxLevel,
-    bool CanGigantamax,
+    int? DynamaxLevel,
+    bool? CanGigantamax,
     StaticEncounterStatsDto Evs,
     StaticEncounterStatsDto Ivs,
     int? FlawlessIvCount,
@@ -96,7 +96,7 @@ public sealed record StaticEncounterEditableFieldOptionDto(
 
 public sealed record StaticEncountersWorkflowStatsDto(
     int TotalEncounterCount,
-    int GigantamaxEncounterCount,
+    int? GigantamaxEncounterCount,
     int FixedIvEncounterCount,
     int SourceFileCount)
 {

@@ -170,6 +170,15 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.Trainers.ZaTrainerRecord>(workflow.Trainers, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.Encounters,
+                "Wild Encounters",
+                "Wild encounter tables, slots, level ranges, weights, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadEncounters(paths);
+                    return new GameDumpCategoryData<KM.ZA.Encounters.ZaEncounterTableRecord>(workflow.Tables, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.StaticEncounters,
                 "Static Encounters",
                 "Scripted static encounter Pokemon rows, moves, IVs, and provenance.",
@@ -204,6 +213,15 @@ public sealed class ZaGameDumpService
                 {
                     var workflow = workflowService.LoadMoves(paths);
                     return new GameDumpCategoryData<KM.ZA.Moves.ZaMoveRecord>(workflow.Moves, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTextCategory(
+                ZaWorkflowIds.Text,
+                "Text",
+                "Message text entries, dialogue contexts, languages, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadText(paths);
+                    return new GameDumpCategoryData<KM.ZA.Text.ZaTextEntryRecord>(workflow.Entries, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.Items,

@@ -180,7 +180,7 @@ internal sealed class ZaWorkflowFileSource
         {
             return cacheManager.ListBaseTrinityPackNames(project.Paths);
         }
-        catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
             return Array.Empty<string>();
         }

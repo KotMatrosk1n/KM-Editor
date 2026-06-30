@@ -1014,7 +1014,7 @@ public static class SvBridgeMapper
                 pokemon.Personal.HatchedSpecies,
                 pokemon.Personal.LocalFormIndex,
                 pokemon.Personal.IsRegionalForm,
-                pokemon.Personal.CanNotDynamax,
+                null,
                 pokemon.Personal.Form),
             pokemon.CatchRate,
             pokemon.EvolutionStage,
@@ -1274,11 +1274,11 @@ public static class SvBridgeMapper
             pokemon.Nature,
             pokemon.NatureLabel,
             ToDto(pokemon.Evs),
-            pokemon.DynamaxLevel,
-            pokemon.CanGigantamax,
+            null,
+            null,
             ToDto(pokemon.Ivs),
             pokemon.Shiny,
-            pokemon.CanDynamax,
+            null,
             pokemon.TeraType,
             pokemon.TeraTypeLabel)
         {
@@ -1587,7 +1587,7 @@ public static class SvBridgeMapper
             workflow.EditableFields.Select(ToDto).ToArray(),
             new StaticEncountersWorkflowStatsDto(
                 workflow.Stats.TotalEncounterCount,
-                workflow.Stats.GigantamaxEncounterCount,
+                null,
                 workflow.Stats.FixedIvEncounterCount,
                 workflow.Stats.SourceFileCount)
             {
@@ -1622,8 +1622,8 @@ public static class SvBridgeMapper
             encounter.ShinyLockLabel,
             encounter.EncounterScenario,
             encounter.EncounterScenarioLabel,
-            encounter.DynamaxLevel,
-            encounter.CanGigantamax,
+            null,
+            null,
             ToDto(encounter.Evs),
             ToDto(encounter.Ivs),
             encounter.FlawlessIvCount,

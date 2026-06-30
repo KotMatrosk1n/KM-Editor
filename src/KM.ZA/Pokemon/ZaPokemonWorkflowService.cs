@@ -419,7 +419,6 @@ internal sealed class ZaPokemonWorkflowService
             eggSpecies,
             eggForm,
             IsRegionalForm: false,
-            CanNotDynamax: false,
             zaDexOrder,
             form,
             0,

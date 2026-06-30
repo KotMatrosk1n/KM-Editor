@@ -1264,7 +1264,8 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.SourceLayer);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.TeamSourceLayer);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.ClassSourceLayer);
-        var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(6, trainer.Team.Count);
+        var pokemon = Assert.Single(trainer.Team, entry => entry.SpeciesId > 0);
         Assert.Equal(810, pokemon.SpeciesId);
         Assert.Equal("Grookey", pokemon.Species);
         Assert.Equal(12, pokemon.Level);

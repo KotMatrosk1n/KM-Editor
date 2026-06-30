@@ -16,7 +16,7 @@ const gameSmokeCases = [
   },
   {
     label: 'Pokemon Legends Z-A',
-    expectedMinimumWorkflowCount: 10
+    expectedMinimumWorkflowCount: 11
   }
 ] as const;
 

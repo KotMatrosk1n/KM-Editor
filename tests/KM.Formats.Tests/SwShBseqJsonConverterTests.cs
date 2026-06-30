@@ -31,7 +31,7 @@ public sealed class SwShBseqJsonConverterTests
     }
 
     [Fact]
-    public void CommandReferenceCoversHarvestedPbseqtoolMetadata()
+    public void CommandReferenceCoversKnownBseqMetadata()
     {
         Assert.Equal(385, SwShBseqCommandReference.Commands.Count);
         Assert.Equal(32, SwShBseqCommandReference.GroupOptionHashes.Count);

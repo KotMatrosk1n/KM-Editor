@@ -424,16 +424,16 @@ const gameDefinitions = {
 >;
 
 const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet', 'za'] as const satisfies readonly ProjectGame[];
-const svTextWorkflowPageLimit = 500;
+const trinityTextWorkflowPageLimit = 500;
 
 function createTextWorkflowQuery(game: ProjectGame | null, searchText: string): TextWorkflowQuery | undefined {
-  if (!isScarletVioletGame(game)) {
+  if (!isScarletVioletGame(game) && !isPokemonLegendsZAGame(game)) {
     return undefined;
   }
 
   const trimmedSearchText = searchText.trim();
   return {
-    limit: svTextWorkflowPageLimit,
+    limit: trinityTextWorkflowPageLimit,
     offset: 0,
     searchText: trimmedSearchText.length > 0 ? trimmedSearchText : null
   };
@@ -12876,7 +12876,7 @@ function TrainersSection({
                     <span role="cell">{trainer.name}</span>
                     <span role="cell">{trainer.trainerClass}</span>
                     <span role="cell">{trainer.battleType}</span>
-                    <span role="cell">{trainer.team.length}</span>
+                    <span role="cell">{getOccupiedTrainerPokemonCount(trainer)}</span>
                     <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
                   </button>
                 )}
@@ -13118,6 +13118,15 @@ function SelectedTrainerPanel({
 
     return draftState.normalizedValue === '1';
   }, [contextualPokemonFields, pokemonDrafts, selectedPokemon]);
+  const selectedPokemonBlockedByPreviousSlot = useMemo(() => {
+    if (!trainer || !selectedPokemon) {
+      return false;
+    }
+
+    return trainer.team.some(
+      (pokemon) => pokemon.slot < selectedPokemon.slot && pokemon.speciesId === 0
+    );
+  }, [selectedPokemon, trainer]);
   const trainerDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -13212,11 +13221,11 @@ function SelectedTrainerPanel({
               <>
                 <div>
                   <dt>Can Terastallize</dt>
-                  <dd>{trainer.canTerastallize ? 'Yes' : 'No'}</dd>
+                  <dd>{trainer.canTerastallize === true ? 'Yes' : 'No'}</dd>
                 </div>
                 <div>
                   <dt>Tera behavior</dt>
-                  <dd>{trainer.teraTarget}</dd>
+                  <dd>{trainer.teraTarget ?? 'Disabled'}</dd>
                 </div>
               </>
             ) : null}
@@ -13394,12 +13403,16 @@ function SelectedTrainerPanel({
             {trainer.team.length > 0 ? (
               <div className="trainer-party-card-grid" aria-label="Trainer party Pokemon">
                 {trainer.team.map((pokemon) => {
-                  const pokemonLabel = formatSpeciesFormLabel(
-                    pokemon.species,
-                    pokemon.form,
-                    pokemon.speciesId,
-                    editorFamily
-                  );
+                  const isEmptySlot = pokemon.speciesId === 0;
+                  const pokemonLabel = isEmptySlot
+                    ? 'Empty slot'
+                    : formatSpeciesFormLabel(
+                        pokemon.species,
+                        pokemon.form,
+                        pokemon.speciesId,
+                        editorFamily
+                      );
+                  const slotLabel = `Slot ${formatTrainerSlotNumber(pokemon.slot, editorFamily)}`;
 
                   return (
                     <button
@@ -13409,9 +13422,9 @@ function SelectedTrainerPanel({
                       onClick={() => onSelectSlot(pokemon.slot)}
                       type="button"
                     >
-                      <PokemonSprite className="trainer-party-sprite" name={pokemonLabel} />
-                      <strong>{pokemonLabel}</strong>
-                      <span>Lv. {pokemon.level}</span>
+                      <PokemonSprite className="trainer-party-sprite" name={isEmptySlot ? 'None' : pokemonLabel} />
+                      <strong>{isEmptySlot ? slotLabel : pokemonLabel}</strong>
+                      <span>{isEmptySlot ? 'None' : `Lv. ${pokemon.level}`}</span>
                     </button>
                   );
                 })}
@@ -13447,8 +13460,13 @@ function SelectedTrainerPanel({
                           const isDynamaxDependentField = dynamaxDependentFieldNames.includes(
                             field.field as (typeof dynamaxDependentFieldNames)[number]
                           );
+                          const selectedPokemonSlotIsEmpty = selectedPokemon.speciesId === 0;
                           const disabledReason =
-                            isDynamaxDependentField && !selectedPokemonCanDynamax
+                            selectedPokemonBlockedByPreviousSlot
+                              ? 'Fill the previous party slot first.'
+                              : selectedPokemonSlotIsEmpty && field.field !== speciesIdFieldName
+                              ? 'Set species before editing this slot.'
+                              : isDynamaxDependentField && !selectedPokemonCanDynamax
                               ? 'Set Can Dynamax to Yes to edit this field.'
                               : undefined;
 
@@ -13456,7 +13474,10 @@ function SelectedTrainerPanel({
                             <TrainerDraftField
                               currentValue={currentValue}
                               disabled={
-                                !canEditTrainers || editSession === null || isTrainerUpdating
+                                disabledReason !== undefined ||
+                                !canEditTrainers ||
+                                editSession === null ||
+                                isTrainerUpdating
                               }
                               disabledReason={disabledReason}
                               draftState={draftState}
@@ -13935,6 +13956,14 @@ function getProjectedTrainerHighestLevel(
       return Number.isInteger(draftedLevel) ? draftedLevel : pokemon.level;
     })
   );
+}
+
+function getOccupiedTrainerPokemonCount(trainer: TrainerRecord) {
+  return trainer.team.filter((pokemon) => pokemon.speciesId > 0).length;
+}
+
+function formatTrainerSlotNumber(slot: number, editorFamily: EditorUiFamily) {
+  return editorFamily === 'swsh' ? slot : slot + 1;
 }
 
 function createTrainerPrizeMoneyOptions(highestLevel: number): EditableFieldOption[] {
@@ -18215,7 +18244,7 @@ function StaticEncountersSection({
             <>
               <Metric
                 label={translateLiteral('Gigantamax')}
-                value={workflow ? workflow.stats.gigantamaxEncounterCount.toString() : '0'}
+                value={workflow ? (workflow.stats.gigantamaxEncounterCount ?? 0).toString() : '0'}
               />
               <Metric
                 label={translateLiteral('Fixed IV rows')}
@@ -30221,8 +30250,8 @@ function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
       gift.gender.toString(),
       gift.shinyLockLabel,
       gift.shinyLock.toString(),
-      gift.dynamaxLevel.toString(),
-      gift.canGigantamax ? 'gigantamax' : '',
+      gift.dynamaxLevel?.toString() ?? '',
+      gift.canGigantamax === true ? 'gigantamax' : '',
       gift.specialMove ?? 'None',
       gift.specialMoveId.toString(),
       ...gift.moves.flatMap((move) => [
@@ -30276,8 +30305,8 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
       trade.gender.toString(),
       trade.shinyLockLabel,
       trade.shinyLock.toString(),
-      trade.dynamaxLevel.toString(),
-      trade.canGigantamax ? 'gigantamax' : '',
+      trade.dynamaxLevel?.toString() ?? '',
+      trade.canGigantamax === true ? 'gigantamax' : '',
       trade.trainerId.toString(),
       trade.otGenderLabel,
       trade.memoryCode.toString(),
@@ -30407,8 +30436,8 @@ function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText:
       encounter.categoryLabel ?? '',
       encounter.encounterScenarioLabel,
       encounter.encounterScenario.toString(),
-      encounter.dynamaxLevel.toString(),
-      encounter.canGigantamax ? 'gigantamax' : '',
+      encounter.dynamaxLevel?.toString() ?? '',
+      encounter.canGigantamax === true ? 'gigantamax' : '',
       encounter.ivSummary,
       formatStaticEncounterIvs(encounter),
       formatStaticEncounterStats(encounter.evs),
@@ -31397,7 +31426,7 @@ function getEditablePersonalFieldValue(pokemon: PokemonRecord, field: string) {
     case 'isRegionalForm':
       return pokemon.personal.isRegionalForm ? 1 : 0;
     case 'canNotDynamax':
-      return pokemon.personal.canNotDynamax ? 1 : 0;
+      return pokemon.personal.canNotDynamax === true ? 1 : 0;
     case 'regionalDexIndex':
       return pokemon.dexPresence.regionalDexIndex;
     case 'form':
@@ -31494,7 +31523,7 @@ function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
     case aiFlagsFieldName:
       return trainer.aiFlags;
     case trainerCanTerastallizeFieldName:
-      return trainer.canTerastallize ? 1 : 0;
+      return trainer.canTerastallize === true ? 1 : 0;
     case zaRankFieldName:
       return trainer.zaRank;
     case zaMegaEvolutionFieldName:
@@ -31551,7 +31580,7 @@ function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: stri
     case dynamaxLevelFieldName:
       return pokemon.dynamaxLevel;
     case canGigantamaxFieldName:
-      return pokemon.canGigantamax ? 1 : 0;
+      return pokemon.canGigantamax === true ? 1 : 0;
     case ivFieldNames[0]:
       return pokemon.ivs.hp;
     case ivFieldNames[1]:
@@ -31569,7 +31598,7 @@ function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: stri
     case trainerTeraTypeFieldName:
       return pokemon.teraType;
     case canDynamaxFieldName:
-      return pokemon.canDynamax ? 1 : 0;
+      return pokemon.canDynamax === true ? 1 : 0;
     default:
       return null;
   }
@@ -31598,7 +31627,7 @@ function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string
     case dynamaxLevelFieldName:
       return gift.dynamaxLevel;
     case canGigantamaxFieldName:
-      return gift.canGigantamax ? 1 : 0;
+      return gift.canGigantamax === true ? 1 : 0;
     case giftSpecialMoveIdFieldName:
       return gift.specialMoveId;
     case giftMoveFieldNames[0]:
@@ -31659,7 +31688,7 @@ function getEditableTradePokemonFieldValue(trade: TradePokemonRecord, field: str
     case dynamaxLevelFieldName:
       return trade.dynamaxLevel;
     case canGigantamaxFieldName:
-      return trade.canGigantamax ? 1 : 0;
+      return trade.canGigantamax === true ? 1 : 0;
     case tradeRequiredSpeciesFieldName:
       return trade.requiredSpeciesId;
     case tradeRequiredFormFieldName:
@@ -31744,7 +31773,7 @@ function getEditableStaticEncounterFieldValue(encounter: StaticEncounterRecord, 
     case dynamaxLevelFieldName:
       return encounter.dynamaxLevel;
     case canGigantamaxFieldName:
-      return encounter.canGigantamax ? 1 : 0;
+      return encounter.canGigantamax === true ? 1 : 0;
     case staticEncounterMoveFieldNames[0]:
       return encounter.moves[0]?.moveId ?? null;
     case staticEncounterMoveFieldNames[1]:

@@ -34,11 +34,8 @@ public sealed record SvTrainerPokemonRecord(
     int Nature,
     string NatureLabel,
     SvTrainerPokemonStatsRecord Evs,
-    int DynamaxLevel,
-    bool CanGigantamax,
     SvTrainerPokemonStatsRecord Ivs,
     bool Shiny,
-    bool CanDynamax,
     int? TeraType = null,
     string? TeraTypeLabel = null)
 {

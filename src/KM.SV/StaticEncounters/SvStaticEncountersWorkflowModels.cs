@@ -47,8 +47,6 @@ public sealed record SvStaticEncounterEntry(
     string ShinyLockLabel,
     int EncounterScenario,
     string EncounterScenarioLabel,
-    int DynamaxLevel,
-    bool CanGigantamax,
     SvStaticEncounterStatsRecord Evs,
     SvStaticEncounterStatsRecord Ivs,
     int? FlawlessIvCount,
@@ -78,7 +76,6 @@ public sealed record SvStaticEncounterEditableFieldOption(
 
 public sealed record SvStaticEncountersWorkflowStats(
     int TotalEncounterCount,
-    int GigantamaxEncounterCount,
     int FixedIvEncounterCount,
     int SourceFileCount,
     int FixedSymbolCount,

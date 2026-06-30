@@ -587,6 +587,74 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows only Z-A owned editors and tools from a contaminated workflow list', async () => {
+    const user = userEvent.setup();
+    const createWorkflowSummary = (id: string, label: string): WorkflowSummary => ({
+      availability: 'available',
+      description: `${label} Z-A test workflow.`,
+      diagnostics: [],
+      id,
+      label
+    });
+    const listWorkflows = vi.fn(async () => ({
+      workflows: [
+        ['pokemon', 'Pokemon Data'], ['trainers', 'Trainers'], ['encounters', 'Wild Encounters'],
+        ['staticEncounters', 'Static Encounters'], ['giftPokemon', 'Gift Pokemon'], ['tradePokemon', 'Trade Pokemon'],
+        ['moves', 'Moves'], ['text', 'Text and Dialogue Map'], ['items', 'Items'], ['placement', 'Placement'],
+        ['shops', 'Shops'], ['typeChart', 'Type Chart'], ['spreadsheetImport', 'Dump Importer'],
+        ['modMerger', 'Z-A Mod Merger'], ['gameDump', 'Game Dump'], ['teraRaids', 'Tera Raids'],
+        ['raidBattles', 'Raid Battles'], ['fashionUnlock', 'Fashion Unlock'], ['randomizer', 'Randomizer']
+      ].map(([id, label]) => createWorkflowSummary(id, label))
+    }));
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+
+    render(<App bridge={createMockProjectBridge({ listWorkflows }, true)} />);
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await waitFor(() => expect(listWorkflows).toHaveBeenCalledTimes(1));
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace' });
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    expect(within(navigation).getByRole('button', { name: 'Pokemon' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Moves' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Text' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Items' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Placement' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    expect(within(navigation).getByRole('button', { name: 'Wild Encounters' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Static Encounters' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Gift Pokemon' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Trade Pokemon' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Tera Raids' })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Raid Battles' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    expect(within(navigation).getByRole('button', { name: 'Shops' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(within(navigation).getByRole('button', { name: 'Game Dump' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Dump Importer' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(within(navigation).getByRole('button', { name: 'Type Chart' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Fashion Unlock' })).not.toBeInTheDocument();
+  });
+
   it('keeps Scarlet/Violet advanced editor changes inside the editor', async () => {
     useWorkbenchStore.setState({
       draftPaths: {
@@ -2861,6 +2929,44 @@ describe('App', () => {
     expect(textValue.value).toContain('\\n');
     expect(textValue.value).toContain('\\c\\n');
     expect(textValue.value).toContain('\\r\\n');
+  });
+
+  it('opens Z-A Text with a bounded Text workflow query', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+    const baseBridge = createMockProjectBridge({}, true);
+    const loadTextWorkflow = vi.fn(baseBridge.loadTextWorkflow);
+    const user = userEvent.setup();
+
+    render(<App bridge={{ ...baseBridge, loadTextWorkflow }} />);
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(await screen.findByRole('button', { name: 'Text' }));
+
+    await waitFor(() =>
+      expect(loadTextWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: {
+            limit: 500,
+            offset: 0,
+            searchText: null
+          }
+        })
+      )
+    );
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Text and Dialogue Map' })
+    ).toBeInTheDocument();
   });
 
   it('opens Trainers, edits a party level, reviews a trainer plan, and applies it', async () => {

@@ -2140,8 +2140,8 @@ public static class SwShBridgeMapper
             trainer.Items,
             trainer.AiFlags,
             trainer.AiFlagStates.Select(ToDto).ToArray(),
-            false,
-            "Disabled",
+            null,
+            null,
             trainer.Heal,
             trainer.Money,
             trainer.Gift,
@@ -2177,8 +2177,8 @@ public static class SwShBridgeMapper
             ToDto(pokemon.Ivs),
             pokemon.Shiny,
             pokemon.CanDynamax,
-            pokemon.TeraType,
-            pokemon.TeraTypeLabel)
+            null,
+            null)
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
         };

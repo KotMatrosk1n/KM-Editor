@@ -254,6 +254,11 @@ internal sealed class ZaTrainersEditSessionService
                 ApplyEdit(rows, edit, diagnostics);
             }
 
+            foreach (var row in rows)
+            {
+                row.NormalizeEmptyPokemon();
+            }
+
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -343,6 +348,26 @@ internal sealed class ZaTrainersEditSessionService
                 return null;
             }
 
+            if (pokemon.SpeciesId <= 0 && !string.Equals(normalizedField, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer Pokemon slot is empty. Set a Pokemon species before editing slot details.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: normalizedField,
+                    expected: "Occupied trainer Pokemon slot"));
+                return null;
+            }
+
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidateTeamOrder(
+                OverlayTrainerPokemon(trainer, slot.Value, normalizedField, parsedValue.Value),
+                diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) != errorCount)
+            {
+                return null;
+            }
+
             return ZaEditSessionSupport.CreatePendingEdit(
                 ZaEditSessionSupport.TrainersDomain,
                 $"Set {trainer.Name} slot {slot.Value} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -384,6 +409,8 @@ internal sealed class ZaTrainersEditSessionService
             return;
         }
 
+        ZaTrainerRecord? pokemonTrainer = null;
+        int? pokemonSlot = null;
         if (IsPokemonField(edit.Field))
         {
             if (!TryParseTeamRecordId(edit.RecordId, out var trainerId, out var slot))
@@ -408,6 +435,9 @@ internal sealed class ZaTrainersEditSessionService
                     expected: "Existing trainer Pokemon slot"));
                 return;
             }
+
+            pokemonTrainer = trainer;
+            pokemonSlot = slot;
         }
         else
         {
@@ -434,6 +464,24 @@ internal sealed class ZaTrainersEditSessionService
         if (parsedValue is not null)
         {
             ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
+            if (pokemonTrainer is not null && pokemonSlot is not null)
+            {
+                if (pokemonTrainer.Team.First(candidate => candidate.Slot == pokemonSlot.Value).SpeciesId <= 0
+                    && !string.Equals(edit.Field, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Trainer Pokemon slot is empty. Set a Pokemon species before editing slot details.",
+                        ZaEditSessionSupport.TrainersDomain,
+                        field: edit.Field,
+                        expected: "Occupied trainer Pokemon slot"));
+                    return;
+                }
+
+                ValidateTeamOrder(
+                    OverlayTrainerPokemon(pokemonTrainer, pokemonSlot.Value, edit.Field, parsedValue.Value),
+                    diagnostics);
+            }
         }
     }
 
@@ -597,6 +645,11 @@ internal sealed class ZaTrainersEditSessionService
 
     private static ZaTrainerPokemonRecord OverlayPokemon(ZaTrainerPokemonRecord pokemon, string? field, int value)
     {
+        if (string.Equals(field, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal) && value == 0)
+        {
+            return CreateEmptyPokemonRecord(pokemon.Slot);
+        }
+
         return field switch
         {
             ZaTrainersWorkflowService.SpeciesIdField => pokemon with
@@ -640,6 +693,32 @@ internal sealed class ZaTrainersEditSessionService
         };
     }
 
+    private static ZaTrainerPokemonRecord CreateEmptyPokemonRecord(int slot)
+    {
+        return new ZaTrainerPokemonRecord(
+            slot,
+            0,
+            "None",
+            0,
+            1,
+            0,
+            null,
+            [0, 0, 0, 0],
+            ["None", "None", "None", "None"],
+            -1,
+            ZaTrainersWorkflowService.FormatGender(-1),
+            0,
+            "Game default / random",
+            -1,
+            ZaTrainersWorkflowService.FormatNature(-1),
+            new ZaTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            new ZaTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            false)
+        {
+            AbilityOptions = Array.Empty<ZaTrainerEditableFieldOption>(),
+        };
+    }
+
     private static ZaTrainerPokemonRecord OverlayMove(ZaTrainerPokemonRecord pokemon, int moveIndex, int value)
     {
         var moveIds = pokemon.MoveIds.ToList();
@@ -658,6 +737,32 @@ internal sealed class ZaTrainersEditSessionService
             MoveIds = moveIds,
             Moves = moves,
         };
+    }
+
+    private static void ValidateTeamOrder(
+        ZaTrainerRecord trainer,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var hasEmptySlot = false;
+        foreach (var pokemon in trainer.Team.OrderBy(candidate => candidate.Slot))
+        {
+            if (pokemon.SpeciesId <= 0)
+            {
+                hasEmptySlot = true;
+                continue;
+            }
+
+            if (hasEmptySlot)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer Pokemon slots must be filled in order. Fill the previous slot before adding this Pokemon, or clear later slots first.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: ZaTrainersWorkflowService.SpeciesIdField,
+                    expected: "Contiguous trainer Pokemon slots"));
+                return;
+            }
+        }
     }
 
     private static void ApplyEdit(
@@ -689,8 +794,8 @@ internal sealed class ZaTrainersEditSessionService
                 return;
             }
 
-            var pokemon = rows.ElementAtOrDefault(trainerId)?.Pokemon.ElementAtOrDefault(slot);
-            if (pokemon is null)
+            var trainerRow = rows.ElementAtOrDefault(trainerId);
+            if (trainerRow is null || (uint)slot >= (uint)TrainerRow.MaximumPartySize)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -701,6 +806,7 @@ internal sealed class ZaTrainersEditSessionService
                 return;
             }
 
+            var pokemon = trainerRow.GetOrCreatePokemon(slot);
             ApplyPokemonField(pokemon, edit.Field, value);
             return;
         }
@@ -758,6 +864,12 @@ internal sealed class ZaTrainersEditSessionService
         switch (field)
         {
             case ZaTrainersWorkflowService.SpeciesIdField:
+                if (value == 0)
+                {
+                    row.Clear();
+                    break;
+                }
+
                 row.SpeciesId = checked((ushort)value);
                 break;
             case ZaTrainersWorkflowService.FormField:
@@ -917,6 +1029,8 @@ internal sealed class ZaTrainersEditSessionService
 
     private sealed class TrainerRow
     {
+        public const int MaximumPartySize = 6;
+
         public string? TrainerId { get; init; }
         public ulong TrainerType { get; init; }
         public ulong TrainerType2 { get; init; }
@@ -924,7 +1038,7 @@ internal sealed class ZaTrainersEditSessionService
         public byte MoneyRate { get; set; }
         public bool MegaEvolution { get; set; }
         public bool LastHand { get; set; }
-        public IReadOnlyList<PokemonRow?> Pokemon { get; init; } = Array.Empty<PokemonRow?>();
+        public IReadOnlyList<PokemonRow?> Pokemon { get; private set; } = Array.Empty<PokemonRow?>();
         public bool AiBasic { get; set; }
         public bool AiHigh { get; set; }
         public bool AiExpert { get; set; }
@@ -983,6 +1097,35 @@ internal sealed class ZaTrainersEditSessionService
             AiWeak = (flags & (1 << 5)) != 0;
             AiItem = (flags & (1 << 6)) != 0;
             AiChange = (flags & (1 << 7)) != 0;
+        }
+
+        public PokemonRow GetOrCreatePokemon(int slot)
+        {
+            var slots = Pokemon.Take(MaximumPartySize).ToArray();
+            if (slots.Length < MaximumPartySize)
+            {
+                Array.Resize(ref slots, MaximumPartySize);
+            }
+
+            var pokemon = slots[slot];
+            if (pokemon is null)
+            {
+                pokemon = PokemonRow.CreateDefault();
+                slots[slot] = pokemon;
+                Pokemon = slots;
+            }
+
+            return pokemon;
+        }
+
+        public void NormalizeEmptyPokemon()
+        {
+            Pokemon = Pokemon
+                .Take(MaximumPartySize)
+                .Concat(Enumerable.Repeat<PokemonRow?>(null, MaximumPartySize))
+                .Take(MaximumPartySize)
+                .Select(pokemon => pokemon is null || pokemon.SpeciesId == 0 ? null : pokemon)
+                .ToArray();
         }
 
         public Offset<ZaTrainerRow> Write(FlatBufferBuilder builder)
@@ -1062,6 +1205,41 @@ internal sealed class ZaTrainersEditSessionService
             result.Moves[2] = row.Move3 is { } move3 ? MoveRow.From(move3) : null;
             result.Moves[3] = row.Move4 is { } move4 ? MoveRow.From(move4) : null;
             return result;
+        }
+
+        public static PokemonRow CreateDefault()
+        {
+            return new PokemonRow
+            {
+                SpeciesId = 0,
+                FormId = 0,
+                Sex = -1,
+                Item = 0,
+                Level = 1,
+                BallId = 0,
+                Nature = -1,
+                Ability = 0,
+                Ivs = StatRow.Zero,
+                Evs = StatRow.Zero,
+                RareType = 0,
+                ScaleValue = 0,
+                IsOriginalTrainerByName = false,
+            };
+        }
+
+        public void Clear()
+        {
+            SpeciesId = 0;
+            FormId = 0;
+            Sex = -1;
+            Item = 0;
+            Level = 1;
+            Array.Clear(Moves);
+            Nature = -1;
+            Ability = 0;
+            Ivs = StatRow.Zero;
+            Evs = StatRow.Zero;
+            RareType = 0;
         }
 
         public void SetMove(int index, int value)

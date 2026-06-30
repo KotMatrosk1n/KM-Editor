@@ -18,6 +18,7 @@ using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Shops;
 using KM.Api.StaticEncounters;
+using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
@@ -318,7 +319,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Basic" && flag.Enabled);
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "High" && flag.Enabled);
 
-        var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(6, trainer.Team.Count);
+        var pokemon = Assert.Single(trainer.Team, entry => entry.SpeciesId > 0);
         Assert.Equal(0, pokemon.Slot);
         Assert.Equal(1, pokemon.SpeciesId);
         Assert.Equal("Bulbasaur", pokemon.Species);
@@ -513,6 +515,102 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZATextEditorSupportsBoundedSearchQueries()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        const string scriptPath = "ik_message/dat/English/script/common_0025.dat";
+        temp.WriteBaseRomFsFile(
+            scriptPath,
+            CreateTextTable(2, (0, "Alpha script line"), (1, "Second script line")));
+        var paths = CreatePaths(temp) with { GameTextLanguage = "en" };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var query = new TextWorkflowQueryDto("Second script", 0, 1);
+
+        var load = Dispatch<LoadTextWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(paths, query),
+            "request-za-text-query-load");
+
+        AssertSuccess(load);
+        var entry = Assert.Single(load.Payload!.Workflow.Entries);
+        Assert.Equal($"romfs/{scriptPath}", entry.SourceFile);
+        Assert.Equal(1, entry.LineIndex);
+        Assert.Equal("Second script line", entry.Value);
+        Assert.Equal(1, load.Payload.Workflow.Stats.TotalTextEntryCount);
+
+        var update = Dispatch<UpdateTextEntryResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(paths, Session: null, entry.TextKey, "Renamed Z-A script line", Query: query),
+            "request-za-text-query-update");
+
+        AssertSuccess(update);
+        var updatedEntry = Assert.Single(update.Payload!.Workflow.Entries);
+        Assert.Equal(entry.TextKey, updatedEntry.TextKey);
+        Assert.Equal("Renamed Z-A script line", updatedEntry.Value);
+        Assert.Contains(update.Payload.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.text" && edit.RecordId == entry.TextKey && edit.NewValue == "Renamed Z-A script line");
+    }
+
+    [Fact]
+    public void PokemonLegendsZATextEditorStagesAndAppliesMessageEdits()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        const string scriptPath = "ik_message/dat/English/script/common_0025.dat";
+        temp.WriteBaseRomFsFile(scriptPath, CreateTextTable(1, (0, "[VAR 0100] Original Z-A script line")));
+        var paths = CreatePaths(temp) with { GameTextLanguage = "en" };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var load = Dispatch<LoadTextWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(paths),
+            "request-za-text-edit-load");
+        AssertSuccess(load);
+        var entry = load.Payload!.Workflow.Entries.Single(entry =>
+            entry.SourceFile == $"romfs/{scriptPath}" && entry.LineIndex == 0);
+        Assert.True(entry.CanEdit);
+        Assert.Null(entry.EditBlockedReason);
+
+        var update = Dispatch<UpdateTextEntryResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(paths, Session: null, entry.TextKey, "[VAR 0100] Updated Z-A script line"),
+            "request-za-text-update");
+        AssertSuccess(update);
+        Assert.Contains(update.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.text"
+            && edit.RecordId == entry.TextKey
+            && edit.NewValue == "[VAR 0100] Updated Z-A script line");
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-text-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        Assert.Equal(scriptPath, write.TargetRelativePath);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-text-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal([scriptPath], apply.Payload.ApplyResult.WrittenFiles);
+
+        var outputText = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            scriptPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal("[VAR 0100] Updated Z-A script line", outputText.Lines[0].Text);
+    }
+
+    [Fact]
     public void PokemonLegendsZAGameDumpWritesImplementedCategoryFiles()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -525,6 +623,9 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+        temp.WriteBaseRomFsFile(
+            "ik_message/dat/English/script/common_0025.dat",
+            CreateTextTable(1, (0, "Game dump Z-A script line")));
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
         WriteTrainerFixture(temp);
@@ -544,7 +645,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var categories = load.Payload!.Workflow.Categories;
-        Assert.Equal(["pokemon", "trainers", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "items", "placement", "shops", "typeChart"], categories.Select(category => category.Id).ToArray());
+        Assert.Equal(["pokemon", "trainers", "encounters", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "text", "items", "placement", "shops", "typeChart"], categories.Select(category => category.Id).ToArray());
         Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
 
         var destinationFolder = Path.Combine(temp.RootPath, "dump");
@@ -557,10 +658,12 @@ public sealed class PokemonLegendsZABridgeTests
                 [
                     new GameDumpSelectionDto("items", GameDumpFormatDto.TsvAndJson),
                     new GameDumpSelectionDto("trainers", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("encounters", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("placement", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("staticEncounters", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("giftPokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("tradePokemon", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("text", GameDumpFormatDto.TxtAndJson),
                     new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("typeChart", GameDumpFormatDto.Json),
                 ]),
@@ -584,6 +687,9 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "trainers" && file.RelativePath == Path.Combine("Trainers", "trainers.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "encounters" && file.RelativePath == Path.Combine("Wild Encounters", "encounters.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "placement" && file.RelativePath == Path.Combine("Placement", "placement.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
@@ -596,16 +702,24 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "tradePokemon" && file.RelativePath == Path.Combine("Trade Pokemon", "tradePokemon.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "text" && file.RelativePath == Path.Combine("Text", "text.txt"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "text" && file.RelativePath == Path.Combine("Text", "text.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "typeChart" && file.RelativePath == Path.Combine("Type Chart", "typeChart.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
         Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
         Assert.Contains("Rival Aria", File.ReadAllText(Path.Combine(destinationFolder, "Trainers", "trainers.json")));
+        Assert.Contains("wild_ignore", File.ReadAllText(Path.Combine(destinationFolder, "Wild Encounters", "encounters.json")));
         Assert.Contains("wild_spawn_001", File.ReadAllText(Path.Combine(destinationFolder, "Placement", "placement.json")));
         Assert.Contains("static_event_ivysaur", File.ReadAllText(Path.Combine(destinationFolder, "Static Encounters", "staticEncounters.json")));
         Assert.Contains("main_init_poke_1", File.ReadAllText(Path.Combine(destinationFolder, "Gift Pokemon", "giftPokemon.json")));
         Assert.Contains("sub_tradepoke_bulbasaur", File.ReadAllText(Path.Combine(destinationFolder, "Trade Pokemon", "tradePokemon.json")));
+        Assert.Contains("Game dump Z-A script line", File.ReadAllText(Path.Combine(destinationFolder, "Text", "text.txt")));
         Assert.Contains("Friendly Shop", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
         Assert.Contains("attackTypeIndex", File.ReadAllText(Path.Combine(destinationFolder, "Type Chart", "typeChart.json")));
         Assert.Contains("Pokemon Legends Z-A", File.ReadAllText(Path.Combine(destinationFolder, "manifest.json")));
@@ -915,7 +1029,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(25, trainer.ZaRank);
         Assert.False(trainer.ZaMegaEvolution);
         Assert.Equal("Trainer Battle", trainer.BattleType);
-        var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(6, trainer.Team.Count);
+        var pokemon = Assert.Single(trainer.Team, entry => entry.SpeciesId > 0);
         Assert.Equal(2, pokemon.SpeciesId);
         Assert.Equal("Ivysaur", pokemon.Species);
         Assert.Equal(42, pokemon.Level);
@@ -946,6 +1061,137 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(2, writtenPokemon!.Value.SpeciesId);
         Assert.Equal(42, writtenPokemon!.Value.Level);
         Assert.Equal(45, writtenPokemon.Value.Move1!.Value.MoveId);
+    }
+
+    [Fact]
+    public void PokemonLegendsZATrainerEditorAllowsClearingAndFillingExposedPartySlots()
+    {
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        using (var temp = CreatePokemonLegendsZAProject())
+        {
+            WriteTrainerFixture(temp);
+            var paths = CreatePaths(temp);
+
+            var clear = Dispatch<UpdateTrainerFieldsResponse>(
+                dispatcher,
+                KmCommandNames.UpdateTrainerFields,
+                new UpdateTrainerFieldsRequest(
+                    paths,
+                    Session: null,
+                    [new TrainerFieldUpdateDto(0, 0, "speciesId", "0")]),
+                "request-za-trainer-clear-slot");
+            AssertSuccess(clear);
+            var emptySlot = clear.Payload!.Workflow.Trainers.Single().Team[0];
+            Assert.Equal(0, emptySlot.SpeciesId);
+            Assert.Equal("None", emptySlot.Species);
+            Assert.Equal([0, 0, 0, 0], emptySlot.MoveIds);
+            Assert.Equal(0, emptySlot.HeldItemId);
+            Assert.Equal(0, emptySlot.Ability);
+            Assert.Equal(0, emptySlot.Evs.HP + emptySlot.Evs.Attack + emptySlot.Evs.Defense + emptySlot.Evs.SpecialAttack + emptySlot.Evs.SpecialDefense + emptySlot.Evs.Speed);
+            Assert.Equal(0, emptySlot.Ivs.HP + emptySlot.Ivs.Attack + emptySlot.Ivs.Defense + emptySlot.Ivs.SpecialAttack + emptySlot.Ivs.SpecialDefense + emptySlot.Ivs.Speed);
+            var clearPlan = Dispatch<CreateChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, clear.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+                "request-za-trainer-clear-plan");
+            AssertSuccess(clearPlan);
+            Assert.True(clearPlan.Payload!.ChangePlan.CanApply);
+            var clearApply = Dispatch<ApplyChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.ApplyChangePlan,
+                new ApplyChangePlanRequest(paths, clear.Payload.Session, clearPlan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+                "request-za-trainer-clear-apply");
+            AssertSuccess(clearApply);
+            Assert.DoesNotContain(clearApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+            Assert.Null(ReadTrainer(temp, 0).Pokemon1);
+        }
+
+        using (var temp = CreatePokemonLegendsZAProject())
+        {
+            WriteTrainerFixture(temp);
+            var paths = CreatePaths(temp);
+
+            var fill = Dispatch<UpdateTrainerFieldsResponse>(
+                dispatcher,
+                KmCommandNames.UpdateTrainerFields,
+                new UpdateTrainerFieldsRequest(
+                    paths,
+                    Session: null,
+                    [new TrainerFieldUpdateDto(0, 1, "speciesId", "2")]),
+                "request-za-trainer-fill-slot");
+            AssertSuccess(fill);
+            var trainer = Assert.Single(fill.Payload!.Workflow.Trainers);
+            Assert.Equal(6, trainer.Team.Count);
+            Assert.Equal(2, trainer.Team[1].SpeciesId);
+            var fillPlan = Dispatch<CreateChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, fill.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+                "request-za-trainer-fill-plan");
+            AssertSuccess(fillPlan);
+            Assert.True(fillPlan.Payload!.ChangePlan.CanApply);
+            var fillApply = Dispatch<ApplyChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.ApplyChangePlan,
+                new ApplyChangePlanRequest(paths, fill.Payload.Session, fillPlan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+                "request-za-trainer-fill-apply");
+            AssertSuccess(fillApply);
+            Assert.DoesNotContain(fillApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+            var writtenPokemon = ReadTrainer(temp, 0).Pokemon2;
+            Assert.NotNull(writtenPokemon);
+            Assert.Equal(2, writtenPokemon!.Value.SpeciesId);
+        }
+    }
+
+    [Fact]
+    public void PokemonLegendsZATrainerEditorRejectsPartySlotGaps()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTrainerFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var response = Dispatch<UpdateTrainerFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerFields,
+            new UpdateTrainerFieldsRequest(
+                paths,
+                Session: null,
+                [new TrainerFieldUpdateDto(0, 2, "speciesId", "2")]),
+            "request-za-trainer-gap");
+
+        AssertSuccess(response);
+        Assert.False(response.Payload!.Session.HasPendingChanges);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("filled in order", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PokemonLegendsZATrainerEditorRejectsEditingEmptyPartySlotDetails()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTrainerFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var response = Dispatch<UpdateTrainerFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerFields,
+            new UpdateTrainerFieldsRequest(
+                paths,
+                Session: null,
+                [new TrainerFieldUpdateDto(0, 1, "move1Id", "33")]),
+            "request-za-trainer-empty-slot-detail");
+
+        AssertSuccess(response);
+        Assert.False(response.Payload!.Session.HasPendingChanges);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("slot is empty", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -1132,7 +1378,9 @@ public sealed class PokemonLegendsZABridgeTests
             new LoadTrainersWorkflowRequest(paths),
             "request-za-trainers-signed-defaults");
         AssertSuccess(trainers);
-        var trainerPokemon = Assert.Single(Assert.Single(trainers.Payload!.Workflow.Trainers).Team);
+        var signedDefaultsTrainer = Assert.Single(trainers.Payload!.Workflow.Trainers);
+        Assert.Equal(6, signedDefaultsTrainer.Team.Count);
+        var trainerPokemon = Assert.Single(signedDefaultsTrainer.Team, entry => entry.SpeciesId > 0);
         Assert.Equal(-1, trainerPokemon.Gender);
         Assert.Equal("Game default / random", trainerPokemon.GenderLabel);
         Assert.Equal(33, trainerPokemon.MoveIds[0]);

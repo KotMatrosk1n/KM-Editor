@@ -174,9 +174,15 @@ internal sealed class SvTrainersEditSessionService
             SvEditSessionSupport.TrainersDomain,
             diagnostics);
 
+        var effectiveWorkflow = workflow;
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+            {
+                effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
+            }
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -251,6 +257,11 @@ internal sealed class SvTrainersEditSessionService
             foreach (var edit in session.PendingEdits)
             {
                 ApplyEdit(rows, edit, moveResolver, diagnostics);
+            }
+
+            foreach (var row in rows)
+            {
+                row.NormalizeEmptyPokemon();
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -337,6 +348,26 @@ internal sealed class SvTrainersEditSessionService
                 return null;
             }
 
+            if (pokemon.SpeciesId <= 0 && !string.Equals(normalizedField, SvTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer Pokemon slot is empty. Set a Pokemon species before editing slot details.",
+                    SvEditSessionSupport.TrainersDomain,
+                    field: normalizedField,
+                    expected: "Occupied trainer Pokemon slot"));
+                return null;
+            }
+
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidateTeamOrder(
+                OverlayTrainerPokemon(trainer, slot.Value, normalizedField, parsedValue.Value),
+                diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) != errorCount)
+            {
+                return null;
+            }
+
             return SvEditSessionSupport.CreatePendingEdit(
                 SvEditSessionSupport.TrainersDomain,
                 $"Set {trainer.Name} slot {slot.Value} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -379,6 +410,7 @@ internal sealed class SvTrainersEditSessionService
         }
 
         SvTrainerRecord? trainer;
+        int? pokemonSlot = null;
         if (IsPokemonField(edit.Field))
         {
             if (!TryParseTeamRecordId(edit.RecordId, out var trainerId, out var slot))
@@ -403,6 +435,8 @@ internal sealed class SvTrainersEditSessionService
                     expected: "Existing trainer Pokemon slot"));
                 return;
             }
+
+            pokemonSlot = slot;
         }
         else
         {
@@ -430,13 +464,33 @@ internal sealed class SvTrainersEditSessionService
             }
         }
 
-        _ = SvEditSessionSupport.TryParseInt(
+        var parsedValue = SvEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             SvEditSessionSupport.TrainersDomain,
             diagnostics);
+        if (parsedValue is not null
+            && pokemonSlot is not null
+            && trainer.Team.First(candidate => candidate.Slot == pokemonSlot.Value).SpeciesId <= 0
+            && !string.Equals(edit.Field, SvTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Trainer Pokemon slot is empty. Set a Pokemon species before editing slot details.",
+                SvEditSessionSupport.TrainersDomain,
+                field: edit.Field,
+                expected: "Occupied trainer Pokemon slot"));
+            return;
+        }
+
+        if (parsedValue is not null && pokemonSlot is not null)
+        {
+            ValidateTeamOrder(
+                OverlayTrainerPokemon(trainer, pokemonSlot.Value, edit.Field, parsedValue.Value),
+                diagnostics);
+        }
     }
 
     private static SvTrainersWorkflow OverlayPendingEdits(SvTrainersWorkflow workflow, IEnumerable<PendingEdit> edits)
@@ -520,6 +574,11 @@ internal sealed class SvTrainersEditSessionService
 
     private static SvTrainerPokemonRecord OverlayPokemon(SvTrainerPokemonRecord pokemon, string? field, int value)
     {
+        if (string.Equals(field, SvTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal) && value == 0)
+        {
+            return CreateEmptyPokemonRecord(pokemon.Slot);
+        }
+
         return field switch
         {
             SvTrainersWorkflowService.SpeciesIdField => pokemon with
@@ -559,6 +618,34 @@ internal sealed class SvTrainersEditSessionService
         };
     }
 
+    private static SvTrainerPokemonRecord CreateEmptyPokemonRecord(int slot)
+    {
+        return new SvTrainerPokemonRecord(
+            slot,
+            0,
+            "None",
+            0,
+            1,
+            0,
+            null,
+            [0, 0, 0, 0],
+            ["None", "None", "None", "None"],
+            (int)global::SexType.DEFAULT,
+            SvTrainersWorkflowService.FormatGender(global::SexType.DEFAULT),
+            (int)global::TokuseiType.RANDOM_12,
+            SvTrainersWorkflowService.FormatAbilityMode(global::TokuseiType.RANDOM_12),
+            (int)global::SeikakuType.DEFAULT,
+            SvTrainersWorkflowService.FormatNature(global::SeikakuType.DEFAULT),
+            new SvTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            new SvTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0),
+            Shiny: false,
+            TeraType: (int)global::GemType.DEFAULT,
+            TeraTypeLabel: SvTrainersWorkflowService.FormatTeraType(global::GemType.DEFAULT))
+        {
+            AbilityOptions = Array.Empty<SvTrainerEditableFieldOption>(),
+        };
+    }
+
     private static SvTrainerPokemonRecord OverlayMove(SvTrainerPokemonRecord pokemon, int moveIndex, int value)
     {
         var moveIds = pokemon.MoveIds.ToList();
@@ -577,6 +664,32 @@ internal sealed class SvTrainersEditSessionService
             MoveIds = moveIds,
             Moves = moves,
         };
+    }
+
+    private static void ValidateTeamOrder(
+        SvTrainerRecord trainer,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var hasEmptySlot = false;
+        foreach (var pokemon in trainer.Team.OrderBy(candidate => candidate.Slot))
+        {
+            if (pokemon.SpeciesId <= 0)
+            {
+                hasEmptySlot = true;
+                continue;
+            }
+
+            if (hasEmptySlot)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer Pokemon slots must be filled in order. Fill the previous slot before adding this Pokemon, or clear later slots first.",
+                    SvEditSessionSupport.TrainersDomain,
+                    field: SvTrainersWorkflowService.SpeciesIdField,
+                    expected: "Contiguous trainer Pokemon slots"));
+                return;
+            }
+        }
     }
 
     private static SvTrainerRecord WithTeraTarget(SvTrainerRecord trainer)
@@ -621,8 +734,7 @@ internal sealed class SvTrainersEditSessionService
             }
 
             row = rows.ElementAtOrDefault(trainerId);
-            var pokemon = row?.Pokemon.ElementAtOrDefault(slot);
-            if (pokemon is null)
+            if (row is null || (uint)slot >= (uint)TrainerRow.MaximumPartySize)
             {
                 diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -633,6 +745,7 @@ internal sealed class SvTrainersEditSessionService
                 return;
             }
 
+            var pokemon = row.GetOrCreatePokemon(slot);
             ApplyPokemonField(pokemon, edit.Field, value, moveResolver);
             return;
         }
@@ -694,6 +807,12 @@ internal sealed class SvTrainersEditSessionService
         switch (field)
         {
             case SvTrainersWorkflowService.SpeciesIdField:
+                if (value == 0)
+                {
+                    row.Clear();
+                    break;
+                }
+
                 row.DevId = (global::pml.common.DevID)checked((ushort)value);
                 break;
             case SvTrainersWorkflowService.FormField:
@@ -885,6 +1004,8 @@ internal sealed class SvTrainersEditSessionService
 
     private sealed class TrainerRow
     {
+        public const int MaximumPartySize = 6;
+
         public string? Trid { get; init; }
         public string? TrNameLabel { get; init; }
         public string? TrainerType { get; init; }
@@ -893,7 +1014,7 @@ internal sealed class SvTrainersEditSessionService
         public global::trainer.DataType DataType { get; init; }
         public sbyte MoneyRate { get; set; }
         public bool ChangeGem { get; set; }
-        public IReadOnlyList<PokemonRow?> Pokemon { get; init; } = Array.Empty<PokemonRow?>();
+        public IReadOnlyList<PokemonRow?> Pokemon { get; private set; } = Array.Empty<PokemonRow?>();
         public bool AiBasic { get; set; }
         public bool AiHigh { get; set; }
         public bool AiExpert { get; set; }
@@ -953,6 +1074,35 @@ internal sealed class SvTrainersEditSessionService
             AiWeak = (flags & (1 << 5)) != 0;
             AiItem = (flags & (1 << 6)) != 0;
             AiChange = (flags & (1 << 7)) != 0;
+        }
+
+        public PokemonRow GetOrCreatePokemon(int slot)
+        {
+            var slots = Pokemon.Take(MaximumPartySize).ToArray();
+            if (slots.Length < MaximumPartySize)
+            {
+                Array.Resize(ref slots, MaximumPartySize);
+            }
+
+            var pokemon = slots[slot];
+            if (pokemon is null)
+            {
+                pokemon = PokemonRow.CreateDefault();
+                slots[slot] = pokemon;
+                Pokemon = slots;
+            }
+
+            return pokemon;
+        }
+
+        public void NormalizeEmptyPokemon()
+        {
+            Pokemon = Pokemon
+                .Take(MaximumPartySize)
+                .Concat(Enumerable.Repeat<PokemonRow?>(null, MaximumPartySize))
+                .Take(MaximumPartySize)
+                .Select(pokemon => pokemon is null || (int)pokemon.DevId == 0 ? null : pokemon)
+                .ToArray();
         }
 
         public Offset<global::trainer.TrdataMain> Write(FlatBufferBuilder builder)
@@ -1048,6 +1198,47 @@ internal sealed class SvTrainersEditSessionService
             result.Waza[2] = row.Waza3 is { } waza3 ? WazaSetRow.From(waza3) : null;
             result.Waza[3] = row.Waza4 is { } waza4 ? WazaSetRow.From(waza4) : null;
             return result;
+        }
+
+        public static PokemonRow CreateDefault()
+        {
+            return new PokemonRow
+            {
+                DevId = (global::pml.common.DevID)0,
+                FormId = 0,
+                Sex = global::SexType.DEFAULT,
+                Item = (global::ItemID)0,
+                Level = 1,
+                BallId = (global::BallType)0,
+                WazaType = global::WazaType.MANUAL,
+                GemType = global::GemType.DEFAULT,
+                Seikaku = global::SeikakuType.DEFAULT,
+                Tokusei = global::TokuseiType.RANDOM_12,
+                TalentType = (global::TalentType)0,
+                TalentValue = ParamSetRow.Zero,
+                TalentVnum = 0,
+                EffortValue = ParamSetRow.Zero,
+                RareType = global::RareType.DEFAULT,
+                ScaleType = (global::SizeType)0,
+                ScaleValue = 0,
+            };
+        }
+
+        public void Clear()
+        {
+            DevId = (global::pml.common.DevID)0;
+            FormId = 0;
+            Sex = global::SexType.DEFAULT;
+            Item = (global::ItemID)0;
+            Level = 1;
+            WazaType = global::WazaType.MANUAL;
+            Array.Clear(Waza);
+            GemType = global::GemType.DEFAULT;
+            Seikaku = global::SeikakuType.DEFAULT;
+            Tokusei = global::TokuseiType.RANDOM_12;
+            TalentValue = ParamSetRow.Zero;
+            EffortValue = ParamSetRow.Zero;
+            RareType = global::RareType.DEFAULT;
         }
 
         public void SetMove(int index, int moveId, SvDefaultMoveResolver moveResolver)

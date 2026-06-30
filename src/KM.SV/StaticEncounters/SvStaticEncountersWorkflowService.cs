@@ -181,7 +181,6 @@ internal sealed class SvStaticEncountersWorkflowService
             CreateEditableFields(placementWorkflow.EditableFields),
             new SvStaticEncountersWorkflowStats(
                 encounters.Length,
-                GigantamaxEncounterCount: 0,
                 encounters.Count(entry => entry.FlawlessIvCount is not null and not 0),
                 sourceFiles,
                 encounters.Count(entry => entry.CategoryId == SvPlacementWorkflowService.FixedSymbolsCategory),
@@ -293,8 +292,6 @@ internal sealed class SvStaticEncountersWorkflowService
             displayValues.GetValueOrDefault(ShinyLockField, "Default"),
             categoryOrdinal,
             categoryLabel,
-            DynamaxLevel: 0,
-            CanGigantamax: false,
             new SvStaticEncounterStatsRecord(0, 0, 0, 0, 0, 0),
             ivs,
             flawlessIvCount,

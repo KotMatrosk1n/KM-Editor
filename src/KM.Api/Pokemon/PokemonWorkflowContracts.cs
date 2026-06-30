@@ -106,7 +106,7 @@ public sealed record PokemonPersonalDetailsDto(
     int HatchedSpecies,
     int LocalFormIndex,
     bool IsRegionalForm,
-    bool CanNotDynamax,
+    bool? CanNotDynamax,
     int Form);
 
 public sealed record PokemonEvolutionRecordDto(
