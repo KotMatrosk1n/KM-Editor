@@ -1294,6 +1294,11 @@ const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
 const encounterLevelMinFieldName = 'levelMin';
 const encounterLevelMaxFieldName = 'levelMax';
+const encounterClearFieldNames = [
+  encounterSpeciesFieldName,
+  encounterFormFieldName,
+  encounterProbabilityFieldName
+];
 const encounterConditionLabels = [
   'Normal',
   'Overcast',
@@ -6536,45 +6541,19 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = encountersWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
-
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateEncounterSlotFields({
-          paths: toProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            slot,
-            tableId,
-            value: change.value
-          }))
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updateEncounterSlotField({
-            field: change.field,
-            paths: toProjectPaths(draftPaths),
-            session: nextSession,
-            slot,
-            tableId,
-            value: change.value
-          });
-          nextWorkflow = response.workflow;
-          nextSession = response.session;
-          nextDiagnostics = response.diagnostics;
-        }
-      }
-
-      if (nextWorkflow) {
-        setEncountersWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
+      const response = await bridge.updateEncounterSlotFields({
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        updates: changes.map((change) => ({
+          field: change.field,
+          slot,
+          tableId,
+          value: change.value
+        }))
+      });
+      setEncountersWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
       return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -6595,14 +6574,10 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = encountersWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
       const totalChanges = nonEmptyUpdates.reduce(
         (total, update) => total + update.changes.length,
         0
       );
-      let completedChanges = 0;
 
       setWorkProgress(createDeterminateWorkProgress(
         'Applying Encounter Copy',
@@ -6612,64 +6587,26 @@ export function App({
         0
       ));
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        setWorkProgress(createDeterminateWorkProgress(
-          'Applying Encounter Copy',
-          `Applying ${totalChanges} slot field updates`,
-          encounterAreaCopyProgressSteps,
-          1,
-          50
-        ));
+      setWorkProgress(createDeterminateWorkProgress(
+        'Applying Encounter Copy',
+        `Applying ${totalChanges} slot field updates`,
+        encounterAreaCopyProgressSteps,
+        1,
+        50
+      ));
 
-        const response = await bridge.updateEncounterSlotFields({
-          paths: toProjectPaths(draftPaths),
-          session: editSession,
-          updates: nonEmptyUpdates.flatMap((update) =>
-            update.changes.map((change) => ({
-              field: change.field,
-              slot: update.slot,
-              tableId: update.tableId,
-              value: change.value
-            }))
-          )
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const update of nonEmptyUpdates) {
-          for (const change of update.changes) {
-            setWorkProgress(createDeterminateWorkProgress(
-              'Applying Encounter Copy',
-              formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
-              encounterAreaCopyProgressSteps,
-              1,
-              Math.round((completedChanges / totalChanges) * 100)
-            ));
-
-            const response = await bridge.updateEncounterSlotField({
-              field: change.field,
-              paths: toProjectPaths(draftPaths),
-              session: nextSession,
-              slot: update.slot,
-              tableId: update.tableId,
-              value: change.value
-            });
-            nextWorkflow = response.workflow;
-            nextSession = response.session;
-            nextDiagnostics = response.diagnostics;
-            completedChanges++;
-
-            setWorkProgress(createDeterminateWorkProgress(
-              'Applying Encounter Copy',
-              formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
-              encounterAreaCopyProgressSteps,
-              1,
-              Math.round((completedChanges / totalChanges) * 100)
-            ));
-          }
-        }
-      }
+      const response = await bridge.updateEncounterSlotFields({
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        updates: nonEmptyUpdates.flatMap((update) =>
+          update.changes.map((change) => ({
+            field: change.field,
+            slot: update.slot,
+            tableId: update.tableId,
+            value: change.value
+          }))
+        )
+      });
 
       setWorkProgress(createDeterminateWorkProgress(
         'Applying Encounter Copy',
@@ -6679,11 +6616,9 @@ export function App({
         100
       ));
 
-      if (nextWorkflow) {
-        setEncountersWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
+      setEncountersWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
       return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -20646,6 +20581,17 @@ function SelectedEncounterPanel({
   const hasInvalidEncounterLevelDraft = encounterDraftSummary.invalidFields.some((field) =>
     encounterLevelFieldNames.includes(field.field)
   );
+  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
+  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const canClearEncounterSlot =
+    table !== null &&
+    encounterSlot !== null &&
+    editSession !== null &&
+    canEditEncounters &&
+    !isEncounterUpdating &&
+    !isSvEncounterTable &&
+    !isZaEncounterTable &&
+    (encounterSlot.speciesId !== 0 || encounterSlot.form !== 0 || encounterSlot.weight !== 0);
   const canApplyEncounterLevelsToZone =
     table !== null &&
     encounterSlot !== null &&
@@ -20678,8 +20624,6 @@ function SelectedEncounterPanel({
       : preparedAreaCopyRequest === null
       ? 'No matching destination conditions or slots are available to copy.'
       : undefined;
-  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
-  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
   const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
   const displayedEncounterSlots = table
     ? isSvEncounterTable
@@ -21094,6 +21038,47 @@ function SelectedEncounterPanel({
                         label="Save Encounter"
                       />
                     </button>
+                    {!isSvEncounterTable && !isZaEncounterTable ? (
+                      <button
+                        aria-busy={isEncounterUpdating || undefined}
+                        className="danger-button"
+                        disabled={!canClearEncounterSlot}
+                        onClick={async () => {
+                          if (!table || !encounterSlot || !encounterDraftKey) {
+                            return;
+                          }
+
+                          const didSave = await onUpdateEncounterSlotFields(
+                            table.tableId,
+                            encounterSlot.slot,
+                            [
+                              { field: encounterSpeciesFieldName, value: '0' },
+                              { field: encounterFormFieldName, value: '0' },
+                              { field: encounterProbabilityFieldName, value: '0' }
+                            ]
+                          );
+                          if (didSave) {
+                            setDraftsBySlotKey((currentDrafts) =>
+                              removeDraftFieldsFromRecord(
+                                currentDrafts,
+                                encounterDraftKey,
+                                encounterDraftDefaults,
+                                encounterClearFieldNames
+                              )
+                            );
+                          }
+                        }}
+                        title="Set this SwSh encounter slot to Empty at 0% probability."
+                        type="button"
+                      >
+                        <BusyActionContent
+                          busyLabel="Clearing"
+                          icon={<Trash2 aria-hidden="true" size={16} />}
+                          isBusy={isEncounterUpdating}
+                          label="Clear Slot"
+                        />
+                      </button>
+                    ) : null}
                     <button
                       className="danger-button"
                       disabled={isEncounterUpdating}
@@ -30803,38 +30788,6 @@ function createEncounterTableCopyUpdates(
       slot: slot.slot,
       tableId: targetTable.tableId
     }));
-}
-
-function formatEncounterCopyProgressDetail(
-  workflow: EncountersWorkflow | null,
-  update: EncounterSlotFieldUpdate,
-  field: string
-) {
-  const table = workflow?.tables.find((candidate) => candidate.tableId === update.tableId);
-  const fieldLabel = getEncounterCopyFieldLabel(field);
-
-  if (!table) {
-    return `Updating slot ${update.slot} ${fieldLabel}`;
-  }
-
-  return `Updating ${table.area} ${table.encounterType} slot ${update.slot} ${fieldLabel}`;
-}
-
-function getEncounterCopyFieldLabel(field: string) {
-  switch (field) {
-    case encounterSpeciesFieldName:
-      return 'Pokemon';
-    case encounterFormFieldName:
-      return 'form';
-    case encounterProbabilityFieldName:
-      return 'percentage';
-    case encounterLevelMinFieldName:
-      return 'minimum level';
-    case encounterLevelMaxFieldName:
-      return 'maximum level';
-    default:
-      return field;
-  }
 }
 
 function compareEncounterTablesForCopy(

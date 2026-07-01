@@ -9,3 +9,9 @@ public sealed record SwShEncountersEditResult(
     SwShEncountersWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SwShEncounterSlotFieldUpdate(
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);

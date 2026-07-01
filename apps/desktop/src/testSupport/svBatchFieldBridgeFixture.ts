@@ -92,8 +92,15 @@ export function createSvBatchFieldBridgeFixtureMethods(
                         return { ...slot, levelMin: value };
                       case 'levelMax':
                         return { ...slot, levelMax: value };
+                      case 'form':
+                        return { ...slot, form: value };
+                      case 'speciesId':
                       case 'species':
-                        return { ...slot, speciesId: value };
+                        return {
+                          ...slot,
+                          species: value === 0 ? 'Empty' : `Species ${value}`,
+                          speciesId: value
+                        };
                       case 'probability':
                       case 'weight':
                         return { ...slot, weight: value };

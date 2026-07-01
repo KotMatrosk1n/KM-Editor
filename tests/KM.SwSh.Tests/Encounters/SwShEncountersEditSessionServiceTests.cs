@@ -221,6 +221,64 @@ public sealed class SwShEncountersEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateSlotFieldsStagesEmptySpeciesFormAndZeroProbabilityTogether()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var service = new SwShEncountersEditSessionService();
+
+        var result = service.UpdateSlotFields(
+            temp.Paths,
+            session: null,
+            [
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.SpeciesIdField,
+                    "0"),
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.FormField,
+                    "0"),
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.ProbabilityField,
+                    "0"),
+            ]);
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(3, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShEncountersWorkflowService.SpeciesIdField && edit.NewValue == "0");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShEncountersWorkflowService.FormField && edit.NewValue == "0");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShEncountersWorkflowService.ProbabilityField && edit.NewValue == "0");
+        var updatedTable = result.Workflow.Tables.First(candidate => candidate.TableId == table.TableId);
+        var updatedSlot = updatedTable.Slots.Single(slot => slot.Slot == 2);
+        Assert.Equal(0, updatedSlot.SpeciesId);
+        Assert.Equal("Empty", updatedSlot.Species);
+        Assert.Equal(0, updatedSlot.Form);
+        Assert.Equal(0, updatedSlot.Weight);
+
+        var validation = service.Validate(temp.Paths, result.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("must total 100", StringComparison.Ordinal));
+        Assert.DoesNotContain(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("empty but has", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesEditedEncounterArchiveToOutputPack()
     {
         using var temp = TemporarySwShProject.Create();

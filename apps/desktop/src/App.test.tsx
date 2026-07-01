@@ -4231,6 +4231,55 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('clears a SwSh wild encounter slot to Empty with zero probability', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    const updateEncounterSlotFields = vi.fn(baseBridge.updateEncounterSlotFields);
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          updateEncounterSlotFields
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    await user.click(await screen.findByRole('button', { name: /#2.*Charmander/ }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Clear Slot' }));
+
+    await waitFor(() => expect(updateEncounterSlotFields).toHaveBeenCalled());
+    expect(updateEncounterSlotFields.mock.calls.at(-1)?.[0].updates).toEqual([
+      {
+        field: 'speciesId',
+        slot: 2,
+        tableId: 'sword:symbol:0:1122334455667788:0',
+        value: '0'
+      },
+      {
+        field: 'form',
+        slot: 2,
+        tableId: 'sword:symbol:0:1122334455667788:0',
+        value: '0'
+      },
+      {
+        field: 'probability',
+        slot: 2,
+        tableId: 'sword:symbol:0:1122334455667788:0',
+        value: '0'
+      }
+    ]);
+    expect((await screen.findAllByText('Empty')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Total chance: 35%')).toBeInTheDocument();
+  });
+
   it('shows wild encounter form names without duplicating the suffix', async () => {
     const user = userEvent.setup();
     const workflow: EncountersWorkflow = {
@@ -4632,9 +4681,9 @@ describe('App', () => {
         }))
       ]
     };
-    const updates: Array<Parameters<ProjectBridge['updateEncounterSlotField']>[0]> = [];
-    const updateEncounterSlotField: ProjectBridge['updateEncounterSlotField'] = async (request) => {
-      updates.push(request);
+    const updates: Array<Parameters<ProjectBridge['updateEncounterSlotFields']>[0]['updates'][number]> = [];
+    const updateEncounterSlotFields: ProjectBridge['updateEncounterSlotFields'] = async (request) => {
+      updates.push(...request.updates);
 
       return {
         diagnostics: [],
@@ -4642,19 +4691,19 @@ describe('App', () => {
           hasPendingChanges: true,
           pendingEdits: [
             ...(request.session?.pendingEdits ?? []),
-            {
+            ...request.updates.map((update) => ({
               domain: 'workflow.encounters',
-              field: request.field,
-              newValue: request.value,
-              recordId: `${request.tableId}#${request.slot}`,
+              field: update.field,
+              newValue: update.value,
+              recordId: `${update.tableId}#${update.slot}`,
               sources: [
                 {
-                  layer: 'base',
+                  layer: 'base' as const,
                   relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
                 }
               ],
-              summary: `Set ${request.tableId} slot ${request.slot} ${request.field} to ${request.value}.`
-            }
+              summary: `Set ${update.tableId} slot ${update.slot} ${update.field} to ${update.value}.`
+            }))
           ],
           sessionId: request.session?.sessionId ?? 'session-1'
         },
@@ -4670,7 +4719,7 @@ describe('App', () => {
               Promise.resolve({
                 workflow
               }),
-            updateEncounterSlotField
+            updateEncounterSlotFields
           },
           true
         )}
@@ -5092,11 +5141,11 @@ describe('App', () => {
         ])
       ]
     };
-    const updates: Array<Parameters<ProjectBridge['updateEncounterSlotField']>[0]> = [];
+    const updates: Array<Parameters<ProjectBridge['updateEncounterSlotFields']>[0]['updates'][number]> = [];
     const firstUpdateRelease: { current: (() => void) | null } = { current: null };
     let didHoldFirstUpdate = false;
-    const updateEncounterSlotField: ProjectBridge['updateEncounterSlotField'] = async (request) => {
-      updates.push(request);
+    const updateEncounterSlotFields: ProjectBridge['updateEncounterSlotFields'] = async (request) => {
+      updates.push(...request.updates);
 
       if (!didHoldFirstUpdate) {
         didHoldFirstUpdate = true;
@@ -5105,41 +5154,43 @@ describe('App', () => {
         });
       }
 
-      workflow = {
-        ...workflow,
-        tables: workflow.tables.map((table) =>
-          table.tableId === request.tableId
-            ? {
-                ...table,
-                slots: table.slots.map((slot) => {
-                  if (slot.slot !== request.slot) {
-                    return slot;
-                  }
-
-                  const nextValue = Number.parseInt(request.value, 10);
-                  switch (request.field) {
-                    case 'speciesId':
-                      return {
-                        ...slot,
-                        species: speciesNames.get(nextValue) ?? slot.species,
-                        speciesId: nextValue
-                      };
-                    case 'form':
-                      return { ...slot, form: nextValue };
-                    case 'probability':
-                      return { ...slot, weight: nextValue };
-                    case 'levelMin':
-                      return { ...slot, levelMin: nextValue };
-                    case 'levelMax':
-                      return { ...slot, levelMax: nextValue };
-                    default:
+      for (const update of request.updates) {
+        workflow = {
+          ...workflow,
+          tables: workflow.tables.map((table) =>
+            table.tableId === update.tableId
+              ? {
+                  ...table,
+                  slots: table.slots.map((slot) => {
+                    if (slot.slot !== update.slot) {
                       return slot;
-                  }
-                })
-              }
-            : table
-        )
-      };
+                    }
+
+                    const nextValue = Number.parseInt(update.value, 10);
+                    switch (update.field) {
+                      case 'speciesId':
+                        return {
+                          ...slot,
+                          species: speciesNames.get(nextValue) ?? slot.species,
+                          speciesId: nextValue
+                        };
+                      case 'form':
+                        return { ...slot, form: nextValue };
+                      case 'probability':
+                        return { ...slot, weight: nextValue };
+                      case 'levelMin':
+                        return { ...slot, levelMin: nextValue };
+                      case 'levelMax':
+                        return { ...slot, levelMax: nextValue };
+                      default:
+                        return slot;
+                    }
+                  })
+                }
+              : table
+          )
+        };
+      }
 
       return {
         diagnostics: [],
@@ -5147,19 +5198,19 @@ describe('App', () => {
           hasPendingChanges: true,
           pendingEdits: [
             ...(request.session?.pendingEdits ?? []),
-            {
+            ...request.updates.map((update) => ({
               domain: 'workflow.encounters',
-              field: request.field,
-              newValue: request.value,
-              recordId: `${request.tableId}#${request.slot}`,
+              field: update.field,
+              newValue: update.value,
+              recordId: `${update.tableId}#${update.slot}`,
               sources: [
                 {
-                  layer: 'base',
+                  layer: 'base' as const,
                   relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
                 }
               ],
-              summary: `Set ${request.tableId} slot ${request.slot} ${request.field} to ${request.value}.`
-            }
+              summary: `Set ${update.tableId} slot ${update.slot} ${update.field} to ${update.value}.`
+            }))
           ],
           sessionId: request.session?.sessionId ?? 'session-1'
         },
@@ -5172,7 +5223,7 @@ describe('App', () => {
         bridge={createMockProjectBridge(
           {
             loadEncountersWorkflow: () => Promise.resolve({ workflow }),
-            updateEncounterSlotField
+            updateEncounterSlotFields
           },
           true
         )}
@@ -5201,9 +5252,9 @@ describe('App', () => {
 
     const progressDialog = await screen.findByRole('dialog', { name: 'Applying Encounter Copy' });
     expect(
-      within(progressDialog).getByText('Updating Hidden Normal slot 1 Pokemon')
+      within(progressDialog).getByText('Applying 5 slot field updates')
     ).toBeInTheDocument();
-    expect(within(progressDialog).getByText('0%')).toBeInTheDocument();
+    expect(within(progressDialog).getByText('50%')).toBeInTheDocument();
     if (!firstUpdateRelease.current) {
       throw new Error('First encounter update did not start.');
     }

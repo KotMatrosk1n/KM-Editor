@@ -703,6 +703,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateEncounterSlotFieldsResponse ToEncounterSlotFieldsDto(SwShEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateEncounterSlotFieldsResponse(
+            ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateRaidRewardFieldResponse ToDto(SwShRaidRewardsEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
