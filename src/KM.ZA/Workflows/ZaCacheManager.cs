@@ -33,10 +33,13 @@ public sealed class ZaCacheManager
     private const string OutputRootStampFileName = "output-root.json";
     private const string PayloadDirectoryName = "payloads";
     private const string MetadataDirectoryName = "metadata";
+    private const int TextWarmupBatchSize = 256;
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static readonly IReadOnlyList<string> WarmupTextLanguages =
         ZaGameTextLanguage.SupportedMessageLanguages;
+    private static readonly IReadOnlyList<string> CoreWarmupVirtualPaths = CreateCoreWarmupVirtualPaths();
+    private static readonly IReadOnlyList<string> LabelWarmupVirtualPaths = CreateLabelWarmupVirtualPaths();
 
     private readonly string cacheRoot;
     private readonly object syncRoot = new();
@@ -56,7 +59,23 @@ public sealed class ZaCacheManager
         return options;
     }
 
-    public static IReadOnlyList<string> WarmupVirtualPaths { get; } = CreateWarmupVirtualPaths();
+    public static IReadOnlyList<string> WarmupVirtualPaths { get; } = CreateOrderedWarmupVirtualPaths();
+
+    public IReadOnlyList<string> GetWarmupVirtualPaths(ProjectPaths? paths = null)
+    {
+        lock (syncRoot)
+        {
+            EnsureRoot();
+            var context = TryCreateActiveProjectContext(paths);
+            if (context is null)
+            {
+                return WarmupVirtualPaths;
+            }
+
+            DeleteObsoleteProjectCaches(context);
+            return GetWarmupVirtualPaths(context);
+        }
+    }
 
     public ZaCacheSettings GetSettings()
     {
@@ -67,36 +86,40 @@ public sealed class ZaCacheManager
         }
     }
 
-    private static IReadOnlyList<string> CreateWarmupVirtualPaths()
+    private static IReadOnlyList<string> CreateCoreWarmupVirtualPaths()
     {
-        return new[]
-            {
-                ZaDataPaths.PersonalArray,
-                ZaDataPaths.MoveDataArray,
-                ZaDataPaths.ItemDataArray,
-                ZaDataPaths.TrainerDataArray,
-                ZaDataPaths.PokemonDataArray,
-                ZaDataPaths.EncountDataArray,
-                ZaDataPaths.PokemonSpawnerDataArray,
-                ZaDataPaths.PokemonSpawnerTransformArray,
-                ZaDataPaths.ItemBallSpawnerDataArray,
-                ZaDataPaths.ItemBallSpawnerTransformArray,
-                ZaDataPaths.RandomPopItemSpawnerDataArray,
-                ZaDataPaths.BattleTrainerSpawnerDataArray,
-                ZaDataPaths.ShopItemArray,
-                ZaDataPaths.ShopItemLineupArray,
-                ZaDataPaths.ShopDressUpArray,
-                ZaDataPaths.ShopDressUpLineupArray,
-                ZaDataPaths.ShopHairMakeLineupArray,
-                ZaDataPaths.DressUpDataArray,
-                ZaDataPaths.HairMakeDataArray,
-            }
-            .Concat(CreateWarmupTextPaths())
+        return
+        [
+            ZaDataPaths.PersonalArray,
+            ZaDataPaths.MoveDataArray,
+            ZaDataPaths.ItemDataArray,
+            ZaDataPaths.TrainerDataArray,
+            ZaDataPaths.PokemonDataArray,
+            ZaDataPaths.EncountDataArray,
+            ZaDataPaths.PokemonSpawnerDataArray,
+            ZaDataPaths.PokemonSpawnerTransformArray,
+            ZaDataPaths.ItemBallSpawnerDataArray,
+            ZaDataPaths.ItemBallSpawnerTransformArray,
+            ZaDataPaths.RandomPopItemSpawnerDataArray,
+            ZaDataPaths.BattleTrainerSpawnerDataArray,
+            ZaDataPaths.ShopItemArray,
+            ZaDataPaths.ShopItemLineupArray,
+            ZaDataPaths.ShopDressUpArray,
+            ZaDataPaths.ShopDressUpLineupArray,
+            ZaDataPaths.ShopHairMakeLineupArray,
+            ZaDataPaths.DressUpDataArray,
+            ZaDataPaths.HairMakeDataArray,
+        ];
+    }
+
+    private static IReadOnlyList<string> CreateLabelWarmupVirtualPaths()
+    {
+        return CreateWarmupLabelTextPaths()
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
-    private static IEnumerable<string> CreateWarmupTextPaths()
+    private static IEnumerable<string> CreateWarmupLabelTextPaths()
     {
         foreach (var language in WarmupTextLanguages)
         {
@@ -111,6 +134,54 @@ public sealed class ZaCacheManager
             yield return ZaDataPaths.TrainerNameKeys(language);
             yield return ZaDataPaths.TrainerTypes(language);
             yield return ZaDataPaths.TrainerTypeKeys(language);
+        }
+    }
+
+    private static IReadOnlyList<string> CreateOrderedWarmupVirtualPaths(
+        IEnumerable<string>? discoveredTextEditorPaths = null)
+    {
+        return CoreWarmupVirtualPaths
+            .Concat(LabelWarmupVirtualPaths)
+            .Concat(discoveredTextEditorPaths ?? [])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private IReadOnlyList<string> GetWarmupVirtualPaths(ZaCacheProjectContext context)
+    {
+        try
+        {
+            var index = GetOrBuildIndex(context);
+            var fileHashes = index.Files
+                .Select(file => file.FileHash)
+                .ToHashSet();
+
+            return CreateOrderedWarmupVirtualPaths(CreateDiscoveredMessageWarmupPaths(index))
+                .Where(virtualPath => fileHashes.Contains(ZaTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath))))
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return WarmupVirtualPaths;
+        }
+    }
+
+    private static IEnumerable<string> CreateDiscoveredMessageWarmupPaths(ZaTrinityArchiveIndex index)
+    {
+        var packNames = index.Files
+            .Select(file => file.PackName)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var language in WarmupTextLanguages)
+        {
+            foreach (var packName in packNames)
+            {
+                var virtualPath = ZaMessagePathResolver.TryCreateMessageDatPathFromPackName(packName, language);
+                if (!string.IsNullOrWhiteSpace(virtualPath))
+                {
+                    yield return virtualPath;
+                }
+            }
         }
     }
 
@@ -193,15 +264,28 @@ public sealed class ZaCacheManager
 
             DeleteObsoleteProjectCaches(context);
 
-            var safeStepIndex = Math.Clamp(stepIndex, 0, Math.Max(0, WarmupVirtualPaths.Count - 1));
-            var virtualPath = WarmupVirtualPaths[safeStepIndex];
+            var warmupVirtualPaths = GetWarmupVirtualPaths(context);
+            if (warmupVirtualPaths.Count == 0)
+            {
+                return CreateStatus(settings, context, activeProjectPreserved: false);
+            }
 
-            _ = GetOrBuildIndex(context);
-            WriteVirtualMetadata(context, virtualPath);
+            var batch = GetWarmupBatch(settings, context, warmupVirtualPaths, stepIndex);
+            if (batch.Count == 0)
+            {
+                return CreateStatus(settings, context, activeProjectPreserved: false);
+            }
 
             if (settings.Mode == ZaCacheMode.Performance)
             {
-                _ = ReadBaseTrinityFile(paths, virtualPath);
+                WarmupPerformanceBatch(paths, context, batch);
+            }
+            else
+            {
+                foreach (var virtualPath in batch)
+                {
+                    WriteVirtualMetadata(context, virtualPath);
+                }
             }
 
             PruneIfNeeded(settings, context.ProjectKey);
@@ -285,15 +369,10 @@ public sealed class ZaCacheManager
         Directory.CreateDirectory(context.ProjectDirectory);
         var indexPath = Path.Combine(context.ProjectDirectory, IndexFileName);
 
-        if (File.Exists(indexPath))
+        if (TryReadCachedIndex(context, out var cachedIndex))
         {
-            if (TryReadCacheIndexFile(indexPath, out var cached)
-                && cached.Source == context.Source
-                && cached.Index.SchemaVersion == ZaTrinityArchive.IndexSchemaVersion)
-            {
-                TouchProjectDirectory(context);
-                return cached.Index;
-            }
+            TouchProjectDirectory(context);
+            return cachedIndex;
         }
 
         var index = ZaTrinityArchive.BuildIndex(context.RomFsRootPath);
@@ -304,6 +383,21 @@ public sealed class ZaCacheManager
         WriteJsonAtomic(indexPath, indexFile);
         TouchProjectDirectory(context);
         return index;
+    }
+
+    private bool TryReadCachedIndex(ZaCacheProjectContext context, out ZaTrinityArchiveIndex index)
+    {
+        var indexPath = Path.Combine(context.ProjectDirectory, IndexFileName);
+        if (TryReadCacheIndexFile(indexPath, out var cached)
+            && cached.Source == context.Source
+            && cached.Index.SchemaVersion == ZaTrinityArchive.IndexSchemaVersion)
+        {
+            index = cached.Index;
+            return true;
+        }
+
+        index = default!;
+        return false;
     }
 
     private ZaTrinityArchiveIndex GetBaseTrinityIndex(ProjectPaths paths)
@@ -371,6 +465,110 @@ public sealed class ZaCacheManager
         }
     }
 
+    private IReadOnlyList<string> GetWarmupBatch(
+        ZaCacheSettings settings,
+        ZaCacheProjectContext context,
+        IReadOnlyList<string> warmupVirtualPaths,
+        int stepIndex)
+    {
+        var firstIndex = FindNextIncompleteWarmupIndex(settings, context, warmupVirtualPaths, stepIndex);
+        if (firstIndex < 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var firstPath = NormalizeVirtualPath(warmupVirtualPaths[firstIndex]);
+        if (!IsTextMessagePath(firstPath))
+        {
+            return [firstPath];
+        }
+
+        var batch = new List<string>(TextWarmupBatchSize);
+        for (var offset = 0; offset < warmupVirtualPaths.Count && batch.Count < TextWarmupBatchSize; offset++)
+        {
+            var index = (firstIndex + offset) % warmupVirtualPaths.Count;
+            var virtualPath = NormalizeVirtualPath(warmupVirtualPaths[index]);
+            if (!IsTextMessagePath(virtualPath))
+            {
+                continue;
+            }
+
+            if (!IsWarmupEntryComplete(settings, context, virtualPath))
+            {
+                batch.Add(virtualPath);
+            }
+        }
+
+        return batch;
+    }
+
+    private int FindNextIncompleteWarmupIndex(
+        ZaCacheSettings settings,
+        ZaCacheProjectContext context,
+        IReadOnlyList<string> warmupVirtualPaths,
+        int stepIndex)
+    {
+        var safeStepIndex = Math.Clamp(stepIndex, 0, Math.Max(0, warmupVirtualPaths.Count - 1));
+        for (var offset = 0; offset < warmupVirtualPaths.Count; offset++)
+        {
+            var index = (safeStepIndex + offset) % warmupVirtualPaths.Count;
+            var virtualPath = NormalizeVirtualPath(warmupVirtualPaths[index]);
+            if (!IsWarmupEntryComplete(settings, context, virtualPath))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsWarmupEntryComplete(
+        ZaCacheSettings settings,
+        ZaCacheProjectContext context,
+        string virtualPath)
+    {
+        if (!File.Exists(GetMetadataPath(context, virtualPath)))
+        {
+            return false;
+        }
+
+        return settings.Mode != ZaCacheMode.Performance || File.Exists(GetPayloadPath(context, virtualPath));
+    }
+
+    private static bool IsWarmupPayloadComplete(ZaCacheProjectContext context, string virtualPath)
+    {
+        return File.Exists(GetMetadataPath(context, virtualPath))
+            && File.Exists(GetPayloadPath(context, virtualPath));
+    }
+
+    private void WarmupPerformanceBatch(
+        ProjectPaths paths,
+        ZaCacheProjectContext context,
+        IReadOnlyList<string> virtualPaths)
+    {
+        var index = GetOrBuildIndex(context);
+        using var archive = ZaTrinityArchive.Open(
+            paths.BaseRomFsPath!,
+            paths.PokemonLegendsZASupportFolderPath,
+            index: index);
+
+        foreach (var virtualPath in virtualPaths)
+        {
+            if (IsWarmupPayloadComplete(context, virtualPath))
+            {
+                continue;
+            }
+
+            if (!archive.TryReadFile(virtualPath, out var bytes))
+            {
+                continue;
+            }
+
+            WriteVirtualMetadata(context, virtualPath);
+            WritePayload(context, virtualPath, bytes);
+        }
+    }
+
     private void WritePayload(ZaCacheProjectContext context, string virtualPath, byte[] bytes)
     {
         Directory.CreateDirectory(GetPayloadDirectory(context));
@@ -394,11 +592,12 @@ public sealed class ZaCacheManager
         bool activeProjectPreserved)
     {
         var cacheSize = GetCacheContentSize();
-        var total = context is not null && settings.Mode != ZaCacheMode.Minimal
-            ? WarmupVirtualPaths.Count
-            : 0;
+        var warmupVirtualPaths = context is not null && settings.Mode != ZaCacheMode.Minimal
+            ? GetWarmupVirtualPathsForStatus(context)
+            : Array.Empty<string>();
+        var total = warmupVirtualPaths.Count;
         var completed = context is not null && total > 0
-            ? CountCompletedWarmupEntries(settings, context)
+            ? CountCompletedWarmupEntries(settings, context, warmupVirtualPaths)
             : 0;
         var percent = total == 0
             ? 0
@@ -431,6 +630,29 @@ public sealed class ZaCacheManager
             phase,
             message,
             activeProjectPreserved);
+    }
+
+    private IReadOnlyList<string> GetWarmupVirtualPathsForStatus(ZaCacheProjectContext context)
+    {
+        try
+        {
+            if (!TryReadCachedIndex(context, out var index))
+            {
+                return WarmupVirtualPaths;
+            }
+
+            var fileHashes = index.Files
+                .Select(file => file.FileHash)
+                .ToHashSet();
+
+            return CreateOrderedWarmupVirtualPaths(CreateDiscoveredMessageWarmupPaths(index))
+                .Where(virtualPath => fileHashes.Contains(ZaTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath))))
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return WarmupVirtualPaths;
+        }
     }
 
     private void InvalidateCompletedCacheIfOutputRootChanged(
@@ -481,26 +703,20 @@ public sealed class ZaCacheManager
 
     private bool IsWarmupComplete(ZaCacheSettings settings, ZaCacheProjectContext context)
     {
-        return WarmupVirtualPaths.Count > 0
-            && CountCompletedWarmupEntries(settings, context) >= WarmupVirtualPaths.Count;
+        var warmupVirtualPaths = GetWarmupVirtualPathsForStatus(context);
+        return warmupVirtualPaths.Count > 0
+            && CountCompletedWarmupEntries(settings, context, warmupVirtualPaths) >= warmupVirtualPaths.Count;
     }
 
-    private int CountCompletedWarmupEntries(ZaCacheSettings settings, ZaCacheProjectContext context)
+    private int CountCompletedWarmupEntries(
+        ZaCacheSettings settings,
+        ZaCacheProjectContext context,
+        IReadOnlyList<string> warmupVirtualPaths)
     {
         var completed = 0;
-        foreach (var virtualPath in WarmupVirtualPaths.Select(NormalizeVirtualPath))
+        foreach (var virtualPath in warmupVirtualPaths.Select(NormalizeVirtualPath))
         {
-            if (!File.Exists(GetMetadataPath(context, virtualPath)))
-            {
-                continue;
-            }
-
-            if (settings.Mode == ZaCacheMode.Performance && !File.Exists(GetPayloadPath(context, virtualPath)))
-            {
-                continue;
-            }
-
-            completed++;
+            completed += IsWarmupEntryComplete(settings, context, virtualPath) ? 1 : 0;
         }
 
         return completed;
@@ -947,6 +1163,12 @@ public sealed class ZaCacheManager
     private static string GetOutputRootStampPath(ZaCacheProjectContext context)
     {
         return Path.Combine(context.ProjectDirectory, OutputRootStampFileName);
+    }
+
+    private static bool IsTextMessagePath(string virtualPath)
+    {
+        return NormalizeVirtualPath(virtualPath)
+            .StartsWith($"{ZaMessagePathResolver.MessageRootPath}/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void TouchProjectDirectory(ZaCacheProjectContext context)
