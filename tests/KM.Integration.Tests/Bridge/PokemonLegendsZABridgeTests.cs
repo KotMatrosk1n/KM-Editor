@@ -22,6 +22,7 @@ using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
+using KM.Api.ZaCache;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.Field.PokemonSpawner;
@@ -31,6 +32,7 @@ using KM.Integration.Tests.Tools;
 using KM.Tools.Bridge;
 using KM.ZA.Data;
 using KM.ZA.Placement;
+using KM.ZA.Workflows;
 using Xunit;
 
 namespace KM.Integration.Tests.Bridge;
@@ -45,6 +47,47 @@ public sealed class PokemonLegendsZABridgeTests
     private const string ModMergerDataVirtualPath = "bin/mock/data.bin";
     private const string ModMergerDataOutputPath = "romfs/bin/mock/data.bin";
     private const string ModMergerDescriptorOutputPath = "romfs/arc/data.trpfd";
+
+    [Fact]
+    public void PokemonLegendsZACacheBridgeCommandsReturnStatusAndSettings()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        var paths = CreatePaths(temp);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+
+        var initial = Dispatch<ZaCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.GetZaCacheStatus,
+            new GetZaCacheStatusRequest(paths),
+            "request-za-cache-status");
+
+        AssertSuccess(initial);
+        Assert.Equal(ZaCacheModeDto.Balanced, initial.Payload!.Status.Settings.Mode);
+        Assert.True(initial.Payload.Status.WarmupTotal > 0);
+        Assert.Contains(ZaDataPaths.ShopItemArray, ZaCacheManager.WarmupVirtualPaths);
+
+        var updated = Dispatch<ZaCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.UpdateZaCacheSettings,
+            new UpdateZaCacheSettingsRequest(
+                ZaCacheModeDto.Performance,
+                2L * 1024 * 1024 * 1024,
+                paths),
+            "request-za-cache-settings");
+
+        AssertSuccess(updated);
+        Assert.Equal(ZaCacheModeDto.Performance, updated.Payload!.Status.Settings.Mode);
+        Assert.Equal(2L * 1024 * 1024 * 1024, updated.Payload.Status.Settings.MaxCacheSizeBytes);
+
+        var cleared = Dispatch<ZaCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.ClearZaCache,
+            new ClearZaCacheRequest(paths),
+            "request-za-cache-clear");
+
+        AssertSuccess(cleared);
+        Assert.Equal(ZaCacheModeDto.Performance, cleared.Payload!.Status.Settings.Mode);
+    }
 
     [Fact]
     public void PokemonLegendsZAProjectLoadsPokemonData()
@@ -2002,6 +2045,13 @@ public sealed class PokemonLegendsZABridgeTests
             SelectedGame = ProjectGameDto.ZA,
             PokemonLegendsZASupportFolderPath = temp.PokemonLegendsZASupportFolderPath,
         };
+    }
+
+    private static ProjectBridgeDispatcher CreateDispatcherWithZaCache(TemporaryBridgeProject temp)
+    {
+        return new ProjectBridgeDispatcher(
+            zaWorkflowService: new ZaWorkflowService(
+                cacheManager: new ZaCacheManager(Path.Combine(temp.RootPath, "za-cache"))));
     }
 
     private static string CreateZaFolderMod(TemporaryBridgeProject temp, string name, byte[] bytes)

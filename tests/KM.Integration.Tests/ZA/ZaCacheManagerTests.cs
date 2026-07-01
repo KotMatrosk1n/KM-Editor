@@ -61,6 +61,81 @@ public sealed class ZaCacheManagerTests
     }
 
     [Fact]
+    public void WarmupDiscoversTextMessagePayloadsForEverySupportedLanguage()
+    {
+        using var temp = TemporaryFolder.Create();
+        var entries = ZaGameTextLanguage.SupportedMessageLanguages
+            .Select((language, index) => (
+                PackName: $"arc/ik_messagedat{language}scriptcommon_{index:0000}.trpak",
+                VirtualPath: $"ik_message/dat/{language}/script/common_{index:0000}.dat",
+                Bytes: new[] { checked((byte)(index + 1)) }))
+            .ToArray();
+        WriteSyntheticArchiveEntries(temp.BaseRomFsPath, entries);
+        var paths = temp.CreatePaths();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        var warmupPaths = cache.GetWarmupVirtualPaths(paths);
+        var status = cache.GetStatus(paths);
+
+        foreach (var entry in entries)
+        {
+            Assert.Contains(entry.VirtualPath, warmupPaths);
+        }
+
+        Assert.Equal(entries.Length, warmupPaths.Count);
+        Assert.Equal(entries.Length, status.WarmupTotal);
+    }
+
+    [Fact]
+    public void PerformanceWarmupCachesDiscoveredTextPayloads()
+    {
+        using var temp = TemporaryFolder.Create();
+        const string textPath = "ik_message/dat/English/script/common_0025.dat";
+        WriteSyntheticArchiveEntries(
+            temp.BaseRomFsPath,
+            [("arc/ik_messagedatEnglishscriptcommon_0025.trpak", textPath, new byte[] { 0x5A, 0x54, 0x58, 0x54 })]);
+        var paths = temp.CreatePaths();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        cache.UpdateSettings(ZaCacheMode.Performance, 2L * 1024 * 1024 * 1024, paths);
+        var warmupPaths = cache.GetWarmupVirtualPaths(paths);
+        var stepIndex = warmupPaths
+            .Select((path, index) => (path, index))
+            .First(entry => string.Equals(entry.path, textPath, StringComparison.OrdinalIgnoreCase))
+            .index;
+        var warmup = cache.WarmupStep(paths, stepIndex);
+        var bytes = cache.ReadBaseTrinityFile(paths, textPath);
+
+        Assert.Equal(ZaCacheMode.Performance, warmup.Settings.Mode);
+        Assert.Equal([0x5A, 0x54, 0x58, 0x54], bytes);
+    }
+
+    [Fact]
+    public void PerformanceWarmupBatchesTextPayloads()
+    {
+        using var temp = TemporaryFolder.Create();
+        var entries = Enumerable.Range(0, 5)
+            .Select(index => (
+                PackName: $"arc/ik_messagedatEnglishscriptcommon_{index:0000}.trpak",
+                VirtualPath: $"ik_message/dat/English/script/common_{index:0000}.dat",
+                Bytes: new[] { checked((byte)(0x30 + index)) }))
+            .ToArray();
+        WriteSyntheticArchiveEntries(temp.BaseRomFsPath, entries);
+        var paths = temp.CreatePaths();
+        var cache = new ZaCacheManager(temp.CacheRootPath);
+
+        cache.UpdateSettings(ZaCacheMode.Performance, 2L * 1024 * 1024 * 1024, paths);
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(entries.Length, warmup.WarmupCompleted);
+        Assert.Equal(entries.Length, warmup.WarmupTotal);
+        foreach (var entry in entries)
+        {
+            Assert.Equal(entry.Bytes, cache.ReadBaseTrinityFile(paths, entry.VirtualPath));
+        }
+    }
+
+    [Fact]
     public void ClearRemovesActiveProjectCache()
     {
         using var temp = TemporaryFolder.Create();
@@ -118,13 +193,14 @@ public sealed class ZaCacheManagerTests
         var cache = new ZaCacheManager(temp.CacheRootPath);
 
         cache.UpdateSettings(ZaCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        var warmupPaths = cache.GetWarmupVirtualPaths(paths);
         ZaCacheStatus warmup = null!;
-        for (var stepIndex = 0; stepIndex < ZaCacheManager.WarmupVirtualPaths.Count; stepIndex++)
+        for (var stepIndex = 0; stepIndex < warmupPaths.Count; stepIndex++)
         {
             warmup = cache.WarmupStep(paths, stepIndex);
         }
 
-        Assert.Equal(ZaCacheManager.WarmupVirtualPaths.Count, warmup.WarmupCompleted);
+        Assert.Equal(warmupPaths.Count, warmup.WarmupCompleted);
         Assert.Equal(1, CountProjectCacheDirectories(temp));
 
         File.WriteAllText(Path.Combine(temp.OutputRootPath, "romfs_override.bin"), "changed");
@@ -162,6 +238,40 @@ public sealed class ZaCacheManagerTests
         File.WriteAllBytes(Path.Combine(romFsRoot, "arc", "data.trpfs"), trpfs);
     }
 
+    private static void WriteSyntheticArchiveEntries(
+        string romFsRoot,
+        IReadOnlyList<(string PackName, string VirtualPath, byte[] Bytes)> entries)
+    {
+        Directory.CreateDirectory(Path.Combine(romFsRoot, "arc"));
+        var packedArchives = entries
+            .Select(entry => CreatePackedArchive([(entry.VirtualPath, entry.Bytes)]))
+            .ToArray();
+        var descriptor = CreateDescriptorEntries(
+            entries
+                .Select((entry, index) => (entry.PackName, PackSize: packedArchives[index].Length, entry.VirtualPath))
+                .ToArray());
+        var packOffsets = new ulong[packedArchives.Length];
+        var currentOffset = 16;
+        for (var index = 0; index < packedArchives.Length; index++)
+        {
+            packOffsets[index] = checked((ulong)currentOffset);
+            currentOffset += packedArchives[index].Length;
+        }
+
+        var fileSystem = CreateFileSystem(entries.Select(entry => entry.PackName).ToArray(), packOffsets);
+        var trpfs = new byte[currentOffset + fileSystem.Length];
+        BinaryPrimitives.WriteInt64LittleEndian(trpfs.AsSpan(8, sizeof(long)), currentOffset);
+        for (var index = 0; index < packedArchives.Length; index++)
+        {
+            packedArchives[index].CopyTo(trpfs.AsSpan(checked((int)packOffsets[index])));
+        }
+
+        fileSystem.CopyTo(trpfs.AsSpan(currentOffset));
+
+        File.WriteAllBytes(Path.Combine(romFsRoot, "arc", "data.trpfd"), descriptor);
+        File.WriteAllBytes(Path.Combine(romFsRoot, "arc", "data.trpfs"), trpfs);
+    }
+
     private static byte[] CreateDescriptor(
         string packName,
         int packSize,
@@ -187,11 +297,45 @@ public sealed class ZaCacheManagerTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateDescriptorEntries(
+        IReadOnlyList<(string PackName, int PackSize, string VirtualPath)> entries)
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var packNameOffsets = entries
+            .Select(entry => builder.CreateString(entry.PackName))
+            .ToArray();
+        var packNames = FileDescriptor.CreatePackNamesVector(builder, packNameOffsets);
+        var fileHashes = FileDescriptor.CreateFileHashesVector(
+            builder,
+            entries.Select(entry => ZaTrinityPathHasher.HashPath(entry.VirtualPath)).ToArray());
+        var fileEntries = entries
+            .Select((_, index) => FileDescriptorEntry.CreateFileDescriptorEntry(builder, pack_index: checked((ulong)index)))
+            .ToArray();
+        var files = FileDescriptor.CreateFilesVector(builder, fileEntries);
+        var packEntries = entries
+            .Select(entry => PackDescriptorEntry.CreatePackDescriptorEntry(
+                builder,
+                file_size: checked((ulong)entry.PackSize),
+                file_count: 1))
+            .ToArray();
+        var packs = FileDescriptor.CreatePacksVector(builder, packEntries);
+        var root = FileDescriptor.CreateFileDescriptor(builder, fileHashes, packNames, files, packs);
+        FileDescriptor.FinishFileDescriptorBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static byte[] CreateFileSystem(string packName, ulong packOffset)
     {
+        return CreateFileSystem([packName], [packOffset]);
+    }
+
+    private static byte[] CreateFileSystem(IReadOnlyList<string> packNames, IReadOnlyList<ulong> packOffsets)
+    {
         var builder = new FlatBufferBuilder(128);
-        var hashes = TrinityFileSystem.CreateFileHashesVector(builder, [ZaTrinityPathHasher.HashPath(packName)]);
-        var offsets = TrinityFileSystem.CreateFileOffsetsVector(builder, [packOffset]);
+        var hashes = TrinityFileSystem.CreateFileHashesVector(
+            builder,
+            packNames.Select(ZaTrinityPathHasher.HashPath).ToArray());
+        var offsets = TrinityFileSystem.CreateFileOffsetsVector(builder, packOffsets.ToArray());
         var root = TrinityFileSystem.CreateFileSystem(builder, hashes, offsets);
         builder.Finish(root.Value);
         return builder.SizedByteArray();
