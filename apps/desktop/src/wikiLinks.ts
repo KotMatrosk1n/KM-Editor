@@ -2,7 +2,7 @@
 
 import { type ProjectGame } from './bridge/contracts';
 import { type WorkbenchSection } from './workbenchStore';
-import { isScarletVioletGame } from './workflowGameSupport';
+import { isPokemonLegendsZAGame, isScarletVioletGame } from './workflowGameSupport';
 
 const wikiBaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/wiki';
 
@@ -19,6 +19,7 @@ const commonWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   flagworkSave: 'Flagwork-and-Save-Viewers',
   fpsPatch: '60FPS-Patch',
   giftPokemon: 'Gift-Pokemon-Editor',
+  gameDump: 'Game-Dump',
   gymUniformRemoval: 'Gym-Uniform-Removal',
   health: 'Project-Setup',
   hyperTraining: 'Hyper-Training',
@@ -37,7 +38,7 @@ const commonWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   royalCandy: 'Royal-Candy',
   shinyRate: 'Shiny-Rate',
   shops: 'Shops-Editor',
-  spreadsheetImport: 'Spreadsheet-Import',
+  spreadsheetImport: 'Dump-Importer',
   startingItems: 'Starting-Items',
   staticEncounters: 'Static-Encounters-Editor',
   text: 'Text-Viewer',
@@ -63,10 +64,30 @@ const scarletVioletWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   typeChart: 'Scarlet-and-Violet-Type-Chart'
 };
 
+const pokemonLegendsZAWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
+  encounters: 'Legends-Z-A-Wild-Encounters-Editor',
+  gameDump: 'Legends-Z-A-Game-Dump',
+  giftPokemon: 'Legends-Z-A-Gift-Pokemon-Editor',
+  items: 'Legends-Z-A-Items-Editor',
+  modMerger: 'Legends-Z-A-Mod-Merger',
+  moves: 'Legends-Z-A-Moves-Editor',
+  placement: 'Legends-Z-A-Placement-Editor',
+  pokemon: 'Legends-Z-A-Pokemon-Editor',
+  shops: 'Legends-Z-A-Shops-Editor',
+  spreadsheetImport: 'Legends-Z-A-Dump-Importer',
+  staticEncounters: 'Legends-Z-A-Static-Encounters-Editor',
+  tradePokemon: 'Legends-Z-A-Trade-Pokemon-Editor',
+  trainers: 'Legends-Z-A-Trainers-Editor',
+  typeChart: 'Legends-Z-A-Type-Chart'
+};
+
 export function getSectionWikiUrl(section: WorkbenchSection, selectedGame: ProjectGame | null) {
-  const slug = isScarletVioletGame(selectedGame)
-    ? scarletVioletWikiSlugs[section] ?? commonWikiSlugs[section]
-    : commonWikiSlugs[section];
+  const gameWikiSlugs = isScarletVioletGame(selectedGame)
+    ? scarletVioletWikiSlugs
+    : isPokemonLegendsZAGame(selectedGame)
+      ? pokemonLegendsZAWikiSlugs
+      : null;
+  const slug = gameWikiSlugs?.[section] ?? commonWikiSlugs[section];
 
   return slug ? `${wikiBaseUrl}/${slug}` : null;
 }

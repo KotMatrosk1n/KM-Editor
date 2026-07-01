@@ -28,6 +28,33 @@ describe('wiki links', () => {
     );
   });
 
+  it('links Legends Z-A sections to Z-A wiki pages when available', () => {
+    expect(getSectionWikiUrl('pokemon', 'za')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Pokemon-Editor'
+    );
+    expect(getSectionWikiUrl('encounters', 'za')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Wild-Encounters-Editor'
+    );
+    expect(getSectionWikiUrl('gameDump', 'za')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Game-Dump'
+    );
+    expect(getSectionWikiUrl('spreadsheetImport', 'za')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Dump-Importer'
+    );
+    expect(getSectionWikiUrl('text', 'za')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Text-Viewer'
+    );
+  });
+
+  it('links shared tool pages to the current wiki page names', () => {
+    expect(getSectionWikiUrl('gameDump', 'sword')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Game-Dump'
+    );
+    expect(getSectionWikiUrl('spreadsheetImport', 'shield')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Dump-Importer'
+    );
+  });
+
   it('hides the button for sections without a wiki page', () => {
     expect(getSectionWikiUrl('settings', 'sword')).toBeNull();
   });
