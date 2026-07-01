@@ -1581,6 +1581,61 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchEncounterBatchUpdateSupportsSwShClearSlotEdits()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShEncounterBridgeFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(temp.Paths),
+            requestId: "request-encounter-load");
+        var loadResponse = DeserializeResponse<LoadEncountersWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.NotNull(loadResponse.Payload);
+        var table = loadResponse.Payload.Workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                temp.Paths,
+                Session: null,
+                [
+                    new EncounterSlotFieldUpdateDto(table.TableId, Slot: 2, Field: "speciesId", Value: "0"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, Slot: 2, Field: "form", Value: "0"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, Slot: 2, Field: "probability", Value: "0"),
+                ]),
+            requestId: "request-encounter-clear-slot");
+
+        var updateResponse = DeserializeResponse<UpdateEncounterSlotFieldsResponse>(dispatcher.Dispatch(updateJson));
+
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(3, updateResponse.Payload.Session.PendingEdits.Count);
+        var updatedTable = updateResponse.Payload.Workflow.Tables.First(candidate => candidate.TableId == table.TableId);
+        var clearedSlot = updatedTable.Slots.Single(slot => slot.Slot == 2);
+        Assert.Equal(0, clearedSlot.SpeciesId);
+        Assert.Equal("Empty", clearedSlot.Species);
+        Assert.Equal(0, clearedSlot.Form);
+        Assert.Equal(0, clearedSlot.Weight);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-encounter-clear-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.False(validateResponse.Payload.IsValid);
+        Assert.Contains(validateResponse.Payload.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error
+            && diagnostic.Message.Contains("must total 100", StringComparison.Ordinal));
+        Assert.DoesNotContain(validateResponse.Payload.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error
+            && diagnostic.Message.Contains("empty but has", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DispatchLoadRaidBattlesWorkflowReturnsRealBattleSlots()
     {
         using var temp = TemporaryBridgeProject.Create();

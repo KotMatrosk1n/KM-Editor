@@ -91,6 +91,84 @@ public sealed class SwShEncountersEditSessionService
             diagnostics);
     }
 
+    public SwShEncountersEditResult UpdateSlotFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShEncounterSlotFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanEditEncounters(project, workflow, diagnostics))
+        {
+            return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.TableId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Encounter batch update is missing a table, field, or value.",
+                    field: "updates",
+                    expected: "Complete encounter slot field update"));
+                continue;
+            }
+
+            var table = effectiveWorkflow.Tables.FirstOrDefault(candidate => candidate.TableId == update.TableId);
+            if (table is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Encounter table {FormatEncounterTableIdContext(update.TableId)} is not present in the loaded workflow.",
+                    field: "tableId",
+                    expected: "Existing encounter table"));
+                continue;
+            }
+
+            var slotRecord = table.Slots.FirstOrDefault(candidate => candidate.Slot == update.Slot);
+            if (slotRecord is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Encounter table {FormatEncounterTableContext(table)} does not have slot {update.Slot}.",
+                    field: "slot",
+                    expected: "Existing encounter slot"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                table,
+                slotRecord,
+                update.Field,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = ReplacePendingEncounterEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        return new SwShEncountersEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
