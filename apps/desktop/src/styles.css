@@ -6356,6 +6356,43 @@ button.sv-encounter-condition-row:hover {
   font-size: 0.92rem;
 }
 
+.update-progress-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.update-progress-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  color: var(--color-text);
+  font-weight: 900;
+}
+
+.update-progress-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.update-progress-header span {
+  flex: 0 0 auto;
+  color: var(--color-gold);
+}
+
+.update-progress-panel p {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 0.92rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .modal-actions {
   display: flex;
   flex-wrap: wrap;

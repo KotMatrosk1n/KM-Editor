@@ -6411,9 +6411,14 @@ describe('App', () => {
 
   it('checks native updates and installs them in the desktop app', async () => {
     const user = userEvent.setup();
+    let finishInstall: (() => void) | null = null;
     const install = vi.fn(async (onProgress?: Parameters<NativeUpdate['install']>[0]) => {
       onProgress?.({ data: { contentLength: 42000 }, event: 'Started' });
-      onProgress?.({ data: { chunkLength: 42000 }, event: 'Progress' });
+      onProgress?.({ data: { chunkLength: 21000 }, event: 'Progress' });
+      await new Promise<void>((resolve) => {
+        finishInstall = resolve;
+      });
+      onProgress?.({ data: { chunkLength: 21000 }, event: 'Progress' });
       onProgress?.({ event: 'Finished' });
     });
     const relaunchApp = vi.fn(async () => undefined);
@@ -6442,6 +6447,25 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Install Update' }));
 
     await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    const updateDialog = screen.getByRole('dialog', { name: 'Update Available' });
+    const progressBar = within(updateDialog).getByRole('progressbar', {
+      name: 'Update download progress'
+    });
+    expect(progressBar).toHaveAttribute('aria-valuenow', '50');
+    expect(within(updateDialog).getByText('Downloading update')).toBeInTheDocument();
+    expect(
+      within(updateDialog).getByText('Downloading update (21,000 bytes of 42,000 bytes).')
+    ).toBeInTheDocument();
+
+    if (!finishInstall) {
+      throw new Error('Update install did not reach the paused download state.');
+    }
+
+    await act(async () => {
+      finishInstall?.();
+    });
+
+    await waitFor(() => expect(relaunchApp).toHaveBeenCalledTimes(1));
     expect(relaunchApp).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
