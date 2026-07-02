@@ -337,6 +337,37 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
+    [MemberData(nameof(ExeFsInstallOrders))]
+    public void RoyalCandyAndStartingItemsApplyInEitherOrderWithoutOverwritingBagHookSlots(ProjectGame game, string workflowId, bool royalCandyFirst)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+
+        if (royalCandyFirst)
+        {
+            ApplyRoyalCandy(paths, workflowId);
+            ApplyStartingItems(paths);
+        }
+        else
+        {
+            ApplyStartingItems(paths);
+            ApplyRoyalCandy(paths, workflowId);
+        }
+
+        var bagHook = SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
+        var slot1 = bagHook.Slots.Single(slot => slot.Slot == 1);
+        var slot2 = bagHook.Slots.Single(slot => slot.Slot == 2);
+        Assert.Equal(SwShBagHookInstallKind.InstalledV2, bagHook.Kind);
+        Assert.Equal("occupied", slot1.Status);
+        Assert.Equal(SwShBagHookAmxPatcher.RoyalCandyItemId, slot1.ItemId);
+        Assert.Equal(1, slot1.Quantity);
+        Assert.Equal("occupied", slot2.Status);
+        Assert.Equal(50, slot2.ItemId);
+        Assert.Equal(3, slot2.Quantity);
+    }
+
+    [Theory]
     [InlineData(ProjectGame.Sword)]
     [InlineData(ProjectGame.Shield)]
     public void FpsPatchMainBytesSurviveExeFsHookStack(ProjectGame game)

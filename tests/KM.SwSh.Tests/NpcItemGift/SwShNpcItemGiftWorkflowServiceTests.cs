@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Formats.SwSh;
 using KM.SwSh.NpcItemGift;
 using KM.SwSh.Scripts;
@@ -150,6 +151,44 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
         Assert.Equal(1, Assert.Single(slumberingGift.Items).ItemId);
     }
 
+    [Fact]
+    public void StageAndApplyPreservesExistingLayeredScriptCells()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteBroadItemOptionsFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var definition = Assert.Single(
+            SwShNpcItemGiftWorkflowService.GetDefinitionsForGame(ProjectGame.Sword),
+            gift => gift.GiftId == "sonia-stow-on-side-revive");
+        WriteGiftScriptFixture(temp, definition);
+        var layeredScript = ReadBaseScript(temp, "main_event_1110.amx").ToArray();
+        WriteExpandedCodeCell(layeredScript, 10, PackConstant(777));
+        temp.WriteOutputFile(definition.RelativePath, layeredScript);
+
+        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(temp.Paths));
+        var sonia = Assert.Single(workflow.Npcs, npc => npc.NpcId == "sonia");
+        var gift = Assert.Single(sonia.Gifts, gift => gift.GiftId == definition.GiftId);
+        var service = new SwShNpcItemGiftEditSessionService();
+
+        var staged = service.StageGifts(
+            temp.Paths,
+            [CreateSelection(gift, quantity: 7, itemId: 5)],
+            session: null);
+        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+
+        Assert.DoesNotContain(staged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var write = Assert.Single(plan.Writes);
+        Assert.Equal(ProjectFileLayer.Layered, Assert.Single(write.Sources).Layer);
+        var output = ReadOutputScript(temp, "main_event_1110.amx");
+        Assert.Equal(777, SwShAmxCellPatcher.ReadCodeCellInt(output, 10));
+        Assert.Equal(7, SwShAmxCellPatcher.ReadCodeCellInt(output, definition.QuantityCell));
+        Assert.Equal(5, SwShAmxCellPatcher.ReadCodeCellInt(output, definition.Items.Single().ItemCell));
+        Assert.Equal(0, SwShAmxCellPatcher.ReadCodeCellInt(ReadBaseScript(temp, "main_event_1110.amx"), 10));
+    }
+
     private static void WriteItemOptionsFixture(TemporarySwShProject temp)
     {
         temp.WriteBaseRomFsFile(
@@ -285,5 +324,10 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     private static ulong PackConstant(int value)
     {
         return ((ulong)(uint)value << 32) | PackedConstantOpcode;
+    }
+
+    private static void WriteExpandedCodeCell(byte[] amx, int cell, ulong value)
+    {
+        BinaryPrimitives.WriteUInt64LittleEndian(amx.AsSpan(0x38 + cell * 8), value);
     }
 }
