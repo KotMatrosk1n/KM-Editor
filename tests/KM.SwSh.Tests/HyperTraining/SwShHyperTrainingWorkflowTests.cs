@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.Formats.Executable;
@@ -189,6 +190,42 @@ public sealed class SwShHyperTrainingWorkflowTests
             "script",
             "sub_event_007.dat")));
         Assert.Contains("Lv. 50", dialogue.Lines[3].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StageAndApplyMinimumLevelPreservesExistingLayeredScriptCells()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var baseScript = CreateSyntheticHyperTrainingAmx(100);
+        temp.WriteBaseRomFsFile(
+            "bin/script/amx/hyper_training.amx",
+            baseScript);
+        temp.WriteBaseExeFsFile("main", CreateSyntheticHyperTrainingMain(ProjectGame.Sword));
+        var layeredScript = baseScript.ToArray();
+        WriteCodeCell(layeredScript, 2300, PackInstruction(188, 77));
+        temp.WriteOutputFile(SwShHyperTrainingWorkflowService.ScriptPath, layeredScript);
+        var service = new SwShHyperTrainingEditSessionService();
+
+        var staged = service.StageMinimumLevel(temp.Paths, 50, session: null);
+        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+
+        Assert.DoesNotContain(staged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var scriptWrite = Assert.Single(
+            plan.Writes,
+            write => write.TargetRelativePath == SwShHyperTrainingWorkflowService.ScriptPath);
+        Assert.Equal(ProjectFileLayer.Layered, Assert.Single(scriptWrite.Sources).Layer);
+        var output = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "script",
+            "amx",
+            "hyper_training.amx"));
+        Assert.Equal(50, SwShHyperTrainingAmxPatcher.ReadMinimumLevel(output));
+        Assert.Equal(PackInstruction(188, 77), ReadCodeCell(output, 2300));
     }
 
     private static byte[] CreateSyntheticHyperTrainingMain(
