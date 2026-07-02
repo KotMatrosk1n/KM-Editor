@@ -310,11 +310,20 @@ public sealed class SwShNpcItemGiftEditSessionService
         foreach (var selectionPatch in fileGroup.Selections)
         {
             AddPatch(selectionPatch.Definition.QuantityCell, selectionPatch.Selection.Quantity);
+            foreach (var companionCell in selectionPatch.Definition.CompanionQuantityCells)
+            {
+                AddPatch(companionCell, selectionPatch.Selection.Quantity);
+            }
+
             foreach (var slot in selectionPatch.Definition.Items)
             {
                 var selectedItem = selectionPatch.Selection.Items
                     .First(item => string.Equals(item.SlotId, slot.SlotId, StringComparison.Ordinal));
                 AddPatch(slot.ItemCell, selectedItem.ItemId);
+                foreach (var companionCell in slot.CompanionItemCells)
+                {
+                    AddPatch(companionCell, selectedItem.ItemId);
+                }
             }
         }
 

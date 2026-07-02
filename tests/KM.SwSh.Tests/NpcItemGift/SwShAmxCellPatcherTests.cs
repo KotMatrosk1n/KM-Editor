@@ -9,6 +9,7 @@ namespace KM.SwSh.Tests.NpcItemGift;
 public sealed class SwShAmxCellPatcherTests
 {
     private const ushort PawnMagic64 = 0xF1E1;
+    private const short PawnFlagCompact = 0x0004;
     private const uint PackedConstantOpcode = 0x000000BC;
 
     [Fact]
@@ -46,6 +47,30 @@ public sealed class SwShAmxCellPatcherTests
         Assert.Equal(30, SwShAmxCellPatcher.ReadCodeCellInt(patched, 0));
     }
 
+    [Fact]
+    public void ApplyCodeCellPatchesPreservesUnchangedCompactAmxBytes()
+    {
+        var amx = CreateCompactAmx([PackConstant(2), PackConstant(28), 135, 72, 16]);
+
+        var patched = SwShAmxCellPatcher.ApplyCodeCellPatches(amx, []);
+
+        Assert.Equal(amx, patched);
+    }
+
+    [Fact]
+    public void ApplyCodeCellPatchesKeepsItemOnlyCompactSwapLengthStable()
+    {
+        var amx = CreateCompactAmx([PackConstant(2), PackConstant(28), 135, 72, 16]);
+
+        var patched = SwShAmxCellPatcher.ApplyCodeCellPatches(
+            amx,
+            [new SwShAmxCellPatch(1, 5)]);
+
+        Assert.Equal(amx.Length, patched.Length);
+        Assert.Equal(2, SwShAmxCellPatcher.ReadCodeCellInt(patched, 0));
+        Assert.Equal(5, SwShAmxCellPatcher.ReadCodeCellInt(patched, 1));
+    }
+
     private static byte[] CreateExpandedAmx(IReadOnlyList<ulong> codeCells)
     {
         const int headerSize = 0x38;
@@ -72,6 +97,64 @@ public sealed class SwShAmxCellPatcherTests
         }
 
         return amx;
+    }
+
+    private static byte[] CreateCompactAmx(IReadOnlyList<ulong> codeCells)
+    {
+        const int headerSize = 0x38;
+        const int cellSize = 8;
+        var dat = headerSize + codeCells.Count * cellSize;
+        var compactBody = CompactAmxCells(codeCells);
+        var amx = new byte[headerSize + compactBody.Length];
+
+        BinaryPrimitives.WriteInt32LittleEndian(amx.AsSpan(0x00), amx.Length);
+        BinaryPrimitives.WriteUInt16LittleEndian(amx.AsSpan(0x04), PawnMagic64);
+        amx[0x06] = 12;
+        amx[0x07] = 14;
+        BinaryPrimitives.WriteInt16LittleEndian(amx.AsSpan(0x08), PawnFlagCompact);
+        BinaryPrimitives.WriteInt16LittleEndian(amx.AsSpan(0x0A), 8);
+        BinaryPrimitives.WriteInt32LittleEndian(amx.AsSpan(0x0C), headerSize);
+        BinaryPrimitives.WriteInt32LittleEndian(amx.AsSpan(0x10), dat);
+        BinaryPrimitives.WriteInt32LittleEndian(amx.AsSpan(0x14), dat);
+        BinaryPrimitives.WriteInt32LittleEndian(amx.AsSpan(0x18), dat);
+        compactBody.CopyTo(amx.AsSpan(headerSize));
+
+        return amx;
+    }
+
+    private static byte[] CompactAmxCells(IEnumerable<ulong> cells)
+    {
+        var compact = new List<byte>();
+        foreach (var cell in cells)
+        {
+            var signed = unchecked((long)cell);
+            var chunks = new List<byte>();
+            var value = signed;
+            while (true)
+            {
+                var payload = (byte)(value & 0x7F);
+                chunks.Add(payload);
+                value >>= 7;
+                var signBitSet = (payload & 0x40) != 0;
+                if ((value == 0 && !signBitSet) || (value == -1 && signBitSet))
+                {
+                    break;
+                }
+            }
+
+            for (var i = chunks.Count - 1; i >= 0; i--)
+            {
+                var current = chunks[i];
+                if (i != 0)
+                {
+                    current |= 0x80;
+                }
+
+                compact.Add(current);
+            }
+        }
+
+        return compact.ToArray();
     }
 
     private static ulong ReadCodeCell(byte[] amx, int cell)

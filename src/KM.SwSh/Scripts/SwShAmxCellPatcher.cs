@@ -42,6 +42,7 @@ internal static class SwShAmxCellPatcher
         ArgumentNullException.ThrowIfNull(patches);
 
         var decoded = Decode(data);
+        var originalExpanded = decoded.Expanded.ToArray();
         var codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
         foreach (var patch in patches)
         {
@@ -64,7 +65,15 @@ internal static class SwShAmxCellPatcher
             return decoded.Expanded;
         }
 
-        var compact = BuildCompactAmx(data[..decoded.Header.Cod], decoded.Header, decoded.Expanded, decoded.CellSize);
+        var compact = decoded.CompactCellSpans is null
+            ? BuildCompactAmx(data[..decoded.Header.Cod], decoded.Header, decoded.Expanded, decoded.CellSize)
+            : BuildCompactAmxPreservingUnchangedCells(
+                data,
+                decoded.Header,
+                originalExpanded,
+                decoded.Expanded,
+                decoded.CellSize,
+                decoded.CompactCellSpans);
         VerifyExpandedMemory(compact, decoded.Expanded);
         return compact;
     }
@@ -79,13 +88,15 @@ internal static class SwShAmxCellPatcher
         }
 
         var wasCompact = (header.Flags & PawnFlagCompact) != 0;
-        var expanded = wasCompact ? ExpandAmxIfNeeded(data, header, cellSize) : data.ToArray();
+        var expansion = wasCompact
+            ? ExpandCompactAmx(data, header, cellSize)
+            : new CompactAmxExpansion(data.ToArray(), null);
         if (wasCompact)
         {
-            VerifyCompactRoundTrip(data, header, expanded, cellSize);
+            VerifyCompactRoundTrip(data, header, expansion.Expanded, cellSize);
         }
 
-        return new DecodedAmx(header, cellSize, wasCompact, expanded);
+        return new DecodedAmx(header, cellSize, wasCompact, expansion.Expanded, expansion.CompactCellSpans);
     }
 
     private static int GetPawnCellSize(ushort magic) => magic switch
@@ -98,9 +109,14 @@ internal static class SwShAmxCellPatcher
 
     private static byte[] ExpandAmxIfNeeded(byte[] data, SwShAmxHeader header, int cellSize)
     {
+        return ExpandCompactAmx(data, header, cellSize).Expanded;
+    }
+
+    private static CompactAmxExpansion ExpandCompactAmx(byte[] data, SwShAmxHeader header, int cellSize)
+    {
         if ((header.Flags & PawnFlagCompact) == 0)
         {
-            return data.ToArray();
+            return new CompactAmxExpansion(data.ToArray(), null);
         }
 
         if (header.Hea < header.Cod || header.Size < header.Cod || header.Size > data.Length)
@@ -118,8 +134,10 @@ internal static class SwShAmxCellPatcher
             throw new InvalidDataException($"Expanded AMX memory size 0x{dst:X} is not aligned to {cellSize}-byte cells.");
         }
 
+        var spans = new CompactCellSpan[dst / cellSize];
         while (src > 0)
         {
+            var encodedEnd = src;
             ulong cell = 0;
             var shift = 0;
             var signSource = 0;
@@ -147,6 +165,7 @@ internal static class SwShAmxCellPatcher
                 throw new InvalidDataException("AMX compact expansion produced more cells than the header allows.");
             }
 
+            spans[dst / cellSize] = new CompactCellSpan(header.Cod + src, encodedEnd - src);
             WriteCell(expanded, header.Cod + dst, cell, cellSize);
         }
 
@@ -155,7 +174,7 @@ internal static class SwShAmxCellPatcher
             throw new InvalidDataException($"AMX compact expansion stopped with 0x{dst:X} bytes unwritten.");
         }
 
-        return expanded;
+        return new CompactAmxExpansion(expanded, spans);
     }
 
     private static void VerifyCompactRoundTrip(byte[] original, SwShAmxHeader header, byte[] expanded, int cellSize)
@@ -184,39 +203,103 @@ internal static class SwShAmxCellPatcher
         return result;
     }
 
+    private static byte[] BuildCompactAmxPreservingUnchangedCells(
+        byte[] original,
+        SwShAmxHeader header,
+        byte[] originalExpanded,
+        byte[] patchedExpanded,
+        int cellSize,
+        IReadOnlyList<CompactCellSpan> compactCellSpans)
+    {
+        if (original.Length < header.Cod)
+        {
+            throw new InvalidDataException("Original AMX data is shorter than COD.");
+        }
+
+        if (originalExpanded.Length < header.Hea || patchedExpanded.Length < header.Hea)
+        {
+            throw new InvalidDataException("Expanded AMX memory is shorter than HEA.");
+        }
+
+        var cellCount = (header.Hea - header.Cod) / cellSize;
+        if (compactCellSpans.Count != cellCount)
+        {
+            throw new InvalidDataException("AMX compact span count does not match expanded cell count.");
+        }
+
+        var compact = new List<byte>(Math.Max(0, header.Size - header.Cod));
+        for (var cellIndex = 0; cellIndex < cellCount; cellIndex++)
+        {
+            var offset = header.Cod + cellIndex * cellSize;
+            var originalCell = ReadCell(originalExpanded, offset, cellSize);
+            var patchedCell = ReadCell(patchedExpanded, offset, cellSize);
+            if (originalCell == patchedCell)
+            {
+                var span = compactCellSpans[cellIndex];
+                if (span.Offset < header.Cod || span.Length <= 0 || span.Offset + span.Length > original.Length)
+                {
+                    throw new InvalidDataException("AMX compact span points outside the original file.");
+                }
+
+                for (var i = 0; i < span.Length; i++)
+                {
+                    compact.Add(original[span.Offset + i]);
+                }
+
+                continue;
+            }
+
+            compact.AddRange(CompactAmxCell(patchedCell, cellSize));
+        }
+
+        var result = new byte[header.Cod + compact.Count];
+        Array.Copy(original, result, header.Cod);
+        compact.CopyTo(result, header.Cod);
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(0), result.Length);
+        return result;
+    }
+
     private static byte[] CompactAmxMemory(byte[] expanded, SwShAmxHeader header, int cellSize)
     {
         var compact = new List<byte>(Math.Max(0, header.Size - header.Cod));
         for (var offset = header.Cod; offset < header.Hea; offset += cellSize)
         {
-            var signed = SignedCellValue(ReadCell(expanded, offset, cellSize), cellSize);
-            var chunks = new List<byte>();
-            var value = signed;
-            while (true)
-            {
-                var payload = (byte)(value & 0x7F);
-                chunks.Add(payload);
-                value >>= 7;
-                var signBitSet = (payload & 0x40) != 0;
-                if ((value == 0 && !signBitSet) || (value == -1 && signBitSet))
-                {
-                    break;
-                }
-            }
-
-            for (var i = chunks.Count - 1; i >= 0; i--)
-            {
-                var current = chunks[i];
-                if (i != 0)
-                {
-                    current |= 0x80;
-                }
-
-                compact.Add(current);
-            }
+            compact.AddRange(CompactAmxCell(ReadCell(expanded, offset, cellSize), cellSize));
         }
 
         return compact.ToArray();
+    }
+
+    private static byte[] CompactAmxCell(ulong cell, int cellSize)
+    {
+        var signed = SignedCellValue(cell, cellSize);
+        var chunks = new List<byte>();
+        var value = signed;
+        while (true)
+        {
+            var payload = (byte)(value & 0x7F);
+            chunks.Add(payload);
+            value >>= 7;
+            var signBitSet = (payload & 0x40) != 0;
+            if ((value == 0 && !signBitSet) || (value == -1 && signBitSet))
+            {
+                break;
+            }
+        }
+
+        var compact = new byte[chunks.Count];
+        for (var i = chunks.Count - 1; i >= 0; i--)
+        {
+            var current = chunks[i];
+            if (i != 0)
+            {
+                current |= 0x80;
+            }
+
+            compact[chunks.Count - 1 - i] = current;
+        }
+
+        return compact;
     }
 
     private static void VerifyExpandedMemory(byte[] compactData, byte[] expectedExpanded)
@@ -342,7 +425,16 @@ internal static class SwShAmxCellPatcher
         SwShAmxHeader Header,
         int CellSize,
         bool WasCompact,
-        byte[] Expanded);
+        byte[] Expanded,
+        IReadOnlyList<CompactCellSpan>? CompactCellSpans);
+
+    private sealed record CompactAmxExpansion(
+        byte[] Expanded,
+        IReadOnlyList<CompactCellSpan>? CompactCellSpans);
+
+    private readonly record struct CompactCellSpan(
+        int Offset,
+        int Length);
 
     private sealed record SwShAmxHeader(
         int Size,

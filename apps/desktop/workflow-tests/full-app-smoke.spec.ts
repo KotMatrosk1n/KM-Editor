@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { kmCommandNames } from '../src/bridge/contracts';
 import { type ProjectBridge } from '../src/bridge/projectBridge';
 import { createMockProjectBridge } from '../src/testSupport/appTestFixtures';
@@ -51,6 +51,38 @@ test.describe('full app smoke pass', () => {
       await assertNoRuntimeIssues(page, runtimeIssues);
     });
   }
+
+  test('keeps Pokemon learnset inline controls inside the row at scaled desktop sizes', async ({ page }) => {
+    const runtimeIssues = await installMockRuntime(page);
+    await page.setViewportSize({ width: 1024, height: 640 });
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Which game are you using?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Pokemon Sword' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Project Setup' })).toBeVisible();
+
+    await fillProjectPathInputs(page);
+    await page.getByRole('button', { name: 'Validate Paths' }).click();
+    await page.getByRole('button', { exact: true, name: 'Editors' }).click();
+    await page.getByRole('button', { exact: true, name: 'Pokemon' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Pokemon' })).toBeVisible();
+    await page.getByRole('button', { exact: true, name: 'Edit' }).click();
+
+    const inlineRow = page.locator('.learnset-inline-row').first();
+    await expect(inlineRow).toBeVisible();
+
+    for (const viewport of [
+      { width: 1024, height: 640 },
+      { width: 1280, height: 800 },
+      { width: 2560, height: 1600 }
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(inlineRow).toBeVisible();
+      await assertLearnsetInlineControlsStayInRow(page, inlineRow);
+    }
+
+    await assertNoRuntimeIssues(page, runtimeIssues);
+  });
 });
 
 async function installMockRuntime(page: Page) {
@@ -257,6 +289,60 @@ async function assertNoRuntimeIssues(page: Page, runtimeIssues: string[]) {
   await expect(page.getByText(/^Error code:/)).toHaveCount(0);
   await expect(page.getByText(/^Unhandled exception/i)).toHaveCount(0);
   expect(runtimeIssues).toEqual([]);
+}
+
+async function assertLearnsetInlineControlsStayInRow(
+  page: Page,
+  inlineRow: Locator
+) {
+  const bounds = await inlineRow.evaluate((row) => {
+    const rowBox = row.getBoundingClientRect();
+    const actionBox = row.querySelector('.learnset-inline-actions')?.getBoundingClientRect();
+    const boxes = Array.from(
+      row.querySelectorAll<HTMLElement>(
+        '.learnset-move-field, .learnset-level-field, .learnset-inline-metadata, .learnset-inline-actions'
+      )
+    ).map((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        bottom: box.bottom,
+        left: box.left,
+        right: box.right,
+        top: box.top
+      };
+    });
+
+    return {
+      actionBottom: actionBox?.bottom ?? 0,
+      actionLeft: actionBox?.left ?? 0,
+      actionRight: actionBox?.right ?? 0,
+      actionTop: actionBox?.top ?? 0,
+      boxes,
+      rowBottom: rowBox.bottom,
+      rowLeft: rowBox.left,
+      rowRight: rowBox.right,
+      rowTop: rowBox.top,
+      scrollWidth: row.scrollWidth,
+      width: row.clientWidth
+    };
+  });
+
+  const tolerance = 1;
+  expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.width + tolerance);
+  expect(bounds.actionLeft).toBeGreaterThanOrEqual(bounds.rowLeft - tolerance);
+  expect(bounds.actionRight).toBeLessThanOrEqual(bounds.rowRight + tolerance);
+  expect(bounds.actionTop).toBeGreaterThanOrEqual(bounds.rowTop - tolerance);
+  expect(bounds.actionBottom).toBeLessThanOrEqual(bounds.rowBottom + tolerance);
+  for (const box of bounds.boxes) {
+    expect(box.left).toBeGreaterThanOrEqual(bounds.rowLeft - tolerance);
+    expect(box.right).toBeLessThanOrEqual(bounds.rowRight + tolerance);
+    expect(box.top).toBeGreaterThanOrEqual(bounds.rowTop - tolerance);
+    expect(box.bottom).toBeLessThanOrEqual(bounds.rowBottom + tolerance);
+  }
+
+  await expect(page.getByRole('button', { name: 'Move learnset row up' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Move learnset row down' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove learnset row' })).toBeVisible();
 }
 
 function escapeRegExp(value: string) {

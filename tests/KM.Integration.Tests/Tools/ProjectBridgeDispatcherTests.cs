@@ -15,6 +15,7 @@ using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
 using KM.Api.Moves;
+using KM.Api.NpcItemGift;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
@@ -51,6 +52,7 @@ public sealed class ProjectBridgeDispatcherTests
     private const ulong RoyalCandyDyniteOreTraderShopHash = 0xF49C86F8683842BF;
     private const string GymUniformRemovalSwordIpsPath = "exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips";
     private const int RoyalCandyItemId = 1128;
+    private const uint PackedConstantOpcode = 0x000000BC;
 
     [Fact]
     public void DispatchOpenProjectReturnsProjectHealthAndFileGraph()
@@ -3170,6 +3172,121 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchNpcItemGiftStageValidatePlanApplyAndReloadWritesSoniaRevives()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteNpcItemGiftItemOptions(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/script/amx/main_event_1110.amx",
+            CreateNpcItemGiftScript(
+                quantityCell: 5246,
+                quantity: 2,
+                itemCell: 5247,
+                itemId: 28,
+                companionQuantityCells: [5130],
+                companionItemCells: [5131]));
+        temp.WriteBaseRomFsFile(
+            "bin/script/amx/main_event_1820.amx",
+            CreateNpcItemGiftScript(
+                quantityCell: 6775,
+                quantity: 3,
+                itemCell: 6776,
+                itemId: 29,
+                companionQuantityCells: [6335],
+                companionItemCells: [6336]));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadResponse = DeserializeResponse<LoadNpcItemGiftWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadNpcItemGiftWorkflow,
+            new LoadNpcItemGiftWorkflowRequest(temp.Paths),
+            requestId: "request-npc-gift-load")));
+        Assert.Null(loadResponse.Error);
+        Assert.NotNull(loadResponse.Payload);
+
+        var stageResponse = DeserializeResponse<StageNpcItemGiftResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StageNpcItemGift,
+            new StageNpcItemGiftRequest(
+                temp.Paths,
+                Session: null,
+                Gifts:
+                [
+                    new NpcItemGiftSelectionDto(
+                        "sonia-stow-on-side-revive",
+                        7,
+                        [new NpcItemGiftItemSelectionDto("item", 5)]),
+                    new NpcItemGiftSelectionDto(
+                        "sonia-slumbering-weald-max-revive",
+                        9,
+                        [new NpcItemGiftItemSelectionDto("item", 1)]),
+                ]),
+            requestId: "request-npc-gift-stage")));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.npcItemGift", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-npc-gift-validate")));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-npc-gift-plan")));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Equal(2, planResponse.Payload.ChangePlan.Writes.Count);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/script/amx/main_event_1110.amx");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/script/amx/main_event_1820.amx");
+
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-npc-gift-apply")));
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == "romfs/bin/script/amx/main_event_1110.amx");
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == "romfs/bin/script/amx/main_event_1820.amx");
+
+        var reloadResponse = DeserializeResponse<LoadNpcItemGiftWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadNpcItemGiftWorkflow,
+            new LoadNpcItemGiftWorkflowRequest(temp.Paths),
+            requestId: "request-npc-gift-reload")));
+        Assert.Null(reloadResponse.Error);
+        Assert.NotNull(reloadResponse.Payload);
+        var reloadedGifts = reloadResponse.Payload.Workflow.Npcs.SelectMany(npc => npc.Gifts).ToArray();
+        var stowGift = Assert.Single(reloadedGifts, gift => gift.GiftId == "sonia-stow-on-side-revive");
+        var slumberingGift = Assert.Single(reloadedGifts, gift => gift.GiftId == "sonia-slumbering-weald-max-revive");
+        Assert.Equal(7, stowGift.Quantity);
+        Assert.Equal(5, Assert.Single(stowGift.Items).ItemId);
+        Assert.Equal(9, slumberingGift.Quantity);
+        Assert.Equal(1, Assert.Single(slumberingGift.Items).ItemId);
+    }
+
+    [Fact]
     public void DispatchLoadSpreadsheetImportWorkflowReturnsGeneratedImportProfiles()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -4208,6 +4325,89 @@ public sealed class ProjectBridgeDispatcherTests
             "common",
             fileName)));
         Assert.Equal(expectedText, outputText.Lines[1128].Text);
+    }
+
+    private static void WriteNpcItemGiftItemOptions(TemporaryBridgeProject temp)
+    {
+        const int maxItemId = 29;
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            SwShItemBridgeFixtures.CreateItemTable(
+                Enumerable.Range(0, maxItemId + 1)
+                    .Select(itemId => new ItemBridgeFixtureRecord(itemId, itemId, 0, 0, 0, SwShItemPouch.Items))
+                    .ToArray()));
+
+        var names = Enumerable.Range(0, maxItemId + 1)
+            .Select(itemId => itemId switch
+            {
+                0 => "None",
+                1 => "Potion",
+                5 => "Rare Candy",
+                28 => "Revive",
+                29 => "Max Revive",
+                _ => $"Selectable {itemId}",
+            })
+            .ToArray();
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShItemBridgeFixtures.CreateItemNames(names));
+    }
+
+    private static byte[] CreateNpcItemGiftScript(
+        int quantityCell,
+        int quantity,
+        int itemCell,
+        int itemId,
+        IReadOnlyList<int>? companionQuantityCells = null,
+        IReadOnlyList<int>? companionItemCells = null)
+    {
+        const ushort pawnMagic64 = 0xF1E1;
+        const short pawnFlagCompact = 0x0004;
+        const short defSize = 8;
+        const int cellSize = 8;
+        const int cod = 0x38;
+        var codeCellCount = new[] { quantityCell, itemCell }
+            .Concat(companionQuantityCells ?? Array.Empty<int>())
+            .Concat(companionItemCells ?? Array.Empty<int>())
+            .Max() + 1;
+        var cells = new ulong[codeCellCount];
+        cells[quantityCell] = PackAmxConstant(quantity);
+        cells[itemCell] = PackAmxConstant(itemId);
+        foreach (var companionQuantityCell in companionQuantityCells ?? Array.Empty<int>())
+        {
+            cells[companionQuantityCell] = PackAmxConstant(quantity);
+        }
+
+        foreach (var companionItemCell in companionItemCells ?? Array.Empty<int>())
+        {
+            cells[companionItemCell] = PackAmxConstant(itemId);
+        }
+
+        var compactCode = CompactAmxCells(cells);
+        var data = new byte[cod + compactCode.Length];
+        Array.Copy(compactCode, 0, data, cod, compactCode.Length);
+
+        var dat = cod + codeCellCount * cellSize;
+        WriteAmxHeaderFields(
+            data,
+            size: data.Length,
+            magic: pawnMagic64,
+            flags: pawnFlagCompact,
+            defSize: defSize,
+            cod: cod,
+            dat: dat,
+            hea: dat,
+            stp: dat,
+            publics: cod,
+            natives: cod,
+            libraries: cod,
+            nameTable: cod);
+        return data;
+    }
+
+    private static ulong PackAmxConstant(int value)
+    {
+        return ((ulong)(uint)value << 32) | PackedConstantOpcode;
     }
 
     private static byte[] CreateRoyalCandyBagEventScript()

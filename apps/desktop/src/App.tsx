@@ -11171,8 +11171,8 @@ function SelectedPokemonPanel({
                             <span className="learnset-drag-cell" aria-hidden="true">
                               <GripVertical size={15} />
                             </span>
-                            <span>#{move.slot + 1}</span>
-                            <label className="path-field learnset-inline-field">
+                            <span className="learnset-slot-cell">#{move.slot + 1}</span>
+                            <label className="path-field learnset-inline-field learnset-move-field">
                               <span>Move</span>
                               {learnsetMoveOptionsForDraft.length > 0 ? (
                                 <SearchableOptionInput
@@ -11198,7 +11198,7 @@ function SelectedPokemonPanel({
                                 />
                               )}
                             </label>
-                            <label className="path-field learnset-inline-field">
+                            <label className="path-field learnset-inline-field learnset-level-field">
                               <span>Level</span>
                               <input
                                 disabled={!canEditLearnset}
@@ -11287,7 +11287,7 @@ function SelectedPokemonPanel({
                             <span className="learnset-drag-cell" aria-hidden="true">
                               <GripVertical size={15} />
                             </span>
-                            <span>#{move.slot + 1}</span>
+                            <span className="learnset-slot-cell">#{move.slot + 1}</span>
                             <span className="learnset-level-cell">
                               {displayMove.levelLabel ?? `Lv. ${displayMove.level}`}
                             </span>
