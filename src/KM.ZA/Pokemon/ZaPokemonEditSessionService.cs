@@ -1044,30 +1044,33 @@ internal sealed class ZaPokemonEditSessionService
 
     private static void ApplyCompatibility(PersonalRow row, string groupId, int slot, bool enabled)
     {
+        if (string.Equals(groupId, ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            var move = (ushort)slot;
+            row.TmMoves.RemoveAll(candidate => candidate == move);
+            if (enabled)
+            {
+                row.TmMoves.Add(move);
+                row.TmMoves.Sort();
+            }
+
+            return;
+        }
+
         var target = groupId switch
         {
-            ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId => row.TmMoves,
             ZaPokemonWorkflowService.EggMoveCompatibilityGroupId => row.EggMoves,
             ZaPokemonWorkflowService.ReminderMoveCompatibilityGroupId => row.ReminderMoves,
             _ => null,
         };
-        if (target is null)
+        if (target is null || (uint)slot >= (uint)target.Count)
         {
             return;
         }
 
-        var move = (ushort)slot;
-        if (enabled)
+        if (!enabled)
         {
-            if (!target.Contains(move))
-            {
-                target.Add(move);
-                target.Sort();
-            }
-        }
-        else
-        {
-            target.Remove(move);
+            target.RemoveAt(slot);
         }
     }
 

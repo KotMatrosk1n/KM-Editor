@@ -312,8 +312,9 @@ internal sealed class ZaPokemonWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            var tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels).ToArray();
+            pokemon = LoadRecords(source, labels, tmCatalog).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -348,7 +349,8 @@ internal sealed class ZaPokemonWorkflowService
 
     private static IEnumerable<ZaPokemonRecord> LoadRecords(
         ZaWorkflowFile source,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.EntryLength; index++)
@@ -359,7 +361,7 @@ internal sealed class ZaPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels);
+            yield return ToRecord(index, entry.Value, source, labels, tmCatalog);
         }
     }
 
@@ -367,7 +369,8 @@ internal sealed class ZaPokemonWorkflowService
         int personalId,
         ZaPersonal entry,
         ZaWorkflowFile source,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
     {
         var species = entry.Species;
         var baseStatsData = entry.BaseStats;
@@ -478,7 +481,7 @@ internal sealed class ZaPokemonWorkflowService
             weight,
             ReadEvolutions(entry, labels),
             ReadLearnset(entry, labels),
-            ReadCompatibility(entry, labels),
+            ReadCompatibility(entry, labels, tmCatalog),
             new ZaPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
@@ -570,16 +573,12 @@ internal sealed class ZaPokemonWorkflowService
 
     private static IReadOnlyList<ZaPokemonCompatibilityGroup> ReadCompatibility(
         ZaPersonal entry,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
     {
         var groups = new List<ZaPokemonCompatibilityGroup>
         {
-            CreateMoveVectorCompatibilityGroup(
-                TechnicalMachineCompatibilityGroupId,
-                "TM Moves",
-                entry.GetTmMovesArray(),
-                labels,
-                useMoveIdAsSlot: true),
+            CreateTechnicalMachineCompatibilityGroup(entry.GetTmMovesArray(), labels, tmCatalog),
         };
 
         var eggMoves = entry.GetEggMovesArray();
@@ -595,6 +594,40 @@ internal sealed class ZaPokemonWorkflowService
         }
 
         return groups;
+    }
+
+    private static ZaPokemonCompatibilityGroup CreateTechnicalMachineCompatibilityGroup(
+        IReadOnlyList<ushort> learnableMoves,
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
+    {
+        if (tmCatalog.Count == 0)
+        {
+            return CreateMoveVectorCompatibilityGroup(
+                TechnicalMachineCompatibilityGroupId,
+                "TM Moves",
+                learnableMoves,
+                labels,
+                useMoveIdAsSlot: true);
+        }
+
+        var learnableMoveSet = learnableMoves
+            .Select(move => (int)move)
+            .ToHashSet();
+        var entries = tmCatalog
+            .Select(tm => new ZaPokemonCompatibilityEntry(
+                tm.MoveId,
+                tm.MoveId,
+                tm.MoveName,
+                tm.Label,
+                learnableMoveSet.Contains(tm.MoveId)))
+            .ToArray();
+
+        return new ZaPokemonCompatibilityGroup(
+            TechnicalMachineCompatibilityGroupId,
+            "TM Moves",
+            entries.Count(entry => entry.CanLearn),
+            entries);
     }
 
     private static ZaPokemonCompatibilityGroup CreateMoveVectorCompatibilityGroup(
