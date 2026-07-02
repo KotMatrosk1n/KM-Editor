@@ -107,6 +107,9 @@ export function NpcItemGiftSection({
 
   const [selectedNpcId, setSelectedNpcId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<NpcGiftDrafts>(() => createDrafts(cleanSelections));
+  const [quantityInputOverrides, setQuantityInputOverrides] = useState<Record<string, string>>(
+    {}
+  );
   const draftsRef = useRef(drafts);
   const cleanSelectionsRef = useRef(cleanSelections);
 
@@ -114,6 +117,7 @@ export function NpcItemGiftSection({
 
   const replaceDrafts = (nextDrafts: NpcGiftDrafts) => {
     draftsRef.current = nextDrafts;
+    setQuantityInputOverrides({});
     setDrafts(nextDrafts);
   };
 
@@ -204,7 +208,17 @@ export function NpcItemGiftSection({
   };
 
   const updateQuantity = (giftId: string, value: string) => {
-    const quantity = Math.max(1, Math.min(999, Number.parseInt(value, 10) || 1));
+    setQuantityInputOverrides((current) => ({
+      ...current,
+      [giftId]: value
+    }));
+
+    const parsedQuantity = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsedQuantity)) {
+      return;
+    }
+
+    const quantity = clampGiftQuantity(parsedQuantity);
     updateDrafts((current) => ({
       ...current,
       [giftId]: {
@@ -212,6 +226,30 @@ export function NpcItemGiftSection({
         quantity
       }
     }));
+  };
+
+  const commitQuantity = (giftId: string) => {
+    const override = quantityInputOverrides[giftId];
+    if (override === undefined) {
+      return;
+    }
+
+    const parsedQuantity = Number.parseInt(override, 10);
+    if (Number.isInteger(parsedQuantity)) {
+      const quantity = clampGiftQuantity(parsedQuantity);
+      updateDrafts((current) => ({
+        ...current,
+        [giftId]: {
+          ...(current[giftId] ?? cleanSelectionsRef.current[giftId]),
+          quantity
+        }
+      }));
+    }
+
+    setQuantityInputOverrides((current) => {
+      const { [giftId]: _, ...rest } = current;
+      return rest;
+    });
   };
 
   const updateItem = (giftId: string, slotId: string, itemId: number) => {
@@ -234,6 +272,10 @@ export function NpcItemGiftSection({
   };
 
   const restoreGiftDefault = (gift: NpcItemGiftRecord) => {
+    setQuantityInputOverrides((current) => {
+      const { [gift.giftId]: _, ...rest } = current;
+      return rest;
+    });
     updateDrafts((current) => ({
       ...current,
       [gift.giftId]: getGiftVanillaSelection(gift)
@@ -315,8 +357,14 @@ export function NpcItemGiftSection({
                     itemOptions={workflow.itemOptions}
                     key={gift.giftId}
                     onItemChange={updateItem}
+                    onQuantityBlur={commitQuantity}
                     onQuantityChange={updateQuantity}
                     onRestoreDefault={restoreGiftDefault}
+                    quantityValue={
+                      quantityInputOverrides[gift.giftId] ?? (
+                        drafts[gift.giftId] ?? cleanSelections[gift.giftId]
+                      )?.quantity.toString() ?? ''
+                    }
                     selection={drafts[gift.giftId] ?? cleanSelections[gift.giftId]}
                   />
                 ))}
@@ -376,16 +424,20 @@ function NpcItemGiftCard({
   gift,
   itemOptions,
   onItemChange,
+  onQuantityBlur,
   onQuantityChange,
   onRestoreDefault,
+  quantityValue,
   selection
 }: {
   disabled: boolean;
   gift: NpcItemGiftRecord;
   itemOptions: NpcItemGiftItemOptionRecord[];
   onItemChange: (giftId: string, slotId: string, itemId: number) => void;
+  onQuantityBlur: (giftId: string) => void;
   onQuantityChange: (giftId: string, value: string) => void;
   onRestoreDefault: (gift: NpcItemGiftRecord) => void;
+  quantityValue: string;
   selection: NpcItemGiftSelection | undefined;
 }) {
   if (!selection) {
@@ -430,9 +482,10 @@ function NpcItemGiftCard({
             disabled={disabled}
             max={999}
             min={1}
+            onBlur={() => onQuantityBlur(gift.giftId)}
             onChange={(event) => onQuantityChange(gift.giftId, event.target.value)}
             type="number"
-            value={selection.quantity}
+            value={quantityValue}
           />
         </label>
       </div>
@@ -722,6 +775,10 @@ function getGiftVanillaSelection(gift: NpcItemGiftRecord): NpcItemGiftSelection 
       itemId: item.vanillaItemId
     }))
   };
+}
+
+function clampGiftQuantity(quantity: number) {
+  return Math.max(1, Math.min(999, quantity));
 }
 
 function groupNpcTabs(npcs: NpcItemGiftNpcGroup[]): NpcItemGiftTabGroup[] {

@@ -93,6 +93,7 @@ internal sealed record SwShNpcItemGiftDefinition(
     string RelativePath,
     int QuantityCell,
     int Quantity,
+    IReadOnlyList<int> CompanionQuantityCells,
     IReadOnlyList<SwShNpcItemGiftItemSlotDefinition> Items,
     ProjectGame? Game = null);
 
@@ -100,7 +101,8 @@ internal sealed record SwShNpcItemGiftItemSlotDefinition(
     string SlotId,
     string Label,
     int ItemCell,
-    int ItemId);
+    int ItemId,
+    IReadOnlyList<int> CompanionItemCells);
 
 internal sealed record SwShNpcItemGiftFileGroup(
     string RelativePath,

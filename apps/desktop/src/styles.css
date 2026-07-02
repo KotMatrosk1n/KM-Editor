@@ -39,6 +39,18 @@
   text-rendering: optimizeLegibility;
 }
 
+@media (min-height: 920px) {
+  :root {
+    --editor-visible-row-count: 8;
+  }
+}
+
+@media (min-height: 1200px) {
+  :root {
+    --editor-visible-row-count: 11;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2123,6 +2135,7 @@ h2 {
 }
 
 .learnset-list-item {
+  container-type: inline-size;
   min-width: 0;
 }
 
@@ -2148,9 +2161,28 @@ h2 {
 }
 
 .learnset-inline-row {
-  grid-template-columns: 24px 42px minmax(180px, 1fr) minmax(74px, 0.34fr) minmax(104px, 132px) auto;
+  grid-template-areas: "drag slot move level metadata actions";
+  grid-template-columns:
+    24px minmax(42px, max-content) minmax(150px, 1.4fr) minmax(74px, 112px)
+    minmax(92px, 132px) max-content;
   align-items: end;
   cursor: default;
+}
+
+.learnset-inline-row .learnset-drag-cell {
+  grid-area: drag;
+}
+
+.learnset-inline-row .learnset-slot-cell {
+  grid-area: slot;
+}
+
+.learnset-move-field {
+  grid-area: move;
+}
+
+.learnset-level-field {
+  grid-area: level;
 }
 
 .learnset-drag-cell {
@@ -2216,6 +2248,7 @@ h2 {
 }
 
 .learnset-inline-metadata {
+  grid-area: metadata;
   align-self: center;
   min-width: 0;
   overflow: hidden;
@@ -2224,10 +2257,42 @@ h2 {
 }
 
 .learnset-inline-actions {
+  grid-area: actions;
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
   justify-content: flex-end;
+  min-width: max-content;
+}
+
+@container (max-width: 820px) {
+  .learnset-inline-row {
+    grid-template-areas:
+      "drag slot move level"
+      "drag slot metadata actions";
+    grid-template-columns: 24px minmax(42px, max-content) minmax(0, 1fr) max-content;
+    row-gap: 8px;
+  }
+
+  .learnset-inline-actions {
+    justify-self: end;
+  }
+}
+
+@container (max-width: 480px) {
+  .learnset-inline-row {
+    grid-template-areas:
+      "drag slot actions"
+      "move move move"
+      "level metadata metadata";
+    grid-template-columns: 24px minmax(0, 1fr) max-content;
+  }
+
+  .learnset-move-field,
+  .learnset-level-field,
+  .learnset-inline-metadata {
+    width: 100%;
+  }
 }
 
 .learnset-row:hover,
