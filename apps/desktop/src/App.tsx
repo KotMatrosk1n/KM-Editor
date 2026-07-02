@@ -847,7 +847,12 @@ type ReleasePageUpdate = {
 type UpdateCheckStatus =
   | { kind: 'available'; message: string }
   | { kind: 'checking'; message: string }
-  | { kind: 'downloading'; message: string }
+  | {
+      contentLength: number | null;
+      downloadedBytes: number;
+      kind: 'downloading';
+      message: string;
+    }
   | { kind: 'error'; message: string }
   | { kind: 'idle'; message: string }
   | { kind: 'installing'; message: string }
@@ -3006,6 +3011,8 @@ export function App({
       let contentLength: number | null = null;
 
       setUpdateCheckStatus({
+        contentLength: null,
+        downloadedBytes: 0,
         kind: 'downloading',
         message: `Downloading KM Editor v${availableUpdate.version}.`
       });
@@ -3020,6 +3027,8 @@ export function App({
                   ? event.data.contentLength
                   : null;
               setUpdateCheckStatus({
+                contentLength,
+                downloadedBytes,
                 kind: 'downloading',
                 message: contentLength
                   ? `Downloading KM Editor v${availableUpdate.version} (${formatByteCount(
@@ -3030,7 +3039,12 @@ export function App({
               break;
             case 'Progress':
               downloadedBytes += event.data.chunkLength;
+              if (contentLength) {
+                downloadedBytes = Math.min(downloadedBytes, contentLength);
+              }
               setUpdateCheckStatus({
+                contentLength,
+                downloadedBytes,
                 kind: 'downloading',
                 message: contentLength
                   ? `Downloading update (${formatByteCount(downloadedBytes)} of ${formatByteCount(
@@ -9030,14 +9044,9 @@ export function App({
       ) : null}
       {availableUpdate ? (
         <UpdatePromptModal
-          isApplying={
-            updateCheckStatus.kind === 'downloading' ||
-            updateCheckStatus.kind === 'installing' ||
-            updateCheckStatus.kind === 'opening' ||
-            updateCheckStatus.kind === 'restarting'
-          }
           onDismiss={handleDismissAvailableUpdate}
           onDownload={handleDownloadAvailableUpdate}
+          status={updateCheckStatus}
           update={availableUpdate}
         />
       ) : null}
@@ -29179,17 +29188,32 @@ function ShopItemNavigationModal({
 }
 
 function UpdatePromptModal({
-  isApplying,
   onDismiss,
   onDownload,
+  status,
   update
 }: {
-  isApplying: boolean;
   onDismiss: () => void;
   onDownload: () => void;
+  status: UpdateCheckStatus;
   update: AvailableUpdate;
 }) {
   const isNativeUpdate = update.kind === 'native';
+  const isApplying =
+    status.kind === 'downloading' ||
+    status.kind === 'installing' ||
+    status.kind === 'opening' ||
+    status.kind === 'restarting';
+  const isProgressVisible = status.kind === 'downloading' || status.kind === 'installing';
+  const downloadContentLength =
+    status.kind === 'downloading' && status.contentLength !== null && status.contentLength > 0
+      ? status.contentLength
+      : null;
+  const downloadedBytes = status.kind === 'downloading' ? status.downloadedBytes : 0;
+  const downloadPercent =
+    downloadContentLength !== null
+      ? Math.max(0, Math.min(100, Math.round((downloadedBytes / downloadContentLength) * 100)))
+      : null;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -29215,6 +29239,40 @@ function UpdatePromptModal({
         ) : null}
         {update.kind === 'native' && update.body ? (
           <p className="modal-copy modal-copy-muted">{update.body}</p>
+        ) : null}
+        {isProgressVisible ? (
+          <div className="update-progress-panel" role="status">
+            <div className="update-progress-header">
+              <strong>
+                {status.kind === 'installing' ? 'Installing update' : 'Downloading update'}
+              </strong>
+              {downloadPercent !== null ? <span>{downloadPercent}%</span> : null}
+            </div>
+            <div
+              aria-label="Update download progress"
+              aria-valuemax={downloadContentLength !== null ? 100 : undefined}
+              aria-valuemin={downloadContentLength !== null ? 0 : undefined}
+              aria-valuenow={downloadPercent ?? undefined}
+              aria-valuetext={status.message}
+              className={`work-progress-track${
+                downloadContentLength !== null ? '' : ' work-progress-track-indeterminate'
+              }`}
+              role="progressbar"
+            >
+              <div
+                className="work-progress-fill"
+                style={
+                  downloadContentLength !== null ? { width: `${downloadPercent}%` } : undefined
+                }
+              />
+            </div>
+            <p>{status.message}</p>
+          </div>
+        ) : null}
+        {status.kind === 'error' ? (
+          <p className="update-status update-status-error" role="alert">
+            {status.message}
+          </p>
         ) : null}
         <div className="modal-actions">
           <button
