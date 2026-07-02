@@ -94,6 +94,13 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray(includeAdditionalMachines: true));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(329, (4, "Poke Ball"), (17, "Potion"), (328, "TM001"), (329, "TM002")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
         var dispatcher = new ProjectBridgeDispatcher();
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
@@ -126,7 +133,10 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Lv. 1 / Mastery Lv. 10", learnedMove.LevelLabel);
         Assert.Equal(1, Assert.Single(bulbasaur.Evolutions).Species);
         var tmGroup = bulbasaur.Compatibility.Single(group => group.GroupId == "tm");
-        Assert.Contains(tmGroup.Entries, entry => entry.MoveId == 45 && entry.CanLearn);
+        Assert.Equal(1, tmGroup.EnabledCount);
+        Assert.Equal(2, tmGroup.Entries.Count);
+        Assert.Contains(tmGroup.Entries, entry => entry.MoveId == 45 && entry.Label == "TM001 Growl" && entry.CanLearn);
+        Assert.Contains(tmGroup.Entries, entry => entry.MoveId == 33 && entry.Label == "TM002 Tackle" && !entry.CanLearn);
         var unavailablePokemon = workflow.Pokemon.Single(row => row.PersonalId == 3);
         Assert.Equal(3, unavailablePokemon.SpeciesId);
         Assert.False(unavailablePokemon.DexPresence.IsPresentInGame);
@@ -889,6 +899,72 @@ public sealed class PokemonLegendsZABridgeTests
         var row = written.Entry(1);
         Assert.NotNull(row);
         Assert.Equal(99, row!.Value.BaseStats!.Value.Hp);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAPokemonCompatibilityEditsWriteMoveLists()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray(includeAdditionalMachines: true));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(329, (4, "Poke Ball"), (17, "Potion"), (328, "TM001"), (329, "TM002")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (36, "Take Down"), (45, "Growl")));
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var tmUpdate = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(paths, Session: null, PersonalId: 1, Field: "compatibility:tm:33", Value: "1"),
+            "request-za-pokemon-tm-compatibility-update");
+        AssertSuccess(tmUpdate);
+        var updatedTmGroup = tmUpdate.Payload!.Workflow.Pokemon
+            .Single(row => row.PersonalId == 1)
+            .Compatibility
+            .Single(group => group.GroupId == "tm");
+        Assert.Equal(2, updatedTmGroup.EnabledCount);
+        Assert.True(updatedTmGroup.Entries.Single(entry => entry.MoveId == 33).CanLearn);
+
+        var eggUpdate = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(paths, tmUpdate.Payload.Session, PersonalId: 1, Field: "compatibility:egg:0", Value: "0"),
+            "request-za-pokemon-egg-compatibility-update");
+        AssertSuccess(eggUpdate);
+        var reminderUpdate = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(paths, eggUpdate.Payload!.Session, PersonalId: 1, Field: "compatibility:reminder:0", Value: "0"),
+            "request-za-pokemon-reminder-compatibility-update");
+        AssertSuccess(reminderUpdate);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, reminderUpdate.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-compatibility-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, reminderUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-compatibility-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "avalon", "data", "personal_array.bin");
+        var written = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(File.ReadAllBytes(outputPath)));
+        var row = written.Entry(1);
+        Assert.NotNull(row);
+        Assert.Equal([33, 45], row!.Value.GetTmMovesArray().Select(move => (int)move).ToArray());
+        Assert.Empty(row.Value.GetEggMovesArray());
+        Assert.Empty(row.Value.GetReminderMovesArray());
     }
 
     [Fact]
@@ -2204,7 +2280,7 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateItemDataArray()
+    private static byte[] CreateItemDataArray(bool includeAdditionalMachines = false)
     {
         var builder = new FlatBufferBuilder(2048);
         var pokeBall = CreateItem(
@@ -2241,7 +2317,37 @@ public sealed class PokemonLegendsZABridgeTests
             sortOrder: 1,
             machineMoveId: 33,
             machineIndex: -1);
-        var vector = ZaItemDataArray.CreateValuesVector(builder, [pokeBall, potion, tm]);
+        Offset<ZaItemData>[] rows = [pokeBall, potion, tm];
+        if (includeAdditionalMachines)
+        {
+            var tm1 = CreateItem(
+                builder,
+                itemId: 328,
+                itemType: 5,
+                internalName: "WAZAMASIN01",
+                iconName: "item_0332",
+                price: 1000,
+                pocket: 6,
+                stackCap: 1,
+                sortOrder: 1,
+                machineMoveId: 45,
+                machineIndex: 0);
+            var tm2 = CreateItem(
+                builder,
+                itemId: 329,
+                itemType: 5,
+                internalName: "WAZAMASIN02",
+                iconName: "item_0333",
+                price: 1000,
+                pocket: 6,
+                stackCap: 1,
+                sortOrder: 2,
+                machineMoveId: 33,
+                machineIndex: 1);
+            rows = [pokeBall, potion, tm1, tm2];
+        }
+
+        var vector = ZaItemDataArray.CreateValuesVector(builder, rows);
         var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
         ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
