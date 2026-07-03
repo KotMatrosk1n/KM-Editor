@@ -29,6 +29,7 @@ import {
   ListChecks,
   MapPinned,
   MapPin,
+  MessageSquareOff,
   Package,
   PackagePlus,
   Pencil,
@@ -213,6 +214,7 @@ import {
 } from './bridge/contracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
+import { type ProfanityFilterStatus } from './bridge/profanityFilterContracts';
 import {
   ProjectBridgeError,
   projectBridge as defaultProjectBridge,
@@ -625,6 +627,11 @@ const sections: Array<{
     icon: Zap
   },
   {
+    id: 'profanityFilter',
+    label: 'Profanity Filter',
+    icon: MessageSquareOff
+  },
+  {
     id: 'gameDump',
     label: 'Game Dump',
     icon: Download
@@ -909,6 +916,12 @@ const saveChangesProgressSteps = [
 
 const fpsPatchProgressSteps = [
   'Reading patch state',
+  'Updating ExeFS output',
+  'Refreshing loaded editors'
+] as const;
+
+const profanityFilterProgressSteps = [
+  'Reading filter state',
   'Updating ExeFS output',
   'Refreshing loaded editors'
 ] as const;
@@ -1930,6 +1943,10 @@ export function App({
   const [fpsPatchStatus, setFpsPatchStatus] = useState<FpsPatchStatus | null>(null);
   const [isFpsPatchLoading, setIsFpsPatchLoading] = useState(false);
   const [isFpsPatchApplying, setIsFpsPatchApplying] = useState(false);
+  const [profanityFilterStatus, setProfanityFilterStatus] =
+    useState<ProfanityFilterStatus | null>(null);
+  const [isProfanityFilterLoading, setIsProfanityFilterLoading] = useState(false);
+  const [isProfanityFilterApplying, setIsProfanityFilterApplying] = useState(false);
   const [isRandomizerApplying, setIsRandomizerApplying] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
   const [isSupportSearchPermissionOpen, setIsSupportSearchPermissionOpen] = useState(false);
@@ -2035,6 +2052,7 @@ export function App({
   const activeSectionIsEditor =
     activeSectionCanStayMounted &&
     activeSection !== 'fpsPatch' &&
+    activeSection !== 'profanityFilter' &&
     activeSection !== 'randomizer' &&
     activeSection !== 'gameDump';
   const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
@@ -2160,6 +2178,7 @@ export function App({
     setZaModMergerApplyResult(null);
     setZaModSources([]);
     setFpsPatchStatus(null);
+    setProfanityFilterStatus(null);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
     clearScopedEditorPanelState();
@@ -5079,6 +5098,96 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
+      setWorkProgress(null);
+    }
+  };
+
+  const handleLoadProfanityFilter = async () => {
+    setIsProfanityFilterLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadProfanityFilter({
+        paths: toProjectPaths(draftPaths)
+      });
+      setProfanityFilterStatus(response.status);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsProfanityFilterLoading(false);
+    }
+  };
+
+  const handleApplyProfanityFilter = async () => {
+    setIsProfanityFilterApplying(true);
+    setBridgeDiagnostics([]);
+    setApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Applying Profanity Filter',
+      'Updating executable patch output',
+      profanityFilterProgressSteps,
+      1
+    ));
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.applyProfanityFilter({ paths });
+      setProfanityFilterStatus(response.status);
+      setApplyResult(response.applyResult);
+
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Applying Profanity Filter',
+          'Refreshing loaded editor data',
+          profanityFilterProgressSteps,
+          2
+        ));
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsProfanityFilterApplying(false);
+      setWorkProgress(null);
+    }
+  };
+
+  const handleRestoreProfanityFilter = async () => {
+    setIsProfanityFilterApplying(true);
+    setBridgeDiagnostics([]);
+    setApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Restoring Profanity Filter',
+      'Removing profanity filter patch output',
+      profanityFilterProgressSteps,
+      1
+    ));
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.restoreProfanityFilter({ paths });
+      setProfanityFilterStatus(response.status);
+      setApplyResult(response.applyResult);
+
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Restoring Profanity Filter',
+          'Refreshing loaded editor data',
+          profanityFilterProgressSteps,
+          2
+        ));
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsProfanityFilterApplying(false);
       setWorkProgress(null);
     }
   };
@@ -8837,6 +8946,17 @@ export function App({
               onRefresh={handleLoadFpsPatch}
               onRestore={handleRestoreFpsPatch}
               status={fpsPatchStatus}
+            />
+          ) : null}
+          {activeSection === 'profanityFilter' ? (
+            <ProfanityFilterSection
+              canApply={health?.canOpenEditableWorkflows ?? false}
+              isApplying={isProfanityFilterApplying}
+              isLoading={isProfanityFilterLoading}
+              onApply={handleApplyProfanityFilter}
+              onRefresh={handleLoadProfanityFilter}
+              onRestore={handleRestoreProfanityFilter}
+              status={profanityFilterStatus}
             />
           ) : null}
           {activeSection === 'randomizer' ? (
@@ -27663,6 +27783,152 @@ function getFpsPatchStatusClassName(status: string) {
     case 'unchecked':
     default:
       return 'status-warning';
+  }
+}
+
+function ProfanityFilterSection({
+  canApply,
+  isApplying,
+  isLoading,
+  onApply,
+  onRefresh,
+  onRestore,
+  status
+}: {
+  canApply: boolean;
+  isApplying: boolean;
+  isLoading: boolean;
+  onApply: () => void;
+  onRefresh: () => void;
+  onRestore: () => void;
+  status: ProfanityFilterStatus | null;
+}) {
+  const isBusy = isLoading || isApplying;
+  const statusLabel = status ? formatProfanityFilterStatus(status.status) : 'Not checked';
+  const patchSiteValue = status?.patchOffsetHex ?? 'Not checked';
+  const patchShapeValue = status?.patchShape ?? 'Not checked';
+  const sourceValue = status ? formatProfanityFilterSourceLayer(status.sourceLayer) : 'Not checked';
+
+  return (
+    <>
+      <section
+        aria-labelledby="profanity-filter-heading"
+        className="panel wide-panel swsh-editor-surface fps-patch-section"
+      >
+        <div className="panel-heading">
+          <MessageSquareOff aria-hidden="true" size={18} />
+          <h2 id="profanity-filter-heading">Profanity Filter</h2>
+        </div>
+
+        <div className="fps-patch-status-row" aria-live="polite">
+          <span className={`status-pill ${getProfanityFilterStatusClassName(status?.status ?? 'unchecked')}`}>
+            {statusLabel}
+          </span>
+          {status ? <span className="fps-patch-status-message">{status.message}</span> : null}
+        </div>
+
+        <div className="metric-grid">
+          <Metric label="Patch site" value={patchSiteValue} />
+          <Metric label="Bytes" value={patchShapeValue} />
+          <Metric label="Source" value={sourceValue} />
+        </div>
+
+        <div className="mod-merger-action-row">
+          <button
+            aria-busy={isLoading || undefined}
+            className="secondary-button"
+            disabled={isBusy}
+            onClick={onRefresh}
+            title="Refresh Profanity Filter status from Base ExeFS and Output Root."
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Refreshing"
+              icon={<RefreshCw aria-hidden="true" size={16} />}
+              isBusy={isLoading}
+              label="Refresh"
+            />
+          </button>
+          <button
+            aria-busy={isApplying || undefined}
+            className="primary-button"
+            disabled={!canApply || isBusy}
+            onClick={onApply}
+            title="Install the SwSh Profanity Filter ExeFS patch."
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Working"
+              icon={<CheckCircle aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label="Install"
+            />
+          </button>
+          <button
+            aria-busy={isApplying || undefined}
+            className="danger-button"
+            disabled={!canApply || isBusy}
+            onClick={onRestore}
+            title="Remove only Profanity Filter bytes while preserving other exefs/main edits."
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Working"
+              icon={<RotateCcw aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label="Uninstall"
+            />
+          </button>
+        </div>
+      </section>
+
+      {status && status.diagnostics.length > 0 ? (
+        <DiagnosticsSection diagnostics={status.diagnostics} scrollAfterEntries={5} />
+      ) : null}
+    </>
+  );
+}
+
+function formatProfanityFilterStatus(status: string) {
+  switch (status) {
+    case 'installed':
+      return 'Installed';
+    case 'compatible':
+      return 'Compatible';
+    case 'notInstalled':
+      return 'Not installed';
+    case 'blocked':
+      return 'Blocked';
+    case 'unsupported':
+      return 'Unsupported';
+    default:
+      return status;
+  }
+}
+
+function getProfanityFilterStatusClassName(status: string) {
+  switch (status) {
+    case 'installed':
+    case 'compatible':
+      return 'status-ready';
+    case 'blocked':
+    case 'unsupported':
+      return 'status-blocked';
+    case 'notInstalled':
+    case 'unchecked':
+    default:
+      return 'status-warning';
+  }
+}
+
+function formatProfanityFilterSourceLayer(sourceLayer: string) {
+  switch (sourceLayer) {
+    case 'base':
+      return 'Base ExeFS';
+    case 'layered':
+      return 'Output Root';
+    default:
+      return 'Unknown';
   }
 }
 

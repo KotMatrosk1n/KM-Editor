@@ -12,6 +12,7 @@ using KM.SwSh.FpsPatch;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
+using KM.SwSh.NameFilter;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
 using KM.SwSh.Tests.FpsPatch;
@@ -184,6 +185,29 @@ public sealed class SwShHookReservationTests
                 Assert.Equal(0x00D314B8, region.StartOffset);
                 Assert.Equal(0x08, region.Length);
                 Assert.Equal("text+0xD314B8..0xD314BF", region.OffsetLabel);
+            });
+    }
+
+    [Fact]
+    public void ProfanityFilterReservesSwordAndShieldProfanityCheckCalls()
+    {
+        var regions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerNameFilterBypass);
+
+        Assert.Collection(
+            regions.OrderBy(region => region.StartOffset).ToArray(),
+            region =>
+            {
+                Assert.Equal("name-filter-bypass-sword-profanity-call", region.FeatureId);
+                Assert.Equal(SwShNameFilterMainPatcher.SwordProfanityCheckCallOffset, region.StartOffset);
+                Assert.Equal(0x04, region.Length);
+                Assert.Equal("text+0xEF1228..0xEF122B", region.OffsetLabel);
+            },
+            region =>
+            {
+                Assert.Equal("name-filter-bypass-shield-profanity-call", region.FeatureId);
+                Assert.Equal(SwShNameFilterMainPatcher.ShieldProfanityCheckCallOffset, region.StartOffset);
+                Assert.Equal(0x04, region.Length);
+                Assert.Equal("text+0xEF1258..0xEF125B", region.OffsetLabel);
             });
     }
 
