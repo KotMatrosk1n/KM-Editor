@@ -9,7 +9,11 @@ using KM.ZA.Workflows;
 
 namespace KM.ZA.Trainers;
 
-internal sealed record ZaTrainerAbilitySet(string Ability1, string Ability2, string HiddenAbility)
+internal sealed record ZaTrainerAbilitySet(
+    string Ability1,
+    string Ability2,
+    string HiddenAbility,
+    ZaTrainerPokemonStatsRecord? BaseStats = null)
 {
     public static readonly ZaTrainerAbilitySet Empty = new("Ability 1", "Ability 2", "Hidden Ability");
 }
@@ -53,10 +57,21 @@ internal sealed class ZaTrainerAbilityResolver
                     continue;
                 }
 
+                var baseStats = entry.Value.BaseStats is { } stats
+                    ? new ZaTrainerPokemonStatsRecord(
+                        stats.Hp,
+                        stats.Atk,
+                        stats.Def,
+                        stats.Spa,
+                        stats.Spd,
+                        stats.Spe)
+                    : null;
+
                 records[(species.Value.Species, species.Value.Form)] = new ZaTrainerAbilitySet(
                     labels.Ability(entry.Value.Ability1),
                     labels.Ability(entry.Value.Ability2),
-                    labels.Ability(entry.Value.AbilityHidden));
+                    labels.Ability(entry.Value.AbilityHidden),
+                    baseStats);
             }
 
             return new ZaTrainerAbilityResolver(records, labels);

@@ -1781,6 +1781,9 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Random", trainerPokemon.GenderLabel);
         Assert.Equal("Random 1/2", trainerPokemon.AbilityLabel);
         Assert.Equal("Default (game behavior)", trainerPokemon.NatureLabel);
+        Assert.NotNull(trainerPokemon.BaseStats);
+        Assert.Equal(45, trainerPokemon.BaseStats!.HP);
+        Assert.Equal(49, trainerPokemon.BaseStats.Attack);
         Assert.Contains(
             trainerPokemon.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "Overgrow (Ability 1)");

@@ -1010,6 +1010,17 @@ const natureStatLabels = {
   specialDefense: 'Sp. Def',
   speed: 'Speed'
 } as const;
+const trainerProjectedStatRows = [
+  { key: 'hp', label: 'HP' },
+  { key: 'attack', label: 'Attack' },
+  { key: 'defense', label: 'Defense' },
+  { key: 'specialAttack', label: 'Sp. Atk' },
+  { key: 'specialDefense', label: 'Sp. Def' },
+  { key: 'speed', label: 'Speed' }
+] as const satisfies ReadonlyArray<{
+  key: keyof TrainerPokemonRecord['evs'];
+  label: string;
+}>;
 const shinyFieldName = 'shiny';
 const canDynamaxFieldName = 'canDynamax';
 const trainerTeraTypeFieldName = 'teraType';
@@ -8165,6 +8176,7 @@ export function App({
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
+                pokemonWorkflow={pokemonWorkflow}
                 workflow={trainersWorkflow}
               />
             ) : isScarletVioletProject ? (
@@ -8179,6 +8191,7 @@ export function App({
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
+                pokemonWorkflow={pokemonWorkflow}
                 workflow={trainersWorkflow}
               />
             ) : (
@@ -8193,6 +8206,7 @@ export function App({
                 onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
+                pokemonWorkflow={pokemonWorkflow}
                 workflow={trainersWorkflow}
               />
             )
@@ -12679,6 +12693,7 @@ type TrainersSectionProps = {
     slot: number | null,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonWorkflow: PokemonWorkflow | null;
   searchText: string;
   selectedTrainerId: number | null;
   workflow: TrainersWorkflow | null;
@@ -12712,6 +12727,7 @@ function TrainersSection({
   onStartEditSession,
   onUpdateTrainerField,
   onUpdateTrainerFields,
+  pokemonWorkflow,
   searchText,
   selectedTrainerId,
   workflow
@@ -12837,6 +12853,7 @@ function TrainersSection({
               onStartEditSession={onStartEditSession}
               onUpdateTrainerField={onUpdateTrainerField}
               onUpdateTrainerFields={onUpdateTrainerFields}
+              pokemonWorkflow={pokemonWorkflow}
               selectedPokemon={selectedPokemon}
               selectedSlot={selectedSlot}
               trainer={selectedTrainer}
@@ -12864,6 +12881,7 @@ function SelectedTrainerPanel({
   onStartEditSession,
   onUpdateTrainerField,
   onUpdateTrainerFields,
+  pokemonWorkflow,
   selectedPokemon,
   selectedSlot,
   trainer
@@ -12888,6 +12906,7 @@ function SelectedTrainerPanel({
     slot: number | null,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonWorkflow: PokemonWorkflow | null;
   selectedPokemon: TrainerPokemonRecord | null;
   selectedSlot: number | null;
   trainer: TrainerRecord | null;
@@ -13034,6 +13053,19 @@ function SelectedTrainerPanel({
       editorFamily
     );
   }, [contextualPokemonFields, editorFamily, pokemonDrafts, selectedPokemon]);
+  const projectedPokemonStats = useMemo(
+    () =>
+      selectedPokemon
+        ? getProjectedTrainerPokemonStats(
+            selectedPokemon,
+            contextualPokemonFields,
+            pokemonDrafts,
+            pokemonWorkflow,
+            editorFamily
+          )
+        : null,
+    [contextualPokemonFields, editorFamily, pokemonDrafts, pokemonWorkflow, selectedPokemon]
+  );
   const selectedPokemonCanDynamax = useMemo(() => {
     if (!selectedPokemon) {
       return true;
@@ -13462,6 +13494,7 @@ function SelectedTrainerPanel({
                     </fieldset>
                   ))}
                 </div>
+                <TrainerPokemonProjectedStatsPanel projectedStats={projectedPokemonStats} />
                 {editSession ? (
                   <div className="draft-action-row">
                     <button
@@ -13553,6 +13586,41 @@ type TrainerDraftChange = {
   label: string;
   value: string;
 };
+
+type ProjectedTrainerPokemonStats = {
+  baseStats: NonNullable<TrainerPokemonRecord['baseStats']>;
+  stats: TrainerPokemonRecord['evs'];
+};
+
+function TrainerPokemonProjectedStatsPanel({
+  projectedStats
+}: {
+  projectedStats: ProjectedTrainerPokemonStats | null;
+}) {
+  const { translateLiteral } = useLocalization();
+
+  if (!projectedStats) {
+    return null;
+  }
+
+  return (
+    <section aria-label="Projected stats" className="trainer-projected-stats-panel">
+      <div className="trainer-projected-stats-header">
+        <strong>{translateLiteral('Projected Stats')}</strong>
+      </div>
+      <dl className="trainer-projected-stats-grid">
+        {trainerProjectedStatRows.map((row) => (
+          <div className="trainer-projected-stat" key={row.key}>
+            <dt>{translateLiteral(row.label)}</dt>
+            <dd aria-label={`${row.label} projected stat`}>
+              {projectedStats.stats[row.key]}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
 type DynamaxAdventureEntryChangeGroup = { entryIndex: number; changes: Array<{ field: string; value: string }> };
 type DynamaxAdventureDraftFieldOptions = Record<string, EditableFieldOption[]>;
 
@@ -14036,6 +14104,225 @@ function getNatureStatEffects(
   const normalizedNature =
     (editorFamily === 'sv' || editorFamily === 'za') && nature > 0 ? nature - 1 : nature;
   return effects[normalizedNature] ?? { up: null, down: null };
+}
+
+function getProjectedTrainerPokemonStats(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts: Record<string, string>,
+  pokemonWorkflow: PokemonWorkflow | null,
+  editorFamily: EditorUiFamily
+): ProjectedTrainerPokemonStats | null {
+  const speciesId =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, speciesIdFieldName) ??
+    pokemon.speciesId;
+  const form =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, formFieldName) ?? pokemon.form;
+  const fallbackBaseStats =
+    speciesId === pokemon.speciesId && form === pokemon.form ? pokemon.baseStats ?? null : null;
+  const baseStats =
+    resolveProjectedTrainerPokemonBaseStats(pokemonWorkflow, speciesId, form) ??
+    fallbackBaseStats;
+
+  if (speciesId <= 0 || !baseStats) {
+    return null;
+  }
+
+  const level = clampInteger(
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, levelFieldName) ??
+      pokemon.level,
+    1,
+    100
+  );
+  const nature =
+    getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, natureFieldName) ??
+    pokemon.nature;
+  const effects = getNatureStatEffects(nature, editorFamily);
+  const evs = getProjectedTrainerPokemonStatValues(pokemon, fields, drafts, evFieldNames);
+  const ivs = getProjectedTrainerPokemonStatValues(pokemon, fields, drafts, ivFieldNames);
+
+  return {
+    baseStats,
+    stats: {
+      hp: calculateProjectedTrainerPokemonStat(
+        'hp',
+        baseStats.hp,
+        normalizeProjectedTrainerEv(evs.hp),
+        normalizeProjectedTrainerIv(ivs.hp),
+        level,
+        effects
+      ),
+      attack: calculateProjectedTrainerPokemonStat(
+        'attack',
+        baseStats.attack,
+        normalizeProjectedTrainerEv(evs.attack),
+        normalizeProjectedTrainerIv(ivs.attack),
+        level,
+        effects
+      ),
+      defense: calculateProjectedTrainerPokemonStat(
+        'defense',
+        baseStats.defense,
+        normalizeProjectedTrainerEv(evs.defense),
+        normalizeProjectedTrainerIv(ivs.defense),
+        level,
+        effects
+      ),
+      specialAttack: calculateProjectedTrainerPokemonStat(
+        'specialAttack',
+        baseStats.specialAttack,
+        normalizeProjectedTrainerEv(evs.specialAttack),
+        normalizeProjectedTrainerIv(ivs.specialAttack),
+        level,
+        effects
+      ),
+      specialDefense: calculateProjectedTrainerPokemonStat(
+        'specialDefense',
+        baseStats.specialDefense,
+        normalizeProjectedTrainerEv(evs.specialDefense),
+        normalizeProjectedTrainerIv(ivs.specialDefense),
+        level,
+        effects
+      ),
+      speed: calculateProjectedTrainerPokemonStat(
+        'speed',
+        baseStats.speed,
+        normalizeProjectedTrainerEv(evs.speed),
+        normalizeProjectedTrainerIv(ivs.speed),
+        level,
+        effects
+      )
+    }
+  };
+}
+
+function getProjectedTrainerPokemonStatValues(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts: Record<string, string>,
+  fieldNames: typeof evFieldNames | typeof ivFieldNames
+): TrainerPokemonRecord['evs'] {
+  return {
+    hp:
+      getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, fieldNames[0]) ??
+      getEditablePokemonFieldValue(pokemon, fieldNames[0]) ??
+      0,
+    attack:
+      getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, fieldNames[1]) ??
+      getEditablePokemonFieldValue(pokemon, fieldNames[1]) ??
+      0,
+    defense:
+      getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, fieldNames[2]) ??
+      getEditablePokemonFieldValue(pokemon, fieldNames[2]) ??
+      0,
+    specialAttack:
+      getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, fieldNames[3]) ??
+      getEditablePokemonFieldValue(pokemon, fieldNames[3]) ??
+      0,
+    specialDefense:
+      getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, fieldNames[4]) ??
+      getEditablePokemonFieldValue(pokemon, fieldNames[4]) ??
+      0,
+    speed:
+      getProjectedTrainerPokemonFieldValue(pokemon, fields, drafts, fieldNames[5]) ??
+      getEditablePokemonFieldValue(pokemon, fieldNames[5]) ??
+      0
+  };
+}
+
+function getProjectedTrainerPokemonFieldValue(
+  pokemon: TrainerPokemonRecord,
+  fields: TrainerEditableField[],
+  drafts: Record<string, string>,
+  fieldName: string
+) {
+  const currentValue = getEditablePokemonFieldValue(pokemon, fieldName);
+  const field = fields.find((candidate) => candidate.field === fieldName);
+  if (!field || currentValue === null) {
+    return currentValue;
+  }
+
+  const draftValue = drafts[fieldName] ?? currentValue.toString();
+  const normalizedDraftValue = draftValue.trim();
+  if (normalizedDraftValue.length === 0) {
+    return currentValue;
+  }
+
+  const parsedValue =
+    field.valueKind === 'number'
+      ? Number(normalizedDraftValue)
+      : parseEditableIntegerDraft(normalizedDraftValue, field.options);
+
+  if (parsedValue === null || !Number.isFinite(parsedValue)) {
+    return currentValue;
+  }
+
+  const minimumValue = field.minimumValue ?? null;
+  const maximumValue = field.maximumValue ?? null;
+  if (
+    (minimumValue !== null && parsedValue < minimumValue) ||
+    (maximumValue !== null && parsedValue > maximumValue)
+  ) {
+    return currentValue;
+  }
+
+  if (
+    field.options.length > 0 &&
+    !isSpeciesFormField(field.field) &&
+    !field.options.some((option) => option.value === parsedValue)
+  ) {
+    return currentValue;
+  }
+
+  return parsedValue;
+}
+
+function resolveProjectedTrainerPokemonBaseStats(
+  pokemonWorkflow: PokemonWorkflow | null,
+  speciesId: number,
+  form: number
+): TrainerPokemonRecord['baseStats'] | null {
+  if (!pokemonWorkflow || speciesId <= 0) {
+    return null;
+  }
+
+  return (
+    pokemonWorkflow.pokemon.find(
+      (candidate) => candidate.speciesId === speciesId && candidate.form === form
+    )?.baseStats ??
+    pokemonWorkflow.pokemon.find(
+      (candidate) => candidate.speciesId === speciesId && candidate.form === 0
+    )?.baseStats ??
+    null
+  );
+}
+
+function calculateProjectedTrainerPokemonStat(
+  statKey: keyof TrainerPokemonRecord['evs'],
+  baseStat: number,
+  ev: number,
+  iv: number,
+  level: number,
+  effects: NatureStatEffects | null
+) {
+  if (statKey === 'hp') {
+    return baseStat === 1
+      ? 1
+      : Math.floor(((2 * baseStat + iv + Math.floor(ev / 4)) * level) / 100) + level + 10;
+  }
+
+  const neutralStat = Math.floor(((2 * baseStat + iv + Math.floor(ev / 4)) * level) / 100) + 5;
+  const natureMultiplier =
+    effects?.up === statKey ? 1.1 : effects?.down === statKey ? 0.9 : 1;
+  return Math.floor(neutralStat * natureMultiplier);
+}
+
+function normalizeProjectedTrainerEv(value: number) {
+  return clampInteger(value, 0, maximumPokemonEvValue);
+}
+
+function normalizeProjectedTrainerIv(value: number) {
+  return clampInteger(value, 0, maximumPokemonIvValue);
 }
 
 function getNatureStatAdornment(fieldName: string, effects: NatureStatEffects | null) {

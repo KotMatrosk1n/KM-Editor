@@ -1884,6 +1884,63 @@ h2 {
   gap: 12px;
 }
 
+.trainer-projected-stats-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: #121b2d;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.trainer-projected-stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #f4f7fb;
+}
+
+.trainer-projected-stats-header strong {
+  font-size: 14px;
+}
+
+.trainer-projected-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.trainer-projected-stat {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  background: #0f1728;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.trainer-projected-stat dt {
+  color: #9aa7bd;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trainer-projected-stat dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #f4f7fb;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
 .trainer-ai-flag-disabled {
   opacity: 0.52;
 }

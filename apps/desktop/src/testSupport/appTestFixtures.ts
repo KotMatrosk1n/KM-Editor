@@ -1411,6 +1411,14 @@ export function createMockProjectBridge(
               { label: 'Ability 2 - 065 Overgrow', value: 2 },
               { label: 'Hidden Ability - 000 None', value: 3 }
             ],
+            baseStats: {
+              attack: 65,
+              defense: 50,
+              hp: 50,
+              specialAttack: 40,
+              specialDefense: 40,
+              speed: 65
+            },
             canDynamax: false,
             canGigantamax: true,
             dynamaxLevel: 7,

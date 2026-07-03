@@ -53,6 +53,9 @@ public sealed record TrainerPokemonRecordDto(
 {
     public IReadOnlyList<TrainerEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<TrainerEditableFieldOptionDto>();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TrainerPokemonStatsDto? BaseStats { get; init; }
 }
 
 public sealed record TrainerPokemonStatsDto(
