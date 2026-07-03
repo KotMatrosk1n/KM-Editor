@@ -226,7 +226,9 @@ public sealed class SwShTrainersWorkflowServiceTests
         var speciesField = workflow.EditableFields.Single(field =>
             field.Field == SwShTrainersWorkflowService.SpeciesIdField);
         Assert.Contains(speciesField.Options, option => option.Value == 745 && option.Label == "745 Lycanroc");
-        Assert.Equal("Lycanroc", Assert.Single(workflow.Trainers).Team.Single(pokemon => pokemon.SpeciesId > 0).Species);
+        var pokemon = Assert.Single(workflow.Trainers).Team.Single(pokemon => pokemon.SpeciesId > 0);
+        Assert.Equal("Lycanroc", pokemon.Species);
+        Assert.Equal(new SwShTrainerPokemonStatsRecord(45, 49, 49, 65, 65, 45), pokemon.BaseStats);
     }
 
     internal static void WriteTrainerFixture(TemporarySwShProject temp)

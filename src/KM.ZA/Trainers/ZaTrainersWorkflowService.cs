@@ -386,6 +386,7 @@ internal sealed class ZaTrainersWorkflowService
             pokemon.RareType == 2)
         {
             AbilityOptions = abilityOptions,
+            BaseStats = abilities.BaseStats,
         };
     }
 

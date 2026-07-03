@@ -75,9 +75,23 @@ public sealed class SwShPokemonAbilityOptionResolver
 
     private AbilitySet ResolveAbilities(int speciesId, int form)
     {
-        if ((uint)speciesId >= (uint)records.Count)
+        var record = ResolvePersonalRecord(speciesId, form);
+        if (record is null)
         {
             return AbilitySet.Empty;
+        }
+
+        return new AbilitySet(
+            FormatAbility(record.Ability1),
+            FormatAbility(record.Ability2),
+            FormatAbility(record.HiddenAbility));
+    }
+
+    public SwShPersonalRecord? ResolvePersonalRecord(int speciesId, int form)
+    {
+        if ((uint)speciesId >= (uint)records.Count)
+        {
+            return null;
         }
 
         var record = records[speciesId];
@@ -90,10 +104,7 @@ public sealed class SwShPokemonAbilityOptionResolver
             }
         }
 
-        return new AbilitySet(
-            FormatAbility(record.Ability1),
-            FormatAbility(record.Ability2),
-            FormatAbility(record.HiddenAbility));
+        return record;
     }
 
     private string FormatAbility(int abilityId)

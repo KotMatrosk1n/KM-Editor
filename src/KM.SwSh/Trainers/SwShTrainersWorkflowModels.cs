@@ -42,6 +42,8 @@ public sealed record SwShTrainerPokemonRecord(
 {
     public IReadOnlyList<SwShTrainerEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShTrainerEditableFieldOption>();
+
+    public SwShTrainerPokemonStatsRecord? BaseStats { get; init; }
 }
 
 public sealed record SwShTrainerPokemonStatsRecord(

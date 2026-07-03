@@ -1138,6 +1138,7 @@ export const trainerPokemonRecordSchema = z.strictObject({
   ability: z.number().int(),
   abilityLabel: z.string(),
   abilityOptions: z.array(z.strictObject({ label: z.string(), value: z.number().int() })).default([]),
+  baseStats: trainerPokemonStatsSchema.nullable().optional(),
   canDynamax: z.boolean().nullable().default(null),
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),

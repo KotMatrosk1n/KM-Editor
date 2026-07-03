@@ -2191,6 +2191,7 @@ public static class SwShBridgeMapper
             null)
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
+            BaseStats = pokemon.BaseStats is null ? null : ToDto(pokemon.BaseStats),
         };
     }
 

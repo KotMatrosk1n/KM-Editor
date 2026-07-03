@@ -3066,6 +3066,155 @@ describe('App', () => {
     ).toBeInTheDocument();
   }, 10000);
 
+  it('updates trainer projected stats while EV and IV drafts change', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const trainersResponse = await baseBridge.loadTrainersWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'sword'
+      }
+    });
+    const trainerStatFields: TrainersWorkflow['editableFields'] = [
+      ...[
+        ['evHp', 'HP EV'],
+        ['evAttack', 'Attack EV'],
+        ['evDefense', 'Defense EV'],
+        ['evSpecialAttack', 'Sp. Atk EV'],
+        ['evSpecialDefense', 'Sp. Def EV'],
+        ['evSpeed', 'Speed EV']
+      ].map(([field, label]) => ({
+        field,
+        label,
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      })),
+      ...[
+        ['ivHp', 'HP IV'],
+        ['ivAttack', 'Attack IV'],
+        ['ivDefense', 'Defense IV'],
+        ['ivSpecialAttack', 'Sp. Atk IV'],
+        ['ivSpecialDefense', 'Sp. Def IV'],
+        ['ivSpeed', 'Speed IV']
+      ].map(([field, label]) => ({
+        field,
+        label,
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      }))
+    ];
+    const workflow: TrainersWorkflow = {
+      ...trainersResponse.workflow,
+      editableFields: [...trainersResponse.workflow.editableFields, ...trainerStatFields]
+    };
+    const user = userEvent.setup();
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadTrainersWorkflow: async () => ({ workflow })
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByText('Projected Stats')).toBeInTheDocument();
+    expect(screen.getByLabelText('HP projected stat')).toHaveTextContent('34');
+
+    const hpEvInput = screen.getByLabelText('HP EV');
+    await user.clear(hpEvInput);
+    await user.type(hpEvInput, '252');
+
+    await waitFor(() => expect(screen.getByLabelText('HP projected stat')).toHaveTextContent('41'));
+
+    const hpIvInput = screen.getByLabelText('HP IV');
+    await user.clear(hpIvInput);
+    await user.type(hpIvInput, '31');
+
+    await waitFor(() => expect(screen.getByLabelText('HP projected stat')).toHaveTextContent('45'));
+  });
+
+  it('uses loaded Pokemon base stat edits when projecting trainer stats', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const trainersResponse = await baseBridge.loadTrainersWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'sword'
+      }
+    });
+    const avery = trainersResponse.workflow.trainers[0]!;
+    const workflow: TrainersWorkflow = {
+      ...trainersResponse.workflow,
+      trainers: [
+        {
+          ...avery,
+          team: [
+            {
+              ...avery.team[0]!,
+              baseStats: {
+                attack: 49,
+                defense: 49,
+                hp: 45,
+                specialAttack: 65,
+                specialDefense: 65,
+                speed: 45
+              },
+              species: 'Bulbasaur',
+              speciesId: 1
+            }
+          ]
+        }
+      ]
+    };
+    const user = userEvent.setup();
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadTrainersWorkflow: async () => ({ workflow })
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const hpInput = screen.getByLabelText('HP');
+    await user.clear(hpInput);
+    await user.type(hpInput, '99');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByDisplayValue('99')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Trainers' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('HP projected stat')).toHaveTextContent('46'));
+  });
+
   it('uses Scarlet/Violet nature ids when showing trainer stat arrows', async () => {
     const baseBridge = createMockProjectBridge({}, true);
     const trainersResponse = await baseBridge.loadTrainersWorkflow({

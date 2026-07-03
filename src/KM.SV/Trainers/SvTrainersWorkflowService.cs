@@ -401,6 +401,7 @@ internal sealed class SvTrainersWorkflowService
             TeraTypeLabel: FormatTeraType(pokemon.GemType))
         {
             AbilityOptions = abilityOptions,
+            BaseStats = abilities.BaseStats,
         };
 
         return record;
@@ -670,12 +671,22 @@ internal sealed class SvTrainersWorkflowService
                     }
 
                     var key = CreateKey(species.Species, species.Form);
+                    var baseStats = row.Value.BaseStats is { } stats
+                        ? new SvTrainerPokemonStatsRecord(
+                            stats.Hp,
+                            stats.Atk,
+                            stats.Def,
+                            stats.Spa,
+                            stats.Spd,
+                            stats.Spe)
+                        : null;
                     lookup.TryAdd(
                         key,
                         new SvTrainerAbilitySet(
                             labels.Ability(row.Value.Ability1),
                             labels.Ability(row.Value.Ability2),
-                            labels.Ability(row.Value.AbilityHidden)));
+                            labels.Ability(row.Value.AbilityHidden),
+                            baseStats));
                 }
 
                 return new SvTrainerAbilityResolver(lookup);
@@ -707,7 +718,8 @@ internal sealed class SvTrainersWorkflowService
     private sealed record SvTrainerAbilitySet(
         string Ability1,
         string Ability2,
-        string HiddenAbility)
+        string HiddenAbility,
+        SvTrainerPokemonStatsRecord? BaseStats = null)
     {
         public static SvTrainerAbilitySet Empty { get; } = new("Ability 1", "Ability 2", "Hidden Ability");
     }

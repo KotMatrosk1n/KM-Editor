@@ -1124,7 +1124,25 @@ public sealed class SwShTrainersWorkflowService
             pokemon.CanDynamax)
         {
             AbilityOptions = CreateTrainerPokemonAbilityOptions(names, pokemon.SpeciesId, pokemon.Form),
+            BaseStats = ResolveTrainerPokemonBaseStats(names, pokemon.SpeciesId, pokemon.Form),
         };
+    }
+
+    private static SwShTrainerPokemonStatsRecord? ResolveTrainerPokemonBaseStats(
+        TrainerLookupTables names,
+        int speciesId,
+        int form)
+    {
+        var record = names.AbilityResolver.ResolvePersonalRecord(speciesId, form);
+        return record is null
+            ? null
+            : new SwShTrainerPokemonStatsRecord(
+                record.HP,
+                record.Attack,
+                record.Defense,
+                record.SpecialAttack,
+                record.SpecialDefense,
+                record.Speed);
     }
 
     private static SwShTrainerPokemonRecord CreateEmptyTrainerPokemonRecord(

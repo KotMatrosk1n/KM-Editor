@@ -467,6 +467,9 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Growl", pokemon.Moves[1]);
         Assert.Equal(2, pokemon.Ability);
         Assert.Equal("Overgrow (Ability 1)", pokemon.AbilityLabel);
+        Assert.NotNull(pokemon.BaseStats);
+        Assert.Equal(45, pokemon.BaseStats!.HP);
+        Assert.Equal(49, pokemon.BaseStats.Attack);
         Assert.Contains(workflow.EditableFields, field => field.Field == "rank" && field.Label == "Z-A rank");
         Assert.Contains(workflow.EditableFields, field => field.Field == "megaEvolution" && field.Label == "Mega Evolution");
     }
