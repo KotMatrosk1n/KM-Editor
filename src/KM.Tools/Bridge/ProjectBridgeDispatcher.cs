@@ -24,6 +24,7 @@ using KM.Api.Moves;
 using KM.Api.NpcItemGift;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
+using KM.Api.ProfanityFilter;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.Randomizer;
@@ -63,6 +64,7 @@ using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
 using KM.SwSh.Moves;
+using KM.SwSh.NameFilter;
 using KM.SwSh.NpcItemGift;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
@@ -130,6 +132,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
     private readonly SwShFpsPatchService fpsPatchService;
+    private readonly SwShProfanityFilterService profanityFilterService;
     private readonly SwShRandomizerService randomizerService;
     private readonly SwShGameDumpService swShGameDumpService;
     private readonly SvGameDumpService svGameDumpService;
@@ -174,6 +177,7 @@ public sealed class ProjectBridgeDispatcher
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShFpsPatchService? fpsPatchService = null,
+        SwShProfanityFilterService? profanityFilterService = null,
         SwShRandomizerService? randomizerService = null,
         SwShGameDumpService? swShGameDumpService = null,
         SvGameDumpService? svGameDumpService = null,
@@ -217,6 +221,7 @@ public sealed class ProjectBridgeDispatcher
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
         this.fpsPatchService = fpsPatchService ?? new SwShFpsPatchService(this.projectWorkspaceService);
+        this.profanityFilterService = profanityFilterService ?? new SwShProfanityFilterService(this.projectWorkspaceService);
         this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
@@ -364,6 +369,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
                 KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
                 KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
+                KmCommandNames.LoadProfanityFilter => DispatchLoadProfanityFilter(requestJson),
+                KmCommandNames.ApplyProfanityFilter => DispatchApplyProfanityFilter(requestJson),
+                KmCommandNames.RestoreProfanityFilter => DispatchRestoreProfanityFilter(requestJson),
                 KmCommandNames.ImportRandomizerSeed => DispatchImportRandomizerSeed(requestJson),
                 KmCommandNames.ApplyRandomizer => DispatchApplyRandomizer(requestJson),
                 KmCommandNames.RestoreRandomizer => DispatchRestoreRandomizer(requestJson),
@@ -2401,6 +2409,37 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadProfanityFilter(string requestJson)
+    {
+        var request = DeserializeRequest<LoadProfanityFilterRequest>(requestJson);
+        var status = profanityFilterService.Load(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new LoadProfanityFilterResponse(ToDto(status));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyProfanityFilter(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyProfanityFilterRequest>(requestJson);
+        var result = profanityFilterService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new ApplyProfanityFilterResponse(
+            ToDto(result.Status),
+            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchRestoreProfanityFilter(string requestJson)
+    {
+        var request = DeserializeRequest<RestoreProfanityFilterRequest>(requestJson);
+        var result = profanityFilterService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new RestoreProfanityFilterResponse(
+            ToDto(result.Status),
+            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchImportRandomizerSeed(string requestJson)
     {
         var request = DeserializeRequest<ImportRandomizerSeedRequest>(requestJson);
@@ -3193,6 +3232,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadFpsPatch or
             KmCommandNames.ApplyFpsPatch or
             KmCommandNames.RestoreFpsPatch or
+            KmCommandNames.LoadProfanityFilter or
+            KmCommandNames.ApplyProfanityFilter or
+            KmCommandNames.RestoreProfanityFilter or
             KmCommandNames.ImportRandomizerSeed or
             KmCommandNames.ApplyRandomizer or
             KmCommandNames.RestoreRandomizer;
@@ -3335,6 +3377,19 @@ public sealed class ProjectBridgeDispatcher
             status.PatchedRomFsFileCount,
             status.ManagedRomFsFileCount,
             status.ConflictingRomFsFileCount,
+            status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ProfanityFilterStatusDto ToDto(SwShProfanityFilterStatus status)
+    {
+        return new ProfanityFilterStatusDto(
+            status.Status,
+            status.Message,
+            status.BuildId,
+            status.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(status.DetectedGame.Value),
+            status.PatchOffsetHex,
+            status.PatchShape,
+            status.SourceLayer,
             status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 

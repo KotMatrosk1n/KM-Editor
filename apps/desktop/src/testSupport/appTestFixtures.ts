@@ -52,6 +52,7 @@ import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixture
 import { createGameDumpBridgeFixture } from './gameDumpTestFixtures';
 import { createHyperspaceBypassBridgeFixture } from './hyperspaceBypassTestFixtures';
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
+import { createProfanityFilterBridgeFixture } from './profanityFilterTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
 import { createSvBatchFieldBridgeFixtureMethods } from './svBatchFieldBridgeFixture';
 import { createSvCacheBridgeFixture, createZaCacheBridgeFixture } from './svCacheTestFixtures';
@@ -5834,6 +5835,7 @@ export function createMockProjectBridge(
       });
     },
     ...createFpsPatchBridgeFixture(),
+    ...createProfanityFilterBridgeFixture(),
     importRandomizerSeed: (request) =>
       Promise.resolve({
         config: {

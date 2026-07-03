@@ -120,6 +120,9 @@ public static class KmCommandNames
     public const string LoadFpsPatch = "fpsPatch.load";
     public const string ApplyFpsPatch = "fpsPatch.apply";
     public const string RestoreFpsPatch = "fpsPatch.restore";
+    public const string LoadProfanityFilter = "profanityFilter.load";
+    public const string ApplyProfanityFilter = "profanityFilter.apply";
+    public const string RestoreProfanityFilter = "profanityFilter.restore";
     public const string ImportRandomizerSeed = "randomizer.seed.import";
     public const string ApplyRandomizer = "randomizer.apply";
     public const string RestoreRandomizer = "randomizer.restore";

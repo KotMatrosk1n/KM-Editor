@@ -395,6 +395,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     expect(screen.getByRole('button', { name: '60FPS Patch' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Profanity Filter' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Randomizer' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Game Dump' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
@@ -404,8 +405,8 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-5)
-    ).toEqual(['60FPS Patch', 'Randomizer', 'Game Dump', 'Dump Importer', 'Mod Merger']);
+        .slice(-6)
+    ).toEqual(['60FPS Patch', 'Profanity Filter', 'Randomizer', 'Game Dump', 'Dump Importer', 'Mod Merger']);
 
     await user.click(screen.getByRole('button', { name: 'Hooks' }));
     expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
@@ -897,6 +898,64 @@ describe('App', () => {
     await waitFor(() => expect(restoreFpsPatch).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Not installed')).toBeInTheDocument();
     expect(screen.getByText('60FPS Patch is not installed.')).toBeInTheDocument();
+  }, 30_000);
+
+  it('installs and uninstalls the SwSh Profanity Filter from Tools', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    const loadProfanityFilter = vi.fn(baseBridge.loadProfanityFilter);
+    const applyProfanityFilter = vi.fn(baseBridge.applyProfanityFilter);
+    const restoreProfanityFilter = vi.fn(baseBridge.restoreProfanityFilter);
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadProfanityFilter,
+          applyProfanityFilter,
+          restoreProfanityFilter
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Tools' }));
+    await user.click(screen.getByRole('button', { name: 'Profanity Filter' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Profanity Filter' })).toBeInTheDocument();
+    expect(screen.getAllByText('Not checked').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(loadProfanityFilter).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Not installed')).toBeInTheDocument();
+    expect(screen.getByText('Profanity Filter is not installed.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Install' }));
+    await waitFor(() => expect(applyProfanityFilter).toHaveBeenCalledTimes(1));
+    expect(applyProfanityFilter).toHaveBeenCalledWith({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        gameTextLanguage: 'en',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        pokemonLegendsZASupportFolderPath: null,
+        scarletVioletSupportFolderPath: null,
+        selectedGame: 'sword'
+      }
+    });
+    expect(await screen.findByText('Installed')).toBeInTheDocument();
+    expect(screen.getByText('Profanity Filter is installed.')).toBeInTheDocument();
+    expect(screen.getByText('main.text+0x00EF1228')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Uninstall' }));
+    await waitFor(() => expect(restoreProfanityFilter).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Not installed')).toBeInTheDocument();
+    expect(screen.getByText('Profanity Filter is not installed.')).toBeInTheDocument();
   }, 30_000);
 
   it('closes a wrong-family active workflow section before it can stay mounted', async () => {

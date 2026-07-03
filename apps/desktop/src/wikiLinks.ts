@@ -30,6 +30,7 @@ const commonWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   npcItemGift: 'NPC-Item-Gift',
   placement: 'Placement-Editor',
   pokemon: 'Pokemon-Editor',
+  profanityFilter: 'Profanity-Filter',
   raidBattles: 'Raid-Battles-Editor',
   raidBonusRewards: 'Raid-Bonus-Rewards-Editor',
   raidRewards: 'Raid-Rewards-Editor',

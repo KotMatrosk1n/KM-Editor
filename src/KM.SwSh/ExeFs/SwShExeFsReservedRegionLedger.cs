@@ -40,6 +40,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
     public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
+    public const string OwnerNameFilterBypass = "Profanity Filter";
     public const string OwnerPokemonSummaryRuntime = "Pokemon Summary Runtime";
     public const string OwnerRoyalCandy = "Royal Candy";
     public const string OwnerRoyalCandyStoryLimits = "Royal Candy with Story Limits";
@@ -229,6 +230,9 @@ internal static class SwShExeFsReservedRegionLedger
 
         new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D31488, 0x08, "Shiny Rate Sword reroll compare and break branch", "do-not-overwrite"),
         new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D314B8, 0x08, "Shiny Rate Shield reroll compare and break branch", "do-not-overwrite"),
+
+        new(OwnerNameFilterBypass, "name-filter-bypass-sword-profanity-call", ExeFsMainPath, "main.text", 0x00EF1228, 0x04, "Profanity Filter Sword profanity-check call", "do-not-overwrite"),
+        new(OwnerNameFilterBypass, "name-filter-bypass-shield-profanity-call", ExeFsMainPath, "main.text", 0x00EF1258, 0x04, "Profanity Filter Shield profanity-check call", "do-not-overwrite"),
 
         new(OwnerFpsPatch, "60fps-sword-nvn-present-interval", ExeFsMainPath, "main.text", 0x018A2C88, 0x04, "60FPS Sword NVN present interval", "do-not-overwrite"),
         new(OwnerFpsPatch, "60fps-shield-nvn-present-interval", ExeFsMainPath, "main.text", 0x018A2D18, 0x04, "60FPS Shield NVN present interval", "do-not-overwrite"),

@@ -290,6 +290,17 @@ import {
   restoreFpsPatchResponseSchema
 } from './fpsPatchContracts';
 import {
+  type ApplyProfanityFilterRequest,
+  type ApplyProfanityFilterResponse,
+  type LoadProfanityFilterRequest,
+  type LoadProfanityFilterResponse,
+  type RestoreProfanityFilterRequest,
+  type RestoreProfanityFilterResponse,
+  applyProfanityFilterResponseSchema,
+  loadProfanityFilterResponseSchema,
+  restoreProfanityFilterResponseSchema
+} from './profanityFilterContracts';
+import {
   type LoadNpcItemGiftWorkflowRequest,
   type LoadNpcItemGiftWorkflowResponse,
   type StageNpcItemGiftRequest,
@@ -529,6 +540,11 @@ export type ProjectBridge = {
   loadFpsPatch: (request: LoadFpsPatchRequest) => Promise<LoadFpsPatchResponse>;
   applyFpsPatch: (request: ApplyFpsPatchRequest) => Promise<ApplyFpsPatchResponse>;
   restoreFpsPatch: (request: RestoreFpsPatchRequest) => Promise<RestoreFpsPatchResponse>;
+  loadProfanityFilter: (request: LoadProfanityFilterRequest) => Promise<LoadProfanityFilterResponse>;
+  applyProfanityFilter: (request: ApplyProfanityFilterRequest) => Promise<ApplyProfanityFilterResponse>;
+  restoreProfanityFilter: (
+    request: RestoreProfanityFilterRequest
+  ) => Promise<RestoreProfanityFilterResponse>;
   importRandomizerSeed: (
     request: ImportRandomizerSeedRequest
   ) => Promise<ImportRandomizerSeedResponse>;
@@ -1091,6 +1107,27 @@ export function createProjectBridge(
       sendProjectBridgeRequest(transport, kmCommandNames.applyFpsPatch, request, applyFpsPatchResponseSchema),
     restoreFpsPatch: (request) =>
       sendProjectBridgeRequest(transport, kmCommandNames.restoreFpsPatch, request, restoreFpsPatchResponseSchema),
+    loadProfanityFilter: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadProfanityFilter,
+        request,
+        loadProfanityFilterResponseSchema
+      ),
+    applyProfanityFilter: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applyProfanityFilter,
+        request,
+        applyProfanityFilterResponseSchema
+      ),
+    restoreProfanityFilter: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.restoreProfanityFilter,
+        request,
+        restoreProfanityFilterResponseSchema
+      ),
     importRandomizerSeed: (request) =>
       sendProjectBridgeRequest(
         transport,
