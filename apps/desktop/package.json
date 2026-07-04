@@ -1,6 +1,6 @@
 {
   "name": "@km-editor/desktop",
-  "version": "2.1.1",
+  "version": "2.1.5",
   "private": true,
   "type": "module",
   "scripts": {

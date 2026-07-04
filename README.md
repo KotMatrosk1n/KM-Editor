@@ -1,6 +1,6 @@
 # KM Editor
 
-![Version](https://img.shields.io/badge/version-v2.1.1-blue)
+![Version](https://img.shields.io/badge/version-v2.1.5-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
 ![Built with](https://img.shields.io/badge/built%20with-.NET%2010%20%2B%20Tauri%202-512BD4)
 ![Supported Games](https://img.shields.io/badge/supports-SwSh%20%7C%20SV%20%7C%20Z--A-red)
@@ -21,11 +21,11 @@ Before the editors open, KM Editor checks your selected game, clean base RomFS, 
 
 Once a project is loaded, the app keeps track of where your data is coming from. It can show whether something came from the clean base files, layered overrides, generated output, or pending edits in your current session. That makes it much easier to understand what you are actually changing before you apply anything.
 
-For Sword and Shield, KM Editor supports Pokémon data, trainers, moves, items, encounters, raids, shops, placement objects, behavior data, and several advanced tools. That includes things like Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, Hyperspace Bypass, and the 60FPS Patch.
+For Sword and Shield, KM Editor supports Pokémon data, trainers, moves, items, encounters, raids, shops, placement objects, behavior data, and several advanced tools. That includes things like Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, Hyperspace Bypass, 60FPS Patch, and Profanity Filter.
 
-For Scarlet and Violet, KM Editor supports Pokémon data, gift Pokémon, trade Pokémon, trainers, moves, items, placement data, static encounters, wild encounters, shops, Tera Raids, text editing, dump import, mod merging, Fashion Unlock, Hyperspace Bypass, and the type chart. Optional S/V project support is available for editors that need deeper access to Scarlet and Violet data, and the S/V cache system helps repeated editor loads feel a lot less painful.
+For Scarlet and Violet, KM Editor supports Pokémon data, gift Pokémon, trade Pokémon, trainers, moves, items, placement data, static encounters, wild encounters, shops, Tera Raids, text editing, dump import, mod merging, Fashion Unlock, Hyperspace Bypass, and the type chart. Trainer editing includes projected stats for party slots where the loaded Pokemon data is available. Optional S/V project support is available for editors that need deeper access to Scarlet and Violet data, and the S/V cache system helps repeated editor loads feel a lot less painful.
 
-For Pokemon Legends Z-A, KM Editor supports Pokémon data, trainers, moves, items, placement data, wild encounters, static encounters, gift Pokémon, trade Pokémon, shops, text editing, Game Dump, Dump Importer, Mod Merger, and the type chart. Z-A projects use their own Trinity cache and their own workflow services so Z-A editing stays separate from Sword and Shield plus Scarlet and Violet behavior.
+For Pokemon Legends Z-A, KM Editor supports Pokémon data, trainers, moves, items, placement data, wild encounters, static encounters, gift Pokémon, trade Pokémon, shops, text editing, Game Dump, Dump Importer, Mod Merger, and the type chart. Trainer editing includes projected stats, wild encounters are grouped into readable zones and spawner pools, and static encounters use clearer scenario labels. Z-A projects use their own Trinity cache and their own workflow services so Z-A editing stays separate from Sword and Shield plus Scarlet and Violet behavior.
 
 KM Editor stages your changes before applying them. That means you can review edits, remove mistakes, validate the session, and check the planned output before anything gets written. For higher risk edits, especially ExeFS or hook based workflows, the app uses reviewed change plans instead of blindly throwing files into output and hoping for the best.
 
@@ -71,4 +71,4 @@ Installer and updater release builds also need Tauri updater signing secrets. Se
 
 The wiki sidebar carries individual pages for Sword and Shield Advanced Editors, Scarlet and Violet editors, and Legends Z-A editors. The README keeps only the main entry points so this page stays readable.
 
-Advanced Editors include Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass. Tools include 60FPS Patch, Randomizer, Game Dump, Dump Importer, Mod Merger, Text Viewer, and cache controls where supported. Rental Pokemon remains hidden until its runtime safety work is finished.
+Advanced Editors include Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass. Tools include 60FPS Patch, Profanity Filter, Randomizer, Game Dump, Dump Importer, Mod Merger, Text Viewer, and cache controls where supported. Rental Pokemon remains hidden until its runtime safety work is finished.
