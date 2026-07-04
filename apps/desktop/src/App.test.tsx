@@ -5140,7 +5140,7 @@ describe('App', () => {
       tableId: string,
       location: string,
       locationKey: string,
-      locationSort: number,
+      locationSort: number | null,
       tableLabel: string,
       speciesId: number,
       species: string,
@@ -5181,8 +5181,8 @@ describe('App', () => {
       editableFields: [],
       stats: {
         sourceFileCount: 2,
-        totalSlotCount: 3,
-        totalTableCount: 3
+        totalSlotCount: 5,
+        totalTableCount: 5
       },
       summary: {
         availability: 'available',
@@ -5207,7 +5207,25 @@ describe('App', () => {
           }
         ),
         makeZaTable('za-spawner:0:0', 'Wild Zone 1', 'a0102_w01', 1, 'Spawner 1', 1, 'Bulbasaur'),
-        makeZaTable('za-spawner:0:2', 'Wild Zone 2', 'a0103_w01', 2, 'Spawner 1', 4, 'Charmander')
+        makeZaTable('za-spawner:0:2', 'Wild Zone 2', 'a0103_w01', 2, 'Spawner 1', 4, 'Charmander'),
+        makeZaTable(
+          'za-spawner:0:3',
+          'Vert District, Sector 2 Outside Wild Zone',
+          'outzone_a0102',
+          null,
+          'Vert District, Sector 2 Outside Wild Zone, Spawn Group O, Point 50, Battle Zone',
+          587,
+          'Emolga'
+        ),
+        makeZaTable(
+          'za-spawner:0:4',
+          'Vert District, Sector 2 Outside Wild Zone',
+          'outzone_a0102',
+          null,
+          'Vert District, Sector 2 Outside Wild Zone, Special Encounter 1',
+          16,
+          'Pidgey'
+        )
       ]
     };
 
@@ -5230,16 +5248,20 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
     const encounterTable = await screen.findByRole('table', { name: 'Encounter tables' });
-    expect(within(encounterTable).getAllByRole('row')).toHaveLength(3);
+    expect(within(encounterTable).getAllByRole('row')).toHaveLength(6);
     expect(
       within(encounterTable)
         .getAllByRole('columnheader')
         .map((header) => header.textContent)
-    ).toEqual(['Wild Zone', 'Spawners', 'Preview']);
+    ).toEqual(['Location / Event', 'Entries', 'Preview']);
+    expect(within(encounterTable).getByText('Wild Zones')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Outside Wild Zones')).toBeInTheDocument();
     expect(within(encounterTable).getByText('Wild Zone 1')).toBeInTheDocument();
     expect(within(encounterTable).getByText('Wild Zone 2')).toBeInTheDocument();
-    expect(within(encounterTable).getByText('2 spawners')).toBeInTheDocument();
+    expect(within(encounterTable).getAllByText('2 spawners')).toHaveLength(2);
     expect(within(encounterTable).getByText('Bulbasaur, Ivysaur Alpha')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Vert District, Sector 2 Outside Wild Zone')).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Emolga, Pidgey')).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Symbol' })).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Hidden' })).not.toBeInTheDocument();
 
@@ -5261,6 +5283,25 @@ describe('App', () => {
       'aria-pressed',
       'true'
     );
+
+    const outsideWildZoneRow = within(encounterTable)
+      .getByText('Vert District, Sector 2 Outside Wild Zone')
+      .closest('button');
+    expect(outsideWildZoneRow).not.toBeNull();
+    await user.click(outsideWildZoneRow!);
+
+    expect(screen.getAllByText('Outside Wild Zones').length).toBeGreaterThan(0);
+    expect(screen.getByRole('tab', { name: 'Spawn Groups' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(screen.getByRole('tab', { name: 'Special Encounters' })).toBeInTheDocument();
+    expect(screen.getByText('Spawn Group O, Point 50, Battle Zone')).toBeInTheDocument();
+    expect(screen.queryByText('Special Encounter 1')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Special Encounters' }));
+    expect(screen.getByText('Special Encounter 1')).toBeInTheDocument();
+    expect(screen.queryByText('Spawn Group O, Point 50, Battle Zone')).not.toBeInTheDocument();
   });
 
   it('copies the selected symbol encounter table into hidden encounters after confirmation', async () => {

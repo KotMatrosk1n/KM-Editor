@@ -3420,6 +3420,20 @@ h2 {
   cursor: default;
 }
 
+.encounters-section-row {
+  min-height: 34px;
+  color: var(--color-gold);
+  background: #0e1728;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.encounters-section-row span:first-child {
+  grid-column: 1 / -1;
+}
+
 .encounters-row span {
   min-width: 0;
   overflow: hidden;
