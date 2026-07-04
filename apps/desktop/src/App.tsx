@@ -74,6 +74,7 @@ import {
 } from './svEncounterTables';
 import {
   type ReactNode,
+  type RefObject,
   Component,
   Fragment,
   createContext,
@@ -81,6 +82,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -9298,6 +9300,7 @@ function VirtualTableBody<T>({
   renderRow: (item: T) => ReactNode;
 }) {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
+  useVirtualTableHeaderScrollSync(scrollParentRef, items);
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     estimateSize: () => virtualTableRowHeight,
@@ -9340,6 +9343,51 @@ function VirtualTableBody<T>({
       </div>
     </div>
   );
+}
+
+function useVirtualTableHeaderScrollSync<T>(
+  scrollParentRef: RefObject<HTMLDivElement | null>,
+  items: T[]
+) {
+  useLayoutEffect(() => {
+    const scrollElement = scrollParentRef.current;
+    const tableElement = scrollElement?.parentElement;
+
+    if (!scrollElement || !tableElement) {
+      return undefined;
+    }
+
+    const syncScrollState = () => {
+      tableElement.style.setProperty(
+        '--virtual-table-scroll-x',
+        `${scrollElement.scrollLeft}px`
+      );
+      tableElement.style.setProperty(
+        '--virtual-table-scroll-width',
+        `${Math.max(scrollElement.scrollWidth, scrollElement.clientWidth)}px`
+      );
+    };
+
+    syncScrollState();
+    scrollElement.addEventListener('scroll', syncScrollState, { passive: true });
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(syncScrollState);
+
+    resizeObserver?.observe(scrollElement);
+    const spacerElement = scrollElement.querySelector('.virtual-table-spacer');
+
+    if (spacerElement instanceof HTMLElement) {
+      resizeObserver?.observe(spacerElement);
+    }
+
+    return () => {
+      scrollElement.removeEventListener('scroll', syncScrollState);
+      resizeObserver?.disconnect();
+      tableElement.style.removeProperty('--virtual-table-scroll-x');
+      tableElement.style.removeProperty('--virtual-table-scroll-width');
+    };
+  }, [items, scrollParentRef]);
 }
 
 function HealthSection({
