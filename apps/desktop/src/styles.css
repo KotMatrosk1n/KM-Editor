@@ -2636,6 +2636,10 @@ h2 {
   grid-template-columns: 64px minmax(160px, 1.35fr) minmax(110px, 0.9fr) 64px minmax(112px, 0.85fr) minmax(132px, 1fr) minmax(92px, 0.7fr);
 }
 
+.za-static-encounters-section .static-encounters-row {
+  grid-template-columns: 64px minmax(220px, 1.45fr) 72px minmax(240px, 1.25fr);
+}
+
 .trade-pokemon-row {
   grid-template-columns: 64px minmax(130px, 1fr) minmax(130px, 1fr) 64px minmax(120px, 0.9fr) minmax(132px, 1fr) minmax(92px, 0.7fr);
 }
@@ -7184,6 +7188,10 @@ input {
 
   .static-encounters-row {
     grid-template-columns: 56px minmax(120px, 1fr) minmax(90px, 0.8fr);
+  }
+
+  .za-static-encounters-section .static-encounters-row {
+    grid-template-columns: 56px minmax(140px, 1fr) minmax(70px, 0.6fr);
   }
 
   .trade-pokemon-row {

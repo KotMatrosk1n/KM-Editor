@@ -3837,6 +3837,96 @@ describe('App', () => {
     ).toBeInTheDocument();
   }, 10000);
 
+  it('uses the compact Pokemon Legends ZA static encounter list columns', async () => {
+    const zaStaticWorkflow: StaticEncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [],
+      editorFamily: 'za',
+      encounters: [
+        {
+          ability: 255,
+          abilityLabel: 'Game default / random',
+          abilityOptions: [],
+          canGigantamax: null,
+          categoryId: 'encounterData',
+          categoryLabel: 'Encounter Data',
+          dynamaxLevel: null,
+          editorFamily: 'za',
+          encounterId: 'ect_zdm_random_lv1_999_01',
+          encounterIndex: 567,
+          encounterScenario: 0,
+          encounterScenarioLabel: 'Dimension Wild Random Pool, Rank 1',
+          evs: { attack: 0, defense: 0, hp: 0, specialAttack: 0, specialDefense: 0, speed: 0 },
+          fieldDisplayValues: {},
+          fieldReadOnly: {},
+          fieldValues: {},
+          flawlessIvCount: 0,
+          form: 1,
+          gender: -1,
+          genderLabel: 'Game default / random',
+          heldItem: null,
+          heldItemId: 0,
+          ivs: { attack: -1, defense: -1, hp: -1, specialAttack: -1, specialDefense: -1, speed: -1 },
+          ivSummary: 'Random IVs',
+          label: 'Static 568: Gimmighoul (Roaming Form) Lv. 30 | ect_zdm_random_lv1_999_01',
+          level: 30,
+          moves: [],
+          nature: -1,
+          natureLabel: 'Random / game default',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/world/ik_data/field/pokemon/encount_data/encount_data/encount_data_array.bin',
+            sourceLayer: 'base'
+          },
+          shinyLock: 0,
+          shinyLockLabel: 'Default shiny roll',
+          species: 'Gimmighoul',
+          speciesId: 976,
+          supportedFields: []
+        }
+      ],
+      stats: {
+        coinSymbolCount: 0,
+        fixedIvEncounterCount: 0,
+        fixedSymbolCount: 1,
+        gigantamaxEncounterCount: null,
+        sourceFileCount: 2,
+        totalEncounterCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Edit Pokemon Legends Z-A scripted static encounter Pokemon sources.',
+        diagnostics: [],
+        id: 'staticEncounters',
+        label: 'Static Encounters'
+      }
+    };
+    useWorkbenchStore.setState({
+      activeSection: 'staticEncounters',
+      draftPaths: {
+        ...useWorkbenchStore.getState().draftPaths,
+        selectedGame: 'za'
+      },
+      selectedStaticEncounterIndex: 567,
+      staticEncountersWorkflow: zaStaticWorkflow
+    });
+
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    const table = await screen.findByRole('table', { name: 'Static Encounters' });
+    expect(within(table).getByRole('columnheader', { name: 'Index' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Species' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Level' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Scenario' })).toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: 'Encounter' })).not.toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: 'IVs' })).not.toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: 'Source' })).not.toBeInTheDocument();
+    expect(within(table).getByText('Gimmighoul (Roaming Form)')).toBeInTheDocument();
+    expect(within(table).getByText('Dimension Wild Random Pool, Rank 1')).toBeInTheDocument();
+    expect(within(table).queryByText('Random IVs')).not.toBeInTheDocument();
+    expect(within(table).queryByText('Base')).not.toBeInTheDocument();
+  });
+
   it('hides unsafe Dynamax Adventures boss rows from the editor', async () => {
     const user = userEvent.setup();
     const health = createHealthForValidatedPaths('base-romfs', 'base-exefs', 'output', null);

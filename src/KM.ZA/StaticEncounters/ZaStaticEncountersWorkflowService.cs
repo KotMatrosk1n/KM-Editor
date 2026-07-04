@@ -301,10 +301,7 @@ internal sealed class ZaStaticEncountersWorkflowService
                     for (var slot = 0; slot < spawner.Value.EncountDataInfoListLength; slot++)
                     {
                         var encounter = spawner.Value.EncountDataInfoList(slot);
-                        if (!string.IsNullOrWhiteSpace(encounter?.EncountDataId))
-                        {
-                            ids.Add(encounter.Value.EncountDataId!);
-                        }
+                        ZaEncounterDataIds.AddSpawnerEncounterDataTargets(ids, encounter?.EncountDataId);
                     }
                 }
             }
@@ -361,7 +358,7 @@ internal sealed class ZaStaticEncountersWorkflowService
             entry.Rare,
             FormatShinyMode(entry.Rare),
             EncounterScenario: 0,
-            ScenarioLabel,
+            FormatScenarioLabel(entry.Id, labels, speciesId, entry.FormNo, speciesName),
             new ZaStaticEncounterStatsRecord(0, 0, 0, 0, 0, 0),
             ivs,
             flawlessIvCount,
@@ -390,6 +387,308 @@ internal sealed class ZaStaticEncountersWorkflowService
                 moveId,
                 moveId <= 0 ? null : labels.Move(moveId)))
             .ToArray();
+    }
+
+    internal static string FormatScenarioLabel(
+        string? encounterId,
+        ZaTextLabelLookup labels)
+    {
+        return FormatScenarioLabel(encounterId, labels, speciesId: 0, form: 0, speciesName: null);
+    }
+
+    internal static string FormatScenarioLabel(
+        string? encounterId,
+        ZaTextLabelLookup labels,
+        string? speciesName)
+    {
+        return FormatScenarioLabel(encounterId, labels, speciesId: 0, form: 0, speciesName);
+    }
+
+    internal static string FormatScenarioLabel(
+        string? encounterId,
+        ZaTextLabelLookup labels,
+        int speciesId,
+        int form,
+        string? speciesName = null)
+    {
+        if (string.IsNullOrWhiteSpace(encounterId))
+        {
+            return ScenarioLabel;
+        }
+
+        var id = encounterId.Trim();
+        if (TryFormatBossScenario(id, labels, speciesId, form, speciesName, out var scenario)
+            || TryFormatOutzoneScenario(id, out scenario)
+            || TryFormatWildZoneScenario(id, labels, out scenario)
+            || TryFormatDungeonScenario(id, out scenario)
+            || TryFormatSideMissionScenario(id, out scenario)
+            || TryFormatStoryScenario(id, out scenario)
+            || TryFormatDimensionRandomScenario(id, out scenario))
+        {
+            return scenario;
+        }
+
+        return ScenarioLabel;
+    }
+
+    private static bool TryFormatBossScenario(
+        string encounterId,
+        ZaTextLabelLookup labels,
+        int speciesId,
+        int form,
+        string? speciesName,
+        out string scenario)
+    {
+        scenario = string.Empty;
+        var bossTail = encounterId.StartsWith("btl_ect_boss_", StringComparison.OrdinalIgnoreCase)
+            ? encounterId["btl_ect_boss_".Length..]
+            : encounterId.StartsWith("ect_boss_", StringComparison.OrdinalIgnoreCase)
+                ? encounterId["ect_boss_".Length..]
+                : null;
+        if (string.IsNullOrWhiteSpace(bossTail))
+        {
+            return false;
+        }
+
+        var parts = bossTail.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        var speciesLabel = FormatScenarioPokemonLabel(parts[0], labels, speciesId, form, speciesName);
+        var variant = FormatBossScenarioVariant(parts.Skip(1));
+        scenario = string.IsNullOrWhiteSpace(variant)
+            ? $"Boss Battle: {speciesLabel}"
+            : $"Boss Battle: {speciesLabel}, {variant}";
+        return true;
+    }
+
+    private static string FormatScenarioPokemonLabel(
+        string fallbackSpeciesToken,
+        ZaTextLabelLookup labels,
+        int speciesId,
+        int form,
+        string? speciesName)
+    {
+        if (!string.IsNullOrWhiteSpace(speciesName)
+            && !string.Equals(speciesName, "None", StringComparison.Ordinal))
+        {
+            return form == 0
+                ? speciesName
+                : speciesId > 0
+                    ? ZaLabels.PokemonWithForm(speciesId, form, speciesName)
+                    : $"{speciesName} ({ZaLabels.PokemonFormLabel(speciesId, form, speciesName)})";
+        }
+
+        return int.TryParse(fallbackSpeciesToken, NumberStyles.None, CultureInfo.InvariantCulture, out var fallbackSpeciesId)
+            ? labels.Pokemon(fallbackSpeciesId)
+            : fallbackSpeciesToken.ToUpperInvariant();
+    }
+
+    private static string FormatBossScenarioVariant(IEnumerable<string> tokens)
+    {
+        var parts = tokens
+            .Select(FormatBossScenarioVariantToken)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .ToArray();
+        return parts.Length == 0 ? string.Empty : string.Join(" ", parts);
+    }
+
+    private static string FormatBossScenarioVariantToken(string token)
+    {
+        if (token.All(char.IsDigit)
+            && int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var phase))
+        {
+            return phase <= 1
+                ? string.Empty
+                : $"Phase {phase.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        if (token.StartsWith("rus", StringComparison.OrdinalIgnoreCase))
+        {
+            var rushNumber = token["rus".Length..];
+            return string.IsNullOrWhiteSpace(rushNumber) ? "Rush" : $"Rush {rushNumber}";
+        }
+
+        if (token.StartsWith("sim", StringComparison.OrdinalIgnoreCase))
+        {
+            var simulationNumber = token["sim".Length..];
+            return string.IsNullOrWhiteSpace(simulationNumber)
+                ? "Simulation"
+                : $"Simulation {simulationNumber}";
+        }
+
+        return token switch
+        {
+            _ when string.Equals(token, "dim", StringComparison.OrdinalIgnoreCase) => "Dimension",
+            _ when string.Equals(token, "re", StringComparison.OrdinalIgnoreCase) => "Rematch",
+            _ when string.Equals(token, "sim2", StringComparison.OrdinalIgnoreCase) => "Simulation 2",
+            _ when string.Equals(token, "y", StringComparison.OrdinalIgnoreCase) => "Y",
+            _ when string.Equals(token, "z", StringComparison.OrdinalIgnoreCase) => "Z",
+            _ => token.ToUpperInvariant(),
+        };
+    }
+
+    private static bool TryFormatOutzoneScenario(string encounterId, out string scenario)
+    {
+        scenario = string.Empty;
+        const string prefix = "ect_outzone_";
+        if (!encounterId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var tail = encounterId[prefix.Length..];
+        var separatorIndex = tail.IndexOf("_z", StringComparison.OrdinalIgnoreCase);
+        var areaCode = separatorIndex <= 0 ? tail : tail[..separatorIndex];
+        scenario = ZaLumioseLocationLabels.FormatLocation($"outzone_{areaCode}");
+        return true;
+    }
+
+    private static bool TryFormatWildZoneScenario(
+        string encounterId,
+        ZaTextLabelLookup labels,
+        out string scenario)
+    {
+        scenario = string.Empty;
+        const string prefix = "ect_";
+        if (!encounterId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var parts = encounterId[prefix.Length..].Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2
+            || !IsLumioseAreaCode(parts[0])
+            || !IsWildZoneToken(parts[1]))
+        {
+            return false;
+        }
+
+        scenario = ZaLumioseLocationLabels.FormatLocation(
+            $"{parts[0]}_{parts[1]}",
+            labels.PlaceName);
+        return true;
+    }
+
+    private static bool TryFormatDungeonScenario(string encounterId, out string scenario)
+    {
+        scenario = string.Empty;
+        var id = encounterId.StartsWith("ect_", StringComparison.OrdinalIgnoreCase)
+            ? encounterId["ect_".Length..]
+            : encounterId;
+        var parts = id.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2
+            && IsDungeonToken(parts[0])
+            && (IsDungeonSectionToken(parts[1]) || parts[1].All(char.IsDigit)))
+        {
+            scenario = ZaLumioseLocationLabels.FormatLocation($"{parts[0]}_{parts[1]}");
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryFormatSideMissionScenario(string encounterId, out string scenario)
+    {
+        scenario = string.Empty;
+        var parts = encounterId.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2
+            || !string.Equals(parts[0], "sub", StringComparison.OrdinalIgnoreCase)
+            || !parts[1].All(char.IsDigit))
+        {
+            return false;
+        }
+
+        scenario = $"Side Mission {FormatNumber(parts[1])}";
+        return true;
+    }
+
+    private static bool TryFormatStoryScenario(string encounterId, out string scenario)
+    {
+        scenario = string.Empty;
+        if (encounterId.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
+        {
+            var chapter = encounterId["chapter".Length..]
+                .Split('_', StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(chapter) && chapter.All(char.IsDigit))
+            {
+                scenario = $"Story Chapter Event {FormatNumber(chapter)}";
+                return true;
+            }
+        }
+
+        if (encounterId.StartsWith("10rom_poke_encount_rose_dede", StringComparison.OrdinalIgnoreCase))
+        {
+            scenario = "Story Event Rose Dede";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryFormatDimensionRandomScenario(string encounterId, out string scenario)
+    {
+        scenario = string.Empty;
+        const string randomPrefix = "ect_zdm_random_lv";
+        if (encounterId.StartsWith(randomPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = encounterId[randomPrefix.Length..];
+            var level = rest.Split('_', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            scenario = !string.IsNullOrWhiteSpace(level) && level.All(char.IsDigit)
+                ? $"Dimension Wild Random Pool, Rank {FormatNumber(level)}"
+                : "Dimension Wild Random Pool";
+            return true;
+        }
+
+        const string dimensionPrefix = "ect_";
+        if (encounterId.StartsWith(dimensionPrefix, StringComparison.OrdinalIgnoreCase)
+            && TryFormatDungeonScenario(encounterId, out scenario))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsLumioseAreaCode(string value)
+    {
+        return value.Length == 5
+            && value[0] is 'a' or 'A'
+            && value.Skip(1).All(char.IsDigit);
+    }
+
+    private static bool IsWildZoneToken(string value)
+    {
+        return value.Length > 1
+            && value[0] is 'w' or 'W'
+            && value.Skip(1).All(char.IsDigit);
+    }
+
+    private static bool IsDungeonToken(string value)
+    {
+        if (value.Length > 1 && value[0] is 'd' or 'D')
+        {
+            return value.Skip(1).All(char.IsDigit);
+        }
+
+        return value.StartsWith("zdm", StringComparison.OrdinalIgnoreCase)
+            && value["zdm".Length..].All(char.IsDigit);
+    }
+
+    private static bool IsDungeonSectionToken(string value)
+    {
+        return value.StartsWith("sp", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("v", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatNumber(string number)
+    {
+        return int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed.ToString(CultureInfo.InvariantCulture)
+            : number;
     }
 
     private static ZaStaticEncounterStatsRecord ReadIvs(ZaPokemonDataEntry entry)

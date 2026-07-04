@@ -21,10 +21,6 @@ internal sealed class ZaEncountersWorkflowService
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
     private const string GameVersionLabel = "Pokemon Legends ZA";
     private const string TableIdPrefix = "za-spawner";
-    private static readonly string[] EncounterDataIdSuffixes =
-    [
-        "_Alpha",
-    ];
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -241,13 +237,11 @@ internal sealed class ZaEncountersWorkflowService
             return exactRow;
         }
 
-        foreach (var suffix in EncounterDataIdSuffixes)
+        var normalizedId = ZaEncounterDataIds.NormalizeSpawnerEncounterDataId(encounterDataId);
+        if (!string.Equals(normalizedId, encounterDataId, StringComparison.Ordinal)
+            && pokemonRows.TryGetValue(normalizedId, out var suffixedRow))
         {
-            if (encounterDataId.EndsWith(suffix, StringComparison.Ordinal)
-                && pokemonRows.TryGetValue(encounterDataId[..^suffix.Length], out var suffixedRow))
-            {
-                return suffixedRow;
-            }
+            return suffixedRow;
         }
 
         return null;
@@ -255,8 +249,7 @@ internal sealed class ZaEncountersWorkflowService
 
     private static bool IsAlphaEncounter(string encounterDataId)
     {
-        return EncounterDataIdSuffixes.Any(suffix =>
-            encounterDataId.EndsWith(suffix, StringComparison.Ordinal));
+        return ZaEncounterDataIds.IsAlphaSpawnerEncounterDataId(encounterDataId);
     }
 
     private static string FormatUnresolvedEncounterData(string encounterDataId)
