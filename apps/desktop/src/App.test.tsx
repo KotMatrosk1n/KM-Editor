@@ -3925,6 +3925,17 @@ describe('App', () => {
     expect(within(table).getByText('Dimension Wild Random Pool, Rank 1')).toBeInTheDocument();
     expect(within(table).queryByText('Random IVs')).not.toBeInTheDocument();
     expect(within(table).queryByText('Base')).not.toBeInTheDocument();
+
+    const tableBody = table.querySelector('.virtual-table-body') as HTMLDivElement | null;
+    expect(tableBody).not.toBeNull();
+
+    Object.defineProperty(tableBody, 'clientWidth', { configurable: true, value: 520 });
+    Object.defineProperty(tableBody, 'scrollWidth', { configurable: true, value: 960 });
+    tableBody!.scrollLeft = 180;
+    fireEvent.scroll(tableBody!);
+
+    expect(table.style.getPropertyValue('--virtual-table-scroll-x')).toBe('180px');
+    expect(table.style.getPropertyValue('--virtual-table-scroll-width')).toBe('960px');
   });
 
   it('hides unsafe Dynamax Adventures boss rows from the editor', async () => {
