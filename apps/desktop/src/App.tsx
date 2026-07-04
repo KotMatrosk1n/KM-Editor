@@ -18512,6 +18512,7 @@ function StaticEncountersSection({
   const encounters = workflow?.encounters ?? [];
   const editorFamily = workflow?.editorFamily ?? 'swsh';
   const isSvStaticEncounters = editorFamily === 'sv';
+  const isZaStaticEncounters = editorFamily === 'za';
   const filteredEncounters = useMemo(
     () => filterStaticEncounters(encounters, searchText),
     [encounters, searchText]
@@ -18616,7 +18617,7 @@ function StaticEncountersSection({
         {workflow ? (
           <div className="trainers-layout">
             <div
-              aria-colcount={7}
+              aria-colcount={isZaStaticEncounters ? 4 : 7}
               aria-label={translateLiteral('Static Encounters')}
               aria-rowcount={filteredEncounters.length + 1}
               className="trainers-table"
@@ -18624,53 +18625,72 @@ function StaticEncountersSection({
             >
               <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
                 <span role="columnheader">{translateLiteral('Index')}</span>
-                <span role="columnheader">{translateLiteral('Encounter')}</span>
+                {isZaStaticEncounters ? null : (
+                  <span role="columnheader">{translateLiteral('Encounter')}</span>
+                )}
                 <span role="columnheader">{translateLiteral('Species')}</span>
                 <span role="columnheader">{translateLiteral('Level')}</span>
                 <span role="columnheader">
                   {translateLiteral(isSvStaticEncounters ? 'Category' : 'Scenario')}
                 </span>
-                <span role="columnheader">{translateLiteral('IVs')}</span>
-                <span role="columnheader">{translateLiteral('Source')}</span>
+                {isZaStaticEncounters ? null : (
+                  <>
+                    <span role="columnheader">{translateLiteral('IVs')}</span>
+                    <span role="columnheader">{translateLiteral('Source')}</span>
+                  </>
+                )}
               </div>
               <VirtualTableBody
                 getKey={(encounter) => encounter.encounterIndex}
                 items={filteredEncounters}
-                renderRow={(encounter) => (
-                  <button
-                    className={`trainers-row static-encounters-row ${
-                      selectedEncounter?.encounterIndex === encounter.encounterIndex
-                        ? 'trainers-row-selected'
-                        : ''
-                    } ${
-                      pendingEncounterIndexes.has(encounter.encounterIndex)
-                        ? 'trainers-row-pending'
-                        : ''
-                    }`}
-                    onClick={() => onSelectEncounter(encounter.encounterIndex)}
-                    role="row"
-                    type="button"
-                  >
-                    <span role="cell">{encounter.encounterIndex + 1}</span>
-                    <span role="cell">{encounter.label}</span>
-                    <span role="cell">
-                      {formatSpeciesFormLabel(
-                        encounter.species,
-                        encounter.form,
-                        encounter.speciesId,
-                        encounter.editorFamily
+                renderRow={(encounter) => {
+                  const speciesLabel = formatSpeciesFormLabel(
+                    encounter.species,
+                    encounter.form,
+                    encounter.speciesId,
+                    encounter.editorFamily
+                  );
+                  const scenarioLabel = isSvStaticEncounters
+                    ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
+                    : encounter.encounterScenarioLabel;
+
+                  return (
+                    <button
+                      className={`trainers-row static-encounters-row ${
+                        selectedEncounter?.encounterIndex === encounter.encounterIndex
+                          ? 'trainers-row-selected'
+                          : ''
+                      } ${
+                        pendingEncounterIndexes.has(encounter.encounterIndex)
+                          ? 'trainers-row-pending'
+                          : ''
+                      }`}
+                      onClick={() => onSelectEncounter(encounter.encounterIndex)}
+                      role="row"
+                      type="button"
+                    >
+                      <span role="cell">{encounter.encounterIndex + 1}</span>
+                      {isZaStaticEncounters ? null : <span role="cell">{encounter.label}</span>}
+                      <span role="cell" title={speciesLabel}>
+                        {speciesLabel}
+                      </span>
+                      <span role="cell">{encounter.level}</span>
+                      <span role="cell" title={scenarioLabel}>
+                        {scenarioLabel}
+                      </span>
+                      {isZaStaticEncounters ? null : (
+                        <>
+                          <span role="cell" title={encounter.ivSummary}>
+                            {encounter.ivSummary}
+                          </span>
+                          <span role="cell">
+                            {formatSourceLayer(encounter.provenance.sourceLayer)}
+                          </span>
+                        </>
                       )}
-                    </span>
-                    <span role="cell">{encounter.level}</span>
-                    <span role="cell">
-                      {isSvStaticEncounters
-                        ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
-                        : encounter.encounterScenarioLabel}
-                    </span>
-                    <span role="cell">{encounter.ivSummary}</span>
-                    <span role="cell">{formatSourceLayer(encounter.provenance.sourceLayer)}</span>
-                  </button>
-                )}
+                    </button>
+                  );
+                }}
               />
             </div>
 
