@@ -1868,7 +1868,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var workflow = load.Payload!.Workflow;
-        Assert.Equal(4, workflow.Tables.Count);
+        Assert.Equal(15, workflow.Tables.Count);
 
         var alphaTable = workflow.Tables.Single(table => table.Slots.Any(slot => slot.IsAlpha));
         Assert.Equal("Wild Zone 1", alphaTable.Location);
@@ -1883,10 +1883,58 @@ public sealed class PokemonLegendsZABridgeTests
 
         var rawTables = workflow.Tables.Where(table => table.LocationKey == "zdm406_v00").ToArray();
         Assert.Equal(2, rawTables.Length);
-        Assert.All(rawTables, table => Assert.Equal("Dungeon ZDM406 V00", table.Location));
-        Assert.Contains(rawTables, table => table.TableLabel == "Dungeon ZDM406 V00 Spawn 700");
-        Assert.Contains(rawTables, table => table.TableLabel == "Dungeon ZDM406 V00 Spawn 701");
+        Assert.All(rawTables, table => Assert.Equal("Dimension Dungeon 406 Variant 0", table.Location));
+        Assert.Contains(rawTables, table => table.TableLabel == "Dimension Dungeon 406 Variant 0 Spawn Point 700");
+        Assert.Contains(rawTables, table => table.TableLabel == "Dimension Dungeon 406 Variant 0 Spawn Point 701");
         Assert.All(rawTables, table => Assert.Equal("Wild", Assert.Single(table.Slots).EncounterKind));
+
+        var outzoneTable = Assert.Single(
+            workflow.Tables,
+            table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Point 050, Battle Zone");
+        Assert.Equal("Bleu District, Sector 1 Outside Wild Zone", outzoneTable.Location);
+        Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Spawn Point 050, Battle Zone", outzoneTable.TableLabel);
+
+        var outzoneGroupTable = Assert.Single(
+            workflow.Tables,
+            table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Group O, Point 50, Battle Zone");
+        Assert.Equal("Bleu District, Sector 1 Outside Wild Zone", outzoneGroupTable.Location);
+        Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Spawn Group O, Point 50, Battle Zone", outzoneGroupTable.TableLabel);
+
+        var outzonePointZeroTable = Assert.Single(
+            workflow.Tables,
+            table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Group P, Point 00");
+        Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Spawn Group P, Point 00", outzonePointZeroTable.TableLabel);
+
+        var outzoneSpecialTable = Assert.Single(
+            workflow.Tables,
+            table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Special Encounter 1");
+        Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Special Encounter 1", outzoneSpecialTable.TableLabel);
+
+        var bossTable = Assert.Single(workflow.Tables, table => table.LocationKey == "boss_0015_re");
+        Assert.Equal("Boss Battle Pokemon 15 Rematch", bossTable.Location);
+        Assert.Equal("Boss Battle Pokemon 15 Rematch", bossTable.TableLabel);
+
+        var dungeonTable = Assert.Single(workflow.Tables, table => table.LocationKey == "d02_01");
+        Assert.Equal("Dungeon 2 Floor 1", dungeonTable.Location);
+        Assert.Equal("Dungeon 2 Floor 1 Spawn Point 001", dungeonTable.TableLabel);
+
+        var chapterTable = Assert.Single(workflow.Tables, table => table.LocationKey == "id_chapter9");
+        Assert.Equal("Story Chapter Event 9", chapterTable.Location);
+        Assert.Equal("Story Chapter Event 9 Spawn Point 00", chapterTable.TableLabel);
+
+        var chapterDungeonTable = Assert.Single(workflow.Tables, table => table.LocationKey == "id_chapter5");
+        Assert.Equal("Story Chapter Event 5", chapterDungeonTable.Location);
+        Assert.Equal("Story Chapter Event 5 Dungeon 2 Spawn Point 001", chapterDungeonTable.TableLabel);
+
+        var sideMissionTable = Assert.Single(workflow.Tables, table => table.LocationKey == "id_sub090");
+        Assert.Equal("Side Mission Event 90", sideMissionTable.Location);
+        Assert.Equal("Side Mission Event 90 Spawn Point 01", sideMissionTable.TableLabel);
+
+        var dimensionWildTables = workflow.Tables.Where(table => table.LocationKey == "zdm_random_dimension_wilds").ToArray();
+        Assert.Equal(2, dimensionWildTables.Length);
+        Assert.All(dimensionWildTables, table => Assert.Equal("Dimension Wild Pools", table.Location));
+        Assert.Contains(dimensionWildTables, table => table.TableLabel == "Flying Type Pool 2, Rank 3, Pokemon 701");
+        Assert.Contains(dimensionWildTables, table => table.TableLabel == "Flying Type Pool 2, Rank 3, Pokemon 662 Set");
     }
 
     [Fact]
@@ -1913,13 +1961,17 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflow.EditableFields, field => field.Field == "point.positionX" && field.Label == "Position X");
         Assert.Contains(workflow.EditableFields, field => field.Field == "point.attachTransformEnable" && field.Label == "Attach Transform");
 
-        var pokemonSpawner = workflow.Objects.Single(placedObject => placedObject.Label == "wild_spawn_001");
+        var pokemonSpawner = workflow.Objects.Single(placedObject => placedObject.ItemHash == "wild_spawn_001");
         Assert.Equal("pokemonSpawners", pokemonSpawner.CategoryId);
         Assert.Equal("Pokemon Spawner", pokemonSpawner.ObjectType);
-        Assert.Equal("a0102_w01", pokemonSpawner.Map);
+        Assert.Equal("Wild Zone 1 Spawner 1", pokemonSpawner.Label);
+        Assert.Equal("Wild Zone 1 - Vert District, Sector 2", pokemonSpawner.Map);
         Assert.Equal(1, pokemonSpawner.X);
         Assert.Equal(45, pokemonSpawner.RotationY);
         Assert.EndsWith(ZaDataPaths.PokemonSpawnerTransformArray, pokemonSpawner.Provenance.SourceFile, StringComparison.Ordinal);
+        Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.location" && field.DisplayValue == "Wild Zone 1 - Vert District, Sector 2");
+        Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.district" && field.DisplayValue == "Vert District");
+        Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.sector" && field.DisplayValue == "Sector 2");
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "za_wild_spawner_001");
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.encounterRows" && field.DisplayValue == "1");
 
@@ -2559,8 +2611,19 @@ public sealed class PokemonLegendsZABridgeTests
                     weight: 35,
                     appearanceObjectName: "wild_spawn_001"),
                 CreateSpawner(builder, "id_spn_outzone_a0201_A459", "wild_ignore_Alpha", "a0102_w01", weight: 65),
+                CreateSpawner(builder, "id_spn_outzone_a0201_050_BZ", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_outzone_a0201_O50_BZ", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_outzone_a0201_P00", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_outzone_a0201_sp1", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "zdm406_v00_700", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "zdm406_v00_701", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_zdm_random_t02_r03_701", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_zdm_random_t02_r03_662_set", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "btl_spn_boss_0015_re", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_d02_01_001", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_chapter5_spn_d02_001", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_chapter9_00", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_sub090_01", "wild_ignore", zoneId: null, weight: 100),
             }
             :
             [

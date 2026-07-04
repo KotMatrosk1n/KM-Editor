@@ -57,6 +57,7 @@ internal sealed class ZaPlacementWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         var objects = new List<ZaPlacedObjectRecord>();
         var sourceFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
         var pokemonContext = LoadPokemonSpawnerContext(project, diagnostics, sourceFiles);
 
         TryLoadTransformCategory(
@@ -64,6 +65,7 @@ internal sealed class ZaPlacementWorkflowService
             ZaDataPaths.PokemonSpawnerTransformArray,
             PokemonSpawnersCategory,
             "Pokemon Spawner",
+            labels,
             pokemonContext,
             objects,
             sourceFiles,
@@ -73,6 +75,7 @@ internal sealed class ZaPlacementWorkflowService
             ZaDataPaths.ItemBallSpawnerTransformArray,
             ItemBallSpawnersCategory,
             "Item Ball Spawner",
+            labels,
             new Dictionary<string, ZaPlacementSpawnerContext>(StringComparer.Ordinal),
             objects,
             sourceFiles,
@@ -158,6 +161,7 @@ internal sealed class ZaPlacementWorkflowService
         string path,
         string category,
         string objectType,
+        ZaTextLabelLookup labels,
         IReadOnlyDictionary<string, ZaPlacementSpawnerContext> contextByObjectName,
         ICollection<ZaPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
@@ -173,7 +177,7 @@ internal sealed class ZaPlacementWorkflowService
                 foreach (var row in group.Rows)
                 {
                     contextByObjectName.TryGetValue(row.Name, out var context);
-                    objects.Add(ToObjectRecord(source, category, objectType, row, context));
+                    objects.Add(ToObjectRecord(source, category, objectType, row, context, labels));
                 }
             }
         }
@@ -268,14 +272,13 @@ internal sealed class ZaPlacementWorkflowService
         string category,
         string objectType,
         ZaSpawnerTransformRow row,
-        ZaPlacementSpawnerContext? context)
+        ZaPlacementSpawnerContext? context,
+        ZaTextLabelLookup labels)
     {
         var categorySeed = CategorySeeds.First(seed => seed.Id == category);
-        var label = string.IsNullOrWhiteSpace(row.Name)
-            ? string.Create(CultureInfo.InvariantCulture, $"{objectType} {row.GroupIndex}:{row.RowIndex}")
-            : row.Name;
-        var map = FormatMap(categorySeed.Label, context);
-        var fields = CreateFields(row, context);
+        var label = FormatObjectLabel(objectType, row, context, labels);
+        var map = FormatMap(categorySeed.Label, context, labels);
+        var fields = CreateFields(row, context, map);
         return new ZaPlacedObjectRecord(
             CreateRecordId(category, source.VirtualPath, row.GroupIndex, row.RowIndex),
             category,
@@ -303,7 +306,8 @@ internal sealed class ZaPlacementWorkflowService
 
     private static IReadOnlyList<ZaPlacementFieldValue> CreateFields(
         ZaSpawnerTransformRow row,
-        ZaPlacementSpawnerContext? context)
+        ZaPlacementSpawnerContext? context,
+        string map)
     {
         var fields = new List<ZaPlacementFieldValue>
         {
@@ -319,8 +323,18 @@ internal sealed class ZaPlacementWorkflowService
 
         if (context is not null)
         {
+            var locationKey = ZaLumioseLocationLabels.CreateLocationKey(
+                context.ZoneId,
+                context.VariationId,
+                context.SpawnerId);
+            var district = ZaLumioseLocationLabels.FormatDistrict(locationKey);
+            var sector = ZaLumioseLocationLabels.FormatSector(locationKey);
+
             fields.AddRange(
             [
+                Text("spawner.location", "Location", "Spawner Context", map, map, isReadOnly: true),
+                Text("spawner.district", "District", "Spawner Context", district ?? string.Empty, district ?? "None", isReadOnly: true),
+                Text("spawner.sector", "Sector", "Spawner Context", sector ?? string.Empty, sector ?? "None", isReadOnly: true),
                 Text("spawner.id", "Spawner ID", "Spawner Context", context.SpawnerId, context.SpawnerId, isReadOnly: true),
                 Text("spawner.scenePath", "Create Scene Path", "Spawner Context", context.CreateScenePath, EmptyAsNone(context.CreateScenePath), isReadOnly: true),
                 Text("spawner.zoneId", "Zone ID", "Spawner Context", context.ZoneId, EmptyAsNone(context.ZoneId), isReadOnly: true),
@@ -434,29 +448,55 @@ internal sealed class ZaPlacementWorkflowService
 
     private static string FormatMap(
         string fallback,
-        ZaPlacementSpawnerContext? context)
+        ZaPlacementSpawnerContext? context,
+        ZaTextLabelLookup labels)
     {
         if (context is null)
         {
             return fallback;
         }
 
-        if (!string.IsNullOrWhiteSpace(context.ZoneId) && !string.IsNullOrWhiteSpace(context.VariationId))
+        return ZaLumioseLocationLabels.FormatPlacementMap(
+            fallback,
+            context.ZoneId,
+            context.VariationId,
+            context.DungeonName,
+            context.BattleAreaId,
+            context.SpawnerId,
+            labels.PlaceName,
+            labels.Pokemon);
+    }
+
+    private static string FormatObjectLabel(
+        string objectType,
+        ZaSpawnerTransformRow row,
+        ZaPlacementSpawnerContext? context,
+        ZaTextLabelLookup labels)
+    {
+        if (context is not null)
         {
-            return $"{context.ZoneId} {context.VariationId}";
+            var locationKey = ZaLumioseLocationLabels.CreateLocationKey(
+                context.ZoneId,
+                context.VariationId,
+                context.SpawnerId);
+            if (ZaLumioseLocationLabels.IsNumberedWildZone(locationKey))
+            {
+                var location = ZaLumioseLocationLabels.FormatLocation(locationKey, labels.PlaceName, labels.Pokemon);
+                return $"{location} Spawner {(context.SpawnerIndex + 1).ToString(CultureInfo.InvariantCulture)}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(context.SpawnerId))
+            {
+                return ZaLumioseLocationLabels.FormatRawSpawnerId(context.SpawnerId, labels.Pokemon);
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(context.ZoneId))
+        if (!string.IsNullOrWhiteSpace(row.Name))
         {
-            return context.ZoneId;
+            return ZaLumioseLocationLabels.FormatRawObjectName(row.Name);
         }
 
-        if (!string.IsNullOrWhiteSpace(context.DungeonName))
-        {
-            return context.DungeonName;
-        }
-
-        return string.IsNullOrWhiteSpace(context.SpawnerId) ? fallback : context.SpawnerId;
+        return string.Create(CultureInfo.InvariantCulture, $"{objectType} {row.GroupIndex}:{row.RowIndex}");
     }
 
     private static string FormatTags(AppearanceSpawnerObjectInfo appearance)

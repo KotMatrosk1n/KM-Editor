@@ -20786,38 +20786,57 @@ function EncountersSection({
             <div className="encounters-table" role="table" aria-label="Encounter tables">
               <div className="encounters-row encounters-row-heading" role="row">
                 <span role="columnheader">
-                  {editorFamily === 'za' ? 'Wild Zone' : 'Location'}
+                  {editorFamily === 'za' ? 'Location / Event' : 'Location'}
                 </span>
                 <span role="columnheader">
-                  {editorFamily === 'za' ? 'Spawners' : 'Game'}
+                  {editorFamily === 'za' ? 'Entries' : 'Game'}
                 </span>
                 <span role="columnheader">
                   {editorFamily === 'za' ? 'Preview' : 'Areas'}
                 </span>
               </div>
-              {tableRows.map((tableRow) => (
-                <button
-                  className={`encounters-row ${
-                    selectedZoneKey === tableRow.zoneKey ? 'encounters-row-selected' : ''
-                  } ${
-                    tableRow.tableIds.some((tableId) => pendingEncounterTableIds.has(tableId))
-                      ? 'encounters-row-pending'
-                      : ''
-                  }`}
-                  key={tableRow.zoneKey}
-                  onClick={() => onSelectTable(tableRow.table.tableId)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{tableRow.location}</span>
-                  <span role="cell">
-                    {editorFamily === 'za'
-                      ? formatZaEncounterSpawnerCount(tableRow.tableIds.length)
-                      : tableRow.gameVersion}
-                  </span>
-                  <span role="cell">{tableRow.areaLabel}</span>
-                </button>
-              ))}
+              {tableRows.map((tableRow, rowIndex) => {
+                const showSection =
+                  editorFamily === 'za' &&
+                  (rowIndex === 0 ||
+                    tableRows[rowIndex - 1]?.sectionLabel !== tableRow.sectionLabel);
+
+                return (
+                  <Fragment key={tableRow.zoneKey}>
+                    {showSection ? (
+                      <div
+                        aria-label={tableRow.sectionLabel ?? undefined}
+                        className="encounters-row encounters-section-row"
+                        role="row"
+                      >
+                        <span role="cell">{tableRow.sectionLabel ?? ''}</span>
+                        <span role="cell" />
+                        <span role="cell" />
+                      </div>
+                    ) : null}
+                    <button
+                      className={`encounters-row ${
+                        selectedZoneKey === tableRow.zoneKey ? 'encounters-row-selected' : ''
+                      } ${
+                        tableRow.tableIds.some((tableId) => pendingEncounterTableIds.has(tableId))
+                          ? 'encounters-row-pending'
+                          : ''
+                      }`}
+                      onClick={() => onSelectTable(tableRow.table.tableId)}
+                      role="row"
+                      type="button"
+                    >
+                      <span role="cell">{tableRow.location}</span>
+                      <span role="cell">
+                        {editorFamily === 'za'
+                          ? formatZaEncounterSpawnerCount(tableRow.tableIds.length)
+                          : tableRow.gameVersion}
+                      </span>
+                      <span role="cell">{tableRow.areaLabel}</span>
+                    </button>
+                  </Fragment>
+                );
+              })}
             </div>
 
             <SelectedEncounterPanel
@@ -21085,8 +21104,8 @@ function SelectedEncounterPanel({
             ) : null}
             {isZaEncounterTable && table.locationKey ? (
               <div>
-                <dt>Zone ID</dt>
-                <dd>{table.locationKey}</dd>
+                <dt>Group</dt>
+                <dd>{getZaEncounterZoneFamily(table).label}</dd>
               </div>
             ) : null}
             <div>
@@ -21636,15 +21655,42 @@ function ZaEncounterSpawnerBrowser({
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
 }) {
+  const isDimensionWildTable = isZaDimensionWildEncounterTable(table);
+  const dimensionWildData = useMemo(
+    () => (isDimensionWildTable ? buildZaDimensionWildBrowserData(table, tables) : null),
+    [isDimensionWildTable, table, tables]
+  );
   const spawnerRows = useMemo(
     () => buildZaEncounterSpawnerRows(table, tables),
     [table, tables]
   );
+  const spawnerCategoryData = useMemo(
+    () => (!dimensionWildData ? buildZaEncounterSpawnerCategoryData(table, spawnerRows) : null),
+    [dimensionWildData, spawnerRows, table]
+  );
+  const selectedDimensionWildRow =
+    dimensionWildData?.rows.find((row) => row.tableId === table.tableId) ??
+    dimensionWildData?.rows[0] ??
+    null;
   const selectedRow =
     spawnerRows.find((row) => row.tableId === table.tableId) ?? spawnerRows[0] ?? null;
-  const slotCount = spawnerRows.reduce((total, row) => total + row.slotCount, 0);
+  const selectedCategoryRow =
+    spawnerCategoryData?.rows.find((row) => row.tableId === table.tableId) ??
+    spawnerCategoryData?.rows[0] ??
+    null;
+  const selectedDisplayRow = dimensionWildData
+    ? selectedDimensionWildRow
+    : spawnerCategoryData
+      ? selectedCategoryRow
+      : selectedRow;
+  const displayedRows = dimensionWildData
+    ? dimensionWildData.rows
+    : spawnerCategoryData
+      ? spawnerCategoryData.rows
+      : spawnerRows;
+  const slotCount = displayedRows.reduce((total, row) => total + row.slotCount, 0);
 
-  if (!selectedRow) {
+  if (!selectedDisplayRow) {
     return null;
   }
 
@@ -21652,11 +21698,89 @@ function ZaEncounterSpawnerBrowser({
     <section className="za-encounter-spawner-browser" aria-label="Legends Z-A wild zone spawners">
       <div className="sv-encounter-browser-summary">
         <span>{table.location}</span>
-        <span>{formatZaEncounterSpawnerCount(spawnerRows.length)}</span>
+        <span>{formatZaEncounterSpawnerCount(displayedRows.length)}</span>
         <span>
           {slotCount} {slotCount === 1 ? 'slot' : 'slots'} in this zone
         </span>
       </div>
+
+      {dimensionWildData ? (
+        <>
+          <div
+            className="encounter-area-tabs za-dimension-wild-pool-tabs"
+            role="tablist"
+            aria-label="Dimension wild pools"
+          >
+            {dimensionWildData.poolTabs.map((poolTab) => (
+              <button
+                aria-selected={poolTab.isSelected}
+                className="condition-tab-button"
+                key={poolTab.key}
+                onClick={() => {
+                  if (poolTab.tableId !== table.tableId) {
+                    onSelectTable(poolTab.tableId);
+                  }
+                }}
+                role="tab"
+                title={poolTab.title}
+                type="button"
+              >
+                {poolTab.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="encounter-condition-tabs za-dimension-wild-rank-tabs"
+            role="tablist"
+            aria-label="Dimension wild ranks"
+          >
+            {dimensionWildData.rankTabs.map((rankTab) => (
+              <button
+                aria-selected={rankTab.isSelected}
+                className="condition-tab-button"
+                key={rankTab.key}
+                onClick={() => {
+                  if (rankTab.tableId !== table.tableId) {
+                    onSelectTable(rankTab.tableId);
+                  }
+                }}
+                role="tab"
+                title={rankTab.title}
+                type="button"
+              >
+                {rankTab.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {spawnerCategoryData && spawnerCategoryData.categoryTabs.length > 1 ? (
+        <div
+          className="encounter-condition-tabs za-encounter-category-tabs"
+          role="tablist"
+          aria-label="Spawner groups"
+        >
+          {spawnerCategoryData.categoryTabs.map((categoryTab) => (
+            <button
+              aria-selected={categoryTab.isSelected}
+              className="condition-tab-button"
+              key={categoryTab.key}
+              onClick={() => {
+                if (categoryTab.tableId !== table.tableId) {
+                  onSelectTable(categoryTab.tableId);
+                }
+              }}
+              role="tab"
+              title={categoryTab.title}
+              type="button"
+            >
+              {categoryTab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="za-encounter-spawner-table" role="table" aria-label="Z-A zone spawners">
         <div className="za-encounter-spawner-row za-encounter-spawner-heading" role="row">
@@ -21665,7 +21789,7 @@ function ZaEncounterSpawnerBrowser({
           <span role="columnheader">Preview</span>
           <span role="columnheader">Source</span>
         </div>
-        {spawnerRows.map((row) => (
+        {displayedRows.map((row) => (
           <button
             aria-pressed={row.tableId === table.tableId}
             className={`za-encounter-spawner-row ${
@@ -31202,6 +31326,7 @@ function buildEncounterTableRows(
       orderedGroupTables.some((groupTable) => groupTable.tableId === selectedTable.tableId)
         ? selectedTable
         : getPreferredEncounterTable(orderedGroupTables) ?? orderedGroupTables[0]!;
+    const zaFamily = isZaGroup ? getZaEncounterZoneFamily(table) : null;
     const areaLabel = isZaGroup
       ? formatZaEncounterZonePreview(orderedGroupTables)
       : sortEncounterAreaLabels(
@@ -31211,14 +31336,17 @@ function buildEncounterTableRows(
     return {
       areaLabel,
       gameVersion: table.gameVersion,
-      location: table.location,
+      location: isZaGroup ? formatZaEncounterDisplayLocation(table) : table.location,
+      sectionLabel: zaFamily?.label ?? '',
+      sectionRank: zaFamily?.rank ?? 0,
       table,
       tableIds: orderedGroupTables.map((groupTable) => groupTable.tableId),
+      zoneSort: isZaGroup ? getZaEncounterDisplaySort(table) : getEncounterTableLocationSort(table),
       zoneKey
     };
   });
 
-  return rows.some((row) => row.table.locationSort != null)
+  return rows.some((row) => row.table.locationSort != null || isPokemonLegendsZAEncounterTable(row.table))
     ? rows.sort((left, right) => compareEncounterTableRows(left, right))
     : rows;
 }
@@ -31232,8 +31360,14 @@ function getDefaultEncounterTable(tables: EncounterTableRecord[]) {
 }
 
 function compareEncounterTableRows(left: EncounterTableListRow, right: EncounterTableListRow) {
-  const leftSort = getEncounterTableLocationSort(left.table);
-  const rightSort = getEncounterTableLocationSort(right.table);
+  const leftSectionRank = left.sectionRank ?? 0;
+  const rightSectionRank = right.sectionRank ?? 0;
+  if (leftSectionRank !== rightSectionRank) {
+    return leftSectionRank - rightSectionRank;
+  }
+
+  const leftSort = left.zoneSort ?? getEncounterTableLocationSort(left.table);
+  const rightSort = right.zoneSort ?? getEncounterTableLocationSort(right.table);
   if (leftSort !== rightSort) {
     return leftSort - rightSort;
   }
@@ -31245,27 +31379,464 @@ function getEncounterTableLocationSort(table: EncounterTableRecord) {
   return table.locationSort ?? Number.MAX_SAFE_INTEGER;
 }
 
+const zaDimensionWildLocationKey = 'zdm_random_dimension_wilds';
+
+function getZaEncounterZoneFamily(table: EncounterTableRecord): ZaEncounterZoneFamily {
+  const key = table.locationKey ?? table.location;
+  if (/^a\d{4}_w\d+/i.test(key)) {
+    return { label: 'Wild Zones', rank: 0 };
+  }
+
+  if (/^outzone_/i.test(key)) {
+    return { label: 'Outside Wild Zones', rank: 1 };
+  }
+
+  if (key === zaDimensionWildLocationKey) {
+    return { label: 'Dimension Wild Pools', rank: 2 };
+  }
+
+  if (/^zdm\d+_/i.test(key)) {
+    return { label: 'Dimension Dungeons', rank: 3 };
+  }
+
+  if (/^d\d+_/i.test(key)) {
+    return { label: 'Dungeons', rank: 4 };
+  }
+
+  if (/^boss_/i.test(key)) {
+    return { label: 'Boss Battles', rank: 5 };
+  }
+
+  if (/^id_chapter/i.test(key) || /^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+    return { label: 'Event Encounters', rank: 6 };
+  }
+
+  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
+    return { label: 'Event Encounters', rank: 6 };
+  }
+
+  return { label: 'Other Encounters', rank: 7 };
+}
+
+function getZaEncounterDisplayZoneKey(table: EncounterTableRecord) {
+  const key = table.locationKey ?? table.location;
+  const bossMatch = key.match(/^(boss_\d+)/i);
+  if (bossMatch) {
+    return bossMatch[1]!.toLowerCase();
+  }
+
+  const dimensionDungeonMatch = key.match(/^(zdm\d+)_/i);
+  if (dimensionDungeonMatch) {
+    return dimensionDungeonMatch[1]!.toLowerCase();
+  }
+
+  const dungeonMatch = key.match(/^(d\d+)_/i);
+  if (dungeonMatch) {
+    return dungeonMatch[1]!.toLowerCase();
+  }
+
+  if (/^id_chapter/i.test(key)) {
+    return 'story-chapter-events';
+  }
+
+  if (/^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+    return 'side-mission-events';
+  }
+
+  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
+    return 'special-events';
+  }
+
+  return key;
+}
+
+function formatZaEncounterDisplayLocation(table: EncounterTableRecord) {
+  const key = table.locationKey ?? table.location;
+  if (/^boss_/i.test(key)) {
+    return formatZaBossDisplayLocation(table.location);
+  }
+
+  const dimensionDungeonMatch = table.location.match(/^Dimension Dungeon\s+(\d+)/i);
+  if (dimensionDungeonMatch) {
+    return `Dimension Dungeon ${dimensionDungeonMatch[1]}`;
+  }
+
+  const dungeonMatch = table.location.match(/^Dungeon\s+(\d+)/i);
+  if (dungeonMatch) {
+    return `Dungeon ${dungeonMatch[1]}`;
+  }
+
+  if (/^id_chapter/i.test(key)) {
+    return 'Story Chapter Events';
+  }
+
+  if (/^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+    return 'Side Mission Events';
+  }
+
+  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
+    return 'Special Event Encounters';
+  }
+
+  return table.location;
+}
+
+function formatZaBossDisplayLocation(location: string) {
+  return location
+    .replace(
+      /\s+(?:Phase\s+\d+|Rematch|Simulation(?:\s+\d+)?|Rush(?:\s+\d+)?|Variant\s+[A-Z]|Y|Z)(?:\s+.*)?$/i,
+      ''
+    )
+    .trim();
+}
+
+function getZaEncounterDisplaySort(table: EncounterTableRecord) {
+  const key = table.locationKey ?? table.location;
+  const wildSort = table.locationSort;
+  if (wildSort != null) {
+    return wildSort;
+  }
+
+  const areaSort = key.match(/^outzone_a(\d{4})/i);
+  if (areaSort) {
+    return Number.parseInt(areaSort[1]!, 10);
+  }
+
+  const dimensionDungeonSort = key.match(/^zdm(\d+)_/i);
+  if (dimensionDungeonSort) {
+    return Number.parseInt(dimensionDungeonSort[1]!, 10);
+  }
+
+  const dungeonSort = key.match(/^d(\d+)_/i);
+  if (dungeonSort) {
+    return Number.parseInt(dungeonSort[1]!, 10);
+  }
+
+  const bossSort = key.match(/^boss_(\d+)/i);
+  if (bossSort) {
+    return Number.parseInt(bossSort[1]!, 10);
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function buildZaDimensionWildBrowserData(
+  selectedTable: EncounterTableRecord,
+  tables: EncounterTableRecord[]
+): ZaDimensionWildBrowserData | null {
+  const selectedZoneKey = getEncounterTableZoneKey(selectedTable);
+  const entries = tables
+    .filter((table) => getEncounterTableZoneKey(table) === selectedZoneKey)
+    .map((table) => {
+      const facets = parseZaDimensionWildFacets(table);
+      return facets ? { facets, table } : null;
+    })
+    .filter((entry): entry is ZaDimensionWildEntry => entry !== null)
+    .sort((left, right) => compareZaDimensionWildEntries(left, right));
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const selectedEntry =
+    entries.find((entry) => entry.table.tableId === selectedTable.tableId) ?? entries[0]!;
+  const selectedPoolKey = selectedEntry.facets.poolKey;
+  const selectedRankKey = selectedEntry.facets.rankKey;
+  const selectedPoolEntries = entries.filter(
+    (entry) => entry.facets.poolKey === selectedPoolKey
+  );
+  const selectedRankEntries = selectedPoolEntries.filter(
+    (entry) => entry.facets.rankKey === selectedRankKey
+  );
+
+  const poolTabs = Array.from(new Set(entries.map((entry) => entry.facets.poolKey)))
+    .map((poolKey) => {
+      const poolEntries = entries.filter((entry) => entry.facets.poolKey === poolKey);
+      const preferredEntry =
+        poolEntries.find((entry) => entry.facets.rankKey === selectedRankKey) ??
+        poolEntries[0]!;
+      const facets = poolEntries[0]!.facets;
+      return {
+        isSelected: poolKey === selectedPoolKey,
+        key: poolKey,
+        label: facets.poolShortLabel,
+        tableId: preferredEntry.table.tableId,
+        title: facets.poolLabel
+      };
+    });
+
+  const rankTabs = Array.from(new Set(selectedPoolEntries.map((entry) => entry.facets.rankKey)))
+    .map((rankKey) => {
+      const rankEntries = selectedPoolEntries.filter(
+        (entry) => entry.facets.rankKey === rankKey
+      );
+      const preferredEntry = rankEntries[0]!;
+      const facets = preferredEntry.facets;
+      return {
+        isSelected: rankKey === selectedRankKey,
+        key: rankKey,
+        label: facets.rankLabel,
+        tableId: preferredEntry.table.tableId,
+        title: `${selectedEntry.facets.poolLabel}, ${facets.rankLabel}`
+      };
+    });
+
+  return {
+    poolTabs,
+    rankTabs,
+    rows: selectedRankEntries.map(({ facets, table }) => ({
+      categoryKey: facets.rankKey,
+      categoryLabel: facets.rankLabel,
+      categoryRank: facets.rank ?? 0,
+      details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
+      label: facets.spawnerLabel,
+      sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
+      slotCount: table.slots.length,
+      tableId: table.tableId
+    }))
+  };
+}
+
 function buildZaEncounterSpawnerRows(
   selectedTable: EncounterTableRecord,
   tables: EncounterTableRecord[]
 ): ZaEncounterSpawnerRow[] {
   const selectedZoneKey = getEncounterTableZoneKey(selectedTable);
+  const displayLocation = formatZaEncounterDisplayLocation(selectedTable);
   return tables
     .filter((table) => getEncounterTableZoneKey(table) === selectedZoneKey)
     .sort(compareZaEncounterSpawnerTables)
-    .map((table) => ({
-      details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
-      label: table.tableLabel ?? table.tableId,
-      slotCount: table.slots.length,
-      sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
-      tableId: table.tableId
-    }));
+    .map((table) => {
+      const category = getZaEncounterSpawnerCategory(table);
+      return {
+        categoryKey: category.key,
+        categoryLabel: category.label,
+        categoryRank: category.rank,
+        details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
+        label: formatZaEncounterSpawnerRowLabel(table, displayLocation, category.label),
+        slotCount: table.slots.length,
+        sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
+        tableId: table.tableId
+      };
+    });
+}
+
+function buildZaEncounterSpawnerCategoryData(
+  selectedTable: EncounterTableRecord,
+  rows: ZaEncounterSpawnerRow[]
+): ZaEncounterSpawnerCategoryData | null {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const selectedRow = rows.find((row) => row.tableId === selectedTable.tableId) ?? rows[0]!;
+  const selectedCategoryKey = selectedRow.categoryKey;
+  const categoryTabs = Array.from(new Set(rows.map((row) => row.categoryKey)))
+    .map((categoryKey) => {
+      const categoryRows = rows.filter((row) => row.categoryKey === categoryKey);
+      const preferredRow =
+        categoryRows.find((row) => row.tableId === selectedTable.tableId) ?? categoryRows[0]!;
+      const firstRow = categoryRows[0]!;
+      return {
+        isSelected: categoryKey === selectedCategoryKey,
+        key: categoryKey,
+        label: firstRow.categoryLabel,
+        rank: firstRow.categoryRank,
+        tableId: preferredRow.tableId,
+        title: `${firstRow.categoryLabel} - ${formatZaEncounterSpawnerCount(categoryRows.length)}`
+      };
+    })
+    .sort((left, right) => left.rank - right.rank || left.label.localeCompare(right.label));
+
+  return {
+    categoryTabs,
+    rows: rows.filter((row) => row.categoryKey === selectedCategoryKey)
+  };
+}
+
+function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounterSpawnerCategory {
+  const key = table.locationKey ?? table.location;
+    const label = table.tableLabel ?? table.location;
+  if (/^outzone_/i.test(key)) {
+    if (/\bAlpha\b/i.test(label)) {
+      return { key: 'outzone:alpha', label: 'Alpha', rank: 3 };
+    }
+
+    if (/\bSpecial Encounter\b/i.test(label)) {
+      return { key: 'outzone:special', label: 'Special Encounters', rank: 2 };
+    }
+
+    if (/\bSpawn Group\b/i.test(label)) {
+      return { key: 'outzone:groups', label: 'Spawn Groups', rank: 0 };
+    }
+
+    if (/\bSpawn Point\b/i.test(label)) {
+      return { key: 'outzone:points', label: 'Spawn Points', rank: 1 };
+    }
+
+    return { key: 'outzone:other', label: 'Other Spawners', rank: 9 };
+  }
+
+  if (/^boss_/i.test(key)) {
+    const displayLocation = formatZaEncounterDisplayLocation(table);
+    const variant = stripZaEncounterLabelPrefix(table.location, displayLocation);
+    return {
+      key: `boss:${variant || 'main'}`,
+      label: variant || 'Main Battle',
+      rank: getZaBossCategoryRank(variant)
+    };
+  }
+
+  if (/^zdm\d+_/i.test(key)) {
+    const categoryLabel =
+      table.location.match(/^Dimension Dungeon\s+\d+\s+(.+)$/i)?.[1]?.trim() ??
+      'Dimension Area';
+    return {
+      key: `dimension-dungeon:${categoryLabel.toLocaleLowerCase()}`,
+      label: categoryLabel,
+      rank: parseTrailingInteger(categoryLabel) ?? 0
+    };
+  }
+
+  if (/^d\d+_/i.test(key)) {
+    const categoryLabel = table.location.match(/^Dungeon\s+\d+\s+(.+)$/i)?.[1]?.trim() ?? 'Floor';
+    return {
+      key: `dungeon:${categoryLabel.toLocaleLowerCase()}`,
+      label: categoryLabel,
+      rank: parseTrailingInteger(categoryLabel) ?? 0
+    };
+  }
+
+  if (/^id_chapter/i.test(key)) {
+    const chapter = table.location.match(/^Story Chapter Event\s+(\d+)/i)?.[1] ?? 'Event';
+    return {
+      key: `story:${chapter}`,
+      label: chapter === 'Event' ? 'Story Events' : `Chapter ${chapter}`,
+      rank: Number.parseInt(chapter, 10) || 0
+    };
+  }
+
+  if (/^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+    const mission = table.location.match(/^Side Mission Event\s+(\d+)/i)?.[1] ?? 'Event';
+    return {
+      key: `side:${mission}`,
+      label: mission === 'Event' ? 'Side Mission Events' : `Mission ${mission}`,
+      rank: Number.parseInt(mission, 10) || 0
+    };
+  }
+
+  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
+    return {
+      key: `event:${table.location.toLocaleLowerCase()}`,
+      label: table.location,
+      rank: parseTrailingInteger(table.location) ?? 0
+    };
+  }
+
+  return { key: 'spawners', label: 'Spawners', rank: 0 };
+}
+
+function getZaBossCategoryRank(label: string) {
+  if (!label) {
+    return 0;
+  }
+
+  if (/Phase/i.test(label)) {
+    return 1;
+  }
+
+  if (/Rematch/i.test(label)) {
+    return 2;
+  }
+
+  if (/Simulation/i.test(label)) {
+    return 3;
+  }
+
+  if (/Rush/i.test(label)) {
+    return 4;
+  }
+
+  return 9;
+}
+
+function formatZaEncounterSpawnerRowLabel(
+  table: EncounterTableRecord,
+  displayLocation: string,
+  categoryLabel: string
+) {
+  const tableLabel = table.tableLabel ?? table.tableId;
+  const withoutDisplayLocation = stripZaEncounterLabelPrefix(tableLabel, displayLocation);
+  const withoutTableLocation = stripZaEncounterLabelPrefix(
+    withoutDisplayLocation || tableLabel,
+    table.location
+  );
+  const label = withoutTableLocation || withoutDisplayLocation || categoryLabel;
+  const isGroupedEvent =
+    displayLocation !== table.location &&
+    (/Event/i.test(table.location) || /^id_/i.test(table.locationKey ?? ''));
+
+  if (isGroupedEvent && label !== categoryLabel && !label.startsWith(categoryLabel)) {
+    return `${categoryLabel}, ${label}`;
+  }
+
+  return label;
+}
+
+function stripZaEncounterLabelPrefix(label: string, prefix: string) {
+  if (!prefix || label === prefix) {
+    return label === prefix ? '' : label;
+  }
+
+  if (label.startsWith(`${prefix}, `)) {
+    return label.slice(prefix.length + 2).trim();
+  }
+
+  if (label.startsWith(`${prefix} `)) {
+    return label.slice(prefix.length + 1).trim();
+  }
+
+  return label;
 }
 
 function compareZaEncounterSpawnerTables(
   left: EncounterTableRecord,
   right: EncounterTableRecord
 ) {
+  const leftDimensionWild = parseZaDimensionWildFacets(left);
+  const rightDimensionWild = parseZaDimensionWildFacets(right);
+  if (leftDimensionWild || rightDimensionWild) {
+    if (!leftDimensionWild) {
+      return 1;
+    }
+
+    if (!rightDimensionWild) {
+      return -1;
+    }
+
+    const poolRank = compareNullableNumbers(leftDimensionWild.pool, rightDimensionWild.pool);
+    if (poolRank !== 0) {
+      return poolRank;
+    }
+
+    const rankRank = compareNullableNumbers(leftDimensionWild.rank, rightDimensionWild.rank);
+    if (rankRank !== 0) {
+      return rankRank;
+    }
+
+    return leftDimensionWild.spawnerLabel.localeCompare(rightDimensionWild.spawnerLabel);
+  }
+
+  const leftCategory = getZaEncounterSpawnerCategory(left);
+  const rightCategory = getZaEncounterSpawnerCategory(right);
+  if (leftCategory.rank !== rightCategory.rank) {
+    return leftCategory.rank - rightCategory.rank;
+  }
+
+  if (leftCategory.label !== rightCategory.label) {
+    return leftCategory.label.localeCompare(rightCategory.label);
+  }
+
   const leftNumber = parseTrailingInteger(left.tableLabel);
   const rightNumber = parseTrailingInteger(right.tableLabel);
   if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
@@ -31275,9 +31846,68 @@ function compareZaEncounterSpawnerTables(
   return left.tableId.localeCompare(right.tableId);
 }
 
+function compareZaDimensionWildEntries(
+  left: ZaDimensionWildEntry,
+  right: ZaDimensionWildEntry
+) {
+  return compareZaEncounterSpawnerTables(left.table, right.table);
+}
+
+function compareNullableNumbers(left: number | null, right: number | null) {
+  if (left !== null && right !== null && left !== right) {
+    return left - right;
+  }
+
+  if (left !== null && right === null) {
+    return -1;
+  }
+
+  if (left === null && right !== null) {
+    return 1;
+  }
+
+  return 0;
+}
+
 function parseTrailingInteger(value: string | null | undefined) {
   const match = value?.match(/(\d+)$/);
   return match ? Number.parseInt(match[1]!, 10) : null;
+}
+
+function isZaDimensionWildEncounterTable(table: EncounterTableRecord) {
+  return table.locationKey === zaDimensionWildLocationKey;
+}
+
+function parseZaDimensionWildFacets(table: EncounterTableRecord): ZaDimensionWildFacets | null {
+  if (!isZaDimensionWildEncounterTable(table)) {
+    return null;
+  }
+
+  const label = table.tableLabel ?? table.location;
+  const poolMatch = label.match(/(.*?Type Pool)\s+(\d+)/i);
+  const pool = poolMatch ? Number.parseInt(poolMatch[2]!, 10) : null;
+  const poolName = poolMatch?.[1]?.trim() ?? 'Dimension Wild Type Pool';
+  const poolLabel = pool === null ? poolName : `${poolName} ${pool}`;
+  const poolShortLabel =
+    pool === null ? 'Pool' : poolName.replace(/\s*Type Pool$/i, '') || `Pool ${pool}`;
+  const rankMatch = label.match(/\bRank\s+(\d+)\b/i);
+  const rank = rankMatch ? Number.parseInt(rankMatch[1]!, 10) : null;
+  const rankLabel = rank === null ? 'Unranked' : `Rank ${rank}`;
+  const spawnerLabel =
+    label
+      .replace(/^.*?Type Pool\s+\d+(?:,\s*Rank\s+\d+)?(?:,\s*)?/i, '')
+      .trim() || label;
+
+  return {
+    pool,
+    poolKey: pool === null ? 'pool:unknown' : `pool:${pool}`,
+    poolLabel,
+    poolShortLabel,
+    rank,
+    rankKey: rank === null ? 'rank:unknown' : `rank:${rank}`,
+    rankLabel,
+    spawnerLabel
+  };
 }
 
 function formatZaEncounterZonePreview(tables: EncounterTableRecord[]) {
@@ -31476,7 +32106,12 @@ function getEncounterTableZoneKey(table: EncounterTableRecord) {
     return getSvEncounterLocationKey(table);
   }
 
-  return [table.gameVersion, table.locationKey ?? table.location].join(':');
+  return [
+    table.gameVersion,
+    isPokemonLegendsZAEncounterTable(table)
+      ? getZaEncounterDisplayZoneKey(table)
+      : table.locationKey ?? table.location
+  ].join(':');
 }
 
 function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
@@ -32925,17 +33560,78 @@ type EncounterTableListRow = {
   areaLabel: string;
   gameVersion: string;
   location: string;
+  sectionLabel?: string;
+  sectionRank?: number;
   table: EncounterTableRecord;
   tableIds: string[];
+  zoneSort?: number;
   zoneKey: string;
 };
 
 type ZaEncounterSpawnerRow = {
+  categoryKey: string;
+  categoryLabel: string;
+  categoryRank: number;
   details: string;
   label: string;
   sourceLayer: string;
   slotCount: number;
   tableId: string;
+};
+
+type ZaEncounterZoneFamily = {
+  label: string;
+  rank: number;
+};
+
+type ZaEncounterSpawnerCategory = {
+  key: string;
+  label: string;
+  rank: number;
+};
+
+type ZaEncounterSpawnerCategoryTab = {
+  isSelected: boolean;
+  key: string;
+  label: string;
+  rank: number;
+  tableId: string;
+  title: string;
+};
+
+type ZaEncounterSpawnerCategoryData = {
+  categoryTabs: ZaEncounterSpawnerCategoryTab[];
+  rows: ZaEncounterSpawnerRow[];
+};
+
+type ZaDimensionWildFacets = {
+  pool: number | null;
+  poolKey: string;
+  poolLabel: string;
+  poolShortLabel: string;
+  rank: number | null;
+  rankKey: string;
+  rankLabel: string;
+  spawnerLabel: string;
+};
+
+type ZaDimensionWildEntry = {
+  facets: ZaDimensionWildFacets;
+  table: EncounterTableRecord;
+};
+
+type ZaDimensionWildTab = {
+  isSelected: boolean;
+  key: string;
+  label: string;
+  tableId: string;
+  title: string;
+};
+
+type ZaDimensionWildBrowserData = {
+  poolTabs: ZaDimensionWildTab[];
+  rankTabs: ZaDimensionWildTab[];
+  rows: ZaEncounterSpawnerRow[];
 };
 
 type EncounterSlotFieldUpdate = {

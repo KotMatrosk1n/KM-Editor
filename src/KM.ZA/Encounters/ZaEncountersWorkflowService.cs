@@ -21,35 +21,10 @@ internal sealed class ZaEncountersWorkflowService
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
     private const string GameVersionLabel = "Pokemon Legends ZA";
     private const string TableIdPrefix = "za-spawner";
-    private const string WildZonePlaceNamePrefix = "wild_";
     private static readonly string[] EncounterDataIdSuffixes =
     [
         "_Alpha",
     ];
-    private static readonly IReadOnlyDictionary<string, int> WildZoneNumbers =
-        new Dictionary<string, int>(StringComparer.Ordinal)
-        {
-            ["a0102_w01"] = 1,
-            ["a0103_w01"] = 2,
-            ["a0403_w01"] = 3,
-            ["a0402_w01"] = 4,
-            ["a0202_w02"] = 5,
-            ["a0502_w01"] = 6,
-            ["a0303_w01"] = 7,
-            ["a0503_w01"] = 8,
-            ["a0301_w02"] = 9,
-            ["a0202_w01"] = 10,
-            ["a0502_w02"] = 11,
-            ["a0201_w01"] = 12,
-            ["a0401_w01"] = 13,
-            ["a0301_w01"] = 14,
-            ["a0501_w01"] = 15,
-            ["a0203_w01"] = 16,
-            ["a0101_w01"] = 17,
-            ["a0302_w01"] = 18,
-            ["a0501_w02"] = 19,
-            ["a0601_w01"] = 20,
-        };
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -204,7 +179,7 @@ internal sealed class ZaEncountersWorkflowService
                         spawnerSource.FileState),
                     locationKey,
                     GetLocationSort(locationKey),
-                    FormatTableLabel(locationKey, tableNumber, spawner.Value.Id),
+                    FormatTableLabel(locationKey, tableNumber, spawner.Value.Id, labels),
                     FormatTableDetails(slots));
             }
         }
@@ -356,32 +331,15 @@ internal sealed class ZaEncountersWorkflowService
     {
         var objectInfo = FirstAppearanceObject(spawner);
         var zoneInfo = objectInfo?.ZoneInfo;
-        var zoneId = zoneInfo?.ZoneId;
-        var variationId = zoneInfo?.VariationId;
-        if (!string.IsNullOrWhiteSpace(zoneId) && !string.IsNullOrWhiteSpace(variationId))
-        {
-            return $"{zoneId} {variationId}";
-        }
-
-        if (!string.IsNullOrWhiteSpace(zoneId))
-        {
-            return zoneId;
-        }
-
-        return string.IsNullOrWhiteSpace(spawner.Id)
-            ? "Unknown Z-A Area"
-            : FormatRawSpawnerLocationKey(spawner.Id);
+        return ZaLumioseLocationLabels.CreateLocationKey(
+            zoneInfo?.ZoneId,
+            zoneInfo?.VariationId,
+            spawner.Id);
     }
 
     private static string FormatLocation(string locationKey, ZaTextLabelLookup labels)
     {
-        if (WildZoneNumbers.TryGetValue(locationKey, out var zoneNumber))
-        {
-            return labels.PlaceName($"{WildZonePlaceNamePrefix}{locationKey}")
-                ?? $"Wild Zone {zoneNumber.ToString(CultureInfo.InvariantCulture)}";
-        }
-
-        return labels.PlaceName(locationKey) ?? FormatRawSpawnerId(locationKey);
+        return ZaLumioseLocationLabels.FormatLocation(locationKey, labels.PlaceName, labels.Pokemon);
     }
 
     private static int NextTableNumber(IDictionary<string, int> tableCountsByLocation, string locationKey)
@@ -394,17 +352,15 @@ internal sealed class ZaEncountersWorkflowService
 
     private static int? GetLocationSort(string locationKey)
     {
-        return WildZoneNumbers.TryGetValue(locationKey, out var zoneNumber)
-            ? zoneNumber
-            : null;
+        return ZaLumioseLocationLabels.GetLocationSort(locationKey);
     }
 
     private static bool IsNumberedWildZone(string locationKey)
     {
-        return WildZoneNumbers.ContainsKey(locationKey);
+        return ZaLumioseLocationLabels.IsNumberedWildZone(locationKey);
     }
 
-    private static string FormatTableLabel(string locationKey, int tableNumber, string? spawnerId)
+    private static string FormatTableLabel(string locationKey, int tableNumber, string? spawnerId, ZaTextLabelLookup labels)
     {
         if (IsNumberedWildZone(locationKey))
         {
@@ -413,153 +369,7 @@ internal sealed class ZaEncountersWorkflowService
 
         return string.IsNullOrWhiteSpace(spawnerId)
             ? $"Spawner {tableNumber.ToString(CultureInfo.InvariantCulture)}"
-            : FormatRawSpawnerId(spawnerId);
-    }
-
-    private static string FormatRawSpawnerId(string value)
-    {
-        var trimmed = value.Trim();
-        if (trimmed.StartsWith("id_spn_", StringComparison.Ordinal))
-        {
-            trimmed = trimmed["id_spn_".Length..];
-        }
-
-        var outzone = TryFormatOutzoneSpawnerId(trimmed);
-        if (outzone is not null)
-        {
-            return outzone;
-        }
-
-        var dungeon = TryFormatDungeonSpawnerId(trimmed);
-        if (dungeon is not null)
-        {
-            return dungeon;
-        }
-
-        return ToReadableId(trimmed);
-    }
-
-    private static string FormatRawSpawnerLocationKey(string value)
-    {
-        var trimmed = value.Trim();
-        if (trimmed.StartsWith("id_spn_", StringComparison.Ordinal))
-        {
-            trimmed = trimmed["id_spn_".Length..];
-        }
-
-        var groupKey = TryFormatRawSpawnerGroupKey(trimmed);
-        return groupKey ?? value;
-    }
-
-    private static string? TryFormatRawSpawnerGroupKey(string value)
-    {
-        var parts = value.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2 && string.Equals(parts[0], "outzone", StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Join('_', parts.Take(2));
-        }
-
-        if (parts.Length >= 2
-            && parts[0].StartsWith('z')
-            && parts[0].Length > 1
-            && IsDungeonSpawnerSection(parts[1]))
-        {
-            return string.Join('_', parts.Take(2));
-        }
-
-        if (parts.Length >= 2 && parts[0].StartsWith('d') && parts[0].Length > 1 && parts[1].All(char.IsDigit))
-        {
-            return string.Join('_', parts.Take(2));
-        }
-
-        return null;
-    }
-
-    private static string? TryFormatOutzoneSpawnerId(string value)
-    {
-        var parts = value.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2 || !string.Equals(parts[0], "outzone", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var label = $"Outzone {parts[1].ToUpperInvariant()}";
-        return parts.Length == 2
-            ? label
-            : $"{label} {FormatSpawnerIdTail(parts.Skip(2))}";
-    }
-
-    private static string? TryFormatDungeonSpawnerId(string value)
-    {
-        var parts = value.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2)
-        {
-            return null;
-        }
-
-        if (parts[0].StartsWith('z') && parts[0].Length > 1 && IsDungeonSpawnerSection(parts[1]))
-        {
-            var dungeon = parts[0].ToUpperInvariant();
-            var subPlace = parts[1].ToUpperInvariant();
-            var tail = FormatSpawnerIdTail(parts.Skip(2));
-            return string.IsNullOrWhiteSpace(tail)
-                ? $"Dungeon {dungeon} {subPlace}"
-                : $"Dungeon {dungeon} {subPlace} {tail}";
-        }
-
-        if (parts[0].StartsWith('d') && parts[0].Length > 1 && parts[1].All(char.IsDigit))
-        {
-            var tail = FormatSpawnerIdTail(parts.Skip(2));
-            return string.IsNullOrWhiteSpace(tail)
-                ? $"Dungeon {parts[0].ToUpperInvariant()}-{parts[1]}"
-                : $"Dungeon {parts[0].ToUpperInvariant()}-{parts[1]} {tail}";
-        }
-
-        return null;
-    }
-
-    private static bool IsDungeonSpawnerSection(string value)
-    {
-        return value.StartsWith("sp", StringComparison.OrdinalIgnoreCase)
-            || value.StartsWith("v", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string FormatSpawnerIdTail(IEnumerable<string> tokens)
-    {
-        var parts = tokens
-            .Select(FormatSpawnerIdToken)
-            .Where(part => !string.IsNullOrWhiteSpace(part))
-            .ToArray();
-        return parts.Length == 0 ? string.Empty : string.Join(" ", parts);
-    }
-
-    private static string FormatSpawnerIdToken(string token)
-    {
-        if (token.All(char.IsDigit))
-        {
-            return $"Spawn {token}";
-        }
-
-        if (token.Length > 1
-            && token[0] is 'A' or 'a'
-            && token[1..].All(char.IsDigit))
-        {
-            return $"Alpha Spawn {token[1..]}";
-        }
-
-        return token switch
-        {
-            _ when string.Equals(token, "A", StringComparison.OrdinalIgnoreCase) => "Alpha",
-            _ when string.Equals(token, "FLY", StringComparison.OrdinalIgnoreCase) => "Flying",
-            _ => token.ToUpperInvariant(),
-        };
-    }
-
-    private static string ToReadableId(string value)
-    {
-        return value
-            .Replace('_', ' ')
-            .Trim();
+            : ZaLumioseLocationLabels.FormatRawSpawnerId(spawnerId, labels.Pokemon);
     }
 
     private static string FormatTableDetails(IReadOnlyList<ZaEncounterSlotRecord> slots)
