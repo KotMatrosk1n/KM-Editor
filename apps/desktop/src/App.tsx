@@ -277,13 +277,16 @@ import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/np
 import { useNpcItemGiftWorkflowController } from './features/npc-item-gift/useNpcItemGiftWorkflowController';
 import {
   type PlacementFieldControl,
+  type PlacementObjectGroup,
+  buildPlacementObjectGroups,
   formatPlacementCoordinates,
   formatPlacementItem,
-  formatPlacementPrimaryData,
+  getPlacementObjectGroupTabs,
   getPlacementCategoryId,
   getPlacementCategories,
   getPlacementFieldControls,
   getPlacementFieldValue,
+  isZaItemBallPlacementObject,
   isPokemonPlacementObject
 } from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
@@ -8587,6 +8590,20 @@ export function App({
           {activeSection === 'placement' ? (
             isPlacementLoading && !placementWorkflow ? (
               <WorkflowLoadingPanel label="Placement" />
+            ) : isPokemonLegendsZAProject ? (
+              <ZaPlacementSection
+                editSession={getEditSessionForSection('placement')}
+                isEditStarting={isEditStarting}
+                isPlacementUpdating={isPlacementUpdating}
+                onSearchChange={setPlacementSearchText}
+                onSelectObject={setSelectedPlacementObjectId}
+                onStartEditSession={handleStartEditSession}
+                onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
+                onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
+                searchText={placementSearchText}
+                selectedObjectId={selectedPlacementObjectId}
+                workflow={placementWorkflow}
+              />
             ) : isScarletVioletProject ? (
               <SvPlacementSection
                 editSession={getEditSessionForSection('placement')}
@@ -12901,17 +12918,37 @@ function TrainersSection({
   workflow
 }: TrainersSectionProps) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [selectedTrainerCategoryId, setSelectedTrainerCategoryId] = useState('all');
   const trainers = workflow?.trainers ?? [];
-  const filteredTrainers = useMemo(
+  const searchFilteredTrainers = useMemo(
     () => filterTrainers(trainers, searchText),
     [searchText, trainers]
   );
+  const trainerCategories = useMemo(
+    () => (editorFamily === 'za' ? buildZaTrainerCategories(searchFilteredTrainers) : []),
+    [editorFamily, searchFilteredTrainers]
+  );
+  const supportsTrainerCategories = trainerCategories.length > 1;
+  const activeTrainerCategoryId =
+    supportsTrainerCategories &&
+    trainerCategories.some((category) => category.id === selectedTrainerCategoryId)
+      ? selectedTrainerCategoryId
+      : 'all';
+  const filteredTrainers = useMemo(
+    () =>
+      supportsTrainerCategories && activeTrainerCategoryId !== 'all'
+        ? searchFilteredTrainers.filter(
+            (trainer) => getZaTrainerCategoryId(trainer) === activeTrainerCategoryId
+          )
+        : searchFilteredTrainers,
+    [activeTrainerCategoryId, searchFilteredTrainers, supportsTrainerCategories]
+  );
   const selectedTrainer = useMemo(
     () =>
-      trainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
+      filteredTrainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
       filteredTrainers[0] ??
       null,
-    [filteredTrainers, selectedTrainerId, trainers]
+    [filteredTrainers, selectedTrainerId]
   );
   const selectedPokemon =
     selectedTrainer?.team.find((pokemon) => pokemon.slot === selectedSlot) ??
@@ -12931,6 +12968,15 @@ function TrainersSection({
       setSelectedSlot(selectedTrainer.team[0]?.slot ?? null);
     }
   }, [selectedSlot, selectedTrainer?.trainerId, selectedTrainer?.team]);
+
+  useEffect(() => {
+    if (
+      selectedTrainerCategoryId !== 'all' &&
+      !trainerCategories.some((category) => category.id === selectedTrainerCategoryId)
+    ) {
+      setSelectedTrainerCategoryId('all');
+    }
+  }, [selectedTrainerCategoryId, trainerCategories]);
 
   return (
     <>
@@ -12970,63 +13016,99 @@ function TrainersSection({
         </div>
 
         {workflow ? (
-          <div className="trainers-layout">
-            <div
-              aria-colcount={6}
-              aria-label="Trainers"
-              aria-rowcount={filteredTrainers.length + 1}
-              className="trainers-table"
-              role="table"
-            >
-              <div className="trainers-row trainers-row-heading" role="row">
-                <span role="columnheader">ID</span>
-                <span role="columnheader">Name</span>
-                <span role="columnheader">Class</span>
-                <span role="columnheader">Battle</span>
-                <span role="columnheader">Team</span>
-                <span role="columnheader">Source</span>
-              </div>
-              <VirtualTableBody
-                getKey={(trainer) => trainer.trainerId}
-                items={filteredTrainers}
-                renderRow={(trainer) => (
+          <>
+            {supportsTrainerCategories ? (
+              <div
+                aria-label="Trainer categories"
+                className="condition-tabs trainer-category-tabs"
+                role="tablist"
+              >
+                {trainerCategories.map((category) => (
                   <button
-                    className={`trainers-row ${
-                      selectedTrainer?.trainerId === trainer.trainerId ? 'trainers-row-selected' : ''
-                    } ${pendingTrainerIds.has(trainer.trainerId) ? 'trainers-row-pending' : ''}`}
-                    onClick={() => onSelectTrainer(trainer.trainerId)}
-                    role="row"
+                    aria-selected={category.id === activeTrainerCategoryId}
+                    className="condition-tab-button trainer-category-tab"
+                    key={category.id}
+                    onClick={() => {
+                      setSelectedTrainerCategoryId(category.id);
+                      const nextTrainer =
+                        category.id === 'all'
+                          ? searchFilteredTrainers[0]
+                          : searchFilteredTrainers.find(
+                              (trainer) => getZaTrainerCategoryId(trainer) === category.id
+                            );
+                      onSelectTrainer(nextTrainer?.trainerId ?? null);
+                    }}
+                    role="tab"
+                    title={category.description}
                     type="button"
                   >
-                    <span role="cell">{trainer.trainerId}</span>
-                    <span role="cell">{trainer.name}</span>
-                    <span role="cell">{trainer.trainerClass}</span>
-                    <span role="cell">{trainer.battleType}</span>
-                    <span role="cell">{getOccupiedTrainerPokemonCount(trainer)}</span>
-                    <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
+                    <span>{category.label}</span>
+                    <small>{category.count}</small>
                   </button>
-                )}
+                ))}
+              </div>
+            ) : null}
+
+            <div className="trainers-layout">
+              <div
+                aria-colcount={6}
+                aria-label="Trainers"
+                aria-rowcount={filteredTrainers.length + 1}
+                className="trainers-table"
+                role="table"
+              >
+                <div className="trainers-row trainers-row-heading" role="row">
+                  <span role="columnheader">ID</span>
+                  <span role="columnheader">Name</span>
+                  <span role="columnheader">Class</span>
+                  <span role="columnheader">Battle</span>
+                  <span role="columnheader">Team</span>
+                  <span role="columnheader">Source</span>
+                </div>
+                <VirtualTableBody
+                  getKey={(trainer) => trainer.trainerId}
+                  items={filteredTrainers}
+                  renderRow={(trainer) => (
+                    <button
+                      className={`trainers-row ${
+                        selectedTrainer?.trainerId === trainer.trainerId
+                          ? 'trainers-row-selected'
+                          : ''
+                      } ${pendingTrainerIds.has(trainer.trainerId) ? 'trainers-row-pending' : ''}`}
+                      onClick={() => onSelectTrainer(trainer.trainerId)}
+                      role="row"
+                      type="button"
+                    >
+                      <span role="cell">{trainer.trainerId}</span>
+                      <span role="cell">{trainer.name}</span>
+                      <span role="cell">{trainer.trainerClass}</span>
+                      <span role="cell">{trainer.battleType}</span>
+                      <span role="cell">{getOccupiedTrainerPokemonCount(trainer)}</span>
+                      <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
+                    </button>
+                  )}
+                />
+              </div>
+
+              <SelectedTrainerPanel
+                canEditTrainers={canEditTrainers}
+                editSession={editSession}
+                editorFamily={editorFamily}
+                editableFields={workflow.editableFields}
+                isEditStarting={isEditStarting}
+                isTrainerUpdating={isTrainerUpdating}
+                isScarletVioletProject={isScarletVioletProject}
+                onSelectSlot={setSelectedSlot}
+                onStartEditSession={onStartEditSession}
+                onUpdateTrainerField={onUpdateTrainerField}
+                onUpdateTrainerFields={onUpdateTrainerFields}
+                pokemonWorkflow={pokemonWorkflow}
+                selectedPokemon={selectedPokemon}
+                selectedSlot={selectedSlot}
+                trainer={selectedTrainer}
               />
             </div>
-
-            <SelectedTrainerPanel
-              canEditTrainers={canEditTrainers}
-              editSession={editSession}
-              editorFamily={editorFamily}
-              editableFields={workflow.editableFields}
-              isEditStarting={isEditStarting}
-              isTrainerUpdating={isTrainerUpdating}
-              isScarletVioletProject={isScarletVioletProject}
-              onSelectSlot={setSelectedSlot}
-              onStartEditSession={onStartEditSession}
-              onUpdateTrainerField={onUpdateTrainerField}
-              onUpdateTrainerFields={onUpdateTrainerFields}
-              pokemonWorkflow={pokemonWorkflow}
-              selectedPokemon={selectedPokemon}
-              selectedSlot={selectedSlot}
-              trainer={selectedTrainer}
-            />
-          </div>
+          </>
         ) : (
           <p className="empty-copy">Open Trainers from Workflows to load backend trainer data.</p>
         )}
@@ -24222,6 +24304,10 @@ function SvPlacementSection(props: PlacementSectionPublicProps) {
   return <PlacementSection {...props} editorFamily="sv" />;
 }
 
+function ZaPlacementSection(props: PlacementSectionPublicProps) {
+  return <PlacementSection {...props} editorFamily="za" />;
+}
+
 function PlacementSection({
   editSession,
   editorFamily,
@@ -24281,9 +24367,23 @@ function PlacementSection({
         .toLocaleLowerCase()
         .includes(normalizedSearch);
     }) ?? [];
+  const groupedObjects = useMemo(
+    () =>
+      buildPlacementObjectGroups(filteredObjects, {
+        groupItemBallSpawners: editorFamily === 'za',
+        groupPokemonSpawners: editorFamily === 'za'
+      }),
+    [editorFamily, filteredObjects]
+  );
   const selectedObject =
     filteredObjects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
-    filteredObjects[0] ??
+    groupedObjects[0]?.objects[0] ??
+    null;
+  const selectedGroup =
+    groupedObjects.find((group) =>
+      selectedObject ? group.objects.some((placedObject) => placedObject.objectId === selectedObject.objectId) : false
+    ) ??
+    groupedObjects[0] ??
     null;
   const canEditPlacement = workflow?.summary.availability === 'available';
   const pendingPlacementObjectIds = getPendingPlacementObjectIds(editSession);
@@ -24365,10 +24465,14 @@ function PlacementSection({
                 key={category.id}
                 onClick={() => {
                   setSelectedCategoryId(category.id);
-                  const firstObject = workflow?.objects.find(
+                  const categoryObjects = workflow?.objects.filter(
                     (placedObject) => getPlacementCategoryId(placedObject) === category.id
-                  );
-                  onSelectObject(firstObject?.objectId ?? null);
+                  ) ?? [];
+                  const firstGroup = buildPlacementObjectGroups(categoryObjects, {
+                    groupItemBallSpawners: editorFamily === 'za',
+                    groupPokemonSpawners: editorFamily === 'za'
+                  })[0];
+                  onSelectObject(firstGroup?.objects[0]?.objectId ?? null);
                 }}
                 role="tab"
                 title={category.description}
@@ -24389,33 +24493,38 @@ function PlacementSection({
                 <span role="columnheader">Pokemon / Data</span>
                 <span role="columnheader">Position</span>
               </div>
-              {filteredObjects.map((placedObject) => (
-                <button
-                  className={`raid-rewards-row placement-object-row ${
-                    selectedObject?.objectId === placedObject.objectId
-                      ? 'raid-rewards-row-selected'
-                      : ''
-                  } ${
-                    pendingPlacementObjectIds.has(placedObject.objectId)
-                      ? 'raid-rewards-row-pending'
-                      : ''
-                  }`}
-                  key={placedObject.objectId}
-                  onClick={() => onSelectObject(placedObject.objectId)}
-                  role="row"
-                  type="button"
-                >
-                  <span className="placement-object-name" role="cell">
-                    <strong>{placedObject.label}</strong>
-                    <small>{placedObject.map}</small>
-                  </span>
-                  <span className="placement-primary-cell" role="cell">
-                    {formatPlacementPrimaryData(placedObject)}
-                  </span>
-                  <span role="cell">{formatPlacementCoordinates(placedObject)}</span>
-                </button>
-              ))}
-              {filteredObjects.length === 0 ? (
+              {groupedObjects.map((objectGroup) => {
+                const isSelected = selectedObject
+                  ? objectGroup.objects.some((placedObject) => placedObject.objectId === selectedObject.objectId)
+                  : false;
+                const isPending = objectGroup.objects.some((placedObject) =>
+                  pendingPlacementObjectIds.has(placedObject.objectId)
+                );
+                const nextObjectId = isSelected
+                  ? selectedObject?.objectId ?? objectGroup.objects[0]?.objectId ?? null
+                  : objectGroup.objects[0]?.objectId ?? null;
+                return (
+                  <button
+                    className={`raid-rewards-row placement-object-row ${
+                      isSelected ? 'raid-rewards-row-selected' : ''
+                    } ${isPending ? 'raid-rewards-row-pending' : ''}`}
+                    key={objectGroup.key}
+                    onClick={() => onSelectObject(nextObjectId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span className="placement-object-name" role="cell">
+                      <strong>{objectGroup.label}</strong>
+                      <small>{objectGroup.map}</small>
+                    </span>
+                    <span className="placement-primary-cell" role="cell">
+                      {objectGroup.preview}
+                    </span>
+                    <span role="cell">{objectGroup.position}</span>
+                  </button>
+                );
+              })}
+              {groupedObjects.length === 0 ? (
                 <div className="raid-rewards-row placement-object-row placement-empty-row" role="row">
                   <span role="cell">{activeCategoryId === null ? 'No placement entries.' : `No entries in ${placementCategories.find((category) => category.id === activeCategoryId)?.label ?? 'placement'}.`}</span>
                 </div>
@@ -24431,6 +24540,8 @@ function PlacementSection({
               onStartEditSession={onStartEditSession}
               onUpdatePlacementObjectField={onUpdatePlacementObjectField}
               onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
+              onSelectObject={onSelectObject}
+              placementGroup={selectedGroup}
               placedObject={selectedObject}
             />
           </div>
@@ -24450,9 +24561,11 @@ function SelectedPlacementPanel({
   editableFields,
   isEditStarting,
   isPlacementUpdating,
+  onSelectObject,
   onStartEditSession,
   onUpdatePlacementObjectField,
   onUpdatePlacementObjectFields,
+  placementGroup,
   placedObject
 }: {
   canEditPlacement: boolean;
@@ -24460,12 +24573,14 @@ function SelectedPlacementPanel({
   editableFields: PlacementEditableField[];
   isEditStarting: boolean;
   isPlacementUpdating: boolean;
+  onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
   onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
   onUpdatePlacementObjectFields: (
     objectId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  placementGroup: PlacementObjectGroup | null;
   placedObject: PlacedObjectRecord | null;
 }) {
   const [draftsByObjectId, setDraftsByObjectId] = useState<
@@ -24575,6 +24690,14 @@ function SelectedPlacementPanel({
               <dd>{formatFileState(placedObject.provenance.fileState)}</dd>
             </div>
           </dl>
+
+          {placementGroup && placementGroup.objects.length > 1 ? (
+            <PlacementObjectGroupBrowser
+              group={placementGroup}
+              onSelectObject={onSelectObject}
+              selectedObjectId={placedObject.objectId}
+            />
+          ) : null}
 
           <div className="encounter-edit-form">
             <dl className="encounter-slot-detail">
@@ -24813,6 +24936,79 @@ function SelectedPlacementPanel({
         <p className="empty-copy">No placement object selected.</p>
       )}
     </aside>
+  );
+}
+
+function PlacementObjectGroupBrowser({
+  group,
+  onSelectObject,
+  selectedObjectId
+}: {
+  group: PlacementObjectGroup;
+  onSelectObject: (objectId: string | null) => void;
+  selectedObjectId: string;
+}) {
+  const tabs = getPlacementObjectGroupTabs(group);
+  const useListPicker = group.objects.some(isZaItemBallPlacementObject);
+
+  return (
+    <section className="za-placement-object-browser" aria-label="Z-A placement spawner group">
+      <div className="sv-encounter-browser-summary">
+        <span>{group.label}</span>
+        <span>{group.objects.length} transforms</span>
+        <span>{group.map}</span>
+      </div>
+      {useListPicker ? (
+        <div
+          className="placement-object-picker-list"
+          role="tablist"
+          aria-label="Placement spawner transforms"
+        >
+          {tabs.map((tab) => (
+            <button
+              aria-selected={tab.objectId === selectedObjectId}
+              className="placement-object-picker-row"
+              key={tab.objectId}
+              onClick={() => {
+                if (tab.objectId !== selectedObjectId) {
+                  onSelectObject(tab.objectId);
+                }
+              }}
+              role="tab"
+              title={tab.title}
+              type="button"
+            >
+              <span>{tab.label}</span>
+              <small>{tab.title}</small>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div
+          className="encounter-condition-tabs placement-object-tabs"
+          role="tablist"
+          aria-label="Placement spawner transforms"
+        >
+          {tabs.map((tab) => (
+            <button
+              aria-selected={tab.objectId === selectedObjectId}
+              className="condition-tab-button"
+              key={tab.objectId}
+              onClick={() => {
+                if (tab.objectId !== selectedObjectId) {
+                  onSelectObject(tab.objectId);
+                }
+              }}
+              role="tab"
+              title={tab.title}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -29965,7 +30161,7 @@ function UpdatePromptModal({
       <section
         aria-labelledby="update-prompt-heading"
         aria-modal="true"
-        className="modal-panel"
+        className="modal-panel update-prompt-panel"
         role="dialog"
       >
         <div className="panel-heading">
@@ -30957,6 +31153,150 @@ function matchesSearchPrefix(value: string, normalizedSearch: string) {
     .some((token) => token.startsWith(normalizedSearch));
 }
 
+type TrainerCategory = {
+  count: number;
+  description: string;
+  id: string;
+  label: string;
+  rank: number;
+};
+
+const zaTrainerCategoryDetails: Record<
+  string,
+  Omit<TrainerCategory, 'count' | 'id'>
+> = {
+  named: {
+    description: 'Trainer rows with localized game names.',
+    label: 'Named Trainers',
+    rank: 1
+  },
+  hyperspace: {
+    description: 'Generated Dimension and Hyperspace rank trainer rows.',
+    label: 'Hyperspace Trainers',
+    rank: 2
+  },
+  infinite: {
+    description: 'Generated Infinite Z-A battle trainer rows.',
+    label: 'Infinite Z-A Battles',
+    rank: 3
+  },
+  'main-missions': {
+    description: 'Generated main mission trainer rows.',
+    label: 'Main Mission Trainers',
+    rank: 4
+  },
+  'side-missions': {
+    description: 'Generated side mission trainer rows.',
+    label: 'Side Mission Trainers',
+    rank: 5
+  },
+  generated: {
+    description: 'Generated trainer rows that do not map to a named mission group yet.',
+    label: 'Other Generated',
+    rank: 9
+  }
+};
+
+function buildZaTrainerCategories(trainers: TrainerRecord[]): TrainerCategory[] {
+  const allCategory: TrainerCategory = {
+    count: trainers.length,
+    description: 'All loaded Z-A trainer rows.',
+    id: 'all',
+    label: 'All Trainers',
+    rank: 0
+  };
+  const categoriesById = new Map<string, TrainerCategory>();
+
+  for (const trainer of trainers) {
+    const categoryId = getZaTrainerCategoryId(trainer);
+    const details = zaTrainerCategoryDetails[categoryId] ?? zaTrainerCategoryDetails.generated;
+    const category = categoriesById.get(categoryId);
+
+    if (category) {
+      category.count += 1;
+      continue;
+    }
+
+    categoriesById.set(categoryId, {
+      count: 1,
+      description: details.description,
+      id: categoryId,
+      label: details.label,
+      rank: details.rank
+    });
+  }
+
+  return [
+    allCategory,
+    ...Array.from(categoriesById.values()).sort(
+      (left, right) => left.rank - right.rank || left.label.localeCompare(right.label)
+    )
+  ];
+}
+
+function getZaTrainerCategoryId(trainer: TrainerRecord) {
+  const location = trainer.location.toLocaleLowerCase();
+  const name = trainer.name.toLocaleLowerCase();
+  const trainerClass = trainer.trainerClass.toLocaleLowerCase();
+
+  if (
+    location.startsWith('dim_rank_') ||
+    trainerClass.includes('hyperspace trainer') ||
+    /^(?:dimension\s+)?rank\s+\d+/.test(name)
+  ) {
+    return 'hyperspace';
+  }
+
+  if (location.startsWith('za_inf') || name.startsWith('infinite z-a')) {
+    return 'infinite';
+  }
+
+  if (
+    location.startsWith('ev_m') ||
+    /^mission\s+\d+/.test(name) ||
+    name.startsWith('story chapter')
+  ) {
+    return 'main-missions';
+  }
+
+  if (location.startsWith('ev_sub') || name.startsWith('side mission')) {
+    return 'side-missions';
+  }
+
+  if (isGeneratedZaTrainerRow(trainer)) {
+    return 'generated';
+  }
+
+  return 'named';
+}
+
+function getZaGeneratedTrainerCategoryLabel(trainer: TrainerRecord) {
+  const categoryId = getZaTrainerCategoryId(trainer);
+
+  if (categoryId === 'named') {
+    return '';
+  }
+
+  return zaTrainerCategoryDetails[categoryId]?.label ?? zaTrainerCategoryDetails.generated.label;
+}
+
+function isGeneratedZaTrainerRow(trainer: TrainerRecord) {
+  const location = trainer.location.toLocaleLowerCase();
+  const name = trainer.name.toLocaleLowerCase();
+
+  return (
+    name.startsWith('trainer ') ||
+    /^(?:dimension\s+)?rank\s+\d+/.test(name) ||
+    /^mission\s+\d+/.test(name) ||
+    name.startsWith('side mission ') ||
+    name.startsWith('story chapter ') ||
+    name.startsWith('infinite z-a') ||
+    /^ev_(?:m|sub)/.test(location) ||
+    location.startsWith('dim_') ||
+    location.startsWith('za_inf')
+  );
+}
+
 function filterTrainers(trainers: TrainerRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -30974,6 +31314,7 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
       trainer.classBallId?.toString() ?? '',
       trainer.classBallScope,
       trainer.battleType,
+      getZaGeneratedTrainerCategoryLabel(trainer),
       ...trainer.itemIds.map((itemId) => itemId.toString()),
       ...trainer.items,
       trainer.aiFlags.toString(),

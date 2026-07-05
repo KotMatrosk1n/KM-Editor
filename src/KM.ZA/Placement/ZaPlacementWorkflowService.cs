@@ -7,6 +7,8 @@ using KM.Formats.ZA.Generated.Field.PokemonSpawner;
 using KM.ZA.Data;
 using KM.ZA.Workflows;
 using System.Globalization;
+using ItemBallSpawnerData = KM.Formats.ZA.Generated.Field.ItemBall.ItemBallSpawnerData;
+using ItemBallSpawnerDataDBArray = KM.Formats.ZA.Generated.Field.ItemBall.ItemBallSpawnerDataDBArray;
 
 namespace KM.ZA.Placement;
 
@@ -59,6 +61,7 @@ internal sealed class ZaPlacementWorkflowService
         var sourceFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
         var pokemonContext = LoadPokemonSpawnerContext(project, diagnostics, sourceFiles);
+        var itemBallContext = LoadItemBallSpawnerContext(project, diagnostics, sourceFiles, labels);
 
         TryLoadTransformCategory(
             project,
@@ -76,7 +79,7 @@ internal sealed class ZaPlacementWorkflowService
             ItemBallSpawnersCategory,
             "Item Ball Spawner",
             labels,
-            new Dictionary<string, ZaPlacementSpawnerContext>(StringComparer.Ordinal),
+            itemBallContext,
             objects,
             sourceFiles,
             diagnostics);
@@ -262,8 +265,113 @@ internal sealed class ZaPlacementWorkflowService
                     appearance.Value.ZoneInfo?.VariationId ?? string.Empty,
                     appearance.Value.AppearanceInfo?.MinCount ?? 0,
                     appearance.Value.AppearanceInfo?.MaxCount ?? 0,
+                    LocationKey: string.Empty,
+                    "spawner.encounterRows",
+                    "Encounter Rows",
                     spawner.EncountDataInfoListLength,
+                    PrimaryData: string.Empty,
+                    DisplayLabel: string.Empty,
+                    DisplayMap: string.Empty,
                     FormatTags(appearance.Value)));
+        }
+    }
+
+    private Dictionary<string, ZaPlacementSpawnerContext> LoadItemBallSpawnerContext(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ISet<string> sourceFiles,
+        ZaTextLabelLookup labels)
+    {
+        try
+        {
+            var source = fileSource.Read(project, ZaDataPaths.ItemBallSpawnerDataArray);
+            sourceFiles.Add(source.RelativePath);
+            var table = ItemBallSpawnerDataDBArray.GetRootAsItemBallSpawnerDataDBArray(new ByteBuffer(source.Bytes));
+            var contexts = new Dictionary<string, ZaPlacementSpawnerContext>(StringComparer.Ordinal);
+            for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
+            {
+                var db = table.Values(groupIndex);
+                if (db is null)
+                {
+                    continue;
+                }
+
+                for (var spawnerIndex = 0; spawnerIndex < db.Value.RootLength; spawnerIndex++)
+                {
+                    var spawner = db.Value.Root(spawnerIndex);
+                    if (spawner is null)
+                    {
+                        continue;
+                    }
+
+                    AddItemBallSpawnerContexts(
+                        contexts,
+                        spawner.Value,
+                        groupIndex,
+                        spawnerIndex,
+                        labels);
+                }
+            }
+
+            return contexts;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                $"Item ball spawner context could not be loaded for Placement: {exception.Message}",
+                $"romfs/{ZaDataPaths.ItemBallSpawnerDataArray}"));
+            return [];
+        }
+    }
+
+    private static void AddItemBallSpawnerContexts(
+        IDictionary<string, ZaPlacementSpawnerContext> contexts,
+        ItemBallSpawnerData spawner,
+        int groupIndex,
+        int spawnerIndex,
+        ZaTextLabelLookup labels)
+    {
+        var tableIds = Enumerable
+            .Range(0, spawner.TableInfoListLength)
+            .Select(index => spawner.TableInfoList(index)?.TableId ?? string.Empty)
+            .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var primaryData = FormatItemBallTablePreview(tableIds, labels);
+
+        for (var objectIndex = 0; objectIndex < spawner.AppearanceSpawnerObjectInfoListLength; objectIndex++)
+        {
+            var appearance = spawner.AppearanceSpawnerObjectInfoList(objectIndex);
+            if (appearance is null || string.IsNullOrWhiteSpace(appearance.Value.ObjectName))
+            {
+                continue;
+            }
+
+            var objectName = appearance.Value.ObjectName!;
+            var itemBallLabel = FormatItemBallObjectLabel(objectName, primaryData);
+            var itemBallMap = FormatItemBallObjectMap(objectName);
+            _ = TryParseItemBallObjectName(objectName, out var locationKey, out _);
+            contexts.TryAdd(
+                objectName,
+                new ZaPlacementSpawnerContext(
+                    spawner.Id ?? string.Empty,
+                    groupIndex,
+                    spawnerIndex,
+                    appearance.Value.CreateScenePath ?? string.Empty,
+                    DungeonName: string.Empty,
+                    BattleAreaId: string.Empty,
+                    appearance.Value.ZoneInfo?.ZoneId ?? string.Empty,
+                    appearance.Value.ZoneInfo?.VariationId ?? string.Empty,
+                    appearance.Value.AppearanceInfo?.MinCount ?? 0,
+                    appearance.Value.AppearanceInfo?.MaxCount ?? 0,
+                    locationKey,
+                    "spawner.itemTables",
+                    "Item Tables",
+                    tableIds.Length,
+                    primaryData,
+                    itemBallLabel,
+                    itemBallMap,
+                    string.Join(", ", tableIds)));
         }
     }
 
@@ -276,6 +384,9 @@ internal sealed class ZaPlacementWorkflowService
         ZaTextLabelLookup labels)
     {
         var categorySeed = CategorySeeds.First(seed => seed.Id == category);
+        context ??= category == ItemBallSpawnersCategory
+            ? CreateFallbackItemBallContext(row)
+            : null;
         var label = FormatObjectLabel(objectType, row, context, labels);
         var map = FormatMap(categorySeed.Label, context, labels);
         var fields = CreateFields(row, context, map);
@@ -291,7 +402,7 @@ internal sealed class ZaPlacementWorkflowService
             row.RowIndex,
             ChanceIndex: null,
             ItemId: null,
-            ItemName: context?.SpawnerId ?? string.Empty,
+            ItemName: context?.PrimaryData ?? string.Empty,
             ItemHash: row.Name,
             Quantity: 0,
             Chance: null,
@@ -326,7 +437,7 @@ internal sealed class ZaPlacementWorkflowService
             var locationKey = ZaLumioseLocationLabels.CreateLocationKey(
                 context.ZoneId,
                 context.VariationId,
-                context.SpawnerId);
+                string.IsNullOrWhiteSpace(context.LocationKey) ? context.SpawnerId : context.LocationKey);
             var district = ZaLumioseLocationLabels.FormatDistrict(locationKey);
             var sector = ZaLumioseLocationLabels.FormatSector(locationKey);
 
@@ -340,10 +451,15 @@ internal sealed class ZaPlacementWorkflowService
                 Text("spawner.zoneId", "Zone ID", "Spawner Context", context.ZoneId, EmptyAsNone(context.ZoneId), isReadOnly: true),
                 Text("spawner.variationId", "Zone Variation", "Spawner Context", context.VariationId, EmptyAsNone(context.VariationId), isReadOnly: true),
                 Text("spawner.tags", "Tags", "Spawner Context", context.Tags, EmptyAsNone(context.Tags), isReadOnly: true),
-                Text("spawner.encounterRows", "Encounter Rows", "Spawner Context", context.EncounterRowCount.ToString(CultureInfo.InvariantCulture), context.EncounterRowCount.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
+                Text(context.CountField, context.CountLabel, "Spawner Context", context.CountValue.ToString(CultureInfo.InvariantCulture), context.CountValue.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
                 Text("spawner.minCount", "Minimum Count", "Spawner Context", context.MinCount.ToString(CultureInfo.InvariantCulture), context.MinCount.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
                 Text("spawner.maxCount", "Maximum Count", "Spawner Context", context.MaxCount.ToString(CultureInfo.InvariantCulture), context.MaxCount.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
             ]);
+
+            if (!string.IsNullOrWhiteSpace(context.PrimaryData))
+            {
+                fields.Add(Text("spawner.primaryData", "Primary Data", "Spawner Context", context.PrimaryData, context.PrimaryData, isReadOnly: true));
+            }
         }
 
         return fields;
@@ -456,6 +572,11 @@ internal sealed class ZaPlacementWorkflowService
             return fallback;
         }
 
+        if (!string.IsNullOrWhiteSpace(context.DisplayMap))
+        {
+            return context.DisplayMap;
+        }
+
         return ZaLumioseLocationLabels.FormatPlacementMap(
             fallback,
             context.ZoneId,
@@ -473,6 +594,11 @@ internal sealed class ZaPlacementWorkflowService
         ZaPlacementSpawnerContext? context,
         ZaTextLabelLookup labels)
     {
+        if (!string.IsNullOrWhiteSpace(context?.DisplayLabel))
+        {
+            return context.DisplayLabel;
+        }
+
         if (context is not null)
         {
             var locationKey = ZaLumioseLocationLabels.CreateLocationKey(
@@ -510,6 +636,234 @@ internal sealed class ZaPlacementWorkflowService
         return tags.Length == 0 ? string.Empty : string.Join(", ", tags);
     }
 
+    private static ZaPlacementSpawnerContext? CreateFallbackItemBallContext(ZaSpawnerTransformRow row)
+    {
+        var label = FormatItemBallObjectLabel(row.Name, primaryData: string.Empty);
+        var map = FormatItemBallObjectMap(row.Name);
+        if (string.Equals(label, ZaLumioseLocationLabels.FormatRawObjectName(row.Name), StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(map))
+        {
+            return null;
+        }
+
+        return new ZaPlacementSpawnerContext(
+            row.Name,
+            row.GroupIndex,
+            row.RowIndex,
+            CreateScenePath: string.Empty,
+            DungeonName: string.Empty,
+            BattleAreaId: string.Empty,
+            ZoneId: string.Empty,
+            VariationId: string.Empty,
+            MinCount: 0,
+            MaxCount: 0,
+            LocationKey: TryParseItemBallObjectName(row.Name, out var locationKey, out _) ? locationKey : string.Empty,
+            "spawner.itemTables",
+            "Item Tables",
+            0,
+            PrimaryData: string.Empty,
+            DisplayLabel: label,
+            DisplayMap: string.IsNullOrWhiteSpace(map) ? "Item Ball Spawners" : map,
+            Tags: string.Empty);
+    }
+
+    private static string FormatItemBallTablePreview(
+        IReadOnlyList<string> tableIds,
+        ZaTextLabelLookup labels)
+    {
+        var itemNames = tableIds
+            .Select(ParseItemBallTableItemId)
+            .Where(itemId => itemId > 0)
+            .Select(labels.Item)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (itemNames.Length > 0)
+        {
+            return itemNames.Length == 1
+                ? itemNames[0]
+                : $"{itemNames[0]} + {(itemNames.Length - 1).ToString(CultureInfo.InvariantCulture)} more";
+        }
+
+        if (tableIds.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return tableIds.Count == 1
+            ? tableIds[0]
+            : $"{tableIds[0]} + {(tableIds.Count - 1).ToString(CultureInfo.InvariantCulture)} more";
+    }
+
+    private static int ParseItemBallTableItemId(string tableId)
+    {
+        const string prefix = "field_item_ball_";
+        return tableId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(tableId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+            ? itemId
+            : 0;
+    }
+
+    private static string FormatItemBallObjectMap(string objectName)
+    {
+        return TryParseItemBallObjectName(objectName, out var locationKey, out _)
+            ? FormatItemBallLocation(locationKey)
+            : string.Empty;
+    }
+
+    private static string FormatItemBallObjectLabel(string objectName, string primaryData)
+    {
+        var label = TryParseItemBallObjectName(objectName, out var locationKey, out var itemBallNumber)
+            ? string.IsNullOrWhiteSpace(itemBallNumber)
+                ? $"{FormatItemBallLocation(locationKey)} Item Ball"
+                : $"{FormatItemBallLocation(locationKey)} Item Ball {itemBallNumber}"
+            : ZaLumioseLocationLabels.FormatRawObjectName(objectName);
+
+        return string.IsNullOrWhiteSpace(primaryData)
+            ? label
+            : $"{label}: {primaryData}";
+    }
+
+    private static string FormatItemBallLocation(string locationKey)
+    {
+        if (ZaLumioseLocationLabels.FormatDistrictSector(locationKey) is { Length: > 0 } districtSector)
+        {
+            return districtSector;
+        }
+
+        if (locationKey.StartsWith("d", StringComparison.OrdinalIgnoreCase))
+        {
+            return ZaLumioseLocationLabels.FormatLocation(locationKey);
+        }
+
+        var tokens = locationKey.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length >= 2
+            && string.Equals(tokens[0], "last", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(tokens[1], "battle", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Final Battle Area";
+        }
+
+        if (tokens.Length > 0 && tokens[0].StartsWith("t", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = new List<string>();
+            for (var index = 1; index < tokens.Length; index++)
+            {
+                var token = tokens[index];
+                if (token.StartsWith("i", StringComparison.OrdinalIgnoreCase) && token.Length > 1)
+                {
+                    parts.Add($"Interior Area {token[1..].ToUpperInvariant()}");
+                    continue;
+                }
+
+                parts.Add(token.All(char.IsDigit)
+                    ? $"Room {int.Parse(token, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture)}"
+                    : token.ToUpperInvariant());
+            }
+
+            var phase = FormatItemBallScenePhase(tokens[0]);
+            return parts.Count == 0
+                ? phase
+                : $"{phase}, {string.Join(", ", parts)}";
+        }
+
+        return ZaLumioseLocationLabels.FormatRawObjectName(locationKey);
+    }
+
+    private static string FormatItemBallScenePhase(string token)
+    {
+        if (token.Length > 1
+            && token[0] is 't' or 'T'
+            && int.TryParse(token[1..], NumberStyles.None, CultureInfo.InvariantCulture, out var phase))
+        {
+            return phase <= 1
+                ? "Lumiose City"
+                : $"Lumiose City Phase {phase.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return ZaLumioseLocationLabels.FormatRawObjectName(token);
+    }
+
+    private static bool TryParseItemBallObjectName(
+        string objectName,
+        out string locationKey,
+        out string itemBallNumber)
+    {
+        locationKey = string.Empty;
+        itemBallNumber = string.Empty;
+        var trimmed = objectName.Trim();
+        if (trimmed.StartsWith("id_", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["id_".Length..];
+        }
+
+        var tokens = trimmed.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length < 2)
+        {
+            return false;
+        }
+
+        if (string.Equals(tokens[0], "itb", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryParseItbObjectTokens(tokens, out locationKey, out itemBallNumber);
+        }
+
+        if (string.Equals(tokens[0], "itd", StringComparison.OrdinalIgnoreCase))
+        {
+            return TryParseItdObjectTokens(tokens, out locationKey, out itemBallNumber);
+        }
+
+        return false;
+    }
+
+    private static bool TryParseItbObjectTokens(
+        IReadOnlyList<string> tokens,
+        out string locationKey,
+        out string itemBallNumber)
+    {
+        locationKey = string.Empty;
+        itemBallNumber = string.Empty;
+        if (tokens.Count < 2)
+        {
+            return false;
+        }
+
+        var locationTokens = tokens.Skip(1).ToArray();
+        if (locationTokens.Length > 1 && locationTokens[^1].All(char.IsDigit))
+        {
+            itemBallNumber = locationTokens[^1];
+            locationTokens = locationTokens[..^1];
+        }
+
+        if (locationTokens.Length == 0)
+        {
+            return false;
+        }
+
+        locationKey = string.Join('_', locationTokens);
+        return true;
+    }
+
+    private static bool TryParseItdObjectTokens(
+        IReadOnlyList<string> tokens,
+        out string locationKey,
+        out string itemBallNumber)
+    {
+        locationKey = string.Empty;
+        itemBallNumber = string.Empty;
+        if (tokens.Count < 3)
+        {
+            return false;
+        }
+
+        locationKey = string.Join('_', tokens.Skip(1).Take(2));
+        if (tokens.Count > 3 && tokens[3].All(char.IsDigit))
+        {
+            itemBallNumber = tokens[3];
+        }
+
+        return true;
+    }
+
     private static string EmptyAsNone(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? "None" : value;
@@ -526,7 +880,13 @@ internal sealed class ZaPlacementWorkflowService
         string VariationId,
         int MinCount,
         int MaxCount,
-        int EncounterRowCount,
+        string LocationKey,
+        string CountField,
+        string CountLabel,
+        int CountValue,
+        string PrimaryData,
+        string DisplayLabel,
+        string DisplayMap,
         string Tags);
 
     private sealed record CategorySeed(
