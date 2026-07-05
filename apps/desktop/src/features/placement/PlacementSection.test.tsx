@@ -81,6 +81,89 @@ describe('PlacementSection', () => {
     expect(screen.queryByLabelText('Item 1')).not.toBeInTheDocument();
   });
 
+  it('groups Z-A Pokemon spawner placement rows and switches grouped transforms', async () => {
+    const user = userEvent.setup();
+    const loadPlacementWorkflow = vi.fn(async () => ({ workflow: createZaPlacementWorkflow() }));
+
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        selectedGame: 'za'
+      }
+    }));
+
+    const { container } = render(
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow }, true)} />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(await screen.findByRole('button', { name: 'Placement' }));
+
+    expect(container.querySelector('.za-placement-section')).not.toBeNull();
+    expect(container.querySelector('.swsh-placement-section')).toBeNull();
+
+    const table = await screen.findByRole('table', { name: 'Placed objects' });
+    expect(within(table).getAllByRole('row')).toHaveLength(3);
+    expect(within(table).getByText('Boss Battle Beedrill (15)')).toBeInTheDocument();
+    expect(within(table).getByText('Boss Battle Banette (354)')).toBeInTheDocument();
+    expect(
+      within(table).queryByText('Boss Battle Beedrill (15) Phase 1 Follower 1')
+    ).not.toBeInTheDocument();
+    expect(
+      within(table).getByText('Phase 1 Follower 1, Simulation Follower 1, Rush Follower 1')
+    ).toBeInTheDocument();
+    expect(within(table).getByText('3 positions')).toBeInTheDocument();
+
+    const groupBrowser = await screen.findByRole('region', {
+      name: 'Z-A placement spawner group'
+    });
+    expect(within(groupBrowser).getByText('3 transforms')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Phase 1 Follower 1' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+
+    await user.click(screen.getByRole('tab', { name: 'Simulation Follower 1' }));
+
+    expect(screen.getByRole('tab', { name: 'Simulation Follower 1' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    const inspector = screen.getByLabelText('Selected placement object provenance');
+    expect(
+      within(inspector).getAllByText('Boss Battle Beedrill (15) Simulation Follower 1').length
+    ).toBeGreaterThan(0);
+    expect(
+      within(inspector).getByText('Pokemon')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /Item Ball Spawners/ }));
+
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
+    expect(within(table).getByText('Bleu District, Sector 1')).toBeInTheDocument();
+    expect(within(table).getByText('Item Ball 01: Potion, Item Ball 02: Revive')).toBeInTheDocument();
+    expect(within(table).getByText('2 positions')).toBeInTheDocument();
+    expect(within(table).queryByText('itb_a0201_01')).not.toBeInTheDocument();
+
+    const itemBallBrowser = await screen.findByRole('region', {
+      name: 'Z-A placement spawner group'
+    });
+    expect(within(itemBallBrowser).getByText('2 transforms')).toBeInTheDocument();
+    expect(within(itemBallBrowser).getByRole('tab', { name: /Item Ball 01: Potion/ }))
+      .toHaveAttribute('aria-selected', 'true');
+
+    await user.click(within(itemBallBrowser).getByRole('tab', { name: /Item Ball 02: Revive/ }));
+
+    expect(within(itemBallBrowser).getByRole('tab', { name: /Item Ball 02: Revive/ }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Selected placement object provenance'))
+      .toHaveTextContent('Bleu District, Sector 1 Item Ball 02: Revive');
+  });
+
   it('keeps SwSh legacy placement rows out of S/V category metadata', () => {
     const workflow = createSwShPlacementWorkflowWithStaleStructuredCategories();
 
@@ -342,6 +425,321 @@ describe('PlacementSection', () => {
     );
   });
 });
+
+function createZaPlacementWorkflow(): PlacementWorkflow {
+  return {
+    categories: [
+      {
+        description: 'Pokemon spawner transform rows joined to Pokemon spawner table context.',
+        id: 'pokemonSpawners',
+        label: 'Pokemon Spawners',
+        objectCount: 4
+      },
+      {
+        description: 'Item ball spawner transform rows joined to item table context.',
+        id: 'itemBallSpawners',
+        label: 'Item Ball Spawners',
+        objectCount: 2
+      }
+    ],
+    diagnostics: [],
+    editableFields: [
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        field: 'point.positionX',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position X',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        options: [],
+        valueKind: 'number'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        field: 'point.rotationYaw',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Rotation Yaw',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        options: [],
+        valueKind: 'number'
+      }
+    ],
+    objects: [
+      createZaPlacementObject(
+        0,
+        'Boss Battle Beedrill (15) Phase 1 Follower 1',
+        'Boss Battle Beedrill (15) Phase 1',
+        'spn_boss_0015_01_follower1',
+        10
+      ),
+      createZaPlacementObject(
+        1,
+        'Boss Battle Beedrill (15) Simulation Follower 1',
+        'Boss Battle Beedrill (15) Simulation',
+        'spn_boss_0015_sim_follower1',
+        12
+      ),
+      createZaPlacementObject(
+        2,
+        'Boss Battle Beedrill (15) Rush Follower 1',
+        'Boss Battle Beedrill (15) Rush',
+        'spn_boss_0015_rus_follower1',
+        14
+      ),
+      createZaPlacementObject(
+        3,
+        'Boss Battle Banette (354) Phase 1 Follower 1',
+        'Boss Battle Banette (354) Phase 1',
+        'spn_boss_0354_01_follower1',
+        20
+      ),
+      createZaItemBallPlacementObject(
+        4,
+        'Bleu District, Sector 1 Item Ball 01: Potion',
+        'Bleu District, Sector 1',
+        'itb_a0201_01',
+        'Potion',
+        30
+      ),
+      createZaItemBallPlacementObject(
+        5,
+        'Bleu District, Sector 1 Item Ball 02: Revive',
+        'Bleu District, Sector 1',
+        'itb_a0201_02',
+        'Revive',
+        32
+      )
+    ],
+    stats: {
+      sourceFileCount: 2,
+      totalAreaCount: 2,
+      totalObjectCount: 6
+    },
+    summary: {
+      availability: 'available',
+      description: 'Z-A placement test workflow.',
+      diagnostics: [],
+      id: 'placement',
+      label: 'Placement'
+    }
+  };
+}
+
+function createZaItemBallPlacementObject(
+  index: number,
+  label: string,
+  map: string,
+  scriptId: string,
+  itemName: string,
+  x: number
+): PlacementWorkflow['objects'][number] {
+  const sourceFile = 'romfs/world/ik_data/field/item_ball/item_ball_spawner_/item_ball_spawner_transform_array.bin';
+  const position = x.toString();
+  return {
+    archiveMember: sourceFile,
+    categoryId: 'itemBallSpawners',
+    categoryLabel: 'Item Ball Spawners',
+    chance: null,
+    chanceIndex: null,
+    fields: [
+      {
+        description: 'Scene transform row name.',
+        displayValue: scriptId,
+        field: 'point.name',
+        group: 'Identity',
+        isReadOnly: true,
+        label: 'Object Name',
+        maximumValue: 0,
+        minimumValue: 0,
+        value: scriptId,
+        valueKind: 'text'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        displayValue: position,
+        field: 'point.positionX',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position X',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        value: position,
+        valueKind: 'number'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        displayValue: '0',
+        field: 'point.positionY',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position Y',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        value: '0',
+        valueKind: 'number'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        displayValue: '6',
+        field: 'point.positionZ',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position Z',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        value: '6',
+        valueKind: 'number'
+      },
+      {
+        description: 'Resolved item ball spawner location.',
+        displayValue: map,
+        field: 'spawner.location',
+        group: 'Spawner Context',
+        isReadOnly: true,
+        label: 'Location',
+        maximumValue: 0,
+        minimumValue: 0,
+        value: map,
+        valueKind: 'text'
+      },
+      {
+        description: 'Resolved item table contents.',
+        displayValue: itemName,
+        field: 'spawner.primaryData',
+        group: 'Spawner Context',
+        isReadOnly: true,
+        label: 'Primary Data',
+        maximumValue: 0,
+        minimumValue: 0,
+        value: itemName,
+        valueKind: 'text'
+      }
+    ],
+    itemHash: scriptId,
+    itemId: null,
+    itemName,
+    label,
+    map,
+    objectId: `itemBallSpawners|${sourceFile}|0|${index}`,
+    objectIndex: index,
+    objectType: 'Item Ball Spawner',
+    provenance: {
+      fileState: 'baseOnly',
+      sourceFile,
+      sourceLayer: 'base'
+    },
+    quantity: 0,
+    rotationY: 90,
+    scriptId,
+    x,
+    y: 0,
+    zoneIndex: 0,
+    z: 6
+  };
+}
+
+function createZaPlacementObject(
+  index: number,
+  label: string,
+  map: string,
+  scriptId: string,
+  x: number
+): PlacementWorkflow['objects'][number] {
+  const sourceFile = 'romfs/world/ik_data/field/pokemon_spawner/pokemon_spawner_point/pokemon_spawner_point_array.bin';
+  const position = x.toString();
+  return {
+    archiveMember: sourceFile,
+    categoryId: 'pokemonSpawners',
+    categoryLabel: 'Pokemon Spawners',
+    chance: null,
+    chanceIndex: null,
+    fields: [
+      {
+        description: 'Scene transform row name.',
+        displayValue: scriptId,
+        field: 'point.name',
+        group: 'Identity',
+        isReadOnly: true,
+        label: 'Object Name',
+        maximumValue: 0,
+        minimumValue: 0,
+        value: scriptId,
+        valueKind: 'text'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        displayValue: position,
+        field: 'point.positionX',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position X',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        value: position,
+        valueKind: 'number'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        displayValue: '0',
+        field: 'point.positionY',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position Y',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        value: '0',
+        valueKind: 'number'
+      },
+      {
+        description: 'Spawner transform coordinate or rotation value.',
+        displayValue: '5',
+        field: 'point.positionZ',
+        group: 'Transform',
+        isReadOnly: false,
+        label: 'Position Z',
+        maximumValue: 1000000,
+        minimumValue: -1000000,
+        value: '5',
+        valueKind: 'number'
+      },
+      {
+        description: 'Resolved Pokemon spawner id.',
+        displayValue: scriptId,
+        field: 'spawner.id',
+        group: 'Spawner Context',
+        isReadOnly: true,
+        label: 'Spawner ID',
+        maximumValue: 0,
+        minimumValue: 0,
+        value: scriptId,
+        valueKind: 'text'
+      }
+    ],
+    itemHash: scriptId,
+    itemId: null,
+    itemName: scriptId,
+    label,
+    map,
+    objectId: `pokemonSpawners|${sourceFile}|0|${index}`,
+    objectIndex: index,
+    objectType: 'Pokemon Spawner',
+    provenance: {
+      fileState: 'baseOnly',
+      sourceFile,
+      sourceLayer: 'base'
+    },
+    quantity: 0,
+    rotationY: 90,
+    scriptId,
+    x,
+    y: 0,
+    zoneIndex: 0,
+    z: 5
+  };
+}
 
 function createSvPlacementWorkflow(): PlacementWorkflow {
   return {

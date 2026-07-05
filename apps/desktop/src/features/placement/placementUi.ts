@@ -28,6 +28,21 @@ export type PlacementFieldControl = {
   valueKind: string;
 };
 
+export type PlacementObjectGroup = {
+  key: string;
+  label: string;
+  map: string;
+  objects: PlacedObjectRecord[];
+  position: string;
+  preview: string;
+};
+
+export type PlacementObjectGroupTab = {
+  label: string;
+  objectId: string;
+  title: string;
+};
+
 export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   if (!workflow) return [];
   const hasStructuredCategoryIds = workflow.objects.some((object) => object.categoryId?.trim());
@@ -136,6 +151,14 @@ export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
     fields.find((field) => field.field.endsWith('.Species'));
   if (species) return species.displayValue || species.value;
 
+  if (getPlacementCategoryId(object) === 'pokemonSpawners') {
+    return object.label;
+  }
+
+  if (getPlacementCategoryId(object) === 'itemBallSpawners') {
+    return object.itemName || object.label;
+  }
+
   const table =
     fields.find((field) => field.field.endsWith('.tableKey')) ??
     fields.find((field) => field.field.endsWith('.label') && hasUsefulPlacementDisplay(field)) ??
@@ -179,7 +202,61 @@ export function formatPlacementCoordinates(object: PlacedObjectRecord) {
 
 export function isPokemonPlacementObject(object: PlacedObjectRecord) {
   const categoryId = getPlacementCategoryId(object);
-  return categoryId === 'fixedSymbols' || categoryId === 'coinSymbols' || categoryId === 'pokemonEncounters';
+  return categoryId === 'fixedSymbols' ||
+    categoryId === 'coinSymbols' ||
+    categoryId === 'pokemonEncounters' ||
+    categoryId === 'pokemonSpawners';
+}
+
+export function buildPlacementObjectGroups(
+  objects: PlacedObjectRecord[],
+  options: { groupItemBallSpawners?: boolean; groupPokemonSpawners?: boolean } = {}
+): PlacementObjectGroup[] {
+  const groups = new Map<string, { label: string; map: string; objects: PlacedObjectRecord[] }>();
+
+  for (const object of objects) {
+    const groupInfo =
+      options.groupPokemonSpawners && isZaPokemonSpawnerPlacementObject(object)
+        ? getZaPokemonSpawnerGroupInfo(object)
+        : options.groupItemBallSpawners && isZaItemBallPlacementObject(object)
+          ? getZaItemBallGroupInfo(object)
+          : null;
+    const key = groupInfo?.key ?? `object:${object.objectId}`;
+    const group = groups.get(key);
+    if (group) {
+      group.objects.push(object);
+      continue;
+    }
+
+    groups.set(key, {
+      label: groupInfo?.label ?? object.label,
+      map: groupInfo?.map ?? object.map,
+      objects: [object]
+    });
+  }
+
+  return [...groups.entries()].map(([key, group]) => {
+    const objects = [...group.objects].sort(comparePlacementObjectsForGroup);
+    return {
+      key,
+      label: group.label,
+      map: group.map,
+      objects,
+      position: formatPlacementGroupPosition(objects),
+      preview: formatPlacementGroupPreview(group.label, objects)
+    };
+  });
+}
+
+export function getPlacementObjectGroupTabs(group: PlacementObjectGroup): PlacementObjectGroupTab[] {
+  return group.objects.map((object, index) => {
+    const label = formatPlacementObjectTabLabel(group, object, index);
+    return {
+      label,
+      objectId: object.objectId,
+      title: `${object.label} - ${formatPlacementCoordinates(object)}`
+    };
+  });
 }
 
 function getPlacementCategoryLabel(object: PlacedObjectRecord, categoryId: string) {
@@ -229,4 +306,183 @@ function hasUsefulPlacementDisplay(field: { displayValue: string; value: string 
     value !== 'None' &&
     value !== 'None (empty hash)' &&
     value !== '0xCBF29CE484222645';
+}
+
+function isZaPokemonSpawnerPlacementObject(object: PlacedObjectRecord) {
+  return getPlacementCategoryId(object) === 'pokemonSpawners' ||
+    object.objectType.toLocaleLowerCase().includes('pokemon spawner');
+}
+
+export function isZaItemBallPlacementObject(object: PlacedObjectRecord) {
+  return getPlacementCategoryId(object) === 'itemBallSpawners' ||
+    object.objectType.toLocaleLowerCase().includes('item ball spawner');
+}
+
+function getZaPokemonSpawnerGroupInfo(object: PlacedObjectRecord) {
+  const bossLabel = getZaBossPlacementBaseLabel(object.label) ??
+    getZaBossPlacementBaseLabel(object.map);
+  if (bossLabel) {
+    return {
+      key: `za:pokemon-spawner:boss:${normalizePlacementGroupKey(bossLabel)}`,
+      label: bossLabel,
+      map: 'Boss Battles'
+    };
+  }
+
+  const map = object.map.trim();
+  if (map && map !== object.categoryLabel) {
+    return {
+      key: `za:pokemon-spawner:map:${normalizePlacementGroupKey(map)}`,
+      label: map,
+      map
+    };
+  }
+
+  const label = object.label.trim() || object.objectType;
+  return {
+    key: `za:pokemon-spawner:object:${normalizePlacementGroupKey(label)}`,
+    label,
+    map: object.categoryLabel || object.objectType
+  };
+}
+
+function getZaItemBallGroupInfo(object: PlacedObjectRecord) {
+  const map = object.map.trim();
+  if (map && map !== object.categoryLabel) {
+    return {
+      key: `za:item-ball-spawner:map:${normalizePlacementGroupKey(map)}`,
+      label: map,
+      map: object.categoryLabel || object.objectType
+    };
+  }
+
+  const label = getZaItemBallBaseLabel(object.label) ?? object.objectType;
+  return {
+    key: `za:item-ball-spawner:object:${normalizePlacementGroupKey(label)}`,
+    label,
+    map: object.categoryLabel || object.objectType
+  };
+}
+
+function getZaItemBallBaseLabel(label: string) {
+  const trimmed = label.trim();
+  const match = trimmed.match(/^(.*?)(?:\s+Item Ball(?:\s+\d+)?)(?::.*)?$/i);
+  return match?.[1]?.trim() || null;
+}
+
+function getZaBossPlacementBaseLabel(label: string) {
+  const trimmed = label.trim();
+  if (!/^Boss Battle\b/i.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed
+    .replace(
+      /\s+(?:Phase\s+\d+|Rematch|Simulation(?:\s+\d+)?|Rush(?:\s+\d+)?|Dimension|Variant\s+[A-Z]|Y|Z)(?:\b.*)?$/i,
+      ''
+    )
+    .trim();
+}
+
+function comparePlacementObjectsForGroup(left: PlacedObjectRecord, right: PlacedObjectRecord) {
+  const leftRank = getPlacementObjectSortRank(left.label);
+  const rightRank = getPlacementObjectSortRank(right.label);
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+
+  return left.label.localeCompare(right.label) ||
+    left.objectIndex - right.objectIndex ||
+    left.objectId.localeCompare(right.objectId);
+}
+
+function getPlacementObjectSortRank(label: string) {
+  if (/\bPhase\s+\d+\b/i.test(label)) {
+    return 10 + (parseFirstInteger(label) ?? 0);
+  }
+
+  if (/\bRematch\b/i.test(label)) {
+    return 30;
+  }
+
+  if (/\bSimulation(?:\s+\d+)?\b/i.test(label)) {
+    return 40 + (parseFirstInteger(label) ?? 0);
+  }
+
+  if (/\bRush(?:\s+\d+)?\b/i.test(label)) {
+    return 50 + (parseFirstInteger(label) ?? 0);
+  }
+
+  if (/\bAlpha\b/i.test(label)) {
+    return 60;
+  }
+
+  return parseFirstInteger(label) ?? 1000;
+}
+
+function formatPlacementGroupPreview(groupLabel: string, objects: PlacedObjectRecord[]) {
+  if (objects.length === 1) {
+    return formatPlacementPrimaryData(objects[0]!);
+  }
+
+  const tabs = objects
+    .map((object, index) => formatPlacementObjectTabLabel({ label: groupLabel, map: '' }, object, index))
+    .filter((label, index, labels) => labels.indexOf(label) === index);
+  const preview = tabs.slice(0, 3).join(', ');
+  const additionalCount = tabs.length - 3;
+  return additionalCount > 0 ? `${preview} + ${additionalCount} more` : preview;
+}
+
+function formatPlacementGroupPosition(objects: PlacedObjectRecord[]) {
+  return objects.length === 1
+    ? formatPlacementCoordinates(objects[0]!)
+    : `${objects.length} positions`;
+}
+
+function formatPlacementObjectTabLabel(
+  group: Pick<PlacementObjectGroup, 'label' | 'map'>,
+  object: PlacedObjectRecord,
+  index: number
+) {
+  const strippedFromLabel = stripPlacementGroupPrefix(object.label, group.label);
+  const strippedFromMap = stripPlacementGroupPrefix(strippedFromLabel || object.label, group.map);
+  const label = strippedFromMap || strippedFromLabel || object.label;
+  return label === group.label || !label.trim()
+    ? `Transform ${index + 1}`
+    : label.trim();
+}
+
+function stripPlacementGroupPrefix(label: string, prefix: string) {
+  const trimmed = label.trim();
+  const normalizedPrefix = prefix.trim();
+  if (!normalizedPrefix) {
+    return trimmed;
+  }
+
+  if (trimmed === normalizedPrefix) {
+    return '';
+  }
+
+  if (trimmed.startsWith(`${normalizedPrefix}, `)) {
+    return trimmed.slice(normalizedPrefix.length + 2).trim();
+  }
+
+  if (trimmed.startsWith(`${normalizedPrefix} - `)) {
+    return trimmed.slice(normalizedPrefix.length + 3).trim();
+  }
+
+  if (trimmed.startsWith(`${normalizedPrefix} `)) {
+    return trimmed.slice(normalizedPrefix.length + 1).trim();
+  }
+
+  return trimmed;
+}
+
+function parseFirstInteger(label: string) {
+  const match = label.match(/\d+/);
+  return match ? Number.parseInt(match[0]!, 10) : null;
+}
+
+function normalizePlacementGroupKey(label: string) {
+  return label.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }

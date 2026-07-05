@@ -34,6 +34,12 @@ using KM.ZA.Data;
 using KM.ZA.Placement;
 using KM.ZA.Workflows;
 using Xunit;
+using ItemBallAppearanceInfo = KM.Formats.ZA.Generated.Field.ItemBall.AppearanceInfo;
+using ItemBallAppearanceSpawnerObjectInfo = KM.Formats.ZA.Generated.Field.ItemBall.AppearanceSpawnerObjectInfo;
+using ItemBallSpawnerData = KM.Formats.ZA.Generated.Field.ItemBall.ItemBallSpawnerData;
+using ItemBallSpawnerDataDB = KM.Formats.ZA.Generated.Field.ItemBall.ItemBallSpawnerDataDB;
+using ItemBallSpawnerDataDBArray = KM.Formats.ZA.Generated.Field.ItemBall.ItemBallSpawnerDataDBArray;
+using ItemBallTableInfo = KM.Formats.ZA.Generated.Field.ItemBall.TableInfo;
 
 namespace KM.Integration.Tests.Bridge;
 
@@ -506,7 +512,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(trainers);
         var trainer = Assert.Single(trainers.Payload!.Workflow.Trainers);
-        Assert.Equal("Hyperspace Trainer Rank 2 Water 5", trainer.Name);
+        Assert.Equal("Dimension Rank 2 Water 5", trainer.Name);
         Assert.Equal(0, trainer.TrainerClassId);
         Assert.Equal("Hyperspace Trainer", trainer.TrainerClass);
     }
@@ -1955,9 +1961,9 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = load.Payload!.Workflow;
         Assert.Equal("Placement", workflow.Summary.Label);
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
-        Assert.Equal(2, workflow.Objects.Count);
+        Assert.Equal(3, workflow.Objects.Count);
         Assert.Contains(workflow.Categories!, category => category.Id == "pokemonSpawners" && category.ObjectCount == 1);
-        Assert.Contains(workflow.Categories!, category => category.Id == "itemBallSpawners" && category.ObjectCount == 1);
+        Assert.Contains(workflow.Categories!, category => category.Id == "itemBallSpawners" && category.ObjectCount == 2);
         Assert.Contains(workflow.EditableFields, field => field.Field == "point.positionX" && field.Label == "Position X");
         Assert.Contains(workflow.EditableFields, field => field.Field == "point.attachTransformEnable" && field.Label == "Attach Transform");
 
@@ -1974,6 +1980,29 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.sector" && field.DisplayValue == "Sector 2");
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "za_wild_spawner_001");
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.encounterRows" && field.DisplayValue == "1");
+
+        var itemBallSpawner = workflow.Objects.Single(placedObject => placedObject.ItemHash == "itb_a0201_01");
+        Assert.Equal("itemBallSpawners", itemBallSpawner.CategoryId);
+        Assert.Equal("Item Ball Spawner", itemBallSpawner.ObjectType);
+        Assert.Equal("Bleu District, Sector 1 Item Ball 01: Potion", itemBallSpawner.Label);
+        Assert.Equal("Bleu District, Sector 1", itemBallSpawner.Map);
+        Assert.Equal("Potion", itemBallSpawner.ItemName);
+        Assert.Contains(itemBallSpawner.Fields!, field => field.Field == "spawner.location" && field.DisplayValue == "Bleu District, Sector 1");
+        Assert.Contains(itemBallSpawner.Fields!, field => field.Field == "spawner.district" && field.DisplayValue == "Bleu District");
+        Assert.Contains(itemBallSpawner.Fields!, field => field.Field == "spawner.sector" && field.DisplayValue == "Sector 1");
+        Assert.Contains(itemBallSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "id_itb_a0201_01");
+        Assert.Contains(itemBallSpawner.Fields!, field => field.Field == "spawner.itemTables" && field.DisplayValue == "1");
+        Assert.Contains(itemBallSpawner.Fields!, field => field.Field == "spawner.primaryData" && field.DisplayValue == "Potion");
+
+        var interiorItemBallSpawner = workflow.Objects.Single(placedObject => placedObject.ItemHash == "itb_t1_i004a_01");
+        Assert.Equal("Lumiose City, Interior Area 004A Item Ball 01: Rare Candy", interiorItemBallSpawner.Label);
+        Assert.Equal("Lumiose City, Interior Area 004A", interiorItemBallSpawner.Map);
+        Assert.Equal("Rare Candy", interiorItemBallSpawner.ItemName);
+        Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.location" && field.DisplayValue == "Lumiose City, Interior Area 004A");
+        Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.district" && field.DisplayValue == "None");
+        Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.sector" && field.DisplayValue == "None");
+        Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "id_itb_t1_i004a_01");
+        Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.primaryData" && field.DisplayValue == "Rare Candy");
 
         var update = Dispatch<UpdatePlacementObjectFieldsResponse>(
             dispatcher,
@@ -2500,6 +2529,10 @@ public sealed class PokemonLegendsZABridgeTests
     private static void WritePlacementFixture(TemporaryBridgeProject temp)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemBallSpawnerDataArray, CreateItemBallSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(50, (17, "Potion"), (50, "Rare Candy")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonSpawnerTransformArray,
             CreateSpawnerTransformArray(
@@ -2513,15 +2546,83 @@ public sealed class PokemonLegendsZABridgeTests
                 attach: true));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemBallSpawnerTransformArray,
-            CreateSpawnerTransformArray(
-                "itemball_spawn_001",
-                positionX: 4,
-                positionY: 5,
-                positionZ: 6,
-                rotationX: 10,
-                rotationY: 90,
-                rotationZ: 20,
-                attach: true));
+            CreateItemBallSpawnerTransformArray());
+    }
+
+    private static byte[] CreateItemBallSpawnerDataArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var districtSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itb_a0201_01",
+            "itb_a0201_01",
+            "field_item_ball_0017",
+            "t1_item_ball_object");
+        var interiorSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itb_t1_i004a_01",
+            "itb_t1_i004a_01",
+            "field_item_ball_0050",
+            "./");
+        var rootVector = ItemBallSpawnerDataDB.CreateRootVector(builder, [districtSpawner, interiorSpawner]);
+        var db = ItemBallSpawnerDataDB.CreateItemBallSpawnerDataDB(builder, rootVector);
+        var valuesVector = ItemBallSpawnerDataDBArray.CreateValuesVector(builder, [db]);
+        var root = ItemBallSpawnerDataDBArray.CreateItemBallSpawnerDataDBArray(builder, valuesVector);
+        ItemBallSpawnerDataDBArray.FinishItemBallSpawnerDataDBArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<ItemBallSpawnerData> CreateItemBallSpawnerData(
+        FlatBufferBuilder builder,
+        string spawnerId,
+        string objectName,
+        string tableId,
+        string scenePath)
+    {
+        var tableIdOffset = builder.CreateString(tableId);
+        var table = ItemBallTableInfo.CreateTableInfo(builder, tableIdOffset);
+        var tables = ItemBallSpawnerData.CreateTableInfoListVector(builder, [table]);
+        var objectNameOffset = builder.CreateString(objectName);
+        var scenePathOffset = builder.CreateString(scenePath);
+        var appearanceInfo = ItemBallAppearanceInfo.CreateAppearanceInfo(builder, minCount: 1, maxCount: 1);
+        var appearance = ItemBallAppearanceSpawnerObjectInfo.CreateAppearanceSpawnerObjectInfo(
+            builder,
+            objectNameOffset,
+            scenePathOffset,
+            appearanceInfoOffset: appearanceInfo);
+        var appearances = ItemBallSpawnerData.CreateAppearanceSpawnerObjectInfoListVector(builder, [appearance]);
+        var spawnerIdOffset = builder.CreateString(spawnerId);
+        return ItemBallSpawnerData.CreateItemBallSpawnerData(
+            builder,
+            spawnerIdOffset,
+            tables,
+            appearances);
+    }
+
+    private static byte[] CreateItemBallSpawnerTransformArray()
+    {
+        var document = ZaSpawnerTransformDocument.Create(
+        [
+            new ZaSpawnerTransformGroup(
+                0,
+                [
+                    new ZaSpawnerTransformRow(
+                        0,
+                        0,
+                        "itb_a0201_01",
+                        new ZaSpawnerTransformVector(4, 5, 6),
+                        new ZaSpawnerTransformVector(10, 90, 20),
+                        true),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        1,
+                        "itb_t1_i004a_01",
+                        new ZaSpawnerTransformVector(12, 0, -38),
+                        new ZaSpawnerTransformVector(0, 180, 0),
+                        false),
+                ]),
+        ]);
+        return document.Write();
     }
 
     private static byte[] CreatePokemonDataArray(bool signedDefaults = false, bool gameDefaultGift = false)

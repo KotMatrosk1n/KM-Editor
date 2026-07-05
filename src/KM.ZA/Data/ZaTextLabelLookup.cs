@@ -138,7 +138,7 @@ internal sealed class ZaTextLabelLookup
                     : GetKeyed(trainerNames, trainerNameIndices, $"TRNAME_{key}"))
             ?? FirstUsable(GetIndexed(trainerNames, trainerId))
             ?? (!string.IsNullOrWhiteSpace(key) && !key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
-                ? ZaLabels.FormatTrainerIdForLookup(key, trainerClass)
+                ? ZaLabels.FormatTrainerIdForLookup(key)
                 : $"Trainer {trainerId}");
     }
 

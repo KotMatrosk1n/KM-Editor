@@ -3125,6 +3125,109 @@ describe('App', () => {
     ).toBeInTheDocument();
   }, 10000);
 
+  it('groups Z-A generated trainer rows without repeating the trainer class in fallback names', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const trainersResponse = await baseBridge.loadTrainersWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'za'
+      }
+    });
+    const baseTrainer = trainersResponse.workflow.trainers[0]!;
+    const workflow: TrainersWorkflow = {
+      ...trainersResponse.workflow,
+      stats: {
+        ...trainersResponse.workflow.stats,
+        totalPokemonCount: 4,
+        totalTrainerCount: 4
+      },
+      trainers: [
+        {
+          ...baseTrainer,
+          location: 'tr_battle_main_001',
+          name: 'Rival Aria',
+          trainerClass: 'Duelist',
+          trainerId: 100
+        },
+        {
+          ...baseTrainer,
+          location: 'dim_rank_02_mizu_05',
+          name: 'Dimension Rank 2 Water 5',
+          trainerClass: 'Hyperspace Trainer',
+          trainerId: 2105
+        },
+        {
+          ...baseTrainer,
+          location: 'za_inf_strong_fire_01',
+          name: 'Infinite Z-A Battle Strong Fire 1',
+          trainerClass: 'Trainer',
+          trainerId: 2301
+        },
+        {
+          ...baseTrainer,
+          location: 'Ev_m04_02',
+          name: 'Mission 04 Step 2',
+          trainerClass: 'Trainer',
+          trainerId: 2401
+        }
+      ]
+    };
+    const user = userEvent.setup();
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        pokemonLegendsZASupportFolderPath: '',
+        saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadTrainersWorkflow: async () => ({ workflow })
+        }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
+
+    const tabs = await screen.findByRole('tablist', { name: 'Trainer categories' });
+    expect(within(tabs).getByRole('tab', { name: /All Trainers/ })).toHaveTextContent('4');
+    expect(within(tabs).getByRole('tab', { name: /Named Trainers/ })).toHaveTextContent('1');
+    expect(within(tabs).getByRole('tab', { name: /Hyperspace Trainers/ })).toHaveTextContent(
+      '1'
+    );
+    expect(within(tabs).getByRole('tab', { name: /Infinite Z-A Battles/ })).toHaveTextContent(
+      '1'
+    );
+    expect(within(tabs).getByRole('tab', { name: /Main Mission Trainers/ })).toHaveTextContent(
+      '1'
+    );
+
+    const table = screen.getByRole('table', { name: 'Trainers' });
+    expect(within(table).getByText('Dimension Rank 2 Water 5')).toBeInTheDocument();
+    expect(within(table).queryByText('Hyperspace Trainer Rank 2 Water 5')).not.toBeInTheDocument();
+
+    await user.click(within(tabs).getByRole('tab', { name: /Hyperspace Trainers/ }));
+    expect(within(table).getByText('Dimension Rank 2 Water 5')).toBeInTheDocument();
+    expect(within(table).getByText('Hyperspace Trainer')).toBeInTheDocument();
+    expect(within(table).queryByText('Rival Aria')).not.toBeInTheDocument();
+
+    await user.click(within(tabs).getByRole('tab', { name: /Named Trainers/ }));
+    expect(within(table).getByText('Rival Aria')).toBeInTheDocument();
+    expect(within(table).queryByText('Dimension Rank 2 Water 5')).not.toBeInTheDocument();
+  });
+
   it('updates trainer projected stats while EV and IV drafts change', async () => {
     const baseBridge = createMockProjectBridge({}, true);
     const trainersResponse = await baseBridge.loadTrainersWorkflow({
@@ -6798,6 +6901,7 @@ describe('App', () => {
 
     await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
     const updateDialog = screen.getByRole('dialog', { name: 'Update Available' });
+    expect(updateDialog).toHaveClass('update-prompt-panel');
     const progressBar = within(updateDialog).getByRole('progressbar', {
       name: 'Update download progress'
     });
