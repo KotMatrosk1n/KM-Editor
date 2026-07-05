@@ -1,6 +1,6 @@
 # KM Editor
 
-![Version](https://img.shields.io/badge/version-v2.1.5-blue)
+![Version](https://img.shields.io/badge/version-v2.1.6-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
 ![Built with](https://img.shields.io/badge/built%20with-.NET%2010%20%2B%20Tauri%202-512BD4)
 ![Supported Games](https://img.shields.io/badge/supports-SwSh%20%7C%20SV%20%7C%20Z--A-red)
@@ -69,7 +69,3 @@ Installer and updater release builds also need Tauri updater signing secrets. Se
 - [Legends Z-A Overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview)
 - [Desktop app notes](apps/desktop/README.md)
 - [Backend test notes](tests/README.md)
-
-The wiki sidebar carries individual pages for Sword and Shield Advanced Editors, Scarlet and Violet editors, and Legends Z-A editors. The README keeps only the main entry points so this page stays readable.
-
-Advanced Editors include Royal Candy, Starting Items, NPC Item Gift, Catch Cap, Hyper Training, Shiny Rate, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass. Tools include 60FPS Patch, Profanity Filter, Randomizer, Game Dump, Dump Importer, Mod Merger, Text Viewer, and cache controls where supported. Rental Pokemon remains hidden until its runtime safety work is finished.
