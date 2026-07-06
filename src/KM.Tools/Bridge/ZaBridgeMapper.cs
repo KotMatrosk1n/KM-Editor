@@ -1477,7 +1477,7 @@ public static class ZaBridgeMapper
             null,
             null,
             0,
-            "Script linked",
+            "Handled by trade event",
             0,
             0,
             "Default",

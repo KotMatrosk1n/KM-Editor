@@ -8,7 +8,12 @@ import { type PlacementWorkflow } from '../../bridge/contracts';
 import { type UpdatePlacementObjectFieldsRequest } from '../../bridge/svBatchFieldContracts';
 import { createMockProjectBridge } from '../../testSupport/appTestFixtures';
 import { useWorkbenchStore } from '../../workbenchStore';
-import { getPlacementCategories, getPlacementCategoryId } from './placementUi';
+import {
+  buildPlacementObjectGroups,
+  getPlacementCategories,
+  getPlacementCategoryId,
+  getPlacementObjectSubgroups
+} from './placementUi';
 
 const tauriEventMock = vi.hoisted(() => ({
   listen: vi.fn(() => Promise.resolve(() => undefined))
@@ -107,16 +112,19 @@ describe('PlacementSection', () => {
     expect(container.querySelector('.swsh-placement-section')).toBeNull();
 
     const table = await screen.findByRole('table', { name: 'Placed objects' });
-    expect(within(table).getAllByRole('row')).toHaveLength(3);
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(within(table).getByText('Boss Battle Beedrill (15)')).toBeInTheDocument();
     expect(within(table).getByText('Boss Battle Banette (354)')).toBeInTheDocument();
+    expect(within(table).getByText('Magenta District')).toBeInTheDocument();
+    expect(within(table).getByText('Sector 1 Outside Wild Zone, Sector 2 Outside Wild Zone')).toBeInTheDocument();
+    expect(within(table).queryByText('Magenta District, Sector 1 Outside Wild Zone')).not.toBeInTheDocument();
     expect(
       within(table).queryByText('Boss Battle Beedrill (15) Phase 1 Follower 1')
     ).not.toBeInTheDocument();
     expect(
       within(table).getByText('Phase 1 Follower 1, Simulation Follower 1, Rush Follower 1')
     ).toBeInTheDocument();
-    expect(within(table).getByText('3 positions')).toBeInTheDocument();
+    expect(within(table).getAllByText('3 positions')).toHaveLength(2);
 
     const groupBrowser = await screen.findByRole('region', {
       name: 'Z-A placement spawner group'
@@ -141,18 +149,41 @@ describe('PlacementSection', () => {
       within(inspector).getByText('Pokemon')
     ).toBeInTheDocument();
 
+    await user.click(within(table).getByRole('row', { name: /Magenta District/ }));
+
+    expect(within(groupBrowser).getByText('2 locations')).toBeInTheDocument();
+    expect(within(groupBrowser).getByRole('tab', { name: 'Sector 1 Outside Wild Zone' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(within(groupBrowser).getByRole('tab', { name: 'Sector 2 Outside Wild Zone' }))
+      .toHaveAttribute('aria-selected', 'false');
+    expect(within(groupBrowser).getByRole('tab', { name: 'Spawner 01' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(within(groupBrowser).getByRole('tab', { name: 'Spawner 02' }))
+      .toHaveAttribute('aria-selected', 'false');
+
+    await user.click(within(groupBrowser).getByRole('tab', { name: 'Sector 2 Outside Wild Zone' }));
+
+    expect(within(groupBrowser).getByRole('tab', { name: 'Sector 2 Outside Wild Zone' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Selected placement object provenance'))
+      .toHaveTextContent('Magenta District, Sector 2 Outside Wild Zone, Spawner 01');
+
     await user.click(screen.getByRole('tab', { name: /Item Ball Spawners/ }));
 
     expect(within(table).getAllByRole('row')).toHaveLength(2);
-    expect(within(table).getByText('Bleu District, Sector 1')).toBeInTheDocument();
-    expect(within(table).getByText('Item Ball 01: Potion, Item Ball 02: Revive')).toBeInTheDocument();
-    expect(within(table).getByText('2 positions')).toBeInTheDocument();
+    expect(within(table).getByText('Bleu District')).toBeInTheDocument();
+    expect(within(table).getByText('Sector 1, Sector 2')).toBeInTheDocument();
+    expect(within(table).getByText('3 positions')).toBeInTheDocument();
+    expect(within(table).queryByText('Bleu District, Sector 1')).not.toBeInTheDocument();
     expect(within(table).queryByText('itb_a0201_01')).not.toBeInTheDocument();
 
     const itemBallBrowser = await screen.findByRole('region', {
       name: 'Z-A placement spawner group'
     });
-    expect(within(itemBallBrowser).getByText('2 transforms')).toBeInTheDocument();
+    expect(within(itemBallBrowser).getByText('3 transforms')).toBeInTheDocument();
+    expect(within(itemBallBrowser).getByText('2 locations')).toBeInTheDocument();
+    expect(within(itemBallBrowser).getByRole('tab', { name: 'Sector 1' }))
+      .toHaveAttribute('aria-selected', 'true');
     expect(within(itemBallBrowser).getByRole('tab', { name: /Item Ball 01: Potion/ }))
       .toHaveAttribute('aria-selected', 'true');
 
@@ -162,6 +193,307 @@ describe('PlacementSection', () => {
       .toHaveAttribute('aria-selected', 'true');
     expect(screen.getByLabelText('Selected placement object provenance'))
       .toHaveTextContent('Bleu District, Sector 1 Item Ball 02: Revive');
+
+    await user.click(within(itemBallBrowser).getByRole('tab', { name: 'Sector 2' }));
+
+    expect(within(itemBallBrowser).getByRole('tab', { name: 'Sector 2' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(within(itemBallBrowser).getByRole('tab', { name: /Item Ball 01: Super Potion/ }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Selected placement object provenance'))
+      .toHaveTextContent('Bleu District, Sector 2 Item Ball 01: Super Potion');
+  });
+
+  it('groups every known Z-A district at the district row level', () => {
+    const districts = ['Vert', 'Bleu', 'Magenta', 'Rouge', 'Jaune'];
+    const districtNames = districts.map((district) => `${district} District`);
+    const pokemonObjects = districts.flatMap((district, districtIndex) => [
+      createZaPlacementObject(
+        districtIndex * 2,
+        `${district} District, Sector 1 Outside Wild Zone, Spawner 01`,
+        `${district} District, Sector 1 Outside Wild Zone`,
+        `spn_${district.toLocaleLowerCase()}_s1_01`,
+        districtIndex * 10
+      ),
+      createZaPlacementObject(
+        districtIndex * 2 + 1,
+        `${district} District, Sector 2 Outside Wild Zone, Spawner 01`,
+        `${district} District, Sector 2 Outside Wild Zone`,
+        `spn_${district.toLocaleLowerCase()}_s2_01`,
+        districtIndex * 10 + 1
+      )
+    ]);
+    const itemBallObjects = districts.flatMap((district, districtIndex) => [
+      createZaItemBallPlacementObject(
+        districtIndex * 2,
+        `${district} District, Sector 1 Item Ball 01: Potion`,
+        `${district} District, Sector 1`,
+        `itb_${district.toLocaleLowerCase()}_s1_01`,
+        'Potion',
+        districtIndex * 10
+      ),
+      createZaItemBallPlacementObject(
+        districtIndex * 2 + 1,
+        `${district} District, Sector 2 Item Ball 01: Revive`,
+        `${district} District, Sector 2`,
+        `itb_${district.toLocaleLowerCase()}_s2_01`,
+        'Revive',
+        districtIndex * 10 + 1
+      )
+    ]);
+
+    const pokemonGroups = buildPlacementObjectGroups(pokemonObjects, {
+      groupPokemonSpawners: true
+    });
+    const itemBallGroups = buildPlacementObjectGroups(itemBallObjects, {
+      groupItemBallSpawners: true
+    });
+
+    expect(pokemonGroups.map((group) => group.label)).toEqual(districtNames);
+    expect(itemBallGroups.map((group) => group.label)).toEqual(districtNames);
+
+    for (const group of pokemonGroups) {
+      expect(group.objects).toHaveLength(2);
+      expect(group.preview).toBe('Sector 1 Outside Wild Zone, Sector 2 Outside Wild Zone');
+      expect(getPlacementObjectSubgroups(group).map((subgroup) => subgroup.label)).toEqual([
+        'Sector 1 Outside Wild Zone',
+        'Sector 2 Outside Wild Zone'
+      ]);
+    }
+
+    for (const group of itemBallGroups) {
+      expect(group.objects).toHaveLength(2);
+      expect(group.preview).toBe('Sector 1, Sector 2');
+      expect(getPlacementObjectSubgroups(group).map((subgroup) => subgroup.label)).toEqual([
+        'Sector 1',
+        'Sector 2'
+      ]);
+    }
+  });
+
+  it('groups raw Z-A random dimension dungeon placement rows by dungeon and variant', () => {
+    const groups = buildPlacementObjectGroups(
+      [
+        createZaPlacementObject(
+          0,
+          'random zdm403 v01 381',
+          'Pokemon Spawners',
+          'random_zdm403_v01_381',
+          0
+        ),
+        createZaPlacementObject(
+          1,
+          'random zdm403 v01 382',
+          'Pokemon Spawners',
+          'random_zdm403_v01_382',
+          1
+        ),
+        createZaPlacementObject(
+          2,
+          'random zdm403 v02 001',
+          'Pokemon Spawners',
+          'random_zdm403_v02_001',
+          2
+        ),
+        createZaPlacementObject(
+          3,
+          'Dimension Dungeon 403 Variant 2 Spawn Point 002',
+          'Pokemon Spawners',
+          'random_zdm403_v02_002',
+          3
+        ),
+        createZaPlacementObject(
+          4,
+          'random zdm404 sp06 017',
+          'Pokemon Spawners',
+          'random_zdm404_sp06_017',
+          4
+        )
+      ],
+      { groupPokemonSpawners: true }
+    );
+
+    expect(groups.map((group) => group.label)).toEqual([
+      'Dimension Dungeon 403',
+      'Dimension Dungeon 404'
+    ]);
+    expect(groups[0]?.preview).toBe('Variant 1, Variant 2');
+    expect(groups[0]?.objects).toHaveLength(4);
+    expect(getPlacementObjectSubgroups(groups[0]!).map((subgroup) => subgroup.label)).toEqual([
+      'Variant 1',
+      'Variant 2'
+    ]);
+    expect(getPlacementObjectSubgroups(groups[0]!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+      'Spawn Point 381',
+      'Spawn Point 382'
+    ]);
+    expect(getPlacementObjectSubgroups(groups[0]!)[1]?.tabs.map((tab) => tab.label)).toEqual([
+      'Spawn Point 001',
+      'Spawn Point 002'
+    ]);
+    expect(groups[1]?.preview).toBe('Special Area 6: Spawn Point 017');
+    expect(getPlacementObjectSubgroups(groups[1]!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+      'Spawn Point 017'
+    ]);
+  });
+
+  it('groups remaining raw Z-A placement families into readable location rows', () => {
+    const pokemonGroups = buildPlacementObjectGroups(
+      [
+        createZaPlacementObject(
+          0,
+          'spn_zdm502_v00_001',
+          'Pokemon Spawners',
+          'spn_zdm502_v00_001',
+          0
+        ),
+        createZaPlacementObject(
+          1,
+          'Dimension Dungeon 502 Variant 0 Spawn Point 011',
+          'Pokemon Spawners',
+          'spn_zdm502_v00_011',
+          1
+        ),
+        createZaPlacementObject(
+          2,
+          'spn_zdm502_poke1_001',
+          'Pokemon Spawners',
+          'spn_zdm502_poke1_001',
+          2
+        ),
+        createZaPlacementObject(
+          3,
+          'Dimension Dungeon 502 Pokemon Set 1 Spawn Point 002',
+          'Pokemon Spawners',
+          'spn_zdm502_poke1_002',
+          3
+        ),
+        createZaPlacementObject(
+          4,
+          'spn_d03_01_ev_001',
+          'Pokemon Spawners',
+          'spn_d03_01_ev_001',
+          4
+        ),
+        createZaPlacementObject(
+          5,
+          'Dungeon 3 Floor 1 Event Spawn Point 002',
+          'Pokemon Spawners',
+          'spn_d03_01_ev_002',
+          5
+        ),
+        createZaPlacementObject(
+          6,
+          'Wild Zone 1 Variant 1 Spawn Point 001',
+          'Pokemon Spawners',
+          'spn_a0102_w01_v01_001',
+          6
+        ),
+        createZaPlacementObject(
+          7,
+          'Wild Zone 1 Variant 2 Spawn Point 011',
+          'Pokemon Spawners',
+          'spn_a0102_w01_v02_011',
+          7
+        ),
+        createZaPlacementObject(
+          8,
+          'Side Mission Event 147 Spawn Point 002B',
+          'Pokemon Spawners',
+          'spn_subq147_002b',
+          8
+        ),
+        createZaPlacementObject(
+          9,
+          'test_pokemon_spawner_object_01',
+          'Pokemon Spawners',
+          'test_pokemon_spawner_object_01',
+          9
+        ),
+        createZaPlacementObject(
+          10,
+          'test_pokemon_spawner_blue_object_01',
+          'Pokemon Spawners',
+          'test_pokemon_spawner_blue_object_01',
+          10
+        )
+      ],
+      { groupPokemonSpawners: true }
+    );
+    const itemBallGroups = buildPlacementObjectGroups(
+      [
+        createZaItemBallPlacementObject(
+          0,
+          'Dungeon 1 Floor 1 Item 01',
+          'Dungeon 1 Floor 1',
+          'itd_d01_01_01',
+          'Rare Candy',
+          0
+        ),
+        createZaItemBallPlacementObject(
+          1,
+          'Dungeon 1 Floor 1 Item 02',
+          'Dungeon 1 Floor 1',
+          'itd_d01_01_02',
+          'Potion',
+          1
+        ),
+        createZaItemBallPlacementObject(
+          2,
+          'Dungeon 2 Item 01',
+          'Dungeon 2',
+          'itd_d02_01',
+          'Revive',
+          2
+        )
+      ],
+      { groupItemBallSpawners: true }
+    );
+
+    expect(pokemonGroups.map((group) => group.label)).toEqual([
+      'Dimension Dungeon 502',
+      'Dungeon 3',
+      'Wild Zone 1',
+      'Side Mission Event 147',
+      'Test Pokemon Spawners'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[0]!).map((subgroup) => subgroup.label)).toEqual([
+      'Variant 0',
+      'Pokemon Set 1'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[0]!)[1]?.tabs.map((tab) => tab.label)).toEqual([
+      'Spawn Point 001',
+      'Spawn Point 002'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[1]!).map((subgroup) => subgroup.label)).toEqual([
+      'Floor 1'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[2]!).map((subgroup) => subgroup.label)).toEqual([
+      'Variant 1',
+      'Variant 2'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[3]!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+      'Spawn Point 002B'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[4]!).map((subgroup) => subgroup.label)).toEqual([
+      'Test Objects'
+    ]);
+    expect(getPlacementObjectSubgroups(pokemonGroups[4]!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+      'Blue Object 01',
+      'Object 01'
+    ]);
+
+    expect(itemBallGroups.map((group) => group.label)).toEqual(['Dungeon 1', 'Dungeon 2']);
+    expect(getPlacementObjectSubgroups(itemBallGroups[0]!).map((subgroup) => subgroup.label)).toEqual([
+      'Floor 1'
+    ]);
+    expect(getPlacementObjectSubgroups(itemBallGroups[0]!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+      'Item 01',
+      'Item 02'
+    ]);
+    expect(getPlacementObjectSubgroups(itemBallGroups[1]!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+      'Item 01'
+    ]);
   });
 
   it('keeps SwSh legacy placement rows out of S/V category metadata', () => {
@@ -433,13 +765,13 @@ function createZaPlacementWorkflow(): PlacementWorkflow {
         description: 'Pokemon spawner transform rows joined to Pokemon spawner table context.',
         id: 'pokemonSpawners',
         label: 'Pokemon Spawners',
-        objectCount: 4
+        objectCount: 7
       },
       {
         description: 'Item ball spawner transform rows joined to item table context.',
         id: 'itemBallSpawners',
         label: 'Item Ball Spawners',
-        objectCount: 2
+        objectCount: 3
       }
     ],
     diagnostics: [],
@@ -496,8 +828,29 @@ function createZaPlacementWorkflow(): PlacementWorkflow {
         'spn_boss_0354_01_follower1',
         20
       ),
-      createZaItemBallPlacementObject(
+      createZaPlacementObject(
         4,
+        'Magenta District, Sector 1 Outside Wild Zone, Spawner 01',
+        'Magenta District, Sector 1 Outside Wild Zone',
+        'spn_magenta_s1_outside_01',
+        24
+      ),
+      createZaPlacementObject(
+        5,
+        'Magenta District, Sector 1 Outside Wild Zone, Spawner 02',
+        'Magenta District, Sector 1 Outside Wild Zone',
+        'spn_magenta_s1_outside_02',
+        26
+      ),
+      createZaPlacementObject(
+        6,
+        'Magenta District, Sector 2 Outside Wild Zone, Spawner 01',
+        'Magenta District, Sector 2 Outside Wild Zone',
+        'spn_magenta_s2_outside_01',
+        28
+      ),
+      createZaItemBallPlacementObject(
+        7,
         'Bleu District, Sector 1 Item Ball 01: Potion',
         'Bleu District, Sector 1',
         'itb_a0201_01',
@@ -505,18 +858,26 @@ function createZaPlacementWorkflow(): PlacementWorkflow {
         30
       ),
       createZaItemBallPlacementObject(
-        5,
+        8,
         'Bleu District, Sector 1 Item Ball 02: Revive',
         'Bleu District, Sector 1',
         'itb_a0201_02',
         'Revive',
         32
+      ),
+      createZaItemBallPlacementObject(
+        9,
+        'Bleu District, Sector 2 Item Ball 01: Super Potion',
+        'Bleu District, Sector 2',
+        'itb_a0202_01',
+        'Super Potion',
+        34
       )
     ],
     stats: {
       sourceFileCount: 2,
-      totalAreaCount: 2,
-      totalObjectCount: 6
+      totalAreaCount: 4,
+      totalObjectCount: 10
     },
     summary: {
       availability: 'available',

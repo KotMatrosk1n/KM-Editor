@@ -3878,7 +3878,7 @@ describe('bridge contracts', () => {
               requiredForm: 0,
               requiredNature: -1,
               requiredNatureLabel: 'Random / game default',
-              requiredSpecies: 'Script linked',
+              requiredSpecies: 'Handled by trade event',
               requiredSpeciesId: 0,
               shinyLock: 536870911,
               shinyLockLabel: 'Game default / not forced',

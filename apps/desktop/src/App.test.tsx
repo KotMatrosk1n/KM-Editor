@@ -3888,6 +3888,111 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('labels Legends Z-A trade requests as event handled instead of fake requested Pokemon', async () => {
+    const zaTradeWorkflow: TradePokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [],
+      editorFamily: 'za',
+      stats: {
+        fixedIvTradeCount: 1,
+        sourceFileCount: 1,
+        totalTradeCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Edit Pokemon Legends Z-A received trade Pokemon payloads; trade requests are handled by event scripts.',
+        diagnostics: [],
+        id: 'tradePokemon',
+        label: 'Trade Pokemon'
+      },
+      trades: [
+        {
+          ability: 255,
+          abilityLabel: 'Game default / random',
+          abilityOptions: [],
+          ballItem: 'None',
+          ballItemId: 0,
+          canGigantamax: null,
+          dynamaxLevel: null,
+          editorFamily: 'za',
+          eventLabel: 'sub_tradepoke_poligon2',
+          field03: 0,
+          flawlessIvCount: null,
+          form: 0,
+          gender: -1,
+          genderLabel: 'Game default / random',
+          hash0: '0x0000000000000000',
+          hash1: '0x0000000000000000',
+          hash2: '0x0000000000000000',
+          heldItem: 'Upgrade',
+          heldItemId: 252,
+          ivs: {
+            attack: 31,
+            defense: 31,
+            hp: -1,
+            specialAttack: 31,
+            specialDefense: 31,
+            speed: 31
+          },
+          ivSummary: 'Fixed IVs: HP Random / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31',
+          label: 'Trade 3: Porygon Lv. 50 (sub_tradepoke_poligon2)',
+          level: 50,
+          memoryCode: 0,
+          memoryFeel: 0,
+          memoryIntensity: 0,
+          memoryTextVariable: 0,
+          moves: [],
+          nature: 15,
+          natureLabel: 'Naive (+Spe, -Sp. Def)',
+          otGender: 0,
+          otGenderLabel: 'Default',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/world/ik_data/field/pokemon/pokemon_data/pokemon_data/pokemon_data_array.bin',
+            sourceLayer: 'base'
+          },
+          relearnMoves: [],
+          requiredForm: 0,
+          requiredNature: 0,
+          requiredNatureLabel: 'Default',
+          requiredSpecies: 'Handled by trade event',
+          requiredSpeciesId: 0,
+          scaleMode: null,
+          scaleModeLabel: null,
+          scaleValue: null,
+          shinyLock: 536870911,
+          shinyLockLabel: 'Game default / not forced',
+          species: 'Porygon',
+          speciesId: 137,
+          teraType: null,
+          teraTypeLabel: null,
+          tradeIndex: 2,
+          trainerId: 0,
+          unknownRequirement: 0
+        }
+      ]
+    };
+    useWorkbenchStore.setState({
+      activeSection: 'tradePokemon',
+      draftPaths: {
+        ...useWorkbenchStore.getState().draftPaths,
+        selectedGame: 'za'
+      },
+      selectedTradePokemonIndex: 2,
+      tradePokemonWorkflow: zaTradeWorkflow
+    });
+
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    const table = await screen.findByRole('table', { name: 'Trade Pokemon' });
+    expect(within(table).getByRole('columnheader', { name: 'Request' })).toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: 'Requested' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Handled by trade event').length).toBeGreaterThan(0);
+    expect(screen.getByText('Request source')).toBeInTheDocument();
+    expect(screen.getByText('sub_tradepoke_poligon2')).toBeInTheDocument();
+    expect(screen.queryByText('Requested')).not.toBeInTheDocument();
+  });
+
   it('opens Static Encounters, edits IVs, reviews a static plan, and applies it', async () => {
     window.localStorage.setItem(languageStorageKey, 'en');
     const user = userEvent.setup();

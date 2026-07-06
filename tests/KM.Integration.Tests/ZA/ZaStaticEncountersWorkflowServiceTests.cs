@@ -27,6 +27,22 @@ public sealed class ZaStaticEncountersWorkflowServiceTests
         Assert.Equal(expectedLabel, label);
     }
 
+    [Theory]
+    [InlineData("random_zdm403_v01_381", "Dimension Dungeon 403 Variant 1 Spawn Point 381")]
+    [InlineData("random_zdm403_v02_001", "Dimension Dungeon 403 Variant 2 Spawn Point 001")]
+    [InlineData("random_zdm404_sp06_017", "Dimension Dungeon 404 Special Area 6 Spawn Point 017")]
+    [InlineData("spn_zdm502_v00_001", "Dimension Dungeon 502 Variant 0 Spawn Point 001")]
+    [InlineData("spn_outzone_a0201_050", "Bleu District, Sector 1 Outside Wild Zone, Spawn Point 050")]
+    [InlineData("spn_a0102_w01_v01_001", "Wild Zone 1 Variant 1 Spawn Point 001")]
+    [InlineData("spn_d03_01_ev_001", "Dungeon 3 Floor 1 Event Spawn Point 001")]
+    [InlineData("spn_subq147_002b", "Side Mission Event 147 Spawn Point 002B")]
+    public void RawSpawnerLabelsUseLocationContext(
+        string spawnerId,
+        string expectedLabel)
+    {
+        Assert.Equal(expectedLabel, ZaLumioseLocationLabels.FormatRawObjectName(spawnerId));
+    }
+
     [Fact]
     public void BossScenarioLabelsPreferEncounterRowSpecies()
     {

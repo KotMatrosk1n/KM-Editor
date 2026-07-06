@@ -1286,6 +1286,7 @@ h2 {
 .trainers-table {
   --virtual-table-scroll-x: 0px;
   --virtual-table-scroll-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .items-table {
@@ -2984,6 +2985,7 @@ h2 {
   display: grid;
   align-content: start;
   align-self: start;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
   min-width: 0;
   max-height: min(360px, var(--editor-table-max-height));
@@ -3003,6 +3005,7 @@ h2 {
   grid-template-columns: minmax(72px, 0.55fr) minmax(160px, 1.2fr) minmax(120px, 0.9fr) minmax(120px, 0.9fr) 64px minmax(180px, 1.3fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 0;
   min-height: 40px;
   padding: 0 12px;
@@ -3227,6 +3230,7 @@ h2 {
 
 .shop-inventory-editor-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
 }
@@ -3252,6 +3256,7 @@ h2 {
     minmax(190px, 0.7fr);
   gap: 10px;
   align-items: end;
+  width: 100%;
   min-width: 0;
   padding: 10px;
   background: #10192b;
@@ -3479,6 +3484,7 @@ h2 {
   display: grid;
   align-content: start;
   align-self: start;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
   min-width: 0;
   max-height: var(--editor-table-max-height);
@@ -3494,6 +3500,7 @@ h2 {
   grid-template-columns: minmax(150px, 1.25fr) minmax(70px, 0.5fr) minmax(130px, 1fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 0;
   min-height: 40px;
   padding: 0 12px;
@@ -3567,6 +3574,7 @@ h2 {
   display: grid;
   align-content: start;
   align-self: start;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
   min-width: 0;
   max-height: var(--editor-table-max-height);
@@ -3582,6 +3590,7 @@ h2 {
   grid-template-columns: minmax(150px, 1.1fr) minmax(90px, 0.7fr) minmax(70px, 0.45fr) minmax(180px, 1.4fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 0;
   min-height: 40px;
   padding: 0 12px;
@@ -3663,6 +3672,7 @@ h2 {
 .flagwork-table {
   display: grid;
   align-self: start;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   max-height: var(--editor-table-max-height);
   overflow: auto;
@@ -3677,6 +3687,7 @@ h2 {
   grid-template-columns: minmax(120px, 0.9fr) 64px minmax(72px, 0.5fr) minmax(160px, 1.2fr) minmax(132px, 1fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 0;
   min-height: 40px;
   padding: 0 12px;
@@ -3722,6 +3733,7 @@ h2 {
 .exefs-table {
   display: grid;
   align-content: start;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(44px, max-content);
   min-width: 0;
   max-height: 264px;
@@ -5200,6 +5212,7 @@ h2 {
 .mod-merger-preview-table {
   display: grid;
   align-content: start;
+  grid-template-columns: minmax(0, 1fr);
   max-height: min(560px, 58vh);
   overflow: auto;
   background: #080d16;
@@ -5220,6 +5233,7 @@ h2 {
   grid-template-columns: minmax(220px, 1.2fr) minmax(130px, 0.45fr) minmax(280px, 1.5fr) minmax(170px, 0.7fr);
   gap: 12px;
   align-items: center;
+  width: 100%;
   min-height: 40px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--color-border);
@@ -5694,6 +5708,7 @@ h2 {
 .sv-encounter-condition-table,
 .za-encounter-spawner-table {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   max-height: 264px;
   overflow: auto;
@@ -5714,6 +5729,7 @@ h2 {
     minmax(106px, 0.6fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 1060px;
   min-height: 36px;
   padding: 0 10px;
@@ -5733,6 +5749,7 @@ h2 {
     minmax(96px, 0.55fr);
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-width: 640px;
   min-height: 36px;
   padding: 0 10px;

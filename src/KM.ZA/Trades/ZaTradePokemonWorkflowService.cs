@@ -37,7 +37,7 @@ internal sealed class ZaTradePokemonWorkflowService
     internal const int TalentModeFixedValues = 2;
 
     private const string WorkflowLabel = "Trade Pokemon";
-    private const string WorkflowDescription = "Edit Pokemon Legends Z-A scripted trade Pokemon sources.";
+    private const string WorkflowDescription = "Edit Pokemon Legends Z-A received trade Pokemon payloads; trade requests are handled by event scripts.";
 
     private static readonly string[] TradeIdPrefixes =
     [

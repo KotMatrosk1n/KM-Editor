@@ -638,7 +638,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains("Bulbasaur", trade.Label);
         Assert.Equal(1, trade.SpeciesId);
         Assert.Equal("Bulbasaur", trade.Species);
-        Assert.Equal("Script linked", trade.RequiredSpecies);
+        Assert.Equal("Handled by trade event", trade.RequiredSpecies);
         Assert.Equal(5, trade.Level);
         Assert.Equal(4, trade.HeldItemId);
         Assert.Equal("Poke Ball", trade.HeldItem);
@@ -2532,7 +2532,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(ZaDataPaths.ItemBallSpawnerDataArray, CreateItemBallSpawnerDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
-            CreateTextTable(50, (17, "Potion"), (50, "Rare Candy")));
+            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (50, "Rare Candy"), (328, "TM001")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonSpawnerTransformArray,
             CreateSpawnerTransformArray(
