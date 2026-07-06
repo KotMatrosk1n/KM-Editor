@@ -705,22 +705,77 @@ internal sealed class ZaPlacementWorkflowService
 
     private static string FormatItemBallObjectMap(string objectName)
     {
-        return TryParseItemBallObjectName(objectName, out var locationKey, out _)
-            ? FormatItemBallLocation(locationKey)
-            : string.Empty;
+        if (TryParseDungeonItemObjectName(objectName, out var dungeonItem))
+        {
+            return dungeonItem.Map;
+        }
+
+        if (TryParseItemBallObjectName(objectName, out var locationKey, out _))
+        {
+            return FormatItemBallLocation(locationKey);
+        }
+
+        return string.Empty;
     }
 
     private static string FormatItemBallObjectLabel(string objectName, string primaryData)
     {
-        var label = TryParseItemBallObjectName(objectName, out var locationKey, out var itemBallNumber)
-            ? string.IsNullOrWhiteSpace(itemBallNumber)
+        string label;
+        if (TryParseDungeonItemObjectName(objectName, out var dungeonItem))
+        {
+            label = dungeonItem.Label;
+        }
+        else if (TryParseItemBallObjectName(objectName, out var locationKey, out var itemBallNumber))
+        {
+            label = string.IsNullOrWhiteSpace(itemBallNumber)
                 ? $"{FormatItemBallLocation(locationKey)} Item Ball"
-                : $"{FormatItemBallLocation(locationKey)} Item Ball {itemBallNumber}"
-            : ZaLumioseLocationLabels.FormatRawObjectName(objectName);
+                : $"{FormatItemBallLocation(locationKey)} Item Ball {itemBallNumber}";
+        }
+        else
+        {
+            label = ZaLumioseLocationLabels.FormatRawObjectName(objectName);
+        }
 
         return string.IsNullOrWhiteSpace(primaryData)
             ? label
             : $"{label}: {primaryData}";
+    }
+
+    private static bool TryParseDungeonItemObjectName(
+        string objectName,
+        out DungeonItemLocation dungeonItem)
+    {
+        dungeonItem = default;
+        var tokens = objectName.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length < 3
+            || !string.Equals(tokens[0], "itd", StringComparison.OrdinalIgnoreCase)
+            || !tokens[1].StartsWith("d", StringComparison.OrdinalIgnoreCase)
+            || !int.TryParse(tokens[1][1..], NumberStyles.None, CultureInfo.InvariantCulture, out var dungeonNumber))
+        {
+            return false;
+        }
+
+        if (tokens.Length >= 4
+            && int.TryParse(tokens[2], NumberStyles.None, CultureInfo.InvariantCulture, out var floorNumber)
+            && int.TryParse(tokens[3], NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        {
+            var map = $"Dungeon {dungeonNumber.ToString(CultureInfo.InvariantCulture)} Floor {floorNumber.ToString(CultureInfo.InvariantCulture)}";
+            dungeonItem = new DungeonItemLocation(
+                map,
+                $"{map} Item {tokens[3].ToUpperInvariant()}");
+            return true;
+        }
+
+        if (int.TryParse(tokens[2], NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        {
+            var map = $"Dungeon {dungeonNumber.ToString(CultureInfo.InvariantCulture)}";
+            dungeonItem = new DungeonItemLocation(
+                map,
+                $"{map} Item {tokens[2].ToUpperInvariant()}");
+            return true;
+        }
+
+        return false;
     }
 
     private static string FormatItemBallLocation(string locationKey)
@@ -868,6 +923,10 @@ internal sealed class ZaPlacementWorkflowService
     {
         return string.IsNullOrWhiteSpace(value) ? "None" : value;
     }
+
+    private readonly record struct DungeonItemLocation(
+        string Map,
+        string Label);
 
     private sealed record ZaPlacementSpawnerContext(
         string SpawnerId,

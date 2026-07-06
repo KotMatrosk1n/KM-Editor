@@ -282,6 +282,7 @@ import {
   formatPlacementCoordinates,
   formatPlacementItem,
   getPlacementObjectGroupTabs,
+  getPlacementObjectSubgroups,
   getPlacementCategoryId,
   getPlacementCategories,
   getPlacementFieldControls,
@@ -16917,6 +16918,7 @@ function TradePokemonSection({
   const trades = workflow?.trades ?? [];
   const editorFamily: EditorUiFamily =
     workflow?.editorFamily === 'za' ? 'za' : workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
+  const isZaTradeWorkflow = editorFamily === 'za';
   const filteredTrades = useMemo(
     () => filterTradePokemon(trades, searchText),
     [searchText, trades]
@@ -17004,7 +17006,7 @@ function TradePokemonSection({
             >
               <div className="trainers-row trade-pokemon-row trainers-row-heading" role="row">
                 <span role="columnheader">Index</span>
-                <span role="columnheader">Requested</span>
+                <span role="columnheader">{isZaTradeWorkflow ? 'Request' : 'Requested'}</span>
                 <span role="columnheader">Received</span>
                 <span role="columnheader">Level</span>
                 <span role="columnheader">IVs</span>
@@ -17029,12 +17031,7 @@ function TradePokemonSection({
                   >
                     <span role="cell">{trade.tradeIndex + 1}</span>
                     <span role="cell">
-                      {formatSpeciesFormLabel(
-                        trade.requiredSpecies,
-                        trade.requiredForm,
-                        trade.requiredSpeciesId,
-                        editorFamily
-                      )}
+                      {formatTradePokemonRequestLabel(trade, editorFamily)}
                     </span>
                     <span role="cell">
                       {formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
@@ -17055,6 +17052,7 @@ function TradePokemonSection({
               editorFamily={editorFamily}
               isEditStarting={isEditStarting}
               isTradePokemonUpdating={isTradePokemonUpdating}
+              isZaTradeWorkflow={isZaTradeWorkflow}
               onStartEditSession={onStartEditSession}
               onUpdateTradePokemonField={onUpdateTradePokemonField}
               onUpdateTradePokemonFields={onUpdateTradePokemonFields}
@@ -17094,6 +17092,7 @@ function SelectedTradePokemonPanel({
   editorFamily,
   isEditStarting,
   isTradePokemonUpdating,
+  isZaTradeWorkflow,
   onStartEditSession,
   onUpdateTradePokemonField,
   onUpdateTradePokemonFields,
@@ -17105,6 +17104,7 @@ function SelectedTradePokemonPanel({
   editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isTradePokemonUpdating: boolean;
+  isZaTradeWorkflow: boolean;
   onStartEditSession: () => void;
   onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
   onUpdateTradePokemonFields: (
@@ -17181,21 +17181,13 @@ function SelectedTradePokemonPanel({
       {trade ? (
         <>
           <div className="pokemon-summary-grid">
-            <PokemonSummaryCard
-              name={formatSpeciesFormLabel(
-                trade.requiredSpecies,
-                trade.requiredForm,
-                trade.requiredSpeciesId,
-                editorFamily
-              )}
-              subtitle="Requested"
-              title={formatSpeciesFormLabel(
-                trade.requiredSpecies,
-                trade.requiredForm,
-                trade.requiredSpeciesId,
-                editorFamily
-              )}
-            />
+            {!isZaTradeWorkflow ? (
+              <PokemonSummaryCard
+                name={formatTradePokemonRequestLabel(trade, editorFamily)}
+                subtitle="Requested"
+                title={formatTradePokemonRequestLabel(trade, editorFamily)}
+              />
+            ) : null}
             <PokemonSummaryCard
               name={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
               subtitle={`Received | Lv. ${trade.level}`}
@@ -17221,15 +17213,8 @@ function SelectedTradePokemonPanel({
               <dd>{formatFileState(trade.provenance.fileState)}</dd>
             </div>
             <div>
-              <dt>Requested</dt>
-              <dd>
-                {formatSpeciesFormLabel(
-                  trade.requiredSpecies,
-                  trade.requiredForm,
-                  trade.requiredSpeciesId,
-                  editorFamily
-                )}
-              </dd>
+              <dt>{isZaTradeWorkflow ? 'Request source' : 'Requested'}</dt>
+              <dd>{formatTradePokemonRequestLabel(trade, editorFamily)}</dd>
             </div>
             <div>
               <dt>Received</dt>
@@ -24948,21 +24933,67 @@ function PlacementObjectGroupBrowser({
   onSelectObject: (objectId: string | null) => void;
   selectedObjectId: string;
 }) {
-  const tabs = getPlacementObjectGroupTabs(group);
-  const useListPicker = group.objects.some(isZaItemBallPlacementObject);
+  const subgroups = getPlacementObjectSubgroups(group);
+  const selectedSubgroup =
+    subgroups.find((subgroup) =>
+      subgroup.objects.some((object) => object.objectId === selectedObjectId)
+    ) ??
+    subgroups[0] ??
+    null;
+  const tabs = selectedSubgroup
+    ? selectedSubgroup.tabs
+    : getPlacementObjectGroupTabs(group);
+  const selectedSubgroupObjects = selectedSubgroup?.objects ?? group.objects;
+  const useListPicker =
+    selectedSubgroupObjects.length > 8 ||
+    selectedSubgroupObjects.some(isZaItemBallPlacementObject);
 
   return (
     <section className="za-placement-object-browser" aria-label="Z-A placement spawner group">
       <div className="sv-encounter-browser-summary">
         <span>{group.label}</span>
         <span>{group.objects.length} transforms</span>
+        {subgroups.length > 1 ? <span>{subgroups.length} locations</span> : null}
         <span>{group.map}</span>
       </div>
+      {subgroups.length > 1 ? (
+        <div
+          className="encounter-condition-tabs placement-object-tabs placement-location-tabs"
+          role="tablist"
+          aria-label="Placement locations"
+        >
+          {subgroups.map((subgroup) => {
+            const isSelected = subgroup.key === selectedSubgroup?.key;
+            return (
+              <button
+                aria-selected={isSelected}
+                className="condition-tab-button"
+                key={subgroup.key}
+                onClick={() => {
+                  const nextObjectId = subgroup.objects[0]?.objectId ?? null;
+                  if (nextObjectId && nextObjectId !== selectedObjectId) {
+                    onSelectObject(nextObjectId);
+                  }
+                }}
+                role="tab"
+                title={`${subgroup.label} - ${subgroup.objects.length} transforms`}
+                type="button"
+              >
+                {subgroup.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       {useListPicker ? (
         <div
           className="placement-object-picker-list"
           role="tablist"
-          aria-label="Placement spawner transforms"
+          aria-label={
+            selectedSubgroup
+              ? `Placement spawner transforms in ${selectedSubgroup.label}`
+              : 'Placement spawner transforms'
+          }
         >
           {tabs.map((tab) => (
             <button
@@ -24987,7 +25018,11 @@ function PlacementObjectGroupBrowser({
         <div
           className="encounter-condition-tabs placement-object-tabs"
           role="tablist"
-          aria-label="Placement spawner transforms"
+          aria-label={
+            selectedSubgroup
+              ? `Placement spawner transforms in ${selectedSubgroup.label}`
+              : 'Placement spawner transforms'
+          }
         >
           {tabs.map((tab) => (
             <button
@@ -31415,6 +31450,7 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
       trade.speciesId.toString(),
       trade.form.toString(),
       trade.level.toString(),
+      formatTradePokemonRequestLabel(trade, trade.editorFamily),
       trade.requiredSpecies,
       trade.requiredSpeciesId.toString(),
       trade.requiredForm.toString(),
@@ -31458,6 +31494,22 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
       formatTradePokemonRelearnMoves(trade),
       trade.provenance.sourceFile
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function formatTradePokemonRequestLabel(
+  trade: TradePokemonRecord,
+  editorFamily: EditorUiFamily
+) {
+  if (editorFamily === 'za') {
+    return 'Handled by trade event';
+  }
+
+  return formatSpeciesFormLabel(
+    trade.requiredSpecies,
+    trade.requiredForm,
+    trade.requiredSpeciesId,
+    editorFamily
   );
 }
 

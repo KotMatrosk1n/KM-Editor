@@ -43,6 +43,13 @@ export type PlacementObjectGroupTab = {
   title: string;
 };
 
+export type PlacementObjectSubgroup = {
+  key: string;
+  label: string;
+  objects: PlacedObjectRecord[];
+  tabs: PlacementObjectGroupTab[];
+};
+
 export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   if (!workflow) return [];
   const hasStructuredCategoryIds = workflow.objects.some((object) => object.categoryId?.trim());
@@ -237,26 +244,60 @@ export function buildPlacementObjectGroups(
 
   return [...groups.entries()].map(([key, group]) => {
     const objects = [...group.objects].sort(comparePlacementObjectsForGroup);
-    return {
+    const objectGroup = {
       key,
       label: group.label,
       map: group.map,
       objects,
       position: formatPlacementGroupPosition(objects),
-      preview: formatPlacementGroupPreview(group.label, objects)
+      preview: ''
+    };
+    return {
+      ...objectGroup,
+      preview: formatPlacementGroupPreview(objectGroup)
     };
   });
 }
 
-export function getPlacementObjectGroupTabs(group: PlacementObjectGroup): PlacementObjectGroupTab[] {
-  return group.objects.map((object, index) => {
-    const label = formatPlacementObjectTabLabel(group, object, index);
-    return {
-      label,
-      objectId: object.objectId,
-      title: `${object.label} - ${formatPlacementCoordinates(object)}`
-    };
-  });
+export function getPlacementObjectGroupTabs(
+  group: Pick<PlacementObjectGroup, 'label' | 'map'> & Partial<Pick<PlacementObjectGroup, 'objects'>>,
+  objects?: PlacedObjectRecord[],
+  subgroupLabel = ''
+): PlacementObjectGroupTab[] {
+  const groupObjects = objects ?? group.objects ?? [];
+  return groupObjects.map((object, index) => createPlacementObjectGroupTab(group, object, index, subgroupLabel));
+}
+
+export function getPlacementObjectSubgroups(group: PlacementObjectGroup): PlacementObjectSubgroup[] {
+  const subgroups = new Map<string, { label: string; objects: PlacedObjectRecord[] }>();
+
+  for (const object of group.objects) {
+    const subgroupInfo = getPlacementObjectSubgroupInfo(group, object);
+    const current = subgroups.get(subgroupInfo.key);
+    if (current) {
+      current.objects.push(object);
+      continue;
+    }
+
+    subgroups.set(subgroupInfo.key, {
+      label: subgroupInfo.label,
+      objects: [object]
+    });
+  }
+
+  return [...subgroups.entries()]
+    .map(([key, subgroup]) => {
+      const objects = [...subgroup.objects].sort((left, right) =>
+        comparePlacementObjectsWithinSubgroup(group, subgroup.label, left, right)
+      );
+      return {
+        key,
+        label: subgroup.label,
+        objects,
+        tabs: getPlacementObjectGroupTabs(group, objects, subgroup.label)
+      };
+    })
+    .sort(comparePlacementSubgroups);
 }
 
 function getPlacementCategoryLabel(object: PlacedObjectRecord, categoryId: string) {
@@ -329,8 +370,35 @@ function getZaPokemonSpawnerGroupInfo(object: PlacedObjectRecord) {
     };
   }
 
+  const dungeonInfo = getZaDimensionDungeonPlacementInfo(object);
+  if (dungeonInfo) {
+    return {
+      key: `za:pokemon-spawner:dimension-dungeon:${dungeonInfo.dungeonNumber}`,
+      label: dungeonInfo.dungeonLabel,
+      map: object.categoryLabel || object.objectType
+    };
+  }
+
+  const semanticLocation = getZaSemanticPlacementMajorLocation(object);
+  if (semanticLocation) {
+    return {
+      key: `za:pokemon-spawner:location:${normalizePlacementGroupKey(semanticLocation)}`,
+      label: semanticLocation,
+      map: object.categoryLabel || object.objectType
+    };
+  }
+
   const map = object.map.trim();
   if (map && map !== object.categoryLabel) {
+    const majorLocation = getZaPlacementMajorLocation(object);
+    if (majorLocation && majorLocation !== map) {
+      return {
+        key: `za:pokemon-spawner:location:${normalizePlacementGroupKey(majorLocation)}`,
+        label: majorLocation,
+        map: object.categoryLabel || object.objectType
+      };
+    }
+
     return {
       key: `za:pokemon-spawner:map:${normalizePlacementGroupKey(map)}`,
       label: map,
@@ -347,8 +415,26 @@ function getZaPokemonSpawnerGroupInfo(object: PlacedObjectRecord) {
 }
 
 function getZaItemBallGroupInfo(object: PlacedObjectRecord) {
+  const semanticLocation = getZaSemanticPlacementMajorLocation(object);
+  if (semanticLocation) {
+    return {
+      key: `za:item-ball-spawner:location:${normalizePlacementGroupKey(semanticLocation)}`,
+      label: semanticLocation,
+      map: object.categoryLabel || object.objectType
+    };
+  }
+
   const map = object.map.trim();
   if (map && map !== object.categoryLabel) {
+    const majorLocation = getZaPlacementMajorLocation(object);
+    if (majorLocation && majorLocation !== map) {
+      return {
+        key: `za:item-ball-spawner:location:${normalizePlacementGroupKey(majorLocation)}`,
+        label: majorLocation,
+        map: object.categoryLabel || object.objectType
+      };
+    }
+
     return {
       key: `za:item-ball-spawner:map:${normalizePlacementGroupKey(map)}`,
       label: map,
@@ -368,6 +454,447 @@ function getZaItemBallBaseLabel(label: string) {
   const trimmed = label.trim();
   const match = trimmed.match(/^(.*?)(?:\s+Item Ball(?:\s+\d+)?)(?::.*)?$/i);
   return match?.[1]?.trim() || null;
+}
+
+function getZaPlacementMajorLocation(object: PlacedObjectRecord) {
+  for (const label of [object.map, object.label]) {
+    const trimmed = label.trim();
+    if (!trimmed || trimmed === object.categoryLabel || trimmed === object.objectType) {
+      continue;
+    }
+
+    if (parseZaDimensionDungeonPlacement(label)) {
+      continue;
+    }
+
+    const mainDungeon = parseZaMainDungeonPlacement(label);
+    if (mainDungeon) {
+      return mainDungeon.dungeonLabel;
+    }
+
+    const wildZone = parseZaWildZonePlacement(label);
+    if (wildZone?.zoneLabel) {
+      return wildZone.zoneLabel;
+    }
+
+    const event = parseZaEventPlacement(label);
+    if (event?.eventLabel) {
+      return event.eventLabel;
+    }
+
+    const testSpawner = parseZaTestSpawnerPlacement(label);
+    if (testSpawner?.groupLabel) {
+      return testSpawner.groupLabel;
+    }
+
+    const majorLocation = parseZaPlacementMajorLocation(label);
+    if (majorLocation && majorLocation !== trimmed) {
+      return majorLocation;
+    }
+  }
+
+  return null;
+}
+
+function getZaSemanticPlacementMajorLocation(object: PlacedObjectRecord) {
+  const majorLocation = getZaPlacementMajorLocation(object);
+  const objectLabel = object.label.trim();
+  const objectMap = object.map.trim();
+  return majorLocation &&
+    majorLocation !== objectLabel &&
+    majorLocation !== objectMap &&
+    majorLocation !== object.categoryLabel
+    ? majorLocation
+    : null;
+}
+
+function parseZaPlacementMajorLocation(label: string) {
+  const trimmed = label.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const districtMatch = trimmed.match(/^([^,]+ District)\b/i);
+  if (districtMatch?.[1]) {
+    return districtMatch[1].trim();
+  }
+
+  const wildZoneMatch = trimmed.match(/^(Wild Zone\s+\d+)\b/i);
+  if (wildZoneMatch?.[1]) {
+    return wildZoneMatch[1].trim();
+  }
+
+  const lumioseInteriorMatch = trimmed.match(/^(Lumiose City),\s*Interior Area\b/i);
+  if (lumioseInteriorMatch?.[1]) {
+    return `${lumioseInteriorMatch[1].trim()} Interiors`;
+  }
+
+  const commaIndex = trimmed.indexOf(',');
+  if (commaIndex > 0) {
+    return trimmed.slice(0, commaIndex).trim();
+  }
+
+  return trimmed;
+}
+
+function getZaDimensionDungeonPlacementInfo(object: PlacedObjectRecord) {
+  for (const label of [object.map, object.label]) {
+    const info = parseZaDimensionDungeonPlacement(label);
+    if (info) {
+      return info;
+    }
+  }
+
+  return null;
+}
+
+function parseZaDimensionDungeonPlacement(label: string) {
+  const normalized = label
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!normalized) {
+    return null;
+  }
+
+  const formattedMatch = normalized.match(
+    /^Dimension Dungeon\s+(\d+)\s+(Variant|Special Area|Pokemon Set)\s+(\d+)(?:\s+(.*))?$/i
+  );
+  if (formattedMatch?.[1] && formattedMatch[2] && formattedMatch[3]) {
+    const variantKind = formatDimensionDungeonSectionKind(formattedMatch[2]);
+    return {
+      dungeonLabel: `Dimension Dungeon ${formatPlacementNumber(formattedMatch[1])}`,
+      dungeonNumber: formatPlacementNumber(formattedMatch[1]),
+      tailLabel: formatDimensionDungeonTail(formattedMatch[4] ?? ''),
+      variantLabel: `${variantKind} ${formatPlacementNumber(formattedMatch[3])}`
+    };
+  }
+
+  const rawMatch = normalized.match(
+    /^(?:spn\s+)?(?:random\s+)?zdm(\d+)\s+(v|sp|poke)0*(\d+)(?:\s+(.*))?$/i
+  );
+  if (rawMatch?.[1] && rawMatch[2] && rawMatch[3]) {
+    const variantKind = rawMatch[2].toLocaleLowerCase() === 'sp'
+      ? 'Special Area'
+      : rawMatch[2].toLocaleLowerCase() === 'poke'
+        ? 'Pokemon Set'
+        : 'Variant';
+    return {
+      dungeonLabel: `Dimension Dungeon ${formatPlacementNumber(rawMatch[1])}`,
+      dungeonNumber: formatPlacementNumber(rawMatch[1]),
+      tailLabel: formatDimensionDungeonTail(rawMatch[4] ?? ''),
+      variantLabel: `${variantKind} ${formatPlacementNumber(rawMatch[3])}`
+    };
+  }
+
+  return null;
+}
+
+function formatDimensionDungeonSectionKind(value: string) {
+  const normalized = value.toLocaleLowerCase();
+  if (normalized === 'special area') {
+    return 'Special Area';
+  }
+
+  if (normalized === 'pokemon set') {
+    return 'Pokemon Set';
+  }
+
+  return 'Variant';
+}
+
+function getZaMainDungeonPlacementInfo(object: PlacedObjectRecord) {
+  for (const label of [object.map, object.label]) {
+    const info = parseZaMainDungeonPlacement(label);
+    if (info) {
+      return info;
+    }
+  }
+
+  return null;
+}
+
+function parseZaMainDungeonPlacement(label: string) {
+  const normalized = label
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!normalized) {
+    return null;
+  }
+
+  const formattedMatch = normalized.match(/^Dungeon\s+(\d+)(?:\s+Floor\s+(\d+))?(?:\s+(.*))?$/i);
+  if (formattedMatch?.[1]) {
+    const dungeonNumber = formatPlacementNumber(formattedMatch[1]);
+    return {
+      dungeonLabel: `Dungeon ${dungeonNumber}`,
+      dungeonNumber,
+      floorLabel: formattedMatch[2] ? `Floor ${formatPlacementNumber(formattedMatch[2])}` : 'Dungeon Items',
+      tailLabel: formatMainDungeonTail(formattedMatch[3] ?? '')
+    };
+  }
+
+  const rawMatch = normalized.match(/^(?:spn|itd)\s+d0*(\d+)(?:\s+0*(\d+))?(?:\s+(.*))?$/i);
+  if (rawMatch?.[1]) {
+    const dungeonNumber = formatPlacementNumber(rawMatch[1]);
+    const floorNumber = rawMatch[2] ? formatPlacementNumber(rawMatch[2]) : '';
+    return {
+      dungeonLabel: `Dungeon ${dungeonNumber}`,
+      dungeonNumber,
+      floorLabel: floorNumber ? `Floor ${floorNumber}` : 'Dungeon Items',
+      tailLabel: formatMainDungeonTail(rawMatch[3] ?? '')
+    };
+  }
+
+  return null;
+}
+
+function formatMainDungeonTail(tail: string) {
+  const normalized = tail.trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+  if (!normalized) {
+    return '';
+  }
+
+  if (/^Item\s+\d+/i.test(normalized) || /^Spawn Point\s+\w+/i.test(normalized)) {
+    return normalized;
+  }
+
+  return normalized
+    .split(' ')
+    .map((token) => {
+      if (/^\d+[a-z]?$/i.test(token)) {
+        return `Spawn Point ${token.toUpperCase()}`;
+      }
+
+      if (/^ev$/i.test(token)) {
+        return 'Event';
+      }
+
+      return formatDimensionDungeonTailToken(token);
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function parseZaWildZonePlacement(label: string) {
+  const normalized = label
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!normalized) {
+    return null;
+  }
+
+  const formattedMatch = normalized.match(/^(Wild Zone\s+\d+)(?:\s+(.*))?$/i);
+  if (formattedMatch?.[1]) {
+    return {
+      tailLabel: formatWildZonePlacementTail(formattedMatch[2] ?? ''),
+      zoneLabel: formatPlacementTitleWords(formattedMatch[1])
+    };
+  }
+
+  const rawMatch = normalized.match(/^(?:spn\s+)?a\d{4}\s+w\d+(?:\s+(.*))?$/i);
+  if (rawMatch) {
+    return {
+      tailLabel: formatWildZonePlacementTail(rawMatch[1] ?? ''),
+      zoneLabel: ''
+    };
+  }
+
+  return null;
+}
+
+function formatWildZonePlacementTail(tail: string) {
+  const normalized = tail.trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+  if (!normalized) {
+    return '';
+  }
+
+  if (/^Variant\s+\d+/i.test(normalized)) {
+    return normalized;
+  }
+
+  return normalized
+    .split(' ')
+    .map((token) => {
+      const variantMatch = token.match(/^v0*(\d+)$/i);
+      if (variantMatch?.[1]) {
+        return `Variant ${formatPlacementNumber(variantMatch[1])}`;
+      }
+
+      if (/^\d+[a-z]?$/i.test(token)) {
+        return `Spawn Point ${token.toUpperCase()}`;
+      }
+
+      return formatDimensionDungeonTailToken(token);
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function parseZaEventPlacement(label: string) {
+  const normalized = label.trim().replace(/\s+/g, ' ');
+  const match = normalized.match(
+    /^(Story Chapter Event\s+\d+|Side Mission Event\s+\d+|Rest Event\s+\d+|DLC Event\s+\d+(?:\.\d+)?|Story Event\s+[A-Za-z ]+)(?:\s+(.*))?$/i
+  );
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return {
+    eventLabel: formatPlacementTitleWords(match[1]),
+    tailLabel: formatMainDungeonTail(match[2] ?? '')
+  };
+}
+
+function parseZaTestSpawnerPlacement(label: string) {
+  const normalized = label
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ');
+  const match = normalized.match(/^test pokemon spawner(?:\s+(.*))?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const tail = (match[1] ?? '').trim();
+  return {
+    groupLabel: 'Test Pokemon Spawners',
+    subgroupLabel: 'Test Objects',
+    tailLabel: tail ? formatPlacementTitleWords(tail) : 'Test Object'
+  };
+}
+
+function formatPlacementTitleWords(value: string) {
+  return value
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => (/^\d+(?:\.\d+)?$/.test(part) ? part : formatPlacementTitleToken(part)))
+    .join(' ');
+}
+
+function formatDimensionDungeonTail(tail: string) {
+  const normalized = tail.trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+  if (!normalized) {
+    return '';
+  }
+
+  if (
+    /^(?:Alpha\s+)?Spawn Point\s+\d+/i.test(normalized) ||
+    /^Follower(?:\s+\d+)?$/i.test(normalized)
+  ) {
+    return normalized;
+  }
+
+  const tokens = normalized.split(' ');
+  return tokens.map(formatDimensionDungeonTailToken).filter(Boolean).join(' ');
+}
+
+function formatDimensionDungeonTailToken(token: string) {
+  if (/^\d+$/.test(token)) {
+    return `Spawn Point ${token}`;
+  }
+
+  const alphaMatch = token.match(/^a(\d+)$/i);
+  if (alphaMatch?.[1]) {
+    return `Alpha Spawn Point ${alphaMatch[1]}`;
+  }
+
+  if (/^follower\d*$/i.test(token)) {
+    const followerNumber = token.replace(/^follower/i, '');
+    return followerNumber ? `Follower ${followerNumber}` : 'Follower';
+  }
+
+  return token
+    .split(/[-\s]/)
+    .filter(Boolean)
+    .map(formatPlacementTitleToken)
+    .join(' ');
+}
+
+function formatPlacementNumber(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed.toString() : value;
+}
+
+function formatPlacementTitleToken(value: string) {
+  const lower = value.toLocaleLowerCase();
+  return lower.charAt(0).toLocaleUpperCase() + lower.slice(1);
+}
+
+function getPlacementObjectSubgroupInfo(
+  group: Pick<PlacementObjectGroup, 'label' | 'map'>,
+  object: PlacedObjectRecord
+) {
+  if (group.map === 'Boss Battles') {
+    return {
+      key: 'subgroup:general',
+      label: 'General'
+    };
+  }
+
+  const subgroupLabel = formatPlacementSubgroupLabel(group, object);
+  return {
+    key: `subgroup:${normalizePlacementGroupKey(subgroupLabel)}`,
+    label: subgroupLabel
+  };
+}
+
+function formatPlacementSubgroupLabel(
+  group: Pick<PlacementObjectGroup, 'label' | 'map'>,
+  object: PlacedObjectRecord
+) {
+  const dungeonInfo = getZaDimensionDungeonPlacementInfo(object);
+  if (dungeonInfo?.variantLabel) {
+    return dungeonInfo.variantLabel;
+  }
+
+  const mainDungeonInfo = getZaMainDungeonPlacementInfo(object);
+  if (mainDungeonInfo?.floorLabel) {
+    return mainDungeonInfo.floorLabel;
+  }
+
+  const wildZoneInfo = parseZaWildZonePlacement(object.map) ?? parseZaWildZonePlacement(object.label);
+  if (wildZoneInfo?.tailLabel) {
+    const variantMatch = wildZoneInfo.tailLabel.match(/^(Variant\s+\d+)/i);
+    return variantMatch?.[1] ?? 'Spawners';
+  }
+
+  const eventInfo = parseZaEventPlacement(object.map) ?? parseZaEventPlacement(object.label);
+  if (eventInfo?.eventLabel) {
+    return eventInfo.eventLabel === group.label ? 'Event Spawners' : eventInfo.eventLabel;
+  }
+
+  const testSpawnerInfo = parseZaTestSpawnerPlacement(object.map) ?? parseZaTestSpawnerPlacement(object.label);
+  if (testSpawnerInfo?.subgroupLabel) {
+    return testSpawnerInfo.subgroupLabel;
+  }
+
+  const map = object.map.trim();
+  const label = object.label.trim();
+  const strippedMap = stripPlacementGroupPrefix(map, group.label);
+  if (strippedMap && strippedMap !== map) {
+    return strippedMap;
+  }
+
+  const strippedLabel = stripPlacementGroupPrefix(label, group.label);
+  const withoutItemBall = strippedLabel
+    .replace(/\s+Item Ball(?:\s+\d+)?(?::.*)?$/i, '')
+    .trim();
+  const withoutSpawner = withoutItemBall
+    .replace(/,\s*(?:Spawner|Transform)\s+\d+.*$/i, '')
+    .replace(/\s+(?:Spawner|Transform)\s+\d+.*$/i, '')
+    .trim();
+
+  if (withoutSpawner && withoutSpawner !== label && withoutSpawner !== group.label) {
+    return withoutSpawner;
+  }
+
+  if (map && map !== group.label && map !== group.map) {
+    return map;
+  }
+
+  return 'General';
 }
 
 function getZaBossPlacementBaseLabel(label: string) {
@@ -420,17 +947,122 @@ function getPlacementObjectSortRank(label: string) {
   return parseFirstInteger(label) ?? 1000;
 }
 
-function formatPlacementGroupPreview(groupLabel: string, objects: PlacedObjectRecord[]) {
-  if (objects.length === 1) {
-    return formatPlacementPrimaryData(objects[0]!);
+function formatPlacementGroupPreview(group: PlacementObjectGroup) {
+  if (group.objects.length === 1) {
+    const dungeonInfo = getZaDimensionDungeonPlacementInfo(group.objects[0]!);
+    if (dungeonInfo) {
+      return [dungeonInfo.variantLabel, dungeonInfo.tailLabel].filter(Boolean).join(': ');
+    }
+
+    const mainDungeonInfo = getZaMainDungeonPlacementInfo(group.objects[0]!);
+    if (mainDungeonInfo) {
+      return [mainDungeonInfo.floorLabel, mainDungeonInfo.tailLabel].filter(Boolean).join(': ');
+    }
+
+    const wildZoneInfo = parseZaWildZonePlacement(group.objects[0]!.map) ??
+      parseZaWildZonePlacement(group.objects[0]!.label);
+    if (wildZoneInfo?.tailLabel) {
+      return wildZoneInfo.tailLabel;
+    }
+
+    const eventInfo = parseZaEventPlacement(group.objects[0]!.map) ??
+      parseZaEventPlacement(group.objects[0]!.label);
+    if (eventInfo?.tailLabel) {
+      return eventInfo.tailLabel;
+    }
+
+    const testSpawnerInfo = parseZaTestSpawnerPlacement(group.objects[0]!.map) ??
+      parseZaTestSpawnerPlacement(group.objects[0]!.label);
+    if (testSpawnerInfo?.tailLabel) {
+      return testSpawnerInfo.tailLabel;
+    }
+
+    return formatPlacementPrimaryData(group.objects[0]!);
   }
 
-  const tabs = objects
-    .map((object, index) => formatPlacementObjectTabLabel({ label: groupLabel, map: '' }, object, index))
+  const subgroups = getPlacementObjectSubgroups(group);
+  if (subgroups.length > 1) {
+    const preview = subgroups.slice(0, 3).map((subgroup) => subgroup.label).join(', ');
+    const additionalCount = subgroups.length - 3;
+    return additionalCount > 0 ? `${preview} + ${additionalCount} more` : preview;
+  }
+
+  const subgroup = subgroups[0];
+  const tabs = (subgroup?.tabs ?? getPlacementObjectGroupTabs(group))
+    .map((tab) => tab.label)
     .filter((label, index, labels) => labels.indexOf(label) === index);
   const preview = tabs.slice(0, 3).join(', ');
   const additionalCount = tabs.length - 3;
-  return additionalCount > 0 ? `${preview} + ${additionalCount} more` : preview;
+  const tabPreview = additionalCount > 0 ? `${preview} + ${additionalCount} more` : preview;
+  return subgroup && subgroup.label !== 'General' && tabPreview
+    ? `${subgroup.label}: ${tabPreview}`
+    : tabPreview;
+}
+
+function comparePlacementObjectsWithinSubgroup(
+  group: Pick<PlacementObjectGroup, 'label' | 'map'>,
+  subgroupLabel: string,
+  left: PlacedObjectRecord,
+  right: PlacedObjectRecord
+) {
+  const leftDungeon = getZaDimensionDungeonPlacementInfo(left);
+  const rightDungeon = getZaDimensionDungeonPlacementInfo(right);
+  if (!leftDungeon && !rightDungeon) {
+    return comparePlacementObjectsForGroup(left, right);
+  }
+
+  const leftLabel = formatPlacementObjectTabLabel(group, left, 0, subgroupLabel);
+  const rightLabel = formatPlacementObjectTabLabel(group, right, 0, subgroupLabel);
+  return comparePlacementNaturalLabels(leftLabel, rightLabel) ||
+    comparePlacementObjectsForGroup(left, right);
+}
+
+function comparePlacementNaturalLabels(left: string, right: string) {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  });
+}
+
+function comparePlacementSubgroups(left: PlacementObjectSubgroup, right: PlacementObjectSubgroup) {
+  return getPlacementSubgroupSortRank(left.label) - getPlacementSubgroupSortRank(right.label) ||
+    comparePlacementNaturalLabels(left.label, right.label);
+}
+
+function getPlacementSubgroupSortRank(label: string) {
+  if (/^Variant\s+\d+/i.test(label)) {
+    return 10;
+  }
+
+  if (/^Special Area\s+\d+/i.test(label)) {
+    return 20;
+  }
+
+  if (/^Pokemon Set\s+\d+/i.test(label)) {
+    return 30;
+  }
+
+  if (/^Floor\s+\d+/i.test(label)) {
+    return 40;
+  }
+
+  if (/^Sector\s+\d+/i.test(label)) {
+    return 50;
+  }
+
+  if (/^Event/i.test(label)) {
+    return 60;
+  }
+
+  if (/^Test/i.test(label)) {
+    return 70;
+  }
+
+  if (label === 'General') {
+    return 1000;
+  }
+
+  return 100;
 }
 
 function formatPlacementGroupPosition(objects: PlacedObjectRecord[]) {
@@ -439,15 +1071,55 @@ function formatPlacementGroupPosition(objects: PlacedObjectRecord[]) {
     : `${objects.length} positions`;
 }
 
+function createPlacementObjectGroupTab(
+  group: Pick<PlacementObjectGroup, 'label' | 'map'>,
+  object: PlacedObjectRecord,
+  index: number,
+  subgroupLabel = ''
+) {
+  return {
+    label: formatPlacementObjectTabLabel(group, object, index, subgroupLabel),
+    objectId: object.objectId,
+    title: `${object.label} - ${formatPlacementCoordinates(object)}`
+  };
+}
+
 function formatPlacementObjectTabLabel(
   group: Pick<PlacementObjectGroup, 'label' | 'map'>,
   object: PlacedObjectRecord,
-  index: number
+  index: number,
+  subgroupLabel = ''
 ) {
+  const dungeonInfo = getZaDimensionDungeonPlacementInfo(object);
+  if (dungeonInfo?.tailLabel) {
+    return dungeonInfo.tailLabel;
+  }
+
+  const mainDungeonInfo = getZaMainDungeonPlacementInfo(object);
+  if (mainDungeonInfo?.tailLabel) {
+    return mainDungeonInfo.tailLabel;
+  }
+
+  const wildZoneInfo = parseZaWildZonePlacement(object.map) ?? parseZaWildZonePlacement(object.label);
+  if (wildZoneInfo?.tailLabel) {
+    return wildZoneInfo.tailLabel.replace(/^Variant\s+\d+\s*/i, '').trim() || wildZoneInfo.tailLabel;
+  }
+
+  const eventInfo = parseZaEventPlacement(object.map) ?? parseZaEventPlacement(object.label);
+  if (eventInfo?.tailLabel) {
+    return eventInfo.tailLabel;
+  }
+
+  const testSpawnerInfo = parseZaTestSpawnerPlacement(object.map) ?? parseZaTestSpawnerPlacement(object.label);
+  if (testSpawnerInfo?.tailLabel) {
+    return testSpawnerInfo.tailLabel;
+  }
+
   const strippedFromLabel = stripPlacementGroupPrefix(object.label, group.label);
-  const strippedFromMap = stripPlacementGroupPrefix(strippedFromLabel || object.label, group.map);
+  const strippedFromSubgroup = stripPlacementGroupPrefix(strippedFromLabel || object.label, subgroupLabel);
+  const strippedFromMap = stripPlacementGroupPrefix(strippedFromSubgroup || strippedFromLabel || object.label, group.map);
   const label = strippedFromMap || strippedFromLabel || object.label;
-  return label === group.label || !label.trim()
+  return label === group.label || label === subgroupLabel || !label.trim()
     ? `Transform ${index + 1}`
     : label.trim();
 }

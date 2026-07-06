@@ -251,7 +251,7 @@ public sealed class BridgeJsonTests
                 DynamaxLevel: null,
                 CanGigantamax: null,
                 RequiredSpeciesId: 0,
-                RequiredSpecies: "Script linked",
+                RequiredSpecies: "Handled by trade event",
                 RequiredForm: 0,
                 RequiredNature: 0,
                 RequiredNatureLabel: "Default",

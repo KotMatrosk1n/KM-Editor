@@ -199,7 +199,7 @@ public sealed class ZaGameDumpService
             GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.TradePokemon,
                 "Trade Pokemon",
-                "Scripted local trade Pokemon rows, moves, IVs, and provenance.",
+                "Received local trade Pokemon payload rows, moves, IVs, event keys, and provenance.",
                 paths =>
                 {
                     var workflow = workflowService.LoadTradePokemon(paths);
