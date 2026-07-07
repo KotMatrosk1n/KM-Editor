@@ -107,8 +107,7 @@ internal static class SvTechnicalMachineCatalog
 
     private static bool HasTechnicalMachineShape(global::ItemData item)
     {
-        return item.ItemGroup == global::ItemGroup.ITEMGROUP_WAZA_MACHINE
-            && item.FieldPocket == global::FieldPocket.FPOCKET_WAZA
+        return item.FieldPocket == global::FieldPocket.FPOCKET_WAZA
             && item.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_WAZA
             && item.ItemType == global::ItemType.ITEMTYPE_WAZA
             && (int)item.MachineWaza > 0;

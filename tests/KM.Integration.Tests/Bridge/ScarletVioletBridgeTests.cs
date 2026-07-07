@@ -1705,7 +1705,9 @@ public sealed class ScarletVioletBridgeTests
         var tm100 = items.Payload.Workflow.Items.Single(item => item.ItemId == 5);
         Assert.Equal("Master Ball", masterBall.Name);
         Assert.False(masterBall.Metadata.CanUseOnPokemon);
+        Assert.Equal("Poke Balls", masterBall.Category);
         Assert.True(tm001.Metadata.CanUseOnPokemon);
+        Assert.Equal("TMs", tm001.Category);
         Assert.Equal(1, tm001.Metadata.MachineSlot);
         Assert.Equal(36, tm001.Metadata.MachineMoveId);
         Assert.Equal("Take Down", tm001.Metadata.MachineMoveName);
@@ -1718,16 +1720,16 @@ public sealed class ScarletVioletBridgeTests
         var itemFields = items.Payload.Workflow.EditableFields;
         Assert.Contains(
             itemFields.Single(field => field.Field == "pouch").Options,
-            option => option.Value == (int)global::FieldPocket.FPOCKET_BALL && option.Label == "Ball");
+            option => option.Value == (int)global::FieldPocket.FPOCKET_BALL && option.Label == "Poke Balls");
         Assert.Contains(
             itemFields.Single(field => field.Field == "fieldUseType").Options,
-            option => option.Value == (int)global::FieldFunctionType.FIELDFUNC_WAZA && option.Label == "Waza");
+            option => option.Value == (int)global::FieldFunctionType.FIELDFUNC_WAZA && option.Label == "Teach Move");
         Assert.Contains(
             itemFields.Single(field => field.Field == "itemType").Options,
-            option => option.Value == (int)global::ItemType.ITEMTYPE_BALL && option.Label == "Ball");
+            option => option.Value == (int)global::ItemType.ITEMTYPE_BALL && option.Label == "Poke Ball");
         Assert.Contains(
             itemFields.Single(field => field.Field == "groupType").Options,
-            option => option.Value == (int)global::ItemGroup.ITEMGROUP_BALL && option.Label == "Ball");
+            option => option.Value == (int)global::ItemGroup.ITEMGROUP_BALL && option.Label == "Poke Ball");
         Assert.Contains(
             itemFields.Single(field => field.Field == "machineMoveId").Options,
             option => option.Value == 36 && option.Label.Contains("Take Down", StringComparison.Ordinal));
@@ -1892,6 +1894,58 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             coinSymbol.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletUngroupedTechnicalMachinesUseReadableLabelsAndRemainEditable(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteSvOutput(temp, SvDataPaths.ItemDataArray, CreateUngroupedTechnicalMachineItemDataArray());
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(2176, (2175, "TM115")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishMoveNames,
+            CreateTextTable(407, (45, "Growl"), (406, "Dragon Pulse")));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var items = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-sv-ungrouped-tm-items");
+
+        AssertSuccess(items);
+        var tm115 = Assert.Single(items.Payload!.Workflow.Items);
+        Assert.Equal(2175, tm115.ItemId);
+        Assert.Equal("TMs", tm115.Category);
+        Assert.Equal(115, tm115.Metadata.MachineSlot);
+        Assert.Equal(406, tm115.Metadata.MachineMoveId);
+        Assert.Equal("Dragon Pulse", tm115.Metadata.MachineMoveName);
+        var details = tm115.DetailGroups.Single(group => group.Label == "Scarlet/Violet").Details;
+        Assert.Equal("TM", details.Single(detail => detail.Label == "Item type").Value);
+        Assert.Equal("TMs", details.Single(detail => detail.Label == "Field pocket").Value);
+        Assert.Equal("Teach Move", details.Single(detail => detail.Label == "Field function").Value);
+        Assert.Equal("None", details.Single(detail => detail.Label == "Group").Value);
+
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(2175, "machineMoveId", "45")]),
+            "request-sv-ungrouped-tm-update");
+
+        AssertSuccess(update);
+        Assert.DoesNotContain(update.Payload!.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var updatedTm = Assert.Single(update.Payload.Workflow.Items);
+        Assert.Equal(45, updatedTm.Metadata.MachineMoveId);
+        Assert.Equal("Growl", updatedTm.Metadata.MachineMoveName);
     }
 
     [Theory]
@@ -3287,7 +3341,10 @@ public sealed class ScarletVioletBridgeTests
             BP: 2,
             ThrowPower: 10,
             SortNum: 1,
+            ItemGroup: global::ItemGroup.ITEMGROUP_BALL,
             GroupID: 1,
+            FieldPocket: global::FieldPocket.FPOCKET_BALL,
+            BattleFunctionType: global::BattleFunctionType.BTLFUNC_BALL,
             SetToPoke: true);
         var tmIcon = builder.CreateString("item_tm_001");
         var tm001 = global::ItemData.CreateItemData(
@@ -3343,6 +3400,30 @@ public sealed class ScarletVioletBridgeTests
             FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
             SetToPoke: true);
         var vector = global::ItemDataArray.CreateValuesVector(builder, [masterBall, tm001, legacyMoveItem, tm002, tm100]);
+        var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
+        global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateUngroupedTechnicalMachineItemDataArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var icon = builder.CreateString("item_2175");
+        var tm115 = global::ItemData.CreateItemData(
+            builder,
+            Id: 2175,
+            ItemType: global::ItemType.ITEMTYPE_WAZA,
+            IconNameOffset: icon,
+            Price: 32000,
+            BP: 40,
+            MachineWaza: (global::pml.common.WazaID)406,
+            SortNum: 115,
+            ItemGroup: global::ItemGroup.ITEMGROUP_NONE,
+            GroupID: 0,
+            FieldPocket: global::FieldPocket.FPOCKET_WAZA,
+            FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
+            SetToPoke: true);
+        var vector = global::ItemDataArray.CreateValuesVector(builder, [tm115]);
         var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
         global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();

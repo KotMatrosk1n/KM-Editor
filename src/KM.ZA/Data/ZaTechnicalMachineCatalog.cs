@@ -87,7 +87,7 @@ internal static class ZaTechnicalMachineCatalog
             && item.MachineWaza > 0;
     }
 
-    private static bool TryResolveMachineSlot(ZaItemData item, string itemName, out int slot)
+    public static bool TryResolveMachineSlot(ZaItemData item, string itemName, out int slot)
     {
         if (TryParseMachineSlot(itemName, out slot))
         {

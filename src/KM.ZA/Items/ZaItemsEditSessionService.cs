@@ -488,7 +488,7 @@ internal sealed class ZaItemsEditSessionService
     private static ZaItemRecord OverlayItem(ZaItemRecord item, string? field, int value)
     {
         var metadata = item.Metadata;
-        return field switch
+        var updated = field switch
         {
             ZaItemsWorkflowService.ItemTypeField => item with { Metadata = metadata with { ItemType = value } },
             ZaItemsWorkflowService.PriceField => item with { BuyPrice = value, SellPrice = value / 2 },
@@ -512,7 +512,7 @@ internal sealed class ZaItemsEditSessionService
             },
             ZaItemsWorkflowService.MachineIndexField => item with
             {
-                Metadata = metadata with { MachineSlot = value >= 0 ? value : null, GroupIndex = value },
+                Metadata = metadata with { MachineSlot = value >= 0 ? value + 1 : null, GroupIndex = value },
             },
             ZaItemsWorkflowService.CureSleepField => item with { Metadata = metadata with { CureStatusFlags = SetFlag(metadata.CureStatusFlags, 0, value != 0) } },
             ZaItemsWorkflowService.CurePoisonField => item with { Metadata = metadata with { CureStatusFlags = SetFlag(metadata.CureStatusFlags, 1, value != 0) } },
@@ -540,6 +540,22 @@ internal sealed class ZaItemsEditSessionService
             ZaItemsWorkflowService.CanUseInBattleField => item with { Metadata = metadata with { FieldUseType = value != 0 ? 1 : 0 } },
             _ => item,
         };
+
+        return field is null
+            ? updated
+            : updated with { FieldValues = SetFieldValue(updated.FieldValues, field, value) };
+    }
+
+    private static IReadOnlyDictionary<string, int?> SetFieldValue(
+        IReadOnlyDictionary<string, int?> values,
+        string field,
+        int value)
+    {
+        var updated = new Dictionary<string, int?>(values, StringComparer.Ordinal)
+        {
+            [field] = value,
+        };
+        return updated;
     }
 
     private static int SetFlag(int flags, int bit, bool enabled)

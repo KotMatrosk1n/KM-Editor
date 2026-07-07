@@ -61,6 +61,7 @@ public sealed record ZaItemRecord(
     int SellPrice,
     int WattsPrice,
     int AlternatePrice,
+    IReadOnlyDictionary<string, int?> FieldValues,
     ZaItemMetadata Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<ZaItemDetailGroup> DetailGroups,

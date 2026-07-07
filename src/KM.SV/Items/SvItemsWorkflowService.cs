@@ -58,16 +58,16 @@ internal sealed class SvItemsWorkflowService
     ];
 
     private static readonly IReadOnlyList<SvItemEditableFieldOption> FieldPocketOptions =
-        CreateEnumOptions<global::FieldPocket>("FPOCKET_");
+        CreateEnumOptions<global::FieldPocket>(value => SvLabels.FieldPocket(value));
 
     private static readonly IReadOnlyList<SvItemEditableFieldOption> FieldFunctionOptions =
-        CreateEnumOptions<global::FieldFunctionType>("FIELDFUNC_");
+        CreateEnumOptions<global::FieldFunctionType>(value => SvLabels.FieldFunction(value));
 
     private static readonly IReadOnlyList<SvItemEditableFieldOption> ItemTypeOptions =
-        CreateEnumOptions<global::ItemType>("ITEMTYPE_");
+        CreateEnumOptions<global::ItemType>(value => SvLabels.ItemType(value));
 
     private static readonly IReadOnlyList<SvItemEditableFieldOption> ItemGroupOptions =
-        CreateEnumOptions<global::ItemGroup>("ITEMGROUP_");
+        CreateEnumOptions<global::ItemGroup>(value => SvLabels.ItemGroup(value));
 
     private static readonly IReadOnlyList<SvItemEditableField> EditableFields =
     [
@@ -221,18 +221,18 @@ internal sealed class SvItemsWorkflowService
                 "Scarlet/Violet",
                 [
                     new SvItemDetail("Icon", item.IconName ?? string.Empty),
-                    new SvItemDetail("Item type", SvLabels.EnumName(item.ItemType, "ITEMTYPE_")),
-                    new SvItemDetail("Field pocket", SvLabels.EnumName(item.FieldPocket, "FPOCKET_")),
-                    new SvItemDetail("Field function", SvLabels.EnumName(item.FieldFunctionType, "FIELDFUNC_")),
-                    new SvItemDetail("Battle function", SvLabels.EnumName(item.BattleFunctionType, "BTLFUNC_")),
-                    new SvItemDetail("Group", SvLabels.EnumName(item.ItemGroup, "ITEMGROUP_")),
+                    new SvItemDetail("Item type", SvLabels.ItemType(item.ItemType)),
+                    new SvItemDetail("Field pocket", SvLabels.FieldPocket(item.FieldPocket)),
+                    new SvItemDetail("Field function", SvLabels.FieldFunction(item.FieldFunctionType)),
+                    new SvItemDetail("Battle function", SvLabels.BattleFunction(item.BattleFunctionType)),
+                    new SvItemDetail("Group", SvLabels.ItemGroup(item.ItemGroup)),
                 ]),
         };
 
         return new SvItemRecord(
             item.Id,
             labels.Item(item.Id),
-            SvLabels.EnumName(item.FieldPocket, "FPOCKET_"),
+            SvLabels.FieldPocket(item.FieldPocket),
             item.Price,
             item.Price / 2,
             item.BP,
@@ -335,14 +335,14 @@ internal sealed class SvItemsWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<SvItemEditableFieldOption> CreateEnumOptions<TEnum>(string prefix)
+    private static IReadOnlyList<SvItemEditableFieldOption> CreateEnumOptions<TEnum>(Func<TEnum, string> formatName)
         where TEnum : struct, Enum
     {
         return Enum
             .GetValues<TEnum>()
             .Select(value => new SvItemEditableFieldOption(
                 Convert.ToInt32(value),
-                SvLabels.EnumName(value, prefix)))
+                formatName(value)))
             .OrderBy(option => option.Value)
             .ToArray();
     }

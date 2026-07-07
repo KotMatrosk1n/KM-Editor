@@ -367,10 +367,32 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
         Assert.Equal(3, workflow.Items.Count);
         Assert.Equal(3, workflow.Stats.TotalItemCount);
+        foreach (var item in workflow.Items)
+        {
+            foreach (var field in workflow.EditableFields)
+            {
+                Assert.True(
+                    item.FieldValues.ContainsKey(field.Field),
+                    $"Item {item.ItemId} is missing editable field value '{field.Field}'.");
+            }
+        }
+
         var pokeBall = workflow.Items.Single(item => item.ItemId == 4);
         Assert.Equal("Poke Ball", pokeBall.Name);
         Assert.Equal("Balls", pokeBall.Category);
         Assert.Equal(100, pokeBall.BuyPrice);
+        Assert.Null(pokeBall.Metadata.MachineSlot);
+        Assert.Equal(4, pokeBall.FieldValues["itemType"]);
+        Assert.Equal(100, pokeBall.FieldValues["price"]);
+        Assert.Equal(0, pokeBall.FieldValues["megaShardPrice"]);
+        Assert.Equal(0, pokeBall.FieldValues["colorfulScrewPrice"]);
+        Assert.Equal(1, pokeBall.FieldValues["pocket"]);
+        Assert.Equal(999, pokeBall.FieldValues["stackCap"]);
+        Assert.Equal(1, pokeBall.FieldValues["sortOrder"]);
+        Assert.Equal(0, pokeBall.FieldValues["machineMoveId"]);
+        var potion = workflow.Items.Single(item => item.ItemId == 17);
+        Assert.Equal(20, potion.FieldValues["healPower"]);
+        Assert.Equal(1, potion.FieldValues["canUseInBattle"]);
         Assert.Equal("999", pokeBall
             .DetailGroups
             .Single(group => group.Label == "Pokemon Legends Z-A")
@@ -379,9 +401,133 @@ public sealed class PokemonLegendsZABridgeTests
             .Value);
         var tm = workflow.Items.Single(item => item.ItemId == 328);
         Assert.Equal("Technical Machines", tm.Category);
+        Assert.Equal(1, tm.Metadata.MachineSlot);
         Assert.Equal(33, tm.Metadata.MachineMoveId);
         Assert.Equal("Tackle", tm.Metadata.MachineMoveName);
+        Assert.Equal(33, tm.FieldValues["machineMoveId"]);
+        Assert.Equal(-1, tm.FieldValues["machineIndex"]);
         Assert.Contains(workflow.EditableFields, field => field.Field == "machineMoveId" && field.Label == "TM move");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAProjectDerivesHighNumberTechnicalMachineLabels()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateHighNumberTechnicalMachineItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(429, (427, "TM100"), (429, "TM102")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(528, (526, "Dragon Dance"), (527, "Electroweb"), (528, "Psychic Noise")));
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ShopItemLineupArray,
+            CreateShopLineupArrayWithItems(427, 429));
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var items = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-za-high-tm-items");
+
+        AssertSuccess(items);
+        var tm101 = items.Payload!.Workflow.Items.Single(item => item.ItemId == 428);
+        Assert.Equal("TM101 Electroweb", tm101.Name);
+        Assert.Equal(101, tm101.Metadata.MachineSlot);
+        Assert.Equal(527, tm101.Metadata.MachineMoveId);
+        Assert.Equal(
+            "TM101",
+            tm101.DetailGroups
+                .Single(group => group.Label == "TM Assignment")
+                .Details
+                .Single(detail => detail.Label == "TM slot")
+                .Value);
+
+        var shops = Dispatch<LoadShopsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadShopsWorkflow,
+            new LoadShopsWorkflowRequest(paths),
+            "request-za-high-tm-shops");
+
+        AssertSuccess(shops);
+        var itemField = shops.Payload!.Workflow.EditableFields.Single(field => field.Field == "itemId");
+        Assert.Contains(
+            itemField.Options,
+            option => option.Value == 428 && option.ItemName == "TM101 Electroweb");
+        Assert.DoesNotContain(itemField.Options, option => option.Value == 2161);
+        var shop = Assert.Single(shops.Payload.Workflow.Shops);
+        Assert.Collection(
+            shop.Inventory,
+            item => Assert.Equal("TM100", item.ItemName),
+            item => Assert.Equal("TM102", item.ItemName));
+
+        var invalidUpdate = Dispatch<UpdateShopInventoryItemResponse>(
+            dispatcher,
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                paths,
+                Session: null,
+                ShopId: "shop:a01_friendlyshop_01",
+                Slot: 1,
+                Field: "setInventory",
+                Value: "427,2161,429"),
+            "request-za-high-tm-shop-invalid-insert");
+
+        AssertSuccess(invalidUpdate);
+        Assert.Contains(
+            invalidUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("2161", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("not a known Pokemon Legends Z-A item", StringComparison.Ordinal));
+
+        var update = Dispatch<UpdateShopInventoryItemResponse>(
+            dispatcher,
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                paths,
+                Session: null,
+                ShopId: "shop:a01_friendlyshop_01",
+                Slot: 1,
+                Field: "setInventory",
+                Value: "427,428,429"),
+            "request-za-high-tm-shop-insert");
+
+        AssertSuccess(update);
+        var updatedShop = Assert.Single(update.Payload!.Workflow.Shops);
+        Assert.Collection(
+            updatedShop.Inventory,
+            item => Assert.Equal("TM100", item.ItemName),
+            item =>
+            {
+                Assert.Equal(428, item.ItemId);
+                Assert.Equal("TM101 Electroweb", item.ItemName);
+                Assert.True(item.IsKnownItem);
+            },
+            item => Assert.Equal("TM102", item.ItemName));
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-high-tm-shop-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-high-tm-shop-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadShopLineup(temp, "a01_friendlyshop_01_lineup1");
+        Assert.Equal(427u, written.Inventory(0)!.Value.Item);
+        Assert.Equal(428u, written.Inventory(1)!.Value.Item);
+        Assert.Equal(429u, written.Inventory(2)!.Value.Item);
     }
 
     [Fact]
@@ -2437,6 +2583,51 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateHighNumberTechnicalMachineItemDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var tm100 = CreateItem(
+            builder,
+            itemId: 427,
+            itemType: 5,
+            internalName: "WAZAMASIN100",
+            iconName: "item_0427",
+            price: 1000,
+            pocket: 6,
+            stackCap: 1,
+            sortOrder: 100,
+            machineMoveId: 526,
+            machineIndex: 99);
+        var tm101 = CreateItem(
+            builder,
+            itemId: 428,
+            itemType: 5,
+            internalName: "WAZAMASIN101",
+            iconName: "item_0428",
+            price: 1000,
+            pocket: 6,
+            stackCap: 1,
+            sortOrder: 101,
+            machineMoveId: 527,
+            machineIndex: 100);
+        var tm102 = CreateItem(
+            builder,
+            itemId: 429,
+            itemType: 5,
+            internalName: "WAZAMASIN102",
+            iconName: "item_0429",
+            price: 1000,
+            pocket: 6,
+            stackCap: 1,
+            sortOrder: 102,
+            machineMoveId: 528,
+            machineIndex: 101);
+        var vector = ZaItemDataArray.CreateValuesVector(builder, [tm100, tm101, tm102]);
+        var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
+        ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static void WriteTrainerFixture(TemporaryBridgeProject temp)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.TrainerDataArray, CreateTrainerDataArray());
@@ -2985,6 +3176,23 @@ public sealed class PokemonLegendsZABridgeTests
         var pokeBall = CreateShopInventory(builder, itemId: 4, displayIndex: 1, CreateForceShopCondition(builder));
         var potion = CreateShopInventory(builder, itemId: 17, displayIndex: 2, CreatePhaseShopCondition(builder, "30600"));
         var lineup = CreateShopLineup(builder, "a01_friendlyshop_01_lineup1", [pokeBall, potion]);
+        var vector = ZaShopLineupArray.CreateValuesVector(builder, [lineup]);
+        var root = ZaShopLineupArray.CreateZaShopLineupArray(builder, vector);
+        ZaShopLineupArray.FinishZaShopLineupArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateShopLineupArrayWithItems(params uint[] itemIds)
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var inventory = itemIds
+            .Select((itemId, index) => CreateShopInventory(
+                builder,
+                itemId,
+                checked((uint)(index + 1)),
+                CreateForceShopCondition(builder)))
+            .ToArray();
+        var lineup = CreateShopLineup(builder, "a01_friendlyshop_01_lineup1", inventory);
         var vector = ZaShopLineupArray.CreateValuesVector(builder, [lineup]);
         var root = ZaShopLineupArray.CreateZaShopLineupArray(builder, vector);
         ZaShopLineupArray.FinishZaShopLineupArrayBuffer(builder, root);

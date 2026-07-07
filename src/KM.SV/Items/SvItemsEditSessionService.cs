@@ -403,7 +403,7 @@ internal sealed class SvItemsEditSessionService
             "TM move can only be edited on Scarlet/Violet TM item records.",
             SvEditSessionSupport.ItemsDomain,
             field: SvItemsWorkflowService.MachineMoveIdField,
-            expected: "Item with an S/V TM group and machine move"));
+            expected: "Item with S/V TM pocket, function, type, label, and machine move"));
         return false;
     }
 
@@ -436,19 +436,23 @@ internal sealed class SvItemsEditSessionService
         return workflow with
         {
             Items = workflow.Items
-                .Select(item => item.ItemId == itemId ? OverlayItem(item, edit.Field, value) : item)
+                .Select(item => item.ItemId == itemId ? OverlayItem(workflow, item, edit.Field, value) : item)
                 .ToArray(),
         };
     }
 
-    private static SvItemRecord OverlayItem(SvItemRecord item, string? field, int value)
+    private static SvItemRecord OverlayItem(SvItemsWorkflow workflow, SvItemRecord item, string? field, int value)
     {
         var metadata = item.Metadata;
         return field switch
         {
             SvItemsWorkflowService.BuyPriceField => item with { BuyPrice = value, SellPrice = value / 2 },
             SvItemsWorkflowService.WattsPriceField => item with { WattsPrice = value },
-            SvItemsWorkflowService.PouchField => item with { Metadata = metadata with { Pouch = value } },
+            SvItemsWorkflowService.PouchField => item with
+            {
+                Category = SvLabels.FieldPocket((global::FieldPocket)value),
+                Metadata = metadata with { Pouch = value },
+            },
             SvItemsWorkflowService.FlingPowerField => item with { Metadata = metadata with { FlingPower = value } },
             SvItemsWorkflowService.FieldUseTypeField => item with
             {
@@ -497,11 +501,27 @@ internal sealed class SvItemsEditSessionService
                 Metadata = metadata with
                 {
                     MachineMoveId = value > 0 ? value : null,
-                    MachineMoveName = value > 0 ? SvLabels.Move(value) : null,
+                    MachineMoveName = value > 0 ? ResolveMoveName(workflow, value) : null,
                 },
             },
             _ => item,
         };
+    }
+
+    private static string ResolveMoveName(SvItemsWorkflow workflow, int moveId)
+    {
+        var machineMoveField = workflow.EditableFields.FirstOrDefault(
+            field => string.Equals(field.Field, SvItemsWorkflowService.MachineMoveIdField, StringComparison.Ordinal));
+        var moveOption = machineMoveField?.Options.FirstOrDefault(option => option.Value == moveId);
+        if (moveOption is null)
+        {
+            return SvLabels.Move(moveId);
+        }
+
+        var prefix = moveId.ToString(CultureInfo.InvariantCulture) + " ";
+        return moveOption.Label.StartsWith(prefix, StringComparison.Ordinal)
+            ? moveOption.Label[prefix.Length..]
+            : moveOption.Label;
     }
 
     private static void ApplyEdit(
