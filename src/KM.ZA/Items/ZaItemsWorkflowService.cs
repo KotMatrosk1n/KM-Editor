@@ -282,6 +282,12 @@ internal sealed class ZaItemsWorkflowService
     {
         var machineMoveId = item.MachineWaza;
         var machineMoveName = machineMoveId > 0 ? labels.Move(machineMoveId) : null;
+        var sourceItemName = labels.Item(item.Id);
+        var machineSlot = ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+            && ZaTechnicalMachineCatalog.TryResolveMachineSlot(item, sourceItemName, out var resolvedSlot)
+                ? resolvedSlot
+                : (int?)null;
+        var itemName = ResolveItemName(item, sourceItemName, machineSlot, machineMoveName);
         var metadata = new ZaItemMetadata(
             item.Pocket,
             PouchFlags: 0,
@@ -312,22 +318,93 @@ internal sealed class ZaItemsWorkflowService
             item.WorkFriendly1,
             item.WorkFriendly2,
             item.WorkFriendly3,
-            MachineSlot: item.MachineIndex >= 0 ? item.MachineIndex : null,
+            MachineSlot: machineSlot,
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
             MachineMoveName: machineMoveName);
 
         return new ZaItemRecord(
             item.Id,
-            labels.Item(item.Id),
+            itemName,
             FormatPocket(item.Pocket),
             item.Price,
             item.Price / 2,
             item.PriceMegaShard,
             item.PriceColorfulScrew,
+            CreateFieldValues(item),
             metadata,
             SharedItemIds: [],
             CreateDetailGroups(item, labels),
             new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+    }
+
+    internal static IReadOnlyDictionary<string, int?> CreateFieldValues(ZaItemData item)
+    {
+        return new Dictionary<string, int?>
+        {
+            [ItemTypeField] = item.ItemType,
+            [PriceField] = item.Price,
+            [MegaShardPriceField] = item.PriceMegaShard,
+            [ColorfulScrewPriceField] = item.PriceColorfulScrew,
+            [PocketField] = item.Pocket,
+            [StackCapField] = item.SlotMaxNum,
+            [SortOrderField] = item.SortNum,
+            [CanNotHoldField] = item.CanNotHold ? 1 : 0,
+            [MachineMoveIdField] = item.MachineWaza,
+            [MachineIndexField] = item.MachineIndex,
+            [CureSleepField] = item.WorkRecvSleep ? 1 : 0,
+            [CurePoisonField] = item.WorkRecvPoison ? 1 : 0,
+            [CureBurnField] = item.WorkRecvBurn ? 1 : 0,
+            [CureFreezeField] = item.WorkRecvFreeze ? 1 : 0,
+            [CureParalyzeField] = item.WorkRecvParalyze ? 1 : 0,
+            [CureConfuseField] = item.WorkRecvConfuse ? 1 : 0,
+            [CureInfatuationField] = item.WorkRecvMero ? 1 : 0,
+            [AttackBoostField] = item.WorkAttack,
+            [DefenseBoostField] = item.WorkDefense,
+            [SpecialAttackBoostField] = item.WorkSpAttack,
+            [SpecialDefenseBoostField] = item.WorkSpDefense,
+            [SpeedBoostField] = item.WorkSpeed,
+            [AccuracyBoostField] = item.WorkAccuracy,
+            [CriticalHitBoostField] = item.WorkCritical,
+            [EffectGuardField] = item.WorkEffectGuard,
+            [MintNatureField] = item.MintNature,
+            [HealPowerField] = item.WorkRecvPower,
+            [HealPercentageField] = item.HealPercentage,
+            [RevivalCountField] = item.WorkRevival,
+            [RevivePercentageField] = item.RevivePercentage,
+            [ExpPointGainField] = item.ExpPointGain,
+            [MaxUseLevelField] = item.MaxUseLevel,
+            [FriendshipGain1Field] = item.WorkFriendly1,
+            [FriendshipGain2Field] = item.WorkFriendly2,
+            [FriendshipGain3Field] = item.WorkFriendly3,
+            [EvolutionItemField] = item.WorkEvolutional ? 1 : 0,
+            [FormChangeItemField] = item.WorkFormChange ? 1 : 0,
+            [EvHpField] = item.WorkStatusHp,
+            [EvAttackField] = item.WorkStatusAtk,
+            [EvDefenseField] = item.WorkStatusDef,
+            [EvSpeedField] = item.WorkStatusSpd,
+            [EvSpecialAttackField] = item.WorkStatusSAtk,
+            [EvSpecialDefenseField] = item.WorkStatusSDef,
+            [EquipPowerField] = item.EquipPower,
+            [AutoHealPriorityField] = item.AutoHealPriority,
+            [CanUseInBattleField] = item.CanUseInBattle ? 1 : 0,
+            [SwapIntoItemField] = item.SwapIntoId,
+        };
+    }
+
+    private static string ResolveItemName(
+        ZaItemData item,
+        string itemName,
+        int? machineSlot,
+        string? machineMoveName)
+    {
+        if (!string.Equals(itemName, ZaLabels.Item(item.Id), StringComparison.Ordinal)
+            || machineMoveName is null
+            || machineSlot is null)
+        {
+            return itemName;
+        }
+
+        return $"{ZaTechnicalMachineCatalog.FormatMachineLabel(machineSlot.Value)} {machineMoveName}";
     }
 
     private static bool CanUseOnPokemon(ZaItemData item)
@@ -425,6 +502,7 @@ internal sealed class ZaItemsWorkflowService
                 "TM Assignment",
                 [
                     Detail("TM move", item.MachineWaza > 0 ? $"{item.MachineWaza.ToString(CultureInfo.InvariantCulture)} {labels.Move(item.MachineWaza)}" : "None"),
+                    Detail("TM slot", FormatMachineSlot(item, labels)),
                     Detail("TM index", item.MachineIndex),
                 ]),
             new ZaItemDetailGroup(
@@ -470,6 +548,14 @@ internal sealed class ZaItemsWorkflowService
 
     private static ZaItemDetail Detail(string label, string value) =>
         new(label, value);
+
+    private static string FormatMachineSlot(ZaItemData item, ZaTextLabelLookup labels)
+    {
+        return ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+            && ZaTechnicalMachineCatalog.TryResolveMachineSlot(item, labels.Item(item.Id), out var slot)
+                ? ZaTechnicalMachineCatalog.FormatMachineLabel(slot)
+                : "None";
+    }
 
     private static ZaItemEditableField Field(
         string field,

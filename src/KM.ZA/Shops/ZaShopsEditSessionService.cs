@@ -239,7 +239,7 @@ internal sealed class ZaShopsEditSessionService
 
         if (isSetInventory)
         {
-            if (!ValidateInventoryList(normalizedValue, diagnostics, normalizedField))
+            if (!ValidateInventoryList(workflow, normalizedValue, diagnostics, normalizedField))
             {
                 return null;
             }
@@ -261,6 +261,29 @@ internal sealed class ZaShopsEditSessionService
                 field: "slot",
                 expected: "Safe shop insert slot"));
             return null;
+        }
+
+        if (isAdd)
+        {
+            if (ZaEditSessionSupport.TryParseInt(
+                    normalizedValue,
+                    ZaShopsWorkflowService.MinimumItemId,
+                    ZaShopsWorkflowService.MaximumItemId,
+                    normalizedField,
+                    ZaEditSessionSupport.ShopsDomain,
+                    diagnostics) is not { } addItemId
+                || !ValidateKnownItemId(workflow, addItemId, normalizedField, diagnostics))
+            {
+                return null;
+            }
+
+            return ZaEditSessionSupport.CreatePendingEdit(
+                ZaEditSessionSupport.ShopsDomain,
+                $"Add {FormatKnownItemName(workflow, addItemId)} to {shop.Name} at slot {slot}.",
+                new ProjectFileReference(shop.Provenance.SourceLayer, shop.Provenance.SourceFile),
+                CreateRecordId(shop.ShopId, slot),
+                normalizedField,
+                normalizedValue);
         }
 
         if (!isAdd && !isSetInventory && inventoryItem is null)
@@ -299,6 +322,13 @@ internal sealed class ZaShopsEditSessionService
                 normalizedField,
                 ZaEditSessionSupport.ShopsDomain,
                 diagnostics) is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(normalizedField, ZaShopsWorkflowService.ItemIdField, StringComparison.Ordinal)
+            && int.TryParse(normalizedValue, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+            && !ValidateKnownItemId(workflow, itemId, normalizedField, diagnostics))
         {
             return null;
         }
@@ -746,21 +776,54 @@ internal sealed class ZaShopsEditSessionService
     }
 
     private static bool ValidateInventoryList(
+        ZaShopsWorkflow workflow,
         string value,
         ICollection<ValidationDiagnostic> diagnostics,
         string field)
     {
-        if (ParseInventoryList(value) is not null)
+        var itemIds = ParseInventoryList(value);
+        if (itemIds is not null
+            && itemIds.All(itemId => ValidateKnownItemId(workflow, itemId, field, diagnostics)))
+        {
+            return true;
+        }
+
+        if (itemIds is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Shop inventory value must be a comma-separated list of item IDs.",
+                field: field,
+                expected: "Comma-separated item IDs"));
+        }
+
+        return false;
+    }
+
+    private static bool ValidateKnownItemId(
+        ZaShopsWorkflow workflow,
+        int itemId,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (itemId == 0 || workflow.KnownItemIds.Contains(itemId))
         {
             return true;
         }
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Error,
-            "Shop inventory value must be a comma-separated list of item IDs.",
+            $"Shop item ID {itemId.ToString(CultureInfo.InvariantCulture)} is not a known Pokemon Legends Z-A item.",
             field: field,
-            expected: "Comma-separated item IDs"));
+            expected: "Known Z-A item ID from Items"));
         return false;
+    }
+
+    private static string FormatKnownItemName(ZaShopsWorkflow workflow, int itemId)
+    {
+        var itemField = GetEditableField(workflow, ZaShopsWorkflowService.ItemIdField);
+        return itemField?.Options.FirstOrDefault(option => option.Value == itemId)?.ItemName
+            ?? (itemId == 0 ? "None" : $"Item {itemId.ToString(CultureInfo.InvariantCulture)}");
     }
 
     private static int[]? ParseInventoryList(string value)

@@ -63,5 +63,7 @@ public sealed record ZaShopsWorkflow(
     IReadOnlyList<ZaShopRecord> Shops,
     IReadOnlyList<ZaShopEditableField> EditableFields,
     ZaShopsWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
-
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public IReadOnlySet<int> KnownItemIds { get; init; } = new HashSet<int>();
+}

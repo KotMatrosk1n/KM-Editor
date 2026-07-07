@@ -32784,6 +32784,11 @@ function filterRoyalCandyOutputs(outputs: RoyalCandyOutputRecord[], searchText: 
 }
 
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
+  const fieldValues = item.fieldValues ?? {};
+  if (Object.prototype.hasOwnProperty.call(fieldValues, field)) {
+    return fieldValues[field];
+  }
+
   switch (field) {
     case buyPriceFieldName:
       return item.buyPrice;

@@ -702,6 +702,7 @@ export const itemRecordSchema = z.strictObject({
   buyPrice: z.number().int().nonnegative(),
   category: z.string(),
   detailGroups: z.array(itemDetailGroupSchema),
+  fieldValues: z.record(z.string(), z.number().int().nullable()).optional(),
   itemId: z.number().int().nonnegative(),
   metadata: itemMetadataSchema,
   name: z.string(),

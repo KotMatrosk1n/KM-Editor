@@ -1006,6 +1006,7 @@ public static class ZaBridgeMapper
             item.SellPrice,
             item.WattsPrice,
             item.AlternatePrice,
+            item.FieldValues,
             ToDto(item.Metadata),
             item.SharedItemIds.ToArray(),
             item.DetailGroups.Select(ToDto).ToArray(),

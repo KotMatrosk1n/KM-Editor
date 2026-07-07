@@ -2952,6 +2952,137 @@ describe('App', () => {
     expect(screen.getByText('Set Potion pouch to 4.')).toBeInTheDocument();
   });
 
+  it('hydrates item edit controls from backend-provided field values', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    const bridge = createMockProjectBridge(
+      {
+        loadItemsWorkflow: async (request) => {
+          const response = await baseBridge.loadItemsWorkflow(request);
+          const item = response.workflow.items[0]!;
+          const workflow: ItemsWorkflow = {
+            ...response.workflow,
+            editableFields: [
+              {
+                field: 'price',
+                label: 'Price',
+                maximumValue: 9_999_999,
+                minimumValue: 0,
+                options: [],
+                valueKind: 'integer'
+              },
+              {
+                field: 'megaShardPrice',
+                label: 'Mega Shard price',
+                maximumValue: 9_999_999,
+                minimumValue: 0,
+                options: [],
+                valueKind: 'integer'
+              },
+              {
+                field: 'colorfulScrewPrice',
+                label: 'Colorful Screw price',
+                maximumValue: 9_999_999,
+                minimumValue: 0,
+                options: [],
+                valueKind: 'integer'
+              },
+              {
+                field: 'pocket',
+                label: 'Bag pocket',
+                maximumValue: 7,
+                minimumValue: 0,
+                options: [{ label: '2 Items', value: 2 }],
+                valueKind: 'integer'
+              },
+              {
+                field: 'stackCap',
+                label: 'Stack cap',
+                maximumValue: 9_999,
+                minimumValue: 1,
+                options: [],
+                valueKind: 'integer'
+              },
+              {
+                field: 'sortOrder',
+                label: 'Sort order',
+                maximumValue: 2_147_483_647,
+                minimumValue: 0,
+                options: [],
+                valueKind: 'integer'
+              },
+              {
+                field: 'machineMoveId',
+                label: 'TM move',
+                maximumValue: 65_535,
+                minimumValue: 0,
+                options: [{ label: '0 None', value: 0 }],
+                valueKind: 'integer'
+              },
+              {
+                field: 'machineIndex',
+                label: 'TM index',
+                maximumValue: 2_147_483_647,
+                minimumValue: -1,
+                options: [],
+                valueKind: 'integer'
+              }
+            ],
+            items: [
+              {
+                ...item,
+                alternatePrice: 22,
+                buyPrice: 2000,
+                category: 'None',
+                fieldValues: {
+                  colorfulScrewPrice: 22,
+                  machineIndex: 0,
+                  machineMoveId: 0,
+                  megaShardPrice: 11,
+                  pocket: 2,
+                  price: 2000,
+                  sortOrder: 29,
+                  stackCap: 999
+                },
+                metadata: {
+                  ...item.metadata,
+                  machineMoveId: null,
+                  machineSlot: null,
+                  pouch: 2,
+                  sortIndex: 29
+                },
+                name: 'Max Revive',
+                sellPrice: 1000,
+                wattsPrice: 11
+              }
+            ]
+          };
+
+          return { workflow };
+        }
+      },
+      true
+    );
+    render(<App bridge={bridge} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Price')).toHaveDisplayValue('2000');
+    expect(screen.getByLabelText('Mega Shard price')).toHaveDisplayValue('11');
+    expect(screen.getByLabelText('Colorful Screw price')).toHaveDisplayValue('22');
+    expect(screen.getByLabelText('Bag pocket')).toHaveDisplayValue('2 Items');
+    expect(screen.getByLabelText('Stack cap')).toHaveDisplayValue('999');
+    expect(screen.getByLabelText('Sort order')).toHaveDisplayValue('29');
+    expect(screen.getByLabelText('TM move')).toHaveDisplayValue('0 None');
+    expect(screen.getByLabelText('TM index')).toHaveDisplayValue('0');
+  });
+
   it('opens Text from Editors with editable text control helpers', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);

@@ -139,7 +139,10 @@ internal sealed class ZaShopsWorkflowService
             shops,
             CreateEditableFields(itemRecords, shops),
             new ZaShopsWorkflowStats(shops.Length, shops.Sum(shop => shop.Inventory.Count), sourceCount),
-            diagnostics);
+            diagnostics)
+        {
+            KnownItemIds = itemRecords.Select(item => item.ItemId).ToHashSet(),
+        };
     }
 
     public static string CreateInventoryRecordId(string shopId, int slot) =>
@@ -603,7 +606,7 @@ internal sealed class ZaShopsWorkflowService
                     item.BuyPrice));
         }
 
-        foreach (var item in shops.SelectMany(shop => shop.Inventory))
+        foreach (var item in shops.SelectMany(shop => shop.Inventory).Where(item => item.IsKnownItem))
         {
             options.TryAdd(
                 item.ItemId,

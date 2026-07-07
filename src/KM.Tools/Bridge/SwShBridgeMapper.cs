@@ -1800,6 +1800,7 @@ public static class SwShBridgeMapper
             item.SellPrice,
             item.WattsPrice,
             item.AlternatePrice,
+            new Dictionary<string, int?>(),
             new ItemMetadataDto(
                 item.Metadata.Pouch,
                 item.Metadata.PouchFlags,

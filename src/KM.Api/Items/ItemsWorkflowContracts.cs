@@ -91,6 +91,7 @@ public sealed record ItemRecordDto(
     int SellPrice,
     int WattsPrice,
     int AlternatePrice,
+    IReadOnlyDictionary<string, int?> FieldValues,
     ItemMetadataDto Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<ItemDetailGroupDto> DetailGroups,
