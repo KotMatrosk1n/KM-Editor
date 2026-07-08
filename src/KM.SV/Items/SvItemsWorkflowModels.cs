@@ -61,6 +61,7 @@ public sealed record SvItemRecord(
     int SellPrice,
     int WattsPrice,
     int AlternatePrice,
+    IReadOnlyDictionary<string, int?> FieldValues,
     SvItemMetadata Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<SvItemDetailGroup> DetailGroups,

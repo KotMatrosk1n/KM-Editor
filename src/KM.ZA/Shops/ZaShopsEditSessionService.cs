@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.ZA.Data;
+using KM.ZA.Items;
 using KM.ZA.Workflows;
 using System.Globalization;
 
@@ -128,14 +129,67 @@ internal sealed class ZaShopsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return ZaEditSessionSupport.CreateSingleFileChangePlan(
-            paths,
-            session,
-            ZaEditSessionSupport.ShopsDomain,
-            ZaDataPaths.ShopItemLineupArray,
-            "Shops",
-            validation.Diagnostics,
-            outputMode);
+        var diagnostics = validation.Diagnostics.ToList();
+        if (session.PendingEdits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Shops edit before reviewing a change plan.",
+                expected: "Pending Shops edit"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        var writes = new List<PlannedFileWrite>();
+        try
+        {
+            var lineupWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.ShopItemLineupArray,
+                session.PendingEdits.SelectMany(edit => edit.Sources).Distinct().ToArray(),
+                outputMode);
+            var lineupReason = session.PendingEdits.Count == 1
+                ? $"Apply pending Shops edit: {session.PendingEdits[0].Summary}"
+                : $"Apply {session.PendingEdits.Count} pending Shops edits.";
+            writes.Add(new PlannedFileWrite(
+                lineupWriteInfo.TargetRelativePath,
+                lineupWriteInfo.Sources,
+                lineupWriteInfo.ReplacesExistingOutput,
+                lineupReason));
+
+            if (TryCreateKnownMissingTechnicalMachineItemDataWrite(paths, session, outputMode) is { } itemDataWrite)
+            {
+                writes.Add(itemDataWrite);
+            }
+
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(
+                    descriptorWriteInfo.TargetRelativePath,
+                    descriptorWriteInfo.Sources,
+                    descriptorWriteInfo.ReplacesExistingOutput,
+                    "Patch Pokemon Legends Z-A Trinity descriptor for standalone LayeredFS overrides."));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException or InvalidDataException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shops change plan could not resolve the output target: {exception.Message}",
+                file: $"romfs/{ZaDataPaths.ShopItemLineupArray}",
+                expected: "Writable output root"));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            $"Change plan preview contains {writes.Count} target files."));
+
+        return new ChangePlan(session.Id, writes, diagnostics);
     }
 
     public ApplyResult ApplyChangePlan(
@@ -185,6 +239,20 @@ internal sealed class ZaShopsEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
+            if (PendingEditsReferenceKnownMissingTechnicalMachine(session))
+            {
+                var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+                if (!ZaItemsEditSessionService.ContainsKnownMissingTechnicalMachineRow(itemSource.Bytes))
+                {
+                    ZaWorkflowFileSource.Write(
+                        paths,
+                        ZaDataPaths.ItemDataArray,
+                        ZaItemsEditSessionService.EnsureKnownMissingTechnicalMachineRow(itemSource.Bytes),
+                        outputMode);
+                    writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ItemDataArray, outputMode));
+                }
+            }
+
             ZaWorkflowFileSource.Write(
                 paths,
                 ZaDataPaths.ShopItemLineupArray,
@@ -210,6 +278,62 @@ internal sealed class ZaShopsEditSessionService
         }
 
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private PlannedFileWrite? TryCreateKnownMissingTechnicalMachineItemDataWrite(
+        ProjectPaths paths,
+        EditSession session,
+        ZaOutputMode outputMode)
+    {
+        if (!PendingEditsReferenceKnownMissingTechnicalMachine(session))
+        {
+            return null;
+        }
+
+        var project = projectWorkspaceService.Open(paths);
+        var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+        if (ZaItemsEditSessionService.ContainsKnownMissingTechnicalMachineRow(itemSource.Bytes))
+        {
+            return null;
+        }
+
+        var writeInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+            paths,
+            ZaDataPaths.ItemDataArray,
+            [ZaWorkflowFileSource.CreateReference(itemSource)],
+            outputMode);
+        return new PlannedFileWrite(
+            writeInfo.TargetRelativePath,
+            writeInfo.Sources,
+            writeInfo.ReplacesExistingOutput,
+            "Materialize Pokemon Legends Z-A TM101 item data for shop inventory item 2161.");
+    }
+
+    private static bool PendingEditsReferenceKnownMissingTechnicalMachine(EditSession session)
+    {
+        foreach (var edit in session.PendingEdits)
+        {
+            if (!string.Equals(edit.Domain, ZaEditSessionSupport.ShopsDomain, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (edit.Field is ZaShopsWorkflowService.ItemIdField or ZaShopsWorkflowService.AddItemField
+                && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                && ZaTechnicalMachineCatalog.IsKnownMissingTechnicalMachineItemId(itemId))
+            {
+                return true;
+            }
+
+            if (edit.Field == ZaShopsWorkflowService.SetInventoryField
+                && ParseInventoryList(edit.NewValue ?? string.Empty) is { } itemIds
+                && itemIds.Any(ZaTechnicalMachineCatalog.IsKnownMissingTechnicalMachineItemId))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static PendingEdit? CreatePendingEdit(

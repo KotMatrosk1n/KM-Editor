@@ -1950,6 +1950,63 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletItemEditWritesEvolutionItemFlag(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var items = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-sv-item-evolution-flag-load");
+
+        AssertSuccess(items);
+        var evolutionItemField = items.Payload!.Workflow.EditableFields.Single(field => field.Field == "evolutionItem");
+        Assert.Equal("Evolution item", evolutionItemField.Label);
+        Assert.Equal("boolean", evolutionItemField.ValueKind);
+        var masterBall = items.Payload.Workflow.Items.Single(item => item.ItemId == 1);
+        Assert.Equal(0, masterBall.FieldValues["evolutionItem"]);
+
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(1, "evolutionItem", "1")]),
+            "request-sv-item-evolution-flag-update");
+
+        AssertSuccess(update);
+        Assert.DoesNotContain(update.Payload!.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var updatedItem = update.Payload.Workflow.Items.Single(item => item.ItemId == 1);
+        Assert.Equal(1, updatedItem.FieldValues["evolutionItem"]);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session),
+            "request-sv-item-evolution-flag-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan),
+            "request-sv-item-evolution-flag-apply");
+
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(1, ReadItem(temp, itemId: 1).WorkEvolutional);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletEvolutionItemParametersUseItemLabels(
         ProjectGameDto game,
         ulong titleId)
@@ -1988,6 +2045,52 @@ public sealed class ScarletVioletBridgeTests
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletHeldItemEvolutionParametersUseHeldItemLabels(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(
+                2483,
+                (2, "Ultra Ball"),
+                (81, "Moon Stone"),
+                (2482, "Metal Alloy")));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-held-item-evolution");
+
+        AssertSuccess(pokemon);
+        var workflow = pokemon.Payload!.Workflow;
+        var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolution = Assert.Single(bulbasaur.Evolutions);
+        Assert.Equal(19, evolution.Method);
+        Assert.Equal(2, evolution.Argument);
+        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
+
+        var heldItemDay = workflow.EvolutionMethodOptions.Single(option => option.Value == 19);
+        Assert.Contains(heldItemDay.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.DoesNotContain(heldItemDay.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+
+        var heldItemNight = workflow.EvolutionMethodOptions.Single(option => option.Value == 20);
+        Assert.Contains(heldItemNight.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+
+        var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
     }
 
     [Theory]
@@ -3142,13 +3245,18 @@ public sealed class ScarletVioletBridgeTests
 
     private static int ReadItemPrice(TemporaryBridgeProject temp, int itemId)
     {
+        return ReadItem(temp, itemId).Price;
+    }
+
+    private static global::ItemData ReadItem(TemporaryBridgeProject temp, int itemId)
+    {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(ReadSvOutput(temp, SvDataPaths.ItemDataArray)));
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var item = table.Values(index);
             if (item is not null && item.Value.Id == itemId)
             {
-                return item.Value.Price;
+                return item.Value;
             }
         }
 

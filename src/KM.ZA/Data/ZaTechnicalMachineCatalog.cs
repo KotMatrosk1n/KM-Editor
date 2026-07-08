@@ -19,6 +19,11 @@ internal sealed record ZaTechnicalMachineMove(
 
 internal static class ZaTechnicalMachineCatalog
 {
+    public const int KnownMissingTechnicalMachineItemId = 2161;
+    public const int KnownMissingTechnicalMachineSlot = 101;
+    public const int KnownMissingTechnicalMachineIndex = KnownMissingTechnicalMachineSlot - 1;
+    public const int KnownMissingTechnicalMachineMoveId = 527;
+
     public static IReadOnlyList<ZaTechnicalMachineMove> Load(
         OpenedProject project,
         ZaWorkflowFileSource fileSource,
@@ -69,6 +74,16 @@ internal static class ZaTechnicalMachineCatalog
                 $"{FormatMachineLabel(slot)} {moveName}"));
         }
 
+        var hasNearbyHighNumberMachine = records.Any(record =>
+            record.ItemId is KnownMissingTechnicalMachineItemId - 1 or KnownMissingTechnicalMachineItemId + 1
+            || record.Slot is KnownMissingTechnicalMachineSlot - 1 or KnownMissingTechnicalMachineSlot + 1);
+        if (hasNearbyHighNumberMachine
+            && !records.Any(record => record.ItemId == KnownMissingTechnicalMachineItemId)
+            && !records.Any(record => record.Slot == KnownMissingTechnicalMachineSlot))
+        {
+            records.Add(CreateKnownMissingTechnicalMachine(labels));
+        }
+
         return records
             .GroupBy(record => record.MoveId)
             .Select(group => group
@@ -87,8 +102,29 @@ internal static class ZaTechnicalMachineCatalog
             && item.MachineWaza > 0;
     }
 
+    public static bool IsKnownMissingTechnicalMachineItemId(int itemId) =>
+        itemId == KnownMissingTechnicalMachineItemId;
+
+    public static ZaTechnicalMachineMove CreateKnownMissingTechnicalMachine(ZaTextLabelLookup labels)
+    {
+        var moveName = labels.Move(KnownMissingTechnicalMachineMoveId);
+        return new ZaTechnicalMachineMove(
+            KnownMissingTechnicalMachineSlot,
+            KnownMissingTechnicalMachineItemId,
+            KnownMissingTechnicalMachineIndex,
+            KnownMissingTechnicalMachineMoveId,
+            moveName,
+            $"{FormatMachineLabel(KnownMissingTechnicalMachineSlot)} {moveName}");
+    }
+
     public static bool TryResolveMachineSlot(ZaItemData item, string itemName, out int slot)
     {
+        if (item.SortNum > 0)
+        {
+            slot = item.SortNum;
+            return true;
+        }
+
         if (TryParseMachineSlot(itemName, out slot))
         {
             return true;

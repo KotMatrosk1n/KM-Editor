@@ -444,7 +444,7 @@ internal sealed class SvItemsEditSessionService
     private static SvItemRecord OverlayItem(SvItemsWorkflow workflow, SvItemRecord item, string? field, int value)
     {
         var metadata = item.Metadata;
-        return field switch
+        var updated = field switch
         {
             SvItemsWorkflowService.BuyPriceField => item with { BuyPrice = value, SellPrice = value / 2 },
             SvItemsWorkflowService.WattsPriceField => item with { WattsPrice = value },
@@ -496,6 +496,7 @@ internal sealed class SvItemsEditSessionService
             SvItemsWorkflowService.FriendshipGain1Field => item with { Metadata = metadata with { FriendshipGain1 = value } },
             SvItemsWorkflowService.FriendshipGain2Field => item with { Metadata = metadata with { FriendshipGain2 = value } },
             SvItemsWorkflowService.FriendshipGain3Field => item with { Metadata = metadata with { FriendshipGain3 = value } },
+            SvItemsWorkflowService.EvolutionItemField => item,
             SvItemsWorkflowService.MachineMoveIdField => item with
             {
                 Metadata = metadata with
@@ -506,6 +507,22 @@ internal sealed class SvItemsEditSessionService
             },
             _ => item,
         };
+
+        return field is null
+            ? updated
+            : updated with { FieldValues = SetFieldValue(updated.FieldValues, field, value) };
+    }
+
+    private static IReadOnlyDictionary<string, int?> SetFieldValue(
+        IReadOnlyDictionary<string, int?> values,
+        string field,
+        int value)
+    {
+        var updated = new Dictionary<string, int?>(values)
+        {
+            [field] = value,
+        };
+        return updated;
     }
 
     private static string ResolveMoveName(SvItemsWorkflow workflow, int moveId)
@@ -648,6 +665,9 @@ internal sealed class SvItemsEditSessionService
             case SvItemsWorkflowService.FriendshipGain3Field:
                 row.WorkFriendly3 = value;
                 break;
+            case SvItemsWorkflowService.EvolutionItemField:
+                row.WorkEvolutional = value;
+                break;
             case SvItemsWorkflowService.MachineMoveIdField:
                 row.MachineWaza = (global::pml.common.WazaID)checked((ushort)value);
                 break;
@@ -742,7 +762,7 @@ internal sealed class SvItemsEditSessionService
         public int WorkRecvMero { get; init; }
         public int WorkRecvPower { get; init; }
         public int WorkRevival { get; init; }
-        public int WorkEvolutional { get; init; }
+        public int WorkEvolutional { get; set; }
         public int WorkRecvNemuke { get; init; }
         public int WorkRecvTousyou { get; init; }
         public int WorkWazaDrunk { get; init; }

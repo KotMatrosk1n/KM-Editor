@@ -186,6 +186,47 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAHeldItemEvolutionParametersUseHeldItemLabels()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(
+                2483,
+                (2, "Ultra Ball"),
+                (81, "Moon Stone"),
+                (2482, "Metal Alloy")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(CreatePaths(temp)),
+            "request-za-pokemon-held-item-evolution");
+
+        AssertSuccess(pokemon);
+        var workflow = pokemon.Payload!.Workflow;
+        var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolution = Assert.Single(bulbasaur.Evolutions);
+        Assert.Equal(19, evolution.Method);
+        Assert.Equal(2, evolution.Argument);
+        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
+
+        var heldItemDay = workflow.EvolutionMethodOptions.Single(option => option.Value == 19);
+        Assert.Contains(heldItemDay.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.DoesNotContain(heldItemDay.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+
+        var heldItemNight = workflow.EvolutionMethodOptions.Single(option => option.Value == 20);
+        Assert.Contains(heldItemNight.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+
+        var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+    }
+
+    [Fact]
     public void PokemonLegendsZAEvolutionConditionArgumentsUseNamedValues()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -400,6 +441,7 @@ public sealed class PokemonLegendsZABridgeTests
             .Single(detail => detail.Label == "Stack cap")
             .Value);
         var tm = workflow.Items.Single(item => item.ItemId == 328);
+        Assert.Equal("TM001 Tackle", tm.Name);
         Assert.Equal("Technical Machines", tm.Category);
         Assert.Equal(1, tm.Metadata.MachineSlot);
         Assert.Equal(33, tm.Metadata.MachineMoveId);
@@ -416,14 +458,14 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateHighNumberTechnicalMachineItemDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
-            CreateTextTable(429, (427, "TM100"), (429, "TM102")));
+            CreateTextTable(2163, (2160, "TM100"), (2161, "TM101"), (2162, "TM102")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
-            CreateTextTable(528, (526, "Dragon Dance"), (527, "Electroweb"), (528, "Psychic Noise")));
+            CreateTextTable(528, (526, "Stealth Rock"), (527, "Electroweb"), (528, "Psychic Noise")));
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ShopItemLineupArray,
-            CreateShopLineupArrayWithItems(427, 429));
+            CreateShopLineupArrayWithItems(2160, 2162));
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
 
@@ -434,7 +476,7 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-high-tm-items");
 
         AssertSuccess(items);
-        var tm101 = items.Payload!.Workflow.Items.Single(item => item.ItemId == 428);
+        var tm101 = items.Payload!.Workflow.Items.Single(item => item.ItemId == 2161);
         Assert.Equal("TM101 Electroweb", tm101.Name);
         Assert.Equal(101, tm101.Metadata.MachineSlot);
         Assert.Equal(527, tm101.Metadata.MachineMoveId);
@@ -456,13 +498,13 @@ public sealed class PokemonLegendsZABridgeTests
         var itemField = shops.Payload!.Workflow.EditableFields.Single(field => field.Field == "itemId");
         Assert.Contains(
             itemField.Options,
-            option => option.Value == 428 && option.ItemName == "TM101 Electroweb");
-        Assert.DoesNotContain(itemField.Options, option => option.Value == 2161);
+            option => option.Value == 2161 && option.ItemName == "TM101 Electroweb");
+        Assert.DoesNotContain(itemField.Options, option => option.Value == 428);
         var shop = Assert.Single(shops.Payload.Workflow.Shops);
         Assert.Collection(
             shop.Inventory,
-            item => Assert.Equal("TM100", item.ItemName),
-            item => Assert.Equal("TM102", item.ItemName));
+            item => Assert.Equal("TM037 Stealth Rock", item.ItemName),
+            item => Assert.Equal("TM102 Psychic Noise", item.ItemName));
 
         var invalidUpdate = Dispatch<UpdateShopInventoryItemResponse>(
             dispatcher,
@@ -473,14 +515,14 @@ public sealed class PokemonLegendsZABridgeTests
                 ShopId: "shop:a01_friendlyshop_01",
                 Slot: 1,
                 Field: "setInventory",
-                Value: "427,2161,429"),
+                Value: "2160,428,2162"),
             "request-za-high-tm-shop-invalid-insert");
 
         AssertSuccess(invalidUpdate);
         Assert.Contains(
             invalidUpdate.Payload!.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
-                && diagnostic.Message.Contains("2161", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("428", StringComparison.Ordinal)
                 && diagnostic.Message.Contains("not a known Pokemon Legends Z-A item", StringComparison.Ordinal));
 
         var update = Dispatch<UpdateShopInventoryItemResponse>(
@@ -492,21 +534,21 @@ public sealed class PokemonLegendsZABridgeTests
                 ShopId: "shop:a01_friendlyshop_01",
                 Slot: 1,
                 Field: "setInventory",
-                Value: "427,428,429"),
+                Value: "2160,2161,2162"),
             "request-za-high-tm-shop-insert");
 
         AssertSuccess(update);
         var updatedShop = Assert.Single(update.Payload!.Workflow.Shops);
         Assert.Collection(
             updatedShop.Inventory,
-            item => Assert.Equal("TM100", item.ItemName),
+            item => Assert.Equal("TM037 Stealth Rock", item.ItemName),
             item =>
             {
-                Assert.Equal(428, item.ItemId);
+                Assert.Equal(2161, item.ItemId);
                 Assert.Equal("TM101 Electroweb", item.ItemName);
                 Assert.True(item.IsKnownItem);
             },
-            item => Assert.Equal("TM102", item.ItemName));
+            item => Assert.Equal("TM102 Psychic Noise", item.ItemName));
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -515,6 +557,8 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-high-tm-shop-plan");
         AssertSuccess(plan);
         Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.ShopItemLineupArray);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.ItemDataArray);
 
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
@@ -525,9 +569,52 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
         var written = ReadShopLineup(temp, "a01_friendlyshop_01_lineup1");
-        Assert.Equal(427u, written.Inventory(0)!.Value.Item);
-        Assert.Equal(428u, written.Inventory(1)!.Value.Item);
-        Assert.Equal(429u, written.Inventory(2)!.Value.Item);
+        Assert.Equal(2160u, written.Inventory(0)!.Value.Item);
+        Assert.Equal(2161u, written.Inventory(1)!.Value.Item);
+        Assert.Equal(2162u, written.Inventory(2)!.Value.Item);
+        var writtenTm101 = ReadItem(temp, 2161);
+        Assert.Equal(5, writtenTm101.ItemType);
+        Assert.Equal(6, writtenTm101.Pocket);
+        Assert.Equal(101, writtenTm101.SortNum);
+        Assert.Equal(527, writtenTm101.MachineWaza);
+        Assert.Equal(100, writtenTm101.MachineIndex);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAProjectUsesSortOrderForTechnicalMachineNumbers()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateReorderedTechnicalMachineItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(620, (619, "TM094")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(250, (249, "Rock Smash")));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var items = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(CreatePaths(temp)),
+            "request-za-reordered-tm-items");
+
+        AssertSuccess(items);
+        var tm = Assert.Single(items.Payload!.Workflow.Items);
+        Assert.Equal(619, tm.ItemId);
+        Assert.Equal("TM004 Rock Smash", tm.Name);
+        Assert.Equal(4, tm.Metadata.MachineSlot);
+        Assert.Equal(93, tm.Metadata.GroupIndex);
+        Assert.Equal(249, tm.Metadata.MachineMoveId);
+        Assert.Equal(4, tm.FieldValues["sortOrder"]);
+        Assert.Equal(93, tm.FieldValues["machineIndex"]);
+        Assert.Equal(
+            "TM004",
+            tm.DetailGroups
+                .Single(group => group.Label == "TM Assignment")
+                .Details
+                .Single(detail => detail.Label == "TM slot")
+                .Value);
     }
 
     [Fact]
@@ -1249,6 +1336,7 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-item-update");
         AssertSuccess(update);
         var updatedTm = update.Payload!.Workflow.Items.Single(item => item.ItemId == 328);
+        Assert.Equal("TM001 Growl", updatedTm.Name);
         Assert.Equal(3000, updatedTm.BuyPrice);
         Assert.Equal(45, updatedTm.Metadata.MachineMoveId);
 
@@ -1273,6 +1361,98 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(3000, writtenTm.Price);
         Assert.Equal(45, writtenTm.MachineWaza);
         Assert.Equal(50, ReadItem(temp, 17).HealPercentage);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAItemEditRenamesTechnicalMachineFromSortOrder()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateReorderedTechnicalMachineItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(620, (619, "TM094")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(251, (249, "Rock Smash"), (250, "Water Pulse")));
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(619, "machineMoveId", "250"),
+                    new ItemFieldUpdateDto(619, "machineIndex", "12"),
+                    new ItemFieldUpdateDto(619, "sortOrder", "44"),
+                ]),
+            "request-za-reordered-tm-update");
+
+        AssertSuccess(update);
+        var tm = Assert.Single(update.Payload!.Workflow.Items);
+        Assert.Equal("TM044 Water Pulse", tm.Name);
+        Assert.Equal(44, tm.Metadata.MachineSlot);
+        Assert.Equal(12, tm.Metadata.GroupIndex);
+        Assert.Equal(250, tm.Metadata.MachineMoveId);
+    }
+
+
+    [Fact]
+    public void PokemonLegendsZAItemEditWritesMissingTechnicalMachine101Row()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateHighNumberTechnicalMachineItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(2163, (2160, "TM100"), (2161, "TM101"), (2162, "TM102")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(528, (526, "Dragon Dance"), (527, "Electroweb"), (528, "Psychic Noise")));
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(2161, "price", "2500"),
+                ]),
+            "request-za-missing-tm101-item-update");
+
+        AssertSuccess(update);
+        var tm101 = update.Payload!.Workflow.Items.Single(item => item.ItemId == 2161);
+        Assert.Equal("TM101 Electroweb", tm101.Name);
+        Assert.Equal(2500, tm101.BuyPrice);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-missing-tm101-item-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.ItemDataArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-missing-tm101-item-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var writtenTm101 = ReadItem(temp, 2161);
+        Assert.Equal(5, writtenTm101.ItemType);
+        Assert.Equal(2500, writtenTm101.Price);
+        Assert.Equal(6, writtenTm101.Pocket);
+        Assert.Equal(1, writtenTm101.SlotMaxNum);
+        Assert.Equal(527, writtenTm101.MachineWaza);
+        Assert.Equal(100, writtenTm101.MachineIndex);
     }
 
     [Fact]
@@ -2588,41 +2768,50 @@ public sealed class PokemonLegendsZABridgeTests
         var builder = new FlatBufferBuilder(2048);
         var tm100 = CreateItem(
             builder,
-            itemId: 427,
+            itemId: 2160,
             itemType: 5,
             internalName: "WAZAMASIN100",
-            iconName: "item_0427",
-            price: 1000,
+            iconName: "item_2160",
+            price: 0,
             pocket: 6,
             stackCap: 1,
-            sortOrder: 100,
+            sortOrder: 37,
             machineMoveId: 526,
             machineIndex: 99);
-        var tm101 = CreateItem(
-            builder,
-            itemId: 428,
-            itemType: 5,
-            internalName: "WAZAMASIN101",
-            iconName: "item_0428",
-            price: 1000,
-            pocket: 6,
-            stackCap: 1,
-            sortOrder: 101,
-            machineMoveId: 527,
-            machineIndex: 100);
         var tm102 = CreateItem(
             builder,
-            itemId: 429,
+            itemId: 2162,
             itemType: 5,
             internalName: "WAZAMASIN102",
-            iconName: "item_0429",
-            price: 1000,
+            iconName: "item_2162",
+            price: 0,
             pocket: 6,
             stackCap: 1,
             sortOrder: 102,
             machineMoveId: 528,
             machineIndex: 101);
-        var vector = ZaItemDataArray.CreateValuesVector(builder, [tm100, tm101, tm102]);
+        var vector = ZaItemDataArray.CreateValuesVector(builder, [tm100, tm102]);
+        var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
+        ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateReorderedTechnicalMachineItemDataArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var rockSmash = CreateItem(
+            builder,
+            itemId: 619,
+            itemType: 5,
+            internalName: "WAZAMASIN94",
+            iconName: "item_0619",
+            price: 0,
+            pocket: 6,
+            stackCap: 1,
+            sortOrder: 4,
+            machineMoveId: 249,
+            machineIndex: 93);
+        var vector = ZaItemDataArray.CreateValuesVector(builder, [rockSmash]);
         var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
         ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();

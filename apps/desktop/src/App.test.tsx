@@ -3083,6 +3083,137 @@ describe('App', () => {
     expect(screen.getByLabelText('TM index')).toHaveDisplayValue('0');
   });
 
+  it('shows and saves the item evolution flag from backend field values', async () => {
+    const user = userEvent.setup();
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'za'
+      }
+    });
+    const baseBridge = createMockProjectBridge({}, true);
+    let workflow: ItemsWorkflow | null = null;
+    const updateItemFields = vi.fn(
+      async (request: Parameters<ProjectBridge['updateItemFields']>[0]) => ({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: request.updates.map((update) => ({
+            domain: 'workflow.items',
+            field: update.field,
+            newValue: update.value,
+            recordId: update.itemId.toString(),
+            sources: [
+              {
+                layer: 'base' as const,
+                relativePath: 'romfs/world/exl/item_data/item_data/item_data.bin'
+              }
+            ],
+            summary: `Set Max Revive ${update.field} to ${update.value}.`
+          })),
+          sessionId: request.session?.sessionId ?? 'session-1'
+        },
+        workflow: {
+          ...workflow!,
+          items: workflow!.items.map((item) =>
+            item.itemId === request.updates[0]?.itemId
+              ? {
+                  ...item,
+                  fieldValues: {
+                    ...(item.fieldValues ?? {}),
+                    evolutionItem: Number.parseInt(request.updates[0]?.value ?? '0', 10)
+                  }
+                }
+              : item
+          )
+        }
+      })
+    );
+    const bridge = createMockProjectBridge(
+      {
+        loadItemsWorkflow: async (request) => {
+          const response = await baseBridge.loadItemsWorkflow(request);
+          const item = response.workflow.items[0]!;
+          workflow = {
+            ...response.workflow,
+            editableFields: [
+              {
+                field: 'evolutionItem',
+                label: 'Evolution item',
+                maximumValue: 1,
+                minimumValue: 0,
+                options: [
+                  { label: 'No', value: 0 },
+                  { label: 'Yes', value: 1 }
+                ],
+                valueKind: 'boolean'
+              },
+              {
+                field: 'formChangeItem',
+                label: 'Form change item',
+                maximumValue: 1,
+                minimumValue: 0,
+                options: [
+                  { label: 'No', value: 0 },
+                  { label: 'Yes', value: 1 }
+                ],
+                valueKind: 'boolean'
+              }
+            ],
+            items: [
+              {
+                ...item,
+                fieldValues: {
+                  ...(item.fieldValues ?? {}),
+                  evolutionItem: 0,
+                  formChangeItem: 1
+                },
+                name: 'Max Revive'
+              }
+            ]
+          };
+
+          return { workflow };
+        },
+        updateItemFields
+      },
+      true
+    );
+    render(<App bridge={bridge} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Evolution item')).toHaveDisplayValue('No');
+    expect(screen.getByLabelText('Form change item')).toHaveDisplayValue('Yes');
+
+    await user.selectOptions(screen.getByLabelText('Evolution item'), '1');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    await waitFor(() => expect(updateItemFields).toHaveBeenCalled());
+    expect(updateItemFields).toHaveBeenCalledWith(
+      expect.objectContaining({
+        updates: [
+          {
+            field: 'evolutionItem',
+            itemId: 1,
+            value: '1'
+          }
+        ]
+      })
+    );
+  });
+
   it('opens Text from Editors with editable text control helpers', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);

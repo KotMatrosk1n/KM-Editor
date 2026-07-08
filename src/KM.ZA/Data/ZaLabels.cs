@@ -10,6 +10,7 @@ internal static class ZaLabels
 {
     private static readonly IReadOnlyDictionary<int, string> MoveFallbacks = new Dictionary<int, string>
     {
+        [527] = "Electroweb",
         [622] = "Breakneck Blitz (Physical)",
         [623] = "Breakneck Blitz (Special)",
         [624] = "All-Out Pummeling (Physical)",

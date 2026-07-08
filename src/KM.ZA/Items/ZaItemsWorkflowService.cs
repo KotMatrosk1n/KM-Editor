@@ -265,13 +265,20 @@ internal sealed class ZaItemsWorkflowService
         ZaTextLabelLookup labels)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
+        var records = new List<ZaItemRecord>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var item = table.Values(index);
             if (item is not null)
             {
-                yield return ToRecord(item.Value, labels, source);
+                records.Add(ToRecord(item.Value, labels, source));
             }
+        }
+
+        AddKnownMissingTechnicalMachineRecords(records, labels, source);
+        foreach (var record in records)
+        {
+            yield return record;
         }
     }
 
@@ -337,6 +344,196 @@ internal sealed class ZaItemsWorkflowService
             new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
+    private static void AddKnownMissingTechnicalMachineRecords(
+        List<ZaItemRecord> records,
+        ZaTextLabelLookup labels,
+        ZaWorkflowFile source)
+    {
+        if (records.Any(record => record.ItemId == ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineItemId))
+        {
+            return;
+        }
+
+        var hasNearbyHighNumberMachine = records.Any(record =>
+            record.ItemId is ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineItemId - 1
+                or ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineItemId + 1);
+        if (!hasNearbyHighNumberMachine)
+        {
+            return;
+        }
+
+        var record = CreateKnownMissingTechnicalMachineRecord(labels, source);
+        var insertIndex = records.FindIndex(candidate => candidate.ItemId > record.ItemId);
+        if (insertIndex < 0)
+        {
+            records.Add(record);
+        }
+        else
+        {
+            records.Insert(insertIndex, record);
+        }
+    }
+
+    private static ZaItemRecord CreateKnownMissingTechnicalMachineRecord(
+        ZaTextLabelLookup labels,
+        ZaWorkflowFile source)
+    {
+        var machine = ZaTechnicalMachineCatalog.CreateKnownMissingTechnicalMachine(labels);
+        var fieldValues = new Dictionary<string, int?>
+        {
+            [ItemTypeField] = 5,
+            [PriceField] = 0,
+            [MegaShardPriceField] = 0,
+            [ColorfulScrewPriceField] = 0,
+            [PocketField] = 6,
+            [StackCapField] = 1,
+            [SortOrderField] = machine.Slot,
+            [CanNotHoldField] = 0,
+            [MachineMoveIdField] = machine.MoveId,
+            [MachineIndexField] = machine.MachineIndex,
+            [CureSleepField] = 0,
+            [CurePoisonField] = 0,
+            [CureBurnField] = 0,
+            [CureFreezeField] = 0,
+            [CureParalyzeField] = 0,
+            [CureConfuseField] = 0,
+            [CureInfatuationField] = 0,
+            [AttackBoostField] = 0,
+            [DefenseBoostField] = 0,
+            [SpecialAttackBoostField] = 0,
+            [SpecialDefenseBoostField] = 0,
+            [SpeedBoostField] = 0,
+            [AccuracyBoostField] = 0,
+            [CriticalHitBoostField] = 0,
+            [EffectGuardField] = 0,
+            [MintNatureField] = 0,
+            [HealPowerField] = 0,
+            [HealPercentageField] = 0,
+            [RevivalCountField] = 0,
+            [RevivePercentageField] = 0,
+            [ExpPointGainField] = 0,
+            [MaxUseLevelField] = 0,
+            [FriendshipGain1Field] = 0,
+            [FriendshipGain2Field] = 0,
+            [FriendshipGain3Field] = 0,
+            [EvolutionItemField] = 0,
+            [FormChangeItemField] = 0,
+            [EvHpField] = 0,
+            [EvAttackField] = 0,
+            [EvDefenseField] = 0,
+            [EvSpeedField] = 0,
+            [EvSpecialAttackField] = 0,
+            [EvSpecialDefenseField] = 0,
+            [EquipPowerField] = 0,
+            [AutoHealPriorityField] = 0,
+            [CanUseInBattleField] = 0,
+            [SwapIntoItemField] = 0,
+        };
+        var metadata = new ZaItemMetadata(
+            Pouch: 6,
+            PouchFlags: 0,
+            FlingPower: 0,
+            FieldUseType: 0,
+            FieldFlags: 0,
+            CanUseOnPokemon: false,
+            ItemType: 5,
+            SortIndex: machine.Slot,
+            ItemSprite: machine.ItemId,
+            GroupType: 6,
+            GroupIndex: machine.MachineIndex,
+            CureStatusFlags: 0,
+            Boost0: 0,
+            Boost1: 0,
+            Boost2: 0,
+            Boost3: 0,
+            UseFlags1: 0,
+            UseFlags2: 0,
+            EvHp: 0,
+            EvAttack: 0,
+            EvDefense: 0,
+            EvSpeed: 0,
+            EvSpecialAttack: 0,
+            EvSpecialDefense: 0,
+            HealAmount: 0,
+            PpGain: 0,
+            FriendshipGain1: 0,
+            FriendshipGain2: 0,
+            FriendshipGain3: 0,
+            MachineSlot: machine.Slot,
+            MachineMoveId: machine.MoveId,
+            MachineMoveName: machine.MoveName);
+
+        return new ZaItemRecord(
+            machine.ItemId,
+            machine.Label,
+            FormatPocket(6),
+            BuyPrice: 0,
+            SellPrice: 0,
+            WattsPrice: 0,
+            AlternatePrice: 0,
+            fieldValues,
+            metadata,
+            SharedItemIds: [],
+            CreateKnownMissingTechnicalMachineDetailGroups(machine),
+            new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+    }
+
+    private static IReadOnlyList<ZaItemDetailGroup> CreateKnownMissingTechnicalMachineDetailGroups(
+        ZaTechnicalMachineMove machine)
+    {
+        return
+        [
+            new ZaItemDetailGroup(
+                "Pokemon Legends Z-A",
+                [
+                    Detail("Internal token", "WAZAMASIN101"),
+                    Detail("Icon", "item_2161"),
+                    Detail("Item type", "5 Technical Machine"),
+                    Detail("Bag pocket", "6 Technical Machines"),
+                    Detail("Stack cap", 1),
+                    Detail("Sort order", machine.Slot),
+                    Detail("Cannot be held", "No"),
+                    Detail("Can use in battle", "No"),
+                ]),
+            new ZaItemDetailGroup(
+                "Prices",
+                [
+                    Detail("Money", 0),
+                    Detail("Sell estimate", 0),
+                    Detail("Mega Shards", 0),
+                    Detail("Colorful Screws", 0),
+                ]),
+            new ZaItemDetailGroup(
+                "TM Assignment",
+                [
+                    Detail("TM move", $"{machine.MoveId.ToString(CultureInfo.InvariantCulture)} {machine.MoveName}"),
+                    Detail("TM slot", ZaTechnicalMachineCatalog.FormatMachineLabel(machine.Slot)),
+                    Detail("TM index", machine.MachineIndex),
+                ]),
+            new ZaItemDetailGroup(
+                "Effects",
+                [
+                    Detail("Cures sleep", "No"),
+                    Detail("Cures poison", "No"),
+                    Detail("Cures burn", "No"),
+                    Detail("Cures freeze", "No"),
+                    Detail("Cures paralysis", "No"),
+                    Detail("Cures confusion", "No"),
+                    Detail("Cures infatuation", "No"),
+                    Detail("Healing power", 0),
+                    Detail("Heal percentage", 0),
+                    Detail("Revival count", 0),
+                    Detail("Revive percentage", 0),
+                    Detail("EXP gain", 0),
+                    Detail("Max use level", 0),
+                    Detail("Mint nature", "0 None"),
+                    Detail("Evolution item", "No"),
+                    Detail("Form change item", "No"),
+                    Detail("Swap into item", "None"),
+                ]),
+        ];
+    }
+
     internal static IReadOnlyDictionary<string, int?> CreateFieldValues(ZaItemData item)
     {
         return new Dictionary<string, int?>
@@ -397,15 +594,18 @@ internal sealed class ZaItemsWorkflowService
         int? machineSlot,
         string? machineMoveName)
     {
-        if (!string.Equals(itemName, ZaLabels.Item(item.Id), StringComparison.Ordinal)
-            || machineMoveName is null
-            || machineSlot is null)
+        if (ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
+            && machineSlot is not null
+            && machineMoveName is not null)
         {
-            return itemName;
+            return FormatTechnicalMachineName(machineSlot.Value, machineMoveName);
         }
 
-        return $"{ZaTechnicalMachineCatalog.FormatMachineLabel(machineSlot.Value)} {machineMoveName}";
+        return itemName;
     }
+
+    internal static string FormatTechnicalMachineName(int machineSlot, string machineMoveName) =>
+        $"{ZaTechnicalMachineCatalog.FormatMachineLabel(machineSlot)} {machineMoveName}";
 
     private static bool CanUseOnPokemon(ZaItemData item)
     {
