@@ -49,6 +49,7 @@ internal sealed class SvItemsWorkflowService
     public const string FriendshipGain1Field = "friendshipGain1";
     public const string FriendshipGain2Field = "friendshipGain2";
     public const string FriendshipGain3Field = "friendshipGain3";
+    public const string EvolutionItemField = "evolutionItem";
     public const string MachineMoveIdField = "machineMoveId";
 
     private static readonly IReadOnlyList<SvItemEditableFieldOption> BooleanOptions =
@@ -94,6 +95,7 @@ internal sealed class SvItemsWorkflowService
         CreateField(SvItemsWorkflowService.FriendshipGain1Field, "Friendship 1", int.MinValue, int.MaxValue),
         CreateField(SvItemsWorkflowService.FriendshipGain2Field, "Friendship 2", int.MinValue, int.MaxValue),
         CreateField(SvItemsWorkflowService.FriendshipGain3Field, "Friendship 3", int.MinValue, int.MaxValue),
+        CreateField(SvItemsWorkflowService.EvolutionItemField, "Evolution item", 0, 1, BooleanOptions, "boolean"),
         CreateField(SvItemsWorkflowService.MachineMoveIdField, "TM move", 0, ushort.MaxValue),
     ];
 
@@ -237,10 +239,41 @@ internal sealed class SvItemsWorkflowService
             item.Price / 2,
             item.BP,
             AlternatePrice: 0,
+            CreateFieldValues(item),
             metadata,
             SharedItemIds: [],
             detailGroups,
             new SvItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+    }
+
+    internal static IReadOnlyDictionary<string, int?> CreateFieldValues(global::ItemData item)
+    {
+        return new Dictionary<string, int?>
+        {
+            [BuyPriceField] = item.Price,
+            [WattsPriceField] = item.BP,
+            [PouchField] = (int)item.FieldPocket,
+            [FlingPowerField] = item.ThrowPower,
+            [FieldUseTypeField] = (int)item.FieldFunctionType,
+            [CanUseOnPokemonField] = CanUseOnPokemon(item.FieldFunctionType) ? 1 : 0,
+            [ItemTypeField] = (int)item.ItemType,
+            [SortIndexField] = item.SortNum,
+            [GroupTypeField] = (int)item.ItemGroup,
+            [GroupIndexField] = item.GroupID,
+            [EvHpField] = item.WorkStatusHp,
+            [EvAttackField] = item.WorkStatusAtk,
+            [EvDefenseField] = item.WorkStatusDef,
+            [EvSpeedField] = item.WorkStatusSpd,
+            [EvSpecialAttackField] = item.WorkStatusSAtk,
+            [EvSpecialDefenseField] = item.WorkStatusSDef,
+            [HealAmountField] = item.WorkStatusHp,
+            [PpGainField] = item.WorkPpRcv,
+            [FriendshipGain1Field] = item.WorkFriendly1,
+            [FriendshipGain2Field] = item.WorkFriendly2,
+            [FriendshipGain3Field] = item.WorkFriendly3,
+            [EvolutionItemField] = item.WorkEvolutional,
+            [MachineMoveIdField] = (int)item.MachineWaza,
+        };
     }
 
     private static SvItemEditableField CreateField(

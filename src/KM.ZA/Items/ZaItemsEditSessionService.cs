@@ -480,12 +480,16 @@ internal sealed class ZaItemsEditSessionService
         return workflow with
         {
             Items = workflow.Items
-                .Select(item => item.ItemId == itemId ? OverlayItem(item, edit.Field, value) : item)
+                .Select(item => item.ItemId == itemId ? OverlayItem(workflow, item, edit.Field, value) : item)
                 .ToArray(),
         };
     }
 
-    private static ZaItemRecord OverlayItem(ZaItemRecord item, string? field, int value)
+    private static ZaItemRecord OverlayItem(
+        ZaItemsWorkflow workflow,
+        ZaItemRecord item,
+        string? field,
+        int value)
     {
         var metadata = item.Metadata;
         var updated = field switch
@@ -500,19 +504,26 @@ internal sealed class ZaItemsEditSessionService
                 Metadata = metadata with { Pouch = value, GroupType = value },
             },
             ZaItemsWorkflowService.StackCapField => item,
-            ZaItemsWorkflowService.SortOrderField => item with { Metadata = metadata with { SortIndex = value } },
+            ZaItemsWorkflowService.SortOrderField => item with
+            {
+                Metadata = metadata with
+                {
+                    SortIndex = value,
+                    MachineSlot = metadata.MachineSlot is null ? null : value,
+                },
+            },
             ZaItemsWorkflowService.CanNotHoldField => item,
             ZaItemsWorkflowService.MachineMoveIdField => item with
             {
                 Metadata = metadata with
                 {
                     MachineMoveId = value > 0 ? value : null,
-                    MachineMoveName = value > 0 ? ZaLabels.Move(value) : null,
+                    MachineMoveName = value > 0 ? ResolveMoveName(workflow, value) : null,
                 },
             },
             ZaItemsWorkflowService.MachineIndexField => item with
             {
-                Metadata = metadata with { MachineSlot = value >= 0 ? value + 1 : null, GroupIndex = value },
+                Metadata = metadata with { GroupIndex = value },
             },
             ZaItemsWorkflowService.CureSleepField => item with { Metadata = metadata with { CureStatusFlags = SetFlag(metadata.CureStatusFlags, 0, value != 0) } },
             ZaItemsWorkflowService.CurePoisonField => item with { Metadata = metadata with { CureStatusFlags = SetFlag(metadata.CureStatusFlags, 1, value != 0) } },
@@ -541,9 +552,35 @@ internal sealed class ZaItemsEditSessionService
             _ => item,
         };
 
+        updated = UpdateTechnicalMachineName(updated);
         return field is null
             ? updated
             : updated with { FieldValues = SetFieldValue(updated.FieldValues, field, value) };
+    }
+
+    private static ZaItemRecord UpdateTechnicalMachineName(ZaItemRecord item)
+    {
+        return item.Metadata.MachineSlot is { } machineSlot
+            && item.Metadata.MachineMoveName is { Length: > 0 } machineMoveName
+                ? item with { Name = ZaItemsWorkflowService.FormatTechnicalMachineName(machineSlot, machineMoveName) }
+                : item;
+    }
+
+    private static string ResolveMoveName(ZaItemsWorkflow workflow, int moveId)
+    {
+        var option = workflow.EditableFields
+            .FirstOrDefault(field => field.Field == ZaItemsWorkflowService.MachineMoveIdField)
+            ?.Options
+            .FirstOrDefault(candidate => candidate.Value == moveId);
+        if (option is not null)
+        {
+            var prefix = moveId.ToString(CultureInfo.InvariantCulture);
+            return option.Label.StartsWith(prefix, StringComparison.Ordinal)
+                ? option.Label[prefix.Length..].TrimStart()
+                : option.Label;
+        }
+
+        return ZaLabels.Move(moveId);
     }
 
     private static IReadOnlyDictionary<string, int?> SetFieldValue(
@@ -566,7 +603,7 @@ internal sealed class ZaItemsEditSessionService
     }
 
     private static void ApplyEdit(
-        IReadOnlyList<ItemRow> rows,
+        List<ItemRow> rows,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -585,13 +622,20 @@ internal sealed class ZaItemsEditSessionService
         var row = rows.FirstOrDefault(candidate => candidate.Id == itemId);
         if (row is null)
         {
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Item {itemId} is not present in the source item array.",
-                ZaEditSessionSupport.ItemsDomain,
-                field: "itemId",
-                expected: "Existing item source row"));
-            return;
+            if (!ZaTechnicalMachineCatalog.IsKnownMissingTechnicalMachineItemId(itemId))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Item {itemId} is not present in the source item array.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: "itemId",
+                    expected: "Existing item source row"));
+                return;
+            }
+
+            row = CreateKnownMissingTechnicalMachineRow();
+            rows.Add(row);
+            rows.Sort((left, right) => left.Id.CompareTo(right.Id));
         }
 
         ApplyField(row, edit.Field, value);
@@ -745,7 +789,7 @@ internal sealed class ZaItemsEditSessionService
         }
     }
 
-    private static IReadOnlyList<ItemRow> ReadRows(byte[] bytes)
+    private static List<ItemRow> ReadRows(byte[] bytes)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
         var rows = new List<ItemRow>();
@@ -760,6 +804,43 @@ internal sealed class ZaItemsEditSessionService
 
         return rows;
     }
+
+    internal static bool ContainsKnownMissingTechnicalMachineRow(byte[] bytes)
+    {
+        return ReadRows(bytes).Any(row => row.Id == ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineItemId);
+    }
+
+    internal static byte[] EnsureKnownMissingTechnicalMachineRow(byte[] bytes)
+    {
+        var rows = ReadRows(bytes);
+        if (rows.Any(row => row.Id == ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineItemId))
+        {
+            return bytes;
+        }
+
+        rows.Add(CreateKnownMissingTechnicalMachineRow());
+        rows.Sort((left, right) => left.Id.CompareTo(right.Id));
+        return WriteRows(rows);
+    }
+
+    private static ItemRow CreateKnownMissingTechnicalMachineRow() =>
+        new()
+        {
+            Id = ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineItemId,
+            ItemType = 5,
+            InternalName = "WAZAMASIN101",
+            IconName = "item_2161",
+            Price = 0,
+            Pocket = 6,
+            SlotMaxNum = 1,
+            SortNum = ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineSlot,
+            PriceMegaShard = 0,
+            PriceColorfulScrew = 0,
+            CanNotHold = false,
+            MachineWaza = ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineMoveId,
+            MachineIndex = ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineIndex,
+            CanUseInBattle = false,
+        };
 
     private static byte[] WriteRows(IReadOnlyList<ItemRow> rows)
     {

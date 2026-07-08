@@ -829,7 +829,7 @@ internal sealed class ZaPokemonWorkflowService
 
     private static bool IsEvolutionItemParameterMethod(int method)
     {
-        return method is 8 or 17 or 18 or 19 or 20 or 42;
+        return method is 8 or 17 or 18 or 42;
     }
 
     private static string FormatEvolutionValueArgument(int argument, EvolutionMethodDefinition method)

@@ -890,7 +890,7 @@ public static class SvBridgeMapper
             item.SellPrice,
             item.WattsPrice,
             item.AlternatePrice,
-            new Dictionary<string, int?>(),
+            item.FieldValues,
             new ItemMetadataDto(
                 item.Metadata.Pouch,
                 item.Metadata.PouchFlags,
