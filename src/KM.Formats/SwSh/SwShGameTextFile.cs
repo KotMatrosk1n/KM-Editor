@@ -16,6 +16,7 @@ public sealed class SwShGameTextFile
     private const ushort VariableMarker = 0x0010;
     private const ushort TextReturn = 0xBE00;
     private const ushort TextClear = 0xBE01;
+    private const ushort IndexedNameVariable = 0xBDFF;
     private const int HeaderSize = 0x10;
     private const int LineEntrySize = 0x08;
 
@@ -171,7 +172,12 @@ public sealed class SwShGameTextFile
 
             if (value == VariableMarker)
             {
-                AppendVariablePlaceholder(data, builder, ref offset);
+                if (!TryAppendVariablePlaceholder(data, builder, ref offset))
+                {
+                    builder.Append("[VAR]");
+                    break;
+                }
+
                 continue;
             }
 
@@ -188,13 +194,11 @@ public sealed class SwShGameTextFile
         return builder.ToString();
     }
 
-    private static void AppendVariablePlaceholder(ReadOnlySpan<byte> data, StringBuilder builder, ref int offset)
+    private static bool TryAppendVariablePlaceholder(ReadOnlySpan<byte> data, StringBuilder builder, ref int offset)
     {
         if (offset + (sizeof(ushort) * 2) > data.Length)
         {
-            builder.Append("[VAR]");
-            offset = data.Length;
-            return;
+            return false;
         }
 
         var count = BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]);
@@ -205,13 +209,30 @@ public sealed class SwShGameTextFile
         if (count == 1 && variable == TextReturn)
         {
             builder.Append("\\r");
-            return;
+            return true;
         }
 
         if (count == 1 && variable == TextClear)
         {
             builder.Append("\\c");
-            return;
+            return true;
+        }
+
+        if (count == 1
+            && variable == IndexedNameVariable
+            && offset + sizeof(ushort) <= data.Length)
+        {
+            var argument = BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]);
+            if (argument != Terminator)
+            {
+                offset += sizeof(ushort);
+                builder.Append("[VAR ")
+                    .Append(variable.ToString("X4", CultureInfo.InvariantCulture))
+                    .Append('(')
+                    .Append(argument.ToString("X4", CultureInfo.InvariantCulture))
+                    .Append(")]");
+                return true;
+            }
         }
 
         var argumentCount = Math.Max(0, count - 1);
@@ -219,17 +240,18 @@ public sealed class SwShGameTextFile
 
         for (var i = 0; i < argumentCount && offset + sizeof(ushort) <= data.Length; i++)
         {
-            arguments.Add(BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]).ToString("X4"));
+            arguments.Add(BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]).ToString("X4", CultureInfo.InvariantCulture));
             offset += sizeof(ushort);
         }
 
-        builder.Append("[VAR ").Append(variable.ToString("X4"));
+        builder.Append("[VAR ").Append(variable.ToString("X4", CultureInfo.InvariantCulture));
         if (arguments.Count > 0)
         {
             builder.Append('(').Append(string.Join(',', arguments)).Append(')');
         }
 
         builder.Append(']');
+        return true;
     }
 
     private static byte[] EncodeLine(string text)
@@ -337,7 +359,7 @@ public sealed class SwShGameTextFile
         }
 
         values.Add(VariableMarker);
-        values.Add(checked((ushort)(arguments.Count + 1)));
+        values.Add(CreateVariableCount(variable, arguments.Count));
         values.Add(variable);
         foreach (var argument in arguments)
         {
@@ -346,5 +368,15 @@ public sealed class SwShGameTextFile
 
         consumed = end - start + 1;
         return true;
+    }
+
+    private static ushort CreateVariableCount(ushort variable, int argumentCount)
+    {
+        if (variable == IndexedNameVariable && argumentCount == 1)
+        {
+            return 1;
+        }
+
+        return checked((ushort)(argumentCount + 1));
     }
 }
