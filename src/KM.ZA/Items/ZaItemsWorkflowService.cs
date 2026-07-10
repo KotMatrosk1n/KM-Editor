@@ -65,16 +65,16 @@ internal sealed class ZaItemsWorkflowService
 
     private static readonly IReadOnlyList<string> ItemTypeNames =
     [
-        "None",
-        "General Item",
+        "Key Item",
+        "Berry",
         "Medicine",
-        "Battle Item",
+        "Treasure",
         "Ball",
         "Technical Machine",
-        "Berry",
-        "Mega Stone",
-        "Key Item",
-        "Treasure",
+        "Unused",
+        "Pokemon Item",
+        "Unknown",
+        "Special Item",
     ];
 
     private static readonly IReadOnlyDictionary<int, string> PocketNames = new Dictionary<int, string>

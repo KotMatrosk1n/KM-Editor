@@ -469,10 +469,16 @@ public sealed class PokemonLegendsZABridgeTests
     public void PokemonLegendsZAProjectLoadsItemData()
     {
         using var temp = CreatePokemonLegendsZAProject();
-        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray(includePokemonItemTypes: true));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
-            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+            CreateTextTable(
+                2564,
+                (4, "Poke Ball"),
+                (17, "Potion"),
+                (82, "Fire Stone"),
+                (328, "TM001"),
+                (2563, "Meganiumite")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
@@ -488,8 +494,8 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = items.Payload!.Workflow;
         Assert.Equal("Items", workflow.Summary.Label);
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
-        Assert.Equal(3, workflow.Items.Count);
-        Assert.Equal(3, workflow.Stats.TotalItemCount);
+        Assert.Equal(5, workflow.Items.Count);
+        Assert.Equal(5, workflow.Stats.TotalItemCount);
         foreach (var item in workflow.Items)
         {
             foreach (var field in workflow.EditableFields)
@@ -525,6 +531,32 @@ public sealed class PokemonLegendsZABridgeTests
         var potion = workflow.Items.Single(item => item.ItemId == 17);
         Assert.Equal(20, potion.FieldValues["healPower"]);
         Assert.Equal(1, potion.FieldValues["canUseInBattle"]);
+        var fireStone = workflow.Items.Single(item => item.ItemId == 82);
+        Assert.Equal(7, fireStone.FieldValues["itemType"]);
+        Assert.True(fireStone.Metadata.CanUseOnPokemon);
+        Assert.Equal("7 Pokemon Item", fireStone
+            .DetailGroups
+            .Single(group => group.Label == "Pokemon Legends Z-A")
+            .Details
+            .Single(detail => detail.Label == "Item type")
+            .Value);
+        Assert.Equal("Yes", fireStone
+            .DetailGroups
+            .Single(group => group.Label == "Effects")
+            .Details
+            .Single(detail => detail.Label == "Evolution item")
+            .Value);
+        var megaStone = workflow.Items.Single(item => item.ItemId == 2563);
+        Assert.Equal("Mega Stones", megaStone.Category);
+        Assert.Equal("7 Pokemon Item", megaStone
+            .DetailGroups
+            .Single(group => group.Label == "Pokemon Legends Z-A")
+            .Details
+            .Single(detail => detail.Label == "Item type")
+            .Value);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == "itemType").Options,
+            option => option.Value == 7 && option.Label == "7 Pokemon Item");
         Assert.Equal("999", pokeBall
             .DetailGroups
             .Single(group => group.Label == "Pokemon Legends Z-A")
@@ -2800,7 +2832,10 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateItemDataArray(bool includeAdditionalMachines = false, bool includeCustomEvolutionItem = false)
+    private static byte[] CreateItemDataArray(
+        bool includeAdditionalMachines = false,
+        bool includeCustomEvolutionItem = false,
+        bool includePokemonItemTypes = false)
     {
         var builder = new FlatBufferBuilder(2048);
         var pokeBall = CreateItem(
@@ -2881,6 +2916,31 @@ public sealed class PokemonLegendsZABridgeTests
                 stackCap: 999,
                 sortOrder: 222,
                 workEvolutional: true));
+        }
+
+        if (includePokemonItemTypes)
+        {
+            rows.Add(CreateItem(
+                builder,
+                itemId: 82,
+                itemType: 7,
+                internalName: "HONOONOISI",
+                iconName: "item_0082",
+                price: 3000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 42,
+                workEvolutional: true));
+            rows.Add(CreateItem(
+                builder,
+                itemId: 2563,
+                itemType: 7,
+                internalName: "MEGANIUMUNAITO",
+                iconName: "item_2563",
+                price: 100000,
+                pocket: 7,
+                stackCap: 1,
+                sortOrder: 1));
         }
 
         var vector = ZaItemDataArray.CreateValuesVector(builder, rows.ToArray());
