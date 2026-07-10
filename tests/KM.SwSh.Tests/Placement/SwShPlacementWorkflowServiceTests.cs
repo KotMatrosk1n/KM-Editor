@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Placement;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.StaticEncounters;
 using KM.SwSh.Workflows;
 using Xunit;
 
@@ -16,14 +17,15 @@ public sealed class SwShPlacementWorkflowServiceTests
     public void LoadReadsPlacedObjectsFromRealPlacementPack()
     {
         using var temp = TemporarySwShProject.Create();
-        SwShPlacementTestFixtures.WriteBasePlacement(temp);
+        SwShPlacementTestFixtures.WriteBasePlacement(temp, includeStaticObject: true);
+        SwShStaticEncountersWorkflowServiceTests.WriteStaticEncounterFixture(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShPlacementWorkflowService().Load(project);
 
         Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
-        Assert.Equal(2, workflow.Objects.Count);
+        Assert.Equal(3, workflow.Objects.Count);
         Assert.Contains(workflow.EditableFields, field => field.Field == SwShPlacementWorkflowService.ItemIdField);
         var fieldItem = workflow.Objects.Single(placedObject => placedObject.ObjectType == "FieldItem");
         Assert.Equal($"{SwShPlacementTestFixtures.AreaMember}|0|fieldItem|0|-", fieldItem.ObjectId);
@@ -49,8 +51,18 @@ public sealed class SwShPlacementWorkflowServiceTests
         Assert.Equal(2, hiddenItem.Quantity);
         Assert.Equal(50, hiddenItem.Chance);
         Assert.Equal("hidden_item", hiddenItem.ScriptId);
-        Assert.Equal(2, workflow.Stats.TotalObjectCount);
-        Assert.Equal(1, workflow.Stats.TotalAreaCount);
+        var staticObject = workflow.Objects.Single(placedObject => placedObject.ObjectType == "StaticObject");
+        Assert.Contains("Static 001", staticObject.Label, StringComparison.Ordinal);
+        Assert.Contains("Grookey", staticObject.Label, StringComparison.Ordinal);
+        Assert.Contains("0x0102030405060708", staticObject.Label, StringComparison.Ordinal);
+        Assert.Equal("Test Cave", staticObject.Map);
+        Assert.Contains(
+            staticObject.Fields!,
+            field => field.Label == "Static Encounter"
+                && field.DisplayValue.Contains("Grookey", StringComparison.Ordinal)
+                && field.DisplayValue.Contains("0x0102030405060708", StringComparison.Ordinal));
+        Assert.Equal(3, workflow.Stats.TotalObjectCount);
+        Assert.Equal(2, workflow.Stats.TotalAreaCount);
         Assert.Equal(3, workflow.Stats.SourceFileCount);
         Assert.Empty(workflow.Diagnostics);
     }

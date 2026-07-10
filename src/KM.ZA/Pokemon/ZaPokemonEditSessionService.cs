@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using System.Globalization;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
@@ -23,6 +24,33 @@ internal sealed class ZaPokemonEditSessionService
     private const string MoveUpAction = "moveUp";
     private const string MoveDownAction = "moveDown";
     private const string MoveToAction = "moveTo";
+    private const int PersonalTableEntryFieldIndex = 0;
+    private const int PersonalSpeciesFieldIndex = 0;
+    private const int PersonalIsPresentFieldIndex = 1;
+    private const int PersonalZaDexOrderFieldIndex = 2;
+    private const int PersonalType1FieldIndex = 3;
+    private const int PersonalType2FieldIndex = 4;
+    private const int PersonalAbility1FieldIndex = 5;
+    private const int PersonalAbility2FieldIndex = 6;
+    private const int PersonalHiddenAbilityFieldIndex = 7;
+    private const int PersonalXpGrowthFieldIndex = 8;
+    private const int PersonalCatchRateFieldIndex = 9;
+    private const int PersonalGenderFieldIndex = 10;
+    private const int PersonalEggGroup1FieldIndex = 11;
+    private const int PersonalEggGroup2FieldIndex = 12;
+    private const int PersonalEggHatchFieldIndex = 13;
+    private const int PersonalEggHatchCyclesFieldIndex = 14;
+    private const int PersonalBaseFriendshipFieldIndex = 15;
+    private const int PersonalEvolutionStageFieldIndex = 17;
+    private const int PersonalEvYieldFieldIndex = 19;
+    private const int PersonalBaseStatsFieldIndex = 20;
+    private const int PersonalEvolutionsFieldIndex = 21;
+    private const int PersonalTmMovesFieldIndex = 22;
+    private const int PersonalEggMovesFieldIndex = 23;
+    private const int PersonalReminderMovesFieldIndex = 24;
+    private const int PersonalLevelupMovesFieldIndex = 25;
+    private const int EvolutionDataSize = 16;
+    private const int LevelupMoveDataSize = 4;
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
@@ -377,6 +405,7 @@ internal sealed class ZaPokemonEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var rows = ReadRows(source.Bytes);
+            var requiresRebuild = RequiresPersonalArrayRebuild(rows, session.PendingEdits);
             foreach (var edit in session.PendingEdits)
             {
                 ApplyEdit(rows, edit, diagnostics);
@@ -387,7 +416,15 @@ internal sealed class ZaPokemonEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PersonalArray, WriteRows(rows), outputMode);
+            var outputBytes = requiresRebuild
+                ? WriteRows(rows)
+                : ApplyPersonalArrayBinaryPatch(source.Bytes, session.PendingEdits, diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            }
+
+            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PersonalArray, outputBytes, outputMode);
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PersonalArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -869,6 +906,7 @@ internal sealed class ZaPokemonEditSessionService
             var operation = ParseLearnsetOperation(edit, null, diagnostics);
             if (operation is not null)
             {
+                row.HasLevelupMoves = true;
                 ApplyLearnsetOperation(row.LevelupMoves, operation);
             }
 
@@ -880,6 +918,7 @@ internal sealed class ZaPokemonEditSessionService
             var operation = ParseEvolutionOperation(edit, null, diagnostics);
             if (operation is not null)
             {
+                row.HasEvolutions = true;
                 ApplyEvolutionOperation(row.Evolutions, operation);
             }
 
@@ -928,102 +967,135 @@ internal sealed class ZaPokemonEditSessionService
             switch (field)
             {
                 case ZaPokemonWorkflowService.HPField:
+                    row.HasBaseStats = true;
                     row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Hp = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.AttackField:
+                    row.HasBaseStats = true;
                     row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Atk = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.DefenseField:
+                    row.HasBaseStats = true;
                     row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Def = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.SpecialAttackField:
+                    row.HasBaseStats = true;
                     row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Spa = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.SpecialDefenseField:
+                    row.HasBaseStats = true;
                     row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Spd = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.SpeedField:
+                    row.HasBaseStats = true;
                     row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Spe = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.Type1Field:
+                    row.HasType1 = true;
                     row.Type1 = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.Type2Field:
+                    row.HasType2 = true;
                     row.Type2 = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.Ability1Field:
+                    row.HasAbility1 = true;
                     row.Ability1 = ToUshort(value);
                     break;
                 case ZaPokemonWorkflowService.Ability2Field:
+                    row.HasAbility2 = true;
                     row.Ability2 = ToUshort(value);
                     break;
                 case ZaPokemonWorkflowService.HiddenAbilityField:
+                    row.HasAbilityHidden = true;
                     row.AbilityHidden = ToUshort(value);
                     break;
                 case ZaPokemonWorkflowService.CatchRateField:
+                    row.HasCatchRate = true;
                     row.CatchRate = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.EvolutionStageField:
+                    row.HasEvoStage = true;
                     row.EvoStage = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.EVYieldHPField:
+                    row.HasEvYield = true;
                     row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Hp = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.EVYieldAttackField:
+                    row.HasEvYield = true;
                     row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Atk = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.EVYieldDefenseField:
+                    row.HasEvYield = true;
                     row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Def = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.EVYieldSpecialAttackField:
+                    row.HasEvYield = true;
                     row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Spa = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.EVYieldSpecialDefenseField:
+                    row.HasEvYield = true;
                     row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Spd = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.EVYieldSpeedField:
+                    row.HasEvYield = true;
                     row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Spe = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.GenderRatioField:
+                    row.HasGender = true;
                     row.Gender = (row.Gender ?? new GenderInfoRow(0, 0)) with { Ratio = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.HatchCyclesField:
+                    row.HasEggHatchCycles = true;
                     row.EggHatchCycles = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.BaseFriendshipField:
+                    row.HasBaseFriendship = true;
                     row.BaseFriendship = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.ExpGrowthField:
+                    row.HasXpGrowth = true;
                     row.XpGrowth = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.EggGroup1Field:
+                    row.HasEggGroup1 = true;
                     row.EggGroup1 = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.EggGroup2Field:
+                    row.HasEggGroup2 = true;
                     row.EggGroup2 = ToByte(value);
                     break;
                 case ZaPokemonWorkflowService.FormField:
+                    row.HasSpecies = true;
                     row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Form = ToUshort(value) };
                     break;
                 case ZaPokemonWorkflowService.ModelIdField:
+                    row.HasSpecies = true;
                     row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Model = ToUshort(value) };
                     break;
                 case ZaPokemonWorkflowService.ColorField:
+                    row.HasSpecies = true;
                     row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Color = ToByte(value) };
                     break;
                 case ZaPokemonWorkflowService.HeightField:
+                    row.HasSpecies = true;
                     row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Height = ToUshort(value) };
                     break;
                 case ZaPokemonWorkflowService.WeightField:
+                    row.HasSpecies = true;
                     row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Weight = ToUshort(value) };
                     break;
                 case ZaPokemonWorkflowService.HatchedSpeciesField:
+                    row.HasEggHatch = true;
                     row.EggHatch = (row.EggHatch ?? EggHatchInfoRow.Zero) with { Species = ToUshort(value) };
                     break;
                 case ZaPokemonWorkflowService.IsPresentInGameField:
+                    row.HasIsPresent = true;
                     row.IsPresent = value != 0;
                     break;
                 case ZaPokemonWorkflowService.RegionalDexIndexField:
+                    row.HasZADexOrder = true;
                     row.ZADexOrder = ToByte(value);
                     break;
                 default:
@@ -1046,6 +1118,7 @@ internal sealed class ZaPokemonEditSessionService
     {
         if (string.Equals(groupId, ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId, StringComparison.Ordinal))
         {
+            row.HasTmMoves = true;
             var move = (ushort)slot;
             row.TmMoves.RemoveAll(candidate => candidate == move);
             if (enabled)
@@ -1066,6 +1139,15 @@ internal sealed class ZaPokemonEditSessionService
         if (target is null || (uint)slot >= (uint)target.Count)
         {
             return;
+        }
+
+        if (string.Equals(groupId, ZaPokemonWorkflowService.EggMoveCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            row.HasEggMoves = true;
+        }
+        else if (string.Equals(groupId, ZaPokemonWorkflowService.ReminderMoveCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            row.HasReminderMoves = true;
         }
 
         if (!enabled)
@@ -1168,6 +1250,7 @@ internal sealed class ZaPokemonEditSessionService
     private static byte[] WriteRows(IReadOnlyList<PersonalRow> rows)
     {
         var builder = new FlatBufferBuilder(1024);
+        builder.ForceDefaults = true;
         var offsets = rows.Select(row => row.Write(builder)).ToArray();
         var vector = ZaPersonalTable.CreateEntryVector(builder, offsets);
         ZaPersonalTable.Start(builder);
@@ -1175,6 +1258,1001 @@ internal sealed class ZaPokemonEditSessionService
         var root = ZaPersonalTable.End(builder);
         ZaPersonalTable.FinishBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static bool RequiresPersonalArrayRebuild(
+        IReadOnlyList<PersonalRow> rows,
+        IEnumerable<PendingEdit> edits)
+    {
+        var evolutionLengths = new Dictionary<int, int>();
+        var learnsetLengths = new Dictionary<int, int>();
+        foreach (var edit in edits)
+        {
+            if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+                || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
+                || personalId < 0
+                || personalId >= rows.Count)
+            {
+                continue;
+            }
+
+            var row = rows[personalId];
+            if (TryParseEvolutionField(edit.Field, out var evolutionAction, out var evolutionSlot)
+                && TryParseEvolutionValue(edit.NewValue, out _))
+            {
+                var length = evolutionLengths.TryGetValue(personalId, out var currentLength)
+                    ? currentLength
+                    : row.Evolutions.Count;
+                if (!row.HasEvolutions || ((evolutionAction == AddAction || evolutionAction == UpsertAction) && evolutionSlot >= length))
+                {
+                    return true;
+                }
+
+                evolutionLengths[personalId] = ApplyVectorLengthOverlay(length, evolutionAction, evolutionSlot);
+                continue;
+            }
+
+            if (TryParseLearnsetField(edit.Field, out var learnsetAction, out var learnsetSlot)
+                && TryParseOperationValue(edit.NewValue, out _, out _))
+            {
+                var length = learnsetLengths.TryGetValue(personalId, out var currentLength)
+                    ? currentLength
+                    : row.LevelupMoves.Count;
+                if (!row.HasLevelupMoves || ((learnsetAction == AddAction || learnsetAction == UpsertAction) && learnsetSlot >= length))
+                {
+                    return true;
+                }
+
+                learnsetLengths[personalId] = ApplyVectorLengthOverlay(length, learnsetAction, learnsetSlot);
+                continue;
+            }
+
+            if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
+                && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var compatibilityValue))
+            {
+                if (!RequiresCompatibilityRebuild(row, groupId, slot, compatibilityValue != 0))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            if (RequiresPersonalFieldRebuild(row, edit.Field))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int ApplyVectorLengthOverlay(int length, string action, int slot)
+    {
+        return action switch
+        {
+            AddAction or UpsertAction when slot >= length => slot + 1,
+            RemoveAction when slot >= 0 && slot < length => length - 1,
+            _ => length,
+        };
+    }
+
+    private static bool RequiresCompatibilityRebuild(PersonalRow row, string groupId, int slot, bool enabled)
+    {
+        if (string.Equals(groupId, ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            if (!row.HasTmMoves)
+            {
+                return true;
+            }
+
+            if (slot is < 0 or > ushort.MaxValue)
+            {
+                return false;
+            }
+
+            var move = (ushort)slot;
+            return enabled && !row.TmMoves.Contains(move) && !row.TmMoves.Contains(0);
+        }
+
+        if (string.Equals(groupId, ZaPokemonWorkflowService.EggMoveCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            return !row.HasEggMoves;
+        }
+
+        if (string.Equals(groupId, ZaPokemonWorkflowService.ReminderMoveCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            return !row.HasReminderMoves;
+        }
+
+        return false;
+    }
+
+    private static bool RequiresPersonalFieldRebuild(PersonalRow row, string? field)
+    {
+        return field switch
+        {
+            ZaPokemonWorkflowService.HPField or
+            ZaPokemonWorkflowService.AttackField or
+            ZaPokemonWorkflowService.DefenseField or
+            ZaPokemonWorkflowService.SpecialAttackField or
+            ZaPokemonWorkflowService.SpecialDefenseField or
+            ZaPokemonWorkflowService.SpeedField => !row.HasBaseStats,
+            ZaPokemonWorkflowService.Type1Field => !row.HasType1,
+            ZaPokemonWorkflowService.Type2Field => !row.HasType2,
+            ZaPokemonWorkflowService.Ability1Field => !row.HasAbility1,
+            ZaPokemonWorkflowService.Ability2Field => !row.HasAbility2,
+            ZaPokemonWorkflowService.HiddenAbilityField => !row.HasAbilityHidden,
+            ZaPokemonWorkflowService.CatchRateField => !row.HasCatchRate,
+            ZaPokemonWorkflowService.EvolutionStageField => !row.HasEvoStage,
+            ZaPokemonWorkflowService.EVYieldHPField or
+            ZaPokemonWorkflowService.EVYieldAttackField or
+            ZaPokemonWorkflowService.EVYieldDefenseField or
+            ZaPokemonWorkflowService.EVYieldSpecialAttackField or
+            ZaPokemonWorkflowService.EVYieldSpecialDefenseField or
+            ZaPokemonWorkflowService.EVYieldSpeedField => !row.HasEvYield,
+            ZaPokemonWorkflowService.GenderRatioField => !row.HasGender,
+            ZaPokemonWorkflowService.HatchCyclesField => !row.HasEggHatchCycles,
+            ZaPokemonWorkflowService.BaseFriendshipField => !row.HasBaseFriendship,
+            ZaPokemonWorkflowService.ExpGrowthField => !row.HasXpGrowth,
+            ZaPokemonWorkflowService.EggGroup1Field => !row.HasEggGroup1,
+            ZaPokemonWorkflowService.EggGroup2Field => !row.HasEggGroup2,
+            ZaPokemonWorkflowService.FormField or
+            ZaPokemonWorkflowService.ModelIdField or
+            ZaPokemonWorkflowService.ColorField or
+            ZaPokemonWorkflowService.HeightField or
+            ZaPokemonWorkflowService.WeightField => !row.HasSpecies,
+            ZaPokemonWorkflowService.HatchedSpeciesField => !row.HasEggHatch,
+            ZaPokemonWorkflowService.IsPresentInGameField => !row.HasIsPresent,
+            ZaPokemonWorkflowService.RegionalDexIndexField => !row.HasZADexOrder,
+            _ => false,
+        };
+    }
+
+    private static byte[] ApplyPersonalArrayBinaryPatch(
+        byte[] sourceBytes,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var patchedBytes = sourceBytes.ToArray();
+        foreach (var edit in edits)
+        {
+            if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending edit domain '{edit.Domain}' is not supported by Pokemon Legends Z-A Pokemon Data.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    expected: ZaEditSessionSupport.PokemonDomain));
+                continue;
+            }
+
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Pokemon Data edit targets an invalid personal record.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: "personalId",
+                    expected: "Existing Pokemon personal record"));
+                continue;
+            }
+
+            if (!TryGetPersonalRowTableOffset(patchedBytes, personalId, edit.Field, diagnostics, out var personalOffset))
+            {
+                continue;
+            }
+
+            if (TryParseCompatibilityField(edit.Field, out var compatibilityGroupId, out var compatibilitySlot))
+            {
+                ApplyCompatibilityBinaryPatch(patchedBytes, personalOffset, edit, compatibilityGroupId, compatibilitySlot, diagnostics);
+                continue;
+            }
+
+            if (TryParseLearnsetField(edit.Field, out _, out _))
+            {
+                ApplyLearnsetBinaryPatch(patchedBytes, personalOffset, edit, diagnostics);
+                continue;
+            }
+
+            if (TryParseEvolutionField(edit.Field, out _, out _))
+            {
+                ApplyEvolutionBinaryPatch(patchedBytes, personalOffset, edit, diagnostics);
+                continue;
+            }
+
+            if (!int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Pokemon Data edit value is invalid.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: edit.Field,
+                    expected: "Integer value"));
+                continue;
+            }
+
+            if (!TryApplyPersonalFieldBinaryPatch(patchedBytes, personalOffset, edit.Field, value, diagnostics))
+            {
+                diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+            }
+        }
+
+        return patchedBytes;
+    }
+
+    private static bool TryApplyPersonalFieldBinaryPatch(
+        byte[] data,
+        int personalOffset,
+        string? field,
+        int value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            switch (field)
+            {
+                case ZaPokemonWorkflowService.HPField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalBaseStatsFieldIndex, 0, value, field, diagnostics);
+                case ZaPokemonWorkflowService.AttackField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalBaseStatsFieldIndex, 1, value, field, diagnostics);
+                case ZaPokemonWorkflowService.DefenseField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalBaseStatsFieldIndex, 2, value, field, diagnostics);
+                case ZaPokemonWorkflowService.SpecialAttackField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalBaseStatsFieldIndex, 3, value, field, diagnostics);
+                case ZaPokemonWorkflowService.SpecialDefenseField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalBaseStatsFieldIndex, 4, value, field, diagnostics);
+                case ZaPokemonWorkflowService.SpeedField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalBaseStatsFieldIndex, 5, value, field, diagnostics);
+                case ZaPokemonWorkflowService.Type1Field:
+                    return TryPatchByteTableField(data, personalOffset, PersonalType1FieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.Type2Field:
+                    return TryPatchByteTableField(data, personalOffset, PersonalType2FieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.Ability1Field:
+                    return TryPatchUShortTableField(data, personalOffset, PersonalAbility1FieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.Ability2Field:
+                    return TryPatchUShortTableField(data, personalOffset, PersonalAbility2FieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.HiddenAbilityField:
+                    return TryPatchUShortTableField(data, personalOffset, PersonalHiddenAbilityFieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.CatchRateField:
+                    return TryPatchByteTableField(data, personalOffset, PersonalCatchRateFieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EvolutionStageField:
+                    return TryPatchByteTableField(data, personalOffset, PersonalEvolutionStageFieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EVYieldHPField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalEvYieldFieldIndex, 0, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EVYieldAttackField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalEvYieldFieldIndex, 1, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EVYieldDefenseField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalEvYieldFieldIndex, 2, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EVYieldSpecialAttackField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalEvYieldFieldIndex, 3, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EVYieldSpecialDefenseField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalEvYieldFieldIndex, 4, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EVYieldSpeedField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalEvYieldFieldIndex, 5, value, field, diagnostics);
+                case ZaPokemonWorkflowService.GenderRatioField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalGenderFieldIndex, 1, value, field, diagnostics);
+                case ZaPokemonWorkflowService.HatchCyclesField:
+                    return TryPatchByteTableField(data, personalOffset, PersonalEggHatchCyclesFieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.BaseFriendshipField:
+                    return TryPatchByteTableField(data, personalOffset, PersonalBaseFriendshipFieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.ExpGrowthField:
+                    return TryPatchByteTableField(data, personalOffset, PersonalXpGrowthFieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EggGroup1Field:
+                    return TryPatchByteTableField(data, personalOffset, PersonalEggGroup1FieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.EggGroup2Field:
+                    return TryPatchByteTableField(data, personalOffset, PersonalEggGroup2FieldIndex, value, field, diagnostics);
+                case ZaPokemonWorkflowService.FormField:
+                    return TryPatchStructUShortField(data, personalOffset, PersonalSpeciesFieldIndex, 2, value, field, diagnostics);
+                case ZaPokemonWorkflowService.ModelIdField:
+                    return TryPatchStructUShortField(data, personalOffset, PersonalSpeciesFieldIndex, 4, value, field, diagnostics);
+                case ZaPokemonWorkflowService.ColorField:
+                    return TryPatchStructByteField(data, personalOffset, PersonalSpeciesFieldIndex, 6, value, field, diagnostics);
+                case ZaPokemonWorkflowService.HeightField:
+                    return TryPatchStructUShortField(data, personalOffset, PersonalSpeciesFieldIndex, 8, value, field, diagnostics);
+                case ZaPokemonWorkflowService.WeightField:
+                    return TryPatchStructUShortField(data, personalOffset, PersonalSpeciesFieldIndex, 10, value, field, diagnostics);
+                case ZaPokemonWorkflowService.HatchedSpeciesField:
+                    return TryPatchStructUShortField(data, personalOffset, PersonalEggHatchFieldIndex, 0, value, field, diagnostics);
+                case ZaPokemonWorkflowService.IsPresentInGameField:
+                    return TryPatchBoolTableField(data, personalOffset, PersonalIsPresentFieldIndex, value != 0, field, diagnostics);
+                case ZaPokemonWorkflowService.RegionalDexIndexField:
+                    return TryPatchByteTableField(data, personalOffset, PersonalZaDexOrderFieldIndex, value, field, diagnostics);
+                default:
+                    return false;
+            }
+        }
+        catch (OverflowException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon Data edit value is outside the target field range.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: field,
+                expected: "Safe editor value"));
+            return true;
+        }
+    }
+
+    private static void ApplyEvolutionBinaryPatch(
+        byte[] data,
+        int personalOffset,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var operation = ParseEvolutionOperation(edit, null, diagnostics);
+        if (operation is null
+            || !TryGetTableVector(data, personalOffset, PersonalEvolutionsFieldIndex, edit.Field, diagnostics, out var vectorOffset, out var length))
+        {
+            return;
+        }
+
+        try
+        {
+            switch (operation.Action)
+            {
+                case AddAction:
+                case UpsertAction:
+                    if (!TryGetStructVectorElementOffset(data, vectorOffset, length, operation.Slot, EvolutionDataSize, edit.Field, diagnostics, out var elementOffset))
+                    {
+                        return;
+                    }
+
+                    WriteUShort(data, elementOffset, ToUshort(operation.Level ?? 0));
+                    WriteUShort(data, elementOffset + 2, ToUshort(operation.Method ?? 0));
+                    WriteUShort(data, elementOffset + 4, ToUshort(operation.Argument ?? 0));
+                    WriteUShort(data, elementOffset + 12, ToUshort(operation.Species ?? 0));
+                    WriteUShort(data, elementOffset + 14, ToUshort(operation.Form ?? 0));
+                    break;
+                case RemoveAction:
+                    if (TryGetStructVectorElementOffset(data, vectorOffset, length, operation.Slot, EvolutionDataSize, edit.Field, diagnostics, out _)
+                        && TryGetStructVectorElementOffset(data, vectorOffset, length, length - 1, EvolutionDataSize, edit.Field, diagnostics, out _))
+                    {
+                        RemoveStructVectorElement(data, vectorOffset, length, operation.Slot, EvolutionDataSize);
+                    }
+
+                    break;
+                case MoveUpAction:
+                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Slot - 1, EvolutionDataSize, edit.Field, diagnostics);
+                    break;
+                case MoveDownAction:
+                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Slot + 1, EvolutionDataSize, edit.Field, diagnostics);
+                    break;
+                case MoveToAction:
+                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Method ?? -1, EvolutionDataSize, edit.Field, diagnostics);
+                    break;
+                default:
+                    diagnostics.Add(OperationDiagnostic($"Evolution action '{operation.Action}' is not supported.", "action"));
+                    break;
+            }
+        }
+        catch (OverflowException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon evolution edit value is outside the target field range.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "Safe evolution value"));
+        }
+    }
+
+    private static void ApplyLearnsetBinaryPatch(
+        byte[] data,
+        int personalOffset,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var operation = ParseLearnsetOperation(edit, null, diagnostics);
+        if (operation is null
+            || !TryGetTableVector(data, personalOffset, PersonalLevelupMovesFieldIndex, edit.Field, diagnostics, out var vectorOffset, out var length))
+        {
+            return;
+        }
+
+        try
+        {
+            switch (operation.Action)
+            {
+                case AddAction:
+                case UpsertAction:
+                    if (!TryGetStructVectorElementOffset(data, vectorOffset, length, operation.Slot, LevelupMoveDataSize, edit.Field, diagnostics, out var elementOffset))
+                    {
+                        return;
+                    }
+
+                    WriteUShort(data, elementOffset, ToUshort(operation.MoveId ?? 0));
+                    WriteUShort(data, elementOffset + 2, ToUshort(operation.RawLevel ?? operation.Level ?? 1));
+                    break;
+                case RemoveAction:
+                    if (TryGetStructVectorElementOffset(data, vectorOffset, length, operation.Slot, LevelupMoveDataSize, edit.Field, diagnostics, out _)
+                        && TryGetStructVectorElementOffset(data, vectorOffset, length, length - 1, LevelupMoveDataSize, edit.Field, diagnostics, out _))
+                    {
+                        RemoveStructVectorElement(data, vectorOffset, length, operation.Slot, LevelupMoveDataSize);
+                    }
+
+                    break;
+                case MoveUpAction:
+                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Slot - 1, LevelupMoveDataSize, edit.Field, diagnostics);
+                    break;
+                case MoveDownAction:
+                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.Slot + 1, LevelupMoveDataSize, edit.Field, diagnostics);
+                    break;
+                case MoveToAction:
+                    MoveStructVectorElement(data, vectorOffset, length, operation.Slot, operation.MoveId ?? -1, LevelupMoveDataSize, edit.Field, diagnostics);
+                    break;
+                default:
+                    diagnostics.Add(OperationDiagnostic($"Learnset action '{operation.Action}' is not supported.", "action"));
+                    break;
+            }
+        }
+        catch (OverflowException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon learnset edit value is outside the target field range.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "Safe learnset value"));
+        }
+    }
+
+    private static void ApplyCompatibilityBinaryPatch(
+        byte[] data,
+        int personalOffset,
+        PendingEdit edit,
+        string groupId,
+        int slot,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon compatibility edit value is invalid.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "0 or 1"));
+            return;
+        }
+
+        var enabled = parsed != 0;
+        if (string.Equals(groupId, ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId, StringComparison.Ordinal))
+        {
+            if (!TryGetTableVector(data, personalOffset, PersonalTmMovesFieldIndex, edit.Field, diagnostics, out var vectorOffset, out var length))
+            {
+                return;
+            }
+
+            if (enabled)
+            {
+                AddUShortVectorValue(data, vectorOffset, length, ToUshort(slot), edit.Field, diagnostics);
+            }
+            else
+            {
+                RemoveUShortVectorValue(data, vectorOffset, length, ToUshort(slot), edit.Field, diagnostics);
+            }
+
+            return;
+        }
+
+        var fieldIndex = groupId switch
+        {
+            ZaPokemonWorkflowService.EggMoveCompatibilityGroupId => PersonalEggMovesFieldIndex,
+            ZaPokemonWorkflowService.ReminderMoveCompatibilityGroupId => PersonalReminderMovesFieldIndex,
+            _ => -1,
+        };
+        if (fieldIndex < 0)
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+            return;
+        }
+
+        if (!TryGetTableVector(data, personalOffset, fieldIndex, edit.Field, diagnostics, out var moveVectorOffset, out var moveCount)
+            || !TryGetUShortVectorElementOffset(data, moveVectorOffset, moveCount, slot, edit.Field, diagnostics, out _))
+        {
+            return;
+        }
+
+        if (!enabled)
+        {
+            RemoveUShortVectorElement(data, moveVectorOffset, moveCount, slot);
+        }
+    }
+
+    private static bool TryPatchBoolTableField(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        bool value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetTableFieldLocation(data, tableOffset, fieldIndex, field, diagnostics, out var location)
+            || !TryEnsureRange(data, location, 1, field, diagnostics))
+        {
+            return false;
+        }
+
+        data[location] = value ? (byte)1 : (byte)0;
+        return true;
+    }
+
+    private static bool TryPatchByteTableField(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        int value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetTableFieldLocation(data, tableOffset, fieldIndex, field, diagnostics, out var location)
+            || !TryEnsureRange(data, location, 1, field, diagnostics))
+        {
+            return false;
+        }
+
+        data[location] = ToByte(value);
+        return true;
+    }
+
+    private static bool TryPatchUShortTableField(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        int value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetTableFieldLocation(data, tableOffset, fieldIndex, field, diagnostics, out var location)
+            || !TryEnsureRange(data, location, sizeof(ushort), field, diagnostics))
+        {
+            return false;
+        }
+
+        WriteUShort(data, location, ToUshort(value));
+        return true;
+    }
+
+    private static bool TryPatchStructByteField(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        int structFieldOffset,
+        int value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetTableFieldLocation(data, tableOffset, fieldIndex, field, diagnostics, out var structOffset))
+        {
+            return false;
+        }
+
+        var location = structOffset + structFieldOffset;
+        if (!TryEnsureRange(data, location, 1, field, diagnostics))
+        {
+            return false;
+        }
+
+        data[location] = ToByte(value);
+        return true;
+    }
+
+    private static bool TryPatchStructUShortField(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        int structFieldOffset,
+        int value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetTableFieldLocation(data, tableOffset, fieldIndex, field, diagnostics, out var structOffset))
+        {
+            return false;
+        }
+
+        var location = structOffset + structFieldOffset;
+        if (!TryEnsureRange(data, location, sizeof(ushort), field, diagnostics))
+        {
+            return false;
+        }
+
+        WriteUShort(data, location, ToUshort(value));
+        return true;
+    }
+
+    private static bool TryGetPersonalRowTableOffset(
+        byte[] data,
+        int personalId,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int personalOffset)
+    {
+        personalOffset = 0;
+        if (!TryGetRootTableOffset(data, field, diagnostics, out var rootOffset)
+            || !TryGetTableVector(data, rootOffset, PersonalTableEntryFieldIndex, field, diagnostics, out var entryVectorOffset, out var entryCount))
+        {
+            return false;
+        }
+
+        if (personalId < 0 || personalId >= entryCount)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon Data edit targets a record outside the personal table.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: "personalId",
+                expected: "Existing Pokemon personal record"));
+            return false;
+        }
+
+        var entryOffsetLocation = entryVectorOffset + sizeof(int) + personalId * sizeof(int);
+        return TryReadUOffsetTarget(data, entryOffsetLocation, field, diagnostics, out personalOffset);
+    }
+
+    private static bool TryGetRootTableOffset(
+        byte[] data,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int rootOffset)
+    {
+        rootOffset = 0;
+        if (!TryEnsureRange(data, 0, sizeof(int), field, diagnostics))
+        {
+            return false;
+        }
+
+        rootOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, sizeof(int)));
+        if (!TryEnsureRange(data, rootOffset, sizeof(int), field, diagnostics))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetTableVector(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int vectorOffset,
+        out int length)
+    {
+        vectorOffset = 0;
+        length = 0;
+        if (!TryGetTableFieldLocation(data, tableOffset, fieldIndex, field, diagnostics, out var fieldLocation)
+            || !TryReadUOffsetTarget(data, fieldLocation, field, diagnostics, out vectorOffset)
+            || !TryEnsureRange(data, vectorOffset, sizeof(int), field, diagnostics))
+        {
+            return false;
+        }
+
+        length = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(vectorOffset, sizeof(int)));
+        if (length < 0)
+        {
+            AddBinaryPatchDiagnostic(diagnostics, "Z-A Pokemon Data vector length is invalid.", field);
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetTableFieldLocation(
+        byte[] data,
+        int tableOffset,
+        int fieldIndex,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int location)
+    {
+        location = 0;
+        if (!TryEnsureRange(data, tableOffset, sizeof(int), field, diagnostics))
+        {
+            return false;
+        }
+
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        if (!TryEnsureRange(data, vtableOffset, sizeof(ushort) * 2, field, diagnostics))
+        {
+            return false;
+        }
+
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(vtableOffset, sizeof(ushort)));
+        var fieldOffsetLocation = vtableOffset + sizeof(ushort) * 2 + fieldIndex * sizeof(ushort);
+        if (fieldOffsetLocation + sizeof(ushort) > vtableOffset + vtableLength)
+        {
+            AddBinaryPatchDiagnostic(
+                diagnostics,
+                "Z-A Pokemon Data edit could not be written safely because the target FlatBuffer field is not present in the original personal record.",
+                field);
+            return false;
+        }
+
+        var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(fieldOffsetLocation, sizeof(ushort)));
+        if (fieldOffset == 0)
+        {
+            AddBinaryPatchDiagnostic(
+                diagnostics,
+                "Z-A Pokemon Data edit could not be written safely because the target FlatBuffer field is not present in the original personal record.",
+                field);
+            return false;
+        }
+
+        location = tableOffset + fieldOffset;
+        if (!TryEnsureRange(data, location, 1, field, diagnostics))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadUOffsetTarget(
+        byte[] data,
+        int offsetLocation,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int targetOffset)
+    {
+        targetOffset = 0;
+        if (!TryEnsureRange(data, offsetLocation, sizeof(uint), field, diagnostics))
+        {
+            return false;
+        }
+
+        var relativeOffset = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offsetLocation, sizeof(uint)));
+        if (relativeOffset == 0 || relativeOffset > int.MaxValue)
+        {
+            AddBinaryPatchDiagnostic(diagnostics, "Z-A Pokemon Data contains an invalid FlatBuffer offset.", field);
+            return false;
+        }
+
+        var calculatedOffset = (long)offsetLocation + relativeOffset;
+        if (calculatedOffset > int.MaxValue)
+        {
+            AddBinaryPatchDiagnostic(diagnostics, "Z-A Pokemon Data contains an invalid FlatBuffer offset.", field);
+            return false;
+        }
+
+        targetOffset = (int)calculatedOffset;
+        return TryEnsureRange(data, targetOffset, 1, field, diagnostics);
+    }
+
+    private static bool TryGetStructVectorElementOffset(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        int slot,
+        int structSize,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int elementOffset)
+    {
+        elementOffset = 0;
+        if (slot < 0 || slot >= length)
+        {
+            AddBinaryPatchDiagnostic(
+                diagnostics,
+                "Z-A Pokemon Data edit needs an existing vector slot so the personal table can be patched without rebuilding it.",
+                field);
+            return false;
+        }
+
+        var calculatedOffset = (long)vectorOffset + sizeof(int) + (long)slot * structSize;
+        if (calculatedOffset > int.MaxValue)
+        {
+            AddBinaryPatchDiagnostic(diagnostics, "Z-A Pokemon Data vector slot is outside the source file.", field);
+            return false;
+        }
+
+        elementOffset = (int)calculatedOffset;
+        return TryEnsureRange(data, elementOffset, structSize, field, diagnostics);
+    }
+
+    private static void RemoveStructVectorElement(byte[] data, int vectorOffset, int length, int slot, int structSize)
+    {
+        var elementStart = vectorOffset + sizeof(int);
+        var destination = elementStart + slot * structSize;
+        var source = destination + structSize;
+        var bytesToMove = (length - slot - 1) * structSize;
+        if (bytesToMove > 0)
+        {
+            Buffer.BlockCopy(data, source, data, destination, bytesToMove);
+        }
+
+        Array.Clear(data, elementStart + (length - 1) * structSize, structSize);
+    }
+
+    private static void MoveStructVectorElement(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        int sourceSlot,
+        int destinationSlot,
+        int structSize,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryGetStructVectorElementOffset(data, vectorOffset, length, sourceSlot, structSize, field, diagnostics, out var sourceOffset)
+            || !TryGetStructVectorElementOffset(data, vectorOffset, length, destinationSlot, structSize, field, diagnostics, out var destinationOffset)
+            || sourceSlot == destinationSlot)
+        {
+            return;
+        }
+
+        var moved = data.AsSpan(sourceOffset, structSize).ToArray();
+        if (destinationSlot < sourceSlot)
+        {
+            Buffer.BlockCopy(data, destinationOffset, data, destinationOffset + structSize, (sourceSlot - destinationSlot) * structSize);
+        }
+        else
+        {
+            Buffer.BlockCopy(data, sourceOffset + structSize, data, sourceOffset, (destinationSlot - sourceSlot) * structSize);
+        }
+
+        moved.CopyTo(data.AsSpan(destinationOffset, structSize));
+    }
+
+    private static void AddUShortVectorValue(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        ushort value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var values = ReadUShortVector(data, vectorOffset, length, field, diagnostics);
+        if (values is null || values.Contains(value))
+        {
+            return;
+        }
+
+        var emptyIndex = Array.IndexOf(values, (ushort)0);
+        if (emptyIndex < 0)
+        {
+            AddBinaryPatchDiagnostic(
+                diagnostics,
+                "Z-A Pokemon compatibility edit needs an existing empty move slot so the personal table can be patched without rebuilding it.",
+                field);
+            return;
+        }
+
+        values[emptyIndex] = value;
+        var sorted = values
+            .Where(candidate => candidate != 0)
+            .Order()
+            .Concat(values.Where(candidate => candidate == 0))
+            .ToArray();
+        for (var index = 0; index < sorted.Length; index++)
+        {
+            WriteUShortVectorElement(data, vectorOffset, index, sorted[index]);
+        }
+    }
+
+    private static void RemoveUShortVectorValue(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        ushort value,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var values = ReadUShortVector(data, vectorOffset, length, field, diagnostics);
+        if (values is null)
+        {
+            return;
+        }
+
+        var index = Array.IndexOf(values, value);
+        if (index >= 0)
+        {
+            RemoveUShortVectorElement(data, vectorOffset, length, index);
+        }
+    }
+
+    private static ushort[]? ReadUShortVector(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var values = new ushort[length];
+        for (var index = 0; index < values.Length; index++)
+        {
+            if (!TryGetUShortVectorElementOffset(data, vectorOffset, length, index, field, diagnostics, out var elementOffset))
+            {
+                return null;
+            }
+
+            values[index] = ReadUShort(data, elementOffset);
+        }
+
+        return values;
+    }
+
+    private static bool TryGetUShortVectorElementOffset(
+        byte[] data,
+        int vectorOffset,
+        int length,
+        int slot,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int elementOffset)
+    {
+        elementOffset = 0;
+        if (slot < 0 || slot >= length)
+        {
+            AddBinaryPatchDiagnostic(
+                diagnostics,
+                "Z-A Pokemon compatibility edit targets a move slot that is not loaded.",
+                field);
+            return false;
+        }
+
+        elementOffset = vectorOffset + sizeof(int) + slot * sizeof(ushort);
+        return TryEnsureRange(data, elementOffset, sizeof(ushort), field, diagnostics);
+    }
+
+    private static void RemoveUShortVectorElement(byte[] data, int vectorOffset, int length, int slot)
+    {
+        var elementStart = vectorOffset + sizeof(int);
+        var destination = elementStart + slot * sizeof(ushort);
+        var source = destination + sizeof(ushort);
+        var bytesToMove = (length - slot - 1) * sizeof(ushort);
+        if (bytesToMove > 0)
+        {
+            Buffer.BlockCopy(data, source, data, destination, bytesToMove);
+        }
+
+        WriteUShortVectorElement(data, vectorOffset, length - 1, 0);
+    }
+
+    private static ushort ReadUShort(byte[] data, int offset)
+    {
+        return BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, sizeof(ushort)));
+    }
+
+    private static void WriteUShortVectorElement(byte[] data, int vectorOffset, int index, ushort value)
+    {
+        WriteUShort(data, vectorOffset + sizeof(int) + index * sizeof(ushort), value);
+    }
+
+    private static bool TryEnsureRange(
+        byte[] data,
+        int offset,
+        int length,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (offset >= 0 && length >= 0 && offset <= data.Length - length)
+        {
+            return true;
+        }
+
+        AddBinaryPatchDiagnostic(diagnostics, "Z-A Pokemon Data edit points outside the source file.", field);
+        return false;
+    }
+
+    private static void WriteUShort(byte[] data, int offset, ushort value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset, sizeof(ushort)), value);
+    }
+
+    private static void AddBinaryPatchDiagnostic(
+        ICollection<ValidationDiagnostic> diagnostics,
+        string message,
+        string? field)
+    {
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.PokemonDomain,
+            field: field,
+            expected: "Existing in-place Z-A personal table data"));
     }
 
     private static LearnsetOperation? CreateLearnsetOperation(
@@ -1585,28 +2663,52 @@ internal sealed class ZaPokemonEditSessionService
     private sealed class PersonalRow
     {
         public SpeciesInfoRow? Species { get; set; }
+        public bool HasSpecies { get; set; }
         public bool IsPresent { get; set; }
+        public bool HasIsPresent { get; set; }
         public byte ZADexOrder { get; set; }
+        public bool HasZADexOrder { get; set; }
         public byte Type1 { get; set; }
+        public bool HasType1 { get; set; }
         public byte Type2 { get; set; }
+        public bool HasType2 { get; set; }
         public ushort Ability1 { get; set; }
+        public bool HasAbility1 { get; set; }
         public ushort Ability2 { get; set; }
+        public bool HasAbility2 { get; set; }
         public ushort AbilityHidden { get; set; }
+        public bool HasAbilityHidden { get; set; }
         public byte XpGrowth { get; set; }
+        public bool HasXpGrowth { get; set; }
         public byte CatchRate { get; set; }
+        public bool HasCatchRate { get; set; }
         public GenderInfoRow? Gender { get; set; }
+        public bool HasGender { get; set; }
         public byte EggGroup1 { get; set; }
+        public bool HasEggGroup1 { get; set; }
         public byte EggGroup2 { get; set; }
+        public bool HasEggGroup2 { get; set; }
         public EggHatchInfoRow? EggHatch { get; set; }
+        public bool HasEggHatch { get; set; }
         public byte EggHatchCycles { get; set; }
+        public bool HasEggHatchCycles { get; set; }
         public byte BaseFriendship { get; set; }
+        public bool HasBaseFriendship { get; set; }
         public ushort Unknown16 { get; set; }
         public bool HasUnknown16 { get; set; }
         public byte EvoStage { get; set; }
+        public bool HasEvoStage { get; set; }
         public ushort Unknown18 { get; set; }
         public bool HasUnknown18 { get; set; }
         public StatInfoRow? EvYield { get; set; }
+        public bool HasEvYield { get; set; }
         public StatInfoRow? BaseStats { get; set; }
+        public bool HasBaseStats { get; set; }
+        public bool HasEvolutions { get; set; }
+        public bool HasTmMoves { get; set; }
+        public bool HasEggMoves { get; set; }
+        public bool HasReminderMoves { get; set; }
+        public bool HasLevelupMoves { get; set; }
         public List<EvolutionRow> Evolutions { get; } = [];
         public List<ushort> TmMoves { get; } = [];
         public List<ushort> EggMoves { get; } = [];
@@ -1623,28 +2725,52 @@ internal sealed class ZaPokemonEditSessionService
             var result = new PersonalRow
             {
                 Species = row.Species is { } species ? SpeciesInfoRow.From(species) : null,
+                HasSpecies = row.HasSpecies,
                 IsPresent = row.IsPresent,
+                HasIsPresent = row.HasIsPresent,
                 ZADexOrder = row.ZADexOrder,
+                HasZADexOrder = row.HasZADexOrder,
                 Type1 = row.Type1,
+                HasType1 = row.HasType1,
                 Type2 = row.Type2,
+                HasType2 = row.HasType2,
                 Ability1 = row.Ability1,
+                HasAbility1 = row.HasAbility1,
                 Ability2 = row.Ability2,
+                HasAbility2 = row.HasAbility2,
                 AbilityHidden = row.AbilityHidden,
+                HasAbilityHidden = row.HasAbilityHidden,
                 XpGrowth = row.XpGrowth,
+                HasXpGrowth = row.HasXpGrowth,
                 CatchRate = row.CatchRate,
+                HasCatchRate = row.HasCatchRate,
                 Gender = row.Gender is { } gender ? GenderInfoRow.From(gender) : null,
+                HasGender = row.HasGender,
                 EggGroup1 = row.EggGroup1,
+                HasEggGroup1 = row.HasEggGroup1,
                 EggGroup2 = row.EggGroup2,
+                HasEggGroup2 = row.HasEggGroup2,
                 EggHatch = row.EggHatch is { } eggHatch ? EggHatchInfoRow.From(eggHatch) : null,
+                HasEggHatch = row.HasEggHatch,
                 EggHatchCycles = row.EggHatchCycles,
+                HasEggHatchCycles = row.HasEggHatchCycles,
                 BaseFriendship = row.BaseFriendship,
+                HasBaseFriendship = row.HasBaseFriendship,
                 Unknown16 = row.Unknown16,
                 HasUnknown16 = row.HasUnknown16,
                 EvoStage = row.EvoStage,
+                HasEvoStage = row.HasEvoStage,
                 Unknown18 = row.Unknown18,
                 HasUnknown18 = row.HasUnknown18,
                 EvYield = row.EvYield is { } evYield ? StatInfoRow.From(evYield) : null,
+                HasEvYield = row.HasEvYield,
                 BaseStats = row.BaseStats is { } baseStats ? StatInfoRow.From(baseStats) : null,
+                HasBaseStats = row.HasBaseStats,
+                HasEvolutions = row.HasEvolutions,
+                HasTmMoves = row.HasTmMoves,
+                HasEggMoves = row.HasEggMoves,
+                HasReminderMoves = row.HasReminderMoves,
+                HasLevelupMoves = row.HasLevelupMoves,
             };
 
             for (var index = 0; index < row.EvolutionsLength; index++)
@@ -1673,24 +2799,44 @@ internal sealed class ZaPokemonEditSessionService
 
         public Offset<ZaPersonal> Write(FlatBufferBuilder builder)
         {
-            var evolutionsOffset = CreateEvolutionsVector(builder, Evolutions);
-            var tmMovesOffset = ZaPersonal.CreateUshortVector(builder, TmMoves);
-            var eggMovesOffset = ZaPersonal.CreateUshortVector(builder, EggMoves);
-            var reminderMovesOffset = ZaPersonal.CreateUshortVector(builder, ReminderMoves);
-            var levelupMovesOffset = CreateLevelupMovesVector(builder, LevelupMoves);
+            var evolutionsOffset = HasEvolutions || Evolutions.Count > 0 ? CreateEvolutionsVector(builder, Evolutions) : default(VectorOffset);
+            var tmMovesOffset = HasTmMoves || TmMoves.Count > 0 ? ZaPersonal.CreateUshortVector(builder, TmMoves) : default(VectorOffset);
+            var eggMovesOffset = HasEggMoves || EggMoves.Count > 0 ? ZaPersonal.CreateUshortVector(builder, EggMoves) : default(VectorOffset);
+            var reminderMovesOffset = HasReminderMoves || ReminderMoves.Count > 0 ? ZaPersonal.CreateUshortVector(builder, ReminderMoves) : default(VectorOffset);
+            var levelupMovesOffset = HasLevelupMoves || LevelupMoves.Count > 0 ? CreateLevelupMovesVector(builder, LevelupMoves) : default(VectorOffset);
 
             ZaPersonal.Start(builder);
-            ZaPersonal.AddLevelupMoves(builder, levelupMovesOffset);
-            ZaPersonal.AddReminderMoves(builder, reminderMovesOffset);
-            ZaPersonal.AddEggMoves(builder, eggMovesOffset);
-            ZaPersonal.AddTmMoves(builder, tmMovesOffset);
-            ZaPersonal.AddEvolutions(builder, evolutionsOffset);
-            if (BaseStats is not null)
+            if (HasLevelupMoves || LevelupMoves.Count > 0)
+            {
+                ZaPersonal.AddLevelupMoves(builder, levelupMovesOffset);
+            }
+
+            if (HasReminderMoves || ReminderMoves.Count > 0)
+            {
+                ZaPersonal.AddReminderMoves(builder, reminderMovesOffset);
+            }
+
+            if (HasEggMoves || EggMoves.Count > 0)
+            {
+                ZaPersonal.AddEggMoves(builder, eggMovesOffset);
+            }
+
+            if (HasTmMoves || TmMoves.Count > 0)
+            {
+                ZaPersonal.AddTmMoves(builder, tmMovesOffset);
+            }
+
+            if (HasEvolutions || Evolutions.Count > 0)
+            {
+                ZaPersonal.AddEvolutions(builder, evolutionsOffset);
+            }
+
+            if (HasBaseStats && BaseStats is not null)
             {
                 ZaPersonal.AddBaseStats(builder, BaseStats.Write(builder));
             }
 
-            if (EvYield is not null)
+            if (HasEvYield && EvYield is not null)
             {
                 ZaPersonal.AddEvYield(builder, EvYield.Write(builder));
             }
@@ -1700,36 +2846,92 @@ internal sealed class ZaPokemonEditSessionService
                 ZaPersonal.AddUnknown18(builder, Unknown18);
             }
 
-            ZaPersonal.AddEvoStage(builder, EvoStage);
+            if (HasEvoStage || EvoStage != 0)
+            {
+                ZaPersonal.AddEvoStage(builder, EvoStage);
+            }
+
             if (HasUnknown16)
             {
                 ZaPersonal.AddUnknown16(builder, Unknown16);
             }
 
-            ZaPersonal.AddBaseFriendship(builder, BaseFriendship);
-            ZaPersonal.AddEggHatchCycles(builder, EggHatchCycles);
-            if (EggHatch is not null)
+            if (HasBaseFriendship || BaseFriendship != 0)
+            {
+                ZaPersonal.AddBaseFriendship(builder, BaseFriendship);
+            }
+
+            if (HasEggHatchCycles || EggHatchCycles != 0)
+            {
+                ZaPersonal.AddEggHatchCycles(builder, EggHatchCycles);
+            }
+
+            if (HasEggHatch && EggHatch is not null)
             {
                 ZaPersonal.AddEggHatch(builder, EggHatch.Write(builder));
             }
 
-            ZaPersonal.AddEggGroup2(builder, EggGroup2);
-            ZaPersonal.AddEggGroup1(builder, EggGroup1);
-            if (Gender is not null)
+            if (HasEggGroup2 || EggGroup2 != 0)
+            {
+                ZaPersonal.AddEggGroup2(builder, EggGroup2);
+            }
+
+            if (HasEggGroup1 || EggGroup1 != 0)
+            {
+                ZaPersonal.AddEggGroup1(builder, EggGroup1);
+            }
+
+            if (HasGender && Gender is not null)
             {
                 ZaPersonal.AddGender(builder, Gender.Write(builder));
             }
 
-            ZaPersonal.AddCatchRate(builder, CatchRate);
-            ZaPersonal.AddXpGrowth(builder, XpGrowth);
-            ZaPersonal.AddAbilityHidden(builder, AbilityHidden);
-            ZaPersonal.AddAbility2(builder, Ability2);
-            ZaPersonal.AddAbility1(builder, Ability1);
-            ZaPersonal.AddType2(builder, Type2);
-            ZaPersonal.AddType1(builder, Type1);
-            ZaPersonal.AddZADexOrder(builder, ZADexOrder);
-            ZaPersonal.AddIsPresent(builder, IsPresent);
-            if (Species is not null)
+            if (HasCatchRate || CatchRate != 0)
+            {
+                ZaPersonal.AddCatchRate(builder, CatchRate);
+            }
+
+            if (HasXpGrowth || XpGrowth != 0)
+            {
+                ZaPersonal.AddXpGrowth(builder, XpGrowth);
+            }
+
+            if (HasAbilityHidden || AbilityHidden != 0)
+            {
+                ZaPersonal.AddAbilityHidden(builder, AbilityHidden);
+            }
+
+            if (HasAbility2 || Ability2 != 0)
+            {
+                ZaPersonal.AddAbility2(builder, Ability2);
+            }
+
+            if (HasAbility1 || Ability1 != 0)
+            {
+                ZaPersonal.AddAbility1(builder, Ability1);
+            }
+
+            if (HasType2 || Type2 != 0)
+            {
+                ZaPersonal.AddType2(builder, Type2);
+            }
+
+            if (HasType1 || Type1 != 0)
+            {
+                ZaPersonal.AddType1(builder, Type1);
+            }
+
+            if (HasZADexOrder || ZADexOrder != 0)
+            {
+                ZaPersonal.AddZADexOrder(builder, ZADexOrder);
+            }
+
+            if (HasIsPresent || IsPresent)
+            {
+                ZaPersonal.AddIsPresent(builder, IsPresent);
+            }
+
+            if (HasSpecies && Species is not null)
             {
                 ZaPersonal.AddSpecies(builder, Species.Write(builder));
             }

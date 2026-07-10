@@ -937,7 +937,7 @@ internal sealed class ZaItemsEditSessionService
                 WorkAccuracy = row.WorkAccuracy,
                 WorkCritical = row.WorkCritical,
                 WorkEffectGuard = row.WorkEffectGuard,
-                MintNature = row.MintNature,
+                MintNature = ZaItemsWorkflowService.NormalizeMintNature(row.MintNature),
                 WorkRecvPower = row.WorkRecvPower,
                 HealPercentage = row.HealPercentage,
                 WorkRevival = row.WorkRevival,

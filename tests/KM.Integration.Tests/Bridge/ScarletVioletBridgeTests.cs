@@ -2016,10 +2016,15 @@ public sealed class ScarletVioletBridgeTests
             temp,
             SvDataPaths.PersonalArray,
             CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2));
+        WriteSvOutput(
+            temp,
+            SvDataPaths.ItemDataArray,
+            CreateItemDataArray(masterBallEvolutionParameter: 777));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishItemNames,
             CreateTextTable(
                 2483,
+                (1, "Master Ball"),
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
                 (2482, "Metal Alloy")));
@@ -2041,6 +2046,7 @@ public sealed class ScarletVioletBridgeTests
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 777 && option.Label == "777 Master Ball");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
@@ -3437,7 +3443,7 @@ public sealed class ScarletVioletBridgeTests
         return reward.Value.Num;
     }
 
-    private static byte[] CreateItemDataArray()
+    private static byte[] CreateItemDataArray(int masterBallEvolutionParameter = 0)
     {
         var builder = new FlatBufferBuilder(1024);
         var icon = builder.CreateString("item_0001");
@@ -3453,6 +3459,7 @@ public sealed class ScarletVioletBridgeTests
             GroupID: 1,
             FieldPocket: global::FieldPocket.FPOCKET_BALL,
             BattleFunctionType: global::BattleFunctionType.BTLFUNC_BALL,
+            WorkEvolutional: masterBallEvolutionParameter,
             SetToPoke: true);
         var tmIcon = builder.CreateString("item_tm_001");
         var tm001 = global::ItemData.CreateItemData(

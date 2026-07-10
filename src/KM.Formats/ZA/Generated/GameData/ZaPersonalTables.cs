@@ -370,6 +370,31 @@ public struct ZaPersonal : IFlatbufferObject
         }
     }
 
+    public bool HasSpecies => HasField(4);
+    public bool HasIsPresent => HasField(6);
+    public bool HasZADexOrder => HasField(8);
+    public bool HasType1 => HasField(10);
+    public bool HasType2 => HasField(12);
+    public bool HasAbility1 => HasField(14);
+    public bool HasAbility2 => HasField(16);
+    public bool HasAbilityHidden => HasField(18);
+    public bool HasXpGrowth => HasField(20);
+    public bool HasCatchRate => HasField(22);
+    public bool HasGender => HasField(24);
+    public bool HasEggGroup1 => HasField(26);
+    public bool HasEggGroup2 => HasField(28);
+    public bool HasEggHatch => HasField(30);
+    public bool HasEggHatchCycles => HasField(32);
+    public bool HasBaseFriendship => HasField(34);
+    public bool HasEvoStage => HasField(38);
+    public bool HasEvYield => HasField(42);
+    public bool HasBaseStats => HasField(44);
+    public bool HasEvolutions => HasField(46);
+    public bool HasTmMoves => HasField(48);
+    public bool HasEggMoves => HasField(50);
+    public bool HasReminderMoves => HasField(52);
+    public bool HasLevelupMoves => HasField(54);
+
     public static void Start(FlatBufferBuilder builder) => builder.StartTable(26);
     public static void AddSpecies(FlatBufferBuilder builder, Offset<ZaSpeciesInfo> offset) => builder.AddStruct(0, offset.Value, 0);
     public static void AddIsPresent(FlatBufferBuilder builder, bool value) => builder.AddBool(1, value, false);
@@ -459,6 +484,8 @@ public struct ZaPersonal : IFlatbufferObject
 
         return values;
     }
+
+    private bool HasField(int vtableOffset) => p.__offset(vtableOffset) != 0;
 }
 
 public struct ZaPersonalTable : IFlatbufferObject

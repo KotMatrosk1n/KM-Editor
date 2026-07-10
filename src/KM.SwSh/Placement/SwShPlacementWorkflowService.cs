@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.StaticEncounters;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -948,7 +949,33 @@ public sealed class SwShPlacementWorkflowService
             AddWorkflowHashLabels(labels, trainerIdSource, diagnostics);
         }
 
+        AddStaticEncounterHashLabels(labels, project);
+
         return labels;
+    }
+
+    private static void AddStaticEncounterHashLabels(
+        IDictionary<ulong, string> labels,
+        OpenedProject project)
+    {
+        if (SwShStaticEncountersWorkflowService.ResolveStaticEncounterDataSource(project) is null)
+        {
+            return;
+        }
+
+        var staticWorkflow = new SwShStaticEncountersWorkflowService().Load(project);
+        foreach (var encounter in staticWorkflow.Encounters)
+        {
+            if (!TryParseHash(encounter.EncounterId, out var encounterId)
+                || encounterId == 0
+                || string.IsNullOrWhiteSpace(encounter.Label)
+                || labels.ContainsKey(encounterId))
+            {
+                continue;
+            }
+
+            labels.Add(encounterId, encounter.Label);
+        }
     }
 
     private static void AddWorkflowHashLabels(
