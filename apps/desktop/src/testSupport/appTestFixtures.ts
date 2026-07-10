@@ -1451,6 +1451,7 @@ export function createMockProjectBridge(
             natureLabel: 'Jolly (+Spe/-Sp.Atk)',
             shiny: true,
             slot: 1,
+            spriteName: 'Grookey',
             species: 'Grookey',
             speciesId: 810,
             teraType: null,

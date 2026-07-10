@@ -1607,6 +1607,7 @@ public static class ZaBridgeMapper
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
             BaseStats = pokemon.BaseStats is null ? null : ToDto(pokemon.BaseStats),
+            SpriteName = pokemon.SpriteName,
         };
     }
 

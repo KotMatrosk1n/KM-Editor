@@ -906,6 +906,11 @@ public sealed class SwShTrainersWorkflowService
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var spriteSpeciesNames = LoadMessageTable(
+            project,
+            $"{MessageRootPath}/{PreferredLanguage}/common",
+            "monsname.dat",
+            diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
@@ -914,6 +919,7 @@ public sealed class SwShTrainersWorkflowService
             LoadMessageTable(project, messageRoot, "trname.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "trtype.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics),
+            spriteSpeciesNames,
             presentSpeciesIds,
             itemDisplayNames,
             moveNames,
@@ -1125,6 +1131,7 @@ public sealed class SwShTrainersWorkflowService
         {
             AbilityOptions = CreateTrainerPokemonAbilityOptions(names, pokemon.SpeciesId, pokemon.Form),
             BaseStats = ResolveTrainerPokemonBaseStats(names, pokemon.SpeciesId, pokemon.Form),
+            SpriteName = GetOptionalLookupValue(names.SpriteSpeciesNames, pokemon.SpeciesId),
         };
     }
 
@@ -1197,6 +1204,13 @@ public sealed class SwShTrainersWorkflowService
         return (uint)index < (uint)values.Count && !string.IsNullOrWhiteSpace(values[index])
             ? values[index]
             : fallback;
+    }
+
+    private static string? GetOptionalLookupValue(IReadOnlyList<string> values, int index)
+    {
+        return (uint)index < (uint)values.Count && !string.IsNullOrWhiteSpace(values[index])
+            ? values[index]
+            : null;
     }
 
     private static string FormatBattleMode(int mode)
@@ -1367,6 +1381,7 @@ public sealed class SwShTrainersWorkflowService
         IReadOnlyList<string> TrainerNames,
         IReadOnlyList<string> TrainerClasses,
         IReadOnlyList<string> SpeciesNames,
+        IReadOnlyList<string> SpriteSpeciesNames,
         IReadOnlySet<int> PresentSpeciesIds,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,

@@ -10,6 +10,21 @@ namespace KM.ZA.Data;
 
 internal sealed class ZaTextLabelLookup
 {
+    private static readonly IReadOnlySet<string> GenericTrainerNameLabels =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Boy",
+            "Girl",
+            "Little Boy",
+            "Little Girl",
+            "Man",
+            "Old Man",
+            "Old Woman",
+            "Woman",
+            "Young Lady",
+            "Young Man",
+        };
+
     private static readonly ZaTextLabelLookup Empty = new(
         [],
         [],
@@ -140,7 +155,7 @@ internal sealed class ZaTextLabelLookup
 
     public string? TrainerNameFromText(string? key, int trainerId)
     {
-        var keyed = FirstUsable(TrainerNameKeyCandidates(key)
+        var keyed = FirstUsableTrainerName(TrainerNameKeyCandidates(key)
             .Select(candidate => GetKeyed(trainerNames, trainerNameIndices, candidate))
             .ToArray());
         if (!string.IsNullOrWhiteSpace(key) || !string.IsNullOrWhiteSpace(keyed))
@@ -148,7 +163,7 @@ internal sealed class ZaTextLabelLookup
             return keyed;
         }
 
-        return FirstUsable(GetIndexed(trainerNames, trainerId));
+        return FirstUsableTrainerName(GetIndexed(trainerNames, trainerId));
     }
 
     public string TrainerType(string? key)
@@ -598,9 +613,11 @@ internal sealed class ZaTextLabelLookup
         return true;
     }
 
-    private static string? FirstUsable(params string?[] values)
+    private static string? FirstUsableTrainerName(params string?[] values)
     {
-        return values.FirstOrDefault(value => !IsPlaceholderLabel(value));
+        return values.FirstOrDefault(value =>
+            !IsPlaceholderLabel(value)
+            && !IsGenericTrainerNameLabel(value));
     }
 
     private static bool IsPlaceholderLabel(string? value)
@@ -613,5 +630,11 @@ internal sealed class ZaTextLabelLookup
         var trimmed = value.Trim();
         return string.Equals(trimmed, "-", StringComparison.Ordinal)
             || trimmed.All(character => character == '?');
+    }
+
+    private static bool IsGenericTrainerNameLabel(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && GenericTrainerNameLabels.Contains(value.Trim());
     }
 }

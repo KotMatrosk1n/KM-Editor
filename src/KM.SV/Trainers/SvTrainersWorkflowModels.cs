@@ -42,6 +42,8 @@ public sealed record SvTrainerPokemonRecord(
     public IReadOnlyList<SvTrainerEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SvTrainerEditableFieldOption>();
 
+    public string? SpriteName { get; init; }
+
     public SvTrainerPokemonStatsRecord? BaseStats { get; init; }
 }
 

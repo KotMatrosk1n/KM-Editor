@@ -1159,6 +1159,7 @@ export const trainerPokemonRecordSchema = z.strictObject({
   natureLabel: z.string(),
   shiny: z.boolean(),
   slot: z.number().int().nonnegative(),
+  spriteName: z.string().nullable().default(null),
   speciesId: z.number().int().nonnegative(),
   species: z.string(),
   teraType: z.number().int().nonnegative().nullable().default(null),

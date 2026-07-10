@@ -55,6 +55,9 @@ public sealed record TrainerPokemonRecordDto(
         Array.Empty<TrainerEditableFieldOptionDto>();
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpriteName { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TrainerPokemonStatsDto? BaseStats { get; init; }
 }
 

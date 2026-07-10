@@ -185,10 +185,11 @@ internal sealed class ZaTrainersWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, diagnostics);
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels, abilityResolver).ToArray();
+            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -218,6 +219,7 @@ internal sealed class ZaTrainersWorkflowService
     internal static IEnumerable<ZaTrainerRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
+        ZaTextLabelLookup spriteLabels,
         ZaTrainerAbilityResolver abilityResolver)
     {
         var table = ZaTrainerTable.GetRootAsZaTrainerTable(new ByteBuffer(source.Bytes));
@@ -229,7 +231,7 @@ internal sealed class ZaTrainersWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, trainer.Value, source, labels, abilityResolver);
+            yield return ToRecord(index, trainer.Value, source, labels, spriteLabels, abilityResolver);
         }
     }
 
@@ -238,10 +240,11 @@ internal sealed class ZaTrainersWorkflowService
         ZaTrainerRow trainer,
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
+        ZaTextLabelLookup spriteLabels,
         ZaTrainerAbilityResolver abilityResolver)
     {
         var aiFlags = PackAiFlags(trainer);
-        var team = ReadTeam(trainer, labels, abilityResolver).ToArray();
+        var team = ReadTeam(trainer, labels, spriteLabels, abilityResolver).ToArray();
         var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
         var trainerName = labels.TrainerNameFromText(trainer.TrainerId, trainerId)
             ?? ZaTrainerNameCatalog.ResolveMandatoryTrainerName(team)
@@ -288,6 +291,7 @@ internal sealed class ZaTrainersWorkflowService
     private static IEnumerable<ZaTrainerPokemonRecord> ReadTeam(
         ZaTrainerRow trainer,
         ZaTextLabelLookup labels,
+        ZaTextLabelLookup spriteLabels,
         ZaTrainerAbilityResolver abilityResolver)
     {
         var slots = new[]
@@ -309,7 +313,7 @@ internal sealed class ZaTrainersWorkflowService
                 continue;
             }
 
-            yield return ToPokemon(index, pokemon.Value, labels, abilityResolver);
+            yield return ToPokemon(index, pokemon.Value, labels, spriteLabels, abilityResolver);
         }
     }
 
@@ -346,6 +350,7 @@ internal sealed class ZaTrainersWorkflowService
         int slot,
         ZaTrainerPokemon pokemon,
         ZaTextLabelLookup labels,
+        ZaTextLabelLookup spriteLabels,
         ZaTrainerAbilityResolver abilityResolver)
     {
         var speciesId = pokemon.SpeciesId;
@@ -390,6 +395,7 @@ internal sealed class ZaTrainersWorkflowService
         {
             AbilityOptions = abilityOptions,
             BaseStats = abilities.BaseStats,
+            SpriteName = spriteLabels.Pokemon(speciesId),
         };
     }
 

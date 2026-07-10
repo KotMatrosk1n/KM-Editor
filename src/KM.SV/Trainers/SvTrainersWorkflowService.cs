@@ -197,10 +197,11 @@ internal sealed class SvTrainersWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            var spriteLabels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             var abilityResolver = SvTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels, abilityResolver, moveResolver).ToArray();
+            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver, moveResolver).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -230,6 +231,7 @@ internal sealed class SvTrainersWorkflowService
     private static IEnumerable<SvTrainerRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
+        SvTextLabelLookup spriteLabels,
         SvTrainerAbilityResolver abilityResolver,
         SvDefaultMoveResolver moveResolver)
     {
@@ -242,7 +244,7 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, trainer.Value, source, labels, abilityResolver, moveResolver);
+            yield return ToRecord(index, trainer.Value, source, labels, spriteLabels, abilityResolver, moveResolver);
         }
     }
 
@@ -251,11 +253,12 @@ internal sealed class SvTrainersWorkflowService
         global::trainer.TrdataMain trainer,
         SvWorkflowFile source,
         SvTextLabelLookup labels,
+        SvTextLabelLookup spriteLabels,
         SvTrainerAbilityResolver abilityResolver,
         SvDefaultMoveResolver moveResolver)
     {
         var aiFlags = PackAiFlags(trainer);
-        var team = ReadTeam(trainer, labels, abilityResolver, moveResolver).ToArray();
+        var team = ReadTeam(trainer, labels, spriteLabels, abilityResolver, moveResolver).ToArray();
         var aiStates = CreateAiStates(trainer);
         var className = labels.TrainerType(trainer.TrainerType);
         var name = labels.TrainerName(trainer.TrNameLabel, trainerId);
@@ -297,6 +300,7 @@ internal sealed class SvTrainersWorkflowService
     private static IEnumerable<SvTrainerPokemonRecord> ReadTeam(
         global::trainer.TrdataMain trainer,
         SvTextLabelLookup labels,
+        SvTextLabelLookup spriteLabels,
         SvTrainerAbilityResolver abilityResolver,
         SvDefaultMoveResolver moveResolver)
     {
@@ -319,7 +323,7 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToPokemon(index, pokemon.Value, labels, abilityResolver, moveResolver);
+            yield return ToPokemon(index, pokemon.Value, labels, spriteLabels, abilityResolver, moveResolver);
         }
     }
 
@@ -356,6 +360,7 @@ internal sealed class SvTrainersWorkflowService
         int slot,
         global::PokeDataBattle pokemon,
         SvTextLabelLookup labels,
+        SvTextLabelLookup spriteLabels,
         SvTrainerAbilityResolver abilityResolver,
         SvDefaultMoveResolver moveResolver)
     {
@@ -402,6 +407,7 @@ internal sealed class SvTrainersWorkflowService
         {
             AbilityOptions = abilityOptions,
             BaseStats = abilities.BaseStats,
+            SpriteName = spriteLabels.Pokemon(speciesId),
         };
 
         return record;

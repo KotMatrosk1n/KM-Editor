@@ -878,7 +878,7 @@ public sealed class PokemonLegendsZABridgeTests
         AssertSuccess(trainers);
         Assert.Equal(4, trainers.Payload!.Workflow.Trainers.Count);
         var dimensionTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "dim_rank_02_mizu_05");
-        Assert.Equal("Young Man", dimensionTrainer.Name);
+        Assert.Equal("Dimension Rank 2 Water 5", dimensionTrainer.Name);
         Assert.Equal(0, dimensionTrainer.TrainerClassId);
         Assert.Equal("Hyperspace Trainer", dimensionTrainer.TrainerClass);
         var mandatoryTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_m01_01");
