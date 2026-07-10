@@ -156,11 +156,15 @@ public sealed class PokemonLegendsZABridgeTests
             ZaDataPaths.PersonalArray,
             CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2, evolutionSpecies: 2));
         temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(includeCustomEvolutionItem: true));
+        temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(
                 2483,
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
+                (222, "Twisted Spoon"),
                 (2482, "Metal Alloy")));
         var dispatcher = new ProjectBridgeDispatcher();
 
@@ -179,6 +183,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 222 && option.Label == "222 Twisted Spoon");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
@@ -189,9 +194,10 @@ public sealed class PokemonLegendsZABridgeTests
     public void PokemonLegendsZAHeldItemEvolutionParametersUseHeldItemLabels()
     {
         using var temp = CreatePokemonLegendsZAProject();
+        var personalArray = CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2);
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PersonalArray,
-            CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2));
+            personalArray);
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(
@@ -200,11 +206,12 @@ public sealed class PokemonLegendsZABridgeTests
                 (81, "Moon Stone"),
                 (2482, "Metal Alloy")));
         var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
             KmCommandNames.LoadPokemonWorkflow,
-            new LoadPokemonWorkflowRequest(CreatePaths(temp)),
+            new LoadPokemonWorkflowRequest(paths),
             "request-za-pokemon-held-item-evolution");
 
         AssertSuccess(pokemon);
@@ -224,6 +231,81 @@ public sealed class PokemonLegendsZABridgeTests
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+
+        var update = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(paths, Session: null, PersonalId: 1, Action: "upsert", Slot: 0, Method: 20, Argument: 2, Species: 3, Form: 1, Level: 24),
+            "request-za-pokemon-held-item-evolution-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-held-item-evolution-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-held-item-evolution-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "avalon", "data", "personal_array.bin");
+        var writtenBytes = File.ReadAllBytes(outputPath);
+        var evolutionOffset = FindZaPersonalStructVectorElementOffset(personalArray, personalId: 1, personalFieldIndex: 21, slot: 0, structSize: 16);
+        Assert.Equal(personalArray.Length, writtenBytes.Length);
+        Assert.All(
+            Enumerable.Range(0, writtenBytes.Length).Where(index => personalArray[index] != writtenBytes[index]),
+            index => Assert.InRange(index, evolutionOffset, evolutionOffset + 15));
+
+        var written = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(writtenBytes));
+        var writtenEvolution = written.Entry(1)!.Value.Evolutions(0);
+        Assert.NotNull(writtenEvolution);
+        Assert.Equal(20, writtenEvolution!.Value.Condition);
+        Assert.Equal(2, writtenEvolution.Value.Parameter);
+        Assert.Equal(3, writtenEvolution.Value.Species);
+        Assert.Equal(1, writtenEvolution.Value.Form);
+        Assert.Equal(24, writtenEvolution.Value.Level);
+
+        using var resizeTemp = CreatePokemonLegendsZAProject();
+        resizeTemp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2));
+        var resizePaths = CreatePaths(resizeTemp);
+        var add = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(resizePaths, Session: null, PersonalId: 1, Action: "add", Slot: null, Method: 20, Argument: 2, Species: 3, Form: 1, Level: 24),
+            "request-za-pokemon-held-item-evolution-add");
+        AssertSuccess(add);
+        var addPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(resizePaths, add.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-held-item-evolution-add-plan");
+        AssertSuccess(addPlan);
+        Assert.True(addPlan.Payload!.ChangePlan.CanApply);
+        var addApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(resizePaths, add.Payload.Session, addPlan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-held-item-evolution-add-apply");
+        AssertSuccess(addApply);
+        Assert.DoesNotContain(addApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var resizedBytes = File.ReadAllBytes(Path.Combine(resizeTemp.OutputRootPath, "avalon", "data", "personal_array.bin"));
+        var resized = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(resizedBytes));
+        var resizedBulbasaur = resized.Entry(1)!.Value;
+        var addedEvolution = resizedBulbasaur.Evolutions(1);
+        Assert.NotNull(addedEvolution);
+        Assert.Equal(2, resizedBulbasaur.EvolutionsLength);
+        Assert.Equal(20, addedEvolution!.Value.Condition);
+        Assert.Equal(3, addedEvolution.Value.Species);
+        Assert.Equal(25, resizedBulbasaur.ZADexOrder);
+        Assert.Equal(26, resized.Entry(2)!.Value.ZADexOrder);
     }
 
     [Fact]
@@ -431,6 +513,15 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(999, pokeBall.FieldValues["stackCap"]);
         Assert.Equal(1, pokeBall.FieldValues["sortOrder"]);
         Assert.Equal(0, pokeBall.FieldValues["machineMoveId"]);
+        Assert.Equal(0, pokeBall.FieldValues["mintNature"]);
+        Assert.Equal(
+            "0 None",
+            pokeBall
+                .DetailGroups
+                .Single(group => group.Label == "Effects")
+                .Details
+                .Single(detail => detail.Label == "Mint nature")
+                .Value);
         var potion = workflow.Items.Single(item => item.ItemId == 17);
         Assert.Equal(20, potion.FieldValues["healPower"]);
         Assert.Equal(1, potion.FieldValues["canUseInBattle"]);
@@ -1205,8 +1296,8 @@ public sealed class PokemonLegendsZABridgeTests
         var row = written.Entry(1);
         Assert.NotNull(row);
         Assert.Equal([33, 45], row!.Value.GetTmMovesArray().Select(move => (int)move).ToArray());
-        Assert.Empty(row.Value.GetEggMovesArray());
-        Assert.Empty(row.Value.GetReminderMovesArray());
+        Assert.Equal([0], row.Value.GetEggMovesArray().Select(move => (int)move).ToArray());
+        Assert.Equal([0], row.Value.GetReminderMovesArray().Select(move => (int)move).ToArray());
     }
 
     [Fact]
@@ -2690,7 +2781,7 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateItemDataArray(bool includeAdditionalMachines = false)
+    private static byte[] CreateItemDataArray(bool includeAdditionalMachines = false, bool includeCustomEvolutionItem = false)
     {
         var builder = new FlatBufferBuilder(2048);
         var pokeBall = CreateItem(
@@ -2702,7 +2793,8 @@ public sealed class PokemonLegendsZABridgeTests
             price: 100,
             pocket: 1,
             stackCap: 999,
-            sortOrder: 1);
+            sortOrder: 1,
+            mintNature: -1);
         var potion = CreateItem(
             builder,
             itemId: 17,
@@ -2727,7 +2819,7 @@ public sealed class PokemonLegendsZABridgeTests
             sortOrder: 1,
             machineMoveId: 33,
             machineIndex: -1);
-        Offset<ZaItemData>[] rows = [pokeBall, potion, tm];
+        var rows = new List<Offset<ZaItemData>> { pokeBall, potion, tm };
         if (includeAdditionalMachines)
         {
             var tm1 = CreateItem(
@@ -2757,7 +2849,22 @@ public sealed class PokemonLegendsZABridgeTests
             rows = [pokeBall, potion, tm1, tm2];
         }
 
-        var vector = ZaItemDataArray.CreateValuesVector(builder, rows);
+        if (includeCustomEvolutionItem)
+        {
+            rows.Add(CreateItem(
+                builder,
+                itemId: 222,
+                itemType: 1,
+                internalName: "MAGARISPOON",
+                iconName: "item_0222",
+                price: 3000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 222,
+                workEvolutional: true));
+        }
+
+        var vector = ZaItemDataArray.CreateValuesVector(builder, rows.ToArray());
         var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
         ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
@@ -3462,12 +3569,16 @@ public sealed class PokemonLegendsZABridgeTests
         ushort machineMoveId = 0,
         int machineIndex = 0,
         int healPower = 0,
-        bool canUseInBattle = false)
+        bool canUseInBattle = false,
+        bool workEvolutional = false,
+        int mintNature = 0)
     {
         var internalNameOffset = builder.CreateString(internalName);
         var iconNameOffset = builder.CreateString(iconName);
         ZaItemData.StartZaItemData(builder);
         ZaItemData.AddCanUseInBattle(builder, canUseInBattle);
+        ZaItemData.AddWorkEvolutional(builder, workEvolutional);
+        ZaItemData.AddMintNature(builder, mintNature);
         ZaItemData.AddWorkRecvPower(builder, healPower);
         ZaItemData.AddMachineIndex(builder, machineIndex);
         ZaItemData.AddMachineWaza(builder, machineMoveId);
@@ -3557,7 +3668,7 @@ public sealed class PokemonLegendsZABridgeTests
         }
 
         var evolutions = builder.EndVector();
-        var tmMoves = ZaPersonal.CreateUshortVector(builder, species == 0 ? [] : [(ushort)45]);
+        var tmMoves = ZaPersonal.CreateUshortVector(builder, species == 0 ? [] : [(ushort)45, 0]);
         var eggMoves = ZaPersonal.CreateUshortVector(builder, species == 0 ? [] : [(ushort)33]);
         var reminderMoves = ZaPersonal.CreateUshortVector(builder, species == 0 ? [] : [(ushort)36]);
         ZaPersonal.StartLevelupMovesVector(builder, species == 0 ? 0 : 1);
@@ -3594,6 +3705,38 @@ public sealed class PokemonLegendsZABridgeTests
         ZaPersonal.AddIsPresent(builder, present);
         ZaPersonal.AddSpecies(builder, ZaSpeciesInfo.Create(builder, species, form: 0, model: species, color: 3, bodyType: 1, height: 7, weight: 69, reserved: 0, reserved1: 0, reserved2: 0));
         return ZaPersonal.End(builder);
+    }
+
+    private static int FindZaPersonalStructVectorElementOffset(
+        byte[] data,
+        int personalId,
+        int personalFieldIndex,
+        int slot,
+        int structSize)
+    {
+        var rootOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, sizeof(int)));
+        var entryVectorOffset = ReadFlatBufferVectorOffset(data, rootOffset, fieldIndex: 0);
+        var personalOffsetLocation = entryVectorOffset + sizeof(int) + personalId * sizeof(int);
+        var personalOffset = personalOffsetLocation + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(personalOffsetLocation, sizeof(uint))));
+        var vectorOffset = ReadFlatBufferVectorOffset(data, personalOffset, personalFieldIndex);
+        var length = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(vectorOffset, sizeof(int)));
+        Assert.InRange(slot, 0, length - 1);
+        return vectorOffset + sizeof(int) + slot * structSize;
+    }
+
+    private static int ReadFlatBufferVectorOffset(byte[] data, int tableOffset, int fieldIndex)
+    {
+        var fieldLocation = ReadFlatBufferTableFieldLocation(data, tableOffset, fieldIndex);
+        return fieldLocation + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(fieldLocation, sizeof(uint))));
+    }
+
+    private static int ReadFlatBufferTableFieldLocation(byte[] data, int tableOffset, int fieldIndex)
+    {
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var fieldOffsetLocation = vtableOffset + sizeof(ushort) * 2 + fieldIndex * sizeof(ushort);
+        var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(fieldOffsetLocation, sizeof(ushort)));
+        Assert.NotEqual(0, fieldOffset);
+        return tableOffset + fieldOffset;
     }
 
     private static ZaMoveData ReadMove(TemporaryBridgeProject temp, int moveId)

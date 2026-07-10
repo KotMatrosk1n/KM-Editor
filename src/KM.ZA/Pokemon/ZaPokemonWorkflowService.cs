@@ -308,13 +308,15 @@ internal sealed class ZaPokemonWorkflowService
         ZaWorkflowFile? source = null;
         var labels = ZaTextLabelLookup.None();
         var pokemon = Array.Empty<ZaPokemonRecord>();
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
 
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             var tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels, tmCatalog).ToArray();
+            pokemon = LoadRecords(source, labels, tmCatalog, evolutionItemArgumentLabels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -341,16 +343,61 @@ internal sealed class ZaPokemonWorkflowService
             summary,
             pokemon,
             stats,
-            CreateEvolutionOptions(pokemon, labels),
+            CreateEvolutionOptions(pokemon, labels, evolutionItemArgumentLabels),
             CreateMoveOptions(pokemon, labels),
             CreateEditableFields(labels),
             diagnostics);
     }
 
+    private IReadOnlyDictionary<int, string> LoadEvolutionItemArgumentLabels(
+        OpenedProject project,
+        ZaTextLabelLookup labels,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var argumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
+
+        try
+        {
+            var source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+            var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
+            for (var index = 0; index < table.ValuesLength; index++)
+            {
+                if (table.Values(index) is not { } item)
+                {
+                    continue;
+                }
+
+                if (item.WorkEvolutional && item.Id > 0)
+                {
+                    argumentLabels.TryAdd(item.Id, labels.Item(item.Id));
+                }
+            }
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                $"Item metadata could not be decoded; edited evolution items may be missing from Use Item selectors: {exception.Message}",
+                $"romfs/{ZaDataPaths.ItemDataArray}"));
+        }
+
+        return argumentLabels;
+    }
+
+    private static Dictionary<int, string> CreateDefaultEvolutionItemArgumentLabels(ZaTextLabelLookup labels)
+    {
+        return EvolutionItemParameterItemIds.ToDictionary(
+            entry => entry.Key,
+            entry => labels.Item(entry.Value));
+    }
+
     private static IEnumerable<ZaPokemonRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
-        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.EntryLength; index++)
@@ -361,7 +408,7 @@ internal sealed class ZaPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels, tmCatalog);
+            yield return ToRecord(index, entry.Value, source, labels, tmCatalog, evolutionItemArgumentLabels);
         }
     }
 
@@ -370,7 +417,8 @@ internal sealed class ZaPokemonWorkflowService
         ZaPersonal entry,
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
-        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog)
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var species = entry.Species;
         var baseStatsData = entry.BaseStats;
@@ -479,7 +527,7 @@ internal sealed class ZaPokemonWorkflowService
             baseExperience,
             height,
             weight,
-            ReadEvolutions(entry, labels),
+            ReadEvolutions(entry, labels, evolutionItemArgumentLabels),
             ReadLearnset(entry, labels),
             ReadCompatibility(entry, labels, tmCatalog),
             new ZaPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
@@ -487,7 +535,8 @@ internal sealed class ZaPokemonWorkflowService
 
     private static IReadOnlyList<ZaPokemonEvolutionRecord> ReadEvolutions(
         ZaPersonal entry,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var evolutions = new List<ZaPokemonEvolutionRecord>();
         for (var index = 0; index < entry.EvolutionsLength; index++)
@@ -512,7 +561,8 @@ internal sealed class ZaPokemonWorkflowService
                 FormatEvolutionArgument(
                     evolution.Value.Parameter,
                     method,
-                    labels)));
+                    labels,
+                    evolutionItemArgumentLabels)));
         }
 
         return evolutions;
@@ -652,10 +702,11 @@ internal sealed class ZaPokemonWorkflowService
 
     private static IReadOnlyList<ZaPokemonEvolutionMethodOption> CreateEvolutionOptions(
         IReadOnlyList<ZaPokemonRecord> pokemon,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(pokemon, labels);
+        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(pokemon, labels, evolutionItemArgumentLabels);
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false);
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
 
@@ -753,9 +804,10 @@ internal sealed class ZaPokemonWorkflowService
 
     private static IReadOnlyList<ZaPokemonEditableFieldOption> CreateEvolutionItemArgumentOptions(
         IReadOnlyList<ZaPokemonRecord> pokemon,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
-        return EvolutionItemParameterItemIds.Keys
+        return evolutionItemArgumentLabels.Keys
             .Concat(pokemon
                 .SelectMany(record => record.Evolutions)
                 .Where(evolution => IsEvolutionItemParameterMethod(evolution.Method) && evolution.Argument > 0)
@@ -765,7 +817,7 @@ internal sealed class ZaPokemonWorkflowService
             .Prepend(0)
             .Select(value => new ZaPokemonEditableFieldOption(
                 value,
-                $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels)}"))
+                $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels, evolutionItemArgumentLabels)}"))
             .ToArray();
     }
 
@@ -798,12 +850,13 @@ internal sealed class ZaPokemonWorkflowService
     private static string FormatEvolutionArgument(
         int argument,
         EvolutionMethodDefinition method,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         return method.ArgumentKind switch
         {
             EvolutionArgumentKindItem => IsEvolutionItemParameterMethod(method.Value)
-                ? FormatEvolutionItemArgument(argument, labels)
+                ? FormatEvolutionItemArgument(argument, labels, evolutionItemArgumentLabels)
                 : argument == 0
                     ? "None"
                     : labels.Item(argument),
@@ -815,11 +868,19 @@ internal sealed class ZaPokemonWorkflowService
         };
     }
 
-    private static string FormatEvolutionItemArgument(int argument, ZaTextLabelLookup labels)
+    private static string FormatEvolutionItemArgument(
+        int argument,
+        ZaTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         if (argument == 0)
         {
             return "None";
+        }
+
+        if (evolutionItemArgumentLabels.TryGetValue(argument, out var itemLabel))
+        {
+            return itemLabel;
         }
 
         return EvolutionItemParameterItemIds.TryGetValue(argument, out var itemId)

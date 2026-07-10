@@ -322,13 +322,15 @@ internal sealed class SvPokemonWorkflowService
         SvWorkflowFile? source = null;
         var labels = SvTextLabelLookup.None();
         var pokemon = Array.Empty<SvPokemonRecord>();
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
 
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels, tmCatalog).ToArray();
+            pokemon = LoadRecords(source, labels, tmCatalog, evolutionItemArgumentLabels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -355,16 +357,61 @@ internal sealed class SvPokemonWorkflowService
             summary,
             pokemon,
             stats,
-            CreateEvolutionOptions(pokemon, labels),
+            CreateEvolutionOptions(pokemon, labels, evolutionItemArgumentLabels),
             CreateMoveOptions(pokemon, labels),
             CreateEditableFields(labels),
             diagnostics);
     }
 
+    private IReadOnlyDictionary<int, string> LoadEvolutionItemArgumentLabels(
+        OpenedProject project,
+        SvTextLabelLookup labels,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var argumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
+
+        try
+        {
+            var source = fileSource.Read(project, SvDataPaths.ItemDataArray);
+            var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
+            for (var index = 0; index < table.ValuesLength; index++)
+            {
+                if (table.Values(index) is not { } item)
+                {
+                    continue;
+                }
+
+                if (item.WorkEvolutional > 0 && item.Id > 0)
+                {
+                    argumentLabels[item.WorkEvolutional] = labels.Item(item.Id);
+                }
+            }
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(SvWorkflowSupport.Warning(
+                $"Item metadata could not be decoded; edited evolution items may be missing from Use Item selectors: {exception.Message}",
+                $"romfs/{SvDataPaths.ItemDataArray}"));
+        }
+
+        return argumentLabels;
+    }
+
+    private static Dictionary<int, string> CreateDefaultEvolutionItemArgumentLabels(SvTextLabelLookup labels)
+    {
+        return EvolutionItemParameterItemIds.ToDictionary(
+            entry => entry.Key,
+            entry => labels.Item(entry.Value));
+    }
+
     private static IEnumerable<SvPokemonRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.EntryLength; index++)
@@ -375,7 +422,7 @@ internal sealed class SvPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels, tmCatalog);
+            yield return ToRecord(index, entry.Value, source, labels, tmCatalog, evolutionItemArgumentLabels);
         }
     }
 
@@ -384,7 +431,8 @@ internal sealed class SvPokemonWorkflowService
         global::personal entry,
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var species = entry.Species;
         var baseStatsData = entry.BaseStats;
@@ -506,7 +554,7 @@ internal sealed class SvPokemonWorkflowService
             baseExperience,
             height,
             weight,
-            ReadEvolutions(entry, labels),
+            ReadEvolutions(entry, labels, evolutionItemArgumentLabels),
             ReadLearnset(entry, labels),
             ReadCompatibility(entry, labels, tmCatalog),
             new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
@@ -514,7 +562,8 @@ internal sealed class SvPokemonWorkflowService
 
     private static IReadOnlyList<SvPokemonEvolutionRecord> ReadEvolutions(
         global::personal entry,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var evolutions = new List<SvPokemonEvolutionRecord>();
         for (var index = 0; index < entry.EvolutionsLength; index++)
@@ -539,7 +588,8 @@ internal sealed class SvPokemonWorkflowService
                 FormatEvolutionArgument(
                     evolution.Value.Parameter,
                     method,
-                    labels)));
+                    labels,
+                    evolutionItemArgumentLabels)));
         }
 
         return evolutions;
@@ -651,10 +701,11 @@ internal sealed class SvPokemonWorkflowService
 
     private static IReadOnlyList<SvPokemonEvolutionMethodOption> CreateEvolutionOptions(
         IReadOnlyList<SvPokemonRecord> pokemon,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(pokemon, labels);
+        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(pokemon, labels, evolutionItemArgumentLabels);
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false);
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
 
@@ -754,9 +805,10 @@ internal sealed class SvPokemonWorkflowService
 
     private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionItemArgumentOptions(
         IReadOnlyList<SvPokemonRecord> pokemon,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
-        return EvolutionItemParameterItemIds.Keys
+        return evolutionItemArgumentLabels.Keys
             .Concat(pokemon
                 .SelectMany(record => record.Evolutions)
                 .Where(evolution => IsEvolutionItemParameterMethod(evolution.Method) && evolution.Argument > 0)
@@ -766,7 +818,7 @@ internal sealed class SvPokemonWorkflowService
             .Prepend(0)
             .Select(value => new SvPokemonEditableFieldOption(
                 value,
-                $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels)}"))
+                $"{value.ToString(CultureInfo.InvariantCulture)} {FormatEvolutionItemArgument(value, labels, evolutionItemArgumentLabels)}"))
             .ToArray();
     }
 
@@ -799,12 +851,13 @@ internal sealed class SvPokemonWorkflowService
     private static string FormatEvolutionArgument(
         int argument,
         EvolutionMethodDefinition method,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         return method.ArgumentKind switch
         {
             EvolutionArgumentKindItem => IsEvolutionItemParameterMethod(method.Value)
-                ? FormatEvolutionItemArgument(argument, labels)
+                ? FormatEvolutionItemArgument(argument, labels, evolutionItemArgumentLabels)
                 : argument == 0
                     ? "None"
                     : labels.Item(argument),
@@ -816,11 +869,19 @@ internal sealed class SvPokemonWorkflowService
         };
     }
 
-    private static string FormatEvolutionItemArgument(int argument, SvTextLabelLookup labels)
+    private static string FormatEvolutionItemArgument(
+        int argument,
+        SvTextLabelLookup labels,
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         if (argument == 0)
         {
             return "None";
+        }
+
+        if (evolutionItemArgumentLabels.TryGetValue(argument, out var itemLabel))
+        {
+            return itemLabel;
         }
 
         return EvolutionItemParameterItemIds.TryGetValue(argument, out var itemId)

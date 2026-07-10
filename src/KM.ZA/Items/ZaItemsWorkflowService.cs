@@ -563,7 +563,7 @@ internal sealed class ZaItemsWorkflowService
             [AccuracyBoostField] = item.WorkAccuracy,
             [CriticalHitBoostField] = item.WorkCritical,
             [EffectGuardField] = item.WorkEffectGuard,
-            [MintNatureField] = item.MintNature,
+            [MintNatureField] = NormalizeMintNature(item.MintNature),
             [HealPowerField] = item.WorkRecvPower,
             [HealPercentageField] = item.HealPercentage,
             [RevivalCountField] = item.WorkRevival,
@@ -606,6 +606,8 @@ internal sealed class ZaItemsWorkflowService
 
     internal static string FormatTechnicalMachineName(int machineSlot, string machineMoveName) =>
         $"{ZaTechnicalMachineCatalog.FormatMachineLabel(machineSlot)} {machineMoveName}";
+
+    internal static int NormalizeMintNature(int value) => value < 0 ? 0 : value;
 
     private static bool CanUseOnPokemon(ZaItemData item)
     {
@@ -721,7 +723,7 @@ internal sealed class ZaItemsWorkflowService
                     Detail("Revive percentage", item.RevivePercentage),
                     Detail("EXP gain", item.ExpPointGain),
                     Detail("Max use level", item.MaxUseLevel),
-                    Detail("Mint nature", $"{item.MintNature.ToString(CultureInfo.InvariantCulture)} {FormatNature(item.MintNature)}"),
+                    Detail("Mint nature", $"{NormalizeMintNature(item.MintNature).ToString(CultureInfo.InvariantCulture)} {FormatNature(NormalizeMintNature(item.MintNature))}"),
                     Detail("Evolution item", ZaLabels.Bool(item.WorkEvolutional)),
                     Detail("Form change item", ZaLabels.Bool(item.WorkFormChange)),
                     Detail("Swap into item", item.SwapIntoId > 0 ? $"{item.SwapIntoId.ToString(CultureInfo.InvariantCulture)} {labels.Item(item.SwapIntoId)}" : "None"),
