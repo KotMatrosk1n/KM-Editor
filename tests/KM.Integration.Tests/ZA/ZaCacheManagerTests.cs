@@ -90,10 +90,10 @@ public sealed class ZaCacheManagerTests
     public void PerformanceWarmupCachesDiscoveredTextPayloads()
     {
         using var temp = TemporaryFolder.Create();
-        const string textPath = "ik_message/dat/English/script/common_0025.dat";
+        const string textPath = "ik_message/dat/English/common/trname.tbl";
         WriteSyntheticArchiveEntries(
             temp.BaseRomFsPath,
-            [("arc/ik_messagedatEnglishscriptcommon_0025.trpak", textPath, new byte[] { 0x5A, 0x54, 0x58, 0x54 })]);
+            [("arc/ik_messagedatEnglishcommontrname.tbl.trpak", textPath, new byte[] { 0x5A, 0x54, 0x58, 0x54 })]);
         var paths = temp.CreatePaths();
         var cache = new ZaCacheManager(temp.CacheRootPath);
 

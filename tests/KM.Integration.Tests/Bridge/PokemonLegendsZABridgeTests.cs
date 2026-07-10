@@ -812,14 +812,23 @@ public sealed class PokemonLegendsZABridgeTests
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerDataArray,
-            CreateTrainerDataArray(
-                trainerId: "dim_rank_02_mizu_05",
-                trainerType: hyperspaceTrainerHash,
-                trainerType2: hyperspaceTrainerHash));
+            CreateTrainerLabelFallbackDataArray(hyperspaceTrainerHash));
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerNames("English"),
-            CreateTextTable(0, (0, "???")));
+            CreateTextTable(
+                3,
+                (0, "Young Man"),
+                (1, "Audrey"),
+                (2, "Venin"),
+                (3, "Lyse")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerNameKeys("English"),
+            CreateKeyTable(
+                (0, "dim_rank_02_05"),
+                (0, "rest1_01"),
+                (0, "sub_010_01"),
+                (0, "sub_010_02")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerTypes("English"),
             CreateTextTable(0, (0, "Hyperspace Trainer")));
@@ -835,10 +844,17 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-trainer-labels");
 
         AssertSuccess(trainers);
-        var trainer = Assert.Single(trainers.Payload!.Workflow.Trainers);
-        Assert.Equal("Dimension Rank 2 Water 5", trainer.Name);
-        Assert.Equal(0, trainer.TrainerClassId);
-        Assert.Equal("Hyperspace Trainer", trainer.TrainerClass);
+        Assert.Equal(4, trainers.Payload!.Workflow.Trainers.Count);
+        var dimensionTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "dim_rank_02_mizu_05");
+        Assert.Equal("Young Man", dimensionTrainer.Name);
+        Assert.Equal(0, dimensionTrainer.TrainerClassId);
+        Assert.Equal("Hyperspace Trainer", dimensionTrainer.TrainerClass);
+        var mandatoryTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_m01_01");
+        Assert.Equal("Andi", mandatoryTrainer.Name);
+        var restaurantTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_sys_rest1_01");
+        Assert.Equal("Audrey", restaurantTrainer.Name);
+        var subquestTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_sub_010_030");
+        Assert.Equal("Lyse", subquestTrainer.Name);
     }
 
     [Fact]
@@ -1994,6 +2010,9 @@ public sealed class PokemonLegendsZABridgeTests
             ZaDataPaths.TrainerNames("English"),
             CreateTextTable(0, (0, "Rival Aria")));
         temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerNameKeys("English"),
+            CreateKeyTable((0, "tr_battle_main_001")));
+        temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerTypes("English"),
             CreateTextTable(1, (1, "Duelist")));
         var dispatcher = new ProjectBridgeDispatcher();
@@ -2934,6 +2953,9 @@ public sealed class PokemonLegendsZABridgeTests
             ZaDataPaths.TrainerNames("English"),
             CreateTextTable(0, (0, "Rival Aria")));
         temp.WriteBaseRomFsFile(
+            ZaDataPaths.TrainerNameKeys("English"),
+            CreateKeyTable((0, "tr_battle_main_001")));
+        temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerTypes("English"),
             CreateTextTable(1, (1, "Duelist")));
         temp.WriteBaseRomFsFile(
@@ -3365,11 +3387,46 @@ public sealed class PokemonLegendsZABridgeTests
         bool signedDefaults = false,
         string trainerId = "tr_battle_main_001",
         ulong trainerType = 1,
-        ulong trainerType2 = 0)
+        ulong trainerType2 = 0,
+        ushort speciesId = 1,
+        int level = 12)
     {
         var builder = new FlatBufferBuilder(2048);
-        var trainer = CreateTrainer(builder, signedDefaults, trainerId, trainerType, trainerType2);
+        var trainer = CreateTrainer(builder, signedDefaults, trainerId, trainerType, trainerType2, speciesId, level);
         var vector = ZaTrainerTable.CreateValueVector(builder, [trainer]);
+        var root = ZaTrainerTable.Create(builder, vector);
+        ZaTrainerTable.FinishBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateTrainerLabelFallbackDataArray(ulong trainerType)
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var dimensionTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "dim_rank_02_mizu_05",
+            trainerType: trainerType,
+            trainerType2: trainerType);
+        var mandatoryTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "Ev_m01_01",
+            trainerType: trainerType,
+            trainerType2: trainerType,
+            speciesId: 674,
+            level: 4);
+        var restaurantTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "Ev_sys_rest1_01",
+            trainerType: trainerType,
+            trainerType2: trainerType);
+        var subquestTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "Ev_sub_010_030",
+            trainerType: trainerType,
+            trainerType2: trainerType);
+        var vector = ZaTrainerTable.CreateValueVector(
+            builder,
+            [dimensionTrainer, mandatoryTrainer, restaurantTrainer, subquestTrainer]);
         var root = ZaTrainerTable.Create(builder, vector);
         ZaTrainerTable.FinishBuffer(builder, root);
         return builder.SizedByteArray();
@@ -3380,10 +3437,12 @@ public sealed class PokemonLegendsZABridgeTests
         bool signedDefaults = false,
         string trainerIdValue = "tr_battle_main_001",
         ulong trainerType = 1,
-        ulong trainerType2 = 0)
+        ulong trainerType2 = 0,
+        ushort speciesId = 1,
+        int level = 12)
     {
         var trainerId = builder.CreateString(trainerIdValue);
-        var pokemon = CreateTrainerPokemon(builder, signedDefaults);
+        var pokemon = CreateTrainerPokemon(builder, signedDefaults, speciesId, level);
 
         return ZaTrainerRow.Create(
             builder,
@@ -3402,7 +3461,11 @@ public sealed class PokemonLegendsZABridgeTests
             hearingRange: 8);
     }
 
-    private static Offset<ZaTrainerPokemon> CreateTrainerPokemon(FlatBufferBuilder builder, bool signedDefaults = false)
+    private static Offset<ZaTrainerPokemon> CreateTrainerPokemon(
+        FlatBufferBuilder builder,
+        bool signedDefaults = false,
+        ushort speciesId = 1,
+        int level = 12)
     {
         var move1 = ZaTrainerMove.Create(builder, 33);
         var move2 = ZaTrainerMove.Create(builder, 45);
@@ -3413,11 +3476,11 @@ public sealed class PokemonLegendsZABridgeTests
 
         return ZaTrainerPokemon.Create(
             builder,
-            speciesId: 1,
+            speciesId: speciesId,
             formId: 0,
             sex: signedDefaults ? -1 : 1,
             item: 4,
-            level: 12,
+            level: level,
             ballId: 4,
             move1Offset: move1,
             move2Offset: move2,

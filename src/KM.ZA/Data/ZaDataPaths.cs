@@ -4,6 +4,9 @@ namespace KM.ZA.Data;
 
 public static class ZaDataPaths
 {
+    public const string MessageRoot = "ik_message/dat";
+    public const string LegacyMessageRoot = "message/dat";
+
     public const string PersonalArray = "avalon/data/personal_array.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";
     public const string ItemDataArray = "world/exl/item_data/item_data/item_data.bin";
@@ -48,6 +51,14 @@ public static class ZaDataPaths
 
     private static string CommonMessage(string language, string fileName)
     {
-        return $"ik_message/dat/{language}/common/{fileName}";
+        return $"{MessageRoot}/{language}/common/{fileName}";
+    }
+
+    internal static string? TryCreateLegacyMessagePath(string path)
+    {
+        const string prefix = MessageRoot + "/";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? LegacyMessageRoot + "/" + path[prefix.Length..]
+            : null;
     }
 }

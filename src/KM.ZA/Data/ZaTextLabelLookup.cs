@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.ZA.Workflows;
+using System.Globalization;
 
 namespace KM.ZA.Data;
 
@@ -131,15 +132,23 @@ internal sealed class ZaTextLabelLookup
 
     public string TrainerName(string? key, int trainerId, string? trainerClass = null)
     {
-        return FirstUsable(
-                GetKeyed(trainerNames, trainerNameIndices, key),
-                string.IsNullOrWhiteSpace(key) || key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
-                    ? null
-                    : GetKeyed(trainerNames, trainerNameIndices, $"TRNAME_{key}"))
-            ?? FirstUsable(GetIndexed(trainerNames, trainerId))
+        return TrainerNameFromText(key, trainerId)
             ?? (!string.IsNullOrWhiteSpace(key) && !key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
                 ? ZaLabels.FormatTrainerIdForLookup(key)
                 : $"Trainer {trainerId}");
+    }
+
+    public string? TrainerNameFromText(string? key, int trainerId)
+    {
+        var keyed = FirstUsable(TrainerNameKeyCandidates(key)
+            .Select(candidate => GetKeyed(trainerNames, trainerNameIndices, candidate))
+            .ToArray());
+        if (!string.IsNullOrWhiteSpace(key) || !string.IsNullOrWhiteSpace(keyed))
+        {
+            return keyed;
+        }
+
+        return FirstUsable(GetIndexed(trainerNames, trainerId));
     }
 
     public string TrainerType(string? key)
@@ -196,10 +205,10 @@ internal sealed class ZaTextLabelLookup
         string label,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        return TryLoadIndexedTable(project, fileSource, pathFactory(language), label, diagnostics)
+        return TryLoadIndexedTable(project, fileSource, CreatePathCandidates(language, pathFactory), label, diagnostics)
             ?? (string.Equals(language, ZaGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
                 ? null
-                : TryLoadIndexedTable(project, fileSource, pathFactory(ZaGameTextLanguage.English), label, diagnostics))
+                : TryLoadIndexedTable(project, fileSource, CreatePathCandidates(ZaGameTextLanguage.English, pathFactory), label, diagnostics))
             ?? [];
     }
 
@@ -211,10 +220,10 @@ internal sealed class ZaTextLabelLookup
         string label,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        return TryLoadKeyIndices(project, fileSource, pathFactory(language), label, diagnostics)
+        return TryLoadKeyIndices(project, fileSource, CreatePathCandidates(language, pathFactory), label, diagnostics)
             ?? (string.Equals(language, ZaGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
                 ? null
-                : TryLoadKeyIndices(project, fileSource, pathFactory(ZaGameTextLanguage.English), label, diagnostics))
+                : TryLoadKeyIndices(project, fileSource, CreatePathCandidates(ZaGameTextLanguage.English, pathFactory), label, diagnostics))
             ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -226,11 +235,40 @@ internal sealed class ZaTextLabelLookup
         string label,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        return TryLoadKeyHashIndices(project, fileSource, pathFactory(language), label, diagnostics)
+        return TryLoadKeyHashIndices(project, fileSource, CreatePathCandidates(language, pathFactory), label, diagnostics)
             ?? (string.Equals(language, ZaGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
                 ? null
-                : TryLoadKeyHashIndices(project, fileSource, pathFactory(ZaGameTextLanguage.English), label, diagnostics))
+                : TryLoadKeyHashIndices(project, fileSource, CreatePathCandidates(ZaGameTextLanguage.English, pathFactory), label, diagnostics))
             ?? new Dictionary<ulong, int>();
+    }
+
+    private static IReadOnlyList<string> CreatePathCandidates(string language, Func<string, string> pathFactory)
+    {
+        var path = pathFactory(language);
+        var legacyPath = ZaDataPaths.TryCreateLegacyMessagePath(path);
+        return string.IsNullOrWhiteSpace(legacyPath)
+            || string.Equals(path, legacyPath, StringComparison.OrdinalIgnoreCase)
+            ? [path]
+            : [path, legacyPath];
+    }
+
+    private static IReadOnlyList<string>? TryLoadIndexedTable(
+        OpenedProject project,
+        ZaWorkflowFileSource fileSource,
+        IReadOnlyList<string> paths,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var path in paths)
+        {
+            var values = TryLoadIndexedTable(project, fileSource, path, label, diagnostics);
+            if (values is not null)
+            {
+                return values;
+            }
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<string>? TryLoadIndexedTable(
@@ -263,6 +301,25 @@ internal sealed class ZaTextLabelLookup
     private static IReadOnlyDictionary<string, int>? TryLoadKeyIndices(
         OpenedProject project,
         ZaWorkflowFileSource fileSource,
+        IReadOnlyList<string> paths,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var path in paths)
+        {
+            var values = TryLoadKeyIndices(project, fileSource, path, label, diagnostics);
+            if (values is not null)
+            {
+                return values;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyDictionary<string, int>? TryLoadKeyIndices(
+        OpenedProject project,
+        ZaWorkflowFileSource fileSource,
         string path,
         string label,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -286,6 +343,25 @@ internal sealed class ZaTextLabelLookup
                 $"romfs/{path}"));
             return null;
         }
+    }
+
+    private static IReadOnlyDictionary<ulong, int>? TryLoadKeyHashIndices(
+        OpenedProject project,
+        ZaWorkflowFileSource fileSource,
+        IReadOnlyList<string> paths,
+        string label,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var path in paths)
+        {
+            var values = TryLoadKeyHashIndices(project, fileSource, path, label, diagnostics);
+            if (values is not null)
+            {
+                return values;
+            }
+        }
+
+        return null;
     }
 
     private static IReadOnlyDictionary<ulong, int>? TryLoadKeyHashIndices(
@@ -336,6 +412,166 @@ internal sealed class ZaTextLabelLookup
         }
 
         return GetIndexed(values, index);
+    }
+
+    private static IReadOnlyList<string> TrainerNameKeyCandidates(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return [];
+        }
+
+        var candidates = new List<string> { key };
+        if (!key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add($"TRNAME_{key}");
+            AddTrimmedTrainerNameCandidate(candidates, key, "TR_");
+            AddTrimmedTrainerNameCandidate(candidates, key, "TRAINER_");
+        }
+
+        AddTrainerNamePatternCandidates(candidates, key);
+
+        return candidates
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static void AddTrimmedTrainerNameCandidate(ICollection<string> candidates, string key, string prefix)
+    {
+        if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && key.Length > prefix.Length)
+        {
+            candidates.Add($"TRNAME_{key[prefix.Length..]}");
+        }
+    }
+
+    private static void AddTrainerNamePatternCandidates(ICollection<string> candidates, string key)
+    {
+        AddDimensionTrainerNameCandidate(candidates, key);
+        AddRestaurantTrainerNameCandidate(candidates, key);
+        AddSubquestTrainerNameCandidates(candidates, key);
+    }
+
+    private static void AddDimensionTrainerNameCandidate(ICollection<string> candidates, string key)
+    {
+        var parts = key.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 5
+            && parts[0].Equals("dim", StringComparison.OrdinalIgnoreCase)
+            && parts[1].Equals("rank", StringComparison.OrdinalIgnoreCase)
+            && IsDigits(parts[2])
+            && IsDigits(parts[4]))
+        {
+            candidates.Add($"dim_rank_{parts[2]}_{parts[4]}");
+        }
+    }
+
+    private static void AddRestaurantTrainerNameCandidate(ICollection<string> candidates, string key)
+    {
+        const string prefix = "Ev_sys_";
+        if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add(key[prefix.Length..]);
+        }
+    }
+
+    private static void AddSubquestTrainerNameCandidates(ICollection<string> candidates, string key)
+    {
+        const string prefix = "Ev_sub_";
+        if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var rest = key[prefix.Length..];
+        if (rest.Length < 3 || !IsDigits(rest[..3]))
+        {
+            return;
+        }
+
+        var baseKey = $"sub_{rest[..3]}";
+        var suffix = rest.Length > 3
+            ? rest[3..].TrimStart('_')
+            : string.Empty;
+
+        AddSubquestVariantCandidates(candidates, baseKey, suffix);
+        candidates.Add(baseKey);
+    }
+
+    private static void AddSubquestVariantCandidates(ICollection<string> candidates, string baseKey, string suffix)
+    {
+        if (string.IsNullOrWhiteSpace(suffix))
+        {
+            return;
+        }
+
+        var parts = suffix.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return;
+        }
+
+        var last = parts[^1];
+        if (last.Equals("manager", StringComparison.OrdinalIgnoreCase))
+        {
+            AddNumberedTrainerNameCandidate(candidates, baseKey, 1);
+            return;
+        }
+
+        if (last.Equals("master", StringComparison.OrdinalIgnoreCase))
+        {
+            AddNumberedTrainerNameCandidate(candidates, baseKey, 2);
+            return;
+        }
+
+        if (last.Equals("client", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (last.Equals("nageki", StringComparison.OrdinalIgnoreCase))
+        {
+            AddNumberedTrainerNameCandidate(candidates, baseKey, 1);
+            return;
+        }
+
+        if (last.Equals("dageki", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (IsDigits(last) && int.TryParse(last, NumberStyles.None, CultureInfo.InvariantCulture, out var lastNumber))
+        {
+            AddNumberedTrainerNameCandidate(candidates, baseKey, lastNumber);
+        }
+
+        var first = parts[0];
+        if (!IsDigits(first) || !int.TryParse(first, NumberStyles.None, CultureInfo.InvariantCulture, out var firstNumber))
+        {
+            return;
+        }
+
+        var variant = firstNumber >= 100 && firstNumber % 100 == 10
+            ? (firstNumber / 100) + 1
+            : firstNumber / 10;
+        AddNumberedTrainerNameCandidate(candidates, baseKey, variant);
+        if (variant > 1)
+        {
+            AddNumberedTrainerNameCandidate(candidates, baseKey, variant - 1);
+        }
+    }
+
+    private static void AddNumberedTrainerNameCandidate(ICollection<string> candidates, string baseKey, int number)
+    {
+        if (number > 0)
+        {
+            candidates.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{baseKey}_{number:00}"));
+        }
+    }
+
+    private static bool IsDigits(string value)
+    {
+        return value.Length > 0 && value.All(char.IsDigit);
     }
 
     private bool TryGetTrainerTypeByHash(ulong hash, out (int Id, string Name) trainerType)

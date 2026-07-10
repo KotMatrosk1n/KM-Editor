@@ -5,6 +5,7 @@ namespace KM.ZA.Data;
 internal static class ZaMessagePathResolver
 {
     public const string MessageRootPath = "ik_message/dat";
+    private const string DefaultMessageExtension = ".dat";
 
     public static string? TryCreateMessageDatPathFromPackName(string packName, string language)
     {
@@ -48,14 +49,19 @@ internal static class ZaMessagePathResolver
             return null;
         }
 
-        if (fileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase)
-            || fileName.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase))
+        var extension = Path.GetExtension(fileName);
+        if (string.Equals(extension, ".dat", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(extension, ".tbl", StringComparison.OrdinalIgnoreCase))
         {
             fileName = Path.ChangeExtension(fileName, null);
+        }
+        else
+        {
+            extension = DefaultMessageExtension;
         }
 
         return string.IsNullOrWhiteSpace(fileName)
             ? null
-            : $"{MessageRootPath}/{language}/{folder}/{fileName}.dat";
+            : $"{MessageRootPath}/{language}/{folder}/{fileName}{extension}";
     }
 }

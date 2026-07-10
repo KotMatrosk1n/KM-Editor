@@ -243,13 +243,16 @@ internal sealed class ZaTrainersWorkflowService
         var aiFlags = PackAiFlags(trainer);
         var team = ReadTeam(trainer, labels, abilityResolver).ToArray();
         var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
+        var trainerName = labels.TrainerNameFromText(trainer.TrainerId, trainerId)
+            ?? ZaTrainerNameCatalog.ResolveMandatoryTrainerName(team)
+            ?? labels.TrainerName(trainer.TrainerId, trainerId, className);
         var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
             ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"
             : trainer.TrainerId!;
 
         return new ZaTrainerRecord(
             trainerId,
-            labels.TrainerName(trainer.TrainerId, trainerId, className),
+            trainerName,
             classId,
             className,
             location,
