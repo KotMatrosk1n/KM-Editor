@@ -8,6 +8,7 @@ import esResource from './resources/es.json';
 import frResource from './resources/fr.json';
 import ruResource from './resources/ru.json';
 import ukResource from './resources/uk.json';
+import zhResource from './resources/zh.json';
 import {
   LocalizationProvider,
   languageStorageKey,
@@ -394,13 +395,34 @@ describe('LocalizationProvider', () => {
     );
   });
 
+  it('localizes Chinese static and dynamic UI phrases', () => {
+    expect(translateKeyForLanguage('zh', 'settings.language.title')).toBe('语言和本地化');
+    expect(translateKeyForLanguage('zh', 'settings.language.chinese')).toBe('简体中文');
+    expect(translateLiteralForLanguage('zh', 'Settings')).toBe('设置');
+    expect(translateLiteralForLanguage('zh', 'Made by Matroskin')).toBe(
+      '由 Matroskin 制作'
+    );
+    expect(translateLiteralForLanguage('zh', 'Grass / Poison')).toBe('草原 / 中毒');
+    expect(translateLiteralForLanguage('zh', 'Browse for Base RomFS')).toBe('浏览基础RomFS');
+    expect(translateLiteralForLanguage('zh', 'Makes contact. Allowed range: 0-1')).toBe(
+      '接触类. 允许范围: 0-1'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'zh',
+        'Base ExeFS matches selected Pokemon Scarlet title id 0x0100A3D008C5C000.'
+      )
+    ).toBe('基础ExeFS与所选宝可梦 朱标题ID 0x0100A3D008C5C000匹配。');
+  });
+
   it('keeps localized resource keys aligned with the English catalogue', () => {
     const localizedResources = {
       de: deResource,
       es: esResource,
       fr: frResource,
       ru: ruResource,
-      uk: ukResource
+      uk: ukResource,
+      zh: zhResource
     };
 
     const missingEntries = Object.entries(localizedResources).flatMap(([language, resource]) => {
@@ -424,7 +446,8 @@ describe('LocalizationProvider', () => {
       es: esResource.literals,
       fr: frResource.literals,
       ru: ruResource.literals,
-      uk: ukResource.literals
+      uk: ukResource.literals,
+      zh: zhResource.literals
     };
     const requiredLiterals = [
       'Point type',

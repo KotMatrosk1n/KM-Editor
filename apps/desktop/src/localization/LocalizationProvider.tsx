@@ -15,8 +15,9 @@ import esResource from './resources/es.json';
 import frResource from './resources/fr.json';
 import ruResource from './resources/ru.json';
 import ukResource from './resources/uk.json';
+import zhResource from './resources/zh.json';
 
-export type LanguageCode = 'en' | 'es' | 'fr' | 'de' | 'ru' | 'uk';
+export type LanguageCode = 'en' | 'es' | 'fr' | 'de' | 'ru' | 'uk' | 'zh';
 
 type LocalizationParams = Record<string, string | number>;
 type LocalizationResource = {
@@ -59,6 +60,10 @@ export const supportedLanguages = [
   {
     code: 'uk',
     flag: '🇺🇦'
+  },
+  {
+    code: 'zh',
+    flag: '🇨🇳'
   }
 ] as const;
 
@@ -68,7 +73,8 @@ const resourcesByLanguage: Record<LanguageCode, LocalizationResource> = {
   es: esResource,
   fr: frResource,
   ru: ruResource,
-  uk: ukResource
+  uk: ukResource,
+  zh: zhResource
 };
 
 const translatableAttributes = ['aria-label', 'title', 'placeholder', 'alt'] as const;
@@ -1200,7 +1206,8 @@ function isLanguageCode(value: string | null): value is LanguageCode {
     value === 'fr' ||
     value === 'de' ||
     value === 'ru' ||
-    value === 'uk'
+    value === 'uk' ||
+    value === 'zh'
   );
 }
 

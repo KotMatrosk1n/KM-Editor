@@ -22,6 +22,11 @@ internal static class SwShGameTextLanguage
             "de" or "german" => "German",
             "es" or "spanish" => "Spanish",
             "fr" or "french" => "French",
+            "it" or "italian" => "Italian",
+            "ja" or "jp" or "jpn" or "japanese" => "JPN",
+            "ko" or "kr" or "korean" => "Korean",
+            "zh" or "zh-cn" or "zh-hans" or "cn" or "simplifiedchinese" or "simplified_chinese" or "simp_chinese" => "Simp_Chinese",
+            "zh-tw" or "zh-hant" or "tw" or "traditionalchinese" or "traditional_chinese" or "trad_chinese" => "Trad_Chinese",
             _ => English,
         };
     }

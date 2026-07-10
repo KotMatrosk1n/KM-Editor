@@ -29469,7 +29469,8 @@ function SettingsSection({
     es: 'spanish',
     fr: 'french',
     ru: 'russian',
-    uk: 'ukrainian'
+    uk: 'ukrainian',
+    zh: 'chinese'
   };
   const languageOptions = supportedLanguages.map((option) => {
     const languageKey = languageKeyByCode[option.code];

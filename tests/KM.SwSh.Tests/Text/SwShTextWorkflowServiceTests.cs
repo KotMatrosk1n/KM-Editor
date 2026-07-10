@@ -74,28 +74,33 @@ public sealed class SwShTextWorkflowServiceTests
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, entry.Provenance.FileState);
     }
 
-    [Fact]
-    public void LoadUsesSelectedLanguageWhenAvailable()
+    [Theory]
+    [InlineData("fr", "French", "Ligne francaise.")]
+    [InlineData("zh", "Simp_Chinese", "中文行。")]
+    public void LoadUsesSelectedLanguageWhenAvailable(
+        string languageCode,
+        string messageFolder,
+        string expectedValue)
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/story.dat",
             CreateTextTable("English line."));
         temp.WriteBaseRomFsFile(
-            "bin/message/French/common/story.dat",
-            CreateTextTable("Ligne francaise."));
+            $"bin/message/{messageFolder}/common/story.dat",
+            CreateTextTable(expectedValue));
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with
         {
-            GameTextLanguage = "fr",
+            GameTextLanguage = languageCode,
             OutputRootPath = null,
         });
 
         var workflow = new SwShTextWorkflowService().Load(project);
 
         var entry = Assert.Single(workflow.Entries);
-        Assert.Equal("French", entry.Language);
-        Assert.Equal("Ligne francaise.", entry.Value);
+        Assert.Equal(messageFolder, entry.Language);
+        Assert.Equal(expectedValue, entry.Value);
         Assert.Empty(workflow.Diagnostics);
     }
 

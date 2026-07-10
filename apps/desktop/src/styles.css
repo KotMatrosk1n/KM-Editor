@@ -107,6 +107,16 @@ textarea {
   font: inherit;
 }
 
+button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
@@ -159,9 +169,11 @@ textarea {
 
 .game-choice-button {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 10px;
+  max-width: 100%;
   min-height: 56px;
   padding: 0 16px;
   color: var(--color-text);
@@ -170,6 +182,9 @@ textarea {
   border-radius: 8px;
   cursor: pointer;
   font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
 }
 
 .game-choice-button:hover {
@@ -249,6 +264,7 @@ textarea {
 
 .nav-group-button {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-height: 34px;
@@ -260,7 +276,13 @@ textarea {
   cursor: pointer;
   font-size: 13px;
   font-weight: 900;
+  line-height: 1.2;
   text-align: left;
+}
+
+.nav-group-button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .nav-group-button:hover {
@@ -275,6 +297,7 @@ textarea {
 
 .nav-button {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-height: 40px;
@@ -284,7 +307,13 @@ textarea {
   border: 1px solid transparent;
   border-radius: 8px;
   cursor: pointer;
+  line-height: 1.2;
   text-align: left;
+}
+
+.nav-button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .nav-child-button {
@@ -350,7 +379,7 @@ textarea {
 }
 
 .toolbar-wiki-button {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .title-block {
@@ -404,9 +433,11 @@ h2 {
 
 .primary-button {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 40px;
   padding: 0 14px;
   color: var(--color-text);
@@ -414,6 +445,9 @@ h2 {
   border: 1px solid rgb(128 142 255 / 58%);
   border-radius: 8px;
   cursor: pointer;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   box-shadow:
     0 10px 26px rgb(79 70 229 / 22%),
     var(--shadow-inset);
@@ -421,6 +455,14 @@ h2 {
 
 .primary-button:hover {
   background: linear-gradient(135deg, #5d55f0, #7780ff);
+}
+
+.primary-button svg,
+.secondary-button svg,
+.danger-button svg,
+.purple-button svg,
+.game-choice-button svg {
+  flex: 0 0 auto;
 }
 
 .content-grid {
@@ -640,9 +682,11 @@ h2 {
 
 .secondary-button {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 40px;
   padding: 0 14px;
   color: var(--color-text-soft);
@@ -650,6 +694,9 @@ h2 {
   border: 1px solid #31415f;
   border-radius: 8px;
   cursor: pointer;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
 }
 
 .secondary-button:hover {
@@ -658,9 +705,11 @@ h2 {
 
 .danger-button {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 40px;
   padding: 0 14px;
   color: var(--color-danger);
@@ -668,6 +717,9 @@ h2 {
   border: 1px solid #8a3438;
   border-radius: 8px;
   cursor: pointer;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   box-shadow: var(--shadow-inset);
 }
 
@@ -677,9 +729,11 @@ h2 {
 
 .purple-button {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  max-width: 100%;
   min-height: 40px;
   padding: 0 14px;
   color: #f7f0ff;
@@ -687,6 +741,9 @@ h2 {
   border: 1px solid rgb(196 181 253 / 62%);
   border-radius: 8px;
   cursor: pointer;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   box-shadow:
     0 10px 26px rgb(109 40 217 / 24%),
     var(--shadow-inset);
@@ -730,7 +787,7 @@ h2 {
 
 .path-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-height: 36px;
@@ -741,13 +798,18 @@ h2 {
 }
 
 .path-row dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: #d7deea;
   font-weight: 600;
 }
 
 .path-row dd {
+  min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
   font-weight: 700;
+  text-align: right;
 }
 
 .health-grid {
@@ -789,9 +851,12 @@ h2 {
 }
 
 .metric-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: #9aa7bd;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .path-status {
@@ -972,12 +1037,15 @@ h2 {
   min-height: 32px;
   padding: 0 10px;
   font-size: 13px;
+  line-height: 1.2;
 }
 
 .status-pill {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
+  max-width: 100%;
   min-width: 86px;
   min-height: 30px;
   padding: 0 10px;
@@ -985,8 +1053,10 @@ h2 {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 800;
-  line-height: 1;
-  white-space: nowrap;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
 }
 
 .fps-patch-status-row {
@@ -6176,6 +6246,10 @@ button.sv-encounter-condition-row:hover {
   align-items: flex-start;
 }
 
+.settings-subsection-heading > div {
+  min-width: 0;
+}
+
 .settings-subsection-heading svg {
   flex: 0 0 auto;
   color: var(--color-gold);
@@ -6183,12 +6257,16 @@ button.sv-encounter-condition-row:hover {
 }
 
 .settings-subsection-heading h3 {
+  min-width: 0;
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: 16px;
 }
 
 .settings-subsection-heading p {
+  min-width: 0;
   margin: 2px 0 0;
+  overflow-wrap: anywhere;
   color: var(--color-text-muted);
   font-size: 13px;
   font-weight: 700;
@@ -6226,13 +6304,17 @@ button.sv-encounter-condition-row:hover {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
   font-weight: 900;
 }
 
 .sv-cache-mode-option small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   color: var(--color-gold);
   font-size: 11px;
   font-weight: 900;
+  line-height: 1.2;
   text-transform: uppercase;
 }
 
@@ -6242,6 +6324,7 @@ button.sv-encounter-condition-row:hover {
 
 .sv-cache-mode-option p {
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 700;
@@ -6259,7 +6342,7 @@ button.sv-encounter-condition-row:hover {
 
 .language-option {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   min-width: 0;
   min-height: 92px;
@@ -6292,11 +6375,16 @@ button.sv-encounter-condition-row:hover {
 }
 
 .language-option-copy strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 15px;
   font-weight: 900;
+  line-height: 1.2;
 }
 
 .language-option-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 700;
@@ -6307,7 +6395,11 @@ button.sv-encounter-condition-row:hover {
 }
 
 .language-option-selected-label {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
   align-self: start;
+  overflow-wrap: anywhere;
   color: var(--color-gold);
   font-size: 11px;
   font-weight: 900;
