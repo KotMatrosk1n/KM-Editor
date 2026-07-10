@@ -3734,6 +3734,7 @@ describe('bridge contracts', () => {
                   natureLabel: 'Random / game default',
                   shiny: false,
                   slot: 0,
+                  spriteName: 'Bulbasaur',
                   species: 'Bulbasaur',
                   speciesId: 1
                 }

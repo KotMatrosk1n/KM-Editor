@@ -532,6 +532,7 @@ internal sealed class ZaTrainersEditSessionService
             var overlayDiagnostics = new List<ValidationDiagnostic>();
             var source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
             var labels = ZaTextLabelLookup.Load(project, fileSource, overlayDiagnostics, project.Paths);
+            var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, overlayDiagnostics);
             var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, overlayDiagnostics);
             var rows = ReadRows(source.Bytes);
             foreach (var edit in pendingEdits)
@@ -554,7 +555,7 @@ internal sealed class ZaTrainersEditSessionService
 
             var overlaySource = source with { Bytes = WriteRows(rows) };
             var trainersById = ZaTrainersWorkflowService
-                .LoadRecords(overlaySource, labels, abilityResolver)
+                .LoadRecords(overlaySource, labels, spriteLabels, abilityResolver)
                 .ToDictionary(trainer => trainer.TrainerId);
 
             return workflow with

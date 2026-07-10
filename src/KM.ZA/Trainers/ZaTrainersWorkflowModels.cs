@@ -40,6 +40,8 @@ public sealed record ZaTrainerPokemonRecord(
     public IReadOnlyList<ZaTrainerEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaTrainerEditableFieldOption>();
 
+    public string? SpriteName { get; init; }
+
     public ZaTrainerPokemonStatsRecord? BaseStats { get; init; }
 }
 

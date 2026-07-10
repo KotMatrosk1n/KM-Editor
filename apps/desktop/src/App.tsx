@@ -870,6 +870,7 @@ type UpdateCheckStatus =
   | { kind: 'idle'; message: string }
   | { kind: 'installing'; message: string }
   | { kind: 'opening'; message: string }
+  | { kind: 'preparing'; message: string }
   | { kind: 'restarting'; message: string }
   | { kind: 'upToDate'; message: string };
 
@@ -1825,6 +1826,8 @@ export function App({
   const supportsTrinityOutput = isScarletVioletProject || isPokemonLegendsZAProject;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
+  const lastReloadedGameTextLanguageRef = useRef(language);
+  const gameTextLanguageReloadRunRef = useRef(0);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
   const availableWorkflowSectionIds = useMemo(
@@ -3047,13 +3050,36 @@ export function App({
       let contentLength: number | null = null;
 
       setUpdateCheckStatus({
-        contentLength: null,
-        downloadedBytes: 0,
-        kind: 'downloading',
-        message: `Downloading KM Editor v${availableUpdate.version}.`
+        kind: 'preparing',
+        message: 'Clearing local cache.'
       });
 
       try {
+        svCacheWarmupRunRef.current += 1;
+        setIsSvCacheWarming(false);
+        setIsSvCacheClearing(true);
+        try {
+          const [svCacheClear, zaCacheClear] = await Promise.all([
+            bridge.clearSvCache({ activePaths: null }),
+            bridge.clearZaCache({ activePaths: null })
+          ]);
+
+          if (isPokemonLegendsZAGame(selectedGame)) {
+            setSvCacheStatus(zaCacheClear.status);
+          } else if (isScarletVioletGame(selectedGame)) {
+            setSvCacheStatus(svCacheClear.status);
+          }
+        } finally {
+          setIsSvCacheClearing(false);
+        }
+
+        setUpdateCheckStatus({
+          contentLength: null,
+          downloadedBytes: 0,
+          kind: 'downloading',
+          message: `Downloading KM Editor v${availableUpdate.version}.`
+        });
+
         await availableUpdate.nativeUpdate.install((event) => {
           switch (event.event) {
             case 'Started':
@@ -3147,9 +3173,11 @@ export function App({
     }
   }, [
     availableUpdate,
+    bridge,
     desktopServices.isAvailable,
     desktopServices.openExternalUrl,
-    desktopServices.relaunchApp
+    desktopServices.relaunchApp,
+    selectedGame
   ]);
 
   const handleOpenActiveWiki = useCallback(() => {
@@ -7418,20 +7446,25 @@ export function App({
     }
   };
 
-  const refreshLoadedWorkflowsAfterApply = async (paths: ReturnType<typeof toProjectPaths>) => {
+  const refreshLoadedWorkflowsAfterApply = async (
+    paths: ReturnType<typeof toProjectPaths>,
+    canCommitRefresh: () => boolean = () => true
+  ) => {
     const fileGraphResponse = await bridge.refreshFileGraph({ paths });
-    if (openProject) {
+    if (openProject && canCommitRefresh()) {
       setOpenProject({ ...openProject, fileGraph: fileGraphResponse.fileGraph });
     }
 
-    await refreshWorkflows(paths, health?.canOpenEditableWorkflows ?? true);
+    await refreshWorkflows(paths, health?.canOpenEditableWorkflows ?? true, canCommitRefresh);
 
     const reloadTasks: Array<() => Promise<void>> = [];
     if (itemsWorkflow) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadItemsWorkflow({ paths });
-          setItemsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setItemsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7439,7 +7472,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadPokemonWorkflow({ paths });
-          setPokemonWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setPokemonWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7447,7 +7482,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadMovesWorkflow({ paths });
-          setMovesWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setMovesWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7458,7 +7495,9 @@ export function App({
             paths,
             query: createTextWorkflowQuery(selectedGame, textSearchText)
           });
-          setTextWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setTextWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7466,7 +7505,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTrainersWorkflow({ paths });
-          setTrainersWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setTrainersWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7474,7 +7515,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadGiftPokemonWorkflow({ paths });
-          setGiftPokemonWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setGiftPokemonWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7482,7 +7525,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTradePokemonWorkflow({ paths });
-          setTradePokemonWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setTradePokemonWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7490,7 +7535,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadStaticEncountersWorkflow({ paths });
-          setStaticEncountersWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setStaticEncountersWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7498,7 +7545,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRentalPokemonWorkflow({ paths });
-          setRentalPokemonWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setRentalPokemonWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7506,7 +7555,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadDynamaxAdventuresWorkflow({ paths });
-          setDynamaxAdventuresWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setDynamaxAdventuresWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7514,7 +7565,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadShopsWorkflow({ paths });
-          setShopsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setShopsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7522,7 +7575,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadEncountersWorkflow({ paths });
-          setEncountersWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setEncountersWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7530,7 +7585,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTeraRaidsWorkflow({ paths });
-          setTeraRaidsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setTeraRaidsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7538,7 +7595,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRaidBattlesWorkflow({ paths });
-          setRaidBattlesWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setRaidBattlesWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7546,7 +7605,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRaidRewardsWorkflow({ paths });
-          setRaidRewardsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setRaidRewardsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7554,7 +7615,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRaidBonusRewardsWorkflow({ paths });
-          setRaidBonusRewardsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setRaidBonusRewardsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7562,7 +7625,19 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadPlacementWorkflow({ paths });
-          setPlacementWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setPlacementWorkflow(response.workflow);
+          }
+        }
+      );
+    }
+    if (behaviorWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadBehaviorWorkflow({ paths });
+          if (canCommitRefresh()) {
+            setBehaviorWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7570,7 +7645,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadFlagworkSaveWorkflow({ paths });
-          setFlagworkSaveWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setFlagworkSaveWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7578,7 +7655,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadBagHookWorkflow({ paths });
-          setBagHookWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setBagHookWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7586,7 +7665,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadCatchCapWorkflow({ paths });
-          setCatchCapWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setCatchCapWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7594,7 +7675,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadHyperTrainingWorkflow({ paths });
-          setHyperTrainingWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setHyperTrainingWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7602,7 +7685,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadShinyRateWorkflow({ paths });
-          setShinyRateWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setShinyRateWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7610,7 +7695,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTypeChartWorkflow({ paths });
-          setTypeChartWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setTypeChartWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7618,7 +7705,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadFairyGymBoostsWorkflow({ paths });
-          setFairyGymBoostsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setFairyGymBoostsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7626,7 +7715,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadFashionUnlockWorkflow({ paths });
-          setFashionUnlockWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setFashionUnlockWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7634,7 +7725,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadGymUniformRemovalWorkflow({ paths });
-          setGymUniformRemovalWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setGymUniformRemovalWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7642,7 +7735,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadHyperspaceBypassWorkflow({ paths });
-          setHyperspaceBypassWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setHyperspaceBypassWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7650,7 +7745,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadIvScreenWorkflow({ paths });
-          setIvScreenWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setIvScreenWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7658,7 +7755,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadExeFsPatchWorkflow({ paths });
-          setExeFsPatchWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setExeFsPatchWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7666,7 +7765,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRoyalCandyWorkflow({ paths });
-          setRoyalCandyWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setRoyalCandyWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7674,7 +7775,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadStartingItemsWorkflow({ paths });
-          setStartingItemsWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setStartingItemsWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7682,7 +7785,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadNpcItemGiftWorkflow({ paths });
-          setNpcItemGiftWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setNpcItemGiftWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7690,7 +7795,9 @@ export function App({
       reloadTasks.push(
         async () => {
           const response = await bridge.loadSpreadsheetImportWorkflow({ paths });
-          setSpreadsheetImportWorkflow(response.workflow);
+          if (canCommitRefresh()) {
+            setSpreadsheetImportWorkflow(response.workflow);
+          }
         }
       );
     }
@@ -7699,6 +7806,75 @@ export function App({
       await reloadTask();
     }
   };
+
+  useEffect(() => {
+    if (lastReloadedGameTextLanguageRef.current === language) {
+      return;
+    }
+
+    lastReloadedGameTextLanguageRef.current = language;
+
+    const hasLoadedWorkflow =
+      Boolean(itemsWorkflow) ||
+      Boolean(pokemonWorkflow) ||
+      Boolean(movesWorkflow) ||
+      Boolean(textWorkflow) ||
+      Boolean(trainersWorkflow) ||
+      Boolean(giftPokemonWorkflow) ||
+      Boolean(tradePokemonWorkflow) ||
+      Boolean(staticEncountersWorkflow) ||
+      Boolean(rentalPokemonWorkflow) ||
+      Boolean(dynamaxAdventuresWorkflow) ||
+      Boolean(shopsWorkflow) ||
+      Boolean(encountersWorkflow) ||
+      Boolean(teraRaidsWorkflow) ||
+      Boolean(raidBattlesWorkflow) ||
+      Boolean(raidRewardsWorkflow) ||
+      Boolean(raidBonusRewardsWorkflow) ||
+      Boolean(placementWorkflow) ||
+      Boolean(behaviorWorkflow) ||
+      Boolean(flagworkSaveWorkflow) ||
+      Boolean(bagHookWorkflow) ||
+      Boolean(catchCapWorkflow) ||
+      Boolean(hyperTrainingWorkflow) ||
+      Boolean(shinyRateWorkflow) ||
+      Boolean(typeChartWorkflow) ||
+      Boolean(fairyGymBoostsWorkflow) ||
+      Boolean(fashionUnlockWorkflow) ||
+      Boolean(gymUniformRemovalWorkflow) ||
+      Boolean(hyperspaceBypassWorkflow) ||
+      Boolean(ivScreenWorkflow) ||
+      Boolean(exeFsPatchWorkflow) ||
+      Boolean(royalCandyWorkflow) ||
+      Boolean(startingItemsWorkflow) ||
+      Boolean(npcItemGiftWorkflow) ||
+      Boolean(spreadsheetImportWorkflow);
+
+    if (!openProject || projectStatus !== 'open' || !hasLoadedWorkflow) {
+      return;
+    }
+
+    const reloadRun = gameTextLanguageReloadRunRef.current + 1;
+    gameTextLanguageReloadRunRef.current = reloadRun;
+    const canCommitRefresh = () => gameTextLanguageReloadRunRef.current === reloadRun;
+    const paths = toProjectPaths(draftPathsRef.current);
+
+    void (async () => {
+      try {
+        await refreshLoadedWorkflowsAfterApply(paths, canCommitRefresh);
+      } catch (error) {
+        if (canCommitRefresh()) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      }
+    })();
+
+    return () => {
+      if (gameTextLanguageReloadRunRef.current === reloadRun) {
+        gameTextLanguageReloadRunRef.current += 1;
+      }
+    };
+  }, [language]);
 
   const handleApplyChangePlan = async () => {
     if (!editSession || !changePlan) {
@@ -7837,15 +8013,20 @@ export function App({
 
   const refreshWorkflows = async (
     paths: ReturnType<typeof toProjectPaths>,
-    canOpenEditableWorkflows: boolean
+    canOpenEditableWorkflows: boolean,
+    canCommitRefresh: () => boolean = () => true
   ) => {
     if (!canOpenEditableWorkflows) {
-      setWorkflows([]);
+      if (canCommitRefresh()) {
+        setWorkflows([]);
+      }
       return;
     }
 
     const response = await bridge.listWorkflows({ paths });
-    setWorkflows(getGameScopedWorkflowSummaries(response.workflows, paths.selectedGame));
+    if (canCommitRefresh()) {
+      setWorkflows(getGameScopedWorkflowSummaries(response.workflows, paths.selectedGame));
+    }
   };
 
   const handleSelectGame = useCallback(
@@ -13637,6 +13818,14 @@ function SelectedTrainerPanel({
                         pokemon.speciesId,
                         editorFamily
                       );
+                  const pokemonSpriteLabel = isEmptySlot
+                    ? 'None'
+                    : formatSpeciesFormLabel(
+                        pokemon.spriteName ?? pokemon.species,
+                        pokemon.form,
+                        pokemon.speciesId,
+                        editorFamily
+                      );
                   const slotLabel = `Slot ${formatTrainerSlotNumber(pokemon.slot, editorFamily)}`;
 
                   return (
@@ -13647,7 +13836,10 @@ function SelectedTrainerPanel({
                       onClick={() => onSelectSlot(pokemon.slot)}
                       type="button"
                     >
-                      <PokemonSprite className="trainer-party-sprite" name={isEmptySlot ? 'None' : pokemonLabel} />
+                      <PokemonSprite
+                        className="trainer-party-sprite"
+                        name={pokemonSpriteLabel}
+                      />
                       <strong>{isEmptySlot ? slotLabel : pokemonLabel}</strong>
                       <span>{isEmptySlot ? 'None' : `Lv. ${pokemon.level}`}</span>
                     </button>
@@ -30180,8 +30372,16 @@ function UpdatePromptModal({
     status.kind === 'downloading' ||
     status.kind === 'installing' ||
     status.kind === 'opening' ||
+    status.kind === 'preparing' ||
     status.kind === 'restarting';
-  const isProgressVisible = status.kind === 'downloading' || status.kind === 'installing';
+  const isProgressVisible =
+    status.kind === 'downloading' || status.kind === 'installing' || status.kind === 'preparing';
+  const progressTitle =
+    status.kind === 'preparing'
+      ? 'Preparing update'
+      : status.kind === 'installing'
+        ? 'Installing update'
+        : 'Downloading update';
   const downloadContentLength =
     status.kind === 'downloading' && status.contentLength !== null && status.contentLength > 0
       ? status.contentLength
@@ -30220,9 +30420,7 @@ function UpdatePromptModal({
         {isProgressVisible ? (
           <div className="update-progress-panel" role="status">
             <div className="update-progress-header">
-              <strong>
-                {status.kind === 'installing' ? 'Installing update' : 'Downloading update'}
-              </strong>
+              <strong>{progressTitle}</strong>
               {downloadPercent !== null ? <span>{downloadPercent}%</span> : null}
             </div>
             <div
@@ -30266,7 +30464,9 @@ function UpdatePromptModal({
             <span>
               {isApplying
                 ? isNativeUpdate
-                  ? 'Installing'
+                  ? status.kind === 'preparing'
+                    ? 'Preparing'
+                    : 'Installing'
                   : 'Opening'
                 : isNativeUpdate
                   ? 'Install Update'
