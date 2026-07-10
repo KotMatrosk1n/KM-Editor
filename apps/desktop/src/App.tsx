@@ -15897,6 +15897,10 @@ function getItemEditableFieldGroup(field: ItemEditableField) {
     return 'Bag Metadata';
   }
 
+  if (field.valueKind === 'boolean') {
+    return 'Use Flags';
+  }
+
   if (
     fieldName.includes('heal') ||
     fieldName.startsWith('ev') ||
@@ -15904,10 +15908,6 @@ function getItemEditableFieldGroup(field: ItemEditableField) {
     fieldName.includes('pp')
   ) {
     return 'Use Effects';
-  }
-
-  if (field.valueKind === 'boolean') {
-    return 'Use Flags';
   }
 
   return 'Item Data';
