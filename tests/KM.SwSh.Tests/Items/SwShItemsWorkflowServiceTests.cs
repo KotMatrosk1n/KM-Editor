@@ -112,24 +112,30 @@ public sealed class SwShItemsWorkflowServiceTests
         Assert.Empty(workflow.Diagnostics);
     }
 
-    [Fact]
-    public void LoadUsesSelectedLanguageItemNamesWhenAvailable()
+    [Theory]
+    [InlineData("es", "Spanish", "Pocion")]
+    [InlineData("zh", "Simp_Chinese", "伤药")]
+    [InlineData("zh-Hant", "Trad_Chinese", "傷藥")]
+    public void LoadUsesSelectedLanguageItemNamesWhenAvailable(
+        string languageCode,
+        string messageFolder,
+        string expectedItemName)
     {
         using var temp = TemporarySwShProject.Create();
         WriteBaseItems(temp);
         temp.WriteBaseRomFsFile(
-            "bin/message/Spanish/common/itemname.dat",
-            SwShItemTestFixtures.CreateItemNames("Ninguno", "Pocion", "Antidoto"));
+            $"bin/message/{messageFolder}/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames("None", expectedItemName, "Antidote"));
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with
         {
-            GameTextLanguage = "es",
+            GameTextLanguage = languageCode,
             OutputRootPath = null,
         });
 
         var workflow = new SwShItemsWorkflowService().Load(project);
 
-        Assert.Equal("Pocion", workflow.Items[1].Name);
+        Assert.Equal(expectedItemName, workflow.Items[1].Name);
         Assert.Empty(workflow.Diagnostics);
     }
 
