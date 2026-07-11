@@ -183,37 +183,11 @@ internal sealed class ZaPokemonWorkflowService
         .Select(value => new ZaPokemonEditableFieldOption(value, value.ToString(CultureInfo.InvariantCulture)))
         .ToArray();
 
-    private static readonly IReadOnlyDictionary<int, int> EvolutionItemParameterItemIds = new Dictionary<int, int>
-    {
-        [1] = 80,
-        [2] = 81,
-        [3] = 82,
-        [4] = 83,
-        [5] = 84,
-        [6] = 85,
-        [7] = 107,
-        [8] = 108,
-        [9] = 110,
-        [49] = 326,
-        [50] = 327,
-        [52] = 849,
-        [79] = 1116,
-        [80] = 1117,
-        [81] = 1253,
-        [82] = 1254,
-        [83] = 1582,
-        [84] = 1592,
-        [85] = 2344,
-        [86] = 1861,
-        [88] = 1857,
-        [89] = 1858,
-        [93] = 109,
-        [94] = 2403,
-        [95] = 2404,
-        [96] = 2402,
-        [119] = 2482,
-        [1691] = 1691,
-    };
+    private static readonly IReadOnlyList<int> DefaultEvolutionItemIds =
+    [
+        80, 81, 82, 83, 84, 85, 107, 108, 109, 110, 326, 327, 849, 1116, 1117,
+        1253, 1254, 1582, 1592, 1691, 1857, 1858, 1861, 2344, 2402, 2403, 2404, 2482,
+    ];
 
     private static readonly IReadOnlyList<EvolutionMethodDefinition> EvolutionMethods =
     [
@@ -368,11 +342,9 @@ internal sealed class ZaPokemonWorkflowService
                     continue;
                 }
 
-                if (item.WorkEvolutional
-                    && item.Id > 0
-                    && !EvolutionItemParameterItemIds.Values.Contains(item.Id))
+                if (item.WorkEvolutional && item.Id > 0)
                 {
-                    AddEditedEvolutionItemArgumentLabel(argumentLabels, item.Id, labels.Item(item.Id));
+                    argumentLabels[item.Id] = labels.Item(item.Id);
                 }
             }
         }
@@ -389,37 +361,11 @@ internal sealed class ZaPokemonWorkflowService
         return argumentLabels;
     }
 
-    private static void AddEditedEvolutionItemArgumentLabel(
-        Dictionary<int, string> argumentLabels,
-        int argument,
-        string label)
-    {
-        if (string.IsNullOrWhiteSpace(label))
-        {
-            return;
-        }
-
-        if (!argumentLabels.TryGetValue(argument, out var existingLabel)
-            || string.IsNullOrWhiteSpace(existingLabel))
-        {
-            argumentLabels[argument] = label;
-            return;
-        }
-
-        var existingParts = existingLabel.Split(" / ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (existingParts.Contains(label, StringComparer.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        argumentLabels[argument] = $"{label} / {existingLabel}";
-    }
-
     private static Dictionary<int, string> CreateDefaultEvolutionItemArgumentLabels(ZaTextLabelLookup labels)
     {
-        return EvolutionItemParameterItemIds.ToDictionary(
-            entry => entry.Key,
-            entry => labels.Item(entry.Value));
+        return DefaultEvolutionItemIds.ToDictionary(
+            itemId => itemId,
+            labels.Item);
     }
 
     private static IEnumerable<ZaPokemonRecord> LoadRecords(
@@ -825,7 +771,7 @@ internal sealed class ZaPokemonWorkflowService
     {
         return method.ArgumentKind switch
         {
-            EvolutionArgumentKindItem => IsEvolutionItemParameterMethod(method.Value) ? evolutionItemOptions : itemOptions,
+            EvolutionArgumentKindItem => IsUseItemEvolutionMethod(method.Value) ? evolutionItemOptions : itemOptions,
             EvolutionArgumentKindMove => moveOptions,
             EvolutionArgumentKindSpecies => speciesOptions,
             EvolutionArgumentKindType => TypeOptions,
@@ -842,7 +788,7 @@ internal sealed class ZaPokemonWorkflowService
         return evolutionItemArgumentLabels.Keys
             .Concat(pokemon
                 .SelectMany(record => record.Evolutions)
-                .Where(evolution => IsEvolutionItemParameterMethod(evolution.Method) && evolution.Argument > 0)
+                .Where(evolution => IsUseItemEvolutionMethod(evolution.Method) && evolution.Argument > 0)
                 .Select(evolution => evolution.Argument))
             .Distinct()
             .OrderBy(value => value)
@@ -887,7 +833,7 @@ internal sealed class ZaPokemonWorkflowService
     {
         return method.ArgumentKind switch
         {
-            EvolutionArgumentKindItem => IsEvolutionItemParameterMethod(method.Value)
+            EvolutionArgumentKindItem => IsUseItemEvolutionMethod(method.Value)
                 ? FormatEvolutionItemArgument(argument, labels, evolutionItemArgumentLabels)
                 : argument == 0
                     ? "None"
@@ -915,12 +861,10 @@ internal sealed class ZaPokemonWorkflowService
             return itemLabel;
         }
 
-        return EvolutionItemParameterItemIds.TryGetValue(argument, out var itemId)
-            ? labels.Item(itemId)
-            : labels.Item(argument);
+        return labels.Item(argument);
     }
 
-    private static bool IsEvolutionItemParameterMethod(int method)
+    private static bool IsUseItemEvolutionMethod(int method)
     {
         return method is 8 or 17 or 18 or 42;
     }

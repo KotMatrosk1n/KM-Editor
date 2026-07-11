@@ -246,7 +246,8 @@ internal sealed class ZaTrainersWorkflowService
         var aiFlags = PackAiFlags(trainer);
         var team = ReadTeam(trainer, labels, spriteLabels, abilityResolver).ToArray();
         var (classId, className) = labels.TrainerTypeByHash(trainer.TrainerType, trainer.TrainerType2);
-        var trainerName = ZaTrainerNameCatalog.IsHyperspaceTrainer(trainer.TrainerId)
+        var isHyperspaceTrainer = ZaTrainerNameCatalog.IsHyperspaceTrainer(trainer.TrainerId);
+        var trainerName = isHyperspaceTrainer
             ? ZaLabels.FormatTrainerIdForLookup(trainer.TrainerId!, className)
             : labels.TrainerNameFromText(trainer.TrainerId, trainerId)
                 ?? labels.TrainerNameFromKeys(ZaTrainerNameCatalog.ResolveTrainerNameKeys(trainer.TrainerId))
@@ -254,6 +255,11 @@ internal sealed class ZaTrainersWorkflowService
                     trainer.TrainerId ?? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}",
                     className);
         trainerName = ZaTextLabelLookup.NormalizeTrainerName(trainerName, className);
+        if (isHyperspaceTrainer
+            && labels.HyperspaceTrainerClassFromText(trainer.TrainerId) is { } trainerArchetype)
+        {
+            className = trainerArchetype;
+        }
         var location = string.IsNullOrWhiteSpace(trainer.TrainerId)
             ? $"Trainer {trainerId.ToString(CultureInfo.InvariantCulture)}"
             : trainer.TrainerId!;

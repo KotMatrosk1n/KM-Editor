@@ -240,6 +240,7 @@ type WorkbenchState = {
   setPokemonWorkflow: (pokemonWorkflow: PokemonWorkflow) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
+  resetProjectSession: () => void;
   setTeraRaidSearchText: (teraRaidSearchText: string) => void;
   setTeraRaidsWorkflow: (teraRaidsWorkflow: TeraRaidsWorkflow) => void;
   setRaidBattleSearchText: (raidBattleSearchText: string) => void;
@@ -854,6 +855,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  resetProjectSession: () => set(createProjectSessionResetState()),
   setSelectedTeraRaidRecordId: (selectedTeraRaidRecordId) =>
     set({ selectedTeraRaidRecordId }),
   setSelectedRaidBattleTableId: (selectedRaidBattleTableId) =>

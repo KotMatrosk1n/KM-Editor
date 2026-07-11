@@ -5,6 +5,25 @@ import { type PokemonWorkflow } from './bridge/contracts';
 import { useWorkbenchStore } from './workbenchStore';
 
 describe('workbench store', () => {
+  it('clears every store-owned workflow when the project session resets', () => {
+    const state = useWorkbenchStore.getState();
+    const workflowKeys = Object.keys(state).filter(
+      (key) => key.endsWith('Workflow') && !key.startsWith('set')
+    );
+    const loadedMarker = { loadedFromOldOutputRoot: true };
+    const loadedWorkflows = Object.fromEntries(
+      workflowKeys.map((key) => [key, loadedMarker])
+    );
+
+    useWorkbenchStore.setState(loadedWorkflows as never);
+    useWorkbenchStore.getState().resetProjectSession();
+
+    for (const key of workflowKeys) {
+      expect(useWorkbenchStore.getState()[key as keyof ReturnType<typeof useWorkbenchStore.getState>])
+        .toBeNull();
+    }
+  });
+
   it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
     useWorkbenchStore.setState({
       activeSection: 'health',

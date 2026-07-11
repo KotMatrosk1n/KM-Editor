@@ -1712,6 +1712,7 @@ export function App({
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
   const setMovesWorkflow = useWorkbenchStore((state) => state.setMovesWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
+  const resetProjectSession = useWorkbenchStore((state) => state.resetProjectSession);
   const setBehaviorSearchText = useWorkbenchStore((state) => state.setBehaviorSearchText);
   const setBehaviorWorkflow = useWorkbenchStore((state) => state.setBehaviorWorkflow);
   const setPlacementSearchText = useWorkbenchStore((state) => state.setPlacementSearchText);
@@ -2151,43 +2152,7 @@ export function App({
   const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: createProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
 
   const clearLoadedWorkflowData = useCallback(() => {
-    useWorkbenchStore.setState({
-      bagHookWorkflow: null,
-      catchCapWorkflow: null,
-      hyperTrainingWorkflow: null,
-      shinyRateWorkflow: null,
-      typeChartWorkflow: null,
-      fairyGymBoostsWorkflow: null,
-      fashionUnlockWorkflow: null,
-      gymUniformRemovalWorkflow: null,
-      hyperspaceBypassWorkflow: null,
-      ivScreenWorkflow: null,
-      dynamaxAdventuresWorkflow: null,
-      encountersWorkflow: null,
-      exeFsPatchWorkflow: null,
-      flagworkSaveWorkflow: null,
-      giftPokemonWorkflow: null,
-      itemsWorkflow: null,
-      movesWorkflow: null,
-      behaviorWorkflow: null,
-      placementWorkflow: null,
-      pokemonWorkflow: null,
-      teraRaidsWorkflow: null,
-      raidBattlesWorkflow: null,
-      raidRewardsWorkflow: null,
-      raidBonusRewardsWorkflow: null,
-      rentalPokemonWorkflow: null,
-      royalCandyWorkflow: null,
-      startingItemsWorkflow: null,
-      npcItemGiftWorkflow: null,
-      shopsWorkflow: null,
-      spreadsheetImportPreview: null,
-      spreadsheetImportWorkflow: null,
-      staticEncountersWorkflow: null,
-      textWorkflow: null,
-      tradePokemonWorkflow: null,
-      trainersWorkflow: null
-    });
+    resetProjectSession();
     setSvModMergerWorkflow(null);
     setSvModMergerPreview(null);
     setSvModMergerApplyResult(null);
@@ -2196,13 +2161,19 @@ export function App({
     setZaModMergerPreview(null);
     setZaModMergerApplyResult(null);
     setZaModSources([]);
+    setModMergerWorkflow(null);
+    setModMergerPreview(null);
+    setModMergerApplyResult(null);
+    setModMergerSelectedDirectory1Files(new Set());
+    setModMergerSelectedDirectory2Files(new Set());
+    setModMergerResolutions({});
     setFpsPatchStatus(null);
     setProfanityFilterStatus(null);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
     clearScopedEditorPanelState();
     clearDynamaxAdventurePanelState();
-  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState]);
+  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, resetProjectSession]);
 
   const clearLoadedGameTextWorkflowData = useCallback(() => {
     useWorkbenchStore.setState({
@@ -2259,6 +2230,14 @@ export function App({
     clearDynamaxAdventurePanelState();
     setEditorDraftDirtySections(new Set());
   }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
+
+  const resetLoadedProjectState = useCallback(() => {
+    svCacheWarmupRunRef.current += 1;
+    setIsSvCacheWarming(false);
+    setSvCacheStatus(null);
+    clearPendingEditState();
+    clearLoadedWorkflowData();
+  }, [clearLoadedWorkflowData, clearPendingEditState]);
 
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
@@ -2750,8 +2729,8 @@ export function App({
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(draftPaths);
       }
+      resetLoadedProjectState();
       setProjectHealth(response.health);
-      setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
       void startSvCacheWarmup(paths, response.health);
     } catch (error) {
@@ -2915,8 +2894,8 @@ export function App({
           outputRootPath
         });
       }
+      resetLoadedProjectState();
       setProjectHealth(nextResponse.health);
-      setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(nextPaths, nextResponse.health.canOpenEditableWorkflows);
       void startSvCacheWarmup(nextPaths, nextResponse.health);
     } catch (error) {
@@ -2984,8 +2963,8 @@ export function App({
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(nextDraftPaths);
       }
+      resetLoadedProjectState();
       setProjectHealth(response.health);
-      setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
       void startSvCacheWarmup(paths, response.health);
       setBridgeDiagnostics([
