@@ -2,9 +2,6 @@ name: Validation
 
 on:
   pull_request:
-  push:
-    branches:
-      - master
   workflow_dispatch:
   schedule:
     - cron: "17 9 * * *"
@@ -40,18 +37,13 @@ jobs:
             desktop: false
             backend: true
             restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
-          - name: Sword and Shield Royal Candy cleanup hooks
-            shard: swsh-hooks-royal-cleanup
+          - name: Sword and Shield other cleanup hooks
+            shard: swsh-hooks-other-cleanup
             desktop: false
             backend: true
             restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
-          - name: Sword and Shield Royal Candy behavior hooks
-            shard: swsh-hooks-royal-behavior
-            desktop: false
-            backend: true
-            restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
-          - name: Sword and Shield remaining hooks
-            shard: swsh-hooks-other
+          - name: Sword and Shield other behavior hooks
+            shard: swsh-hooks-other-behavior
             desktop: false
             backend: true
             restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
