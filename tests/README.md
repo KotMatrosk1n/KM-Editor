@@ -45,7 +45,8 @@ Run an individual CI-equivalent shard with:
 pnpm test:shard desktop
 pnpm test:shard core-formats
 pnpm test:shard swsh-general
-pnpm test:shard swsh-hooks
+pnpm test:shard swsh-hooks-royal
+pnpm test:shard swsh-hooks-other
 pnpm test:shard integration-sv
 pnpm test:shard integration-za
 pnpm test:shard integration-bridge

@@ -40,8 +40,13 @@ jobs:
             desktop: false
             backend: true
             restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
-          - name: Sword and Shield hooks
-            shard: swsh-hooks
+          - name: Sword and Shield Royal Candy hooks
+            shard: swsh-hooks-royal
+            desktop: false
+            backend: true
+            restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
+          - name: Sword and Shield remaining hooks
+            shard: swsh-hooks-other
             desktop: false
             backend: true
             restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj

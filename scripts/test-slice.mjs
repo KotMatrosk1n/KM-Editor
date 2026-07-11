@@ -334,6 +334,22 @@ function addShardCommands(shard) {
     return;
   }
 
+  if (shard === 'swsh-hooks-royal') {
+    add('swsh-hooks-royal', 'Run Royal Candy hook coexistence tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-other') {
+    add('swsh-hooks-other', 'Run remaining hook coexistence tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+    ));
+    return;
+  }
+
   if (shard === 'integration-sv') {
     add('integration-sv', 'Run Scarlet and Violet integration tests', dotnetProject(
       'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
