@@ -78,7 +78,16 @@ public sealed class ScarletVioletBridgeTests
         SvDataPaths.VisibleItemSceneBlueberryViolet,
     ];
 
-    public static IEnumerable<object[]> ScarletVioletGames()
+    private static readonly Lazy<ScarletFixtureSet> ScarletFixtures = new(
+        CreateScarletFixtureSet,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    public static IEnumerable<object[]> RepresentativeScarletVioletGame()
+    {
+        yield return [ProjectGameDto.Scarlet, ScarletTitleId];
+    }
+
+    public static IEnumerable<object[]> ScarletVioletBuilds()
     {
         yield return [ProjectGameDto.Scarlet, ScarletTitleId];
         yield return [ProjectGameDto.Violet, VioletTitleId];
@@ -171,7 +180,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletProjectRoutesHiddenBridgeEditorsAndAppliesLooseOutputs(
         ProjectGameDto game,
         ulong titleId)
@@ -179,7 +188,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var itemsSession = UpdateItem(dispatcher, paths, itemId: 1, field: "buyPrice", value: "777");
         Apply(dispatcher, paths, itemsSession);
@@ -234,7 +243,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletChangePlansCanOutputForTrinityModManager(
         ProjectGameDto game,
         ulong titleId)
@@ -242,7 +251,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
         var session = UpdateItem(dispatcher, paths, itemId: 1, field: "buyPrice", value: "888");
 
         var plan = Dispatch<CreateChangePlanResponse>(
@@ -280,7 +289,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletShopOutputsRespectAllRomFsOutputModes(
         ProjectGameDto game,
         ulong titleId)
@@ -295,7 +304,7 @@ public sealed class ScarletVioletBridgeTests
             using var temp = CreateScarletVioletProject(titleId);
             WriteScarletFixtures(temp);
             var paths = temp.Paths with { SelectedGame = game };
-            var dispatcher = new ProjectBridgeDispatcher();
+            var dispatcher = CreateDispatcherWithSvCache(temp);
             var session = UpdateShop(dispatcher, paths, "lineup:shop_00_lineup", slot: 1, field: "itemId", value: "4");
 
             var plan = Dispatch<CreateChangePlanResponse>(
@@ -348,7 +357,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletChangePlansCanOutputForTrinityBypass(
         ProjectGameDto game,
         ulong titleId)
@@ -356,7 +365,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
         var session = UpdateItem(dispatcher, paths, itemId: 1, field: "buyPrice", value: "889");
 
         var plan = Dispatch<CreateChangePlanResponse>(
@@ -397,7 +406,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletGiftPokemonLoadsStagesAndOutputsForTrinityModManager(
         ProjectGameDto game,
         ulong titleId)
@@ -405,7 +414,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadGiftPokemonWorkflowResponse>(
             dispatcher,
@@ -460,7 +469,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletGiftPokemonPendingSpeciesEditsRefreshPreviewLabelsAndDerivedFields(
         ProjectGameDto game,
         ulong titleId)
@@ -468,7 +477,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadGiftPokemonWorkflowResponse>(
             dispatcher,
@@ -515,7 +524,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTradePokemonLoadsStagesAndOutputsForTrinityModManager(
         ProjectGameDto game,
         ulong titleId)
@@ -523,7 +532,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadTradePokemonWorkflowResponse>(
             dispatcher,
@@ -599,7 +608,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTradePokemonPendingSpeciesEditsRefreshPreviewLabelsAndDerivedFields(
         ProjectGameDto game,
         ulong titleId)
@@ -607,7 +616,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadTradePokemonWorkflowResponse>(
             dispatcher,
@@ -675,7 +684,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(ScarletVioletBuilds))]
     public void ScarletVioletHyperspaceBypassStagesStandaloneMainAndRejectsTrinityOutput(
         ProjectGameDto game,
         ulong titleId)
@@ -683,7 +692,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         temp.WriteBaseExeFsFile("main", SvHyperspaceBypassBridgeFixtures.CreateCompatibleMain(game));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var load = Dispatch<LoadHyperspaceBypassWorkflowResponse>(
             dispatcher,
@@ -798,7 +807,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(ScarletVioletBuilds))]
     public void ScarletVioletFashionUnlockStagesStandaloneMainAndRejectsTrinityOutput(
         ProjectGameDto game,
         ulong titleId)
@@ -806,7 +815,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         temp.WriteBaseExeFsFile("main", SvFashionUnlockBridgeFixtures.CreateCompatibleMain(game));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var load = Dispatch<LoadFashionUnlockWorkflowResponse>(
             dispatcher,
@@ -928,7 +937,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(ScarletVioletBuilds))]
     public void ScarletVioletFashionUnlockUninstallPreservesOtherExeFsEdits(
         ProjectGameDto game,
         ulong titleId)
@@ -936,7 +945,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         temp.WriteBaseExeFsFile("main", SvFashionUnlockBridgeFixtures.CreateCompatibleMain(game));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var hyperspaceStage = Dispatch<StageHyperspaceBypassInstallResponse>(
             dispatcher,
@@ -1013,7 +1022,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletNormalEditorsCanShareOnePendingEditSession(
         ProjectGameDto game,
         ulong titleId)
@@ -1021,7 +1030,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var session = UpdatePokemonField(dispatcher, paths, personalId: 1, field: "hp", value: "47");
         session = UpdateItem(dispatcher, paths, session, itemId: 1, field: "buyPrice", value: "999");
@@ -1060,7 +1069,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletBatchFieldCommandsSharePendingEditSession(
         ProjectGameDto game,
         ulong titleId)
@@ -1068,7 +1077,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var itemBatch = Dispatch<UpdateItemFieldsResponse>(
             dispatcher,
@@ -1274,16 +1283,15 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTrainerEditorAllowsClearingAndFillingExposedPartySlots(
         ProjectGameDto game,
         ulong titleId)
     {
-        var dispatcher = new ProjectBridgeDispatcher();
-
         using (var temp = CreateScarletVioletProject(titleId))
         {
             WriteScarletFixtures(temp);
+            var dispatcher = CreateDispatcherWithSvCache(temp);
             var paths = temp.Paths with { SelectedGame = game };
 
             var clear = Dispatch<UpdateTrainerFieldResponse>(
@@ -1309,6 +1317,7 @@ public sealed class ScarletVioletBridgeTests
         using (var temp = CreateScarletVioletProject(titleId))
         {
             WriteScarletFixtures(temp);
+            var dispatcher = CreateDispatcherWithSvCache(temp);
             var paths = temp.Paths with { SelectedGame = game };
 
             var fillSession = UpdateTrainer(dispatcher, paths, trainerId: 0, slot: 1, field: "speciesId", value: "2");
@@ -1321,7 +1330,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTrainerEditorRejectsPartySlotGaps(
         ProjectGameDto game,
         ulong titleId)
@@ -1329,7 +1338,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var response = Dispatch<UpdateTrainerFieldResponse>(
             dispatcher,
@@ -1346,7 +1355,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTrainerEditorRejectsEditingEmptyPartySlotDetails(
         ProjectGameDto game,
         ulong titleId)
@@ -1354,7 +1363,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var response = Dispatch<UpdateTrainerFieldResponse>(
             dispatcher,
@@ -1371,7 +1380,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletProjectExposesBasicEditorWorkflows(
         ProjectGameDto game,
         ulong titleId)
@@ -1381,7 +1390,7 @@ public sealed class ScarletVioletBridgeTests
         var paths = temp.Paths with { SelectedGame = game };
 
         var response = Dispatch<ListWorkflowsResponse>(
-            new ProjectBridgeDispatcher(),
+            CreateDispatcherWithSvCache(temp),
             KmCommandNames.ListWorkflows,
             new ListWorkflowsRequest(paths),
             "request-sv-workflows");
@@ -1411,7 +1420,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletProjectLoadsAndPreviewsDumpImporter(
         ProjectGameDto game,
         ulong titleId)
@@ -1419,7 +1428,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadSpreadsheetImportWorkflowResponse>(
             dispatcher,
@@ -1464,7 +1473,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletDumpImporterRejectsConflictingStoredPriceColumns(
         ProjectGameDto game,
         ulong titleId)
@@ -1472,7 +1481,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
         var sourcePath = Path.Combine(temp.RootPath, "sv-conflicting-items.csv");
         File.WriteAllText(
             sourcePath,
@@ -1498,7 +1507,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletProjectLoadsAndStagesTeraRaidsWorkflow(
         ProjectGameDto game,
         ulong titleId)
@@ -1506,7 +1515,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadTeraRaidsWorkflowResponse>(
             dispatcher,
@@ -1585,7 +1594,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletProjectLoadsEnglishMessageLabels(
         ProjectGameDto game,
         ulong titleId)
@@ -1593,7 +1602,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -1897,7 +1906,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletUngroupedTechnicalMachinesUseReadableLabelsAndRemainEditable(
         ProjectGameDto game,
         ulong titleId)
@@ -1911,7 +1920,7 @@ public sealed class ScarletVioletBridgeTests
             SvDataPaths.EnglishMoveNames,
             CreateTextTable(407, (45, "Growl"), (406, "Dragon Pulse")));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var items = Dispatch<LoadItemsWorkflowResponse>(
             dispatcher,
@@ -1949,7 +1958,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletItemEditWritesEvolutionItemFlag(
         ProjectGameDto game,
         ulong titleId)
@@ -1957,7 +1966,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var items = Dispatch<LoadItemsWorkflowResponse>(
             dispatcher,
@@ -2006,7 +2015,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletEvolutionItemParametersUseItemLabels(
         ProjectGameDto game,
         ulong titleId)
@@ -2029,7 +2038,7 @@ public sealed class ScarletVioletBridgeTests
                 (81, "Moon Stone"),
                 (2482, "Metal Alloy")));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -2054,7 +2063,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletHeldItemEvolutionParametersUseHeldItemLabels(
         ProjectGameDto game,
         ulong titleId)
@@ -2072,7 +2081,7 @@ public sealed class ScarletVioletBridgeTests
                 (81, "Moon Stone"),
                 (2482, "Metal Alloy")));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -2100,7 +2109,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletEvolutionConditionArgumentsUseNamedValues(
         ProjectGameDto game,
         ulong titleId)
@@ -2111,7 +2120,7 @@ public sealed class ScarletVioletBridgeTests
             SvDataPaths.PersonalArray,
             CreatePersonalArray(evolutionCondition: 31, evolutionParameter: 1));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -2160,7 +2169,7 @@ public sealed class ScarletVioletBridgeTests
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishMoveDescriptions,
             CreateTextTable(247, (246, "The user attacks with a prehistoric power.")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var moves = Dispatch<LoadMovesWorkflowResponse>(
             dispatcher,
@@ -2201,7 +2210,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTextEditorLoadsAllMessageFiles(
         ProjectGameDto game,
         ulong titleId)
@@ -2238,7 +2247,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTextEditorSupportsBoundedSearchQueries(
         ProjectGameDto game,
         ulong titleId)
@@ -2281,7 +2290,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletTextEditorStagesAndAppliesMessageEdits(
         ProjectGameDto game,
         ulong titleId)
@@ -2340,7 +2349,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletGameDumpWritesWorkflowParityCategoryFiles(
         ProjectGameDto game,
         ulong titleId)
@@ -2409,7 +2418,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPokemonLearnsetsDisplayEvolutionSentinelAndPreserveRawLevel(
         ProjectGameDto game,
         ulong titleId)
@@ -2418,7 +2427,7 @@ public sealed class ScarletVioletBridgeTests
         WriteScarletFixtures(temp);
         WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArrayWithLevelupMoves((33, 253), (45, 1)));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var loaded = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -2449,7 +2458,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPlacementAlcremieSweetOnlyEditsAlcremieFixedSymbols(
         ProjectGameDto game,
         ulong titleId)
@@ -2457,7 +2466,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
             dispatcher,
@@ -2497,7 +2506,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPlacementFixedSymbolsResolveDefaultMovesBeforeManualMoveEdits(
         ProjectGameDto game,
         ulong titleId)
@@ -2509,7 +2518,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal(4, personalTable.Entry(1)!.Value.LevelupMovesLength);
         WriteSvOutput(temp, SvDataPaths.PersonalArray, personalBytes);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
             dispatcher,
@@ -2536,7 +2545,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPlacementHiddenItemsStageAndApplyItemSlots(
         ProjectGameDto game,
         ulong titleId)
@@ -2548,7 +2557,7 @@ public sealed class ScarletVioletBridgeTests
             SvDataPaths.HiddenItemDataTableSu1Array,
             CreateHiddenItemDataTableArray(tableId: "kitakami_hidden", firstItemId: 4, firstEmergePercent: 80, firstDropCount: 3));
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var placement = Dispatch<LoadPlacementWorkflowResponse>(
             dispatcher,
@@ -2590,7 +2599,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPlacementLoadsVisibleItemScenePoints(
         ProjectGameDto game,
         ulong titleId)
@@ -2598,7 +2607,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var placement = Dispatch<LoadPlacementWorkflowResponse>(
             dispatcher,
@@ -2639,7 +2648,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPlacementVisibleItemsStageAndApplySceneItemFields(
         ProjectGameDto game,
         ulong titleId)
@@ -2647,7 +2656,7 @@ public sealed class ScarletVioletBridgeTests
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var placement = Dispatch<LoadPlacementWorkflowResponse>(
             dispatcher,
@@ -2677,7 +2686,7 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(ScarletVioletGames))]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletPokemonBaseExperienceAndYieldButtonsUsePersonalTableSemantics(
         ProjectGameDto game,
         ulong titleId)
@@ -2686,7 +2695,7 @@ public sealed class ScarletVioletBridgeTests
         WriteScarletFixtures(temp);
         temp.WriteBaseRomFsFile(SvDataPaths.PersonalArray, CreatePersonalArray());
         var paths = temp.Paths with { SelectedGame = game };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var baseExpSession = UpdatePokemonField(dispatcher, paths, personalId: 1, field: "baseExperience", value: "64");
         Apply(dispatcher, paths, baseExpSession);
@@ -2738,7 +2747,7 @@ public sealed class ScarletVioletBridgeTests
         var paths = temp.Paths with { SelectedGame = game };
 
         var encounters = Dispatch<LoadEncountersWorkflowResponse>(
-            new ProjectBridgeDispatcher(),
+            CreateDispatcherWithSvCache(temp),
             KmCommandNames.LoadEncountersWorkflow,
             new LoadEncountersWorkflowRequest(paths),
             "request-sv-versioned-encounters");
@@ -2756,7 +2765,7 @@ public sealed class ScarletVioletBridgeTests
         WriteScarletFixtures(temp);
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray(form: 1));
         var paths = temp.Paths with { SelectedGame = ProjectGameDto.Scarlet };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithSvCache(temp);
 
         var encounters = Dispatch<LoadEncountersWorkflowResponse>(
             dispatcher,
@@ -2825,52 +2834,69 @@ public sealed class ScarletVioletBridgeTests
 
     private static void WriteScarletFixtures(TemporaryBridgeProject temp)
     {
-        WriteSvOutput(temp, SvDataPaths.ItemDataArray, CreateItemDataArray());
-        WriteSvOutput(temp, SvDataPaths.MoveDataArray, CreateMoveDataArray());
-        WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArray());
-        WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
-        WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
-        WriteSvOutput(temp, SvDataPaths.EventAddPokemonArray, CreateEventAddPokemonArray());
-        WriteSvOutput(temp, SvDataPaths.EventTradeListArray, CreateEventTradeListArray());
-        WriteSvOutput(temp, SvDataPaths.EventTradePokemonArray, CreateEventTradePokemonArray());
-        WriteSvOutput(temp, SvDataPaths.FriendlyShopLineupDataArray, CreateFriendlyShopLineupDataArray());
-        WriteSvOutput(temp, SvDataPaths.ShopWazaMachineDataArray, CreateTechnicalMachineShopDataArray());
-        WriteSvOutput(temp, SvDataPaths.FixedSymbolTableArray, CreateFixedSymbolTableArray());
-        WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
-        WriteSvOutput(temp, SvDataPaths.VisibleItemScenePaldeaScarlet, CreateVisibleItemScene(includeItem: true));
-        WriteSvOutput(temp, SvDataPaths.VisibleItemScenePaldeaViolet, CreateVisibleItemScene(includeItem: true));
-        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneKitakamiScarlet, CreateVisibleItemScene(includeItem: false));
-        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneKitakamiViolet, CreateVisibleItemScene(includeItem: false));
-        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneBlueberryScarlet, CreateVisibleItemScene(includeItem: false));
-        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneBlueberryViolet, CreateVisibleItemScene(includeItem: false));
-        WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
-        WriteSvOutput(temp, SvDataPaths.RummagingItemDataTableArray, CreateRummagingItemDataTableArray());
-        WriteTeraRaidFixtures(temp);
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishPokemonNames,
-            CreateTextTable(5, (1, "Bulbasaur"), (2, "Ivysaur"), (4, "Charmander")));
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishItemNames,
-            CreateTextTable(6, (1, "Master Ball"), (2, "TM001"), (3, "Legacy Move Record"), (4, "TM002"), (5, "TM100")));
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishMoveNames,
-            CreateTextTable(350, (33, "Tackle"), (36, "Take Down"), (45, "Growl"), (349, "Dragon Dance")));
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishMoveDescriptions,
-            CreateTextTable(350, (33, "A physical attack."), (45, "Lowers Defense.")));
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishAbilityNames,
-            CreateTextTable(95, (34, "Chlorophyll"), (65, "Overgrow"), (66, "Blaze"), (94, "Solar Power")));
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishPlaceNames,
-            CreateTextTable(2, (0, "South Province (Area Two)"), (1, "South Province (Area Four)")));
-        temp.WriteBaseRomFsFile(
-            SvDataPaths.EnglishPlaceNameKeys,
-            CreateKeyTable("PLACENAME_a_w04_01", "PLACENAME_a_w05_01"));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerNames, CreateTextTable(1, (0, "Test Trainer")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerNameKeys, CreateKeyTable("TRNAME_TEST"));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerTypes, CreateTextTable(1, (0, "Pokemon Trainer")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerTypeKeys, CreateKeyTable("MSG_TRTYPE_TEST"));
+        foreach (var (relativePath, contents) in ScarletFixtures.Value.OutputFiles)
+        {
+            WriteSvOutput(temp, relativePath, contents);
+        }
+
+        foreach (var (relativePath, contents) in ScarletFixtures.Value.BaseFiles)
+        {
+            temp.WriteBaseRomFsFile(relativePath, contents);
+        }
+    }
+
+    private static ScarletFixtureSet CreateScarletFixtureSet()
+    {
+        var outputFiles = new Dictionary<string, byte[]>
+        {
+            [SvDataPaths.ItemDataArray] = CreateItemDataArray(),
+            [SvDataPaths.MoveDataArray] = CreateMoveDataArray(),
+            [SvDataPaths.PersonalArray] = CreatePersonalArray(),
+            [SvDataPaths.TrainerDataArray] = CreateTrainerDataArray(),
+            [SvDataPaths.WildEncounterArray] = CreateEncounterArray(),
+            [SvDataPaths.EventAddPokemonArray] = CreateEventAddPokemonArray(),
+            [SvDataPaths.EventTradeListArray] = CreateEventTradeListArray(),
+            [SvDataPaths.EventTradePokemonArray] = CreateEventTradePokemonArray(),
+            [SvDataPaths.FriendlyShopLineupDataArray] = CreateFriendlyShopLineupDataArray(),
+            [SvDataPaths.ShopWazaMachineDataArray] = CreateTechnicalMachineShopDataArray(),
+            [SvDataPaths.FixedSymbolTableArray] = CreateFixedSymbolTableArray(),
+            [SvDataPaths.EventBattlePokemonArray] = CreateEventBattlePokemonArray(),
+            [SvDataPaths.VisibleItemScenePaldeaScarlet] = CreateVisibleItemScene(includeItem: true),
+            [SvDataPaths.VisibleItemScenePaldeaViolet] = CreateVisibleItemScene(includeItem: true),
+            [SvDataPaths.VisibleItemSceneKitakamiScarlet] = CreateVisibleItemScene(includeItem: false),
+            [SvDataPaths.VisibleItemSceneKitakamiViolet] = CreateVisibleItemScene(includeItem: false),
+            [SvDataPaths.VisibleItemSceneBlueberryScarlet] = CreateVisibleItemScene(includeItem: false),
+            [SvDataPaths.VisibleItemSceneBlueberryViolet] = CreateVisibleItemScene(includeItem: false),
+            [SvDataPaths.HiddenItemDataTableArray] = CreateHiddenItemDataTableArray(),
+            [SvDataPaths.RummagingItemDataTableArray] = CreateRummagingItemDataTableArray(),
+            [SvDataPaths.TeraRaidFixedRewardItemArray] = CreateTeraRaidFixedRewardItemArray(),
+            [SvDataPaths.TeraRaidLotteryRewardItemArray] = CreateTeraRaidLotteryRewardItemArray(),
+        };
+
+        var emptyRaidArray = CreateEmptyTeraRaidEnemyArray();
+        foreach (var path in TeraRaidEnemyPaths)
+        {
+            outputFiles[path] = path == SvDataPaths.TeraRaidEnemyPaldea5
+                ? CreateTeraRaidEnemyArray()
+                : emptyRaidArray;
+        }
+
+        var baseFiles = new Dictionary<string, byte[]>
+        {
+            [SvDataPaths.EnglishPokemonNames] = CreateTextTable(5, (1, "Bulbasaur"), (2, "Ivysaur"), (4, "Charmander")),
+            [SvDataPaths.EnglishItemNames] = CreateTextTable(6, (1, "Master Ball"), (2, "TM001"), (3, "Legacy Move Record"), (4, "TM002"), (5, "TM100")),
+            [SvDataPaths.EnglishMoveNames] = CreateTextTable(350, (33, "Tackle"), (36, "Take Down"), (45, "Growl"), (349, "Dragon Dance")),
+            [SvDataPaths.EnglishMoveDescriptions] = CreateTextTable(350, (33, "A physical attack."), (45, "Lowers Defense.")),
+            [SvDataPaths.EnglishAbilityNames] = CreateTextTable(95, (34, "Chlorophyll"), (65, "Overgrow"), (66, "Blaze"), (94, "Solar Power")),
+            [SvDataPaths.EnglishPlaceNames] = CreateTextTable(2, (0, "South Province (Area Two)"), (1, "South Province (Area Four)")),
+            [SvDataPaths.EnglishPlaceNameKeys] = CreateKeyTable("PLACENAME_a_w04_01", "PLACENAME_a_w05_01"),
+            [SvDataPaths.EnglishTrainerNames] = CreateTextTable(1, (0, "Test Trainer")),
+            [SvDataPaths.EnglishTrainerNameKeys] = CreateKeyTable("TRNAME_TEST"),
+            [SvDataPaths.EnglishTrainerTypes] = CreateTextTable(1, (0, "Pokemon Trainer")),
+            [SvDataPaths.EnglishTrainerTypeKeys] = CreateKeyTable("MSG_TRTYPE_TEST"),
+        };
+
+        return new ScarletFixtureSet(outputFiles, baseFiles);
     }
 
     private static EditSessionDto UpdateItem(
@@ -4405,6 +4431,10 @@ public sealed class ScarletVioletBridgeTests
         Assert.NotNull(response);
         return response;
     }
+
+    private sealed record ScarletFixtureSet(
+        IReadOnlyDictionary<string, byte[]> OutputFiles,
+        IReadOnlyDictionary<string, byte[]> BaseFiles);
 
     private static void AssertSuccess<TPayload>(BridgeResponse<TPayload> response)
     {

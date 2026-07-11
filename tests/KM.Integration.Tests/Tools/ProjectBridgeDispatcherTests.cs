@@ -1455,7 +1455,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(300, inventoryItem.Price);
         Assert.True(inventoryItem.IsKnownItem);
         Assert.Null(inventoryItem.StockLimit);
-        Assert.Equal(1, response.Payload.Workflow.EditableFields.Count);
+        Assert.Single(response.Payload.Workflow.EditableFields);
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single().Options,
             option => option.Value == 2

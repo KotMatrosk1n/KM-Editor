@@ -12,10 +12,122 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  fast:
-    name: Fast validation
+  validation:
+    name: Validation / ${{ matrix.name }}
     runs-on: windows-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Desktop
+            shard: desktop
+            desktop: true
+            backend: false
+            restore: ""
+          - name: Core and formats
+            shard: core-formats
+            desktop: false
+            backend: true
+            restore: KM.Editor.slnx
+          - name: Sword and Shield general
+            shard: swsh-general
+            desktop: false
+            backend: true
+            restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
+          - name: Sword and Shield hooks
+            shard: swsh-hooks
+            desktop: false
+            backend: true
+            restore: tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
+          - name: Scarlet and Violet integration
+            shard: integration-sv
+            desktop: false
+            backend: true
+            restore: tests/KM.Integration.Tests/KM.Integration.Tests.csproj
+          - name: Pokemon Legends Z-A integration
+            shard: integration-za
+            desktop: false
+            backend: true
+            restore: tests/KM.Integration.Tests/KM.Integration.Tests.csproj
+          - name: Shared bridge integration
+            shard: integration-bridge
+            desktop: false
+            backend: true
+            restore: tests/KM.Integration.Tests/KM.Integration.Tests.csproj
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        if: matrix.desktop
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+
+      - name: Set up Node.js with pnpm cache
+        if: matrix.desktop
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Node.js
+        if: matrix.backend
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+
+      - name: Set up .NET
+        if: matrix.backend
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache backend packages
+        if: matrix.backend
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Build.props', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Install desktop dependencies
+        if: matrix.desktop
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore backend dependencies
+        if: matrix.backend
+        shell: pwsh
+        run: dotnet restore '${{ matrix.restore }}'
+
+      - name: Run validation shard
+        shell: pwsh
+        run: node scripts/test-slice.mjs shard '${{ matrix.shard }}'
+
+      - name: Upload timing report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timings-${{ matrix.shard }}
+          path: TestResults/test-timings.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  performance:
+    name: Scheduled performance baselines
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 5
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,57 +137,32 @@ jobs:
         with:
           node-version: 24.16.0
 
-      - name: Set up pnpm
-        shell: pwsh
-        run: npm install --global pnpm@11.5.2
-
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
 
-      - name: Install dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
+      - name: Cache backend packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Build.props', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
 
       - name: Restore backend dependencies
         shell: pwsh
-        run: dotnet restore .\KM.Editor.slnx
+        run: dotnet restore tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj
 
-      - name: Run fast validation
+      - name: Run performance baselines
         shell: pwsh
-        run: pnpm test:fast
+        run: node scripts/test-slice.mjs shard performance
 
-  full:
-    name: Full validation
-    runs-on: windows-latest
-    if: github.event_name != 'pull_request'
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Upload timing report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          node-version: 24.16.0
-
-      - name: Set up pnpm
-        shell: pwsh
-        run: npm install --global pnpm@11.5.2
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      - name: Install dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
-      - name: Restore backend dependencies
-        shell: pwsh
-        run: dotnet restore .\KM.Editor.slnx
-
-      - name: Run full validation
-        shell: pwsh
-        run: pnpm test:full
+          name: test-timings-performance
+          path: TestResults/test-timings.json
+          if-no-files-found: ignore
+          retention-days: 30

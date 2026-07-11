@@ -107,7 +107,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -170,7 +170,7 @@ public sealed class PokemonLegendsZABridgeTests
                 (81, "Moon Stone"),
                 (222, "Twisted Spoon"),
                 (2482, "Metal Alloy")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -209,7 +209,7 @@ public sealed class PokemonLegendsZABridgeTests
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
                 (2482, "Metal Alloy")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
@@ -319,7 +319,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PersonalArray,
             CreatePersonalArray(evolutionCondition: 62, evolutionParameter: 20, evolutionSpecies: 904));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
             dispatcher,
@@ -361,7 +361,7 @@ public sealed class PokemonLegendsZABridgeTests
     public void PokemonLegendsZAProjectListsPokemonTrainersGiftTradeMovesItemsShopsAndModMergerWorkflows()
     {
         using var temp = CreatePokemonLegendsZAProject();
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var workflows = Dispatch<ListWorkflowsResponse>(
             dispatcher,
@@ -392,7 +392,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var moves = Dispatch<LoadMovesWorkflowResponse>(
             dispatcher,
@@ -435,7 +435,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveDescriptions("English"),
             CreateTextTable(246, (246, "The user attacks with a prehistoric power.")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var moves = Dispatch<LoadMovesWorkflowResponse>(
             dispatcher,
@@ -492,7 +492,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var items = Dispatch<LoadItemsWorkflowResponse>(
             dispatcher,
@@ -608,7 +608,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ShopItemLineupArray,
             CreateShopLineupArrayWithItems(2160, 2162));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var items = Dispatch<LoadItemsWorkflowResponse>(
@@ -733,7 +733,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(250, (249, "Rock Smash")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var items = Dispatch<LoadItemsWorkflowResponse>(
             dispatcher,
@@ -769,7 +769,7 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var shops = Dispatch<LoadShopsWorkflowResponse>(
             dispatcher,
@@ -810,7 +810,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteTrainerFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
             dispatcher,
@@ -896,7 +896,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerTypeKeys("English"),
             CreateKeyTable((hyperspaceTrainerHash, "MSG_TRTYPE_DIM")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
             dispatcher,
@@ -931,7 +931,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteGiftPokemonFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var gifts = Dispatch<LoadGiftPokemonWorkflowResponse>(
             dispatcher,
@@ -1000,7 +1000,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteGiftPokemonFixture(temp, gameDefaultGift: true);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var gifts = Dispatch<LoadGiftPokemonWorkflowResponse>(
             dispatcher,
@@ -1025,7 +1025,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteTradePokemonFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var trades = Dispatch<LoadTradePokemonWorkflowResponse>(
             dispatcher,
@@ -1076,7 +1076,7 @@ public sealed class PokemonLegendsZABridgeTests
             scriptPath,
             CreateTextTable(2, (0, "Alpha script line"), (1, "Second script line")));
         var paths = CreatePaths(temp) with { GameTextLanguage = "en" };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var query = new TextWorkflowQueryDto("Second script", 0, 1);
 
         var load = Dispatch<LoadTextWorkflowResponse>(
@@ -1113,7 +1113,7 @@ public sealed class PokemonLegendsZABridgeTests
         const string scriptPath = "ik_message/dat/English/script/common_0025.dat";
         temp.WriteBaseRomFsFile(scriptPath, CreateTextTable(1, (0, "[VAR 0100] Original Z-A script line")));
         var paths = CreatePaths(temp) with { GameTextLanguage = "en" };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var load = Dispatch<LoadTextWorkflowResponse>(
             dispatcher,
             KmCommandNames.LoadTextWorkflow,
@@ -1187,7 +1187,7 @@ public sealed class PokemonLegendsZABridgeTests
         WriteStaticEncounterFixture(temp);
         WritePlacementFixture(temp);
         temp.WriteBaseExeFsFile("main", ZaTypeChartBridgeFixtures.CreateCompatibleMain());
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var load = Dispatch<LoadGameDumpWorkflowResponse>(
@@ -1283,7 +1283,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdatePokemonFieldResponse>(
@@ -1331,7 +1331,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (36, "Take Down"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var tmUpdate = Dispatch<UpdatePokemonFieldResponse>(
@@ -1393,7 +1393,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdatePokemonLearnsetResponse>(
@@ -1442,7 +1442,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdateMoveFieldsResponse>(
@@ -1495,7 +1495,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var derivedUpdate = Dispatch<UpdateItemFieldsResponse>(
@@ -1570,7 +1570,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(251, (249, "Rock Smash"), (250, "Water Pulse")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdateItemFieldsResponse>(
@@ -1606,7 +1606,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(528, (526, "Dragon Dance"), (527, "Electroweb"), (528, "Psychic Noise")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdateItemFieldsResponse>(
@@ -1661,7 +1661,7 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var reorder = Dispatch<UpdateShopInventoryItemResponse>(
@@ -1739,7 +1739,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteTrainerFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdateTrainerFieldsResponse>(
@@ -1798,11 +1798,10 @@ public sealed class PokemonLegendsZABridgeTests
     [Fact]
     public void PokemonLegendsZATrainerEditorAllowsClearingAndFillingExposedPartySlots()
     {
-        var dispatcher = new ProjectBridgeDispatcher();
-
         using (var temp = CreatePokemonLegendsZAProject())
         {
             WriteTrainerFixture(temp);
+            var dispatcher = CreateDispatcherWithZaCache(temp);
             var paths = CreatePaths(temp);
 
             var clear = Dispatch<UpdateTrainerFieldsResponse>(
@@ -1842,6 +1841,7 @@ public sealed class PokemonLegendsZABridgeTests
         using (var temp = CreatePokemonLegendsZAProject())
         {
             WriteTrainerFixture(temp);
+            var dispatcher = CreateDispatcherWithZaCache(temp);
             var paths = CreatePaths(temp);
 
             var fill = Dispatch<UpdateTrainerFieldsResponse>(
@@ -1881,7 +1881,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteTrainerFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var response = Dispatch<UpdateTrainerFieldsResponse>(
@@ -1906,7 +1906,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteTrainerFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var response = Dispatch<UpdateTrainerFieldsResponse>(
@@ -1931,7 +1931,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteGiftPokemonFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdateGiftPokemonFieldsResponse>(
@@ -2015,7 +2015,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteTradePokemonFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var update = Dispatch<UpdateTradePokemonFieldsResponse>(
@@ -2104,7 +2104,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerTypes("English"),
             CreateTextTable(1, (1, "Duelist")));
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
@@ -2177,7 +2177,7 @@ public sealed class PokemonLegendsZABridgeTests
         using var temp = CreatePokemonLegendsZAProject();
         WriteTrainerFixture(temp);
         WriteStaticEncounterFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
@@ -2232,7 +2232,7 @@ public sealed class PokemonLegendsZABridgeTests
         using var temp = CreatePokemonLegendsZAProject();
         WriteTrainerFixture(temp);
         WriteStaticEncounterFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var trainerUpdate = Dispatch<UpdateTrainerFieldsResponse>(
@@ -2305,7 +2305,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteWildEncounterFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var load = Dispatch<LoadEncountersWorkflowResponse>(
@@ -2388,7 +2388,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteWildEncounterFixture(temp, includeAlphaAndRawSpawners: true);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var load = Dispatch<LoadEncountersWorkflowResponse>(
@@ -2473,7 +2473,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WritePlacementFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var load = Dispatch<LoadPlacementWorkflowResponse>(
@@ -2580,7 +2580,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         WriteStaticEncounterFixture(temp);
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
         var load = Dispatch<LoadStaticEncountersWorkflowResponse>(
@@ -2673,7 +2673,7 @@ public sealed class PokemonLegendsZABridgeTests
             new ZaModMergerSourceDto(firstMod, IsEnabled: true),
             new ZaModMergerSourceDto(secondMod, IsEnabled: true),
         };
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = CreateDispatcherWithZaCache(temp);
 
         var load = Dispatch<LoadZaModMergerWorkflowResponse>(
             dispatcher,
