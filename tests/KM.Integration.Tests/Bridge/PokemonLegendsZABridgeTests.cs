@@ -157,6 +157,10 @@ public sealed class PokemonLegendsZABridgeTests
             CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2, evolutionSpecies: 2));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemDataArray,
+            CreateItemDataArray());
+        WriteZaOutput(
+            temp,
+            ZaDataPaths.ItemDataArray,
             CreateItemDataArray(includeCustomEvolutionItem: true));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
@@ -179,10 +183,10 @@ public sealed class PokemonLegendsZABridgeTests
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
         Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Moon Stone", evolution.ArgumentValue);
+        Assert.Equal("Ultra Ball / Moon Stone", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball / Moon Stone");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 222 && option.Label == "222 Twisted Spoon");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
 
@@ -411,6 +415,12 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(35, tackle.PP);
         Assert.Equal("Opponent", tackle.TargetName);
         Assert.Contains(tackle.Flags, flag => flag.Field == "makesContact" && flag.Enabled);
+        Assert.Contains(tackle.Flags, flag => flag.Field == "protect" && flag.Enabled);
+        Assert.Contains(tackle.Flags, flag => flag.Field == "mirror" && flag.Enabled);
+        Assert.Contains(tackle.Flags, flag => flag.Field == "metronome" && flag.Enabled);
+        Assert.DoesNotContain(tackle.Flags, flag => flag.Field == "charge" && flag.Enabled);
+        Assert.DoesNotContain(tackle.Flags, flag => flag.Field == "punch" && flag.Enabled);
+        Assert.DoesNotContain(tackle.Flags, flag => flag.Field == "failEncore" && flag.Enabled);
         Assert.Contains(workflow.EditableFields, field => field.Field == "power" && field.Label == "Power");
     }
 
@@ -518,6 +528,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(1, pokeBall.FieldValues["pocket"]);
         Assert.Equal(999, pokeBall.FieldValues["stackCap"]);
         Assert.Equal(1, pokeBall.FieldValues["sortOrder"]);
+        Assert.Equal(0, pokeBall.FieldValues["canUseOnPokemon"]);
+        Assert.Equal(0, pokeBall.FieldValues["evolutionItem"]);
         Assert.Equal(0, pokeBall.FieldValues["machineMoveId"]);
         Assert.Equal(0, pokeBall.FieldValues["mintNature"]);
         Assert.Equal(
@@ -529,11 +541,16 @@ public sealed class PokemonLegendsZABridgeTests
                 .Single(detail => detail.Label == "Mint nature")
                 .Value);
         var potion = workflow.Items.Single(item => item.ItemId == 17);
+        Assert.True(potion.Metadata.CanUseOnPokemon);
+        Assert.Equal(1, potion.FieldValues["canUseOnPokemon"]);
+        Assert.Equal(0, potion.FieldValues["evolutionItem"]);
         Assert.Equal(20, potion.FieldValues["healPower"]);
         Assert.Equal(1, potion.FieldValues["canUseInBattle"]);
         var fireStone = workflow.Items.Single(item => item.ItemId == 82);
         Assert.Equal(7, fireStone.FieldValues["itemType"]);
         Assert.True(fireStone.Metadata.CanUseOnPokemon);
+        Assert.Equal(1, fireStone.FieldValues["canUseOnPokemon"]);
+        Assert.Equal(1, fireStone.FieldValues["evolutionItem"]);
         Assert.Equal("7 Pokemon Item", fireStone
             .DetailGroups
             .Single(group => group.Label == "Pokemon Legends Z-A")
@@ -544,7 +561,7 @@ public sealed class PokemonLegendsZABridgeTests
             .DetailGroups
             .Single(group => group.Label == "Effects")
             .Details
-            .Single(detail => detail.Label == "Evolution item")
+            .Single(detail => detail.Label == "Evolution Item")
             .Value);
         var megaStone = workflow.Items.Single(item => item.ItemId == 2563);
         Assert.Equal("Mega Stones", megaStone.Category);
@@ -571,6 +588,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Tackle", tm.Metadata.MachineMoveName);
         Assert.Equal(33, tm.FieldValues["machineMoveId"]);
         Assert.Equal(-1, tm.FieldValues["machineIndex"]);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "canUseOnPokemon" && field.Label == "Can use on Pokemon");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "evolutionItem" && field.Label == "Evolution Item");
         Assert.Contains(workflow.EditableFields, field => field.Field == "machineMoveId" && field.Label == "TM move");
     }
 
@@ -837,7 +856,7 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZATrainerLabelsUseHashClassesAndReadableFallbackNames()
+    public void PokemonLegendsZATrainerLabelsUseHashClassesAndRealNameFallbacks()
     {
         const ulong hyperspaceTrainerHash = 0xCB6F6D064E9E96A4;
 
@@ -849,18 +868,28 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerNames("English"),
             CreateTextTable(
-                3,
+                8,
                 (0, "Young Man"),
                 (1, "Audrey"),
                 (2, "Venin"),
-                (3, "Lyse")));
+                (3, "Lyse"),
+                (4, "Gwynn of"),
+                (5, "Fist of Justice Gwynn"),
+                (6, "Emma"),
+                (7, "Lida"),
+                (8, "Jean")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerNameKeys("English"),
             CreateKeyTable(
                 (0, "dim_rank_02_05"),
                 (0, "rest1_01"),
                 (0, "sub_010_01"),
-                (0, "sub_010_02")));
+                (0, "sub_010_02"),
+                (0, "gwynn_of"),
+                (0, "prefix_first"),
+                (0, "detective"),
+                (0, "friend_02"),
+                (0, "za_rank_x_19")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerTypes("English"),
             CreateTextTable(0, (0, "Hyperspace Trainer")));
@@ -876,17 +905,25 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-trainer-labels");
 
         AssertSuccess(trainers);
-        Assert.Equal(4, trainers.Payload!.Workflow.Trainers.Count);
+        Assert.Equal(8, trainers.Payload!.Workflow.Trainers.Count);
         var dimensionTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "dim_rank_02_mizu_05");
-        Assert.Equal("Dimension Rank 2 Water 5", dimensionTrainer.Name);
+        Assert.Equal("Hyperspace Trainer 5", dimensionTrainer.Name);
         Assert.Equal(0, dimensionTrainer.TrainerClassId);
         Assert.Equal("Hyperspace Trainer", dimensionTrainer.TrainerClass);
-        var mandatoryTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_m01_01");
-        Assert.Equal("Andi", mandatoryTrainer.Name);
+        var eventTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_m03_0125");
+        Assert.Equal("Emma", eventTrainer.Name);
         var restaurantTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_sys_rest1_01");
         Assert.Equal("Audrey", restaurantTrainer.Name);
         var subquestTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_sub_010_030");
         Assert.Equal("Lyse", subquestTrainer.Name);
+        var gwynnTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "gwynn_of");
+        Assert.Equal("Gwynn", gwynnTrainer.Name);
+        var prefixedTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "prefix_first");
+        Assert.Equal("Gwynn", prefixedTrainer.Name);
+        var strongestTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "za_inf_strongest_04");
+        Assert.Equal("Lida", strongestTrainer.Name);
+        var rankInfinityTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "za_rank_inf1_01");
+        Assert.Equal("Jean", rankInfinityTrainer.Name);
     }
 
     [Fact]
@@ -1461,6 +1498,20 @@ public sealed class PokemonLegendsZABridgeTests
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
 
+        var derivedUpdate = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "canUseOnPokemon", "1")]),
+            "request-za-item-derived-update");
+        AssertSuccess(derivedUpdate);
+        Assert.Contains(
+            derivedUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("derived from item effects", StringComparison.Ordinal));
+
         var update = Dispatch<UpdateItemFieldsResponse>(
             dispatcher,
             KmCommandNames.UpdateItemFields,
@@ -1468,6 +1519,7 @@ public sealed class PokemonLegendsZABridgeTests
                 paths,
                 Session: null,
                 [
+                    new ItemFieldUpdateDto(4, "evolutionItem", "1"),
                     new ItemFieldUpdateDto(328, "price", "3000"),
                     new ItemFieldUpdateDto(328, "machineMoveId", "45"),
                     new ItemFieldUpdateDto(17, "healPercentage", "50"),
@@ -1478,6 +1530,10 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("TM001 Growl", updatedTm.Name);
         Assert.Equal(3000, updatedTm.BuyPrice);
         Assert.Equal(45, updatedTm.Metadata.MachineMoveId);
+        var updatedPokeBall = update.Payload.Workflow.Items.Single(item => item.ItemId == 4);
+        Assert.True(updatedPokeBall.Metadata.CanUseOnPokemon);
+        Assert.Equal(1, updatedPokeBall.FieldValues["canUseOnPokemon"]);
+        Assert.Equal(1, updatedPokeBall.FieldValues["evolutionItem"]);
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -1499,6 +1555,7 @@ public sealed class PokemonLegendsZABridgeTests
         var writtenTm = ReadItem(temp, 328);
         Assert.Equal(3000, writtenTm.Price);
         Assert.Equal(45, writtenTm.MachineWaza);
+        Assert.True(ReadItem(temp, 4).WorkEvolutional);
         Assert.Equal(50, ReadItem(temp, 17).HealPercentage);
     }
 
@@ -2698,6 +2755,11 @@ public sealed class PokemonLegendsZABridgeTests
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
     }
 
+    private static void WriteZaOutput(TemporaryBridgeProject temp, string relativePath, byte[] contents)
+    {
+        temp.WriteOutputFile(Path.Combine("romfs", relativePath.Replace('/', Path.DirectorySeparatorChar)), contents);
+    }
+
     private static void AssertDescriptorRemovedZaModFile(TemporaryBridgeProject temp)
     {
         var descriptorPath = Path.Combine(temp.OutputRootPath, "romfs", "arc", "data.trpfd");
@@ -2905,6 +2967,17 @@ public sealed class PokemonLegendsZABridgeTests
 
         if (includeCustomEvolutionItem)
         {
+            rows.Add(CreateItem(
+                builder,
+                itemId: 2,
+                itemType: 4,
+                internalName: "HAIPAABOORU",
+                iconName: "item_0002",
+                price: 600,
+                pocket: 1,
+                stackCap: 999,
+                sortOrder: 3,
+                workEvolutional: true));
             rows.Add(CreateItem(
                 builder,
                 itemId: 222,
@@ -3467,13 +3540,11 @@ public sealed class PokemonLegendsZABridgeTests
             trainerIdValue: "dim_rank_02_mizu_05",
             trainerType: trainerType,
             trainerType2: trainerType);
-        var mandatoryTrainer = CreateTrainer(
+        var eventTrainer = CreateTrainer(
             builder,
-            trainerIdValue: "Ev_m01_01",
+            trainerIdValue: "Ev_m03_0125",
             trainerType: trainerType,
-            trainerType2: trainerType,
-            speciesId: 674,
-            level: 4);
+            trainerType2: trainerType);
         var restaurantTrainer = CreateTrainer(
             builder,
             trainerIdValue: "Ev_sys_rest1_01",
@@ -3484,9 +3555,29 @@ public sealed class PokemonLegendsZABridgeTests
             trainerIdValue: "Ev_sub_010_030",
             trainerType: trainerType,
             trainerType2: trainerType);
+        var gwynnTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "gwynn_of",
+            trainerType: trainerType,
+            trainerType2: trainerType);
+        var prefixFirstTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "prefix_first",
+            trainerType: trainerType,
+            trainerType2: trainerType);
+        var strongestTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "za_inf_strongest_04",
+            trainerType: trainerType,
+            trainerType2: trainerType);
+        var rankInfinityTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "za_rank_inf1_01",
+            trainerType: trainerType,
+            trainerType2: trainerType);
         var vector = ZaTrainerTable.CreateValueVector(
             builder,
-            [dimensionTrainer, mandatoryTrainer, restaurantTrainer, subquestTrainer]);
+            [dimensionTrainer, eventTrainer, restaurantTrainer, subquestTrainer, gwynnTrainer, prefixFirstTrainer, strongestTrainer, rankInfinityTrainer]);
         var root = ZaTrainerTable.Create(builder, vector);
         ZaTrainerTable.FinishBuffer(builder, root);
         return builder.SizedByteArray();
@@ -3724,6 +3815,9 @@ public sealed class PokemonLegendsZABridgeTests
         bool makesContact,
         byte type = 0,
         byte category = 1,
+        bool protect = true,
+        bool mirror = true,
+        bool metronome = true,
         sbyte stat1 = 0,
         sbyte stat2 = 0,
         sbyte stat3 = 0,
@@ -3759,6 +3853,9 @@ public sealed class PokemonLegendsZABridgeTests
         ZaMoveData.AddType(builder, type);
         ZaMoveData.AddCanUseMove(builder, true);
         ZaMoveData.AddMoveId(builder, moveId);
+        ZaMoveData.AddFlagMetronome(builder, metronome);
+        ZaMoveData.AddFlagMirror(builder, mirror);
+        ZaMoveData.AddFlagProtect(builder, protect);
         ZaMoveData.AddFlagMakesContact(builder, makesContact);
         return ZaMoveData.EndZaMoveData(builder);
     }

@@ -327,10 +327,11 @@ internal sealed class SvPokemonWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            var spriteLabels = SvTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels, tmCatalog, evolutionItemArgumentLabels).ToArray();
+            pokemon = LoadRecords(source, labels, spriteLabels, tmCatalog, evolutionItemArgumentLabels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -410,6 +411,7 @@ internal sealed class SvPokemonWorkflowService
     private static IEnumerable<SvPokemonRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
+        SvTextLabelLookup spriteLabels,
         IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
@@ -422,7 +424,7 @@ internal sealed class SvPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels, tmCatalog, evolutionItemArgumentLabels);
+            yield return ToRecord(index, entry.Value, source, labels, spriteLabels, tmCatalog, evolutionItemArgumentLabels);
         }
     }
 
@@ -431,6 +433,7 @@ internal sealed class SvPokemonWorkflowService
         global::personal entry,
         SvWorkflowFile source,
         SvTextLabelLookup labels,
+        SvTextLabelLookup spriteLabels,
         IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
@@ -557,7 +560,8 @@ internal sealed class SvPokemonWorkflowService
             ReadEvolutions(entry, labels, evolutionItemArgumentLabels),
             ReadLearnset(entry, labels),
             ReadCompatibility(entry, labels, tmCatalog),
-            new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState),
+            spriteLabels.Pokemon(speciesId));
     }
 
     private static IReadOnlyList<SvPokemonEvolutionRecord> ReadEvolutions(

@@ -47,6 +47,7 @@ public sealed class SwShStaticEncountersEditSessionServiceTests
             edit.Domain == "workflow.staticEncounters"
             && edit.Field == SwShStaticEncountersWorkflowService.IvAttackField
             && edit.RecordId == "static:0"
+            && edit.Summary.Contains("Static 000", StringComparison.Ordinal)
             && edit.NewValue == "31");
         Assert.Contains(result.Session.PendingEdits, edit =>
             edit.Field == SwShStaticEncountersWorkflowService.IvDefenseField

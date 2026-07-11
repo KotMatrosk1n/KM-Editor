@@ -50,6 +50,7 @@ internal sealed class ZaItemsWorkflowService
     public const string FriendshipGain1Field = "friendshipGain1";
     public const string FriendshipGain2Field = "friendshipGain2";
     public const string FriendshipGain3Field = "friendshipGain3";
+    public const string CanUseOnPokemonField = "canUseOnPokemon";
     public const string EvolutionItemField = "evolutionItem";
     public const string FormChangeItemField = "formChangeItem";
     public const string EvHpField = "evHp";
@@ -146,7 +147,8 @@ internal sealed class ZaItemsWorkflowService
         Field(PocketField, "Bag pocket", "integer", 0, 7, PocketOptions),
         Field(StackCapField, "Stack cap", "integer", 1, 9_999),
         Field(SortOrderField, "Sort order", "integer", 0, int.MaxValue),
-        Field(EvolutionItemField, "Can use on pokemon", "boolean", 0, 1, BooleanOptions),
+        Field(CanUseOnPokemonField, "Can use on Pokemon", "boolean", 0, 1, BooleanOptions),
+        Field(EvolutionItemField, "Evolution Item", "boolean", 0, 1, BooleanOptions),
         Field(CanNotHoldField, "Cannot be held", "boolean", 0, 1, BooleanOptions),
         Field(MachineMoveIdField, "TM move", "integer", 0, ushort.MaxValue),
         Field(MachineIndexField, "TM index", "integer", -1, int.MaxValue),
@@ -416,6 +418,7 @@ internal sealed class ZaItemsWorkflowService
             [FriendshipGain1Field] = 0,
             [FriendshipGain2Field] = 0,
             [FriendshipGain3Field] = 0,
+            [CanUseOnPokemonField] = 0,
             [EvolutionItemField] = 0,
             [FormChangeItemField] = 0,
             [EvHpField] = 0,
@@ -527,7 +530,8 @@ internal sealed class ZaItemsWorkflowService
                     Detail("EXP gain", 0),
                     Detail("Max use level", 0),
                     Detail("Mint nature", "0 None"),
-                    Detail("Can use on pokemon", "No"),
+                    Detail("Can use on Pokemon", "No"),
+                    Detail("Evolution Item", "No"),
                     Detail("Form change item", "No"),
                     Detail("Swap into item", "None"),
                 ]),
@@ -573,6 +577,7 @@ internal sealed class ZaItemsWorkflowService
             [FriendshipGain1Field] = item.WorkFriendly1,
             [FriendshipGain2Field] = item.WorkFriendly2,
             [FriendshipGain3Field] = item.WorkFriendly3,
+            [CanUseOnPokemonField] = CanUseOnPokemon(item) ? 1 : 0,
             [EvolutionItemField] = item.WorkEvolutional ? 1 : 0,
             [FormChangeItemField] = item.WorkFormChange ? 1 : 0,
             [EvHpField] = item.WorkStatusHp,
@@ -724,7 +729,8 @@ internal sealed class ZaItemsWorkflowService
                     Detail("EXP gain", item.ExpPointGain),
                     Detail("Max use level", item.MaxUseLevel),
                     Detail("Mint nature", $"{NormalizeMintNature(item.MintNature).ToString(CultureInfo.InvariantCulture)} {FormatNature(NormalizeMintNature(item.MintNature))}"),
-                    Detail("Can use on pokemon", ZaLabels.Bool(item.WorkEvolutional)),
+                    Detail("Can use on Pokemon", ZaLabels.Bool(CanUseOnPokemon(item))),
+                    Detail("Evolution Item", ZaLabels.Bool(item.WorkEvolutional)),
                     Detail("Form change item", ZaLabels.Bool(item.WorkFormChange)),
                     Detail("Swap into item", item.SwapIntoId > 0 ? $"{item.SwapIntoId.ToString(CultureInfo.InvariantCulture)} {labels.Item(item.SwapIntoId)}" : "None"),
                 ]),

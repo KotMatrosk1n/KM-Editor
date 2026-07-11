@@ -31,6 +31,7 @@ public sealed class SwShStaticEncountersWorkflowServiceTests
 
         var firstEncounter = workflow.Encounters[0];
         Assert.Equal(0, firstEncounter.EncounterIndex);
+        Assert.StartsWith("Static 000:", firstEncounter.Label, StringComparison.Ordinal);
         Assert.Contains("Grookey", firstEncounter.Label, StringComparison.Ordinal);
         Assert.Equal("0x0102030405060708", firstEncounter.EncounterId);
         Assert.Equal(810, firstEncounter.SpeciesId);

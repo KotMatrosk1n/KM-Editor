@@ -6,6 +6,7 @@ import { type ProjectBridge } from './projectBridge';
 export type ProjectScopePaths = {
   baseExeFsPath: string | null;
   baseRomFsPath: string | null;
+  gameTextLanguage?: string | null;
   outputRootPath: string | null;
   saveFilePath: string | null;
   selectedGame: ProjectGame | null;
@@ -64,6 +65,7 @@ export function createProjectScopeKey(paths: ProjectScopePaths) {
     selectedGame: paths.selectedGame,
     baseRomFsPath: paths.baseRomFsPath,
     baseExeFsPath: paths.baseExeFsPath,
+    gameTextLanguage: paths.gameTextLanguage ?? null,
     outputRootPath: paths.outputRootPath,
     saveFilePath: paths.saveFilePath
   });

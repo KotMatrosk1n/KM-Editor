@@ -290,6 +290,11 @@ internal sealed class ZaItemsEditSessionService
             return null;
         }
 
+        if (!CanEditDerivedField(editableField, diagnostics))
+        {
+            return null;
+        }
+
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.ItemsDomain,
             $"Set {item.Name} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -354,6 +359,11 @@ internal sealed class ZaItemsEditSessionService
             return;
         }
 
+        if (!CanEditDerivedField(editableField, diagnostics))
+        {
+            return;
+        }
+
         _ = TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
     }
 
@@ -379,6 +389,24 @@ internal sealed class ZaItemsEditSessionService
             ZaEditSessionSupport.ItemsDomain,
             field: field.Field,
             expected: "Item in the Technical Machines pocket"));
+        return false;
+    }
+
+    private static bool CanEditDerivedField(
+        ZaItemEditableField field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (field.Field != ZaItemsWorkflowService.CanUseOnPokemonField)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Can use on Pokemon is derived from item effects and cannot be edited directly.",
+            ZaEditSessionSupport.ItemsDomain,
+            field: field.Field,
+            expected: "Edit the underlying use effect or Evolution Item field"));
         return false;
     }
 
@@ -553,9 +581,19 @@ internal sealed class ZaItemsEditSessionService
         };
 
         updated = UpdateTechnicalMachineName(updated);
-        return field is null
-            ? updated
-            : updated with { FieldValues = SetFieldValue(updated.FieldValues, field, value) };
+        if (field is null)
+        {
+            return updated;
+        }
+
+        var fieldValues = SetFieldValue(updated.FieldValues, field, value);
+        var canUseOnPokemon = CanUseOnPokemon(fieldValues);
+        fieldValues = SetFieldValue(fieldValues, ZaItemsWorkflowService.CanUseOnPokemonField, canUseOnPokemon ? 1 : 0);
+        return updated with
+        {
+            FieldValues = fieldValues,
+            Metadata = updated.Metadata with { CanUseOnPokemon = canUseOnPokemon },
+        };
     }
 
     private static ZaItemRecord UpdateTechnicalMachineName(ZaItemRecord item)
@@ -594,6 +632,36 @@ internal sealed class ZaItemsEditSessionService
         };
         return updated;
     }
+
+    private static bool CanUseOnPokemon(IReadOnlyDictionary<string, int?> fieldValues)
+    {
+        return IsEnabled(fieldValues, ZaItemsWorkflowService.CureSleepField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.CurePoisonField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.CureBurnField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.CureFreezeField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.CureParalyzeField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.CureConfuseField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.CureInfatuationField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.HealPowerField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.HealPercentageField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.RevivalCountField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.RevivePercentageField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.ExpPointGainField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.EvolutionItemField)
+            || IsEnabled(fieldValues, ZaItemsWorkflowService.FormChangeItemField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.EvHpField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.EvAttackField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.EvDefenseField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.EvSpeedField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.EvSpecialAttackField)
+            || IsNonZero(fieldValues, ZaItemsWorkflowService.EvSpecialDefenseField);
+    }
+
+    private static bool IsEnabled(IReadOnlyDictionary<string, int?> fieldValues, string field) =>
+        fieldValues.TryGetValue(field, out var value) && value == 1;
+
+    private static bool IsNonZero(IReadOnlyDictionary<string, int?> fieldValues, string field) =>
+        fieldValues.TryGetValue(field, out var value) && value is not null && value != 0;
 
     private static int SetFlag(int flags, int bit, bool enabled)
     {

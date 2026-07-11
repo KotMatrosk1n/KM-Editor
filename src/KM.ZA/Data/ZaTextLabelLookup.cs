@@ -25,6 +25,43 @@ internal sealed class ZaTextLabelLookup
             "Young Man",
         };
 
+    private static readonly string[] KnownTrainerNamePrefixes =
+    [
+        "Ace Trainer",
+        "Artist",
+        "Backpacker",
+        "Battle Girl",
+        "Collector",
+        "Courier",
+        "Detective",
+        "Driver",
+        "DYN4MO",
+        "Fist of Justice",
+        "Furisode Girl",
+        "Grade-Schooler",
+        "Hex Maniac",
+        "Jogger",
+        "Lady",
+        "Office Worker",
+        "Pokemon Center Clerk",
+        "Pokémon Center Clerk",
+        "Police Officer",
+        "Quasartico Inc.",
+        "Representative",
+        "Rich Boy",
+        "Rising Star",
+        "Rust Syndicate",
+        "SBC",
+        "Sightseer",
+        "Successor",
+        "Team Flare Nouveau",
+        "Team MZ",
+        "Veteran",
+        "Waiter",
+        "Waitress",
+        "Worker",
+    ];
+
     private static readonly ZaTextLabelLookup Empty = new(
         [],
         [],
@@ -147,10 +184,63 @@ internal sealed class ZaTextLabelLookup
 
     public string TrainerName(string? key, int trainerId, string? trainerClass = null)
     {
-        return TrainerNameFromText(key, trainerId)
-            ?? (!string.IsNullOrWhiteSpace(key) && !key.StartsWith("TRNAME_", StringComparison.OrdinalIgnoreCase)
-                ? ZaLabels.FormatTrainerIdForLookup(key)
-                : $"Trainer {trainerId}");
+        return NormalizeTrainerName(
+            TrainerNameFromText(key, trainerId) ?? $"Trainer {trainerId}",
+            trainerClass);
+    }
+
+    public string? TrainerNameFromKeys(IEnumerable<string> keys)
+    {
+        var names = keys
+            .Select(key => FirstUsableTrainerName(TrainerNameKeyCandidates(key)
+                .Select(candidate => GetKeyed(trainerNames, trainerNameIndices, candidate))
+                .ToArray()))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => NormalizeTrainerName(name!))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return names.Length == 0 ? null : string.Join("/", names);
+    }
+
+    public static string NormalizeTrainerName(string name, string? trainerClass = null)
+    {
+        var trimmed = StripKnownTrainerNamePrefix(name.Trim());
+        if (trimmed.EndsWith(" of", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[..^3].TrimEnd();
+        }
+
+        trimmed = StripKnownTrainerNamePrefix(trimmed);
+
+        var titleIndex = trimmed.IndexOf(" the ", StringComparison.OrdinalIgnoreCase);
+        if (titleIndex > 0)
+        {
+            return trimmed[..titleIndex].TrimEnd();
+        }
+
+        var groupIndex = trimmed.IndexOf(" of ", StringComparison.OrdinalIgnoreCase);
+        return groupIndex > 0
+            ? trimmed[..groupIndex].TrimEnd()
+            : trimmed;
+    }
+
+    private static string StripKnownTrainerNamePrefix(string name)
+    {
+        foreach (var prefix in KnownTrainerNamePrefixes)
+        {
+            var prefixed = $"{prefix} ";
+            if (name.StartsWith(prefixed, StringComparison.OrdinalIgnoreCase))
+            {
+                var rest = name[prefixed.Length..].TrimStart();
+                if (!rest.StartsWith("of ", StringComparison.OrdinalIgnoreCase))
+                {
+                    return rest;
+                }
+            }
+        }
+
+        return name;
     }
 
     public string? TrainerNameFromText(string? key, int trainerId)

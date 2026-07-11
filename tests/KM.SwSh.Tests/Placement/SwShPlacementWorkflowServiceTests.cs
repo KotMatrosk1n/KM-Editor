@@ -52,7 +52,7 @@ public sealed class SwShPlacementWorkflowServiceTests
         Assert.Equal(50, hiddenItem.Chance);
         Assert.Equal("hidden_item", hiddenItem.ScriptId);
         var staticObject = workflow.Objects.Single(placedObject => placedObject.ObjectType == "StaticObject");
-        Assert.Contains("Static 001", staticObject.Label, StringComparison.Ordinal);
+        Assert.Contains("Static 000", staticObject.Label, StringComparison.Ordinal);
         Assert.Contains("Grookey", staticObject.Label, StringComparison.Ordinal);
         Assert.Contains("0x0102030405060708", staticObject.Label, StringComparison.Ordinal);
         Assert.Equal("Test Cave", staticObject.Map);

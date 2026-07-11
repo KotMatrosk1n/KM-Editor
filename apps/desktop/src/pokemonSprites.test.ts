@@ -1,7 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { describe, expect, it } from 'vitest';
-import { formatSpeciesFormLabel, getPokemonSpriteId, getPokemonSpriteIds } from './App';
+import {
+  formatSpeciesFormLabel,
+  getPokemonSpriteId,
+  getPokemonSpriteIds,
+  getPokemonSpriteIdsForIdentity
+} from './App';
 
 const bundledStaticSpriteIds = new Set(
   Object.keys(import.meta.glob('../public/sprites/gen5/*.png', { eager: true })).map((filePath) =>
@@ -27,6 +32,18 @@ describe('Pokemon sprite ids', () => {
   it('normalizes known hyphenated Pokemon sprite ids', () => {
     expect(getPokemonSpriteId('Kommo-o')).toBe('kommoo');
     expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
+    expect(
+      getPokemonSpriteIdsForIdentity({ name: '妙蛙种子', spriteName: 'Bulbasaur' })
+    ).toContain('bulbasaur');
+    expect(
+      getPokemonSpriteIdsForIdentity({
+        editorFamily: 'za',
+        form: 1,
+        name: '喷火龙',
+        speciesId: 6,
+        spriteName: 'Charizard'
+      })[0]
+    ).toBe('charizard-megax');
   });
 
   it('normalizes gendered Nidoran sprite ids to bundled static sprites', () => {

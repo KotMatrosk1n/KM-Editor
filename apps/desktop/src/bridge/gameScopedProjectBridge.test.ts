@@ -12,6 +12,7 @@ import { type ProjectBridge } from './projectBridge';
 const swordPaths = {
   baseExeFsPath: 'sword-exefs',
   baseRomFsPath: 'sword-romfs',
+  gameTextLanguage: 'en',
   outputRootPath: 'sword-output',
   saveFilePath: null,
   selectedGame: 'sword' as const
@@ -20,6 +21,7 @@ const swordPaths = {
 const violetPaths = {
   baseExeFsPath: 'violet-exefs',
   baseRomFsPath: 'violet-romfs',
+  gameTextLanguage: 'en',
   outputRootPath: 'violet-output',
   saveFilePath: null,
   selectedGame: 'violet' as const
@@ -67,6 +69,26 @@ describe('createGameScopedProjectBridge', () => {
     await expect(response).rejects.toMatchObject({
       currentScope: createProjectScopeKey(nextSwordPaths),
       requestScope: createProjectScopeKey(swordPaths)
+    });
+  });
+
+  it('uses game text language as part of the scope', async () => {
+    let currentPaths: ProjectScopePaths = swordPaths;
+    const chineseSwordPaths = {
+      ...swordPaths,
+      gameTextLanguage: 'zh'
+    };
+    const baseBridge = {
+      loadPokemonWorkflow: vi.fn(async () => ({ workflow: { summary: { id: 'pokemon' } } }))
+    } as unknown as ProjectBridge;
+    const scopedBridge = createGameScopedProjectBridge(baseBridge, () => currentPaths);
+
+    const response = scopedBridge.loadPokemonWorkflow({ paths: chineseSwordPaths });
+    currentPaths = swordPaths;
+
+    await expect(response).rejects.toMatchObject({
+      currentScope: createProjectScopeKey(swordPaths),
+      requestScope: createProjectScopeKey(chineseSwordPaths)
     });
   });
 });

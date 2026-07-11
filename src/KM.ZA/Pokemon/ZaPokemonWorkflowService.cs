@@ -313,10 +313,11 @@ internal sealed class ZaPokemonWorkflowService
         try
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+            var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             var tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels, tmCatalog, evolutionItemArgumentLabels).ToArray();
+            pokemon = LoadRecords(source, labels, spriteLabels, tmCatalog, evolutionItemArgumentLabels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -367,9 +368,11 @@ internal sealed class ZaPokemonWorkflowService
                     continue;
                 }
 
-                if (item.WorkEvolutional && item.Id > 0)
+                if (item.WorkEvolutional
+                    && item.Id > 0
+                    && !EvolutionItemParameterItemIds.Values.Contains(item.Id))
                 {
-                    argumentLabels.TryAdd(item.Id, labels.Item(item.Id));
+                    AddEditedEvolutionItemArgumentLabel(argumentLabels, item.Id, labels.Item(item.Id));
                 }
             }
         }
@@ -386,6 +389,32 @@ internal sealed class ZaPokemonWorkflowService
         return argumentLabels;
     }
 
+    private static void AddEditedEvolutionItemArgumentLabel(
+        Dictionary<int, string> argumentLabels,
+        int argument,
+        string label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return;
+        }
+
+        if (!argumentLabels.TryGetValue(argument, out var existingLabel)
+            || string.IsNullOrWhiteSpace(existingLabel))
+        {
+            argumentLabels[argument] = label;
+            return;
+        }
+
+        var existingParts = existingLabel.Split(" / ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (existingParts.Contains(label, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        argumentLabels[argument] = $"{label} / {existingLabel}";
+    }
+
     private static Dictionary<int, string> CreateDefaultEvolutionItemArgumentLabels(ZaTextLabelLookup labels)
     {
         return EvolutionItemParameterItemIds.ToDictionary(
@@ -396,6 +425,7 @@ internal sealed class ZaPokemonWorkflowService
     private static IEnumerable<ZaPokemonRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
+        ZaTextLabelLookup spriteLabels,
         IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
@@ -408,7 +438,7 @@ internal sealed class ZaPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels, tmCatalog, evolutionItemArgumentLabels);
+            yield return ToRecord(index, entry.Value, source, labels, spriteLabels, tmCatalog, evolutionItemArgumentLabels);
         }
     }
 
@@ -417,6 +447,7 @@ internal sealed class ZaPokemonWorkflowService
         ZaPersonal entry,
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
+        ZaTextLabelLookup spriteLabels,
         IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
@@ -530,7 +561,8 @@ internal sealed class ZaPokemonWorkflowService
             ReadEvolutions(entry, labels, evolutionItemArgumentLabels),
             ReadLearnset(entry, labels),
             ReadCompatibility(entry, labels, tmCatalog),
-            new ZaPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new ZaPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState),
+            spriteLabels.Pokemon(speciesId));
     }
 
     private static IReadOnlyList<ZaPokemonEvolutionRecord> ReadEvolutions(

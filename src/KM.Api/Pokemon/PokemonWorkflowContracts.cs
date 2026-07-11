@@ -172,7 +172,8 @@ public sealed record PokemonRecordDto(
     IReadOnlyList<PokemonEvolutionRecordDto> Evolutions,
     IReadOnlyList<PokemonLearnsetMoveDto> Learnset,
     IReadOnlyList<PokemonCompatibilityGroupDto> Compatibility,
-    PokemonProvenanceDto Provenance);
+    PokemonProvenanceDto Provenance,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SpriteName = null);
 
 public sealed record PokemonEditableFieldDto(
     string Field,

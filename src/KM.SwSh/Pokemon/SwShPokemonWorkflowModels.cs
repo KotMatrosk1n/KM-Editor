@@ -133,7 +133,8 @@ public sealed record SwShPokemonRecord(
     IReadOnlyList<SwShPokemonEvolutionRecord> Evolutions,
     IReadOnlyList<SwShPokemonLearnsetMove> Learnset,
     IReadOnlyList<SwShPokemonCompatibilityGroup> Compatibility,
-    SwShPokemonProvenance Provenance);
+    SwShPokemonProvenance Provenance,
+    string? SpriteName = null);
 
 public sealed record SwShPokemonWorkflowStats(
     int TotalPokemonCount,

@@ -6,6 +6,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 const tauriDevHost = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  base: './',
   clearScreen: false,
   plugins: [react()],
   server: {
