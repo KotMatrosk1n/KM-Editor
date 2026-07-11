@@ -7051,8 +7051,32 @@ input {
 .raid-rewards-row-heading,
 .flagwork-row-heading,
 .exefs-row-heading {
+  --editor-table-heading-background: linear-gradient(180deg, #172136, #101828);
+
   color: var(--color-text-muted);
-  background: linear-gradient(180deg, #172136, #101828);
+  background: var(--editor-table-heading-background);
+}
+
+.shops-row-heading,
+.encounters-row-heading,
+.raid-rewards-row-heading,
+.flagwork-row-heading,
+.exefs-row-heading {
+  isolation: isolate;
+}
+
+.shops-row-heading::before,
+.encounters-row-heading::before,
+.raid-rewards-row-heading::before,
+.flagwork-row-heading::before,
+.exefs-row-heading::before {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: -100vw;
+  background: var(--editor-table-heading-background);
+  content: '';
+  pointer-events: none;
 }
 
 .items-row:not(.items-row-heading):hover,
