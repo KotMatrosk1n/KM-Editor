@@ -342,6 +342,22 @@ function addShardCommands(shard) {
     return;
   }
 
+  if (shard === 'swsh-hooks-royal-cleanup') {
+    add('swsh-hooks-royal-cleanup', 'Run Royal Candy cleanup hook tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName~Cleanup',
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-royal-behavior') {
+    add('swsh-hooks-royal-behavior', 'Run Royal Candy behavior hook tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName!~Cleanup',
+    ));
+    return;
+  }
+
   if (shard === 'swsh-hooks-other') {
     add('swsh-hooks-other', 'Run remaining hook coexistence tests', dotnetProject(
       'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
