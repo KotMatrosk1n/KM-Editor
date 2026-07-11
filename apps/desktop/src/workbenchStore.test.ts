@@ -24,6 +24,37 @@ describe('workbench store', () => {
     }
   });
 
+  it('clears loaded workflows without dropping the validated project', () => {
+    const state = useWorkbenchStore.getState();
+    const workflowKeys = Object.keys(state).filter(
+      (key) => key.endsWith('Workflow') && !key.startsWith('set')
+    );
+    const loadedMarker = { loadedFromValidatedProject: true };
+    const loadedWorkflows = Object.fromEntries(
+      workflowKeys.map((key) => [key, loadedMarker])
+    );
+    const openProject = { projectId: 'validated-project' };
+    const workflows = [{ id: 'pokemon' }];
+
+    useWorkbenchStore.setState({
+      ...loadedWorkflows,
+      activeSection: 'pokemon',
+      openProject,
+      projectStatus: 'open',
+      workflows
+    } as never);
+    useWorkbenchStore.getState().resetLoadedWorkflowData();
+
+    expect(useWorkbenchStore.getState().activeSection).toBe('pokemon');
+    expect(useWorkbenchStore.getState().openProject).toBe(openProject);
+    expect(useWorkbenchStore.getState().projectStatus).toBe('open');
+    expect(useWorkbenchStore.getState().workflows).toBe(workflows);
+    for (const key of workflowKeys) {
+      expect(useWorkbenchStore.getState()[key as keyof ReturnType<typeof useWorkbenchStore.getState>])
+        .toBeNull();
+    }
+  });
+
   it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
     useWorkbenchStore.setState({
       activeSection: 'health',
