@@ -11,6 +11,8 @@
     "swsh-hooks-royal-cleanup": 240000,
     "swsh-hooks-royal-behavior": 240000,
     "swsh-hooks-other": 240000,
+    "swsh-hooks-other-cleanup": 240000,
+    "swsh-hooks-other-behavior": 240000,
     "integration-sv": 240000,
     "integration-za": 240000,
     "integration-bridge": 180000,

@@ -45,6 +45,14 @@ const commandKeys = new Set();
 
 const dotnetLogger = '--logger "console;verbosity=minimal"';
 const appTimeout = '--testTimeout=30000';
+const swshHookFilters = Object.freeze({
+  royalAll: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+  royalCleanup: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName~Cleanup',
+  royalBehavior: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName!~Cleanup',
+  otherAll: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+  otherCleanup: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy&FullyQualifiedName~Cleanup',
+  otherBehavior: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy&FullyQualifiedName!~Cleanup',
+});
 
 const swshFeatureFilters = new Map([
   ['BagHook', 'BagHook|SwShHookReservationTests'],
@@ -235,18 +243,18 @@ function addFullCommands() {
       command: dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj', 'FullyQualifiedName!~SwShHookReservationTests&Kind!=Slow', { noBuild: true }),
     },
     {
-      label: 'Run Sword and Shield Royal Candy hook coexistence tests',
+      label: 'Run Sword and Shield other cleanup hook tests',
       command: dotnetProject(
         'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-        'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+        swshHookFilters.otherCleanup,
         { noBuild: true },
       ),
     },
     {
-      label: 'Run remaining Sword and Shield hook coexistence tests',
+      label: 'Run Sword and Shield other behavior hook tests',
       command: dotnetProject(
         'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-        'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+        swshHookFilters.otherBehavior,
         { noBuild: true },
       ),
     },
@@ -318,7 +326,7 @@ function addShardCommands(shard) {
         label: 'Run Royal Candy hook coexistence tests',
         command: dotnetProject(
           'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-          'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+          swshHookFilters.royalAll,
           { noBuild: true },
         ),
       },
@@ -326,7 +334,7 @@ function addShardCommands(shard) {
         label: 'Run remaining hook coexistence tests',
         command: dotnetProject(
           'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-          'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+          swshHookFilters.otherAll,
           { noBuild: true },
         ),
       },
@@ -337,7 +345,7 @@ function addShardCommands(shard) {
   if (shard === 'swsh-hooks-royal') {
     add('swsh-hooks-royal', 'Run Royal Candy hook coexistence tests', dotnetProject(
       'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+      swshHookFilters.royalAll,
     ));
     return;
   }
@@ -345,7 +353,7 @@ function addShardCommands(shard) {
   if (shard === 'swsh-hooks-royal-cleanup') {
     add('swsh-hooks-royal-cleanup', 'Run Royal Candy cleanup hook tests', dotnetProject(
       'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName~Cleanup',
+      swshHookFilters.royalCleanup,
     ));
     return;
   }
@@ -353,7 +361,7 @@ function addShardCommands(shard) {
   if (shard === 'swsh-hooks-royal-behavior') {
     add('swsh-hooks-royal-behavior', 'Run Royal Candy behavior hook tests', dotnetProject(
       'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName!~Cleanup',
+      swshHookFilters.royalBehavior,
     ));
     return;
   }
@@ -361,7 +369,23 @@ function addShardCommands(shard) {
   if (shard === 'swsh-hooks-other') {
     add('swsh-hooks-other', 'Run remaining hook coexistence tests', dotnetProject(
       'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+      swshHookFilters.otherAll,
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-other-cleanup') {
+    add('swsh-hooks-other-cleanup', 'Run other cleanup hook tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      swshHookFilters.otherCleanup,
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-other-behavior') {
+    add('swsh-hooks-other-behavior', 'Run other behavior hook tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      swshHookFilters.otherBehavior,
     ));
     return;
   }
