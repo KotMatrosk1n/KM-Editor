@@ -1,0 +1,19 @@
+{
+  "totalMs": 270000,
+  "commandMs": 240000,
+  "maxLocalWorkers": 4,
+  "shards": {
+    "desktop": 60000,
+    "core-formats": 90000,
+    "swsh-general": 240000,
+    "swsh-hooks": 240000,
+    "swsh-hooks-royal": 240000,
+    "swsh-hooks-royal-cleanup": 240000,
+    "swsh-hooks-royal-behavior": 240000,
+    "swsh-hooks-other": 240000,
+    "integration-sv": 240000,
+    "integration-za": 240000,
+    "integration-bridge": 180000,
+    "performance": 120000
+  }
+}

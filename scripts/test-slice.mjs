@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 import { spawn, spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const rawArgs = process.argv.slice(2);
-const modeArg = rawArgs.find((arg) => !arg.startsWith('-')) ?? 'changed';
+const positionalArgs = rawArgs.filter((arg) => !arg.startsWith('-'));
+const modeArg = positionalArgs[0] ?? 'changed';
+const shardArg = positionalArgs[1] ?? '';
 const flags = new Set(rawArgs.filter((arg) => arg.startsWith('-')));
 const printOnly = flags.has('--print') || flags.has('--dry-run');
 
@@ -17,6 +20,25 @@ if (!repoRoot) {
 }
 
 process.chdir(repoRoot);
+
+const budgets = JSON.parse(readFileSync(path.join(repoRoot, 'scripts/test-budgets.json'), 'utf8'));
+const totalBudgetMs = positiveInteger(process.env.KM_TEST_TOTAL_TIMEOUT_MS, budgets.totalMs);
+const commandBudgetMs = positiveInteger(process.env.KM_TEST_COMMAND_TIMEOUT_MS, budgets.commandMs);
+const maxLocalWorkers = positiveInteger(process.env.KM_TEST_MAX_WORKERS, budgets.maxLocalWorkers);
+const runBudgetMs = modeArg === 'shard' && budgets.shards[shardArg]
+  ? Math.min(totalBudgetMs, budgets.shards[shardArg])
+  : totalBudgetMs;
+const timingReportPath = path.join(repoRoot, 'TestResults', 'test-timings.json');
+const timingEntries = [];
+const activeChildren = new Set();
+let totalStarted = 0;
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    terminateActiveChildren();
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  });
+}
 
 const commands = [];
 const commandKeys = new Set();
@@ -123,8 +145,8 @@ const ignoredExact = new Set([
 ]);
 const ignoredExtensions = new Set(['.docx', '.pdf']);
 
-if (!['changed', 'fast', 'full'].includes(modeArg)) {
-  console.error(`Unknown test slice "${modeArg}". Use changed, fast, or full.`);
+if (!['changed', 'fast', 'full', 'shard'].includes(modeArg)) {
+  console.error(`Unknown test slice "${modeArg}". Use changed, fast, full, or shard.`);
   process.exit(1);
 }
 
@@ -132,6 +154,8 @@ if (modeArg === 'fast') {
   addFastCommands();
 } else if (modeArg === 'full') {
   addFullCommands();
+} else if (modeArg === 'shard') {
+  addShardCommands(shardArg);
 } else {
   addChangedCommands();
 }
@@ -158,52 +182,218 @@ if (printOnly) {
   process.exit(0);
 }
 
-const totalStarted = Date.now();
-await runSelectedCommands();
-
-console.log(`total elapsed: ${((Date.now() - totalStarted) / 1000).toFixed(2)}s`);
+totalStarted = Date.now();
+const exitCode = await runSelectedCommands();
+const totalElapsedMs = Date.now() - totalStarted;
+writeTimingReport(totalElapsedMs, exitCode);
+console.log(`total elapsed: ${(totalElapsedMs / 1000).toFixed(2)}s / ${(runBudgetMs / 1000).toFixed(0)}s budget`);
+process.exit(exitCode);
 
 function addFastCommands() {
   add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
-  add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
-  add(
-    'desktop-unit-smoke',
-    'Run focused desktop unit and bridge tests',
-    `pnpm --dir apps/desktop test:run src/AppErrorBoundary.test.tsx src/diagnostics.test.ts src/errorReporting.test.ts src/pokemonSprites.test.ts src/workbenchStore.test.ts src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts src/features/fairy-gym-boosts/FairyGymBoostsSection.test.tsx ${appTimeout}`,
-  );
-  add(
-    'desktop-app-smoke',
-    'Run App shell and advanced editor smoke tests',
-    `pnpm --dir apps/desktop test:run src/App.test.tsx -t "project workbench shell|workflow categories|Dynamax Adventures|Bag Hook|Catch Cap" ${appTimeout}`,
-  );
-  add('core-tests', 'Run core backend tests', dotnetProject('tests/KM.Core.Tests/KM.Core.Tests.csproj'));
-  add('formats-tests', 'Run format backend tests', dotnetProject('tests/KM.Formats.Tests/KM.Formats.Tests.csproj'));
-  add(
-    'swsh-risk-smoke',
-    'Run high risk Sword and Shield workflow smoke tests',
-    dotnetProject(
-      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
-      'FullyQualifiedName~DynamaxAdventure|FullyQualifiedName~ReservedMainRegionsDoNotOverlapBetweenFeatureFamiliesInSameSegment|FullyQualifiedName~SwShRoyalCandyWorkflowServiceTests|FullyQualifiedName~TypeChartWorkflowTests|FullyQualifiedName~SwShFairyGymBoostsBseqPatcherTests',
-    ),
-  );
-  add(
-    'integration-bridge-smoke',
-    'Run bridge serialization and Dynamax Adventures integration smoke tests',
-    dotnetProject(
-      'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
-      'FullyQualifiedName~BridgeJson|FullyQualifiedName~BridgeResponse|FullyQualifiedName~DynamaxAdventure',
-    ),
-  );
+  addParallel('fast-tests', 'Run fast validation shards', [
+    { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
+    {
+      label: 'Run focused desktop unit and bridge tests',
+      command: `pnpm --dir apps/desktop test:run src/AppErrorBoundary.test.tsx src/diagnostics.test.ts src/errorReporting.test.ts src/pokemonSprites.test.ts src/workbenchStore.test.ts src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts src/features/fairy-gym-boosts/FairyGymBoostsSection.test.tsx ${appTimeout}`,
+    },
+    {
+      label: 'Run App shell and advanced editor smoke tests',
+      command: `pnpm --dir apps/desktop test:run src/App.test.tsx -t "project workbench shell|workflow categories|Dynamax Adventures|Bag Hook|Catch Cap" ${appTimeout}`,
+    },
+    { label: 'Run core backend tests', command: dotnetProject('tests/KM.Core.Tests/KM.Core.Tests.csproj') },
+    { label: 'Run format backend tests', command: dotnetProject('tests/KM.Formats.Tests/KM.Formats.Tests.csproj') },
+    {
+      label: 'Run high risk Sword and Shield workflow smoke tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        'FullyQualifiedName~DynamaxAdventure|FullyQualifiedName~ReservedMainRegionsDoNotOverlapBetweenFeatureFamiliesInSameSegment|FullyQualifiedName~SwShRoyalCandyWorkflowServiceTests|FullyQualifiedName~TypeChartWorkflowTests|FullyQualifiedName~SwShFairyGymBoostsBseqPatcherTests',
+      ),
+    },
+    {
+      label: 'Run bridge serialization and Dynamax Adventures integration smoke tests',
+      command: dotnetProject(
+        'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
+        'FullyQualifiedName~BridgeJson|FullyQualifiedName~BridgeResponse|FullyQualifiedName~DynamaxAdventure',
+      ),
+    },
+  ]);
 }
 
 function addFullCommands() {
   add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
-  addParallel('full-tests', 'Run desktop and backend test suites', [
+  add('backend-build', 'Build backend test projects once', 'dotnet build KM.Editor.slnx --no-restore --nologo');
+  addParallel('full-tests', 'Run full validation shards', [
+    { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
     { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
-    { label: 'Run all backend tests', command: dotnetProject('KM.Editor.slnx') },
+    { label: 'Run core backend tests', command: dotnetProject('tests/KM.Core.Tests/KM.Core.Tests.csproj', '', { noBuild: true }) },
+    { label: 'Run format backend tests', command: dotnetProject('tests/KM.Formats.Tests/KM.Formats.Tests.csproj', '', { noBuild: true }) },
+    {
+      label: 'Run Sword and Shield general tests',
+      command: dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj', 'FullyQualifiedName!~SwShHookReservationTests&Kind!=Slow', { noBuild: true }),
+    },
+    {
+      label: 'Run Sword and Shield Royal Candy hook coexistence tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run remaining Sword and Shield hook coexistence tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run Scarlet and Violet integration tests',
+      command: dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', 'FullyQualifiedName~ScarletViolet|FullyQualifiedName~.SV.', { noBuild: true }),
+    },
+    {
+      label: 'Run Pokemon Legends Z-A integration tests',
+      command: dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', 'FullyQualifiedName~PokemonLegendsZA|FullyQualifiedName~.ZA.', { noBuild: true }),
+    },
+    {
+      label: 'Run shared bridge integration tests',
+      command: dotnetProject(
+        'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
+        'FullyQualifiedName!~ScarletViolet&FullyQualifiedName!~.SV.&FullyQualifiedName!~PokemonLegendsZA&FullyQualifiedName!~.ZA.',
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run performance baselines',
+      command: dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj', 'Kind=Slow', { noBuild: true }),
+    },
   ]);
+}
+
+function addShardCommands(shard) {
+  const knownShards = Object.keys(budgets.shards);
+  if (!knownShards.includes(shard)) {
+    console.error(`Unknown test shard "${shard}". Use one of: ${knownShards.join(', ')}.`);
+    process.exit(1);
+  }
+
+  add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
+  add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
+
+  if (shard === 'desktop') {
+    addParallel('desktop-shard', 'Run desktop validation', [
+      { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
+      { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
+    ]);
+    return;
+  }
+
+  if (shard === 'core-formats') {
+    addParallel('core-formats-shard', 'Run core and format tests', [
+      { label: 'Run core backend tests', command: dotnetProject('tests/KM.Core.Tests/KM.Core.Tests.csproj') },
+      { label: 'Run format backend tests', command: dotnetProject('tests/KM.Formats.Tests/KM.Formats.Tests.csproj') },
+    ]);
+    return;
+  }
+
+  if (shard === 'swsh-general') {
+    add('swsh-general', 'Run Sword and Shield general tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName!~SwShHookReservationTests&Kind!=Slow',
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks') {
+    add(
+      'swsh-hooks-build',
+      'Build Sword and Shield hook tests once',
+      'dotnet build tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj --no-restore --nologo',
+    );
+    addParallel('swsh-hooks', 'Run Sword and Shield hook coexistence tests', [
+      {
+        label: 'Run Royal Candy hook coexistence tests',
+        command: dotnetProject(
+          'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+          'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+          { noBuild: true },
+        ),
+      },
+      {
+        label: 'Run remaining hook coexistence tests',
+        command: dotnetProject(
+          'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+          'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+          { noBuild: true },
+        ),
+      },
+    ]);
+    return;
+  }
+
+  if (shard === 'swsh-hooks-royal') {
+    add('swsh-hooks-royal', 'Run Royal Candy hook coexistence tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-royal-cleanup') {
+    add('swsh-hooks-royal-cleanup', 'Run Royal Candy cleanup hook tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName~Cleanup',
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-royal-behavior') {
+    add('swsh-hooks-royal-behavior', 'Run Royal Candy behavior hook tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName!~Cleanup',
+    ));
+    return;
+  }
+
+  if (shard === 'swsh-hooks-other') {
+    add('swsh-hooks-other', 'Run remaining hook coexistence tests', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+    ));
+    return;
+  }
+
+  if (shard === 'integration-sv') {
+    add('integration-sv', 'Run Scarlet and Violet integration tests', dotnetProject(
+      'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
+      'FullyQualifiedName~ScarletViolet|FullyQualifiedName~.SV.',
+    ));
+    return;
+  }
+
+  if (shard === 'performance') {
+    add('performance', 'Run performance baselines', dotnetProject(
+      'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+      'Kind=Slow',
+    ));
+    return;
+  }
+
+  if (shard === 'integration-za') {
+    add('integration-za', 'Run Pokemon Legends Z-A integration tests', dotnetProject(
+      'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
+      'FullyQualifiedName~PokemonLegendsZA|FullyQualifiedName~.ZA.',
+    ));
+    return;
+  }
+
+  add('integration-bridge', 'Run shared bridge integration tests', dotnetProject(
+    'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
+    'FullyQualifiedName!~ScarletViolet&FullyQualifiedName!~.SV.&FullyQualifiedName!~PokemonLegendsZA&FullyQualifiedName!~.ZA.',
+  ));
 }
 
 function addChangedCommands() {
@@ -474,26 +664,27 @@ function addParallel(key, label, childCommands) {
 async function runSelectedCommands() {
   for (const item of commands) {
     if (item.kind === 'parallel') {
-      await runParallelGroup(item);
+      const status = await runParallelGroup(item);
+      if (status !== 0) {
+        return status;
+      }
       continue;
     }
 
     console.log('');
     console.log(`> ${item.label}`);
-    const started = Date.now();
-    const result = spawnSync(item.command, {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      shell: true,
-      stdio: 'inherit',
-    });
-    const elapsedSeconds = ((Date.now() - started) / 1000).toFixed(2);
+    const result = await runCommandStreaming(item.command, item.label, availableCommandBudgetMs());
+    recordTiming(item.label, result);
+    const elapsedSeconds = (result.elapsedMs / 1000).toFixed(2);
     console.log(`elapsed: ${elapsedSeconds}s`);
 
     if (result.status !== 0) {
-      process.exit(result.status ?? 1);
+      terminateActiveChildren();
+      return result.status ?? 1;
     }
   }
+
+  return 0;
 }
 
 async function runParallelGroup(item) {
@@ -507,83 +698,148 @@ async function runParallelGroup(item) {
     }
   }, 30000);
 
-  const results = await Promise.all(
-    item.commands.map(async (child) => {
+  const results = [];
+  let nextIndex = 0;
+  let failedStatus = 0;
+  const workerCount = Math.min(maxLocalWorkers, item.commands.length);
+
+  async function runWorker() {
+    while (failedStatus === 0) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= item.commands.length) {
+        return;
+      }
+
+      const child = item.commands[index];
       console.log(`starting: ${child.label}`);
-      const result = await runCommandBuffered(child.command);
+      const result = await runCommandStreaming(child.command, child.label, availableCommandBudgetMs());
       running.delete(child.label);
       const elapsedSeconds = (result.elapsedMs / 1000).toFixed(2);
       console.log(`finished: ${child.label} (${elapsedSeconds}s)`);
-      return { ...child, ...result, elapsedSeconds };
-    }),
-  );
+      recordTiming(child.label, result);
+      results[index] = { ...child, ...result, elapsedSeconds };
+
+      if (result.status !== 0) {
+        failedStatus = result.status ?? 1;
+        terminateActiveChildren();
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
 
   clearInterval(heartbeat);
 
-  for (const result of results) {
-    console.log('');
-    console.log(`--- ${result.label} output (${result.elapsedSeconds}s) ---`);
-    if (result.stdout) {
-      process.stdout.write(result.stdout);
-      if (!result.stdout.endsWith('\n')) {
-        console.log('');
-      }
-    }
-
-    if (result.stderr) {
-      process.stderr.write(result.stderr);
-      if (!result.stderr.endsWith('\n')) {
-        console.error('');
-      }
-    }
-  }
-
   const elapsedSeconds = ((Date.now() - groupStarted) / 1000).toFixed(2);
   console.log(`parallel elapsed: ${elapsedSeconds}s`);
-
-  const failed = results.find((result) => result.status !== 0);
-  if (failed) {
-    process.exit(failed.status ?? 1);
-  }
+  return failedStatus;
 }
 
-function runCommandBuffered(command) {
+function runCommandStreaming(command, label, timeoutMs) {
   const started = Date.now();
   return new Promise((resolve) => {
     const child = spawn(command, {
       cwd: repoRoot,
       shell: true,
       env: process.env,
+      stdio: 'inherit',
+      detached: process.platform !== 'win32',
     });
-    let stdout = '';
-    let stderr = '';
+    activeChildren.add(child);
+    let timedOut = false;
+    let settled = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      console.error(`${label} exceeded its ${(timeoutMs / 1000).toFixed(0)}s budget. Terminating its process tree.`);
+      terminateProcessTree(child);
+    }, timeoutMs);
 
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.on('error', (error) => {
-      stderr += `${error.message}\n`;
-    });
-    child.on('close', (status) => {
+    const finish = (status) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
+      activeChildren.delete(child);
       resolve({
-        status: status ?? 1,
-        stdout,
-        stderr,
+        status: timedOut ? 124 : (status ?? 1),
         elapsedMs: Date.now() - started,
+        timedOut,
       });
+    };
+
+    child.on('error', (error) => {
+      console.error(`${label} failed to start: ${error.message}`);
+      finish(1);
     });
+    child.on('close', finish);
   });
 }
 
-function dotnetProject(project, filter) {
-  if (!filter) {
-    return `dotnet test ${project} --no-restore ${dotnetLogger}`;
+function availableCommandBudgetMs() {
+  const elapsedMs = totalStarted === 0 ? 0 : Date.now() - totalStarted;
+  return Math.max(1, Math.min(commandBudgetMs, runBudgetMs - elapsedMs));
+}
+
+function recordTiming(label, result) {
+  timingEntries.push({
+    label,
+    elapsedMs: result.elapsedMs,
+    status: result.status,
+    timedOut: result.timedOut,
+  });
+}
+
+function writeTimingReport(totalElapsedMs, status) {
+  mkdirSync(path.dirname(timingReportPath), { recursive: true });
+  writeFileSync(timingReportPath, `${JSON.stringify({
+    schemaVersion: 1,
+    mode: modeArg,
+    shard: shardArg || null,
+    budgetMs: runBudgetMs,
+    totalElapsedMs,
+    status,
+    commands: timingEntries,
+  }, null, 2)}\n`);
+}
+
+function terminateActiveChildren() {
+  for (const child of [...activeChildren]) {
+    terminateProcessTree(child);
+  }
+}
+
+function terminateProcessTree(child) {
+  if (!child || child.pid === undefined || child.exitCode !== null) {
+    return;
   }
 
-  return `dotnet test ${project} --no-restore --filter "${filter}" ${dotnetLogger}`;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    child.kill('SIGKILL');
+  }
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function dotnetProject(project, filter, options = {}) {
+  const noBuild = options.noBuild ? ' --no-build' : '';
+  if (!filter) {
+    return `dotnet test ${project} --no-restore${noBuild} ${dotnetLogger}`;
+  }
+
+  return `dotnet test ${project} --no-restore${noBuild} --filter "${filter}" ${dotnetLogger}`;
 }
 
 function expandFilter(text) {

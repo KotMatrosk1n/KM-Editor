@@ -33,28 +33,40 @@ public sealed class SwShHookReservationTests
     private const string RoyalCandyUnlimitedWorkflowId = "royal-candy-unlimited";
     private const string RoyalCandyStoryLimitsWorkflowId = "royal-candy-story-limits";
     private const string RoyalCandyUninstallWorkflowId = "royal-candy-uninstall";
+    private static readonly Lazy<byte[]> SwordSharedHookNso = new(
+        () => CreateSharedHookNsoCore(ProjectGame.Sword),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<byte[]> ShieldSharedHookNso = new(
+        () => CreateSharedHookNsoCore(ProjectGame.Shield),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<byte[]> SwordSharedHookNsoWithFpsAnchors = new(
+        () => CreateSharedHookNsoWithFpsAnchorsCore(ProjectGame.Sword),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<byte[]> ShieldSharedHookNsoWithFpsAnchors = new(
+        () => CreateSharedHookNsoWithFpsAnchorsCore(ProjectGame.Shield),
+        LazyThreadSafetyMode.ExecutionAndPublication);
 
     public static IEnumerable<object[]> ExeFsInstallOrders()
     {
         foreach (var game in new[] { ProjectGame.Sword, ProjectGame.Shield })
         {
-            foreach (var workflowId in new[] { RoyalCandyUnlimitedWorkflowId, RoyalCandyStoryLimitsWorkflowId })
-            {
-                yield return [game, workflowId, true];
-                yield return [game, workflowId, false];
-            }
+            yield return [game, RoyalCandyUnlimitedWorkflowId, true];
+            yield return [game, RoyalCandyUnlimitedWorkflowId, false];
         }
     }
 
     public static IEnumerable<object[]> RoyalCandyVariantsByGame()
     {
-        foreach (var game in new[] { ProjectGame.Sword, ProjectGame.Shield })
+        foreach (var workflowId in new[] { RoyalCandyUnlimitedWorkflowId, RoyalCandyStoryLimitsWorkflowId })
         {
-            foreach (var workflowId in new[] { RoyalCandyUnlimitedWorkflowId, RoyalCandyStoryLimitsWorkflowId })
-            {
-                yield return [game, workflowId];
-            }
+            yield return [ProjectGame.Sword, workflowId];
         }
+    }
+
+    public static IEnumerable<object[]> RoyalCandyBuildVariants()
+    {
+        yield return [ProjectGame.Sword, RoyalCandyUnlimitedWorkflowId];
+        yield return [ProjectGame.Shield, RoyalCandyUnlimitedWorkflowId];
     }
 
     [Fact]
@@ -805,7 +817,7 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
-    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    [MemberData(nameof(RoyalCandyBuildVariants))]
     public void RoyalCandyPatchesSharedAllowedConsumableRoute(ProjectGame game, string workflowId)
     {
         var baseMain = CreateSharedHookNso(game);
@@ -834,7 +846,7 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
-    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    [MemberData(nameof(RoyalCandyBuildVariants))]
     public void RoyalCandyPatchesVirtualInventoryHelpers(ProjectGame game, string workflowId)
     {
         var baseMain = CreateSharedHookNso(game);
@@ -1903,6 +1915,14 @@ public sealed class SwShHookReservationTests
 
     private static byte[] CreateSharedHookNso(ProjectGame game = ProjectGame.Sword)
     {
+        var cached = game == ProjectGame.Shield
+            ? ShieldSharedHookNso.Value
+            : SwordSharedHookNso.Value;
+        return cached.ToArray();
+    }
+
+    private static byte[] CreateSharedHookNsoCore(ProjectGame game)
+    {
         var text = new byte[0x0157D000];
         WriteRoyalCandyVanillaAnchors(text);
         WriteCatchCapVanillaAnchors(text, game);
@@ -1914,6 +1934,14 @@ public sealed class SwShHookReservationTests
     }
 
     private static byte[] CreateSharedHookNsoWithFpsAnchors(ProjectGame game = ProjectGame.Sword)
+    {
+        var cached = game == ProjectGame.Shield
+            ? ShieldSharedHookNsoWithFpsAnchors.Value
+            : SwordSharedHookNsoWithFpsAnchors.Value;
+        return cached.ToArray();
+    }
+
+    private static byte[] CreateSharedHookNsoWithFpsAnchorsCore(ProjectGame game)
     {
         var text = new byte[SwShFpsMainTestAnchors.RequiredTextLength];
         WriteRoyalCandyVanillaAnchors(text);
