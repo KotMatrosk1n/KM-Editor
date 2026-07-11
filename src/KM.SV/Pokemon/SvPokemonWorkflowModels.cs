@@ -134,7 +134,8 @@ public sealed record SvPokemonRecord(
     IReadOnlyList<SvPokemonEvolutionRecord> Evolutions,
     IReadOnlyList<SvPokemonLearnsetMove> Learnset,
     IReadOnlyList<SvPokemonCompatibilityGroup> Compatibility,
-    SvPokemonProvenance Provenance);
+    SvPokemonProvenance Provenance,
+    string? SpriteName = null);
 
 public sealed record SvPokemonWorkflowStats(
     int TotalPokemonCount,

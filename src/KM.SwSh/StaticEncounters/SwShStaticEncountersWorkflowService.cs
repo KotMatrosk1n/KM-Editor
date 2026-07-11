@@ -444,8 +444,8 @@ public sealed class SwShStaticEncountersWorkflowService
             .Select(move => move.Move ?? $"Move {move.MoveId.ToString(CultureInfo.InvariantCulture)}"));
 
         return moveText.Length == 0
-            ? $"Static {(encounterIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {speciesLabel} Lv. {level}{scenarioText}"
-            : $"Static {(encounterIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {speciesLabel} Lv. {level}{scenarioText} | {moveText}";
+            ? $"Static {encounterIndex.ToString("000", CultureInfo.InvariantCulture)}: {speciesLabel} Lv. {level}{scenarioText}"
+            : $"Static {encounterIndex.ToString("000", CultureInfo.InvariantCulture)}: {speciesLabel} Lv. {level}{scenarioText} | {moveText}";
     }
 
     internal static string FormatIvSummary(SwShStaticEncounterStatsRecord ivs, int? flawlessIvCount)

@@ -8,6 +8,7 @@ import {
   createHealthForValidatedPaths,
   createMockProjectBridge
 } from './testSupport/appTestFixtures';
+import { LocalizationProvider } from './localization';
 import { useWorkbenchStore } from './workbenchStore';
 
 const tauriEventMock = vi.hoisted(() => {
@@ -144,7 +145,49 @@ describe('App', () => {
 
   it('shows the renamed workflow categories in sidebar order', async () => {
     const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
+    const bridge = createMockProjectBridge({}, true);
+    const originalLoadPokemonWorkflow = bridge.loadPokemonWorkflow;
+    const originalLoadTrainersWorkflow = bridge.loadTrainersWorkflow;
+    const loadPokemonWorkflow = vi.fn(
+      async (request: Parameters<typeof originalLoadPokemonWorkflow>[0]) => {
+        const response = await originalLoadPokemonWorkflow(request);
+        const localizedName =
+          request.paths.gameTextLanguage === 'zh' ? '中文宝可梦' : 'Bulbasaur';
+
+        return {
+          workflow: {
+            ...response.workflow,
+            pokemon: response.workflow.pokemon.map((pokemon, index) =>
+              index === 0 ? { ...pokemon, name: localizedName } : pokemon
+            )
+          }
+        };
+      }
+    );
+    const loadTrainersWorkflow = vi.fn(
+      async (request: Parameters<typeof originalLoadTrainersWorkflow>[0]) => {
+        const response = await originalLoadTrainersWorkflow(request);
+        const localizedName =
+          request.paths.gameTextLanguage === 'zh' ? '中文训练家' : 'Avery';
+
+        return {
+          workflow: {
+            ...response.workflow,
+            trainers: response.workflow.trainers.map((trainer, index) =>
+              index === 0 ? { ...trainer, name: localizedName } : trainer
+            )
+          }
+        };
+      }
+    );
+    bridge.loadPokemonWorkflow = loadPokemonWorkflow;
+    bridge.loadTrainersWorkflow = loadTrainersWorkflow;
+
+    render(
+      <LocalizationProvider>
+        <App bridge={bridge} />
+      </LocalizationProvider>
+    );
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -169,6 +212,63 @@ describe('App', () => {
       'Changes',
       'Settings'
     ]);
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(within(navigation).getByRole('button', { name: 'Pokemon' }));
+    await waitFor(() => expect(loadPokemonWorkflow).toHaveBeenCalled());
+    expect(loadPokemonWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('en');
+    await waitFor(() => expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
+    await waitFor(() => expect(loadTrainersWorkflow).toHaveBeenCalled());
+    expect(loadTrainersWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('en');
+    await waitFor(() => expect(screen.getAllByText('Avery').length).toBeGreaterThan(0));
+    const trainerSearch = screen.getByPlaceholderText('Search trainers');
+    await user.type(trainerSearch, 'Trainer 10');
+    expect(screen.getAllByText('Avery').length).toBeGreaterThan(0);
+    await user.clear(trainerSearch);
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('radio', { name: /Simplified Chinese|简体中文/ }));
+
+    const pokemonCallsBeforeChineseReload = loadPokemonWorkflow.mock.calls.length;
+    await user.click(within(navigation).getByRole('button', { name: /^(Pokemon|宝可梦)$/ }));
+    await waitFor(() =>
+      expect(loadPokemonWorkflow).toHaveBeenCalledTimes(pokemonCallsBeforeChineseReload + 1)
+    );
+    expect(loadPokemonWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('zh');
+    await waitFor(() => expect(screen.getAllByText('中文宝可梦').length).toBeGreaterThan(0));
+    expect(screen.queryByText('Bulbasaur')).not.toBeInTheDocument();
+
+    const trainerCallsBeforeChineseReload = loadTrainersWorkflow.mock.calls.length;
+    await user.click(within(navigation).getByRole('button', { name: /^(Trainers|训练家)$/ }));
+    await waitFor(() =>
+      expect(loadTrainersWorkflow).toHaveBeenCalledTimes(trainerCallsBeforeChineseReload + 1)
+    );
+    expect(loadTrainersWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('zh');
+    await waitFor(() => expect(screen.getAllByText('中文训练家').length).toBeGreaterThan(0));
+    expect(screen.queryByText('Avery')).not.toBeInTheDocument();
+
+    await user.click(within(navigation).getByRole('button', { name: /^(Settings|设置)$/ }));
+    await user.click(await screen.findByRole('radio', { name: /English|英语/ }));
+
+    const pokemonCallsBeforeEnglishReload = loadPokemonWorkflow.mock.calls.length;
+    await user.click(within(navigation).getByRole('button', { name: /^(Pokemon|宝可梦)$/ }));
+    await waitFor(() =>
+      expect(loadPokemonWorkflow).toHaveBeenCalledTimes(pokemonCallsBeforeEnglishReload + 1)
+    );
+    expect(loadPokemonWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('en');
+    await waitFor(() => expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0));
+    expect(screen.queryByText('中文宝可梦')).not.toBeInTheDocument();
+
+    const trainerCallsBeforeEnglishReload = loadTrainersWorkflow.mock.calls.length;
+    await user.click(within(navigation).getByRole('button', { name: /^(Trainers|训练家)$/ }));
+    await waitFor(() =>
+      expect(loadTrainersWorkflow).toHaveBeenCalledTimes(trainerCallsBeforeEnglishReload + 1)
+    );
+    expect(loadTrainersWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('en');
+    await waitFor(() => expect(screen.getAllByText('Avery').length).toBeGreaterThan(0));
+    expect(screen.queryByText('中文训练家')).not.toBeInTheDocument();
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {

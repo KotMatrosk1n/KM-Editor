@@ -196,6 +196,12 @@ button > span {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
   color: #f4f7fb;
   background:
@@ -7282,6 +7288,9 @@ input {
   }
 
   .sidebar {
+    position: static;
+    height: auto;
+    overflow: visible;
     padding: 12px;
   }
 

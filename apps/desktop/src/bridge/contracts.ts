@@ -895,6 +895,7 @@ export const pokemonRecordSchema = z.strictObject({
   personal: pokemonPersonalDetailsSchema,
   personalId: z.number().int().nonnegative(),
   provenance: pokemonProvenanceSchema,
+  spriteName: z.string().nullable().default(null),
   speciesId: z.number().int().nonnegative(),
   type1: z.string(),
   type2: z.string(),

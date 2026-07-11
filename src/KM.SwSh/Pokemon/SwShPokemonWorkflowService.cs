@@ -369,6 +369,7 @@ public sealed class SwShPokemonWorkflowService
             "monsname.dat",
             "Pokemon species names",
             diagnostics);
+        var spriteSpeciesNames = LoadOptionalEnglishTextTable(project, "monsname.dat");
         var itemNames = LoadOptionalTextTable(
             project,
             "itemname.dat",
@@ -415,6 +416,7 @@ public sealed class SwShPokemonWorkflowService
                 .Select(record => ToPokemonRecord(
                     record,
                     displaySpeciesNames,
+                    spriteSpeciesNames.Count > 0 ? spriteSpeciesNames : displaySpeciesNames,
                     abilityNames,
                     itemDisplayNames,
                     moveNames,
@@ -645,6 +647,30 @@ public sealed class SwShPokemonWorkflowService
         return [];
     }
 
+    private static IReadOnlyList<string> LoadOptionalEnglishTextTable(
+        OpenedProject project,
+        string fileName)
+    {
+        var relativePath = SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName);
+        var source = ResolveWorkflowFile(project, relativePath);
+        if (source is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+                .Lines
+                .Select(line => line.Text)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
+        {
+            return [];
+        }
+    }
+
     private static string? ResolveCommonTextPath(OpenedProject project, string fileName)
     {
         var language = SwShGameTextLanguage.Resolve(project.Paths);
@@ -715,6 +741,7 @@ public sealed class SwShPokemonWorkflowService
     private static SwShPokemonRecord ToPokemonRecord(
         SwShPersonalRecord personal,
         IReadOnlyList<string> speciesNames,
+        IReadOnlyList<string> spriteSpeciesNames,
         IReadOnlyList<string> abilityNames,
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
@@ -724,6 +751,7 @@ public sealed class SwShPokemonWorkflowService
         SwShPokemonProvenance provenance)
     {
         var displayIdentity = ResolveDisplayIdentity(personal, speciesNames, formOwners);
+        var spriteIdentity = ResolveDisplayIdentity(personal, spriteSpeciesNames, formOwners);
         var learnset = learnsets.TryGetValue(personal.PersonalId, out var learnsetRecord)
             ? learnsetRecord.Moves.Select(move => new SwShPokemonLearnsetMove(
                     move.Slot,
@@ -815,7 +843,8 @@ public sealed class SwShPokemonWorkflowService
             evolutionRecords,
             learnset,
             compatibility,
-            provenance);
+            provenance,
+            spriteIdentity.Name);
     }
 
     private static SwShPokemonEvolutionRecord ToPokemonEvolutionRecord(

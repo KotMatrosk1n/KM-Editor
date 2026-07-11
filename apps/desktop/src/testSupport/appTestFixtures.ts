@@ -699,6 +699,7 @@ export function createMockProjectBridge(
           sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
           sourceLayer: 'base'
         },
+        spriteName: null,
         speciesId: 1,
         type1: 'Grass',
         type2: 'Poison',
@@ -801,6 +802,7 @@ export function createMockProjectBridge(
           sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
           sourceLayer: 'base'
         },
+        spriteName: null,
         speciesId: 4,
         type1: 'Fire',
         type2: 'Fire',
@@ -2316,7 +2318,7 @@ export function createMockProjectBridge(
           speed: 28
         },
         ivSummary: 'HP 31 / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28',
-        label: 'Static 001: Grookey (Form 1) Lv. 50 | Calyrex',
+        label: 'Static 000: Grookey (Form 1) Lv. 50 | Calyrex',
         level: 50,
         moves: [
           { move: 'Scratch', moveId: 1, slot: 0 },
@@ -4577,7 +4579,7 @@ export function createMockProjectBridge(
                 : request.session.pendingEdits[0]?.domain === 'workflow.staticEncounters'
                   ? [
                       {
-                        reason: 'Apply pending Static Encounter edit: Set Static 001 HP IV to 0.',
+                        reason: 'Apply pending Static Encounter edit: Set Static 000 HP IV to 0.',
                         replacesExistingOutput: false,
                         sources: [
                           {
@@ -6718,7 +6720,7 @@ export function createMockProjectBridge(
                   relativePath: 'romfs/bin/script_event_data/event_encount_data.bin'
                 }
               ],
-              summary: `Set Static 001 ${request.field} to ${request.value}.`
+              summary: `Set Static 000 ${request.field} to ${request.value}.`
             }
           ],
           sessionId: 'session-1'

@@ -993,7 +993,8 @@ public static class ZaBridgeMapper
             new PokemonProvenanceDto(
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)),
+            pokemon.SpriteName);
     }
 
     private static ItemRecordDto ToDto(ZaItemRecord item)

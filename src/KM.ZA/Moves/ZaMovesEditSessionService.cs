@@ -884,6 +884,7 @@ internal sealed class ZaMovesEditSessionService
         public byte RawTarget { get; set; }
         public StatChangesRow StatChanges { get; } = new();
         public sbyte Affinity { get; init; }
+        public bool Unknown20 { get; init; }
         public bool FlagMakesContact { get; set; }
         public bool FlagCharge { get; set; }
         public bool FlagRecharge { get; set; }
@@ -959,6 +960,7 @@ internal sealed class ZaMovesEditSessionService
                 RawHealing = row.RawHealing,
                 RawTarget = row.RawTarget,
                 Affinity = row.Affinity,
+                Unknown20 = row.Unknown20,
                 FlagMakesContact = row.FlagMakesContact,
                 FlagCharge = row.FlagCharge,
                 FlagRecharge = row.FlagRecharge,
@@ -1081,6 +1083,7 @@ internal sealed class ZaMovesEditSessionService
             ZaMoveData.AddFlagRecharge(builder, FlagRecharge);
             ZaMoveData.AddFlagCharge(builder, FlagCharge);
             ZaMoveData.AddFlagMakesContact(builder, FlagMakesContact);
+            ZaMoveData.AddUnknown20(builder, Unknown20);
             ZaMoveData.AddAffinity(builder, Affinity);
             ZaMoveData.AddStatChanges(builder, StatChanges.Write(builder));
             ZaMoveData.AddRawTarget(builder, RawTarget);

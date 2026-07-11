@@ -318,15 +318,8 @@ internal static class ZaLabels
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (rankMatch.Success)
         {
-            var rank = int.Parse(rankMatch.Groups["rank"].Value, CultureInfo.InvariantCulture);
             var number = int.Parse(rankMatch.Groups["number"].Value, CultureInfo.InvariantCulture);
-            var typeLabel = rankMatch.Groups["type"].Success
-                ? $" {FormatTrainerToken(rankMatch.Groups["type"].Value)}"
-                : string.Empty;
-            var label = string.IsNullOrWhiteSpace(trainerClass)
-                ? string.Create(CultureInfo.InvariantCulture, $"Dimension Rank {rank}{typeLabel} {number}")
-                : string.Create(CultureInfo.InvariantCulture, $"Rank {rank}{typeLabel} {number}");
-            return PrefixTrainerClass(label, trainerClass);
+            return string.Create(CultureInfo.InvariantCulture, $"Hyperspace Trainer {number}");
         }
 
         var mainMissionMatch = Regex.Match(
@@ -359,7 +352,7 @@ internal static class ZaLabels
 
         var infiniteMatch = Regex.Match(
             raw,
-            @"^za_inf(?<strong>_strong)?_(?<rest>[a-z0-9_]+)$",
+            @"^za_inf(?<strong>_strong(?:est)?)?_(?<rest>[a-z0-9_]+)$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (infiniteMatch.Success)
         {

@@ -960,6 +960,7 @@ const alternatePriceFieldName = 'alternatePrice';
 const itemFieldFlagsFieldName = 'fieldFlags';
 const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
+const itemCanUseOnPokemonFieldName = 'canUseOnPokemon';
 const itemMachineMoveIdFieldName = 'machineMoveId';
 const pokemonGlobalEvYieldFieldName = 'evYieldAll';
 const pokemonGlobalExpYieldFieldName = 'expYieldAll';
@@ -1463,8 +1464,6 @@ function selectTextFieldContents(field: HTMLInputElement | HTMLTextAreaElement) 
   }
 }
 
-let currentGameTextLanguage: LanguageCode = 'en';
-
 export function App({
   bridge: unscopedBridge = defaultProjectBridge,
   desktopServices = defaultDesktopServices
@@ -1474,20 +1473,30 @@ export function App({
 } = {}) {
   useSelectEditableFieldContents();
   const { language, translateLiteral } = useLocalization();
-  currentGameTextLanguage = language;
 
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const applyResult = useWorkbenchStore((state) => state.applyResult);
   const changePlan = useWorkbenchStore((state) => state.changePlan);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
   const draftPathsRef = useRef(draftPaths);
+  const languageRef = useRef(language);
   draftPathsRef.current = draftPaths;
+  languageRef.current = language;
+  const createProjectPaths = useCallback(
+    (paths: ProjectPathDraft = draftPathsRef.current) =>
+      toProjectPaths(paths, languageRef.current),
+    []
+  );
+  const canCommitGameTextWorkflow = useCallback(
+    (gameTextLanguage: LanguageCode) => gameTextLanguage === languageRef.current,
+    []
+  );
   const bridge = useMemo(
     () =>
       createGameScopedProjectBridge(unscopedBridge, () =>
-        toProjectPaths(draftPathsRef.current)
+        createProjectPaths(draftPathsRef.current)
       ),
-    [unscopedBridge]
+    [createProjectPaths, unscopedBridge]
   );
   const editSession = useWorkbenchStore((state) => state.editSession);
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
@@ -1826,8 +1835,9 @@ export function App({
   const supportsTrinityOutput = isScarletVioletProject || isPokemonLegendsZAProject;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
-  const lastReloadedGameTextLanguageRef = useRef(language);
-  const gameTextLanguageReloadRunRef = useRef(0);
+  const lastInvalidatedGameTextLanguageRef = useRef(language);
+  const pokemonWorkflowLoadRunRef = useRef(0);
+  const trainersWorkflowLoadRunRef = useRef(0);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
   const availableWorkflowSectionIds = useMemo(
@@ -2138,7 +2148,7 @@ export function App({
   const getScopedEditorOutputMode = (section: WorkbenchSection): ChangePlanOutputMode | undefined =>
     isScarletVioletAdvancedEditorSection(section, selectedGame) ? 'standalone' : undefined;
 
-  const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: toProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
+  const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: createProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
 
   const clearLoadedWorkflowData = useCallback(() => {
     useWorkbenchStore.setState({
@@ -2193,6 +2203,47 @@ export function App({
     clearScopedEditorPanelState();
     clearDynamaxAdventurePanelState();
   }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState]);
+
+  const clearLoadedGameTextWorkflowData = useCallback(() => {
+    useWorkbenchStore.setState({
+      bagHookWorkflow: null,
+      catchCapWorkflow: null,
+      hyperTrainingWorkflow: null,
+      shinyRateWorkflow: null,
+      typeChartWorkflow: null,
+      fairyGymBoostsWorkflow: null,
+      fashionUnlockWorkflow: null,
+      gymUniformRemovalWorkflow: null,
+      hyperspaceBypassWorkflow: null,
+      ivScreenWorkflow: null,
+      dynamaxAdventuresWorkflow: null,
+      encountersWorkflow: null,
+      exeFsPatchWorkflow: null,
+      flagworkSaveWorkflow: null,
+      giftPokemonWorkflow: null,
+      itemsWorkflow: null,
+      movesWorkflow: null,
+      behaviorWorkflow: null,
+      placementWorkflow: null,
+      pokemonWorkflow: null,
+      teraRaidsWorkflow: null,
+      raidBattlesWorkflow: null,
+      raidRewardsWorkflow: null,
+      raidBonusRewardsWorkflow: null,
+      rentalPokemonWorkflow: null,
+      royalCandyWorkflow: null,
+      startingItemsWorkflow: null,
+      npcItemGiftWorkflow: null,
+      shopsWorkflow: null,
+      spreadsheetImportPreview: null,
+      spreadsheetImportWorkflow: null,
+      staticEncountersWorkflow: null,
+      textWorkflow: null,
+      tradePokemonWorkflow: null,
+      trainersWorkflow: null
+    });
+    setLazyLoadedWorkflowSections(new Set());
+  }, []);
 
   const clearPendingEditState = useCallback(() => {
     editSessionRef.current = null;
@@ -2561,7 +2612,7 @@ export function App({
     }
 
     if (health && hasValidTrinitySupportFolder(selectedGame, health)) {
-      void startSvCacheWarmup(toProjectPaths(draftPathsRef.current), health);
+      void startSvCacheWarmup(createProjectPaths(draftPathsRef.current), health);
       return;
     }
 
@@ -2594,7 +2645,7 @@ export function App({
       setIsSvCacheWarming(false);
 
       const paths = isTrinityCacheGame(selectedGame)
-        ? toProjectPaths(draftPathsRef.current)
+        ? createProjectPaths(draftPathsRef.current)
         : null;
       const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
 
@@ -2624,7 +2675,7 @@ export function App({
   const handleChangeSvCacheLimit = useCallback(
     async (maxCacheSizeBytes: number) => {
       const paths = isTrinityCacheGame(selectedGame)
-        ? toProjectPaths(draftPathsRef.current)
+        ? createProjectPaths(draftPathsRef.current)
         : null;
       const mode = svCacheStatus?.settings.mode ?? 'balanced';
 
@@ -2653,7 +2704,7 @@ export function App({
       return;
     }
 
-    const paths = toProjectPaths(draftPathsRef.current);
+    const paths = createProjectPaths(draftPathsRef.current);
     setIsSvCacheRefreshing(true);
     try {
       const response = isPokemonLegendsZAGame(selectedGame)
@@ -2676,7 +2727,7 @@ export function App({
 
     try {
       const activePaths = isTrinityCacheGame(selectedGame)
-        ? toProjectPaths(draftPathsRef.current)
+        ? createProjectPaths(draftPathsRef.current)
         : null;
       const response = isPokemonLegendsZAGame(selectedGame)
         ? await bridge.clearZaCache({ activePaths })
@@ -2694,7 +2745,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.validateProject({ paths });
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(draftPaths);
@@ -2833,7 +2884,7 @@ export function App({
 
     try {
       const validationPaths = {
-        ...toProjectPaths(draftPaths),
+        ...createProjectPaths(draftPaths),
         outputRootPath: null
       };
       const validationResponse = await bridge.validateProject({ paths: validationPaths });
@@ -2925,7 +2976,7 @@ export function App({
         ...draftPathsRef.current,
         [supportFolderField]: folderPath
       };
-      const paths = toProjectPaths(nextDraftPaths);
+      const paths = createProjectPaths(nextDraftPaths);
       setDraftPath(supportFolderField, folderPath);
       setProjectStatus('validating');
 
@@ -3203,7 +3254,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadItemsWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadItemsWorkflow({ paths: createProjectPaths(draftPaths) });
       setItemsWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3213,16 +3264,29 @@ export function App({
   };
 
   const handleOpenPokemonWorkflow = async () => {
+    const loadRun = pokemonWorkflowLoadRunRef.current + 1;
+    pokemonWorkflowLoadRunRef.current = loadRun;
+    const paths = createProjectPaths(draftPaths);
+    const canCommit = () =>
+      pokemonWorkflowLoadRunRef.current === loadRun &&
+      canCommitGameTextWorkflow(paths.gameTextLanguage);
+
     setIsPokemonLoading(true);
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadPokemonWorkflow({ paths: toProjectPaths(draftPaths) });
-      setPokemonWorkflow(response.workflow);
+      const response = await bridge.loadPokemonWorkflow({ paths });
+      if (canCommit()) {
+        setPokemonWorkflow(response.workflow);
+      }
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (canCommit()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsPokemonLoading(false);
+      if (pokemonWorkflowLoadRunRef.current === loadRun) {
+        setIsPokemonLoading(false);
+      }
     }
   };
 
@@ -3231,7 +3295,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadMovesWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadMovesWorkflow({ paths: createProjectPaths(draftPaths) });
       setMovesWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3246,7 +3310,7 @@ export function App({
 
     try {
       const response = await bridge.loadTextWorkflow({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         query: createTextWorkflowQuery(selectedGame, searchTextOverride)
       });
       setTextWorkflow(response.workflow);
@@ -3266,7 +3330,7 @@ export function App({
       setIsTextLoading(true);
       setBridgeDiagnostics([]);
       bridge.loadTextWorkflow({
-        paths: toProjectPaths(draftPathsRef.current),
+        paths: createProjectPaths(draftPathsRef.current),
         query: createTextWorkflowQuery(selectedGame, textSearchText)
       })
         .then((response) => {
@@ -3292,16 +3356,29 @@ export function App({
   ]);
 
   const handleOpenTrainersWorkflow = async () => {
+    const loadRun = trainersWorkflowLoadRunRef.current + 1;
+    trainersWorkflowLoadRunRef.current = loadRun;
+    const paths = createProjectPaths(draftPaths);
+    const canCommit = () =>
+      trainersWorkflowLoadRunRef.current === loadRun &&
+      canCommitGameTextWorkflow(paths.gameTextLanguage);
+
     setIsTrainersLoading(true);
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadTrainersWorkflow({ paths: toProjectPaths(draftPaths) });
-      setTrainersWorkflow(response.workflow);
+      const response = await bridge.loadTrainersWorkflow({ paths });
+      if (canCommit()) {
+        setTrainersWorkflow(response.workflow);
+      }
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (canCommit()) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsTrainersLoading(false);
+      if (trainersWorkflowLoadRunRef.current === loadRun) {
+        setIsTrainersLoading(false);
+      }
     }
   };
 
@@ -3310,7 +3387,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadGiftPokemonWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadGiftPokemonWorkflow({ paths: createProjectPaths(draftPaths) });
       setGiftPokemonWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3324,7 +3401,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadTradePokemonWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadTradePokemonWorkflow({ paths: createProjectPaths(draftPaths) });
       setTradePokemonWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3339,7 +3416,7 @@ export function App({
 
     try {
       const response = await bridge.loadStaticEncountersWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setStaticEncountersWorkflow(response.workflow);
     } catch (error) {
@@ -3355,7 +3432,7 @@ export function App({
 
     try {
       const response = await bridge.loadRentalPokemonWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setRentalPokemonWorkflow(response.workflow);
     } catch (error) {
@@ -3372,7 +3449,7 @@ export function App({
 
     try {
       const response = await bridge.loadDynamaxAdventuresWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setDynamaxAdventuresWorkflow(response.workflow);
     } catch (error) {
@@ -3387,7 +3464,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadShopsWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadShopsWorkflow({ paths: createProjectPaths(draftPaths) });
       setShopsWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3401,7 +3478,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadEncountersWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadEncountersWorkflow({ paths: createProjectPaths(draftPaths) });
       setEncountersWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3415,7 +3492,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadTeraRaidsWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadTeraRaidsWorkflow({ paths: createProjectPaths(draftPaths) });
       setTeraRaidsWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3429,7 +3506,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadRaidBattlesWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadRaidBattlesWorkflow({ paths: createProjectPaths(draftPaths) });
       setRaidBattlesWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3443,7 +3520,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadRaidRewardsWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadRaidRewardsWorkflow({ paths: createProjectPaths(draftPaths) });
       setRaidRewardsWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3458,7 +3535,7 @@ export function App({
 
     try {
       const response = await bridge.loadRaidBonusRewardsWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setRaidBonusRewardsWorkflow(response.workflow);
     } catch (error) {
@@ -3473,7 +3550,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadPlacementWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadPlacementWorkflow({ paths: createProjectPaths(draftPaths) });
       setPlacementWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3487,7 +3564,7 @@ export function App({
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.loadBehaviorWorkflow({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.loadBehaviorWorkflow({ paths: createProjectPaths(draftPaths) });
       setBehaviorWorkflow(response.workflow);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3502,7 +3579,7 @@ export function App({
 
     try {
       const response = await bridge.loadFlagworkSaveWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setFlagworkSaveWorkflow(response.workflow);
     } catch (error) {
@@ -3518,7 +3595,7 @@ export function App({
 
     try {
       const response = await bridge.loadBagHookWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setBagHookWorkflow(response.workflow);
     } catch (error) {
@@ -3534,7 +3611,7 @@ export function App({
 
     try {
       const response = await bridge.stageBagHookInstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setBagHookWorkflow(response.workflow);
@@ -3554,7 +3631,7 @@ export function App({
 
     try {
       const response = await bridge.stageBagHookUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setBagHookWorkflow(response.workflow);
@@ -3574,7 +3651,7 @@ export function App({
 
     try {
       const response = await bridge.loadCatchCapWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setCatchCapWorkflow(response.workflow);
     } catch (error) {
@@ -3591,7 +3668,7 @@ export function App({
     try {
       const response = await bridge.stageCatchCap({
         caps,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setCatchCapWorkflow(response.workflow);
@@ -3612,7 +3689,7 @@ export function App({
 
     try {
       const response = await bridge.stageCatchCapUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setCatchCapWorkflow(response.workflow);
@@ -3633,7 +3710,7 @@ export function App({
 
     try {
       const response = await bridge.loadHyperTrainingWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setHyperTrainingWorkflow(response.workflow);
     } catch (error) {
@@ -3650,7 +3727,7 @@ export function App({
     try {
       const response = await bridge.stageHyperTraining({
         minimumLevel,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setHyperTrainingWorkflow(response.workflow);
@@ -3671,7 +3748,7 @@ export function App({
 
     try {
       const response = await bridge.loadShinyRateWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setShinyRateWorkflow(response.workflow);
     } catch (error) {
@@ -3688,7 +3765,7 @@ export function App({
     try {
       const response = await bridge.stageShinyRate({
         mode,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         rollCount,
         session: editSession
       });
@@ -3710,7 +3787,7 @@ export function App({
 
     try {
       const response = await bridge.loadTypeChartWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setTypeChartWorkflow(response.workflow);
     } catch (error) {
@@ -3726,7 +3803,7 @@ export function App({
 
     try {
       const response = await bridge.stageTypeChart({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         values
       });
@@ -3748,7 +3825,7 @@ export function App({
 
     try {
       const response = await bridge.stageTypeChartUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setTypeChartWorkflow(response.workflow);
@@ -3769,7 +3846,7 @@ export function App({
 
     try {
       const response = await bridge.loadFairyGymBoostsWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setFairyGymBoostsWorkflow(response.workflow);
     } catch (error) {
@@ -3785,7 +3862,7 @@ export function App({
 
     try {
       const response = await bridge.stageFairyGymBoosts({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         selections,
         session: editSession
       });
@@ -3807,7 +3884,7 @@ export function App({
 
     try {
       const response = await bridge.loadFashionUnlockWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setFashionUnlockWorkflow(response.workflow);
     } catch (error) {
@@ -3823,7 +3900,7 @@ export function App({
 
     try {
       const response = await bridge.stageFashionUnlockInstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setFashionUnlockWorkflow(response.workflow);
@@ -3844,7 +3921,7 @@ export function App({
 
     try {
       const response = await bridge.stageFashionUnlockUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setFashionUnlockWorkflow(response.workflow);
@@ -3865,7 +3942,7 @@ export function App({
 
     try {
       const response = await bridge.loadGymUniformRemovalWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setGymUniformRemovalWorkflow(response.workflow);
     } catch (error) {
@@ -3881,7 +3958,7 @@ export function App({
 
     try {
       const response = await bridge.stageGymUniformRemovalInstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setGymUniformRemovalWorkflow(response.workflow);
@@ -3902,7 +3979,7 @@ export function App({
 
     try {
       const response = await bridge.stageGymUniformRemovalUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setGymUniformRemovalWorkflow(response.workflow);
@@ -3923,7 +4000,7 @@ export function App({
 
     try {
       const response = await bridge.loadHyperspaceBypassWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setHyperspaceBypassWorkflow(response.workflow);
     } catch (error) {
@@ -3939,7 +4016,7 @@ export function App({
 
     try {
       const response = await bridge.stageHyperspaceBypassInstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setHyperspaceBypassWorkflow(response.workflow);
@@ -3960,7 +4037,7 @@ export function App({
 
     try {
       const response = await bridge.stageHyperspaceBypassUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setHyperspaceBypassWorkflow(response.workflow);
@@ -3981,7 +4058,7 @@ export function App({
 
     try {
       const response = await bridge.loadIvScreenWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setIvScreenWorkflow(response.workflow);
     } catch (error) {
@@ -3997,7 +4074,7 @@ export function App({
 
     try {
       const response = await bridge.stageIvScreenInstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setIvScreenWorkflow(response.workflow);
@@ -4018,7 +4095,7 @@ export function App({
 
     try {
       const response = await bridge.stageIvScreenUninstall({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setIvScreenWorkflow(response.workflow);
@@ -4039,7 +4116,7 @@ export function App({
 
     try {
       const response = await bridge.loadExeFsPatchWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setExeFsPatchWorkflow(response.workflow);
     } catch (error) {
@@ -4060,7 +4137,7 @@ export function App({
     try {
       const response = await bridge.stageExeFsPatch({
         patchId,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setExeFsPatchWorkflow(response.workflow);
@@ -4080,7 +4157,7 @@ export function App({
 
     try {
       const response = await bridge.loadRoyalCandyWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setRoyalCandyWorkflow(response.workflow);
     } catch (error) {
@@ -4106,7 +4183,7 @@ export function App({
     try {
       const response = await bridge.stageRoyalCandyWorkflow({
         levelCaps,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         workflowId
       });
@@ -4127,7 +4204,7 @@ export function App({
 
     try {
       const response = await bridge.loadStartingItemsWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setStartingItemsWorkflow(response.workflow);
     } catch (error) {
@@ -4150,7 +4227,7 @@ export function App({
     try {
       const response = await bridge.stageStartingItems({
         grants,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setStartingItemsWorkflow(response.workflow);
@@ -4176,7 +4253,7 @@ export function App({
 
     try {
       const response = await bridge.loadSpreadsheetImportWorkflow({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setSpreadsheetImportWorkflow(response.workflow);
     } catch (error) {
@@ -4502,7 +4579,7 @@ export function App({
 
     try {
       const response = await bridge.previewSpreadsheetImport({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         profileId,
         session: editSession,
         sourcePath
@@ -4571,7 +4648,7 @@ export function App({
       const response = await bridge.loadModMergerWorkflow({
         modDirectory1: directory1.trim() || null,
         modDirectory2: directory2.trim() || null,
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setModMergerWorkflow(response.workflow);
     } catch (error) {
@@ -4588,7 +4665,7 @@ export function App({
     try {
       const response = await bridge.loadSvModMergerWorkflow({
         modSources,
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setSvModMergerWorkflow(response.workflow);
     } catch (error) {
@@ -4605,7 +4682,7 @@ export function App({
     try {
       const response = await bridge.loadZaModMergerWorkflow({
         modSources,
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setZaModMergerWorkflow(response.workflow);
     } catch (error) {
@@ -4832,7 +4909,7 @@ export function App({
       try {
         const response = await bridge.stageSvModMerge({
           modSources: svModSources,
-          paths: toProjectPaths(draftPaths)
+          paths: createProjectPaths(draftPaths)
         });
         setSvModMergerWorkflow(response.workflow);
         setSvModMergerPreview(response.preview);
@@ -4860,7 +4937,7 @@ export function App({
       try {
         const response = await bridge.stageZaModMerge({
           modSources: zaModSources,
-          paths: toProjectPaths(draftPaths)
+          paths: createProjectPaths(draftPaths)
         });
         setZaModMergerWorkflow(response.workflow);
         setZaModMergerPreview(response.preview);
@@ -4889,7 +4966,7 @@ export function App({
         mergeMode: modMergerMergeMode,
         modDirectory1: modMergerDirectory1.trim() || null,
         modDirectory2: modMergerDirectory2.trim() || null,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         resolutions: getModMergerResolutionList(),
         selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
         selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
@@ -4927,7 +5004,7 @@ export function App({
       ));
 
       try {
-        const paths = toProjectPaths(draftPaths);
+        const paths = createProjectPaths(draftPaths);
         const response = await bridge.applySvModMerge({
           modSources: svModSources,
           paths
@@ -4970,7 +5047,7 @@ export function App({
       ));
 
       try {
-        const paths = toProjectPaths(draftPaths);
+        const paths = createProjectPaths(draftPaths);
         const response = await bridge.applyZaModMerge({
           modSources: zaModSources,
           paths
@@ -5012,7 +5089,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyModMerge({
         mergeMode: modMergerMergeMode,
         modDirectory1: modMergerDirectory1.trim() || null,
@@ -5052,7 +5129,7 @@ export function App({
 
     try {
       const response = await bridge.loadFpsPatch({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setFpsPatchStatus(response.status);
     } catch (error) {
@@ -5074,7 +5151,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
@@ -5111,7 +5188,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.restoreFpsPatch({ paths });
       setFpsPatchStatus(response.status);
       setApplyResult(response.applyResult);
@@ -5142,7 +5219,7 @@ export function App({
 
     try {
       const response = await bridge.loadProfanityFilter({
-        paths: toProjectPaths(draftPaths)
+        paths: createProjectPaths(draftPaths)
       });
       setProfanityFilterStatus(response.status);
     } catch (error) {
@@ -5164,7 +5241,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyProfanityFilter({ paths });
       setProfanityFilterStatus(response.status);
       setApplyResult(response.applyResult);
@@ -5201,7 +5278,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.restoreProfanityFilter({ paths });
       setProfanityFilterStatus(response.status);
       setApplyResult(response.applyResult);
@@ -5248,7 +5325,7 @@ export function App({
     setApplyResult(null);
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const label = operation === 'applySeed' ? 'Applying Randomization Seed' : 'Randomizing';
       setWorkProgress(createDeterminateWorkProgress(
         label,
@@ -5313,7 +5390,7 @@ export function App({
     setApplyResult(null);
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       setWorkProgress(createDeterminateWorkProgress(
         'Restoring Vanilla Values',
         'Reading tracked Randomizer output',
@@ -5377,7 +5454,7 @@ export function App({
     setAppliedChangePlan(null);
 
     try {
-      const response = await bridge.startEditSession({ paths: toProjectPaths(draftPaths) });
+      const response = await bridge.startEditSession({ paths: createProjectPaths(draftPaths) });
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
     } catch (error) {
@@ -5439,7 +5516,7 @@ export function App({
       const response = await bridge.updateItemField({
         field,
         itemId,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         value
       });
@@ -5472,7 +5549,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateItemFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -5488,7 +5565,7 @@ export function App({
           const response = await bridge.updateItemField({
             field: change.field,
             itemId,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             value: change.value
           });
@@ -5520,7 +5597,7 @@ export function App({
     try {
       const response = await bridge.updatePokemonField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         personalId,
         session: editSession,
         value
@@ -5559,7 +5636,7 @@ export function App({
         (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame))
       ) {
         const response = await bridge.updatePokemonFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -5574,7 +5651,7 @@ export function App({
         for (const change of changes) {
           const response = await bridge.updatePokemonField({
             field: change.field,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             personalId,
             session: nextSession,
             value: change.value
@@ -5592,7 +5669,7 @@ export function App({
           form: evolutionChange.form,
           level: evolutionChange.level,
           method: evolutionChange.method,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           personalId,
           session: nextSession,
           slot: evolutionChange.slot,
@@ -5608,7 +5685,7 @@ export function App({
           action: learnsetChange.action,
           level: learnsetChange.level,
           moveId: learnsetChange.moveId,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           personalId,
           session: nextSession,
           slot: learnsetChange.slot
@@ -5648,7 +5725,7 @@ export function App({
         action,
         level,
         moveId,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         personalId,
         session: editSession,
         slot
@@ -5684,7 +5761,7 @@ export function App({
         form,
         level,
         method,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         personalId,
         session: editSession,
         slot,
@@ -5709,7 +5786,7 @@ export function App({
       const response = await bridge.updateMoveField({
         field,
         moveId,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         value
       });
@@ -5742,7 +5819,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateMoveFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -5758,7 +5835,7 @@ export function App({
           const response = await bridge.updateMoveField({
             field: change.field,
             moveId,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             value: change.value
           });
@@ -5789,7 +5866,7 @@ export function App({
 
     try {
       const response = await bridge.updateTextEntry({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         query: createTextWorkflowQuery(selectedGame, textSearchText),
         session: editSession,
         textKey,
@@ -5820,7 +5897,7 @@ export function App({
     try {
       const response = await bridge.updateTrainerField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         slot,
         trainerId,
@@ -5856,7 +5933,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateTrainerFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -5872,7 +5949,7 @@ export function App({
         for (const change of changes) {
           const response = await bridge.updateTrainerField({
             field: change.field,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             slot,
             trainerId,
@@ -5911,7 +5988,7 @@ export function App({
       const response = await bridge.updateGiftPokemonField({
         field,
         giftIndex,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         value
       });
@@ -5944,7 +6021,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateGiftPokemonFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -5960,7 +6037,7 @@ export function App({
           const response = await bridge.updateGiftPokemonField({
             field: change.field,
             giftIndex,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             value: change.value
           });
@@ -6000,7 +6077,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateGiftPokemonFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: giftIndexes.map((giftIndex) => ({
             field: giftShinyLockFieldName,
@@ -6016,7 +6093,7 @@ export function App({
           const response = await bridge.updateGiftPokemonField({
             field: giftShinyLockFieldName,
             giftIndex,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             value: '0'
           });
@@ -6052,7 +6129,7 @@ export function App({
     try {
       const response = await bridge.updateTradePokemonField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         tradeIndex,
         value
@@ -6086,7 +6163,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateTradePokemonFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -6101,7 +6178,7 @@ export function App({
         for (const change of changes) {
           const response = await bridge.updateTradePokemonField({
             field: change.field,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             tradeIndex,
             value: change.value
@@ -6142,7 +6219,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updateTradePokemonFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: tradeIndexes.map((tradeIndex) => ({
             field: giftShinyLockFieldName,
@@ -6157,7 +6234,7 @@ export function App({
         for (const tradeIndex of tradeIndexes) {
           const response = await bridge.updateTradePokemonField({
             field: giftShinyLockFieldName,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             tradeIndex,
             value: '0'
@@ -6195,7 +6272,7 @@ export function App({
       const response = await bridge.updateStaticEncounterField({
         encounterIndex,
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         value
       });
@@ -6230,7 +6307,7 @@ export function App({
         const response = await bridge.updateStaticEncounterField({
           encounterIndex,
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           value: change.value
         });
@@ -6271,7 +6348,7 @@ export function App({
         const response = await bridge.updateStaticEncounterField({
           encounterIndex,
           field: giftShinyLockFieldName,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           value: '0'
         });
@@ -6306,7 +6383,7 @@ export function App({
     try {
       const response = await bridge.updateRentalPokemonField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         rentalIndex,
         session: editSession,
         value
@@ -6341,7 +6418,7 @@ export function App({
       for (const change of changes) {
         const response = await bridge.updateRentalPokemonField({
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           rentalIndex,
           session: nextSession,
           value: change.value
@@ -6380,7 +6457,7 @@ export function App({
         entryIndex,
         form,
         level,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         species
       });
@@ -6431,7 +6508,7 @@ export function App({
           const response = await bridge.updateDynamaxAdventureField({
             entryIndex: group.entryIndex,
             field: change.field,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             value: change.value
           });
@@ -6481,7 +6558,7 @@ export function App({
 
     try {
       const response = await bridge.validateEditSession({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       const nextSessionSignature = getEditSessionSignature(response.session);
@@ -6496,7 +6573,7 @@ export function App({
       }
 
       const planResponse = await bridge.createChangePlan({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: response.session
       });
       setDynamaxAdventureChangePlan(planResponse.changePlan);
@@ -6529,7 +6606,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
         changePlan: visibleDynamaxAdventureChangePlan,
         paths,
@@ -6600,7 +6677,7 @@ export function App({
       for (const change of inventoryChanges) {
         const response = await bridge.updateShopInventoryItem({
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           shopId,
           slot: change.slot,
@@ -6614,7 +6691,7 @@ export function App({
       for (const change of rowFieldChanges) {
         const response = await bridge.updateShopInventoryItem({
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           shopId,
           slot: change.slot,
@@ -6629,7 +6706,7 @@ export function App({
         const response = await bridge.updateItemField({
           field: buyPriceFieldName,
           itemId: change.itemId,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           value: change.value
         });
@@ -6679,7 +6756,7 @@ export function App({
     try {
       const response = await bridge.updateEncounterSlotField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         slot,
         tableId,
@@ -6710,7 +6787,7 @@ export function App({
 
     try {
       const response = await bridge.updateEncounterSlotFields({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         updates: changes.map((change) => ({
           field: change.field,
@@ -6764,7 +6841,7 @@ export function App({
       ));
 
       const response = await bridge.updateEncounterSlotFields({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         updates: nonEmptyUpdates.flatMap((update) =>
           update.changes.map((change) => ({
@@ -6810,7 +6887,7 @@ export function App({
     try {
       const response = await bridge.updateRaidRewardField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         slot,
         tableId,
@@ -6847,7 +6924,7 @@ export function App({
       for (const change of changes) {
         const response = await bridge.updateRaidRewardField({
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           slot,
           tableId,
@@ -6885,7 +6962,7 @@ export function App({
     try {
       const response = await bridge.updateRaidBonusRewardField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         slot,
         tableId,
@@ -6922,7 +6999,7 @@ export function App({
       for (const change of changes) {
         const response = await bridge.updateRaidBonusRewardField({
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           slot,
           tableId,
@@ -6960,7 +7037,7 @@ export function App({
     try {
       const response = await bridge.updateRaidBattleSlotField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         slot,
         tableId,
@@ -6997,7 +7074,7 @@ export function App({
       for (const change of changes) {
         const response = await bridge.updateRaidBattleSlotField({
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           slot,
           tableId,
@@ -7034,7 +7111,7 @@ export function App({
     try {
       const response = await bridge.updateTeraRaidField({
         field,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         recordId,
         session: editSession,
         value
@@ -7065,7 +7142,7 @@ export function App({
 
     try {
       const response = await bridge.updateTeraRaidFields({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         updates: changes.map((change) => ({
           field: change.field,
@@ -7098,7 +7175,7 @@ export function App({
       const response = await bridge.updatePlacementObjectField({
         field,
         objectId,
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession,
         value
       });
@@ -7131,7 +7208,7 @@ export function App({
 
       if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
         const response = await bridge.updatePlacementObjectFields({
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: editSession,
           updates: changes.map((change) => ({
             field: change.field,
@@ -7147,7 +7224,7 @@ export function App({
           const response = await bridge.updatePlacementObjectField({
             field: change.field,
             objectId,
-            paths: toProjectPaths(draftPaths),
+            paths: createProjectPaths(draftPaths),
             session: nextSession,
             value: change.value
           });
@@ -7192,7 +7269,7 @@ export function App({
         const response = await bridge.updateBehaviorEntryField({
           entryId,
           field: change.field,
-          paths: toProjectPaths(draftPaths),
+          paths: createProjectPaths(draftPaths),
           session: nextSession,
           value: change.value
         });
@@ -7232,7 +7309,7 @@ export function App({
 
     try {
       const response = await bridge.validateEditSession({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       const nextSessionSignature = getEditSessionSignature(response.session);
@@ -7244,7 +7321,7 @@ export function App({
       }
 
       const planResponse = await bridge.createChangePlan({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: response.session
       });
       setEditSession(response.session);
@@ -7273,7 +7350,7 @@ export function App({
 
     try {
       const response = await bridge.createChangePlan({
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setChangePlan(response.changePlan);
@@ -7310,7 +7387,7 @@ export function App({
     try {
       const response = await bridge.createChangePlan({
         outputMode: getScopedEditorOutputMode(section),
-        paths: toProjectPaths(draftPaths),
+        paths: createProjectPaths(draftPaths),
         session: editSession
       });
       setScopedEditorPanelStates((currentStates) => ({
@@ -7339,7 +7416,7 @@ export function App({
     setApplyResult(null);
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       let planToApply = visibleChangePlan;
 
       setWorkProgress(createDeterminateWorkProgress(
@@ -7452,7 +7529,16 @@ export function App({
   ) => {
     const fileGraphResponse = await bridge.refreshFileGraph({ paths });
     if (openProject && canCommitRefresh()) {
-      setOpenProject({ ...openProject, fileGraph: fileGraphResponse.fileGraph });
+      useWorkbenchStore.setState((state) =>
+        state.openProject
+          ? {
+              openProject: {
+                ...state.openProject,
+                fileGraph: fileGraphResponse.fileGraph
+              }
+            }
+          : {}
+      );
     }
 
     await refreshWorkflows(paths, health?.canOpenEditableWorkflows ?? true, canCommitRefresh);
@@ -7807,74 +7893,55 @@ export function App({
     }
   };
 
-  useEffect(() => {
-    if (lastReloadedGameTextLanguageRef.current === language) {
+  const hasLoadedGameTextWorkflow =
+    Boolean(itemsWorkflow) ||
+    Boolean(pokemonWorkflow) ||
+    Boolean(movesWorkflow) ||
+    Boolean(textWorkflow) ||
+    Boolean(trainersWorkflow) ||
+    Boolean(giftPokemonWorkflow) ||
+    Boolean(tradePokemonWorkflow) ||
+    Boolean(staticEncountersWorkflow) ||
+    Boolean(rentalPokemonWorkflow) ||
+    Boolean(dynamaxAdventuresWorkflow) ||
+    Boolean(shopsWorkflow) ||
+    Boolean(encountersWorkflow) ||
+    Boolean(teraRaidsWorkflow) ||
+    Boolean(raidBattlesWorkflow) ||
+    Boolean(raidRewardsWorkflow) ||
+    Boolean(raidBonusRewardsWorkflow) ||
+    Boolean(placementWorkflow) ||
+    Boolean(behaviorWorkflow) ||
+    Boolean(flagworkSaveWorkflow) ||
+    Boolean(bagHookWorkflow) ||
+    Boolean(catchCapWorkflow) ||
+    Boolean(hyperTrainingWorkflow) ||
+    Boolean(shinyRateWorkflow) ||
+    Boolean(typeChartWorkflow) ||
+    Boolean(fairyGymBoostsWorkflow) ||
+    Boolean(fashionUnlockWorkflow) ||
+    Boolean(gymUniformRemovalWorkflow) ||
+    Boolean(hyperspaceBypassWorkflow) ||
+    Boolean(ivScreenWorkflow) ||
+    Boolean(exeFsPatchWorkflow) ||
+    Boolean(royalCandyWorkflow) ||
+    Boolean(startingItemsWorkflow) ||
+    Boolean(npcItemGiftWorkflow) ||
+    Boolean(spreadsheetImportWorkflow);
+  useLayoutEffect(() => {
+    if (lastInvalidatedGameTextLanguageRef.current === language) {
       return;
     }
 
-    lastReloadedGameTextLanguageRef.current = language;
+    lastInvalidatedGameTextLanguageRef.current = language;
 
-    const hasLoadedWorkflow =
-      Boolean(itemsWorkflow) ||
-      Boolean(pokemonWorkflow) ||
-      Boolean(movesWorkflow) ||
-      Boolean(textWorkflow) ||
-      Boolean(trainersWorkflow) ||
-      Boolean(giftPokemonWorkflow) ||
-      Boolean(tradePokemonWorkflow) ||
-      Boolean(staticEncountersWorkflow) ||
-      Boolean(rentalPokemonWorkflow) ||
-      Boolean(dynamaxAdventuresWorkflow) ||
-      Boolean(shopsWorkflow) ||
-      Boolean(encountersWorkflow) ||
-      Boolean(teraRaidsWorkflow) ||
-      Boolean(raidBattlesWorkflow) ||
-      Boolean(raidRewardsWorkflow) ||
-      Boolean(raidBonusRewardsWorkflow) ||
-      Boolean(placementWorkflow) ||
-      Boolean(behaviorWorkflow) ||
-      Boolean(flagworkSaveWorkflow) ||
-      Boolean(bagHookWorkflow) ||
-      Boolean(catchCapWorkflow) ||
-      Boolean(hyperTrainingWorkflow) ||
-      Boolean(shinyRateWorkflow) ||
-      Boolean(typeChartWorkflow) ||
-      Boolean(fairyGymBoostsWorkflow) ||
-      Boolean(fashionUnlockWorkflow) ||
-      Boolean(gymUniformRemovalWorkflow) ||
-      Boolean(hyperspaceBypassWorkflow) ||
-      Boolean(ivScreenWorkflow) ||
-      Boolean(exeFsPatchWorkflow) ||
-      Boolean(royalCandyWorkflow) ||
-      Boolean(startingItemsWorkflow) ||
-      Boolean(npcItemGiftWorkflow) ||
-      Boolean(spreadsheetImportWorkflow);
-
-    if (!openProject || projectStatus !== 'open' || !hasLoadedWorkflow) {
+    if (!hasLoadedGameTextWorkflow) {
       return;
     }
 
-    const reloadRun = gameTextLanguageReloadRunRef.current + 1;
-    gameTextLanguageReloadRunRef.current = reloadRun;
-    const canCommitRefresh = () => gameTextLanguageReloadRunRef.current === reloadRun;
-    const paths = toProjectPaths(draftPathsRef.current);
-
-    void (async () => {
-      try {
-        await refreshLoadedWorkflowsAfterApply(paths, canCommitRefresh);
-      } catch (error) {
-        if (canCommitRefresh()) {
-          setBridgeDiagnostics(toBridgeDiagnostics(error));
-        }
-      }
-    })();
-
-    return () => {
-      if (gameTextLanguageReloadRunRef.current === reloadRun) {
-        gameTextLanguageReloadRunRef.current += 1;
-      }
-    };
-  }, [language]);
+    clearLoadedGameTextWorkflowData();
+    setBridgeDiagnostics([]);
+  }, [clearLoadedGameTextWorkflowData, hasLoadedGameTextWorkflow, language, setBridgeDiagnostics]);
 
   const handleApplyChangePlan = async () => {
     if (!editSession || !changePlan) {
@@ -7892,7 +7959,7 @@ export function App({
     ));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
         changePlan,
         paths,
@@ -7956,7 +8023,7 @@ export function App({
     }));
 
     try {
-      const paths = toProjectPaths(draftPaths);
+      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
         changePlan: panelOutput.changePlan,
         outputMode: getScopedEditorOutputMode(section),
@@ -9174,7 +9241,7 @@ export function App({
               bridge={bridge}
               desktopServices={desktopServices}
               health={health}
-              paths={toProjectPaths(draftPaths)}
+              paths={createProjectPaths(draftPaths)}
             />
           ) : null}
           {activeSection === 'modMerger' ? (
@@ -10018,6 +10085,7 @@ function ItemsSection({
             <SelectedItemPanel
               canEditItems={canEditItems}
               editSession={editSession}
+              editorFamily={editorFamily}
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               item={selectedItem}
@@ -10040,6 +10108,7 @@ function ItemsSection({
 function SelectedItemPanel({
   canEditItems,
   editSession,
+  editorFamily,
   editableFields,
   isEditStarting,
   isItemUpdating,
@@ -10050,6 +10119,7 @@ function SelectedItemPanel({
 }: {
   canEditItems: boolean;
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   editableFields: ItemEditableField[];
   isEditStarting: boolean;
   isItemUpdating: boolean;
@@ -10219,7 +10289,11 @@ function SelectedItemPanel({
                         currentValue,
                         field
                       );
-                      const disabledReason = getItemFieldDisabledReason(field.field, item);
+                      const disabledReason = getItemFieldDisabledReason(
+                        field.field,
+                        editorFamily,
+                        item
+                      );
 
                       return (
                         <GiftPokemonDraftField
@@ -10537,8 +10611,12 @@ function PokemonSection({
                           type="button"
                         >
                           <span role="cell">{record.personalId}</span>
-                          <span role="cell">{formatPokemonRecordName(record, editorFamily)}</span>
-                          <span role="cell">{formatPokemonTypes(record)}</span>
+                          <span data-localization-ignore="true" role="cell">
+                            {formatPokemonRecordName(record, editorFamily)}
+                          </span>
+                          <span data-localization-ignore="true" role="cell">
+                            {formatPokemonTypes(record)}
+                          </span>
                         </button>
                       );
                     }}
@@ -10602,10 +10680,17 @@ function SelectedPokemonSummaryCard({
         isContext ? 'pokemon-summary-card-context' : 'pokemon-summary-card-detailed'
       }`}
     >
-      <PokemonSprite className="pokemon-summary-sprite" name={pokemonLabel} />
+      <PokemonSprite
+        className="pokemon-summary-sprite"
+        editorFamily={editorFamily}
+        form={pokemon.form}
+        name={pokemonLabel}
+        speciesId={pokemon.speciesId}
+        spriteName={pokemon.spriteName}
+      />
       <div className="pokemon-summary-main">
-        <strong>{pokemonLabel}</strong>
-        <span>
+        <strong data-localization-ignore="true">{pokemonLabel}</strong>
+        <span data-localization-ignore="true">
           {pokemon.speciesId} / {pokemonFormLabel}
         </span>
       </div>
@@ -10616,7 +10701,7 @@ function SelectedPokemonSummaryCard({
         </div>
         <div>
           <dt>Types</dt>
-          <dd>{formatPokemonTypes(pokemon)}</dd>
+          <dd data-localization-ignore="true">{formatPokemonTypes(pokemon)}</dd>
         </div>
         <div>
           <dt>Dex</dt>
@@ -10645,6 +10730,38 @@ function SelectedPokemonSummaryCard({
 
 function formatPokemonRecordName(pokemon: PokemonRecord, editorFamily: EditorUiFamily) {
   return formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
+}
+
+function getPokemonSpriteNameForSpecies(
+  pokemonRecords: PokemonRecord[],
+  speciesId: number,
+  form: number,
+  editorFamily: EditorUiFamily,
+  fallback: string
+) {
+  const matchingForm = pokemonRecords.find(
+    (record) => record.speciesId === speciesId && record.form === form
+  );
+  const matchingSpriteName = getPokemonRecordSpriteName(matchingForm);
+  if (matchingSpriteName) {
+    return formatSpeciesFormLabel(matchingSpriteName, form, speciesId, editorFamily);
+  }
+
+  const baseRecord = pokemonRecords.find(
+    (record) => record.speciesId === speciesId && record.form === 0
+  );
+  const baseSpriteName = getPokemonRecordSpriteName(baseRecord);
+  if (baseSpriteName) {
+    return formatSpeciesFormLabel(baseSpriteName, form, speciesId, editorFamily);
+  }
+
+  return matchingForm?.name ?? baseRecord?.name ?? fallback;
+}
+
+function getPokemonRecordSpriteName(pokemon?: PokemonRecord | null) {
+  return pokemon?.spriteName && pokemon.spriteName.trim().length > 0
+    ? pokemon.spriteName
+    : null;
 }
 
 function SelectedPokemonPanel({
@@ -11288,15 +11405,15 @@ function SelectedPokemonPanel({
             <dl className="item-provenance-list compact-dl">
               <div>
                 <dt>Ability 1</dt>
-                <dd>{pokemon.abilities.ability1Label}</dd>
+                <dd data-localization-ignore="true">{pokemon.abilities.ability1Label}</dd>
               </div>
               <div>
                 <dt>Ability 2</dt>
-                <dd>{pokemon.abilities.ability2Label}</dd>
+                <dd data-localization-ignore="true">{pokemon.abilities.ability2Label}</dd>
               </div>
               <div>
                 <dt>Hidden</dt>
-                <dd>{pokemon.abilities.hiddenAbilityLabel}</dd>
+                <dd data-localization-ignore="true">{pokemon.abilities.hiddenAbilityLabel}</dd>
               </div>
               <div>
                 <dt>Catch rate</dt>
@@ -11592,7 +11709,10 @@ function SelectedPokemonPanel({
                                 value={learnsetLevelDraft}
                               />
                             </label>
-                            <span className="learnset-inline-metadata">
+                            <span
+                              className="learnset-inline-metadata"
+                              data-localization-ignore="true"
+                            >
                               {displayMove.masteryLabel ?? ''}
                             </span>
                             <div className="learnset-inline-actions">
@@ -11669,15 +11789,28 @@ function SelectedPokemonPanel({
                               <GripVertical size={15} />
                             </span>
                             <span className="learnset-slot-cell">#{move.slot + 1}</span>
-                            <span className="learnset-level-cell">
+                            <span
+                              className="learnset-level-cell"
+                              data-localization-ignore="true"
+                            >
                               {displayMove.levelLabel ?? `Lv. ${displayMove.level}`}
                             </span>
                             {displayMove.masteryLabel ? (
-                              <span className="learnset-mastery-cell">{displayMove.masteryLabel}</span>
+                              <span
+                                className="learnset-mastery-cell"
+                                data-localization-ignore="true"
+                              >
+                                {displayMove.masteryLabel}
+                              </span>
                             ) : (
                               <span aria-hidden="true" className="learnset-mastery-cell" />
                             )}
-                            <strong className="learnset-move-name">{displayMove.moveName}</strong>
+                            <strong
+                              className="learnset-move-name"
+                              data-localization-ignore="true"
+                            >
+                              {displayMove.moveName}
+                            </strong>
                             <span>{displayMove.moveId}</span>
                           </button>
                         )}
@@ -11794,7 +11927,7 @@ function SelectedPokemonPanel({
                           }}
                           type="checkbox"
                         />
-                        <span>{entry.label}</span>
+                        <span data-localization-ignore="true">{entry.label}</span>
                         <small>{entry.moveId}</small>
                       </label>
                     </li>
@@ -11826,6 +11959,13 @@ function SelectedPokemonPanel({
                       evolution.form,
                       editorFamily
                     );
+                    const evolutionSpriteName = getPokemonSpriteNameForSpecies(
+                      pokemonRecords,
+                      evolution.species,
+                      evolution.form,
+                      editorFamily,
+                      evolutionSpeciesLabel
+                    );
 
                     return (
                       <li key={evolution.slot}>
@@ -11840,17 +11980,27 @@ function SelectedPokemonPanel({
                         >
                           <PokemonSprite
                             className="pokemon-row-sprite"
-                            name={getReferenceSpriteName(evolutionSpeciesLabel)}
+                            name={getReferenceSpriteName(evolutionSpriteName)}
                             preferStatic
                           />
                           <span title={`Slot ${evolution.slot + 1}`}>#{evolution.slot + 1}</span>
-                          <span title={formatEvolutionMethodSummary(evolution)}>
+                          <span
+                            data-localization-ignore="true"
+                            title={formatEvolutionMethodSummary(evolution)}
+                          >
                             {formatEvolutionMethodSummary(evolution)}
                           </span>
-                          <strong title={evolutionSpeciesLabel}>{evolutionSpeciesLabel}</strong>
-                          <span title={evolutionFormLabel}>{evolutionFormLabel}</span>
+                          <strong data-localization-ignore="true" title={evolutionSpeciesLabel}>
+                            {evolutionSpeciesLabel}
+                          </strong>
+                          <span data-localization-ignore="true" title={evolutionFormLabel}>
+                            {evolutionFormLabel}
+                          </span>
                           <span>Lv. {evolution.level}</span>
-                          <span title={formatEvolutionArgumentSummary(evolution)}>
+                          <span
+                            data-localization-ignore="true"
+                            title={formatEvolutionArgumentSummary(evolution)}
+                          >
                             {formatEvolutionArgumentSummary(evolution)}
                           </span>
                         </button>
@@ -13262,9 +13412,15 @@ function TrainersSection({
                       type="button"
                     >
                       <span role="cell">{trainer.trainerId}</span>
-                      <span role="cell">{trainer.name}</span>
-                      <span role="cell">{trainer.trainerClass}</span>
-                      <span role="cell">{trainer.battleType}</span>
+                      <span data-localization-ignore="true" role="cell">
+                        {trainer.name}
+                      </span>
+                      <span data-localization-ignore="true" role="cell">
+                        {trainer.trainerClass}
+                      </span>
+                      <span data-localization-ignore="true" role="cell">
+                        {trainer.battleType}
+                      </span>
                       <span role="cell">{getOccupiedTrainerPokemonCount(trainer)}</span>
                       <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
                     </button>
@@ -13605,7 +13761,7 @@ function SelectedTrainerPanel({
           <dl className="item-provenance-list">
             <div>
               <dt>Name</dt>
-              <dd>{trainer.name}</dd>
+              <dd data-localization-ignore="true">{trainer.name}</dd>
             </div>
             <div>
               <dt>Data file</dt>
@@ -13837,10 +13993,16 @@ function SelectedTrainerPanel({
                       type="button"
                     >
                       <PokemonSprite
+                        editorFamily={editorFamily}
                         className="trainer-party-sprite"
-                        name={pokemonSpriteLabel}
+                        form={pokemon.form}
+                        name={pokemonLabel}
+                        speciesId={pokemon.speciesId}
+                        spriteName={pokemon.spriteName ?? pokemonSpriteLabel}
                       />
-                      <strong>{isEmptySlot ? slotLabel : pokemonLabel}</strong>
+                      <strong data-localization-ignore="true">
+                        {isEmptySlot ? slotLabel : pokemonLabel}
+                      </strong>
                       <span>{isEmptySlot ? 'None' : `Lv. ${pokemon.level}`}</span>
                     </button>
                   );
@@ -16357,7 +16519,15 @@ function getTradeFieldDisabledReason(fieldName: string) {
     : null;
 }
 
-function getItemFieldDisabledReason(fieldName: string, item?: ItemRecord | null) {
+function getItemFieldDisabledReason(
+  fieldName: string,
+  editorFamily: EditorUiFamily,
+  item?: ItemRecord | null
+) {
+  if (editorFamily === 'za' && fieldName === itemCanUseOnPokemonFieldName) {
+    return 'Derived from item effects. Edit healing, revive, EV, form change, or Evolution Item instead.';
+  }
+
   if (fieldName === itemFieldFlagsFieldName) {
     return 'Unknown raw field flags are visible for research and locked until their meanings are confirmed.';
   }
@@ -18976,7 +19146,7 @@ function StaticEncountersSection({
                       role="row"
                       type="button"
                     >
-                      <span role="cell">{encounter.encounterIndex + 1}</span>
+                      <span role="cell">{getStaticEncounterDisplayIndex(encounter)}</span>
                       {isZaStaticEncounters ? null : <span role="cell">{encounter.label}</span>}
                       <span role="cell" title={speciesLabel}>
                         {speciesLabel}
@@ -19148,7 +19318,7 @@ function SelectedStaticEncounterPanel({
               encounter.speciesId,
               encounter.editorFamily
             )}
-            subtitle={`Static #${encounter.encounterIndex + 1} | Lv. ${encounter.level}`}
+            subtitle={`Static #${getStaticEncounterDisplayIndex(encounter)} | Lv. ${encounter.level}`}
             title={formatSpeciesFormLabel(
               encounter.species,
               encounter.form,
@@ -31383,8 +31553,8 @@ function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
 }
 
 function matchesSearchPrefix(value: string, normalizedSearch: string) {
-  return value
-    .toLocaleLowerCase()
+  const normalizedValue = value.toLocaleLowerCase();
+  return normalizedValue.includes(normalizedSearch) || normalizedValue
     .split(/[^a-z0-9]+/)
     .some((token) => token.startsWith(normalizedSearch));
 }
@@ -31544,6 +31714,7 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
     [
       trainer.trainerId.toString(),
       trainer.name,
+      trainer.location,
       trainer.trainerClass,
       trainer.trainerClassId.toString(),
       trainer.classBall ?? '',
@@ -31785,6 +31956,12 @@ function filterDynamaxAdventures(
   );
 }
 
+function getStaticEncounterDisplayIndex(encounter: StaticEncounterRecord) {
+  return encounter.editorFamily === 'swsh'
+    ? encounter.encounterIndex
+    : encounter.encounterIndex + 1;
+}
+
 function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -31794,8 +31971,7 @@ function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText:
 
   return encounters.filter((encounter) =>
     [
-      encounter.encounterIndex.toString(),
-      (encounter.encounterIndex + 1).toString(),
+      getStaticEncounterDisplayIndex(encounter).toString(),
       encounter.label,
       encounter.encounterId,
       encounter.species,
@@ -34844,17 +35020,32 @@ function useRegisterEditorDraftDirty(section: WorkbenchSection, isDirty: boolean
 }
 
 function PokemonSummaryCard({
+  editorFamily,
+  form,
   name,
+  speciesId,
+  spriteName,
   subtitle,
   title
 }: {
+  editorFamily?: EditorUiFamily;
+  form?: number;
   name: string;
+  speciesId?: number;
+  spriteName?: string | null;
   subtitle: string;
   title: string;
 }) {
   return (
     <div className="pokemon-summary-card">
-      <PokemonSprite className="pokemon-summary-sprite" name={name} />
+      <PokemonSprite
+        className="pokemon-summary-sprite"
+        editorFamily={editorFamily}
+        form={form}
+        name={name}
+        speciesId={speciesId}
+        spriteName={spriteName}
+      />
       <div className="pokemon-summary-main">
         <strong className="pokemon-summary-title">{title}</strong>
         <span className="pokemon-summary-subtitle">{subtitle}</span>
@@ -34865,14 +35056,35 @@ function PokemonSummaryCard({
 
 function PokemonSprite({
   className = '',
+  editorFamily,
+  form,
   name,
-  preferStatic = false
+  preferStatic = false,
+  speciesId,
+  spriteName
 }: {
   className?: string;
+  editorFamily?: EditorUiFamily;
+  form?: number;
   name: string;
   preferStatic?: boolean;
+  speciesId?: number;
+  spriteName?: string | null;
 }) {
-  const urls = useMemo(() => getPokemonSpriteUrls(name, preferStatic), [name, preferStatic]);
+  const urls = useMemo(
+    () =>
+      getPokemonSpriteUrls(
+        {
+          editorFamily,
+          form,
+          name,
+          speciesId,
+          spriteName
+        },
+        preferStatic
+      ),
+    [editorFamily, form, name, preferStatic, speciesId, spriteName]
+  );
   const [urlIndex, setUrlIndex] = useState(0);
 
   useEffect(() => {
@@ -34895,21 +35107,66 @@ function PokemonSprite({
   );
 }
 
-function getPokemonSpriteUrls(name: string, preferStatic: boolean) {
-  const spriteIds = getPokemonSpriteIds(name);
+type PokemonSpriteIdentity = {
+  editorFamily?: EditorUiFamily;
+  form?: number;
+  name: string;
+  speciesId?: number;
+  spriteName?: string | null;
+};
+
+function getPokemonSpriteUrls(identity: PokemonSpriteIdentity, preferStatic: boolean) {
+  const spriteIds = getPokemonSpriteIdsForIdentity(identity);
   if (spriteIds.length === 0) {
     return [];
   }
 
   return spriteIds.flatMap((spriteId) => {
-    const localStatic = `/sprites/gen5/${spriteId}.png`;
-    const localAnimated = `/sprites/ani/${spriteId}.gif`;
+    const localStatic = getPublicAssetUrl(`sprites/gen5/${spriteId}.png`);
+    const localAnimated = getPublicAssetUrl(`sprites/ani/${spriteId}.gif`);
     const remoteStatic = `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`;
 
     return preferStatic
       ? [localStatic, remoteStatic]
       : [localAnimated, localStatic, remoteStatic];
   });
+}
+
+function getPublicAssetUrl(path: string) {
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return `${normalizedBaseUrl}${path.replace(/^\/+/, '')}`;
+}
+
+export function getPokemonSpriteIdsForIdentity(identity: PokemonSpriteIdentity) {
+  const candidateLabels = getPokemonSpriteCandidateLabels(identity);
+  return uniqueStrings(candidateLabels.flatMap((label) => getPokemonSpriteIds(label)));
+}
+
+function getPokemonSpriteCandidateLabels({
+  editorFamily,
+  form,
+  name,
+  speciesId,
+  spriteName
+}: PokemonSpriteIdentity) {
+  const candidates: string[] = [];
+  const normalizedSpriteName = spriteName?.trim();
+
+  if (normalizedSpriteName) {
+    if (form !== undefined) {
+      candidates.push(formatSpeciesFormLabel(normalizedSpriteName, form, speciesId, editorFamily));
+    }
+    candidates.push(normalizedSpriteName);
+  }
+
+  candidates.push(name);
+
+  return uniqueStrings(candidates.filter((candidate) => candidate.trim().length > 0));
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values));
 }
 
 const pokemonSpriteIdOverrides = new Map<string, string>([
@@ -37919,11 +38176,11 @@ function getStartingItemsDependencyWarning(
   };
 }
 
-function toProjectPaths(draftPaths: ProjectPathDraft) {
+function toProjectPaths(draftPaths: ProjectPathDraft, gameTextLanguage: LanguageCode) {
   return {
     baseExeFsPath: normalizeDraftPath(draftPaths.baseExeFsPath),
     baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
-    gameTextLanguage: currentGameTextLanguage,
+    gameTextLanguage,
     outputRootPath: normalizeDraftPath(draftPaths.outputRootPath),
     pokemonLegendsZASupportFolderPath: isPokemonLegendsZAGame(draftPaths.selectedGame)
       ? normalizeDraftPath(draftPaths.pokemonLegendsZASupportFolderPath)

@@ -1940,7 +1940,8 @@ public static class SwShBridgeMapper
             new PokemonProvenanceDto(
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)),
+            pokemon.SpriteName);
     }
 
     private static PokemonEditableFieldDto ToDto(SwShPokemonEditableField field)

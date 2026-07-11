@@ -134,7 +134,8 @@ public sealed record ZaPokemonRecord(
     IReadOnlyList<ZaPokemonEvolutionRecord> Evolutions,
     IReadOnlyList<ZaPokemonLearnsetMove> Learnset,
     IReadOnlyList<ZaPokemonCompatibilityGroup> Compatibility,
-    ZaPokemonProvenance Provenance);
+    ZaPokemonProvenance Provenance,
+    string? SpriteName = null);
 
 public sealed record ZaPokemonWorkflowStats(
     int TotalPokemonCount,
