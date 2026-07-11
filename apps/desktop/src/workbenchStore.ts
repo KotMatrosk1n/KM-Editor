@@ -240,6 +240,7 @@ type WorkbenchState = {
   setPokemonWorkflow: (pokemonWorkflow: PokemonWorkflow) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
+  resetLoadedWorkflowData: () => void;
   resetProjectSession: () => void;
   setTeraRaidSearchText: (teraRaidSearchText: string) => void;
   setTeraRaidsWorkflow: (teraRaidsWorkflow: TeraRaidsWorkflow) => void;
@@ -384,9 +385,8 @@ function isPlaceholderPokemonRecord(pokemon: Pick<PokemonWorkflow['pokemon'][num
   return Number(pokemon.personalId) === 0 || pokemon.name.trim().toLowerCase() === 'egg';
 }
 
-function createProjectSessionResetState(): Partial<WorkbenchState> {
+function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
   return {
-    activeSection: 'health',
     applyResult: null,
     changePlan: null,
     editSession: null,
@@ -419,14 +419,12 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     itemsWorkflow: null,
     movesSearchText: '',
     movesWorkflow: null,
-    openProject: null,
     behaviorSearchText: '',
     behaviorWorkflow: null,
     placementSearchText: '',
     placementWorkflow: null,
     pokemonSearchText: '',
     pokemonWorkflow: null,
-    projectStatus: 'idle',
     teraRaidSearchText: '',
     teraRaidsWorkflow: null,
     raidBattleSearchText: '',
@@ -475,7 +473,16 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     textSearchText: '',
     textWorkflow: null,
     trainerSearchText: '',
-    trainersWorkflow: null,
+    trainersWorkflow: null
+  };
+}
+
+function createProjectSessionResetState(): Partial<WorkbenchState> {
+  return {
+    ...createLoadedWorkflowResetState(),
+    activeSection: 'health',
+    openProject: null,
+    projectStatus: 'idle',
     workflows: []
   };
 }
@@ -855,6 +862,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  resetLoadedWorkflowData: () => set(createLoadedWorkflowResetState()),
   resetProjectSession: () => set(createProjectSessionResetState()),
   setSelectedTeraRaidRecordId: (selectedTeraRaidRecordId) =>
     set({ selectedTeraRaidRecordId }),

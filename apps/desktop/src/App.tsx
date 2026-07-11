@@ -1712,6 +1712,7 @@ export function App({
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
   const setMovesWorkflow = useWorkbenchStore((state) => state.setMovesWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
+  const resetLoadedWorkflowData = useWorkbenchStore((state) => state.resetLoadedWorkflowData);
   const resetProjectSession = useWorkbenchStore((state) => state.resetProjectSession);
   const setBehaviorSearchText = useWorkbenchStore((state) => state.setBehaviorSearchText);
   const setBehaviorWorkflow = useWorkbenchStore((state) => state.setBehaviorWorkflow);
@@ -2152,7 +2153,7 @@ export function App({
   const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: createProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
 
   const clearLoadedWorkflowData = useCallback(() => {
-    resetProjectSession();
+    resetLoadedWorkflowData();
     setSvModMergerWorkflow(null);
     setSvModMergerPreview(null);
     setSvModMergerApplyResult(null);
@@ -2173,7 +2174,7 @@ export function App({
     setEditorDraftDirtySections(new Set());
     clearScopedEditorPanelState();
     clearDynamaxAdventurePanelState();
-  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, resetProjectSession]);
+  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, resetLoadedWorkflowData]);
 
   const clearLoadedGameTextWorkflowData = useCallback(() => {
     useWorkbenchStore.setState({
@@ -2236,8 +2237,9 @@ export function App({
     setIsSvCacheWarming(false);
     setSvCacheStatus(null);
     clearPendingEditState();
+    resetProjectSession();
     clearLoadedWorkflowData();
-  }, [clearLoadedWorkflowData, clearPendingEditState]);
+  }, [clearLoadedWorkflowData, clearPendingEditState, resetProjectSession]);
 
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
@@ -8077,37 +8079,25 @@ export function App({
 
   const handleSelectGame = useCallback(
     (nextGame: ProjectGame) => {
-      svCacheWarmupRunRef.current += 1;
-      setIsSvCacheWarming(false);
-      clearPendingEditState();
-      clearLoadedWorkflowData();
+      resetLoadedProjectState();
       setBridgeDiagnostics([]);
       setExpandedWorkflowGroups(new Set());
-      setProjectStatus('idle');
       setSelectedGame(nextGame);
     },
     [
-      clearLoadedWorkflowData,
-      clearPendingEditState,
-      setProjectStatus,
+      resetLoadedProjectState,
       setSelectedGame
     ]
   );
 
   const handleChangeGame = useCallback(() => {
-    svCacheWarmupRunRef.current += 1;
-    setIsSvCacheWarming(false);
-    clearPendingEditState();
-    clearLoadedWorkflowData();
+    resetLoadedProjectState();
     setBridgeDiagnostics([]);
     setExpandedWorkflowGroups(new Set());
-    setProjectStatus('idle');
     clearSelectedGame();
   }, [
-    clearLoadedWorkflowData,
-    clearPendingEditState,
     clearSelectedGame,
-    setProjectStatus
+    resetLoadedProjectState
   ]);
 
   if (!selectedGame) {

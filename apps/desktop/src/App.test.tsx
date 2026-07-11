@@ -178,6 +178,34 @@ describe('App', () => {
     await waitFor(() => expect(loadStaticEncountersWorkflow).toHaveBeenCalledTimes(1));
     expect(loadStaticEncountersWorkflow.mock.calls[0]?.[0].paths.outputRootPath).toBe('output');
     expect(useWorkbenchStore.getState().staticEncountersWorkflow).not.toBeNull();
+
+    act(() => {
+      useWorkbenchStore.setState({
+        editSession: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.bagHook',
+              field: 'install',
+              newValue: 'enabled',
+              recordId: 'bag-hook',
+              sources: [{ layer: 'base', relativePath: 'romfs/bin/mock' }],
+              summary: 'Stage a test editor change.'
+            }
+          ],
+          sessionId: 'switch-and-revert-session'
+        }
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(within(navigation).getByRole('button', { name: 'Pokemon' }));
+    expect(await screen.findByRole('heading', { name: 'Switch Editors?' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Switch and Revert' }));
+
+    await waitFor(() => expect(useWorkbenchStore.getState().activeSection).toBe('pokemon'));
+    expect(useWorkbenchStore.getState().openProject?.projectId).toBe('pending-project');
+    expect(screen.getByRole('button', { name: 'Editors' })).toBeInTheDocument();
   });
 
   it('shows the renamed workflow categories in sidebar order', async () => {

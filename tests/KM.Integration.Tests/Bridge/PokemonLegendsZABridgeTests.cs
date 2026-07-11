@@ -149,12 +149,12 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZAEvolutionItemsUseItemIds()
+    public void PokemonLegendsZAEvolutionItemsUseEligibleItemIds()
     {
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PersonalArray,
-            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2, evolutionSpecies: 2));
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 86, evolutionSpecies: 2));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemDataArray,
             CreateItemDataArray());
@@ -168,6 +168,7 @@ public sealed class PokemonLegendsZABridgeTests
                 2483,
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
+                (86, "Tiny Mushroom"),
                 (222, "Twisted Spoon"),
                 (2482, "Metal Alloy")));
         var dispatcher = CreateDispatcherWithZaCache(temp);
@@ -182,17 +183,19 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = pokemon.Payload!.Workflow;
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
-        Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
+        Assert.Equal(86, evolution.Argument);
+        Assert.Equal("Tiny Mushroom", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 222 && option.Label == "222 Twisted Spoon");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2482 && option.Label == "2482 Metal Alloy");
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 81);
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 86);
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2482);
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 86 && option.Label == "86 Tiny Mushroom");
     }
 
     [Fact]
@@ -2996,6 +2999,16 @@ public sealed class PokemonLegendsZABridgeTests
                 stackCap: 999,
                 sortOrder: 222,
                 workEvolutional: true));
+            rows.Add(CreateItem(
+                builder,
+                itemId: 86,
+                itemType: 3,
+                internalName: "TIINAKINOKO",
+                iconName: "item_0086",
+                price: 500,
+                pocket: 3,
+                stackCap: 999,
+                sortOrder: 86));
         }
 
         if (includePokemonItemTypes)

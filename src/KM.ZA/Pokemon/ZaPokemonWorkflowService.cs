@@ -329,10 +329,9 @@ internal sealed class ZaPokemonWorkflowService
         ZaTextLabelLookup labels,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var argumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
-
         try
         {
+            var argumentLabels = new Dictionary<int, string>();
             var source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
             for (var index = 0; index < table.ValuesLength; index++)
@@ -347,18 +346,20 @@ internal sealed class ZaPokemonWorkflowService
                     argumentLabels[item.Id] = labels.Item(item.Id);
                 }
             }
+
+            return argumentLabels;
         }
         catch (FileNotFoundException)
         {
+            return CreateDefaultEvolutionItemArgumentLabels(labels);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(ZaWorkflowSupport.Warning(
                 $"Item metadata could not be decoded; edited evolution items may be missing from Use Item selectors: {exception.Message}",
                 $"romfs/{ZaDataPaths.ItemDataArray}"));
+            return CreateDefaultEvolutionItemArgumentLabels(labels);
         }
-
-        return argumentLabels;
     }
 
     private static Dictionary<int, string> CreateDefaultEvolutionItemArgumentLabels(ZaTextLabelLookup labels)
@@ -684,7 +685,7 @@ internal sealed class ZaPokemonWorkflowService
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
-        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(pokemon, labels, evolutionItemArgumentLabels);
+        var evolutionItemOptions = CreateEvolutionItemArgumentOptions(labels, evolutionItemArgumentLabels);
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false);
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
 
@@ -781,16 +782,10 @@ internal sealed class ZaPokemonWorkflowService
     }
 
     private static IReadOnlyList<ZaPokemonEditableFieldOption> CreateEvolutionItemArgumentOptions(
-        IReadOnlyList<ZaPokemonRecord> pokemon,
         ZaTextLabelLookup labels,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         return evolutionItemArgumentLabels.Keys
-            .Concat(pokemon
-                .SelectMany(record => record.Evolutions)
-                .Where(evolution => IsUseItemEvolutionMethod(evolution.Method) && evolution.Argument > 0)
-                .Select(evolution => evolution.Argument))
-            .Distinct()
             .OrderBy(value => value)
             .Prepend(0)
             .Select(value => new ZaPokemonEditableFieldOption(

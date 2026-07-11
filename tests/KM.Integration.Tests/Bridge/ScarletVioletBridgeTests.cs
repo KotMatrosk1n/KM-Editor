@@ -2016,7 +2016,7 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletBuilds))]
-    public void ScarletVioletEvolutionItemsUseItemIds(
+    public void ScarletVioletEvolutionItemsUseEligibleItemIds(
         ProjectGameDto game,
         ulong titleId)
     {
@@ -2024,11 +2024,14 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(
             temp,
             SvDataPaths.PersonalArray,
-            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 2));
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 86));
         WriteSvOutput(
             temp,
             SvDataPaths.ItemDataArray,
-            CreateItemDataArray(masterBallEvolutionItem: true));
+            CreateItemDataArray(
+                masterBallEvolutionItem: true,
+                ultraBallEvolutionItem: true,
+                includeTinyMushroom: true));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishItemNames,
             CreateTextTable(
@@ -2036,6 +2039,7 @@ public sealed class ScarletVioletBridgeTests
                 (1, "Master Ball"),
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
+                (86, "Tiny Mushroom"),
                 (2482, "Metal Alloy")));
         var paths = temp.Paths with { SelectedGame = game };
         var dispatcher = CreateDispatcherWithSvCache(temp);
@@ -2050,17 +2054,19 @@ public sealed class ScarletVioletBridgeTests
         var workflow = pokemon.Payload!.Workflow;
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
-        Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
+        Assert.Equal(86, evolution.Argument);
+        Assert.Equal("Tiny Mushroom", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 1 && option.Label == "1 Master Ball");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2482 && option.Label == "2482 Metal Alloy");
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 81);
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 86);
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2482);
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 86 && option.Label == "86 Tiny Mushroom");
     }
 
     [Theory]
@@ -3471,7 +3477,10 @@ public sealed class ScarletVioletBridgeTests
         return reward.Value.Num;
     }
 
-    private static byte[] CreateItemDataArray(bool masterBallEvolutionItem = false)
+    private static byte[] CreateItemDataArray(
+        bool masterBallEvolutionItem = false,
+        bool ultraBallEvolutionItem = false,
+        bool includeTinyMushroom = false)
     {
         var builder = new FlatBufferBuilder(1024);
         var icon = builder.CreateString("item_0001");
@@ -3502,6 +3511,7 @@ public sealed class ScarletVioletBridgeTests
             GroupID: 1,
             FieldPocket: global::FieldPocket.FPOCKET_WAZA,
             FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
+            WorkEvolutional: ultraBallEvolutionItem ? 1 : 0,
             SetToPoke: true);
         var legacyMoveIcon = builder.CreateString("item_legacy_move");
         var legacyMoveItem = global::ItemData.CreateItemData(
@@ -3542,7 +3552,23 @@ public sealed class ScarletVioletBridgeTests
             FieldPocket: global::FieldPocket.FPOCKET_WAZA,
             FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
             SetToPoke: true);
-        var vector = global::ItemDataArray.CreateValuesVector(builder, [masterBall, tm001, legacyMoveItem, tm002, tm100]);
+        var rows = new List<Offset<global::ItemData>> { masterBall, tm001, legacyMoveItem, tm002, tm100 };
+        if (includeTinyMushroom)
+        {
+            var tinyMushroomIcon = builder.CreateString("item_0086");
+            rows.Add(global::ItemData.CreateItemData(
+                builder,
+                Id: 86,
+                ItemType: global::ItemType.ITEMTYPE_NORMAL,
+                IconNameOffset: tinyMushroomIcon,
+                Price: 500,
+                SortNum: 86,
+                ItemGroup: global::ItemGroup.ITEMGROUP_NONE,
+                FieldPocket: global::FieldPocket.FPOCKET_OTHER,
+                FieldFunctionType: global::FieldFunctionType.FIELDFUNC_NONE));
+        }
+
+        var vector = global::ItemDataArray.CreateValuesVector(builder, rows.ToArray());
         var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
         global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
