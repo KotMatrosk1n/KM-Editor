@@ -58,6 +58,7 @@ describe('App', () => {
       openProject: null,
       projectStatus: 'idle',
       selectedItemId: null,
+      staticEncountersWorkflow: null,
       workflows: []
     });
   });
@@ -106,6 +107,30 @@ describe('App', () => {
 
   it('shows busy feedback while validating project paths', async () => {
     const user = userEvent.setup();
+    const fixtureBridge = createMockProjectBridge({}, true);
+    const existingStaticEncounters = await fixtureBridge.loadStaticEncountersWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'default-output',
+        saveFilePath: null,
+        selectedGame: 'sword'
+      }
+    });
+    const existingHealth = createHealthForValidatedPaths(
+      'base-romfs',
+      'base-exefs',
+      'default-output',
+      null
+    );
+    useWorkbenchStore.setState({
+      openProject: {
+        fileGraph: { entries: [], summary: existingHealth.fileGraph },
+        health: existingHealth,
+        projectId: 'default-output-project'
+      },
+      staticEncountersWorkflow: existingStaticEncounters.workflow
+    });
     let resolveValidateProject!: () => void;
     const validateProject = vi.fn(
       (request: Parameters<ReturnType<typeof createMockProjectBridge>['validateProject']>[0]) =>
@@ -124,8 +149,11 @@ describe('App', () => {
           }
         )
     );
+    const bridge = createMockProjectBridge({ validateProject });
+    const loadStaticEncountersWorkflow = vi.fn(bridge.loadStaticEncountersWorkflow);
+    bridge.loadStaticEncountersWorkflow = loadStaticEncountersWorkflow;
 
-    render(<App bridge={createMockProjectBridge({ validateProject })} />);
+    render(<App bridge={bridge} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -141,6 +169,15 @@ describe('App', () => {
     });
 
     expect(await screen.findByRole('button', { name: 'Editors' })).toBeInTheDocument();
+    expect(useWorkbenchStore.getState().openProject?.projectId).toBe('pending-project');
+    expect(useWorkbenchStore.getState().staticEncountersWorkflow).toBeNull();
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace' });
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(within(navigation).getByRole('button', { name: 'Static Encounters' }));
+    await waitFor(() => expect(loadStaticEncountersWorkflow).toHaveBeenCalledTimes(1));
+    expect(loadStaticEncountersWorkflow.mock.calls[0]?.[0].paths.outputRootPath).toBe('output');
+    expect(useWorkbenchStore.getState().staticEncountersWorkflow).not.toBeNull();
   });
 
   it('shows the renamed workflow categories in sidebar order', async () => {

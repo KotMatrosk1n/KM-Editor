@@ -149,7 +149,7 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZAEvolutionItemParametersUseItemLabels()
+    public void PokemonLegendsZAEvolutionItemsUseItemIds()
     {
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(
@@ -183,19 +183,20 @@ public sealed class PokemonLegendsZABridgeTests
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
         Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Ultra Ball / Moon Stone", evolution.ArgumentValue);
+        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball / Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 222 && option.Label == "222 Twisted Spoon");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2482 && option.Label == "2482 Metal Alloy");
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
     }
 
     [Fact]
-    public void PokemonLegendsZAHeldItemEvolutionParametersUseHeldItemLabels()
+    public void PokemonLegendsZAHeldItemEvolutionsUseItemIds()
     {
         using var temp = CreatePokemonLegendsZAProject();
         var personalArray = CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2);
@@ -234,7 +235,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(heldItemNight.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
 
         var update = Dispatch<UpdatePokemonEvolutionResponse>(
             dispatcher,
@@ -868,20 +870,22 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerNames("English"),
             CreateTextTable(
-                8,
+                9,
                 (0, "Young Man"),
-                (1, "Audrey"),
-                (2, "Venin"),
-                (3, "Lyse"),
-                (4, "Gwynn of"),
-                (5, "Fist of Justice Gwynn"),
-                (6, "Emma"),
-                (7, "Lida"),
-                (8, "Jean")));
+                (1, "Lady"),
+                (2, "Audrey"),
+                (3, "Venin"),
+                (4, "Lyse"),
+                (5, "Gwynn of"),
+                (6, "Fist of Justice Gwynn"),
+                (7, "Emma"),
+                (8, "Lida"),
+                (9, "Jean")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.TrainerNameKeys("English"),
             CreateKeyTable(
                 (0, "dim_rank_02_05"),
+                (0, "dim_rank_04_41"),
                 (0, "rest1_01"),
                 (0, "sub_010_01"),
                 (0, "sub_010_02"),
@@ -905,11 +909,14 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-trainer-labels");
 
         AssertSuccess(trainers);
-        Assert.Equal(8, trainers.Payload!.Workflow.Trainers.Count);
+        Assert.Equal(9, trainers.Payload!.Workflow.Trainers.Count);
         var dimensionTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "dim_rank_02_mizu_05");
         Assert.Equal("Hyperspace Trainer 5", dimensionTrainer.Name);
         Assert.Equal(0, dimensionTrainer.TrainerClassId);
-        Assert.Equal("Hyperspace Trainer", dimensionTrainer.TrainerClass);
+        Assert.Equal("Young Man", dimensionTrainer.TrainerClass);
+        var secondDimensionTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "dim_rank_04_41");
+        Assert.Equal("Hyperspace Trainer 41", secondDimensionTrainer.Name);
+        Assert.Equal("Lady", secondDimensionTrainer.TrainerClass);
         var eventTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_m03_0125");
         Assert.Equal("Emma", eventTrainer.Name);
         var restaurantTrainer = trainers.Payload.Workflow.Trainers.Single(trainer => trainer.Location == "Ev_sys_rest1_01");
@@ -3540,6 +3547,11 @@ public sealed class PokemonLegendsZABridgeTests
             trainerIdValue: "dim_rank_02_mizu_05",
             trainerType: trainerType,
             trainerType2: trainerType);
+        var secondDimensionTrainer = CreateTrainer(
+            builder,
+            trainerIdValue: "dim_rank_04_41",
+            trainerType: trainerType,
+            trainerType2: trainerType);
         var eventTrainer = CreateTrainer(
             builder,
             trainerIdValue: "Ev_m03_0125",
@@ -3577,7 +3589,7 @@ public sealed class PokemonLegendsZABridgeTests
             trainerType2: trainerType);
         var vector = ZaTrainerTable.CreateValueVector(
             builder,
-            [dimensionTrainer, eventTrainer, restaurantTrainer, subquestTrainer, gwynnTrainer, prefixFirstTrainer, strongestTrainer, rankInfinityTrainer]);
+            [dimensionTrainer, secondDimensionTrainer, eventTrainer, restaurantTrainer, subquestTrainer, gwynnTrainer, prefixFirstTrainer, strongestTrainer, rankInfinityTrainer]);
         var root = ZaTrainerTable.Create(builder, vector);
         ZaTrainerTable.FinishBuffer(builder, root);
         return builder.SizedByteArray();

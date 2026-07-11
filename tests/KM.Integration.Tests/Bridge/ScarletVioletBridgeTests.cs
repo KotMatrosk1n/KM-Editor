@@ -2015,8 +2015,8 @@ public sealed class ScarletVioletBridgeTests
     }
 
     [Theory]
-    [MemberData(nameof(RepresentativeScarletVioletGame))]
-    public void ScarletVioletEvolutionItemParametersUseItemLabels(
+    [MemberData(nameof(ScarletVioletBuilds))]
+    public void ScarletVioletEvolutionItemsUseItemIds(
         ProjectGameDto game,
         ulong titleId)
     {
@@ -2028,7 +2028,7 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(
             temp,
             SvDataPaths.ItemDataArray,
-            CreateItemDataArray(masterBallEvolutionParameter: 777));
+            CreateItemDataArray(masterBallEvolutionItem: true));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishItemNames,
             CreateTextTable(
@@ -2051,20 +2051,21 @@ public sealed class ScarletVioletBridgeTests
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
         Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Moon Stone", evolution.ArgumentValue);
+        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 777 && option.Label == "777 Master Ball");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 119 && option.Label == "119 Metal Alloy");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 1 && option.Label == "1 Master Ball");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2482 && option.Label == "2482 Metal Alloy");
 
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
     }
 
     [Theory]
-    [MemberData(nameof(RepresentativeScarletVioletGame))]
-    public void ScarletVioletHeldItemEvolutionParametersUseHeldItemLabels(
+    [MemberData(nameof(ScarletVioletBuilds))]
+    public void ScarletVioletHeldItemEvolutionsUseItemIds(
         ProjectGameDto game,
         ulong titleId)
     {
@@ -2105,7 +2106,8 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(heldItemNight.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
+        Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
     }
 
     [Theory]
@@ -3469,7 +3471,7 @@ public sealed class ScarletVioletBridgeTests
         return reward.Value.Num;
     }
 
-    private static byte[] CreateItemDataArray(int masterBallEvolutionParameter = 0)
+    private static byte[] CreateItemDataArray(bool masterBallEvolutionItem = false)
     {
         var builder = new FlatBufferBuilder(1024);
         var icon = builder.CreateString("item_0001");
@@ -3485,7 +3487,7 @@ public sealed class ScarletVioletBridgeTests
             GroupID: 1,
             FieldPocket: global::FieldPocket.FPOCKET_BALL,
             BattleFunctionType: global::BattleFunctionType.BTLFUNC_BALL,
-            WorkEvolutional: masterBallEvolutionParameter,
+            WorkEvolutional: masterBallEvolutionItem ? 1 : 0,
             SetToPoke: true);
         var tmIcon = builder.CreateString("item_tm_001");
         var tm001 = global::ItemData.CreateItemData(

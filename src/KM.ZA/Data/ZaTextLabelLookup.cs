@@ -256,6 +256,14 @@ internal sealed class ZaTextLabelLookup
         return FirstUsableTrainerName(GetIndexed(trainerNames, trainerId));
     }
 
+    public string? HyperspaceTrainerClassFromText(string? key)
+    {
+        return TrainerNameKeyCandidates(key)
+            .Select(candidate => GetKeyed(trainerNames, trainerNameIndices, candidate))
+            .FirstOrDefault(value => !IsPlaceholderLabel(value))
+            ?.Trim();
+    }
+
     public string TrainerType(string? key)
     {
         return GetKeyed(trainerTypes, trainerTypeIndices, key)
