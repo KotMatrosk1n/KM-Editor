@@ -1,10 +1,10 @@
 # KM Editor
 
-![Version](https://img.shields.io/badge/version-v2.1.8-blue)
+![Version](https://img.shields.io/badge/version-v2.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
 ![Built with](https://img.shields.io/badge/built%20with-.NET%2010%20%2B%20Tauri%202-512BD4)
 ![Supported Games](https://img.shields.io/badge/supports-SwSh%20%7C%20SV%20%7C%20Z--A-red)
-![Localization](https://img.shields.io/badge/localized-EN%20%7C%20ES%20%7C%20FR%20%7C%20DE%20%7C%20RU%20%7C%20UK-orange)
+![Localization](https://img.shields.io/badge/localized-EN%20%7C%20ES%20%7C%20FR%20%7C%20DE%20%7C%20RU%20%7C%20UK%20%7C%20ZH-orange)
 ![License](https://img.shields.io/badge/license-GPL--3.0--only-lightgrey)
 
 KM Editor is a desktop editor for Pokemon Sword, Pokemon Shield, Pokemon Scarlet, Pokemon Violet, and Pokemon Legends Z-A mod projects.
@@ -17,21 +17,21 @@ It works through a safer LayeredFS flow: choose a supported game, validate clean
 
 KM Editor is a desktop editor for Pokémon Sword, Shield, Scarlet, Violet, and Legends Z-A modding. It is built to make ROM editing cleaner, safer, and less annoying than jumping between a bunch of separate tools and hoping everything lines up correctly.
 
-Before the editors open, KM Editor checks your selected game, clean base RomFS, base ExeFS, and output folder. This helps prevent edits for the wrong game, mismatched files, and the usual “why did this break” nonsense that happens when a project is pointed at the wrong dump.
+Before the editors open, KM Editor checks your selected game, clean base RomFS, base ExeFS, and output folder. This helps prevent edits for the wrong game, mismatched files, and the usual “why did this break” nonsense that happens when a project is pointed at the wrong dump. Changing the Output Root and validating paths reloads every affected editor against the new project, while Switch and Revert clear current work without making you validate the same project again.
 
 Once a project is loaded, the app keeps track of where your data is coming from. It can show whether something came from the clean base files, layered overrides, generated output, or pending edits in your current session. That makes it much easier to understand what you are actually changing before you apply anything.
 
 For Sword and Shield, KM Editor supports Pokémon data, trainers, moves, items, text editing, wild and static encounters, gift and trade Pokémon, raid battles, raid rewards, shops, placement objects, behavior data, flagwork metadata, save inspection, Game Dump, Dump Importer, Mod Merger, Randomizer, 60FPS Patch, and Profanity Filter. The SwSh advanced editors include Bag Hook, Royal Candy, Starting Items, NPC Item Gift, Catch Cap, Hyper Training, Shiny Rate, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, and Dynamax Adventures.
 
-For Scarlet and Violet, KM Editor supports Pokémon data, gift Pokémon, trade Pokémon, trainers, moves, items, placement data, static encounters, wild encounters, shops, Tera Raids, text editing, Game Dump, Dump Importer, Mod Merger, Fashion Unlock, Hyperspace Bypass, and the type chart. Trainer editing includes projected stats for party slots where the loaded Pokemon data is available. Item editing uses readable item type, pocket, group, battle, and field function labels, and Pokemon evolution editing can select held items for the held item methods. Optional S/V project support is available for editors that need deeper access to Scarlet and Violet data, and the S/V cache system helps repeated editor loads feel a lot less painful.
+For Scarlet and Violet, KM Editor supports Pokémon data, gift Pokémon, trade Pokémon, trainers, moves, items, placement data, static encounters, wild encounters, shops, Tera Raids, text editing, Game Dump, Dump Importer, Mod Merger, Fashion Unlock, Hyperspace Bypass, and the type chart. Trainer editing includes projected stats for party slots where the loaded Pokemon data is available. Item editing uses readable item type, pocket, group, battle, and field function labels. Pokemon evolution selectors use real item IDs and only offer items whose current metadata marks them for direct evolution use. Optional S/V project support is available for editors that need deeper access to Scarlet and Violet data, and the S/V cache system helps repeated editor loads feel a lot less painful.
 
-For Pokemon Legends Z-A, KM Editor supports Pokémon data, trainers, moves, items, placement data, wild encounters, static encounters, gift Pokémon, trade Pokémon, shops, text editing, Game Dump, Dump Importer, Mod Merger, and the type chart. Trainer editing includes projected stats, placement data and wild encounters are grouped into readable locations, static encounters use clearer scenario labels, item and shop editing keep technical machines selectable by their real item rows, and technical machines can show the move they currently teach. Z-A projects use their own Trinity cache and their own workflow services so Z-A editing stays separate from Sword and Shield plus Scarlet and Violet behavior.
+For Pokemon Legends Z-A, KM Editor supports Pokémon data, trainers, moves, items, placement data, wild encounters, static encounters, gift Pokémon, trade Pokémon, shops, text editing, Game Dump, Dump Importer, Mod Merger, and the type chart. Trainer editing includes projected stats and uses localized game data for readable trainer names and classes, including Hyperspace trainers. Placement data and wild encounters are grouped into readable locations, static encounters use clearer scenario labels, and item and shop editing keep technical machines selectable by their real item rows. Pokemon evolution selectors use real item IDs and current evolution item metadata. Z-A projects use their own Trinity cache and their own workflow services so Z-A editing stays separate from Sword and Shield plus Scarlet and Violet behavior.
 
 KM Editor stages your changes before applying them. That means you can review edits, remove mistakes, validate the session, and check the planned output before anything gets written. For higher risk edits, especially ExeFS or hook based workflows, the app uses reviewed change plans instead of blindly throwing files into output and hoping for the best.
 
 For Sword and Shield, Randomizer can produce reproducible Pokémon data, encounter, raid reward, and type chart output. Game Dump can export supported editor data, including Scarlet and Violet plus Legends Z-A text data, and Dump Importer can bring supported Sword and Shield, Scarlet and Violet, and Pokemon Legends Z-A dump files back in through CSV, TSV, or JSON where import profiles are available.
 
-KM Editor also supports English, Spanish, French, German, Russian, and Ukrainian UI language selection, app update checks on supported builds, and diagnostics that try to explain what actually happened instead of just handing you a vague error and walking away.
+KM Editor also supports English, Spanish, French, German, Russian, Ukrainian, and Simplified Chinese UI language selection, app update checks on supported builds, and diagnostics that try to explain what actually happened instead of just handing you a vague error and walking away.
 
 ## Build Requirements
 
