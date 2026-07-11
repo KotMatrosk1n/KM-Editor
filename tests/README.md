@@ -37,6 +37,8 @@ Every command writes `TestResults/test-timings.json`. A command that exceeds its
 
 CI runs the required shards on separate workers and uploads each timing report. Explicit `Kind=Slow` performance baselines run in local full validation and in scheduled or manually dispatched CI validation, but do not extend the pull-request gate.
 
+Parallel test processes that target the same backend project must build that project once before the parallel group and pass `--no-build` to every child. This prevents concurrent MSBuild writes to the shared `obj` tree.
+
 Run an individual CI-equivalent shard with:
 
 ```powershell

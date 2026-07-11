@@ -308,12 +308,18 @@ function addShardCommands(shard) {
   }
 
   if (shard === 'swsh-hooks') {
+    add(
+      'swsh-hooks-build',
+      'Build Sword and Shield hook tests once',
+      'dotnet build tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj --no-restore --nologo',
+    );
     addParallel('swsh-hooks', 'Run Sword and Shield hook coexistence tests', [
       {
         label: 'Run Royal Candy hook coexistence tests',
         command: dotnetProject(
           'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
           'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
+          { noBuild: true },
         ),
       },
       {
@@ -321,6 +327,7 @@ function addShardCommands(shard) {
         command: dotnetProject(
           'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
           'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy',
+          { noBuild: true },
         ),
       },
     ]);
