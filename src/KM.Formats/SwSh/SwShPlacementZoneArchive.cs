@@ -131,6 +131,8 @@ public sealed record SwShPlacementZoneArchive(
     private const string RawStorageULong = "ulong";
     private const double MinimumRawFloatValue = -1_000_000;
     private const double MaximumRawFloatValue = 1_000_000;
+    private const double MinimumRawRotationValue = -3_600;
+    private const double MaximumRawRotationValue = 3_600;
 
     public static SwShPlacementZoneArchive Parse(ReadOnlySpan<byte> data, IReadOnlyDictionary<ulong, int>? itemIdsByHash = null)
     {
@@ -609,8 +611,11 @@ public sealed record SwShPlacementZoneArchive(
         if (tableName == PlacementRawCatalog.TransformTable)
         {
             var transform = ReadTransform(data, tableOffset);
-            context.Transform ??= transform.Transform;
-            context.ObjectHash = ReadTableUInt64(data, tableOffset, fieldIndex: 9, required: false);
+            if (context.Transform is null)
+            {
+                context.Transform = transform.Transform;
+                context.ObjectHash = ReadTableUInt64(data, tableOffset, fieldIndex: 9, required: false);
+            }
         }
 
         foreach (var field in table.Fields)
@@ -868,9 +873,11 @@ public sealed record SwShPlacementZoneArchive(
         int tableOffset = 0,
         int tableReferenceOffset = 0)
     {
-        var canRewriteTable = valueOffset <= 0 && CanRewriteRawScalarTable(field, storageKind, tableName, tableOffset, tableReferenceOffset);
-        var isPatchable = IsRawStoragePatchable(storageKind, valueOffset, stringByteCapacity, canRewriteTable);
         var label = ResolveRawLabel(objectType, fieldPath, field);
+        var canRewriteTable = valueOffset <= 0 && CanRewriteRawScalarTable(field, storageKind, tableName, tableOffset, tableReferenceOffset);
+        var hasPatchableStorage = IsRawStoragePatchable(storageKind, valueOffset, stringByteCapacity, canRewriteTable);
+        var hasProvenSemantics = IsRawFieldSemanticallyEditable(fieldPath, field.Name, label, storageKind);
+        var isPatchable = hasPatchableStorage && hasProvenSemantics;
         fields.Add(new SwShPlacementRawField(
             $"raw.{objectType}.{fieldPath}",
             label,
@@ -879,9 +886,20 @@ public sealed record SwShPlacementZoneArchive(
             displayValue,
             IsReadOnly: !isPatchable,
             GetRawValueKind(storageKind),
-            GetRawMinimumValue(storageKind),
-            GetRawMaximumValue(storageKind, stringByteCapacity),
-            GetRawDescription(objectType, fieldPath, field.Name, label, storageKind, isPatchable, canRewriteTable, field.DefaultValue, stringByteCapacity),
+            GetRawMinimumValue(storageKind, field.Name),
+            GetRawMaximumValue(storageKind, field.Name, stringByteCapacity),
+            GetRawDescription(
+                objectType,
+                fieldPath,
+                field.Name,
+                label,
+                storageKind,
+                isPatchable,
+                hasPatchableStorage,
+                hasProvenSemantics,
+                canRewriteTable,
+                field.DefaultValue,
+                stringByteCapacity),
             storageKind,
             valueOffset,
             stringByteCapacity,
@@ -914,14 +932,14 @@ public sealed record SwShPlacementZoneArchive(
             _ => string.Empty,
         };
 
-        return string.IsNullOrWhiteSpace(preferred) ? objectType : preferred;
+        return IsEmptyRawHash(preferred) ? objectType : preferred;
     }
 
     private static string ResolveRawLinkValue(
         string objectType,
         IReadOnlyList<SwShPlacementRawField> fields)
     {
-        return objectType switch
+        var value = objectType switch
         {
             "Trainer" => FindRawValue(fields, "TrainerID"),
             "StaticObject" => FindRawValue(fields, "Spawns[0].SpawnID"),
@@ -932,6 +950,8 @@ public sealed record SwShPlacementZoneArchive(
             "Path" => FindRawValue(fields, "PathName"),
             _ => string.Empty,
         };
+
+        return IsEmptyRawHash(value) ? string.Empty : value;
     }
 
     private static string FindRawValue(IReadOnlyList<SwShPlacementRawField> fields, string suffix)
@@ -956,6 +976,7 @@ public sealed record SwShPlacementZoneArchive(
     private static bool IsEmptyRawHash(string value)
     {
         return string.IsNullOrWhiteSpace(value)
+            || string.Equals(value, FormatRawHash(0), StringComparison.OrdinalIgnoreCase)
             || string.Equals(value, FormatRawHash(EmptyFnvHash), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -1198,12 +1219,14 @@ public sealed record SwShPlacementZoneArchive(
 
     private static string FormatRawHash(ulong value)
     {
-        return value == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"0x{value:X16}");
+        return string.Create(CultureInfo.InvariantCulture, $"0x{value:X16}");
     }
 
     private static string FormatRawNumber(float value)
     {
-        return value.ToString("0.###", CultureInfo.InvariantCulture);
+        return value == 0
+            ? "0"
+            : value.ToString("G9", CultureInfo.InvariantCulture);
     }
 
     private static string FormatRawUInt(string fieldName, uint value)
@@ -1229,6 +1252,84 @@ public sealed record SwShPlacementZoneArchive(
         }
 
         return storageKind != RawStorageString || stringByteCapacity >= 0;
+    }
+
+    private static bool IsRawFieldSemanticallyEditable(
+        string fieldPath,
+        string fieldName,
+        string label,
+        string storageKind)
+    {
+        if (storageKind.Length == 0 || IsUnsafeRawLabel(label) || IsUnsafeRawFieldName(fieldName))
+        {
+            return false;
+        }
+
+        if (fieldPath.Contains("Location", StringComparison.Ordinal)
+            || fieldPath.Contains("Rotation", StringComparison.Ordinal)
+            || fieldPath.Contains("Scale", StringComparison.Ordinal))
+        {
+            return fieldName is "LocationX" or "LocationY" or "LocationZ"
+                or "RotationX" or "RotationY" or "RotationZ"
+                or "ScaleX" or "ScaleY" or "ScaleZ";
+        }
+
+        if (IsUnsafeRawReferenceField(fieldName))
+        {
+            return false;
+        }
+
+        return (fieldName == "Enabled" && storageKind == RawStorageBool)
+            || label is "Bounds A Type" or "Bounds B Type";
+    }
+
+    private static bool IsUnsafeRawLabel(string label)
+    {
+        return label.StartsWith("Field ", StringComparison.Ordinal)
+            || label.StartsWith("Hash ", StringComparison.Ordinal)
+            || label.StartsWith("Num ", StringComparison.Ordinal)
+            || label.StartsWith("Byte ", StringComparison.Ordinal)
+            || label.StartsWith("Flag ", StringComparison.Ordinal)
+            || label.StartsWith("Unknown", StringComparison.Ordinal)
+            || label is "Object Hash" or "Number";
+    }
+
+    private static bool IsUnsafeRawFieldName(string fieldName)
+    {
+        return (fieldName.StartsWith("Field_", StringComparison.Ordinal)
+                && fieldName is not "Field_00")
+            || fieldName.StartsWith("Hash_", StringComparison.Ordinal)
+            || fieldName.StartsWith("Num_", StringComparison.Ordinal)
+            || fieldName.StartsWith("Byte_", StringComparison.Ordinal)
+            || fieldName.StartsWith("Flag_", StringComparison.Ordinal)
+            || fieldName.StartsWith("Unused", StringComparison.Ordinal)
+            || fieldName is "HashObjectName" or "Hash";
+    }
+
+    private static bool IsUnsafeRawReferenceField(string fieldName)
+    {
+        return fieldName is "TrainerID"
+            or "MovementPath"
+            or "Common"
+            or "Rare"
+            or "EnableSpawns"
+            or "UnlockFlagHash"
+            or "TriggerName"
+            or "PathName"
+            or "SignHash"
+            or "Message"
+            or "WorkValue"
+            or "SpawnID"
+            or "SymbolHash"
+            or "Behavior"
+            or "NameModel"
+            or "NameAnimation"
+            or "ParticleFile"
+            or "PlayName"
+            or "StopName"
+            or "NameAreaOther"
+            or "NameSoundEffect1"
+            or "NameSoundEffect2";
     }
 
     private static bool CanRewriteRawScalarTable(
@@ -1272,8 +1373,13 @@ public sealed record SwShPlacementZoneArchive(
         };
     }
 
-    private static double GetRawMinimumValue(string storageKind)
+    private static double GetRawMinimumValue(string storageKind, string fieldName)
     {
+        if (storageKind == RawStorageFloat && fieldName.StartsWith("Rotation", StringComparison.Ordinal))
+        {
+            return MinimumRawRotationValue;
+        }
+
         return storageKind switch
         {
             RawStorageFloat => MinimumRawFloatValue,
@@ -1285,8 +1391,16 @@ public sealed record SwShPlacementZoneArchive(
         };
     }
 
-    private static double GetRawMaximumValue(string storageKind, int stringByteCapacity)
+    private static double GetRawMaximumValue(
+        string storageKind,
+        string fieldName,
+        int stringByteCapacity)
     {
+        if (storageKind == RawStorageFloat && fieldName.StartsWith("Rotation", StringComparison.Ordinal))
+        {
+            return MaximumRawRotationValue;
+        }
+
         return storageKind switch
         {
             RawStorageFloat => MaximumRawFloatValue,
@@ -1306,6 +1420,8 @@ public sealed record SwShPlacementZoneArchive(
         string label,
         string storageKind,
         bool isPatchable,
+        bool hasPatchableStorage,
+        bool hasProvenSemantics,
         bool canRewriteTable,
         string defaultValue,
         int stringByteCapacity)
@@ -1338,7 +1454,11 @@ public sealed record SwShPlacementZoneArchive(
             ? canRewriteTable
                 ? "Editable by replacing this small placement subtable and redirecting its parent reference."
                 : "Editable in place without rebuilding the placement FlatBuffer."
-            : "Not editable because the value is absent from this object or represents a vector/table count.";
+            : !hasPatchableStorage
+                ? "Not editable because the value is absent from this object or represents a vector/table count."
+                : !hasProvenSemantics
+                    ? "Read-only because this field is structural, is an unvalidated reference, or does not yet have proven gameplay semantics."
+                    : "Not editable through the current placement workflow.";
 
         return $"{knownness} {storageDescription}{defaultDescription} {editability}";
     }
@@ -1780,8 +1900,12 @@ public sealed record SwShPlacementZoneArchive(
     private static ulong ParseUInt64(string value, string field)
     {
         var trimmed = value.Trim();
-        if (trimmed.Length == 0
-            || trimmed.Equals("none", StringComparison.OrdinalIgnoreCase)
+        if (trimmed.Length == 0)
+        {
+            return 0;
+        }
+
+        if (trimmed.Equals("none", StringComparison.OrdinalIgnoreCase)
             || trimmed.Equals("empty", StringComparison.OrdinalIgnoreCase))
         {
             return EmptyFnvHash;
@@ -1939,9 +2063,9 @@ public sealed record SwShPlacementZoneArchive(
                     F("RotationX", PlacementRawFieldKind.Float, 3),
                     F("RotationY", PlacementRawFieldKind.Float, 4),
                     F("RotationZ", PlacementRawFieldKind.Float, 5),
-                    F("ScaleX", PlacementRawFieldKind.Float, 6),
-                    F("ScaleY", PlacementRawFieldKind.Float, 7),
-                    F("ScaleZ", PlacementRawFieldKind.Float, 8),
+                    F("ScaleX", PlacementRawFieldKind.Float, 6, DefaultValue: "1"),
+                    F("ScaleY", PlacementRawFieldKind.Float, 7, DefaultValue: "1"),
+                    F("ScaleZ", PlacementRawFieldKind.Float, 8, DefaultValue: "1"),
                     F("HashObjectName", PlacementRawFieldKind.ULong, 9),
                     F("Hash_10", PlacementRawFieldKind.ULong, 10),
                     F("Hash_11", PlacementRawFieldKind.ULong, 11)),

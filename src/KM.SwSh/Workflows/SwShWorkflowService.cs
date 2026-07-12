@@ -217,10 +217,13 @@ public sealed class SwShWorkflowService
 
     public SwShPokemonWorkflowService SharedPokemonWorkflowService => pokemonWorkflowService;
 
+    public SwShPlacementWorkflowService SharedPlacementWorkflowService => placementWorkflowService;
+
     public void ClearMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
+        placementWorkflowService.ClearMemoryCache();
         if (clearReusableDataCaches)
         {
             parsedDataCache.Clear();

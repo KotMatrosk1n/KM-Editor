@@ -2023,6 +2023,81 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(5, outputArchive.Zones[0].FieldItems[0].Quantity);
     }
 
+    [Theory]
+    [InlineData(ProjectGameDto.Sword)]
+    [InlineData(ProjectGameDto.Shield)]
+    public void DispatchPlacementObjectFieldsReturnsAtomicDeltaForSwordAndShield(ProjectGameDto selectedGame)
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPlacementBridgeFixtures.WriteBasePlacement(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile(
+            "main.npdm",
+            CreateNpdm(selectedGame == ProjectGameDto.Sword
+                ? 0x0100ABF008968000UL
+                : 0x01008DB008C2C000UL));
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var loadResponse = DeserializeResponse<LoadPlacementWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            requestId: $"request-placement-{selectedGame}-load")));
+        var hiddenItem = loadResponse.Payload!.Workflow.Objects.Single(record => record.ObjectType == "HiddenItem");
+
+        var successfulResponse = DeserializeResponse<UpdatePlacementObjectFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdatePlacementObjectFields,
+            new UpdatePlacementObjectFieldsRequest(
+                paths,
+                Session: null,
+                Updates:
+                [
+                    new PlacementObjectFieldUpdateDto(
+                        hiddenItem.ObjectId,
+                        Field: "itemId",
+                        Value: "2"),
+                    new PlacementObjectFieldUpdateDto(
+                        hiddenItem.ObjectId,
+                        Field: "locationX",
+                        Value: "24"),
+                ]),
+            requestId: $"request-placement-{selectedGame}-batch")));
+
+        Assert.Null(successfulResponse.Error);
+        Assert.NotNull(successfulResponse.Payload);
+        Assert.Null(successfulResponse.Payload.Workflow);
+        var updatedObject = Assert.Single(successfulResponse.Payload.UpdatedObjects!);
+        Assert.Equal(hiddenItem.ObjectId, updatedObject.ObjectId);
+        Assert.Equal("Great Ball", updatedObject.ItemName);
+        Assert.Equal("0xAABBCCDD00112244", updatedObject.ItemHash);
+        Assert.Equal(24, updatedObject.X);
+        Assert.Equal(2, successfulResponse.Payload.Session.PendingEdits.Count);
+
+        var failedResponse = DeserializeResponse<UpdatePlacementObjectFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdatePlacementObjectFields,
+            new UpdatePlacementObjectFieldsRequest(
+                paths,
+                Session: null,
+                Updates:
+                [
+                    new PlacementObjectFieldUpdateDto(
+                        hiddenItem.ObjectId,
+                        Field: "itemId",
+                        Value: "2"),
+                    new PlacementObjectFieldUpdateDto(
+                        hiddenItem.ObjectId,
+                        Field: "notEditable",
+                        Value: "1"),
+                ]),
+            requestId: $"request-placement-{selectedGame}-atomic")));
+
+        Assert.Null(failedResponse.Error);
+        Assert.NotNull(failedResponse.Payload);
+        Assert.Null(failedResponse.Payload.Workflow);
+        Assert.Empty(failedResponse.Payload.UpdatedObjects!);
+        Assert.Empty(failedResponse.Payload.Session.PendingEdits);
+        Assert.Contains(failedResponse.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
     [Fact]
     public void DispatchLoadFlagworkSaveWorkflowReturnsRealFlagworkRecords()
     {

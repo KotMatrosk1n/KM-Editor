@@ -208,7 +208,6 @@ public sealed class ProjectBridgeDispatcher
         this.giftPokemonEditSessionService = giftPokemonEditSessionService ?? new SwShGiftPokemonEditSessionService(this.projectWorkspaceService);
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
         this.movesEditSessionService = movesEditSessionService ?? new SwShMovesEditSessionService(this.projectWorkspaceService);
-        this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(this.projectWorkspaceService);
         this.behaviorEditSessionService = behaviorEditSessionService ?? new SwShBehaviorEditSessionService(this.projectWorkspaceService);
         this.raidBattlesEditSessionService = raidBattlesEditSessionService ?? new SwShRaidBattlesEditSessionService(this.projectWorkspaceService);
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
@@ -229,6 +228,9 @@ public sealed class ProjectBridgeDispatcher
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(
             this.projectWorkspaceService,
             modMergerWorkflowService: this.modMergerWorkflowService);
+        this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(
+            this.projectWorkspaceService,
+            this.swShWorkflowService.SharedPlacementWorkflowService);
         this.pokemonEditSessionService = pokemonEditSessionService ?? new SwShPokemonEditSessionService(
             this.projectWorkspaceService,
             this.swShWorkflowService.SharedPokemonWorkflowService);
@@ -1611,19 +1613,22 @@ public sealed class ProjectBridgeDispatcher
             return SerializeSuccess(zaResponse, request.RequestId);
         }
 
-        if (!IsScarletViolet(paths))
+        if (IsScarletViolet(paths))
         {
-            return SerializeFailure(
-                "bridge.gameMismatch",
-                "Bridge command 'placement.objects.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
-                request.RequestId);
+            var svUpdates = request.Payload.Updates
+                .Select(update => new SvPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
+                .ToArray();
+            var svResponse = SvBridgeMapper.ToPlacementObjectFieldsDto(
+                svWorkflowService.UpdatePlacementObjectFields(paths, session, svUpdates));
+
+            return SerializeSuccess(svResponse, request.RequestId);
         }
 
-        var updates = request.Payload.Updates
-            .Select(update => new SvPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
+        var swShUpdates = request.Payload.Updates
+            .Select(update => new SwShPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
             .ToArray();
-        var response = SvBridgeMapper.ToPlacementObjectFieldsDto(
-            svWorkflowService.UpdatePlacementObjectFields(paths, session, updates));
+        var response = SwShBridgeMapper.ToPlacementObjectFieldsDto(
+            placementEditSessionService.UpdateObjectFields(paths, session, swShUpdates));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3305,7 +3310,6 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadTeraRaidsWorkflow or
             KmCommandNames.UpdateTeraRaidField or
             KmCommandNames.UpdateTeraRaidFields or
-            KmCommandNames.UpdatePlacementObjectFields or
             KmCommandNames.StageTypeChartUninstall or
             KmCommandNames.LoadHyperspaceBypassWorkflow or
             KmCommandNames.StageHyperspaceBypassInstall or

@@ -110,6 +110,7 @@ public sealed record UpdatePlacementObjectFieldResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdatePlacementObjectFieldsResponse(
-    PlacementWorkflowDto Workflow,
+    PlacementWorkflowDto? Workflow,
     EditSessionDto Session,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics,
+    IReadOnlyList<PlacedObjectRecordDto>? UpdatedObjects = null);

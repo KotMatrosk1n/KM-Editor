@@ -53,6 +53,14 @@ export const storedRetainedWorkflowSections = Object.keys(
   workflowStoreKeyBySection
 ) as StoredRetainedWorkflowSection[];
 
+const refreshDependentsBySection: Partial<
+  Record<RetainedWorkflowSection, readonly RetainedWorkflowSection[]>
+> = {
+  royalCandy: ['placement'],
+  staticEncounters: ['placement'],
+  text: ['placement']
+};
+
 export type LoadedWorkflowRetentionEntry = {
   cost: number;
   section: RetainedWorkflowSection;
@@ -296,6 +304,12 @@ export function selectWorkflowSectionsToRefresh(
       loadedSections.has(section)
     ) {
       selected.add(section);
+
+      for (const dependentSection of refreshDependentsBySection[section] ?? []) {
+        if (loadedSections.has(dependentSection)) {
+          selected.add(dependentSection);
+        }
+      }
     }
   }
 

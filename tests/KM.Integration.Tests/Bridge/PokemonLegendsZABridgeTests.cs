@@ -3815,6 +3815,7 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-placement-update");
         AssertSuccess(update);
         Assert.DoesNotContain(update.Payload!.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.NotNull(update.Payload.Workflow);
         var updatedObject = update.Payload.Workflow.Objects.Single(placedObject => placedObject.ObjectId == pokemonSpawner.ObjectId);
         Assert.Equal(9.5, updatedObject.X);
         Assert.Equal(180, updatedObject.RotationY);

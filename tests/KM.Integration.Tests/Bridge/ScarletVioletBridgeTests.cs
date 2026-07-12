@@ -1271,6 +1271,7 @@ public sealed class ScarletVioletBridgeTests
             "request-sv-placement-object-fields-update");
         AssertSuccess(placementBatch);
         session = placementBatch.Payload!.Session;
+        Assert.NotNull(placementBatch.Payload.Workflow);
         var stagedHiddenItem = placementBatch.Payload.Workflow.Objects.Single(entry => entry.ObjectId == hiddenItem.ObjectId);
         Assert.Equal("4", stagedHiddenItem.Fields!.Single(field => field.Field == "hidden.item1.itemId").Value);
         Assert.Equal("80", stagedHiddenItem.Fields!.Single(field => field.Field == "hidden.item1.chance").Value);
