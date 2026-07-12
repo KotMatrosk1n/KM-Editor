@@ -753,6 +753,17 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdatePlacementObjectFieldsResponse ToPlacementObjectFieldsDto(SwShPlacementEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePlacementObjectFieldsResponse(
+            Workflow: null,
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            result.UpdatedObjects?.Select(ToDto).ToArray() ?? []);
+    }
+
     public static UpdateBehaviorEntryFieldResponse ToDto(SwShBehaviorEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

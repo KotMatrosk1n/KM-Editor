@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Core.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.StaticEncounters;
@@ -13,6 +14,13 @@ namespace KM.SwSh.Placement;
 
 public sealed class SwShPlacementWorkflowService
 {
+    private const ulong Wr02HoeruoObjectHash = 0x12E3C0CA0F529035;
+
+    private static readonly string[] EditingSnapshotPrimaryTransformLabels =
+        ["X", "Y", "Z", "Rotation Y"];
+
+    private readonly ProjectWorkflowMemoryCache<SwShPlacementWorkflow> memoryCache = new();
+
     public const string PlacementDataPath = "romfs/bin/archive/field/resident/placement.gfpak";
     public const string ItemHashPath = "romfs/bin/pml/item/item_hash_to_index.dat";
     public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
@@ -30,6 +38,7 @@ public sealed class SwShPlacementWorkflowService
     public const double MinimumRotation = -3600;
     public const double MaximumRotation = 3600;
     public const int MaximumItemId = ushort.MaxValue;
+    public const int MaximumFieldItemQuantity = byte.MaxValue;
     public const int MaximumQuantity = 999;
     public const int MaximumChance = 100;
 
@@ -118,12 +127,91 @@ public sealed class SwShPlacementWorkflowService
     {
         ArgumentNullException.ThrowIfNull(project);
 
+        var workflow = LoadUncached(project);
+        memoryCache.Set(project.Paths, CreateEditingSnapshot(workflow));
+        return workflow;
+    }
+
+    public SwShPlacementWorkflow LoadForEditing(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        if (memoryCache.TryGet(project.Paths, out var cachedWorkflow))
+        {
+            return cachedWorkflow!;
+        }
+
+        var workflow = CreateEditingSnapshot(LoadUncached(project));
+        memoryCache.Set(project.Paths, workflow);
+        return workflow;
+    }
+
+    public void ClearMemoryCache()
+    {
+        memoryCache.Clear();
+    }
+
+    private static SwShPlacementWorkflow CreateEditingSnapshot(
+        SwShPlacementWorkflow workflow)
+    {
+        return workflow with
+        {
+            Objects = workflow.Objects.Select(CreateEditingSnapshotRecord).ToArray(),
+            Categories = [],
+        };
+    }
+
+    private static SwShPlacedObjectRecord CreateEditingSnapshotRecord(
+        SwShPlacedObjectRecord placedObject)
+    {
+        if (placedObject.Fields is null || placedObject.Fields.Count == 0)
+        {
+            return placedObject;
+        }
+
+        var retainedFields = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var label in EditingSnapshotPrimaryTransformLabels)
+        {
+            var primaryRawTransform = placedObject.Fields.FirstOrDefault(field =>
+                field.Field.StartsWith("raw.", StringComparison.Ordinal)
+                && field.Group == "Transform"
+                && field.Label == label);
+            if (primaryRawTransform is not null)
+            {
+                retainedFields.Add(primaryRawTransform.Field);
+            }
+        }
+
+        var fields = placedObject.Fields
+            .Where(field =>
+                !field.IsReadOnly
+                || retainedFields.Contains(field.Field)
+                || IsCanonicalEditingField(field.Field)
+                || field.Field is "fieldItem.hash" or "hiddenItem.hash")
+            .ToArray();
+
+        return placedObject with { Fields = fields };
+    }
+
+    private static bool IsCanonicalEditingField(string field)
+    {
+        return field is LocationXField
+            or LocationYField
+            or LocationZField
+            or RotationYField
+            or ItemIdField
+            or QuantityField
+            or ChanceField;
+    }
+
+    private SwShPlacementWorkflow LoadUncached(OpenedProject project)
+    {
         var summary = CreateSummary(project);
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, [], diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, [], new Dictionary<int, ulong>(), diagnostics);
         }
 
         var placementSource = ResolvePlacementDataSource(project);
@@ -133,13 +221,13 @@ public sealed class SwShPlacementWorkflowService
                 DiagnosticSeverity.Warning,
                 "Placement data is not available for this project.",
                 expected: PlacementDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, [], diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, [], new Dictionary<int, ulong>(), diagnostics);
         }
 
         var itemNames = LoadItemNames(project, diagnostics, out var itemNameSourceCount);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames);
         var itemHashes = LoadItemHashes(project, diagnostics, out var itemHashSourceCount);
-        var itemIdsByHash = itemHashes.ToDictionary(entry => entry.Value, entry => entry.Key);
+        var itemIdsByHash = CreateItemIdsByHash(itemHashes);
 
         try
         {
@@ -203,6 +291,7 @@ public sealed class SwShPlacementWorkflowService
                 areaCount,
                 sourceFileCount: 1 + itemNameSourceCount + itemHashSourceCount,
                 itemDisplayNames,
+                itemHashes,
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -212,7 +301,7 @@ public sealed class SwShPlacementWorkflowService
                 $"Placement data source is not a supported Sword/Shield placement pack: {exception.Message}",
                 file: placementSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield placement.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemDisplayNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemDisplayNames, itemHashes, diagnostics);
         }
         catch (IOException exception)
         {
@@ -221,7 +310,7 @@ public sealed class SwShPlacementWorkflowService
                 $"Placement data source could not be read: {exception.Message}",
                 file: placementSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield placement.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemDisplayNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemDisplayNames, itemHashes, diagnostics);
         }
     }
 
@@ -327,7 +416,7 @@ public sealed class SwShPlacementWorkflowService
         IReadOnlyList<string> itemNames,
         SwShPlacementProvenance provenance)
     {
-        var itemIdsByHash = itemHashes.ToDictionary(entry => entry.Value, entry => entry.Key);
+        var itemIdsByHash = CreateItemIdsByHash(itemHashes);
         var records = new List<SwShPlacedObjectRecord>();
         foreach (var zone in archive.Zones)
         {
@@ -361,7 +450,10 @@ public sealed class SwShPlacementWorkflowService
                     fieldItem.Transform.RotationY,
                     string.IsNullOrWhiteSpace(fieldItem.Model) ? ResolveObjectName(zone.ObjectHash, objectNames) : CleanPath(fieldItem.Model),
                     provenance,
-                    CreateFieldItemFields(fieldItem, itemId, itemName, itemHash, rawObject, hashLabels, itemIdsByHash, itemNames)));
+                    CreateFieldItemFields(fieldItem, itemId, itemName, itemHash, rawObject, hashLabels, itemIdsByHash, itemNames),
+                    itemUsesHashStorage: fieldItem.ItemHashOffsets.Count > 0,
+                    itemUsesDirectIdStorage: fieldItem.ItemHashOffsets.Count == 0
+                        && fieldItem.ItemIdOffsets.Count > 0));
             }
 
             foreach (var hiddenItem in zone.HiddenItems)
@@ -390,7 +482,8 @@ public sealed class SwShPlacementWorkflowService
                         hiddenItem.Transform.RotationY,
                         ResolveObjectName(zone.ObjectHash, objectNames),
                         provenance,
-                        CreateHiddenItemFields(hiddenItem, chance, itemName, rawObject, hashLabels, itemIdsByHash, itemNames)));
+                        CreateHiddenItemFields(hiddenItem, chance, itemName, rawObject, hashLabels, itemIdsByHash, itemNames),
+                        itemUsesHashStorage: chance.ItemHashOffset > 0));
                 }
             }
 
@@ -419,39 +512,69 @@ public sealed class SwShPlacementWorkflowService
                         ? ResolveObjectName(rawObject.ObjectHash, objectNames)
                         : rawObject.LinkValue,
                     provenance,
-                    ConvertRawFields(rawObject.Fields, hashLabels, itemIdsByHash, itemNames)));
+                    ConvertRawFields(
+                        rawObject.Fields,
+                        hashLabels,
+                        itemIdsByHash,
+                        itemNames,
+                        runtimeOwnsScaleAndRotation: IsWr02Hoeruo(rawObject, hashLabels))));
             }
         }
 
         return records;
     }
 
+    private static IReadOnlyDictionary<ulong, int> CreateItemIdsByHash(
+        IReadOnlyDictionary<int, ulong> itemHashes)
+    {
+        return itemHashes
+            .Where(entry => entry.Value != 0)
+            .OrderBy(entry => entry.Key)
+            .GroupBy(entry => entry.Value)
+            .ToDictionary(group => group.Key, group => group.First().Key);
+    }
+
     private static IReadOnlyList<SwShPlacementFieldValue> ConvertRawFields(
         IReadOnlyList<SwShPlacementRawField> rawFields,
         IReadOnlyDictionary<ulong, string> hashLabels,
         IReadOnlyDictionary<ulong, int> itemIdsByHash,
-        IReadOnlyList<string> itemNames)
+        IReadOnlyList<string> itemNames,
+        bool runtimeOwnsScaleAndRotation = false,
+        Func<SwShPlacementRawField, bool>? includeField = null)
     {
         return rawFields
-            .Select(field => new SwShPlacementFieldValue(
-                field.Field,
-                field.Label,
-                field.Group,
-                field.Value,
-                ResolveRawDisplayValue(field, hashLabels, itemIdsByHash, itemNames),
-                field.IsReadOnly,
-                field.ValueKind,
-                field.MinimumValue,
-                field.MaximumValue,
-                field.Description))
+            .Where(field => includeField?.Invoke(field) ?? true)
+            .Select(field =>
+            {
+                var isRuntimeOwned = runtimeOwnsScaleAndRotation
+                    && field.Group == "Transform"
+                    && (field.Label.StartsWith("Scale ", StringComparison.Ordinal)
+                        || field.Label.StartsWith("Rotation ", StringComparison.Ordinal));
+                return new SwShPlacementFieldValue(
+                    field.Field,
+                    field.Label,
+                    field.Group,
+                    field.Value,
+                    ResolveRawDisplayValue(field, hashLabels, itemIdsByHash, itemNames),
+                    field.IsReadOnly || isRuntimeOwned,
+                    field.ValueKind,
+                    field.MinimumValue,
+                    field.MaximumValue,
+                    isRuntimeOwned
+                        ? "Runtime-owned by the wr02_hoeruo Wailord AI. The game reapplies model scale 5 and rotation Y -74 after this placement spawner loads."
+                        : field.Description);
+            })
             .ToArray();
     }
 
-    private static SwShPlacementFieldValue EditableField(
+    private static SwShPlacementFieldValue CanonicalNumberField(
         string field,
         string label,
         string group,
-        double value)
+        double value,
+        bool isStored,
+        double minimumValue,
+        double maximumValue)
     {
         var formatted = FormatNumber(value);
         return new SwShPlacementFieldValue(
@@ -460,18 +583,22 @@ public sealed class SwShPlacementWorkflowService
             group,
             formatted,
             formatted,
-            IsReadOnly: false,
+            IsReadOnly: !isStored,
             ValueKind: "number",
-            MinimumValue: MinimumCoordinate,
-            MaximumValue: MaximumCoordinate);
+            MinimumValue: minimumValue,
+            MaximumValue: maximumValue,
+            Description: GetCanonicalStorageDescription(isStored));
     }
 
-    private static SwShPlacementFieldValue EditableField(
+    private static SwShPlacementFieldValue CanonicalIntegerField(
         string field,
         string label,
         string group,
         int? value,
-        string displayValue)
+        string displayValue,
+        bool isStored,
+        int maximumValue,
+        IReadOnlyList<SwShPlacementEditableFieldOption>? options = null)
     {
         return new SwShPlacementFieldValue(
             field,
@@ -479,14 +606,31 @@ public sealed class SwShPlacementWorkflowService
             group,
             value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             displayValue,
-            IsReadOnly: false,
+            IsReadOnly: !isStored,
             ValueKind: "integer",
             MinimumValue: 0,
-            MaximumValue: field == ChanceField
-                ? MaximumChance
-                : field == QuantityField
-                    ? MaximumQuantity
-                    : MaximumItemId);
+            MaximumValue: maximumValue,
+            Description: GetCanonicalStorageDescription(isStored),
+            Options: options);
+    }
+
+    private static SwShPlacementFieldValue CanonicalIntegerField(
+        string field,
+        string label,
+        string group,
+        int value,
+        bool isStored,
+        int maximumValue)
+    {
+        var formatted = value.ToString(CultureInfo.InvariantCulture);
+        return CanonicalIntegerField(field, label, group, value, formatted, isStored, maximumValue);
+    }
+
+    private static string GetCanonicalStorageDescription(bool isStored)
+    {
+        return isStored
+            ? "Stored directly in this placement object and editable without rebuilding its FlatBuffer table."
+            : "Read-only because this scalar is omitted from the placement object's FlatBuffer table and cannot be patched safely in place.";
     }
 
     private static SwShPlacementFieldValue ReadOnlyField(
@@ -620,6 +764,28 @@ public sealed class SwShPlacementWorkflowService
             _ => rawObject.ObjectType,
         };
 
+        if (rawObject.ObjectType == "StaticObject")
+        {
+            var spawnLabels = rawObject.Fields
+                .Where(field => field.Field.Contains(".Spawns[", StringComparison.Ordinal)
+                    && field.Field.EndsWith(".SpawnID", StringComparison.Ordinal))
+                .Select(field => ResolveRawDisplayValue(field, hashLabels, itemIdsByHash, itemNames))
+                .Where(label => !IsEmptyRawDisplay(label))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (spawnLabels.Length > 0)
+            {
+                var displayedLabels = string.Join(", ", spawnLabels.Take(3));
+                var overflow = spawnLabels.Length > 3
+                    ? $", +{(spawnLabels.Length - 3).ToString(CultureInfo.InvariantCulture)} more"
+                    : string.Empty;
+                var count = spawnLabels.Length > 1
+                    ? $" ({spawnLabels.Length.ToString(CultureInfo.InvariantCulture)} spawn IDs)"
+                    : string.Empty;
+                return $"{typeLabel}: {displayedLabels}{overflow}{count}";
+            }
+        }
+
         var primaryLabel = ResolveRawDisplayValue(
             rawObject.PrimaryLabel,
             rawObject.PrimaryLabel,
@@ -655,6 +821,19 @@ public sealed class SwShPlacementWorkflowService
             || value.Equals("None (empty hash)", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsWr02Hoeruo(
+        SwShPlacementRawObject rawObject,
+        IReadOnlyDictionary<ulong, string> hashLabels)
+    {
+        if (rawObject.ObjectHash == Wr02HoeruoObjectHash)
+        {
+            return true;
+        }
+
+        return hashLabels.TryGetValue(rawObject.ObjectHash, out var label)
+            && label.Contains("wr02_hoeruo", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static PlacementCategoryInfo ResolveCategory(string objectType)
     {
         return CategoryByObjectType.TryGetValue(objectType, out var category)
@@ -682,7 +861,9 @@ public sealed class SwShPlacementWorkflowService
         double rotationY,
         string? scriptId,
         SwShPlacementProvenance provenance,
-        IReadOnlyList<SwShPlacementFieldValue> fields)
+        IReadOnlyList<SwShPlacementFieldValue> fields,
+        bool itemUsesHashStorage = false,
+        bool itemUsesDirectIdStorage = false)
     {
         var category = ResolveCategory(objectType);
         return new SwShPlacedObjectRecord(
@@ -707,7 +888,9 @@ public sealed class SwShPlacementWorkflowService
             provenance,
             category.Id,
             category.Label,
-            fields);
+            fields,
+            itemUsesHashStorage,
+            itemUsesDirectIdStorage);
     }
 
     private static IReadOnlyList<SwShPlacementFieldValue> CreateFieldItemFields(
@@ -720,20 +903,33 @@ public sealed class SwShPlacementWorkflowService
         IReadOnlyDictionary<ulong, int> itemIdsByHash,
         IReadOnlyList<string> itemNames)
     {
+        var directItemOptions = fieldItem.ItemHashOffsets.Count == 0
+            && fieldItem.ItemIdOffsets.Count > 0
+                ? CreateItemOptions(itemNames, _ => true)
+                : null;
         var fields = new List<SwShPlacementFieldValue>
         {
-            EditableField(LocationXField, "X", "Transform", fieldItem.Transform.X),
-            EditableField(LocationYField, "Y", "Transform", fieldItem.Transform.Y),
-            EditableField(LocationZField, "Z", "Transform", fieldItem.Transform.Z),
-            EditableField(RotationYField, "Rotation Y", "Transform", fieldItem.Transform.RotationY),
-            EditableField(ItemIdField, "Item", "Item", itemId, itemName),
-            EditableField(QuantityField, "Quantity", "Item", fieldItem.Quantity),
+            CanonicalNumberField(LocationXField, "X", "Transform", fieldItem.Transform.X, fieldItem.TransformOffsets.X > 0, MinimumCoordinate, MaximumCoordinate),
+            CanonicalNumberField(LocationYField, "Y", "Transform", fieldItem.Transform.Y, fieldItem.TransformOffsets.Y > 0, MinimumCoordinate, MaximumCoordinate),
+            CanonicalNumberField(LocationZField, "Z", "Transform", fieldItem.Transform.Z, fieldItem.TransformOffsets.Z > 0, MinimumCoordinate, MaximumCoordinate),
+            CanonicalNumberField(RotationYField, "Rotation Y", "Transform", fieldItem.Transform.RotationY, fieldItem.TransformOffsets.RotationY > 0, MinimumRotation, MaximumRotation),
+            CanonicalIntegerField(ItemIdField, "Item", "Item", itemId, itemName, fieldItem.ItemHashOffsets.Count > 0 || fieldItem.ItemIdOffsets.Count > 0, MaximumItemId, directItemOptions),
+            CanonicalIntegerField(QuantityField, "Quantity", "Item", fieldItem.Quantity, fieldItem.QuantityOffset > 0, MaximumFieldItemQuantity),
             ReadOnlyField("fieldItem.hash", "Item Hash", "Item", FormatHash(itemHash), ResolveItemHashDisplay(itemHash, itemIdsByHash, itemNames)),
         };
 
         if (rawObject is not null)
         {
-            fields.AddRange(ConvertRawFields(rawObject.Fields, hashLabels, itemIdsByHash, itemNames));
+            fields.AddRange(ConvertRawFields(
+                rawObject.Fields,
+                hashLabels,
+                itemIdsByHash,
+                itemNames,
+                includeField: field => !IsFieldItemCanonicalRawAlias(
+                    field,
+                    usesHashStorage: fieldItem.ItemHashOffsets.Count > 0,
+                    usesDirectIdStorage: fieldItem.ItemHashOffsets.Count == 0
+                        && fieldItem.ItemIdOffsets.Count > 0)));
         }
 
         return fields;
@@ -750,23 +946,51 @@ public sealed class SwShPlacementWorkflowService
     {
         var fields = new List<SwShPlacementFieldValue>
         {
-            EditableField(LocationXField, "X", "Transform", hiddenItem.Transform.X),
-            EditableField(LocationYField, "Y", "Transform", hiddenItem.Transform.Y),
-            EditableField(LocationZField, "Z", "Transform", hiddenItem.Transform.Z),
-            EditableField(RotationYField, "Rotation Y", "Transform", hiddenItem.Transform.RotationY),
-            EditableField(ItemIdField, "Item", "Item", chance.ItemId, itemName),
-            EditableField(QuantityField, "Quantity", "Item", chance.Quantity),
-            EditableField(ChanceField, "Chance", "Item", chance.Chance),
+            CanonicalNumberField(LocationXField, "X", "Transform", hiddenItem.Transform.X, hiddenItem.TransformOffsets.X > 0, MinimumCoordinate, MaximumCoordinate),
+            CanonicalNumberField(LocationYField, "Y", "Transform", hiddenItem.Transform.Y, hiddenItem.TransformOffsets.Y > 0, MinimumCoordinate, MaximumCoordinate),
+            CanonicalNumberField(LocationZField, "Z", "Transform", hiddenItem.Transform.Z, hiddenItem.TransformOffsets.Z > 0, MinimumCoordinate, MaximumCoordinate),
+            CanonicalNumberField(RotationYField, "Rotation Y", "Transform", hiddenItem.Transform.RotationY, hiddenItem.TransformOffsets.RotationY > 0, MinimumRotation, MaximumRotation),
+            CanonicalIntegerField(ItemIdField, "Item", "Item", chance.ItemId, itemName, chance.ItemHashOffset > 0, MaximumItemId),
+            CanonicalIntegerField(QuantityField, "Quantity", "Item", chance.Quantity, chance.QuantityOffset > 0, MaximumQuantity),
+            CanonicalIntegerField(ChanceField, "Chance", "Item", chance.Chance, chance.ChanceOffset > 0, MaximumChance),
             ReadOnlyField("hiddenItem.chanceIndex", "Chance Slot", "Item", chance.ChanceIndex.ToString(CultureInfo.InvariantCulture), chance.ChanceIndex.ToString(CultureInfo.InvariantCulture)),
             ReadOnlyField("hiddenItem.hash", "Item Hash", "Item", FormatHash(chance.ItemHash), ResolveItemHashDisplay(chance.ItemHash, itemIdsByHash, itemNames)),
         };
 
         if (rawObject is not null)
         {
-            fields.AddRange(ConvertRawFields(rawObject.Fields, hashLabels, itemIdsByHash, itemNames));
+            fields.AddRange(ConvertRawFields(
+                rawObject.Fields,
+                hashLabels,
+                itemIdsByHash,
+                itemNames,
+                includeField: field => !IsHiddenItemCanonicalRawAlias(field)));
         }
 
         return fields;
+    }
+
+    private static bool IsFieldItemCanonicalRawAlias(
+        SwShPlacementRawField field,
+        bool usesHashStorage,
+        bool usesDirectIdStorage)
+    {
+        return IsCanonicalTransformAlias(field)
+            || (usesHashStorage && field.Field.EndsWith(".Flags[0]", StringComparison.Ordinal))
+            || (usesDirectIdStorage && field.Field.EndsWith(".Items[0]", StringComparison.Ordinal))
+            || field.Field.EndsWith(".Quantity", StringComparison.Ordinal);
+    }
+
+    private static bool IsHiddenItemCanonicalRawAlias(SwShPlacementRawField field)
+    {
+        return IsCanonicalTransformAlias(field)
+            || field.Field.Contains(".Field_02[", StringComparison.Ordinal);
+    }
+
+    private static bool IsCanonicalTransformAlias(SwShPlacementRawField field)
+    {
+        return field.Group == "Transform"
+            && field.Label is "X" or "Y" or "Z" or "Rotation Y";
     }
 
     private static int? ResolveFieldItemId(
@@ -776,6 +1000,12 @@ public sealed class SwShPlacementWorkflowService
         if (fieldItem.ItemHashes.Count > 0 && itemIdsByHash.TryGetValue(fieldItem.ItemHashes[0], out var itemId))
         {
             return itemId;
+        }
+
+        if (fieldItem.ItemHashes.Count == 0 && fieldItem.ItemIds.Count > 0)
+        {
+            var directItemId = fieldItem.ItemIds[0];
+            return directItemId <= MaximumItemId ? (int)directItemId : null;
         }
 
         return null;
@@ -847,7 +1077,10 @@ public sealed class SwShPlacementWorkflowService
 
     private static string FormatNumber(double value)
     {
-        return value.ToString("0.###", CultureInfo.InvariantCulture);
+        var floatValue = (float)value;
+        return floatValue == 0
+            ? "0"
+            : floatValue.ToString("G9", CultureInfo.InvariantCulture);
     }
 
     private static bool TryParseHash(string value, out ulong hash)
@@ -949,14 +1182,15 @@ public sealed class SwShPlacementWorkflowService
             AddWorkflowHashLabels(labels, trainerIdSource, diagnostics);
         }
 
-        AddStaticEncounterHashLabels(labels, project);
+        AddStaticEncounterHashLabels(labels, project, diagnostics);
 
         return labels;
     }
 
     private static void AddStaticEncounterHashLabels(
         IDictionary<ulong, string> labels,
-        OpenedProject project)
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         if (SwShStaticEncountersWorkflowService.ResolveStaticEncounterDataSource(project) is null)
         {
@@ -964,6 +1198,18 @@ public sealed class SwShPlacementWorkflowService
         }
 
         var staticWorkflow = new SwShStaticEncountersWorkflowService().Load(project);
+        foreach (var diagnostic in staticWorkflow.Diagnostics)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                diagnostic.Severity == DiagnosticSeverity.Error
+                    ? DiagnosticSeverity.Warning
+                    : diagnostic.Severity,
+                $"Static Encounter labels: {diagnostic.Message}",
+                file: diagnostic.File,
+                field: diagnostic.Field,
+                expected: diagnostic.Expected));
+        }
+
         foreach (var encounter in staticWorkflow.Encounters)
         {
             if (!TryParseHash(encounter.EncounterId, out var encounterId)
@@ -1156,12 +1402,13 @@ public sealed class SwShPlacementWorkflowService
         int areaCount,
         int sourceFileCount,
         IReadOnlyList<string> itemNames,
+        IReadOnlyDictionary<int, ulong> itemHashes,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShPlacementWorkflow(
             summary,
             objects,
-            CreateEditableFields(itemNames),
+            CreateEditableFields(itemNames, itemHashes),
             new SwShPlacementWorkflowStats(objects.Count, areaCount, sourceFileCount),
             diagnostics,
             CreateCategories(objects));
@@ -1189,20 +1436,31 @@ public sealed class SwShPlacementWorkflowService
     }
 
     private static IReadOnlyList<SwShPlacementEditableField> CreateEditableFields(
-        IReadOnlyList<string> itemNames)
+        IReadOnlyList<string> itemNames,
+        IReadOnlyDictionary<int, ulong> itemHashes)
     {
-        var itemOptions = itemNames
-            .Select((name, index) => new SwShPlacementEditableFieldOption(
-                index,
-                string.IsNullOrWhiteSpace(name)
-                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}"
-                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
-            .ToArray();
+        var itemOptions = CreateItemOptions(
+            itemNames,
+            itemId => itemHashes.TryGetValue(itemId, out var hash) && hash != 0);
 
         return EditableFields
             .Select(field => field.Field == ItemIdField
                 ? field with { Options = itemOptions }
                 : field)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShPlacementEditableFieldOption> CreateItemOptions(
+        IReadOnlyList<string> itemNames,
+        Func<int, bool> includeItem)
+    {
+        return itemNames
+            .Select((name, index) => new SwShPlacementEditableFieldOption(
+                index,
+                string.IsNullOrWhiteSpace(name)
+                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}"
+                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
+            .Where(option => includeItem(option.Value))
             .ToArray();
     }
 

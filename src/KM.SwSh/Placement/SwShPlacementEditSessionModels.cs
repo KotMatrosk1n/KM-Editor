@@ -8,4 +8,10 @@ namespace KM.SwSh.Placement;
 public sealed record SwShPlacementEditResult(
     SwShPlacementWorkflow Workflow,
     EditSession Session,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics,
+    IReadOnlyList<SwShPlacedObjectRecord>? UpdatedObjects = null);
+
+public sealed record SwShPlacementObjectFieldUpdate(
+    string ObjectId,
+    string Field,
+    string Value);

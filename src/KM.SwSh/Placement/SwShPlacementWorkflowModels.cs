@@ -33,7 +33,9 @@ public sealed record SwShPlacedObjectRecord(
     SwShPlacementProvenance Provenance,
     string CategoryId = "",
     string CategoryLabel = "",
-    IReadOnlyList<SwShPlacementFieldValue>? Fields = null);
+    IReadOnlyList<SwShPlacementFieldValue>? Fields = null,
+    bool ItemUsesHashStorage = false,
+    bool ItemUsesDirectIdStorage = false);
 
 public sealed record SwShPlacementFieldValue(
     string Field,

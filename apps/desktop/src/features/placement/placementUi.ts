@@ -50,6 +50,11 @@ export type PlacementObjectSubgroup = {
   tabs: PlacementObjectGroupTab[];
 };
 
+export type PlacementObjectFieldChange = {
+  field: string;
+  value: string;
+};
+
 export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   if (!workflow) return [];
   const hasStructuredCategoryIds = workflow.objects.some((object) => object.categoryId?.trim());
@@ -151,6 +156,54 @@ export function getPlacementFieldValue(object: PlacedObjectRecord, field: string
   }
 }
 
+export function placementObjectChangesAreStaged(
+  session: {
+    pendingEdits: Array<{
+      domain: string;
+      field?: string | null;
+      newValue?: string | null;
+      recordId?: string | null;
+    }>;
+  },
+  object: PlacedObjectRecord,
+  changes: PlacementObjectFieldChange[]
+) {
+  const stagedEdits = session.pendingEdits.filter(
+    (edit) => edit.domain === 'workflow.placement' && edit.recordId === object.objectId
+  );
+
+  return changes.every((change) => stagedEdits.some(
+    (edit) => edit.field === change.field &&
+      placementPendingValueMatches(object, change.field, change.value, edit.newValue)
+  ));
+}
+
+export function mergePlacementObjectUpdate(
+  current: PlacedObjectRecord,
+  update: PlacedObjectRecord
+) {
+  const updatedFields = new Map(
+    (update.fields ?? []).map((field) => [field.field, field])
+  );
+  const currentFieldNames = new Set(
+    (current.fields ?? []).map((field) => field.field)
+  );
+  const fields = [
+    ...(current.fields ?? []).map(
+      (field) => updatedFields.get(field.field) ?? field
+    ),
+    ...(update.fields ?? []).filter(
+      (field) => !currentFieldNames.has(field.field)
+    )
+  ];
+
+  return {
+    ...current,
+    ...update,
+    fields
+  };
+}
+
 export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
   const fields = object.fields ?? [];
   const species =
@@ -194,6 +247,25 @@ export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
 export function formatPlacementItem(object: PlacedObjectRecord) {
   if (isPokemonPlacementObject(object)) return formatPlacementPrimaryData(object);
   return object.itemId === null ? object.itemHash || object.itemName : `${object.itemName} (${object.itemId})`;
+}
+
+export function getPlacementInspectorPrimaryData(object: PlacedObjectRecord) {
+  if (isPokemonPlacementObject(object)) {
+    return {
+      isItem: false,
+      label: 'Pokemon',
+      value: formatPlacementPrimaryData(object)
+    };
+  }
+
+  const isItem = isItemPlacementObject(object);
+  return {
+    isItem,
+    label: isItem ? 'Item' : 'Placement Data',
+    value: isItem
+      ? formatPlacementItem(object) || formatPlacementPrimaryData(object)
+      : formatPlacementPrimaryData(object)
+  };
 }
 
 export function formatPlacementCoordinates(object: PlacedObjectRecord) {
@@ -308,6 +380,15 @@ function getPlacementCategoryLabel(object: PlacedObjectRecord, categoryId: strin
   return categoryId;
 }
 
+function isItemPlacementObject(object: PlacedObjectRecord) {
+  const categoryId = object.categoryId?.trim();
+  return categoryId === 'hiddenItems' ||
+    categoryId === 'visibleItems' ||
+    categoryId === 'itemBallSpawners' ||
+    object.objectType === 'FieldItem' ||
+    object.objectType === 'HiddenItem';
+}
+
 function isLegacyPlacementFieldVisible(object: PlacedObjectRecord, field: string) {
   if (field === placementChanceFieldName) return object.objectType === 'HiddenItem';
   if (field === placementItemIdFieldName) return object.itemId !== null || object.itemHash.length > 0;
@@ -334,7 +415,112 @@ function getLegacyPlacementFieldGroup(field: PlacementEditableField) {
 }
 
 function formatCoordinate(value: number) {
-  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+  if (!Number.isFinite(value)) return value.toString();
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return normalized.toFixed(6).replace(/\.?0+$/, '');
+}
+
+function placementPendingValueMatches(
+  object: PlacedObjectRecord,
+  field: string,
+  requestedValue: string,
+  stagedValue: string | null | undefined
+) {
+  if (stagedValue === undefined || stagedValue === null) return false;
+  if (stagedValue === requestedValue) return true;
+
+  const valueKind = object.fields?.find((candidate) => candidate.field === field)?.valueKind ??
+    getLegacyPlacementValueKind(field);
+  switch (valueKind) {
+    case 'boolean':
+      return parsePlacementBoolean(stagedValue) === parsePlacementBoolean(requestedValue) &&
+        parsePlacementBoolean(requestedValue) !== null;
+    case 'hash':
+      return parsePlacementHash(stagedValue) === parsePlacementHash(requestedValue) &&
+        parsePlacementHash(requestedValue) !== null;
+    case 'integer':
+      return parsePlacementNumber(stagedValue, true) === parsePlacementNumber(requestedValue, true) &&
+        parsePlacementNumber(requestedValue, true) !== null;
+    case 'number': {
+      const stagedNumber = parsePlacementNumber(stagedValue, false);
+      const requestedNumber = parsePlacementNumber(requestedValue, false);
+      return stagedNumber !== null && requestedNumber !== null &&
+        (stagedNumber === requestedNumber ||
+          (usesFloat32PlacementNumbers(object, field) &&
+            Math.fround(stagedNumber) === Math.fround(requestedNumber)));
+    }
+    default:
+      return false;
+  }
+}
+
+function getLegacyPlacementValueKind(field: string) {
+  if ([
+    placementLocationXFieldName,
+    placementLocationYFieldName,
+    placementLocationZFieldName,
+    placementRotationYFieldName
+  ].includes(field)) {
+    return 'number';
+  }
+  if ([placementItemIdFieldName, placementQuantityFieldName, placementChanceFieldName].includes(field)) {
+    return 'integer';
+  }
+
+  return null;
+}
+
+function parsePlacementBoolean(value: string) {
+  switch (value.trim().toLowerCase()) {
+    case 'true':
+    case '1':
+    case 'yes':
+      return true;
+    case 'false':
+    case '0':
+    case 'no':
+      return false;
+    default:
+      return null;
+  }
+}
+
+function parsePlacementHash(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || ['none', 'empty'].includes(trimmed.toLowerCase())) {
+    return 0xCBF29CE484222645n;
+  }
+
+  const hexIndex = trimmed.toLowerCase().indexOf('0x');
+  const candidate = hexIndex >= 0
+    ? trimmed.slice(hexIndex).match(/^0x[0-9a-f]+/i)?.[0]
+    : trimmed.match(/^\d+$/)?.[0];
+  if (!candidate) return null;
+
+  try {
+    return BigInt(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function parsePlacementNumber(value: string, requireInteger: boolean) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || (requireInteger && !/^[+-]?\d+$/.test(trimmed))) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || (requireInteger && !Number.isInteger(parsed))) return null;
+  return parsed;
+}
+
+function isPokemonLegendsZaPlacementObject(object: PlacedObjectRecord) {
+  return object.categoryId === 'pokemonSpawners' || object.categoryId === 'itemBallSpawners';
+}
+
+function usesFloat32PlacementNumbers(object: PlacedObjectRecord, field: string) {
+  if (isPokemonLegendsZaPlacementObject(object)) return true;
+  if (object.objectType === 'FieldItem' || object.objectType === 'HiddenItem') return true;
+  return field.startsWith('raw.') &&
+    object.fields?.some((candidate) => candidate.field === field) === true;
 }
 
 function getPlacementDisplayValue(field: { displayValue: string; value: string }) {

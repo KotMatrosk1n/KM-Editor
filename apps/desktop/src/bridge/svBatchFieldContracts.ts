@@ -8,6 +8,7 @@ import {
   giftPokemonWorkflowSchema,
   itemsWorkflowSchema,
   movesWorkflowSchema,
+  placedObjectRecordSchema,
   placementWorkflowSchema,
   pokemonWorkflowSchema,
   projectPathsSchema,
@@ -158,7 +159,8 @@ export const updatePlacementObjectFieldsRequestSchema = z.strictObject({
 export const updatePlacementObjectFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
-  workflow: placementWorkflowSchema
+  updatedObjects: z.array(placedObjectRecordSchema).nullable().optional(),
+  workflow: placementWorkflowSchema.nullable()
 });
 
 export type PokemonFieldUpdate = z.infer<typeof pokemonFieldUpdateSchema>;

@@ -45,40 +45,178 @@ public sealed class SwShPlacementEditSessionService
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
         ArgumentNullException.ThrowIfNull(value);
 
+        var result = UpdateObjectFields(
+            paths,
+            session,
+            [new SwShPlacementObjectFieldUpdate(objectId, field, value)]);
+
+        var project = projectWorkspaceService.Open(paths);
+        var fullWorkflow = placementWorkflowService.Load(project);
+        IReadOnlyDictionary<int, ulong>? itemHashes = null;
+        var diagnostics = result.Diagnostics.ToList();
+        if (result.Session.PendingEdits.Any(edit =>
+            edit.Domain == PlacementEditDomain
+            && edit.Field == SwShPlacementWorkflowService.ItemIdField
+            && edit.RecordId is not null
+            && fullWorkflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == edit.RecordId) is { } placedObject
+            && RequiresItemHash(placedObject)))
+        {
+            itemHashes = LoadItemHashes(project, diagnostics);
+        }
+
+        return result with
+        {
+            Workflow = OverlayPendingEdits(fullWorkflow, result.Session.PendingEdits, itemHashes),
+            Diagnostics = diagnostics,
+            UpdatedObjects = null,
+        };
+    }
+
+    public SwShPlacementEditResult UpdateObjectFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShPlacementObjectFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = placementWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var loadedWorkflow = placementWorkflowService.LoadForEditing(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (!CanEditPlacement(project, workflow, diagnostics))
+        if (!CanEditPlacement(project, loadedWorkflow, diagnostics))
         {
-            return new SwShPlacementEditResult(workflow, currentSession, diagnostics);
+            return new SwShPlacementEditResult(
+                OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits),
+                currentSession,
+                diagnostics,
+                []);
         }
 
-        var placedObject = workflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == objectId);
-        if (placedObject is null)
+        var objectIndexes = loadedWorkflow.Objects
+            .Select((placedObject, index) => (placedObject.ObjectId, index))
+            .ToDictionary(entry => entry.ObjectId, entry => entry.index, StringComparer.Ordinal);
+        var needsItemHashLookup = currentSession.PendingEdits.Any(edit =>
+                edit.Domain == PlacementEditDomain
+                && edit.Field == SwShPlacementWorkflowService.ItemIdField
+                && edit.RecordId is not null
+                && objectIndexes.TryGetValue(edit.RecordId, out var index)
+                && RequiresItemHash(loadedWorkflow.Objects[index]))
+            || updates.Any(update =>
+            update is not null
+            && string.Equals(update.Field, SwShPlacementWorkflowService.ItemIdField, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(update.ObjectId)
+            && objectIndexes.TryGetValue(update.ObjectId, out var index)
+            && RequiresItemHash(loadedWorkflow.Objects[index]));
+        IReadOnlyDictionary<int, ulong>? itemHashes = null;
+        var itemHashLookupAvailable = true;
+        if (needsItemHashLookup)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Placement object '{objectId}' is not present in the loaded workflow.",
-                field: "objectId",
-                expected: "Existing placement object"));
-            return new SwShPlacementEditResult(workflow, currentSession, diagnostics);
+            var diagnosticCount = diagnostics.Count;
+            itemHashes = LoadItemHashes(project, diagnostics);
+            itemHashLookupAvailable = !diagnostics
+                .Skip(diagnosticCount)
+                .Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         }
 
-        var pendingEdit = CreatePendingEdit(paths, placedObject, field, value, diagnostics);
-        if (pendingEdit is null)
+        var currentWorkflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits, itemHashes);
+
+        var candidateSession = currentSession;
+        var workingObjects = currentWorkflow.Objects.ToArray();
+        var stagedUpdates = new List<SwShPlacementObjectFieldUpdate>();
+        var incomingStorageTargets = new Dictionary<PlacementStorageIdentity, PendingEdit>();
+        foreach (var update in updates)
         {
-            return new SwShPlacementEditResult(workflow, currentSession, diagnostics);
+            if (update is null
+                || string.IsNullOrWhiteSpace(update.ObjectId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Placement field update is missing object, field, or value metadata.",
+                    expected: "Complete placement field update"));
+                continue;
+            }
+
+            if (!objectIndexes.TryGetValue(update.ObjectId, out var objectIndex))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Placement object '{update.ObjectId}' is not present in the loaded workflow.",
+                    field: "objectId",
+                    expected: "Existing placement object"));
+                continue;
+            }
+
+            var placedObject = workingObjects[objectIndex];
+            var pendingEdit = CreatePendingEdit(
+                placedObject,
+                update.Field,
+                update.Value,
+                itemHashes,
+                itemHashLookupAvailable,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            if (TryCreateStorageIdentity(loadedWorkflow, pendingEdit, out var incomingIdentity))
+            {
+                if (incomingStorageTargets.TryGetValue(incomingIdentity, out var earlierEdit)
+                    && (earlierEdit.RecordId != pendingEdit.RecordId
+                        || earlierEdit.Field != pendingEdit.Field
+                        || earlierEdit.NewValue != pendingEdit.NewValue))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Incoming placement updates '{earlierEdit.RecordId}:{earlierEdit.Field}' and '{pendingEdit.RecordId}:{pendingEdit.Field}' target the same underlying storage. Submit only one update for that value.",
+                        field: "field",
+                        expected: "One incoming update per placement storage value"));
+                }
+
+                incomingStorageTargets[incomingIdentity] = pendingEdit;
+            }
+
+            candidateSession = ReplacePendingPlacementEdit(loadedWorkflow, candidateSession, pendingEdit);
+            var itemDisplayName = update.Field == SwShPlacementWorkflowService.ItemIdField
+                && TryParseInt(pendingEdit.NewValue!, out var stagedItemId)
+                    ? ResolveItemDisplayName(currentWorkflow, placedObject, stagedItemId)
+                    : null;
+            var itemHashDisplay = update.Field == SwShPlacementWorkflowService.ItemIdField
+                && RequiresItemHash(placedObject)
+                && TryParseInt(pendingEdit.NewValue!, out stagedItemId)
+                && itemHashes?.TryGetValue(stagedItemId, out var stagedItemHash) == true
+                    ? FormatHash(stagedItemHash)
+                    : null;
+            foreach (var affectedIndex in GetAffectedObjectIndexes(workingObjects, placedObject, update.Field))
+            {
+                workingObjects[affectedIndex] = OverlayPendingEdit(
+                    workingObjects[affectedIndex],
+                    update.Field,
+                    pendingEdit.NewValue!,
+                    itemDisplayName,
+                    itemHashDisplay);
+            }
+
+            stagedUpdates.Add(update);
         }
 
-        var updatedSession = ReplacePendingPlacementEdit(currentSession, pendingEdit);
+        ValidateStorageConflicts(loadedWorkflow, candidateSession.PendingEdits, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShPlacementEditResult(currentWorkflow, currentSession, diagnostics, []);
+        }
 
+        var projectedWorkflow = currentWorkflow with { Objects = workingObjects };
+        var updatedObjects = GetAffectedObjects(projectedWorkflow, stagedUpdates);
         return new SwShPlacementEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
-            updatedSession,
-            diagnostics);
+            projectedWorkflow,
+            candidateSession,
+            diagnostics,
+            updatedObjects);
     }
 
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -87,15 +225,36 @@ public sealed class SwShPlacementEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = placementWorkflowService.Load(project);
+        var workflow = placementWorkflowService.LoadForEditing(project);
+        var projectedWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditPlacement(project, workflow, diagnostics);
 
+        var needsItemHashLookup = session.PendingEdits.Any(edit =>
+            edit.Domain == PlacementEditDomain
+            && string.Equals(edit.Field, SwShPlacementWorkflowService.ItemIdField, StringComparison.Ordinal)
+            && edit.RecordId is not null
+            && workflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == edit.RecordId) is { } placedObject
+            && RequiresItemHash(placedObject));
+        IReadOnlyDictionary<int, ulong>? itemHashes = null;
+        var itemHashLookupAvailable = true;
+        if (needsItemHashLookup)
+        {
+            var diagnosticCount = diagnostics.Count;
+            itemHashes = LoadItemHashes(project, diagnostics);
+            itemHashLookupAvailable = !diagnostics
+                .Skip(diagnosticCount)
+                .Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        }
+
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(paths, workflow, edit, diagnostics);
+            ValidatePendingEdit(workflow, edit, itemHashes, itemHashLookupAvailable, diagnostics);
         }
+
+        ValidateStorageConflicts(workflow, session.PendingEdits, diagnostics);
+        ValidateHiddenChancePools(projectedWorkflow, session.PendingEdits, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -186,7 +345,7 @@ public sealed class SwShPlacementEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session, validateSession: false);
+        var currentPlan = CreateChangePlan(paths, session, validateSession: true);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -223,13 +382,21 @@ public sealed class SwShPlacementEditSessionService
         try
         {
             var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
+            var workflow = placementWorkflowService.LoadForEditing(project);
             var needsItemHashLookup = session.PendingEdits.Any(edit =>
-                string.Equals(edit.Field, SwShPlacementWorkflowService.ItemIdField, StringComparison.Ordinal));
+                string.Equals(edit.Field, SwShPlacementWorkflowService.ItemIdField, StringComparison.Ordinal)
+                && edit.RecordId is not null
+                && workflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == edit.RecordId) is { } placedObject
+                && RequiresItemHash(placedObject));
             var itemHashes = needsItemHashLookup
                 ? LoadItemHashes(project, diagnostics)
                 : new Dictionary<int, ulong>();
             var itemIdsByHash = needsItemHashLookup
-                ? itemHashes.ToDictionary(entry => entry.Value, entry => entry.Key)
+                ? itemHashes
+                    .Where(entry => entry.Value != 0)
+                    .OrderBy(entry => entry.Key)
+                    .GroupBy(entry => entry.Value)
+                    .ToDictionary(group => group.Key, group => group.First().Key)
                 : new Dictionary<ulong, int>();
 
             foreach (var editGroup in session.PendingEdits.GroupBy(GetArchiveMemberFileName, StringComparer.Ordinal))
@@ -281,6 +448,8 @@ public sealed class SwShPlacementEditSessionService
 
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.WriteAllBytes(targetPath, pack.Write());
+            projectWorkspaceService.ClearMemoryCache();
+            placementWorkflowService.ClearMemoryCache();
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, dataSource.GraphEntry.RelativePath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -308,7 +477,8 @@ public sealed class SwShPlacementEditSessionService
 
     private static SwShPlacementWorkflow OverlayPendingEdits(
         SwShPlacementWorkflow workflow,
-        IReadOnlyList<PendingEdit> pendingEdits)
+        IReadOnlyList<PendingEdit> pendingEdits,
+        IReadOnlyDictionary<int, ulong>? itemHashes = null)
     {
         if (pendingEdits.Count == 0)
         {
@@ -324,7 +494,26 @@ public sealed class SwShPlacementEditSessionService
                 continue;
             }
 
-            objects[index] = OverlayPendingEdit(objects[index], edit.Field, edit.NewValue);
+            var placedObject = objects[index];
+            var itemDisplayName = edit.Field == SwShPlacementWorkflowService.ItemIdField
+                && TryParseInt(edit.NewValue, out var itemId)
+                    ? ResolveItemDisplayName(workflow, placedObject, itemId)
+                    : null;
+            var itemHashDisplay = edit.Field == SwShPlacementWorkflowService.ItemIdField
+                && RequiresItemHash(placedObject)
+                && TryParseInt(edit.NewValue, out itemId)
+                && itemHashes?.TryGetValue(itemId, out var itemHash) == true
+                    ? FormatHash(itemHash)
+                    : null;
+            foreach (var affectedIndex in GetAffectedObjectIndexes(objects, placedObject, edit.Field))
+            {
+                objects[affectedIndex] = OverlayPendingEdit(
+                    objects[affectedIndex],
+                    edit.Field,
+                    edit.NewValue,
+                    itemDisplayName,
+                    itemHashDisplay);
+            }
         }
 
         return workflow with { Objects = objects };
@@ -333,34 +522,109 @@ public sealed class SwShPlacementEditSessionService
     private static SwShPlacedObjectRecord OverlayPendingEdit(
         SwShPlacedObjectRecord placedObject,
         string field,
-        string newValue)
+        string newValue,
+        string? itemDisplayName = null,
+        string? itemHashDisplay = null)
     {
-        var updated = field switch
+        var topLevelField = ResolveTopLevelOverlayField(placedObject, field);
+        var updated = topLevelField switch
         {
-            SwShPlacementWorkflowService.LocationXField when TryParseDouble(newValue, out var value) => placedObject with { X = value },
-            SwShPlacementWorkflowService.LocationYField when TryParseDouble(newValue, out var value) => placedObject with { Y = value },
-            SwShPlacementWorkflowService.LocationZField when TryParseDouble(newValue, out var value) => placedObject with { Z = value },
-            SwShPlacementWorkflowService.RotationYField when TryParseDouble(newValue, out var value) => placedObject with { RotationY = value },
+            SwShPlacementWorkflowService.LocationXField when TryParseFloat(newValue, out var value) => placedObject with { X = value },
+            SwShPlacementWorkflowService.LocationYField when TryParseFloat(newValue, out var value) => placedObject with { Y = value },
+            SwShPlacementWorkflowService.LocationZField when TryParseFloat(newValue, out var value) => placedObject with { Z = value },
+            SwShPlacementWorkflowService.RotationYField when TryParseFloat(newValue, out var value) => placedObject with { RotationY = value },
             SwShPlacementWorkflowService.QuantityField when TryParseInt(newValue, out var value) => placedObject with { Quantity = value },
             SwShPlacementWorkflowService.ChanceField when TryParseInt(newValue, out var value) => placedObject with { Chance = value },
             SwShPlacementWorkflowService.ItemIdField when TryParseInt(newValue, out var value) => placedObject with
             {
                 ItemId = (uint)value,
-                ItemName = string.Create(CultureInfo.InvariantCulture, $"Item {value}"),
-                Label = placedObject.ObjectType == "HiddenItem"
-                    ? string.Create(CultureInfo.InvariantCulture, $"Hidden item: Item {value}")
-                    : string.Create(CultureInfo.InvariantCulture, $"Field item: Item {value}"),
+                ItemName = ResolveOverlayItemName(itemDisplayName, value),
+                ItemHash = itemHashDisplay ?? placedObject.ItemHash,
+                Label = CreateOverlayItemLabel(placedObject.ObjectType, itemDisplayName, value),
             },
             _ => placedObject,
         };
 
-        return updated with { Fields = OverlayStructuredField(updated.Fields, field, newValue) };
+        var updatedFields = OverlayStructuredField(updated.Fields, field, newValue, itemDisplayName);
+        if (field == SwShPlacementWorkflowService.ItemIdField
+            && itemHashDisplay is not null
+            && TryParseInt(newValue, out var itemId))
+        {
+            updatedFields = OverlayDerivedItemHashField(
+                updatedFields,
+                placedObject.ObjectType,
+                itemHashDisplay,
+                ResolveOverlayItemName(itemDisplayName, itemId),
+                itemId);
+        }
+
+        return updated with
+        {
+            Fields = updatedFields,
+        };
+    }
+
+    private static IReadOnlyList<SwShPlacementFieldValue>? OverlayDerivedItemHashField(
+        IReadOnlyList<SwShPlacementFieldValue>? fields,
+        string objectType,
+        string itemHash,
+        string itemName,
+        int itemId)
+    {
+        if (fields is null)
+        {
+            return null;
+        }
+
+        var derivedField = objectType == "HiddenItem" ? "hiddenItem.hash" : "fieldItem.hash";
+        return fields
+            .Select(field => field.Field == derivedField
+                ? field with
+                {
+                    Value = itemHash,
+                    DisplayValue = $"{itemName} ({itemId.ToString(CultureInfo.InvariantCulture)})",
+                }
+                : field)
+            .ToArray();
+    }
+
+    private static string ResolveTopLevelOverlayField(
+        SwShPlacedObjectRecord placedObject,
+        string field)
+    {
+        if (!IsRawPlacementField(field))
+        {
+            return field;
+        }
+
+        var selectedField = FindStructuredField(placedObject, field);
+        var canonicalField = selectedField is { Group: "Transform" }
+            ? selectedField.Label switch
+            {
+                "X" => SwShPlacementWorkflowService.LocationXField,
+                "Y" => SwShPlacementWorkflowService.LocationYField,
+                "Z" => SwShPlacementWorkflowService.LocationZField,
+                "Rotation Y" => SwShPlacementWorkflowService.RotationYField,
+                _ => null,
+            }
+            : null;
+        if (canonicalField is null)
+        {
+            return field;
+        }
+
+        var primaryField = placedObject.Fields?.FirstOrDefault(candidate =>
+            IsRawPlacementField(candidate.Field)
+            && candidate.Group == "Transform"
+            && candidate.Label == selectedField!.Label);
+        return primaryField?.Field == field ? canonicalField : field;
     }
 
     private static IReadOnlyList<SwShPlacementFieldValue>? OverlayStructuredField(
         IReadOnlyList<SwShPlacementFieldValue>? fields,
         string field,
-        string newValue)
+        string newValue,
+        string? displayValue = null)
     {
         if (fields is null)
         {
@@ -372,7 +636,7 @@ public sealed class SwShPlacementEditSessionService
                 ? value with
                 {
                     Value = newValue,
-                    DisplayValue = value.Options?.FirstOrDefault(option =>
+                    DisplayValue = displayValue ?? value.Options?.FirstOrDefault(option =>
                         option.Value.ToString(CultureInfo.InvariantCulture) == newValue)?.Label ?? newValue,
                 }
                 : value)
@@ -380,13 +644,20 @@ public sealed class SwShPlacementEditSessionService
     }
 
     private static PendingEdit? CreatePendingEdit(
-        ProjectPaths paths,
         SwShPlacedObjectRecord placedObject,
         string field,
         string value,
+        IReadOnlyDictionary<int, ulong>? itemHashes,
+        bool itemHashLookupAvailable,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!ValidateFieldValue(paths, placedObject, field, value, diagnostics))
+        if (!ValidateFieldValue(
+            placedObject,
+            field,
+            value,
+            itemHashes,
+            itemHashLookupAvailable,
+            diagnostics))
         {
             return null;
         }
@@ -402,12 +673,18 @@ public sealed class SwShPlacementEditSessionService
     }
 
     private static bool ValidateFieldValue(
-        ProjectPaths paths,
         SwShPlacedObjectRecord placedObject,
         string field,
         string value,
+        IReadOnlyDictionary<int, ulong>? itemHashes,
+        bool itemHashLookupAvailable,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (!IsRawPlacementField(field) && !ValidateCanonicalFieldStorage(placedObject, field, diagnostics))
+        {
+            return false;
+        }
+
         switch (field)
         {
             case SwShPlacementWorkflowService.LocationXField:
@@ -427,9 +704,32 @@ public sealed class SwShPlacementEditSessionService
                     return false;
                 }
 
-                if (RequiresItemHash(placedObject) && !CanResolveItemHash(paths, itemId, diagnostics))
+                if (RequiresItemHash(placedObject))
                 {
-                    return false;
+                    if (!itemHashLookupAvailable)
+                    {
+                        return false;
+                    }
+
+                    if (itemHashes is null)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            "This placement item stores item hashes, and the item hash table is required before editing by item ID.",
+                            field: SwShPlacementWorkflowService.ItemIdField,
+                            expected: SwShPlacementWorkflowService.ItemHashPath));
+                        return false;
+                    }
+
+                    if (!itemHashes.TryGetValue(itemId, out var itemHash) || itemHash == 0)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            $"Item ID {itemId} is not present in the item hash table.",
+                            field: SwShPlacementWorkflowService.ItemIdField,
+                            expected: "Item ID with placement hash"));
+                        return false;
+                    }
                 }
 
                 return true;
@@ -464,65 +764,375 @@ public sealed class SwShPlacementEditSessionService
 
     private static bool RequiresItemHash(SwShPlacedObjectRecord placedObject)
     {
-        return placedObject.ObjectType == "HiddenItem" || !string.IsNullOrWhiteSpace(placedObject.ItemHash);
+        return placedObject.ItemUsesHashStorage;
     }
 
-    private static bool CanResolveItemHash(
-        ProjectPaths paths,
-        int itemId,
+    private static bool ValidateCanonicalFieldStorage(
+        SwShPlacedObjectRecord placedObject,
+        string field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var project = new ProjectWorkspaceService().Open(paths);
-        var source = SwShPlacementWorkflowService.ResolveItemHashSource(project);
-        if (source is null)
+        if (!IsCanonicalPlacementField(field))
+        {
+            return true;
+        }
+
+        var fieldValue = FindStructuredField(placedObject, field);
+        if (fieldValue is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "This placement item stores item hashes, and the item hash table is required before editing by item ID.",
-                field: SwShPlacementWorkflowService.ItemIdField,
-                expected: SwShPlacementWorkflowService.ItemHashPath));
+                $"Placement field '{field}' is not present on the selected object.",
+                field: "field",
+                expected: "Existing placement field"));
             return false;
         }
 
-        try
-        {
-            var hashes = SwShItemHashTable.Parse(File.ReadAllBytes(source.AbsolutePath)).ToHashByItemId();
-            if (!hashes.ContainsKey(itemId))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Item ID {itemId} is not present in the item hash table.",
-                    field: SwShPlacementWorkflowService.ItemIdField,
-                    expected: "Item ID with placement hash"));
-                return false;
-            }
-        }
-        catch (InvalidDataException exception)
+        if (fieldValue.IsReadOnly)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Item hash table could not be decoded: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Sword/Shield item_hash_to_index.dat"));
-            return false;
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Item hash table could not be read: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Readable Sword/Shield item_hash_to_index.dat"));
+                $"Placement field '{fieldValue.Label}' is omitted from this object's FlatBuffer storage and cannot be edited safely in place.",
+                field: "field",
+                expected: "Stored editable placement scalar"));
             return false;
         }
 
         return true;
     }
 
-    private static void ValidatePendingEdit(
-        ProjectPaths paths,
+    private static IReadOnlyList<SwShPlacedObjectRecord> GetAffectedObjects(
+        SwShPlacementWorkflow workflow,
+        IReadOnlyList<SwShPlacementObjectFieldUpdate> updates)
+    {
+        var affectedIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var update in updates)
+        {
+            var selectedObject = workflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == update.ObjectId);
+            if (selectedObject is null)
+            {
+                continue;
+            }
+
+            foreach (var affectedIndex in GetAffectedObjectIndexes(workflow.Objects, selectedObject, update.Field))
+            {
+                affectedIds.Add(workflow.Objects[affectedIndex].ObjectId);
+            }
+        }
+
+        return workflow.Objects
+            .Where(placedObject => affectedIds.Contains(placedObject.ObjectId))
+            .ToArray();
+    }
+
+    private static string ResolveItemDisplayName(
+        SwShPlacementWorkflow workflow,
+        SwShPlacedObjectRecord placedObject,
+        int itemId)
+    {
+        var option = placedObject.Fields?
+                .FirstOrDefault(field => field.Field == SwShPlacementWorkflowService.ItemIdField)?
+                .Options?
+                .FirstOrDefault(candidate => candidate.Value == itemId)
+            ?? workflow.EditableFields
+                .FirstOrDefault(field => field.Field == SwShPlacementWorkflowService.ItemIdField)?
+                .Options
+                .FirstOrDefault(candidate => candidate.Value == itemId);
+        if (option is null)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"Item {itemId}");
+        }
+
+        var separator = option.Label.IndexOf(' ');
+        return separator > 0
+            && int.TryParse(option.Label[..separator], NumberStyles.Integer, CultureInfo.InvariantCulture, out var labelItemId)
+            && labelItemId == itemId
+            ? option.Label[(separator + 1)..]
+            : option.Label;
+    }
+
+    private static string ResolveOverlayItemName(string? itemDisplayName, int itemId)
+    {
+        return itemDisplayName ?? string.Create(CultureInfo.InvariantCulture, $"Item {itemId}");
+    }
+
+    private static string CreateOverlayItemLabel(string objectType, string? itemDisplayName, int itemId)
+    {
+        var itemName = ResolveOverlayItemName(itemDisplayName, itemId);
+        return objectType == "HiddenItem"
+            ? $"Hidden item: {itemName}"
+            : $"Field item: {itemName}";
+    }
+
+    private static IEnumerable<int> GetAffectedObjectIndexes(
+        IReadOnlyList<SwShPlacedObjectRecord> objects,
+        SwShPlacedObjectRecord selectedObject,
+        string field)
+    {
+        var sharesHiddenParent = selectedObject.ObjectType == "HiddenItem"
+            && (IsTransformField(field) || IsRawPlacementField(field));
+
+        for (var index = 0; index < objects.Count; index++)
+        {
+            var candidate = objects[index];
+            if (sharesHiddenParent
+                ? candidate.ObjectType == "HiddenItem"
+                    && candidate.ArchiveMember == selectedObject.ArchiveMember
+                    && candidate.ZoneIndex == selectedObject.ZoneIndex
+                    && candidate.ObjectIndex == selectedObject.ObjectIndex
+                : candidate.ObjectId == selectedObject.ObjectId)
+            {
+                yield return index;
+            }
+        }
+    }
+
+    private static void ValidateStorageConflicts(
+        SwShPlacementWorkflow workflow,
+        IReadOnlyList<PendingEdit> pendingEdits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var storageTargets = pendingEdits
+            .Where(edit => edit.Domain == PlacementEditDomain)
+            .Select(edit => TryCreateStorageIdentity(workflow, edit, out var identity)
+                ? new PlacementStorageTarget(identity, edit)
+                : null)
+            .Where(target => target is not null)
+            .Cast<PlacementStorageTarget>()
+            .GroupBy(target => target.Identity);
+
+        foreach (var group in storageTargets)
+        {
+            var aliases = group
+                .Select(target => (target.Edit.RecordId, target.Edit.Field))
+                .Distinct()
+                .ToArray();
+            if (aliases.Length <= 1)
+            {
+                continue;
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Placement edits '{string.Join("', '", aliases.Select(alias => $"{alias.RecordId}:{alias.Field}"))}' target the same underlying storage. Keep only one edit for that value.",
+                field: "field",
+                expected: "One pending edit per placement storage value"));
+        }
+    }
+
+    private static bool TryCreateStorageIdentity(
         SwShPlacementWorkflow workflow,
         PendingEdit edit,
+        out PlacementStorageIdentity identity)
+    {
+        identity = default!;
+        if (edit.RecordId is null || edit.Field is null)
+        {
+            return false;
+        }
+
+        var placedObject = workflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == edit.RecordId);
+        if (placedObject is null)
+        {
+            return false;
+        }
+
+        var storageSlot = GetStorageSlot(placedObject, edit.Field);
+        if (storageSlot is null)
+        {
+            return false;
+        }
+
+        identity = new PlacementStorageIdentity(
+            placedObject.ArchiveMember,
+            placedObject.ZoneIndex,
+            placedObject.ObjectType,
+            placedObject.ObjectIndex,
+            storageSlot);
+        return true;
+    }
+
+    private static string? GetStorageSlot(SwShPlacedObjectRecord placedObject, string field)
+    {
+        if (IsTransformField(field))
+        {
+            return $"transform:{field}";
+        }
+
+        if (field is SwShPlacementWorkflowService.ItemIdField
+            or SwShPlacementWorkflowService.QuantityField
+            or SwShPlacementWorkflowService.ChanceField)
+        {
+            return placedObject.ObjectType == "HiddenItem"
+                ? $"chance:{placedObject.ChanceIndex}:{field}"
+                : $"value:{field}";
+        }
+
+        if (!IsRawPlacementField(field))
+        {
+            return null;
+        }
+
+        if (placedObject.ObjectType == "FieldItem")
+        {
+            const string root = "raw.FieldItem.Field_00";
+            if (TryGetCanonicalRawTransformSlot(field, $"{root}.Field_00", out var transformSlot))
+            {
+                return transformSlot;
+            }
+
+            if (field == $"{root}.Quantity")
+            {
+                return $"value:{SwShPlacementWorkflowService.QuantityField}";
+            }
+
+            if ((placedObject.ItemUsesHashStorage && field == $"{root}.Flags[0]")
+                || (placedObject.ItemUsesDirectIdStorage && field == $"{root}.Items[0]"))
+            {
+                return $"value:{SwShPlacementWorkflowService.ItemIdField}";
+            }
+        }
+
+        if (placedObject.ObjectType == "HiddenItem")
+        {
+            const string root = "raw.HiddenItem.Field_00";
+            if (TryGetCanonicalRawTransformSlot(field, $"{root}.Field_00", out var transformSlot))
+            {
+                return transformSlot;
+            }
+
+            if (TryParseHiddenChanceRawField(field, out var chanceIndex, out var chanceField))
+            {
+                return $"chance:{chanceIndex}:{chanceField}";
+            }
+        }
+
+        return $"raw:{field}";
+    }
+
+    private static bool TryGetCanonicalRawTransformSlot(
+        string field,
+        string transformRoot,
+        out string storageSlot)
+    {
+        storageSlot = field switch
+        {
+            var value when value == $"{transformRoot}.LocationX" => $"transform:{SwShPlacementWorkflowService.LocationXField}",
+            var value when value == $"{transformRoot}.LocationY" => $"transform:{SwShPlacementWorkflowService.LocationYField}",
+            var value when value == $"{transformRoot}.LocationZ" => $"transform:{SwShPlacementWorkflowService.LocationZField}",
+            var value when value == $"{transformRoot}.RotationY" => $"transform:{SwShPlacementWorkflowService.RotationYField}",
+            _ => string.Empty,
+        };
+        return storageSlot.Length > 0;
+    }
+
+    private static bool TryParseHiddenChanceRawField(
+        string field,
+        out int chanceIndex,
+        out string chanceField)
+    {
+        chanceIndex = 0;
+        chanceField = string.Empty;
+        const string root = "raw.HiddenItem.Field_00";
+        const string marker = ".Field_02[";
+        if (!field.StartsWith(root, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var markerIndex = field.IndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex < 0)
+        {
+            return false;
+        }
+
+        var indexStart = markerIndex + marker.Length;
+        var indexEnd = field.IndexOf(']', indexStart);
+        if (indexEnd < 0
+            || !int.TryParse(field[indexStart..indexEnd], NumberStyles.Integer, CultureInfo.InvariantCulture, out chanceIndex))
+        {
+            return false;
+        }
+
+        var suffix = field[(indexEnd + 1)..];
+        chanceField = suffix switch
+        {
+            ".Hash" => SwShPlacementWorkflowService.ItemIdField,
+            ".Quantity" => SwShPlacementWorkflowService.QuantityField,
+            ".Chance" => SwShPlacementWorkflowService.ChanceField,
+            _ => string.Empty,
+        };
+        return chanceField.Length > 0;
+    }
+
+    private static void ValidateHiddenChancePools(
+        SwShPlacementWorkflow workflow,
+        IReadOnlyList<PendingEdit> pendingEdits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var touchedPools = pendingEdits
+            .Where(edit => edit.Domain == PlacementEditDomain
+                && edit.Field == SwShPlacementWorkflowService.ChanceField
+                && edit.RecordId is not null)
+            .Select(edit => workflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == edit.RecordId))
+            .Where(placedObject => placedObject?.ObjectType == "HiddenItem")
+            .Select(placedObject => (
+                placedObject!.ArchiveMember,
+                placedObject.ZoneIndex,
+                placedObject.ObjectIndex))
+            .ToHashSet();
+
+        foreach (var pool in workflow.Objects
+            .Where(placedObject => placedObject.ObjectType == "HiddenItem"
+                && touchedPools.Contains((
+                    placedObject.ArchiveMember,
+                    placedObject.ZoneIndex,
+                    placedObject.ObjectIndex)))
+            .GroupBy(placedObject => (
+                placedObject.ArchiveMember,
+                placedObject.ZoneIndex,
+                placedObject.ObjectIndex)))
+        {
+            var total = pool.Sum(placedObject => placedObject.Chance ?? 0);
+            if (total == 100)
+            {
+                continue;
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Hidden item chance pool '{pool.Key.ArchiveMember}' zone {pool.Key.ZoneIndex} object {pool.Key.ObjectIndex} totals {total}; the complete pool must total 100 before output.",
+                field: SwShPlacementWorkflowService.ChanceField,
+                expected: "Hidden item chance pool total of 100"));
+        }
+    }
+
+    private static bool IsCanonicalPlacementField(string field)
+    {
+        return field is
+            SwShPlacementWorkflowService.LocationXField
+            or SwShPlacementWorkflowService.LocationYField
+            or SwShPlacementWorkflowService.LocationZField
+            or SwShPlacementWorkflowService.RotationYField
+            or SwShPlacementWorkflowService.ItemIdField
+            or SwShPlacementWorkflowService.QuantityField
+            or SwShPlacementWorkflowService.ChanceField;
+    }
+
+    private static bool IsTransformField(string field)
+    {
+        return field is
+            SwShPlacementWorkflowService.LocationXField
+            or SwShPlacementWorkflowService.LocationYField
+            or SwShPlacementWorkflowService.LocationZField
+            or SwShPlacementWorkflowService.RotationYField;
+    }
+
+    private static void ValidatePendingEdit(
+        SwShPlacementWorkflow workflow,
+        PendingEdit edit,
+        IReadOnlyDictionary<int, ulong>? itemHashes,
+        bool itemHashLookupAvailable,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (edit.Domain != PlacementEditDomain)
@@ -554,7 +1164,13 @@ public sealed class SwShPlacementEditSessionService
             return;
         }
 
-        ValidateFieldValue(paths, placedObject, edit.Field, edit.NewValue, diagnostics);
+        ValidateFieldValue(
+            placedObject,
+            edit.Field,
+            edit.NewValue,
+            itemHashes,
+            itemHashLookupAvailable,
+            diagnostics);
     }
 
     private static void ValidatePendingEditEnvelope(
@@ -638,7 +1254,7 @@ public sealed class SwShPlacementEditSessionService
         if (field == PlacementArchiveField.ItemId && RequiresHashForArchiveEdit(archive, kind, zoneIndex, objectIndex))
         {
             var itemId = checked((int)value);
-            if (!itemHashes.TryGetValue(itemId, out var hash))
+            if (!itemHashes.TryGetValue(itemId, out var hash) || hash == 0)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -812,15 +1428,22 @@ public sealed class SwShPlacementEditSessionService
         return true;
     }
 
-    private static EditSession ReplacePendingPlacementEdit(EditSession session, PendingEdit edit)
+    private static EditSession ReplacePendingPlacementEdit(
+        SwShPlacementWorkflow workflow,
+        EditSession session,
+        PendingEdit edit)
     {
+        var hasStorageIdentity = TryCreateStorageIdentity(workflow, edit, out var storageIdentity);
         return session with
         {
             PendingEdits = session.PendingEdits
                 .Where(candidate =>
-                    candidate.Domain != edit.Domain
-                    || candidate.RecordId != edit.RecordId
-                    || candidate.Field != edit.Field)
+                    (candidate.Domain != edit.Domain
+                        || candidate.RecordId != edit.RecordId
+                        || candidate.Field != edit.Field)
+                    && (!hasStorageIdentity
+                        || !TryCreateStorageIdentity(workflow, candidate, out var candidateIdentity)
+                        || candidateIdentity != storageIdentity))
                 .Append(edit)
                 .ToArray(),
         };
@@ -997,7 +1620,7 @@ public sealed class SwShPlacementEditSessionService
                     ? FormatHash(parsedHash)
                     : value,
                 "integer" => double.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture).ToString("0", CultureInfo.InvariantCulture),
-                "number" => double.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture).ToString("R", CultureInfo.InvariantCulture),
+                "number" => NormalizeFloat32(value),
                 _ => value,
             };
         }
@@ -1007,9 +1630,20 @@ public sealed class SwShPlacementEditSessionService
             SwShPlacementWorkflowService.LocationXField
                 or SwShPlacementWorkflowService.LocationYField
                 or SwShPlacementWorkflowService.LocationZField
-                or SwShPlacementWorkflowService.RotationYField => double.Parse(value, CultureInfo.InvariantCulture).ToString("R", CultureInfo.InvariantCulture),
+                or SwShPlacementWorkflowService.RotationYField => NormalizeFloat32(value),
             _ => int.Parse(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
         };
+    }
+
+    private static string NormalizeFloat32(string value)
+    {
+        var parsed = float.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
+        if (parsed == 0f)
+        {
+            parsed = 0f;
+        }
+
+        return parsed.ToString("G9", CultureInfo.InvariantCulture);
     }
 
     private static SwShPlacementFieldValue? FindStructuredField(SwShPlacedObjectRecord placedObject, string field)
@@ -1180,6 +1814,11 @@ public sealed class SwShPlacementEditSessionService
         return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed);
     }
 
+    private static bool TryParseFloat(string value, out float parsed)
+    {
+        return float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed);
+    }
+
     private static bool TryParseInt(string value, out int parsed)
     {
         return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed);
@@ -1200,4 +1839,15 @@ public sealed class SwShPlacementEditSessionService
             Domain: PlacementEditDomain,
             Expected: expected);
     }
+
+    private sealed record PlacementStorageIdentity(
+        string ArchiveMember,
+        int ZoneIndex,
+        string ObjectType,
+        int ObjectIndex,
+        string Slot);
+
+    private sealed record PlacementStorageTarget(
+        PlacementStorageIdentity Identity,
+        PendingEdit Edit);
 }

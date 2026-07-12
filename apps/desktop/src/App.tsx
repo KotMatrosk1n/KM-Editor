@@ -298,7 +298,7 @@ import {
   type PlacementObjectGroup,
   buildPlacementObjectGroups,
   formatPlacementCoordinates,
-  formatPlacementItem,
+  getPlacementInspectorPrimaryData,
   getPlacementObjectGroupTabs,
   getPlacementObjectSubgroups,
   getPlacementCategoryId,
@@ -306,7 +306,8 @@ import {
   getPlacementFieldControls,
   getPlacementFieldValue,
   isZaItemBallPlacementObject,
-  isPokemonPlacementObject
+  mergePlacementObjectUpdate,
+  placementObjectChangesAreStaged
 } from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
@@ -7393,33 +7394,6 @@ export function App({
     }
   };
 
-  const handleUpdatePlacementObjectField = async (
-    objectId: string,
-    field: string,
-    value: string
-  ) => {
-    setIsPlacementUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updatePlacementObjectField({
-        field,
-        objectId,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        value
-      });
-      setPlacementWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsPlacementUpdating(false);
-    }
-  };
-
   const handleUpdatePlacementObjectFields = async (
     objectId: string,
     changes: Array<{ field: string; value: string }>
@@ -7433,43 +7407,62 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = placementWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await bridge.updatePlacementObjectFields({
+        paths: createProjectPaths(draftPaths),
+        session: editSession,
+        updates: changes.map((change) => ({
+          field: change.field,
+          objectId,
+          value: change.value
+        }))
+      });
+      const stagedObject = response.workflow?.objects.find(
+        (placedObject) => placedObject.objectId === objectId
+      ) ?? response.updatedObjects?.find(
+        (placedObject) => placedObject.objectId === objectId
+      );
+      const stagedAllChanges = stagedObject !== undefined &&
+        placementObjectChangesAreStaged(response.session, stagedObject, changes);
+      const nextDiagnostics: ApiDiagnostic[] = stagedAllChanges
+        ? response.diagnostics
+        : [
+            ...response.diagnostics,
+            {
+              domain: 'workflow.placement',
+              message: 'Placement changes were not staged.',
+              severity: 'error'
+            }
+          ];
+      const hasErrors = nextDiagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updatePlacementObjectFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            objectId,
-            value: change.value
-          }))
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updatePlacementObjectField({
-            field: change.field,
-            objectId,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            value: change.value
-          });
-          nextWorkflow = response.workflow;
-          nextSession = response.session;
-          nextDiagnostics = response.diagnostics;
-        }
+      setEditValidationDiagnostics(nextDiagnostics);
+      if (hasErrors) {
+        return false;
       }
 
+      let nextWorkflow = response.workflow ?? placementWorkflow;
+      if (nextWorkflow && response.updatedObjects && response.updatedObjects.length > 0) {
+        const updatesById = new Map(
+          response.updatedObjects.map((placedObject) => [placedObject.objectId, placedObject])
+        );
+        nextWorkflow = {
+          ...nextWorkflow,
+          objects: nextWorkflow.objects.map(
+            (placedObject) => {
+              const update = updatesById.get(placedObject.objectId);
+              return update
+                ? mergePlacementObjectUpdate(placedObject, update)
+                : placedObject;
+            }
+          )
+        };
+      }
       if (nextWorkflow) {
         setPlacementWorkflow(nextWorkflow);
       }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
+      setEditSession(response.session);
       return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -9260,10 +9253,16 @@ export function App({
                 onSearchChange={setPlacementSearchText}
                 onSelectObject={setSelectedPlacementObjectId}
                 onStartEditSession={handleStartEditSession}
-                onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 searchText={placementSearchText}
                 selectedObjectId={selectedPlacementObjectId}
+                updateDiagnostics={[
+                  ...editValidationDiagnostics.filter(
+                    (diagnostic) =>
+                      diagnostic.domain == null || diagnostic.domain === 'workflow.placement'
+                  ),
+                  ...bridgeDiagnostics
+                ]}
                 workflow={placementWorkflow}
               />
             ) : isScarletVioletProject ? (
@@ -9274,10 +9273,16 @@ export function App({
                 onSearchChange={setPlacementSearchText}
                 onSelectObject={setSelectedPlacementObjectId}
                 onStartEditSession={handleStartEditSession}
-                onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 searchText={placementSearchText}
                 selectedObjectId={selectedPlacementObjectId}
+                updateDiagnostics={[
+                  ...editValidationDiagnostics.filter(
+                    (diagnostic) =>
+                      diagnostic.domain == null || diagnostic.domain === 'workflow.placement'
+                  ),
+                  ...bridgeDiagnostics
+                ]}
                 workflow={placementWorkflow}
               />
             ) : (
@@ -9288,10 +9293,16 @@ export function App({
                 onSearchChange={setPlacementSearchText}
                 onSelectObject={setSelectedPlacementObjectId}
                 onStartEditSession={handleStartEditSession}
-                onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 searchText={placementSearchText}
                 selectedObjectId={selectedPlacementObjectId}
+                updateDiagnostics={[
+                  ...editValidationDiagnostics.filter(
+                    (diagnostic) =>
+                      diagnostic.domain == null || diagnostic.domain === 'workflow.placement'
+                  ),
+                  ...bridgeDiagnostics
+                ]}
                 workflow={placementWorkflow}
               />
             )
@@ -25016,13 +25027,13 @@ type PlacementSectionProps = {
   onSearchChange: (value: string) => void;
   onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
-  onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
   onUpdatePlacementObjectFields: (
     objectId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
   searchText: string;
   selectedObjectId: string | null;
+  updateDiagnostics: ApiDiagnostic[];
   workflow: PlacementWorkflow | null;
 };
 
@@ -25051,10 +25062,10 @@ function PlacementSection({
   onSearchChange,
   onSelectObject,
   onStartEditSession,
-  onUpdatePlacementObjectField,
   onUpdatePlacementObjectFields,
   searchText,
   selectedObjectId,
+  updateDiagnostics,
   workflow
 }: PlacementSectionProps) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
@@ -25273,7 +25284,6 @@ function PlacementSection({
               isEditStarting={isEditStarting}
               isPlacementUpdating={isPlacementUpdating}
               onStartEditSession={onStartEditSession}
-              onUpdatePlacementObjectField={onUpdatePlacementObjectField}
               onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
               onSelectObject={onSelectObject}
               placementGroup={selectedGroup}
@@ -25285,7 +25295,7 @@ function PlacementSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <DiagnosticsSection diagnostics={[...(workflow?.diagnostics ?? []), ...updateDiagnostics]} />
     </>
   );
 }
@@ -25298,7 +25308,6 @@ function SelectedPlacementPanel({
   isPlacementUpdating,
   onSelectObject,
   onStartEditSession,
-  onUpdatePlacementObjectField,
   onUpdatePlacementObjectFields,
   placementGroup,
   placedObject
@@ -25310,7 +25319,6 @@ function SelectedPlacementPanel({
   isPlacementUpdating: boolean;
   onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
-  onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
   onUpdatePlacementObjectFields: (
     objectId: string,
     changes: Array<{ field: string; value: string }>
@@ -25375,6 +25383,9 @@ function SelectedPlacementPanel({
     !isPlacementUpdating &&
     placementDraftSummary.changedFields.length > 0 &&
     placementDraftSummary.invalidFields.length === 0;
+  const inspectorPrimaryData = placedObject
+    ? getPlacementInspectorPrimaryData(placedObject)
+    : null;
 
   useEffect(() => {
     if (!placedObject) {
@@ -25437,17 +25448,21 @@ function SelectedPlacementPanel({
           <div className="encounter-edit-form">
             <dl className="encounter-slot-detail">
               <div>
-                <dt>{isPokemonPlacementObject(placedObject) ? 'Pokemon' : 'Item'}</dt>
-                <dd>{formatPlacementItem(placedObject)}</dd>
+                <dt>{inspectorPrimaryData?.label ?? 'Placement Data'}</dt>
+                <dd>{inspectorPrimaryData?.value ?? 'n/a'}</dd>
               </div>
-              <div>
-                <dt>Quantity</dt>
-                <dd>{placedObject.quantity}</dd>
-              </div>
-              <div>
-                <dt>Chance</dt>
-                <dd>{placedObject.chance ?? 'n/a'}</dd>
-              </div>
+              {inspectorPrimaryData?.isItem ? (
+                <>
+                  <div>
+                    <dt>Quantity</dt>
+                    <dd>{placedObject.quantity}</dd>
+                  </div>
+                  <div>
+                    <dt>Chance</dt>
+                    <dd>{placedObject.chance ?? 'n/a'}</dd>
+                  </div>
+                </>
+              ) : null}
               <div>
                 <dt>Position</dt>
                 <dd>{formatPlacementCoordinates(placedObject)}</dd>
@@ -25628,10 +25643,10 @@ function SelectedPlacementPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging Changes"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isPlacementUpdating}
-                    label="Save Object"
+                    label="Stage Changes"
                   />
                 </button>
                 <button

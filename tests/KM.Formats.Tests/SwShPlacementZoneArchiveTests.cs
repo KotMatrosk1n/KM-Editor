@@ -106,7 +106,77 @@ public sealed class SwShPlacementZoneArchiveTests
         Assert.True(outputField.ValueOffset > 0);
     }
 
-    private static SwShPlacementZoneArchive CreateArchive()
+    [Fact]
+    public void ParseKeepsStoredZeroHashDistinctFromEmptyFnvHashAndReadOnly()
+    {
+        var archive = SwShPlacementZoneArchive.Parse(CreateArchive().Write());
+
+        var fieldItem = Assert.Single(archive.Zones[0].RawObjects, rawObject =>
+            rawObject.ObjectType == "FieldItem");
+        var zeroHash = fieldItem.Fields.Single(field =>
+            field.Field.EndsWith(".Hash_01", StringComparison.Ordinal));
+
+        Assert.Equal("0x0000000000000000", zeroHash.Value);
+        Assert.Equal("0x0000000000000000", zeroHash.DisplayValue);
+        Assert.True(zeroHash.IsReadOnly);
+        Assert.Contains("structural", zeroHash.Description, StringComparison.OrdinalIgnoreCase);
+
+        var reparsed = SwShPlacementZoneArchive.Parse(archive.WriteEdits([], []));
+        var reparsedFieldItem = Assert.Single(reparsed.Zones[0].RawObjects, rawObject =>
+            rawObject.ObjectType == "FieldItem");
+        var reparsedZeroHash = reparsedFieldItem.Fields.Single(field =>
+            field.Field.EndsWith(".Hash_01", StringComparison.Ordinal));
+        Assert.Equal("0x0000000000000000", reparsedZeroHash.Value);
+    }
+
+    [Fact]
+    public void ParseFormatsRawFloatWithRoundTripPrecision()
+    {
+        const float storedX = 10.1234567f;
+        var archive = SwShPlacementZoneArchive.Parse(CreateArchive(storedX).Write());
+
+        var fieldItem = Assert.Single(archive.Zones[0].RawObjects, rawObject =>
+            rawObject.ObjectType == "FieldItem");
+        var x = fieldItem.Fields.Single(field =>
+            field.Group == "Transform" && field.Label == "X");
+        var rotationY = fieldItem.Fields.Single(field =>
+            field.Group == "Transform" && field.Label == "Rotation Y");
+
+        Assert.Equal(storedX.ToString("G9", System.Globalization.CultureInfo.InvariantCulture), x.Value);
+        Assert.Equal(-3_600, rotationY.MinimumValue);
+        Assert.Equal(3_600, rotationY.MaximumValue);
+
+        var negativeZero = BitConverter.Int32BitsToSingle(unchecked((int)0x80000000));
+        var zeroArchive = SwShPlacementZoneArchive.Parse(CreateArchive(negativeZero).Write());
+        var zeroFieldItem = Assert.Single(zeroArchive.Zones[0].RawObjects, rawObject =>
+            rawObject.ObjectType == "FieldItem");
+        var zeroX = zeroFieldItem.Fields.Single(field =>
+            field.Group == "Transform" && field.Label == "X");
+        Assert.Equal("0", zeroX.Value);
+    }
+
+    [Fact]
+    public void ParseKeepsObjectHashPairedWithFirstTransform()
+    {
+        const ulong firstObjectHash = 0x1111222233334444;
+        const ulong secondObjectHash = 0xAAAABBBBCCCCDDDD;
+        var archive = SwShPlacementZoneArchive.Parse(
+            new MultiTransformCritterWriter(firstObjectHash, secondObjectHash).Write());
+
+        var critter = Assert.Single(archive.Zones[0].RawObjects, rawObject =>
+            rawObject.ObjectType == "Critter");
+
+        Assert.Equal(1, critter.Transform.X);
+        Assert.Equal(firstObjectHash, critter.ObjectHash);
+        Assert.True(critter.Fields.Single(field => field.Label == "Species").IsReadOnly);
+        Assert.Contains(
+            critter.Fields,
+            field => field.Field.Contains(".Field_01.", StringComparison.Ordinal)
+                && field.Field.EndsWith(".HashObjectName", StringComparison.Ordinal)
+                && field.Value == "0xAAAABBBBCCCCDDDD");
+    }
+
+    private static SwShPlacementZoneArchive CreateArchive(float fieldItemX = 10.5f)
     {
         return new SwShPlacementZoneArchive(
         [
@@ -120,7 +190,7 @@ public sealed class SwShPlacementZoneArchiveTests
                     new SwShPlacementFieldItem(
                         ObjectIndex: 0,
                         Model: "objects/visible_potion.gfbmdl",
-                        Transform: new SwShPlacementTransform(10.5f, 0, -4.25f, 90),
+                        Transform: new SwShPlacementTransform(fieldItemX, 0, -4.25f, 90),
                         ItemHashes: [0xAABBCCDD00112233],
                         ItemHashOffsets: [],
                         ItemIds: [],
@@ -294,6 +364,167 @@ public sealed class SwShPlacementZoneArchiveTests
         }
 
         private void WriteUInt64(int offset, ulong value)
+        {
+            var position = writer.BaseStream.Position;
+            writer.BaseStream.Position = offset;
+            writer.Write(value);
+            writer.BaseStream.Position = position;
+        }
+
+        private void WriteSingle(int offset, float value)
+        {
+            var position = writer.BaseStream.Position;
+            writer.BaseStream.Position = offset;
+            writer.Write(value);
+            writer.BaseStream.Position = position;
+        }
+    }
+
+    private sealed class MultiTransformCritterWriter
+    {
+        private readonly MemoryStream stream = new();
+        private readonly BinaryWriter writer;
+        private readonly ulong firstObjectHash;
+        private readonly ulong secondObjectHash;
+
+        public MultiTransformCritterWriter(ulong firstObjectHash, ulong secondObjectHash)
+        {
+            writer = new BinaryWriter(stream);
+            this.firstObjectHash = firstObjectHash;
+            this.secondObjectHash = secondObjectHash;
+        }
+
+        public byte[] Write()
+        {
+            writer.Write(0);
+            var root = WriteTable(1, objectSize: 8, Offsets(1, (0, 4)));
+            PatchUOffset(0, root);
+
+            var zones = WriteTableVector(1);
+            PatchUOffset(root + 4, zones);
+            var zone = WriteZone();
+            PatchUOffset(zones + sizeof(int), zone);
+            return stream.ToArray();
+        }
+
+        private int WriteZone()
+        {
+            var zone = WriteTable(28, objectSize: 12, Offsets(28, (0, 4), (2, 8)));
+            var meta = WriteZoneMeta();
+            PatchUOffset(zone + 4, meta);
+            var critters = WriteTableVector(1);
+            PatchUOffset(zone + 8, critters);
+            var critter = WriteCritter();
+            PatchUOffset(critters + sizeof(int), critter);
+            return zone;
+        }
+
+        private int WriteZoneMeta()
+        {
+            var meta = WriteTable(2, objectSize: 16, Offsets(2, (0, 4), (1, 8)));
+            var transform = WriteTransform(0, objectHash: 0);
+            PatchUOffset(meta + 4, transform);
+            WriteUInt64(meta + 8, 0x0102030405060708);
+            return meta;
+        }
+
+        private int WriteCritter()
+        {
+            var holder = WriteTable(16, objectSize: 16, Offsets(16, (0, 4), (1, 8), (2, 12)));
+            var first = WriteFirstCritterTransform();
+            PatchUOffset(holder + 4, first);
+            var second = WriteSecondCritterWrapper();
+            PatchUOffset(holder + 8, second);
+            WriteUInt32(holder + 12, 25);
+            return holder;
+        }
+
+        private int WriteFirstCritterTransform()
+        {
+            var first = WriteTable(13, objectSize: 8, Offsets(13, (0, 4)));
+            var transform = WriteTransform(1, firstObjectHash);
+            PatchUOffset(first + 4, transform);
+            return first;
+        }
+
+        private int WriteSecondCritterWrapper()
+        {
+            var wrapper = WriteTable(1, objectSize: 8, Offsets(1, (0, 4)));
+            var inner = WriteTable(8, objectSize: 8, Offsets(8, (0, 4)));
+            PatchUOffset(wrapper + 4, inner);
+            var transform = WriteTransform(2, secondObjectHash);
+            PatchUOffset(inner + 4, transform);
+            return wrapper;
+        }
+
+        private int WriteTransform(float x, ulong objectHash)
+        {
+            var transform = WriteTable(12, objectSize: 16, Offsets(12, (0, 4), (9, 8)));
+            WriteSingle(transform + 4, x);
+            WriteUInt64(transform + 8, objectHash);
+            return transform;
+        }
+
+        private int WriteTableVector(int count)
+        {
+            var offset = checked((int)stream.Position);
+            writer.Write(count);
+            for (var index = 0; index < count; index++)
+            {
+                writer.Write(0);
+            }
+
+            return offset;
+        }
+
+        private int WriteTable(int fieldCount, ushort objectSize, IReadOnlyList<ushort> fieldOffsets)
+        {
+            var vtableStart = checked((int)stream.Position);
+            writer.Write((ushort)(sizeof(ushort) * (2 + fieldCount)));
+            writer.Write(objectSize);
+            for (var index = 0; index < fieldCount; index++)
+            {
+                writer.Write(index < fieldOffsets.Count ? fieldOffsets[index] : (ushort)0);
+            }
+
+            var tableStart = checked((int)stream.Position);
+            writer.Write(tableStart - vtableStart);
+            for (var index = sizeof(int); index < objectSize; index++)
+            {
+                writer.Write((byte)0);
+            }
+
+            return tableStart;
+        }
+
+        private static ushort[] Offsets(int fieldCount, params (int FieldIndex, ushort Offset)[] values)
+        {
+            var offsets = new ushort[fieldCount];
+            foreach (var value in values)
+            {
+                offsets[value.FieldIndex] = value.Offset;
+            }
+
+            return offsets;
+        }
+
+        private void PatchUOffset(int sourceOffset, int targetOffset)
+        {
+            var position = writer.BaseStream.Position;
+            writer.BaseStream.Position = sourceOffset;
+            writer.Write((uint)(targetOffset - sourceOffset));
+            writer.BaseStream.Position = position;
+        }
+
+        private void WriteUInt64(int offset, ulong value)
+        {
+            var position = writer.BaseStream.Position;
+            writer.BaseStream.Position = offset;
+            writer.Write(value);
+            writer.BaseStream.Position = position;
+        }
+
+        private void WriteUInt32(int offset, uint value)
         {
             var position = writer.BaseStream.Position;
             writer.BaseStream.Position = offset;

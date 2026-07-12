@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Formats.SwSh;
 using KM.SwSh.Tests.Items;
 
@@ -17,12 +18,23 @@ internal static class SwShPlacementTestFixtures
     public const ulong PotionHash = 0xAABBCCDD00112233;
     public const ulong GreatBallHash = 0xAABBCCDD00112244;
     public const ulong StaticEncounterHash = 0x0102030405060708;
+    public const ulong SecondStaticEncounterHash = 0x1112131415161718;
+    public const ulong Wr02HoeruoObjectHash = 0x12E3C0CA0F529035;
 
-    public static void WriteBasePlacement(TemporarySwShProject temp, bool includeStaticObject = false)
+    public static void WriteBasePlacement(
+        TemporarySwShProject temp,
+        bool includeStaticObject = false,
+        bool includeRuntimeOwnedWailord = false,
+        IReadOnlyList<ulong>? staticSpawnIds = null,
+        IReadOnlyList<SwShPlacementHiddenItemChance>? hiddenItemChances = null)
     {
         temp.WriteBaseRomFsFile(
             "bin/archive/field/resident/placement.gfpak",
-            CreatePlacementPack(includeStaticObject: includeStaticObject));
+            CreatePlacementPack(
+                includeStaticObject: includeStaticObject,
+                includeRuntimeOwnedWailord: includeRuntimeOwnedWailord,
+                staticSpawnIds: staticSpawnIds,
+                hiddenItemChances: hiddenItemChances));
         temp.WriteBaseRomFsFile(
             "bin/pml/item/item_hash_to_index.dat",
             CreateItemHashTable());
@@ -37,8 +49,15 @@ internal static class SwShPlacementTestFixtures
     public static byte[] CreatePlacementPack(
         ulong? fieldItemHash = null,
         IReadOnlyList<uint>? fieldItemRawItems = null,
-        bool includeStaticObject = false)
+        bool includeStaticObject = false,
+        bool includeFieldItemHash = true,
+        bool omitFieldItemCanonicalStorage = false,
+        float fieldItemX = 10.5f,
+        bool includeRuntimeOwnedWailord = false,
+        IReadOnlyList<ulong>? staticSpawnIds = null,
+        IReadOnlyList<SwShPlacementHiddenItemChance>? hiddenItemChances = null)
     {
+        includeStaticObject |= includeRuntimeOwnedWailord;
         var areaNames = new List<SwShAhtbEntry>
         {
             new(SwShGfPackFile.HashFnv1a64(AreaName), AreaName),
@@ -47,11 +66,38 @@ internal static class SwShPlacementTestFixtures
         {
             new(ZoneHash, "Route 1"),
         };
+        var objectNames = new List<SwShAhtbEntry>
+        {
+            new(ObjectHash, "objects/hidden_item.gfbmdl"),
+        };
 
         if (includeStaticObject)
         {
             areaNames.Add(new SwShAhtbEntry(SwShGfPackFile.HashFnv1a64(StaticAreaName), StaticAreaName));
             zoneNames.Add(new SwShAhtbEntry(StaticZoneHash, "Test Cave"));
+        }
+
+        if (includeRuntimeOwnedWailord)
+        {
+            objectNames.Add(new SwShAhtbEntry(
+                Wr02HoeruoObjectHash,
+                "z_wr02onload_SymbolEncountPokemonGimmickSpawner_WR02_Hoeruo_0"));
+        }
+
+        if (staticSpawnIds?.Contains(SecondStaticEncounterHash) == true)
+        {
+            objectNames.Add(new SwShAhtbEntry(SecondStaticEncounterHash, "Second static encounter"));
+        }
+
+        var areaArchive = CreatePlacementArchive(
+            fieldItemHash,
+            fieldItemRawItems,
+            includeFieldItemHash,
+            fieldItemX,
+            hiddenItemChances).Write();
+        if (omitFieldItemCanonicalStorage)
+        {
+            OmitFieldItemCanonicalStorage(areaArchive);
         }
 
         var files = new List<SwShGfPackNamedFile>
@@ -64,16 +110,17 @@ internal static class SwShPlacementTestFixtures
                 new SwShAhtbFile(zoneNames).Write()),
             new SwShGfPackNamedFile(
                 "ObjectNameHashTable.tbl",
-                new SwShAhtbFile(
-                [
-                    new SwShAhtbEntry(ObjectHash, "objects/hidden_item.gfbmdl"),
-                ]).Write()),
-            new SwShGfPackNamedFile(AreaMember, CreatePlacementArchive(fieldItemHash, fieldItemRawItems).Write()),
+                new SwShAhtbFile(objectNames).Write()),
+            new SwShGfPackNamedFile(AreaMember, areaArchive),
         };
 
         if (includeStaticObject)
         {
-            files.Add(new SwShGfPackNamedFile(StaticAreaMember, CreateStaticPlacementArchive()));
+            files.Add(new SwShGfPackNamedFile(
+                StaticAreaMember,
+                CreateStaticPlacementArchive(
+                    includeRuntimeOwnedWailord ? Wr02HoeruoObjectHash : 0,
+                    staticSpawnIds ?? [StaticEncounterHash])));
         }
 
         return SwShGfPackFile.Create(files).Write();
@@ -90,7 +137,10 @@ internal static class SwShPlacementTestFixtures
 
     public static SwShPlacementZoneArchive CreatePlacementArchive(
         ulong? fieldItemHash = null,
-        IReadOnlyList<uint>? fieldItemRawItems = null)
+        IReadOnlyList<uint>? fieldItemRawItems = null,
+        bool includeFieldItemHash = true,
+        float fieldItemX = 10.5f,
+        IReadOnlyList<SwShPlacementHiddenItemChance>? hiddenItemChances = null)
     {
         return new SwShPlacementZoneArchive(
         [
@@ -104,8 +154,8 @@ internal static class SwShPlacementTestFixtures
                     new SwShPlacementFieldItem(
                         ObjectIndex: 0,
                         Model: "objects/visible_potion.gfbmdl",
-                        Transform: new SwShPlacementTransform(10.5f, 0, -4.25f, 90),
-                        ItemHashes: [fieldItemHash ?? PotionHash],
+                        Transform: new SwShPlacementTransform(fieldItemX, 0, -4.25f, 90),
+                        ItemHashes: includeFieldItemHash ? [fieldItemHash ?? PotionHash] : [],
                         ItemHashOffsets: [],
                         ItemIds: fieldItemRawItems ?? [],
                         ItemIdOffsets: [],
@@ -118,7 +168,7 @@ internal static class SwShPlacementTestFixtures
                     new SwShPlacementHiddenItem(
                         ObjectIndex: 0,
                         Transform: new SwShPlacementTransform(12, 0, -5, 180),
-                        Chances:
+                        Chances: hiddenItemChances ??
                         [
                             new SwShPlacementHiddenItemChance(
                                 ChanceIndex: 0,
@@ -138,9 +188,59 @@ internal static class SwShPlacementTestFixtures
         SourceData: []);
     }
 
-    private static byte[] CreateStaticPlacementArchive()
+    private static void OmitFieldItemCanonicalStorage(byte[] data)
     {
-        var writer = new StaticPlacementWriter();
+        var root = ReadUOffset(data, 0);
+        var zones = ReadTableUOffset(data, root, 0);
+        var zone = ReadUOffset(data, zones + sizeof(int));
+        var fieldItems = ReadTableUOffset(data, zone, 6);
+        var holder = ReadUOffset(data, fieldItems + sizeof(int));
+        var item = ReadTableUOffset(data, holder, 0);
+        var transform = ReadTableUOffset(data, item, 0);
+
+        ClearTableField(data, transform, 1);
+        ClearTableField(data, transform, 2);
+        ClearTableField(data, transform, 4);
+        ClearTableField(data, item, 8);
+    }
+
+    private static int ReadTableUOffset(byte[] data, int tableOffset, int fieldIndex)
+    {
+        var valueOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        return valueOffset == 0 ? 0 : ReadUOffset(data, valueOffset);
+    }
+
+    private static int ReadTableFieldOffset(byte[] data, int tableOffset, int fieldIndex)
+    {
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var entryOffset = vtableOffset + (sizeof(ushort) * (2 + fieldIndex));
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(vtableOffset, sizeof(ushort)));
+        if (entryOffset + sizeof(ushort) > vtableOffset + vtableLength)
+        {
+            return 0;
+        }
+
+        var relativeOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(entryOffset, sizeof(ushort)));
+        return relativeOffset == 0 ? 0 : tableOffset + relativeOffset;
+    }
+
+    private static int ReadUOffset(byte[] data, int offset)
+    {
+        return checked(offset + (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, sizeof(uint))));
+    }
+
+    private static void ClearTableField(byte[] data, int tableOffset, int fieldIndex)
+    {
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var entryOffset = vtableOffset + (sizeof(ushort) * (2 + fieldIndex));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(entryOffset, sizeof(ushort)), 0);
+    }
+
+    private static byte[] CreateStaticPlacementArchive(
+        ulong objectHash,
+        IReadOnlyList<ulong> spawnIds)
+    {
+        var writer = new StaticPlacementWriter(objectHash, spawnIds);
         return writer.Write();
     }
 
@@ -148,10 +248,14 @@ internal static class SwShPlacementTestFixtures
     {
         private readonly MemoryStream stream = new();
         private readonly BinaryWriter writer;
+        private readonly ulong objectHash;
+        private readonly IReadOnlyList<ulong> spawnIds;
 
-        public StaticPlacementWriter()
+        public StaticPlacementWriter(ulong objectHash, IReadOnlyList<ulong> spawnIds)
         {
             writer = new BinaryWriter(stream);
+            this.objectHash = objectHash;
+            this.spawnIds = spawnIds;
         }
 
         public byte[] Write()
@@ -200,19 +304,23 @@ internal static class SwShPlacementTestFixtures
         private int WriteStaticObject()
         {
             var staticObject = WriteTable(8, objectSize: 12, Offsets(8, (0, 4), (5, 8)));
-            var identifier = WriteTransform(24, 1, -32, 90, objectHash: 0);
+            var identifier = WriteTransform(24, 1, -32, 90, objectHash);
             PatchUOffset(staticObject + 4, identifier);
-            var spawns = WriteTableVector(1);
+            var spawns = WriteTableVector(spawnIds.Count);
             PatchUOffset(staticObject + 8, spawns);
-            var spawn = WriteStaticObjectSpawn();
-            PatchUOffset(spawns + sizeof(int), spawn);
+            for (var index = 0; index < spawnIds.Count; index++)
+            {
+                var spawn = WriteStaticObjectSpawn(spawnIds[index]);
+                PatchUOffset(spawns + sizeof(int) + (index * sizeof(uint)), spawn);
+            }
+
             return staticObject;
         }
 
-        private int WriteStaticObjectSpawn()
+        private int WriteStaticObjectSpawn(ulong spawnId)
         {
             var spawn = WriteTable(5, objectSize: 16, Offsets(5, (0, 8)));
-            WriteUInt64(spawn + 8, StaticEncounterHash);
+            WriteUInt64(spawn + 8, spawnId);
             return spawn;
         }
 

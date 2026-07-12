@@ -157,5 +157,42 @@ describe('workflow retention', () => {
         2
       )]
     ).toEqual(['moves', 'trainers', 'pokemon']);
+
+    expect(
+      [...selectWorkflowSectionsToRefresh(
+        [
+          { cost: 1, section: 'staticEncounters' },
+          { cost: 1, section: 'placement' },
+          { cost: 1, section: 'items' }
+        ],
+        ['placement', 'items', 'staticEncounters'],
+        new Set(['staticEncounters']),
+        0
+      )]
+    ).toEqual(['staticEncounters', 'placement']);
+
+    expect(
+      [...selectWorkflowSectionsToRefresh(
+        [
+          { cost: 1, section: 'text' },
+          { cost: 1, section: 'placement' }
+        ],
+        ['placement', 'text'],
+        new Set(['text']),
+        0
+      )]
+    ).toEqual(['text', 'placement']);
+
+    expect(
+      [...selectWorkflowSectionsToRefresh(
+        [
+          { cost: 1, section: 'royalCandy' },
+          { cost: 1, section: 'placement' }
+        ],
+        ['placement', 'royalCandy'],
+        new Set(['royalCandy']),
+        0
+      )]
+    ).toEqual(['royalCandy', 'placement']);
   });
 });
