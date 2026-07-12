@@ -241,6 +241,10 @@ import {
 } from './desktopServices';
 import { formatDiagnosticMessage } from './diagnostics';
 import {
+  maxConsecutiveNoProgressWarmupAttempts,
+  updateWarmupNoProgressBudget
+} from './cacheWarmupPolicy';
+import {
   createReportableError,
   formatReportableErrorMessage,
   type ReportableError
@@ -253,6 +257,20 @@ import {
 } from './workbenchStore';
 import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
 import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import {
+  WorkflowLoadGeneration,
+  createWorkflowRetentionSizeHint,
+  getEditSessionOwnerSections,
+  getLoadedWorkflowRetentionEntries,
+  isRetainedWorkflowSection,
+  removeWorkflowRecency,
+  selectWorkflowSectionsToEvict,
+  selectWorkflowSectionsToRefresh,
+  storedRetainedWorkflowSections,
+  touchWorkflowRecency,
+  type RetainedWorkflowSection,
+  type StoredRetainedWorkflowSection
+} from './workflowRetention';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
@@ -291,6 +309,7 @@ import {
   isPokemonPlacementObject
 } from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
+import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
 import {
   ShinyRateSection,
   formatShinyRatePendingValue
@@ -1712,6 +1731,9 @@ export function App({
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
   const setMovesWorkflow = useWorkbenchStore((state) => state.setMovesWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
+  const evictLoadedWorkflowSections = useWorkbenchStore(
+    (state) => state.evictLoadedWorkflowSections
+  );
   const resetLoadedWorkflowData = useWorkbenchStore((state) => state.resetLoadedWorkflowData);
   const resetProjectSession = useWorkbenchStore((state) => state.resetProjectSession);
   const setBehaviorSearchText = useWorkbenchStore((state) => state.setBehaviorSearchText);
@@ -1838,8 +1860,10 @@ export function App({
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
   const lastInvalidatedGameTextLanguageRef = useRef(language);
-  const pokemonWorkflowLoadRunRef = useRef(0);
-  const trainersWorkflowLoadRunRef = useRef(0);
+  const workflowLoadGenerationRef = useRef(new WorkflowLoadGeneration());
+  const workflowLoadTailRef = useRef<Promise<void>>(Promise.resolve());
+  const workflowRecencyRef = useRef<RetainedWorkflowSection[]>([]);
+  const previousActiveWorkflowSectionRef = useRef<WorkbenchSection>(activeSection);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
   const availableWorkflowSectionIds = useMemo(
@@ -1920,6 +1944,7 @@ export function App({
   const [isRoyalCandyStaging, setIsRoyalCandyStaging] = useState(false);
   const [isStartingItemsLoading, setIsStartingItemsLoading] = useState(false);
   const [isStartingItemsStaging, setIsStartingItemsStaging] = useState(false);
+  const [isNpcItemGiftLoading, setIsNpcItemGiftLoading] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const [modMergerDirectory1, setModMergerDirectory1] = useState('');
@@ -2020,6 +2045,138 @@ export function App({
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
   const cancelDiscardActionRef = useRef<(() => void) | null>(null);
+  const activeModMergerRetentionValue = useMemo(() => {
+    if (isScarletVioletProject) {
+      if (!svModMergerWorkflow && !svModMergerPreview) {
+        return null;
+      }
+
+      return {
+        preview: svModMergerPreview,
+        sources: svModSources,
+        workflow: svModMergerWorkflow
+      };
+    }
+
+    if (isPokemonLegendsZAProject) {
+      if (!zaModMergerWorkflow && !zaModMergerPreview) {
+        return null;
+      }
+
+      return {
+        preview: zaModMergerPreview,
+        sources: zaModSources,
+        workflow: zaModMergerWorkflow
+      };
+    }
+
+    if (!modMergerWorkflow && !modMergerPreview) {
+      return null;
+    }
+
+    const resolutionCount = Object.keys(modMergerResolutions).length;
+    return {
+      preview: modMergerPreview,
+      resolutions: createWorkflowRetentionSizeHint(resolutionCount * 2),
+      selectedDirectory1Files: modMergerSelectedDirectory1Files,
+      selectedDirectory2Files: modMergerSelectedDirectory2Files,
+      workflow: modMergerWorkflow
+    };
+  }, [
+    isPokemonLegendsZAProject,
+    isScarletVioletProject,
+    modMergerPreview,
+    modMergerResolutions,
+    modMergerSelectedDirectory1Files,
+    modMergerSelectedDirectory2Files,
+    modMergerWorkflow,
+    svModMergerPreview,
+    svModMergerWorkflow,
+    svModSources,
+    zaModMergerPreview,
+    zaModMergerWorkflow,
+    zaModSources
+  ]);
+  const hasModMergerLocalState = isModMergerStaging || isModMergerApplying;
+  const loadedWorkflowRetentionEntries = useMemo(
+    () =>
+      getLoadedWorkflowRetentionEntries(
+        {
+          bagHookWorkflow,
+          behaviorWorkflow,
+          catchCapWorkflow,
+          dynamaxAdventuresWorkflow,
+          encountersWorkflow,
+          exeFsPatchWorkflow,
+          fairyGymBoostsWorkflow,
+          fashionUnlockWorkflow,
+          flagworkSaveWorkflow,
+          giftPokemonWorkflow,
+          gymUniformRemovalWorkflow,
+          hyperTrainingWorkflow,
+          hyperspaceBypassWorkflow,
+          itemsWorkflow,
+          ivScreenWorkflow,
+          movesWorkflow,
+          npcItemGiftWorkflow,
+          placementWorkflow,
+          pokemonWorkflow,
+          raidBattlesWorkflow,
+          raidBonusRewardsWorkflow,
+          raidRewardsWorkflow,
+          rentalPokemonWorkflow,
+          royalCandyWorkflow,
+          shinyRateWorkflow,
+          shopsWorkflow,
+          spreadsheetImportWorkflow,
+          startingItemsWorkflow,
+          staticEncountersWorkflow,
+          teraRaidsWorkflow,
+          textWorkflow,
+          tradePokemonWorkflow,
+          trainersWorkflow,
+          typeChartWorkflow
+        },
+        activeModMergerRetentionValue
+      ),
+    [
+      activeModMergerRetentionValue,
+      bagHookWorkflow,
+      behaviorWorkflow,
+      catchCapWorkflow,
+      dynamaxAdventuresWorkflow,
+      encountersWorkflow,
+      exeFsPatchWorkflow,
+      fairyGymBoostsWorkflow,
+      fashionUnlockWorkflow,
+      flagworkSaveWorkflow,
+      giftPokemonWorkflow,
+      gymUniformRemovalWorkflow,
+      hyperTrainingWorkflow,
+      hyperspaceBypassWorkflow,
+      itemsWorkflow,
+      ivScreenWorkflow,
+      movesWorkflow,
+      npcItemGiftWorkflow,
+      placementWorkflow,
+      pokemonWorkflow,
+      raidBattlesWorkflow,
+      raidBonusRewardsWorkflow,
+      raidRewardsWorkflow,
+      rentalPokemonWorkflow,
+      royalCandyWorkflow,
+      shinyRateWorkflow,
+      shopsWorkflow,
+      spreadsheetImportWorkflow,
+      startingItemsWorkflow,
+      staticEncountersWorkflow,
+      teraRaidsWorkflow,
+      textWorkflow,
+      tradePokemonWorkflow,
+      trainersWorkflow,
+      typeChartWorkflow
+    ]
+  );
   const pendingEditCount = editSession?.pendingEdits.length ?? 0;
   const currentEditSessionSignature = useMemo(
     () => getEditSessionSignature(editSession),
@@ -2152,7 +2309,217 @@ export function App({
 
   const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: createProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
 
+  const getProtectedWorkflowSections = useCallback(
+    (includeActiveSection = true) => {
+      const protectedSections = new Set<WorkbenchSection>(
+        getEditSessionOwnerSections(editSession, editSessionSection)
+      );
+      for (const section of editorDraftDirtySections) {
+        if (isRetainedWorkflowSection(section)) {
+          protectedSections.add(section);
+        }
+      }
+      if (hasModMergerLocalState) {
+        protectedSections.add('modMerger');
+      }
+
+      if (includeActiveSection && isRetainedWorkflowSection(activeSection)) {
+        protectedSections.add(activeSection);
+      }
+
+      return protectedSections;
+    },
+    [
+      activeSection,
+      editSession,
+      editSessionSection,
+      editorDraftDirtySections,
+      hasModMergerLocalState
+    ]
+  );
+
+  const evictWorkflowPayloads = useCallback(
+    (sections: Iterable<WorkbenchSection>) => {
+      const evictedSections = new Set(
+        [...sections].filter(isRetainedWorkflowSection)
+      );
+      if (evictedSections.size === 0) {
+        return;
+      }
+
+      evictLoadedWorkflowSections(evictedSections);
+      if (evictedSections.has('dynamaxAdventures')) {
+        clearDynamaxAdventurePanelState();
+      }
+      for (const section of evictedSections) {
+        if (scopedEditorPanelSectionIds.has(section)) {
+          clearScopedEditorPanelState(section);
+        }
+      }
+      if (evictedSections.has('modMerger')) {
+        setSvModMergerWorkflow(null);
+        setSvModMergerPreview(null);
+        setZaModMergerWorkflow(null);
+        setZaModMergerPreview(null);
+        setModMergerWorkflow(null);
+        setModMergerPreview(null);
+      }
+
+      for (const section of evictedSections) {
+        workflowLoadGenerationRef.current.invalidate(section);
+      }
+      workflowRecencyRef.current = removeWorkflowRecency(
+        workflowRecencyRef.current,
+        evictedSections
+      );
+      setLazyLoadedWorkflowSections((currentSections) => {
+        if (![...evictedSections].some((section) => currentSections.has(section))) {
+          return currentSections;
+        }
+
+        const nextSections = new Set(currentSections);
+        for (const section of evictedSections) {
+          nextSections.delete(section);
+        }
+        return nextSections;
+      });
+    },
+    [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, evictLoadedWorkflowSections]
+  );
+
+  const evictUnprotectedWorkflowPayloads = useCallback(() => {
+    const protectedSections = getProtectedWorkflowSections();
+    const evictionCandidates = new Set([
+      ...loadedWorkflowRetentionEntries.map((entry) => entry.section),
+      ...workflowLoadGenerationRef.current.getActiveSections()
+    ]);
+    const evictedSections = [...evictionCandidates].filter(
+      (section) => !protectedSections.has(section)
+    );
+    evictWorkflowPayloads(evictedSections);
+    return evictedSections;
+  }, [evictWorkflowPayloads, getProtectedWorkflowSections, loadedWorkflowRetentionEntries]);
+
+  const runRetainedWorkflowLoad = useCallback(
+    async <TResponse,>(
+      section: RetainedWorkflowSection,
+      setLoading: (isLoading: boolean) => void,
+      load: () => Promise<TResponse>,
+      commit: (response: TResponse) => void,
+      canCommitExtra: () => boolean = () => true,
+      onError: (error: unknown) => void = (error) =>
+        setBridgeDiagnostics(toBridgeDiagnostics(error))
+    ) => {
+      const token = workflowLoadGenerationRef.current.begin(section);
+      const previousLoad = workflowLoadTailRef.current.catch(() => undefined);
+      let releaseLoadTurn: () => void = () => {};
+      const loadTurn = new Promise<void>((resolve) => {
+        releaseLoadTurn = resolve;
+      });
+      workflowLoadTailRef.current = previousLoad.then(() => loadTurn);
+      setLoading(true);
+      setBridgeDiagnostics([]);
+
+      try {
+        await previousLoad;
+        if (
+          !workflowLoadGenerationRef.current.canCommit(section, token) ||
+          !canCommitExtra()
+        ) {
+          return;
+        }
+
+        setLazyLoadedWorkflowSections((currentSections) => {
+          if (currentSections.has(section)) {
+            return currentSections;
+          }
+
+          const nextSections = new Set(currentSections);
+          nextSections.add(section);
+          return nextSections;
+        });
+        const response = await load();
+        if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
+          commit(response);
+          workflowRecencyRef.current = touchWorkflowRecency(
+            workflowRecencyRef.current,
+            section
+          );
+        } else if (workflowLoadGenerationRef.current.canCommit(section, token)) {
+          setLazyLoadedWorkflowSections((currentSections) => {
+            const nextSections = new Set(currentSections);
+            nextSections.delete(section);
+            return nextSections;
+          });
+        }
+      } catch (error) {
+        if (workflowLoadGenerationRef.current.canCommit(section, token) && canCommitExtra()) {
+          onError(error);
+        }
+      } finally {
+        releaseLoadTurn();
+        const completion = workflowLoadGenerationRef.current.finish(section, token);
+        if (completion === 'current') {
+          setLoading(false);
+        } else if (completion === 'invalidated') {
+          setLoading(false);
+        }
+      }
+    },
+    [setBridgeDiagnostics]
+  );
+
+  useEffect(() => {
+    if (
+      isRetainedWorkflowSection(activeSection) &&
+      loadedWorkflowRetentionEntries.some((entry) => entry.section === activeSection)
+    ) {
+      workflowRecencyRef.current = touchWorkflowRecency(
+        workflowRecencyRef.current,
+        activeSection
+      );
+    }
+
+    const evictedSections = selectWorkflowSectionsToEvict(
+      loadedWorkflowRetentionEntries,
+      workflowRecencyRef.current,
+      getProtectedWorkflowSections()
+    );
+    evictWorkflowPayloads(evictedSections);
+  }, [
+    activeSection,
+    evictWorkflowPayloads,
+    getProtectedWorkflowSections,
+    loadedWorkflowRetentionEntries
+  ]);
+
+  useEffect(() => {
+    const previousSection = previousActiveWorkflowSectionRef.current;
+    previousActiveWorkflowSectionRef.current = activeSection;
+    if (
+      previousSection === activeSection ||
+      !isRetainedWorkflowSection(previousSection) ||
+      getProtectedWorkflowSections().has(previousSection) ||
+      loadedWorkflowRetentionEntries.some((entry) => entry.section === previousSection)
+    ) {
+      return;
+    }
+
+    workflowLoadGenerationRef.current.invalidate(previousSection);
+    setLazyLoadedWorkflowSections((currentSections) => {
+      if (!currentSections.has(previousSection)) {
+        return currentSections;
+      }
+
+      const nextSections = new Set(currentSections);
+      nextSections.delete(previousSection);
+      return nextSections;
+    });
+  }, [activeSection, getProtectedWorkflowSections, loadedWorkflowRetentionEntries]);
+
   const clearLoadedWorkflowData = useCallback(() => {
+    workflowLoadGenerationRef.current.invalidateAll();
+    workflowRecencyRef.current = [];
     resetLoadedWorkflowData();
     setSvModMergerWorkflow(null);
     setSvModMergerPreview(null);
@@ -2177,45 +2544,8 @@ export function App({
   }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, resetLoadedWorkflowData]);
 
   const clearLoadedGameTextWorkflowData = useCallback(() => {
-    useWorkbenchStore.setState({
-      bagHookWorkflow: null,
-      catchCapWorkflow: null,
-      hyperTrainingWorkflow: null,
-      shinyRateWorkflow: null,
-      typeChartWorkflow: null,
-      fairyGymBoostsWorkflow: null,
-      fashionUnlockWorkflow: null,
-      gymUniformRemovalWorkflow: null,
-      hyperspaceBypassWorkflow: null,
-      ivScreenWorkflow: null,
-      dynamaxAdventuresWorkflow: null,
-      encountersWorkflow: null,
-      exeFsPatchWorkflow: null,
-      flagworkSaveWorkflow: null,
-      giftPokemonWorkflow: null,
-      itemsWorkflow: null,
-      movesWorkflow: null,
-      behaviorWorkflow: null,
-      placementWorkflow: null,
-      pokemonWorkflow: null,
-      teraRaidsWorkflow: null,
-      raidBattlesWorkflow: null,
-      raidRewardsWorkflow: null,
-      raidBonusRewardsWorkflow: null,
-      rentalPokemonWorkflow: null,
-      royalCandyWorkflow: null,
-      startingItemsWorkflow: null,
-      npcItemGiftWorkflow: null,
-      shopsWorkflow: null,
-      spreadsheetImportPreview: null,
-      spreadsheetImportWorkflow: null,
-      staticEncountersWorkflow: null,
-      textWorkflow: null,
-      tradePokemonWorkflow: null,
-      trainersWorkflow: null
-    });
-    setLazyLoadedWorkflowSections(new Set());
-  }, []);
+    evictWorkflowPayloads(storedRetainedWorkflowSections);
+  }, [evictWorkflowPayloads]);
 
   const clearPendingEditState = useCallback(() => {
     editSessionRef.current = null;
@@ -2527,18 +2857,30 @@ export function App({
         }
 
         setIsSvCacheWarming(true);
+        // Give the foreground navigation/load path first access to the bridge after validation.
+        // The first persistent-cache step may need to hydrate a large archive index.
+        await delay(500);
+        if (svCacheWarmupRunRef.current !== runId) {
+          return;
+        }
+
         let latestStatus = initialStatus.status;
         let nextStepIndex = Math.max(
           0,
           Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
         );
-        let remainingNoProgressAttempts = latestStatus.warmupTotal + 1;
+        let remainingNoProgressAttempts = maxConsecutiveNoProgressWarmupAttempts;
         while (
           latestStatus.warmupCompleted < latestStatus.warmupTotal &&
           remainingNoProgressAttempts > 0
         ) {
           if (svCacheWarmupRunRef.current !== runId) {
             return;
+          }
+
+          if (workflowLoadGenerationRef.current.getActiveSections().length > 0) {
+            await delay(50);
+            continue;
           }
 
           const previousCompleted = latestStatus.warmupCompleted;
@@ -2552,22 +2894,33 @@ export function App({
 
           latestStatus = response.status;
           setSvCacheStatus(latestStatus);
-          if (
-            latestStatus.warmupCompleted <= previousCompleted &&
-            latestStatus.warmupTotal === previousTotal
-          ) {
-            remainingNoProgressAttempts -= 1;
+          const madeProgress =
+            latestStatus.warmupCompleted > previousCompleted ||
+            latestStatus.warmupTotal !== previousTotal;
+          remainingNoProgressAttempts = updateWarmupNoProgressBudget(
+            remainingNoProgressAttempts,
+            previousCompleted,
+            previousTotal,
+            latestStatus.warmupCompleted,
+            latestStatus.warmupTotal
+          );
+          if (!madeProgress) {
             nextStepIndex = (nextStepIndex + 1) % Math.max(1, latestStatus.warmupTotal);
           } else {
-            remainingNoProgressAttempts = latestStatus.warmupTotal + 1;
             nextStepIndex = Math.max(
               0,
               Math.min(latestStatus.warmupCompleted, Math.max(0, latestStatus.warmupTotal - 1))
             );
           }
+          // Leave a real admission window between native warmup batches so foreground editor
+          // loads, saves, and output requests are never trapped behind a continuous warmup loop.
+          await delay(25);
         }
       } catch (error) {
-        if (!isStaleProjectScopeError(error)) {
+        if (
+          svCacheWarmupRunRef.current === runId &&
+          !isStaleProjectScopeError(error)
+        ) {
           setBridgeDiagnostics(toBridgeDiagnostics(error));
         }
       } finally {
@@ -2643,6 +2996,8 @@ export function App({
               paths
             });
         setSvCacheStatus(response.status);
+        evictUnprotectedWorkflowPayloads();
+        await desktopServices.recycleProjectBridge();
         if (paths && health) {
           void startSvCacheWarmup(paths, health);
         }
@@ -2650,11 +3005,21 @@ export function App({
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
     },
-    [bridge, health, selectedGame, startSvCacheWarmup, svCacheStatus?.settings.maxCacheSizeBytes]
+    [
+      bridge,
+      desktopServices.recycleProjectBridge,
+      evictUnprotectedWorkflowPayloads,
+      health,
+      selectedGame,
+      startSvCacheWarmup,
+      svCacheStatus?.settings.maxCacheSizeBytes
+    ]
   );
 
   const handleChangeSvCacheLimit = useCallback(
     async (maxCacheSizeBytes: number) => {
+      svCacheWarmupRunRef.current += 1;
+      setIsSvCacheWarming(false);
       const paths = isTrinityCacheGame(selectedGame)
         ? createProjectPaths(draftPathsRef.current)
         : null;
@@ -2673,11 +3038,14 @@ export function App({
               paths
             });
         setSvCacheStatus(response.status);
+        if (paths && health) {
+          void startSvCacheWarmup(paths, health);
+        }
       } catch (error) {
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       }
     },
-    [bridge, selectedGame, svCacheStatus?.settings.mode]
+    [bridge, health, selectedGame, startSvCacheWarmup, svCacheStatus?.settings.mode]
   );
 
   const handleRefreshSvCacheStatus = useCallback(async () => {
@@ -2714,12 +3082,14 @@ export function App({
         ? await bridge.clearZaCache({ activePaths })
         : await bridge.clearSvCache({ activePaths });
       setSvCacheStatus(response.status);
+      evictUnprotectedWorkflowPayloads();
+      await desktopServices.recycleProjectBridge();
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsSvCacheClearing(false);
     }
-  }, [bridge, selectedGame]);
+  }, [bridge, desktopServices, evictUnprotectedWorkflowPayloads, selectedGame]);
 
   const handleValidateProject = async () => {
     setProjectStatus('validating');
@@ -3101,6 +3471,8 @@ export function App({
           } else if (isScarletVioletGame(selectedGame)) {
             setSvCacheStatus(svCacheClear.status);
           }
+          evictUnprotectedWorkflowPayloads();
+          await desktopServices.recycleProjectBridge();
         } finally {
           setIsSvCacheClearing(false);
         }
@@ -3208,7 +3580,9 @@ export function App({
     bridge,
     desktopServices.isAvailable,
     desktopServices.openExternalUrl,
+    desktopServices.recycleProjectBridge,
     desktopServices.relaunchApp,
+    evictUnprotectedWorkflowPayloads,
     selectedGame
   ]);
 
@@ -3231,75 +3605,44 @@ export function App({
   }, [activeWikiUrl, desktopServices.isAvailable, desktopServices.openExternalUrl]);
 
   const handleOpenItemsWorkflow = async () => {
-    setIsItemsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadItemsWorkflow({ paths: createProjectPaths(draftPaths) });
-      setItemsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsItemsLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'items',
+      setIsItemsLoading,
+      () => bridge.loadItemsWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setItemsWorkflow(response.workflow)
+    );
   };
 
   const handleOpenPokemonWorkflow = async () => {
-    const loadRun = pokemonWorkflowLoadRunRef.current + 1;
-    pokemonWorkflowLoadRunRef.current = loadRun;
     const paths = createProjectPaths(draftPaths);
-    const canCommit = () =>
-      pokemonWorkflowLoadRunRef.current === loadRun &&
-      canCommitGameTextWorkflow(paths.gameTextLanguage);
-
-    setIsPokemonLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadPokemonWorkflow({ paths });
-      if (canCommit()) {
-        setPokemonWorkflow(response.workflow);
-      }
-    } catch (error) {
-      if (canCommit()) {
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
-      }
-    } finally {
-      if (pokemonWorkflowLoadRunRef.current === loadRun) {
-        setIsPokemonLoading(false);
-      }
-    }
+    await runRetainedWorkflowLoad(
+      'pokemon',
+      setIsPokemonLoading,
+      () => bridge.loadPokemonWorkflow({ paths }),
+      (response) => setPokemonWorkflow(response.workflow),
+      () => canCommitGameTextWorkflow(paths.gameTextLanguage)
+    );
   };
 
   const handleOpenMovesWorkflow = async () => {
-    setIsMovesLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadMovesWorkflow({ paths: createProjectPaths(draftPaths) });
-      setMovesWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsMovesLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'moves',
+      setIsMovesLoading,
+      () => bridge.loadMovesWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setMovesWorkflow(response.workflow)
+    );
   };
 
   const handleOpenTextWorkflow = async (searchTextOverride = textSearchText) => {
-    setIsTextLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadTextWorkflow({
+    await runRetainedWorkflowLoad(
+      'text',
+      setIsTextLoading,
+      () => bridge.loadTextWorkflow({
         paths: createProjectPaths(draftPaths),
         query: createTextWorkflowQuery(selectedGame, searchTextOverride)
-      });
-      setTextWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsTextLoading(false);
-    }
+      }),
+      (response) => setTextWorkflow(response.workflow)
+    );
   };
 
   useEffect(() => {
@@ -3308,21 +3651,15 @@ export function App({
     }
 
     const timeoutId = window.setTimeout(() => {
-      setIsTextLoading(true);
-      setBridgeDiagnostics([]);
-      bridge.loadTextWorkflow({
-        paths: createProjectPaths(draftPathsRef.current),
-        query: createTextWorkflowQuery(selectedGame, textSearchText)
-      })
-        .then((response) => {
-          setTextWorkflow(response.workflow);
-        })
-        .catch((error) => {
-          setBridgeDiagnostics(toBridgeDiagnostics(error));
-        })
-        .finally(() => {
-          setIsTextLoading(false);
-        });
+      void runRetainedWorkflowLoad(
+        'text',
+        setIsTextLoading,
+        () => bridge.loadTextWorkflow({
+          paths: createProjectPaths(draftPathsRef.current),
+          query: createTextWorkflowQuery(selectedGame, textSearchText)
+        }),
+        (response) => setTextWorkflow(response.workflow)
+      );
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
@@ -3330,6 +3667,7 @@ export function App({
     activeSection,
     bridge,
     isScarletVioletProject,
+    runRetainedWorkflowLoad,
     selectedGame,
     setBridgeDiagnostics,
     setTextWorkflow,
@@ -3337,253 +3675,162 @@ export function App({
   ]);
 
   const handleOpenTrainersWorkflow = async () => {
-    const loadRun = trainersWorkflowLoadRunRef.current + 1;
-    trainersWorkflowLoadRunRef.current = loadRun;
     const paths = createProjectPaths(draftPaths);
-    const canCommit = () =>
-      trainersWorkflowLoadRunRef.current === loadRun &&
-      canCommitGameTextWorkflow(paths.gameTextLanguage);
-
-    setIsTrainersLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadTrainersWorkflow({ paths });
-      if (canCommit()) {
-        setTrainersWorkflow(response.workflow);
-      }
-    } catch (error) {
-      if (canCommit()) {
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
-      }
-    } finally {
-      if (trainersWorkflowLoadRunRef.current === loadRun) {
-        setIsTrainersLoading(false);
-      }
-    }
+    await runRetainedWorkflowLoad(
+      'trainers',
+      setIsTrainersLoading,
+      () => bridge.loadTrainersWorkflow({ paths }),
+      (response) => setTrainersWorkflow(response.workflow),
+      () => canCommitGameTextWorkflow(paths.gameTextLanguage)
+    );
   };
 
   const handleOpenGiftPokemonWorkflow = async () => {
-    setIsGiftPokemonLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadGiftPokemonWorkflow({ paths: createProjectPaths(draftPaths) });
-      setGiftPokemonWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsGiftPokemonLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'giftPokemon',
+      setIsGiftPokemonLoading,
+      () => bridge.loadGiftPokemonWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setGiftPokemonWorkflow(response.workflow)
+    );
   };
 
   const handleOpenTradePokemonWorkflow = async () => {
-    setIsTradePokemonLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadTradePokemonWorkflow({ paths: createProjectPaths(draftPaths) });
-      setTradePokemonWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsTradePokemonLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'tradePokemon',
+      setIsTradePokemonLoading,
+      () => bridge.loadTradePokemonWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setTradePokemonWorkflow(response.workflow)
+    );
   };
 
   const handleOpenStaticEncountersWorkflow = async () => {
-    setIsStaticEncountersLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadStaticEncountersWorkflow({
+    await runRetainedWorkflowLoad(
+      'staticEncounters',
+      setIsStaticEncountersLoading,
+      () => bridge.loadStaticEncountersWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setStaticEncountersWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsStaticEncountersLoading(false);
-    }
+      }),
+      (response) => setStaticEncountersWorkflow(response.workflow)
+    );
   };
 
   const handleOpenRentalPokemonWorkflow = async () => {
-    setIsRentalPokemonLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadRentalPokemonWorkflow({
+    await runRetainedWorkflowLoad(
+      'rentalPokemon',
+      setIsRentalPokemonLoading,
+      () => bridge.loadRentalPokemonWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setRentalPokemonWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRentalPokemonLoading(false);
-    }
+      }),
+      (response) => setRentalPokemonWorkflow(response.workflow)
+    );
   };
 
   const handleOpenDynamaxAdventuresWorkflow = async () => {
-    setIsDynamaxAdventuresLoading(true);
-    setBridgeDiagnostics([]);
     clearDynamaxAdventurePanelState();
-
-    try {
-      const response = await bridge.loadDynamaxAdventuresWorkflow({
+    await runRetainedWorkflowLoad(
+      'dynamaxAdventures',
+      setIsDynamaxAdventuresLoading,
+      () => bridge.loadDynamaxAdventuresWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setDynamaxAdventuresWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsDynamaxAdventuresLoading(false);
-    }
+      }),
+      (response) => setDynamaxAdventuresWorkflow(response.workflow)
+    );
   };
 
   const handleOpenShopsWorkflow = async () => {
-    setIsShopsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadShopsWorkflow({ paths: createProjectPaths(draftPaths) });
-      setShopsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsShopsLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'shops',
+      setIsShopsLoading,
+      () => bridge.loadShopsWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setShopsWorkflow(response.workflow)
+    );
   };
 
   const handleOpenEncountersWorkflow = async () => {
-    setIsEncountersLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadEncountersWorkflow({ paths: createProjectPaths(draftPaths) });
-      setEncountersWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsEncountersLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'encounters',
+      setIsEncountersLoading,
+      () => bridge.loadEncountersWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setEncountersWorkflow(response.workflow)
+    );
   };
 
   const handleOpenTeraRaidsWorkflow = async () => {
-    setIsTeraRaidsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadTeraRaidsWorkflow({ paths: createProjectPaths(draftPaths) });
-      setTeraRaidsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsTeraRaidsLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'teraRaids',
+      setIsTeraRaidsLoading,
+      () => bridge.loadTeraRaidsWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setTeraRaidsWorkflow(response.workflow)
+    );
   };
 
   const handleOpenRaidBattlesWorkflow = async () => {
-    setIsRaidBattlesLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadRaidBattlesWorkflow({ paths: createProjectPaths(draftPaths) });
-      setRaidBattlesWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRaidBattlesLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'raidBattles',
+      setIsRaidBattlesLoading,
+      () => bridge.loadRaidBattlesWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setRaidBattlesWorkflow(response.workflow)
+    );
   };
 
   const handleOpenRaidRewardsWorkflow = async () => {
-    setIsRaidRewardsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadRaidRewardsWorkflow({ paths: createProjectPaths(draftPaths) });
-      setRaidRewardsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRaidRewardsLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'raidRewards',
+      setIsRaidRewardsLoading,
+      () => bridge.loadRaidRewardsWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setRaidRewardsWorkflow(response.workflow)
+    );
   };
 
   const handleOpenRaidBonusRewardsWorkflow = async () => {
-    setIsRaidBonusRewardsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadRaidBonusRewardsWorkflow({
+    await runRetainedWorkflowLoad(
+      'raidBonusRewards',
+      setIsRaidBonusRewardsLoading,
+      () => bridge.loadRaidBonusRewardsWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setRaidBonusRewardsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRaidBonusRewardsLoading(false);
-    }
+      }),
+      (response) => setRaidBonusRewardsWorkflow(response.workflow)
+    );
   };
 
   const handleOpenPlacementWorkflow = async () => {
-    setIsPlacementLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadPlacementWorkflow({ paths: createProjectPaths(draftPaths) });
-      setPlacementWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsPlacementLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'placement',
+      setIsPlacementLoading,
+      () => bridge.loadPlacementWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setPlacementWorkflow(response.workflow)
+    );
   };
 
   const handleOpenBehaviorWorkflow = async () => {
-    setIsBehaviorLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadBehaviorWorkflow({ paths: createProjectPaths(draftPaths) });
-      setBehaviorWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsBehaviorLoading(false);
-    }
+    await runRetainedWorkflowLoad(
+      'behavior',
+      setIsBehaviorLoading,
+      () => bridge.loadBehaviorWorkflow({ paths: createProjectPaths(draftPaths) }),
+      (response) => setBehaviorWorkflow(response.workflow)
+    );
   };
 
   const handleOpenFlagworkSaveWorkflow = async () => {
-    setIsFlagworkSaveLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadFlagworkSaveWorkflow({
+    await runRetainedWorkflowLoad(
+      'flagworkSave',
+      setIsFlagworkSaveLoading,
+      () => bridge.loadFlagworkSaveWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setFlagworkSaveWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsFlagworkSaveLoading(false);
-    }
+      }),
+      (response) => setFlagworkSaveWorkflow(response.workflow)
+    );
   };
 
   const handleOpenBagHookWorkflow = async () => {
-    setIsBagHookLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadBagHookWorkflow({
+    await runRetainedWorkflowLoad(
+      'bagHook',
+      setIsBagHookLoading,
+      () => bridge.loadBagHookWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setBagHookWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsBagHookLoading(false);
-    }
+      }),
+      (response) => setBagHookWorkflow(response.workflow)
+    );
   };
 
   const handleStageBagHookInstall = async () => {
@@ -3627,19 +3874,14 @@ export function App({
   };
 
   const handleOpenCatchCapWorkflow = async () => {
-    setIsCatchCapLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadCatchCapWorkflow({
+    await runRetainedWorkflowLoad(
+      'catchCap',
+      setIsCatchCapLoading,
+      () => bridge.loadCatchCapWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setCatchCapWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsCatchCapLoading(false);
-    }
+      }),
+      (response) => setCatchCapWorkflow(response.workflow)
+    );
   };
 
   const handleStageCatchCap = async (caps: CatchCapSelection[]) => {
@@ -3686,19 +3928,14 @@ export function App({
   };
 
   const handleOpenHyperTrainingWorkflow = async () => {
-    setIsHyperTrainingLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadHyperTrainingWorkflow({
+    await runRetainedWorkflowLoad(
+      'hyperTraining',
+      setIsHyperTrainingLoading,
+      () => bridge.loadHyperTrainingWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setHyperTrainingWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsHyperTrainingLoading(false);
-    }
+      }),
+      (response) => setHyperTrainingWorkflow(response.workflow)
+    );
   };
 
   const handleStageHyperTraining = async (minimumLevel: number) => {
@@ -3724,19 +3961,14 @@ export function App({
   };
 
   const handleOpenShinyRateWorkflow = async () => {
-    setIsShinyRateLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadShinyRateWorkflow({
+    await runRetainedWorkflowLoad(
+      'shinyRate',
+      setIsShinyRateLoading,
+      () => bridge.loadShinyRateWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setShinyRateWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsShinyRateLoading(false);
-    }
+      }),
+      (response) => setShinyRateWorkflow(response.workflow)
+    );
   };
 
   const handleStageShinyRate = async (mode: ShinyRateMode, rollCount: number | null) => {
@@ -3763,19 +3995,14 @@ export function App({
   };
 
   const handleOpenTypeChartWorkflow = async () => {
-    setIsTypeChartLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadTypeChartWorkflow({
+    await runRetainedWorkflowLoad(
+      'typeChart',
+      setIsTypeChartLoading,
+      () => bridge.loadTypeChartWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setTypeChartWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsTypeChartLoading(false);
-    }
+      }),
+      (response) => setTypeChartWorkflow(response.workflow)
+    );
   };
 
   const handleStageTypeChart = async (values: TypeChartEffectivenessValue[]) => {
@@ -3822,19 +4049,14 @@ export function App({
   };
 
   const handleOpenFairyGymBoostsWorkflow = async () => {
-    setIsFairyGymBoostsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadFairyGymBoostsWorkflow({
+    await runRetainedWorkflowLoad(
+      'fairyGymBoosts',
+      setIsFairyGymBoostsLoading,
+      () => bridge.loadFairyGymBoostsWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setFairyGymBoostsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsFairyGymBoostsLoading(false);
-    }
+      }),
+      (response) => setFairyGymBoostsWorkflow(response.workflow)
+    );
   };
 
   const handleStageFairyGymBoosts = async (selections: FairyGymBoostSelection[]) => {
@@ -3860,19 +4082,14 @@ export function App({
   };
 
   const handleOpenFashionUnlockWorkflow = async () => {
-    setIsFashionUnlockLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadFashionUnlockWorkflow({
+    await runRetainedWorkflowLoad(
+      'fashionUnlock',
+      setIsFashionUnlockLoading,
+      () => bridge.loadFashionUnlockWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setFashionUnlockWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsFashionUnlockLoading(false);
-    }
+      }),
+      (response) => setFashionUnlockWorkflow(response.workflow)
+    );
   };
 
   const handleStageFashionUnlockInstall = async () => {
@@ -3918,19 +4135,14 @@ export function App({
   };
 
   const handleOpenGymUniformRemovalWorkflow = async () => {
-    setIsGymUniformRemovalLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadGymUniformRemovalWorkflow({
+    await runRetainedWorkflowLoad(
+      'gymUniformRemoval',
+      setIsGymUniformRemovalLoading,
+      () => bridge.loadGymUniformRemovalWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setGymUniformRemovalWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsGymUniformRemovalLoading(false);
-    }
+      }),
+      (response) => setGymUniformRemovalWorkflow(response.workflow)
+    );
   };
 
   const handleStageGymUniformRemovalInstall = async () => {
@@ -3976,19 +4188,17 @@ export function App({
   };
 
   const handleOpenHyperspaceBypassWorkflow = async () => {
-    setIsHyperspaceBypassLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadHyperspaceBypassWorkflow({
+    await runRetainedWorkflowLoad(
+      'hyperspaceBypass',
+      setIsHyperspaceBypassLoading,
+      () => bridge.loadHyperspaceBypassWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setHyperspaceBypassWorkflow(response.workflow);
-    } catch (error) {
-      setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error));
-    } finally {
-      setIsHyperspaceBypassLoading(false);
-    }
+      }),
+      (response) => setHyperspaceBypassWorkflow(response.workflow),
+      () => true,
+      (error) =>
+        setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error))
+    );
   };
 
   const handleStageHyperspaceBypassInstall = async () => {
@@ -4034,19 +4244,14 @@ export function App({
   };
 
   const handleOpenIvScreenWorkflow = async () => {
-    setIsIvScreenLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadIvScreenWorkflow({
+    await runRetainedWorkflowLoad(
+      'ivScreen',
+      setIsIvScreenLoading,
+      () => bridge.loadIvScreenWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setIvScreenWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsIvScreenLoading(false);
-    }
+      }),
+      (response) => setIvScreenWorkflow(response.workflow)
+    );
   };
 
   const handleStageIvScreenInstall = async () => {
@@ -4092,19 +4297,14 @@ export function App({
   };
 
   const handleOpenExeFsPatchWorkflow = async () => {
-    setIsExeFsPatchLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadExeFsPatchWorkflow({
+    await runRetainedWorkflowLoad(
+      'exefsPatches',
+      setIsExeFsPatchLoading,
+      () => bridge.loadExeFsPatchWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setExeFsPatchWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsExeFsPatchLoading(false);
-    }
+      }),
+      (response) => setExeFsPatchWorkflow(response.workflow)
+    );
   };
 
   const handleStageExeFsPatch = async (patchId: string) => {
@@ -4133,19 +4333,14 @@ export function App({
   };
 
   const handleOpenRoyalCandyWorkflow = async () => {
-    setIsRoyalCandyLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadRoyalCandyWorkflow({
+    await runRetainedWorkflowLoad(
+      'royalCandy',
+      setIsRoyalCandyLoading,
+      () => bridge.loadRoyalCandyWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setRoyalCandyWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRoyalCandyLoading(false);
-    }
+      }),
+      (response) => setRoyalCandyWorkflow(response.workflow)
+    );
   };
 
   const handleStageRoyalCandyWorkflow = async (
@@ -4180,19 +4375,14 @@ export function App({
   };
 
   const handleOpenStartingItemsWorkflow = async () => {
-    setIsStartingItemsLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadStartingItemsWorkflow({
+    await runRetainedWorkflowLoad(
+      'startingItems',
+      setIsStartingItemsLoading,
+      () => bridge.loadStartingItemsWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setStartingItemsWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsStartingItemsLoading(false);
-    }
+      }),
+      (response) => setStartingItemsWorkflow(response.workflow)
+    );
   };
 
   const handleStageStartingItems = async (grants: StartingItemGrantSelection[]) => {
@@ -4223,25 +4413,31 @@ export function App({
     }
   };
 
+  const handleOpenNpcItemGiftWorkflow = async () => {
+    await runRetainedWorkflowLoad(
+      'npcItemGift',
+      setIsNpcItemGiftLoading,
+      () => bridge.loadNpcItemGiftWorkflow({
+        paths: createProjectPaths(draftPaths)
+      }),
+      (response) => setNpcItemGiftWorkflow(response.workflow)
+    );
+  };
+
   const handleOpenBagHookFromDependencyWarning = () => {
     setDependencyWarning(null);
     void handleNavigateSection('bagHook');
   };
 
   const handleOpenSpreadsheetImportWorkflow = async () => {
-    setIsSpreadsheetImportLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadSpreadsheetImportWorkflow({
+    await runRetainedWorkflowLoad(
+      'spreadsheetImport',
+      setIsSpreadsheetImportLoading,
+      () => bridge.loadSpreadsheetImportWorkflow({
         paths: createProjectPaths(draftPaths)
-      });
-      setSpreadsheetImportWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsSpreadsheetImportLoading(false);
-    }
+      }),
+      (response) => setSpreadsheetImportWorkflow(response.workflow)
+    );
   };
 
   useEffect(() => {
@@ -4467,7 +4663,10 @@ export function App({
         }
         break;
       case 'npcItemGift':
-        if (!npcItemGiftWorkflow && !npcItemGiftController.isLoading) { markLazyLoadStarted(); void npcItemGiftController.open(); }
+        if (!npcItemGiftWorkflow && !isNpcItemGiftLoading) {
+          markLazyLoadStarted();
+          void handleOpenNpcItemGiftWorkflow();
+        }
         break;
       case 'spreadsheetImport':
         if (!spreadsheetImportWorkflow && !isSpreadsheetImportLoading) {
@@ -4523,7 +4722,7 @@ export function App({
     isRoyalCandyLoading,
     isShopsLoading,
     isStartingItemsLoading,
-    npcItemGiftController.isLoading,
+    isNpcItemGiftLoading,
     isSpreadsheetImportLoading,
     isTextLoading,
     isTrainersLoading,
@@ -4622,55 +4821,40 @@ export function App({
   };
 
   const loadModMergerWorkflow = async (directory1: string, directory2: string) => {
-    setIsModMergerLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadModMergerWorkflow({
+    await runRetainedWorkflowLoad(
+      'modMerger',
+      setIsModMergerLoading,
+      () => bridge.loadModMergerWorkflow({
         modDirectory1: directory1.trim() || null,
         modDirectory2: directory2.trim() || null,
         paths: createProjectPaths(draftPaths)
-      });
-      setModMergerWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsModMergerLoading(false);
-    }
+      }),
+      (response) => setModMergerWorkflow(response.workflow)
+    );
   };
 
   const loadSvModMergerWorkflow = async (modSources: SvModMergerSource[]) => {
-    setIsModMergerLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadSvModMergerWorkflow({
+    await runRetainedWorkflowLoad(
+      'modMerger',
+      setIsModMergerLoading,
+      () => bridge.loadSvModMergerWorkflow({
         modSources,
         paths: createProjectPaths(draftPaths)
-      });
-      setSvModMergerWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsModMergerLoading(false);
-    }
+      }),
+      (response) => setSvModMergerWorkflow(response.workflow)
+    );
   };
 
   const loadZaModMergerWorkflow = async (modSources: ZaModMergerSource[]) => {
-    setIsModMergerLoading(true);
-    setBridgeDiagnostics([]);
-
-    try {
-      const response = await bridge.loadZaModMergerWorkflow({
+    await runRetainedWorkflowLoad(
+      'modMerger',
+      setIsModMergerLoading,
+      () => bridge.loadZaModMergerWorkflow({
         modSources,
         paths: createProjectPaths(draftPaths)
-      });
-      setZaModMergerWorkflow(response.workflow);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsModMergerLoading(false);
-    }
+      }),
+      (response) => setZaModMergerWorkflow(response.workflow)
+    );
   };
 
   const handleOpenModMergerWorkflow = async () => {
@@ -4686,6 +4870,72 @@ export function App({
 
     await loadModMergerWorkflow(modMergerDirectory1, modMergerDirectory2);
   };
+
+  useEffect(() => {
+    if (
+      activeSection !== 'modMerger' ||
+      !health?.canOpenEditableWorkflows ||
+      activeSectionHasLoadedWorkflow ||
+      isModMergerLoading ||
+      lazyLoadedWorkflowSections.has('modMerger')
+    ) {
+      return;
+    }
+
+    if (isScarletVioletGame(selectedGame)) {
+      void runRetainedWorkflowLoad(
+        'modMerger',
+        setIsModMergerLoading,
+        () => bridge.loadSvModMergerWorkflow({
+          modSources: svModSources,
+          paths: createProjectPaths(draftPaths)
+        }),
+        (response) => setSvModMergerWorkflow(response.workflow)
+      );
+      return;
+    }
+
+    if (isPokemonLegendsZAGame(selectedGame)) {
+      void runRetainedWorkflowLoad(
+        'modMerger',
+        setIsModMergerLoading,
+        () => bridge.loadZaModMergerWorkflow({
+          modSources: zaModSources,
+          paths: createProjectPaths(draftPaths)
+        }),
+        (response) => setZaModMergerWorkflow(response.workflow)
+      );
+      return;
+    }
+
+    void runRetainedWorkflowLoad(
+      'modMerger',
+      setIsModMergerLoading,
+      () => bridge.loadModMergerWorkflow({
+        modDirectory1: modMergerDirectory1.trim() || null,
+        modDirectory2: modMergerDirectory2.trim() || null,
+        paths: createProjectPaths(draftPaths)
+      }),
+      (response) => setModMergerWorkflow(response.workflow)
+    );
+  }, [
+    activeSection,
+    activeSectionHasLoadedWorkflow,
+    bridge,
+    draftPaths,
+    health?.canOpenEditableWorkflows,
+    isModMergerLoading,
+    lazyLoadedWorkflowSections,
+    modMergerDirectory1,
+    modMergerDirectory2,
+    runRetainedWorkflowLoad,
+    selectedGame,
+    setModMergerWorkflow,
+    setSvModMergerWorkflow,
+    setZaModMergerWorkflow,
+    svModSources,
+    zaModSources
+  ]);
 
   const handleAddSvModSource = async (kind: 'folder' | 'archive') => {
     try {
@@ -7506,9 +7756,160 @@ export function App({
 
   const refreshLoadedWorkflowsAfterApply = async (
     paths: ReturnType<typeof toProjectPaths>,
-    canCommitRefresh: () => boolean = () => true
+    canCommitProjectRefresh: () => boolean = () => true
   ) => {
-    const fileGraphResponse = await bridge.refreshFileGraph({ paths });
+    if (!canCommitProjectRefresh()) {
+      return;
+    }
+
+    const protectedRefreshSections = getProtectedWorkflowSections();
+    const refreshSections = selectWorkflowSectionsToRefresh(
+      loadedWorkflowRetentionEntries,
+      workflowRecencyRef.current,
+      protectedRefreshSections,
+      0
+    );
+    const reloadSectionOrder = ([
+      'items',
+      'pokemon',
+      'moves',
+      'text',
+      'trainers',
+      'giftPokemon',
+      'tradePokemon',
+      'staticEncounters',
+      'rentalPokemon',
+      'dynamaxAdventures',
+      'shops',
+      'encounters',
+      'teraRaids',
+      'raidBattles',
+      'raidRewards',
+      'raidBonusRewards',
+      'placement',
+      'behavior',
+      'flagworkSave',
+      'bagHook',
+      'catchCap',
+      'hyperTraining',
+      'shinyRate',
+      'typeChart',
+      'fairyGymBoosts',
+      'fashionUnlock',
+      'gymUniformRemoval',
+      'hyperspaceBypass',
+      'ivScreen',
+      'exefsPatches',
+      'royalCandy',
+      'startingItems',
+      'npcItemGift',
+      'spreadsheetImport'
+    ] as const).filter((section) => refreshSections.has(section));
+    const setWorkflowLoadingBySection: Record<
+      StoredRetainedWorkflowSection,
+      (isLoading: boolean) => void
+    > = {
+      bagHook: setIsBagHookLoading,
+      behavior: setIsBehaviorLoading,
+      catchCap: setIsCatchCapLoading,
+      dynamaxAdventures: setIsDynamaxAdventuresLoading,
+      encounters: setIsEncountersLoading,
+      exefsPatches: setIsExeFsPatchLoading,
+      fairyGymBoosts: setIsFairyGymBoostsLoading,
+      fashionUnlock: setIsFashionUnlockLoading,
+      flagworkSave: setIsFlagworkSaveLoading,
+      giftPokemon: setIsGiftPokemonLoading,
+      gymUniformRemoval: setIsGymUniformRemovalLoading,
+      hyperTraining: setIsHyperTrainingLoading,
+      hyperspaceBypass: setIsHyperspaceBypassLoading,
+      items: setIsItemsLoading,
+      ivScreen: setIsIvScreenLoading,
+      moves: setIsMovesLoading,
+      npcItemGift: setIsNpcItemGiftLoading,
+      placement: setIsPlacementLoading,
+      pokemon: setIsPokemonLoading,
+      raidBattles: setIsRaidBattlesLoading,
+      raidBonusRewards: setIsRaidBonusRewardsLoading,
+      raidRewards: setIsRaidRewardsLoading,
+      rentalPokemon: setIsRentalPokemonLoading,
+      royalCandy: setIsRoyalCandyLoading,
+      shinyRate: setIsShinyRateLoading,
+      shops: setIsShopsLoading,
+      spreadsheetImport: setIsSpreadsheetImportLoading,
+      startingItems: setIsStartingItemsLoading,
+      staticEncounters: setIsStaticEncountersLoading,
+      teraRaids: setIsTeraRaidsLoading,
+      text: setIsTextLoading,
+      tradePokemon: setIsTradePokemonLoading,
+      trainers: setIsTrainersLoading,
+      typeChart: setIsTypeChartLoading
+    };
+    const refreshTokens = new Map<StoredRetainedWorkflowSection, symbol>(
+      reloadSectionOrder.map((section) => [
+        section,
+        workflowLoadGenerationRef.current.begin(section)
+      ])
+    );
+    let currentRefreshSection: StoredRetainedWorkflowSection | null = null;
+    const canCommitRefresh = () => {
+      if (!canCommitProjectRefresh()) {
+        return false;
+      }
+
+      if (!currentRefreshSection) {
+        return true;
+      }
+
+      const token = refreshTokens.get(currentRefreshSection);
+      return Boolean(
+        token && workflowLoadGenerationRef.current.canCommit(currentRefreshSection, token)
+      );
+    };
+    const finishWorkflowRefresh = (section: StoredRetainedWorkflowSection) => {
+      const token = refreshTokens.get(section);
+      if (!token) {
+        return;
+      }
+
+      const completion = workflowLoadGenerationRef.current.finish(section, token);
+      refreshTokens.delete(section);
+      if (completion !== 'superseded') {
+        setWorkflowLoadingBySection[section](false);
+      }
+    };
+    const finishWorkflowRefreshes = () => {
+      currentRefreshSection = null;
+      for (const section of [...refreshTokens.keys()]) {
+        finishWorkflowRefresh(section);
+      }
+    };
+    const evictFailedWorkflowRefreshes = () => {
+      if (!canCommitProjectRefresh()) {
+        return;
+      }
+
+      const failedSections = [...refreshTokens].flatMap(([section, token]) =>
+        workflowLoadGenerationRef.current.canCommit(section, token) ? [section] : []
+      );
+      evictWorkflowPayloads(failedSections);
+    };
+
+    if (canCommitRefresh()) {
+      evictWorkflowPayloads(
+        loadedWorkflowRetentionEntries
+          .map((entry) => entry.section)
+          .filter(
+            (section) =>
+              !refreshSections.has(section) && !protectedRefreshSections.has(section)
+          )
+      );
+    }
+
+    const fileGraphResponse = await bridge.refreshFileGraph({ paths }).catch((error: unknown) => {
+      evictFailedWorkflowRefreshes();
+      finishWorkflowRefreshes();
+      throw error;
+    });
     if (openProject && canCommitRefresh()) {
       useWorkbenchStore.setState((state) =>
         state.openProject
@@ -7522,10 +7923,18 @@ export function App({
       );
     }
 
-    await refreshWorkflows(paths, health?.canOpenEditableWorkflows ?? true, canCommitRefresh);
+    await refreshWorkflows(
+      paths,
+      health?.canOpenEditableWorkflows ?? true,
+      canCommitRefresh
+    ).catch((error: unknown) => {
+      evictFailedWorkflowRefreshes();
+      finishWorkflowRefreshes();
+      throw error;
+    });
 
     const reloadTasks: Array<() => Promise<void>> = [];
-    if (itemsWorkflow) {
+    if (itemsWorkflow && refreshSections.has('items')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadItemsWorkflow({ paths });
@@ -7535,7 +7944,7 @@ export function App({
         }
       );
     }
-    if (pokemonWorkflow) {
+    if (pokemonWorkflow && refreshSections.has('pokemon')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadPokemonWorkflow({ paths });
@@ -7545,7 +7954,7 @@ export function App({
         }
       );
     }
-    if (movesWorkflow) {
+    if (movesWorkflow && refreshSections.has('moves')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadMovesWorkflow({ paths });
@@ -7555,7 +7964,7 @@ export function App({
         }
       );
     }
-    if (textWorkflow) {
+    if (textWorkflow && refreshSections.has('text')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTextWorkflow({
@@ -7568,7 +7977,7 @@ export function App({
         }
       );
     }
-    if (trainersWorkflow) {
+    if (trainersWorkflow && refreshSections.has('trainers')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTrainersWorkflow({ paths });
@@ -7578,7 +7987,7 @@ export function App({
         }
       );
     }
-    if (giftPokemonWorkflow) {
+    if (giftPokemonWorkflow && refreshSections.has('giftPokemon')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadGiftPokemonWorkflow({ paths });
@@ -7588,7 +7997,7 @@ export function App({
         }
       );
     }
-    if (tradePokemonWorkflow) {
+    if (tradePokemonWorkflow && refreshSections.has('tradePokemon')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTradePokemonWorkflow({ paths });
@@ -7598,7 +8007,7 @@ export function App({
         }
       );
     }
-    if (staticEncountersWorkflow) {
+    if (staticEncountersWorkflow && refreshSections.has('staticEncounters')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadStaticEncountersWorkflow({ paths });
@@ -7608,7 +8017,7 @@ export function App({
         }
       );
     }
-    if (rentalPokemonWorkflow) {
+    if (rentalPokemonWorkflow && refreshSections.has('rentalPokemon')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRentalPokemonWorkflow({ paths });
@@ -7618,7 +8027,7 @@ export function App({
         }
       );
     }
-    if (dynamaxAdventuresWorkflow) {
+    if (dynamaxAdventuresWorkflow && refreshSections.has('dynamaxAdventures')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadDynamaxAdventuresWorkflow({ paths });
@@ -7628,7 +8037,7 @@ export function App({
         }
       );
     }
-    if (shopsWorkflow) {
+    if (shopsWorkflow && refreshSections.has('shops')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadShopsWorkflow({ paths });
@@ -7638,7 +8047,7 @@ export function App({
         }
       );
     }
-    if (encountersWorkflow) {
+    if (encountersWorkflow && refreshSections.has('encounters')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadEncountersWorkflow({ paths });
@@ -7648,7 +8057,7 @@ export function App({
         }
       );
     }
-    if (teraRaidsWorkflow) {
+    if (teraRaidsWorkflow && refreshSections.has('teraRaids')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTeraRaidsWorkflow({ paths });
@@ -7658,7 +8067,7 @@ export function App({
         }
       );
     }
-    if (raidBattlesWorkflow) {
+    if (raidBattlesWorkflow && refreshSections.has('raidBattles')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRaidBattlesWorkflow({ paths });
@@ -7668,7 +8077,7 @@ export function App({
         }
       );
     }
-    if (raidRewardsWorkflow) {
+    if (raidRewardsWorkflow && refreshSections.has('raidRewards')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRaidRewardsWorkflow({ paths });
@@ -7678,7 +8087,7 @@ export function App({
         }
       );
     }
-    if (raidBonusRewardsWorkflow) {
+    if (raidBonusRewardsWorkflow && refreshSections.has('raidBonusRewards')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRaidBonusRewardsWorkflow({ paths });
@@ -7688,7 +8097,7 @@ export function App({
         }
       );
     }
-    if (placementWorkflow) {
+    if (placementWorkflow && refreshSections.has('placement')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadPlacementWorkflow({ paths });
@@ -7698,7 +8107,7 @@ export function App({
         }
       );
     }
-    if (behaviorWorkflow) {
+    if (behaviorWorkflow && refreshSections.has('behavior')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadBehaviorWorkflow({ paths });
@@ -7708,7 +8117,7 @@ export function App({
         }
       );
     }
-    if (flagworkSaveWorkflow) {
+    if (flagworkSaveWorkflow && refreshSections.has('flagworkSave')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadFlagworkSaveWorkflow({ paths });
@@ -7718,7 +8127,7 @@ export function App({
         }
       );
     }
-    if (bagHookWorkflow) {
+    if (bagHookWorkflow && refreshSections.has('bagHook')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadBagHookWorkflow({ paths });
@@ -7728,7 +8137,7 @@ export function App({
         }
       );
     }
-    if (catchCapWorkflow) {
+    if (catchCapWorkflow && refreshSections.has('catchCap')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadCatchCapWorkflow({ paths });
@@ -7738,7 +8147,7 @@ export function App({
         }
       );
     }
-    if (hyperTrainingWorkflow) {
+    if (hyperTrainingWorkflow && refreshSections.has('hyperTraining')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadHyperTrainingWorkflow({ paths });
@@ -7748,7 +8157,7 @@ export function App({
         }
       );
     }
-    if (shinyRateWorkflow) {
+    if (shinyRateWorkflow && refreshSections.has('shinyRate')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadShinyRateWorkflow({ paths });
@@ -7758,7 +8167,7 @@ export function App({
         }
       );
     }
-    if (typeChartWorkflow) {
+    if (typeChartWorkflow && refreshSections.has('typeChart')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadTypeChartWorkflow({ paths });
@@ -7768,7 +8177,7 @@ export function App({
         }
       );
     }
-    if (fairyGymBoostsWorkflow) {
+    if (fairyGymBoostsWorkflow && refreshSections.has('fairyGymBoosts')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadFairyGymBoostsWorkflow({ paths });
@@ -7778,7 +8187,7 @@ export function App({
         }
       );
     }
-    if (fashionUnlockWorkflow) {
+    if (fashionUnlockWorkflow && refreshSections.has('fashionUnlock')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadFashionUnlockWorkflow({ paths });
@@ -7788,7 +8197,7 @@ export function App({
         }
       );
     }
-    if (gymUniformRemovalWorkflow) {
+    if (gymUniformRemovalWorkflow && refreshSections.has('gymUniformRemoval')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadGymUniformRemovalWorkflow({ paths });
@@ -7798,7 +8207,7 @@ export function App({
         }
       );
     }
-    if (hyperspaceBypassWorkflow) {
+    if (hyperspaceBypassWorkflow && refreshSections.has('hyperspaceBypass')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadHyperspaceBypassWorkflow({ paths });
@@ -7808,7 +8217,7 @@ export function App({
         }
       );
     }
-    if (ivScreenWorkflow) {
+    if (ivScreenWorkflow && refreshSections.has('ivScreen')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadIvScreenWorkflow({ paths });
@@ -7818,7 +8227,7 @@ export function App({
         }
       );
     }
-    if (exeFsPatchWorkflow) {
+    if (exeFsPatchWorkflow && refreshSections.has('exefsPatches')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadExeFsPatchWorkflow({ paths });
@@ -7828,7 +8237,7 @@ export function App({
         }
       );
     }
-    if (royalCandyWorkflow) {
+    if (royalCandyWorkflow && refreshSections.has('royalCandy')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadRoyalCandyWorkflow({ paths });
@@ -7838,7 +8247,7 @@ export function App({
         }
       );
     }
-    if (startingItemsWorkflow) {
+    if (startingItemsWorkflow && refreshSections.has('startingItems')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadStartingItemsWorkflow({ paths });
@@ -7848,7 +8257,7 @@ export function App({
         }
       );
     }
-    if (npcItemGiftWorkflow) {
+    if (npcItemGiftWorkflow && refreshSections.has('npcItemGift')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadNpcItemGiftWorkflow({ paths });
@@ -7858,7 +8267,7 @@ export function App({
         }
       );
     }
-    if (spreadsheetImportWorkflow) {
+    if (spreadsheetImportWorkflow && refreshSections.has('spreadsheetImport')) {
       reloadTasks.push(
         async () => {
           const response = await bridge.loadSpreadsheetImportWorkflow({ paths });
@@ -7869,8 +8278,43 @@ export function App({
       );
     }
 
-    for (const reloadTask of reloadTasks) {
-      await reloadTask();
+    if (reloadTasks.length !== reloadSectionOrder.length) {
+      evictFailedWorkflowRefreshes();
+      finishWorkflowRefreshes();
+      throw new Error('Loaded workflow refresh ordering is out of sync.');
+    }
+
+    try {
+      for (let index = 0; index < reloadTasks.length; index += 1) {
+        const reloadTask = reloadTasks[index];
+        const section = reloadSectionOrder[index];
+        if (!reloadTask || !section) {
+          continue;
+        }
+
+        currentRefreshSection = section;
+        try {
+          await reloadTask();
+        } catch (error) {
+          const token = refreshTokens.get(section);
+          if (
+            canCommitProjectRefresh() &&
+            token &&
+            workflowLoadGenerationRef.current.canCommit(section, token)
+          ) {
+            evictWorkflowPayloads([section]);
+          }
+          throw error;
+        } finally {
+          currentRefreshSection = null;
+          finishWorkflowRefresh(section);
+        }
+      }
+    } catch (error) {
+      evictFailedWorkflowRefreshes();
+      throw error;
+    } finally {
+      finishWorkflowRefreshes();
     }
   };
 
@@ -8316,7 +8760,7 @@ export function App({
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
-              isNpcItemGiftLoading={npcItemGiftController.isLoading}
+              isNpcItemGiftLoading={isNpcItemGiftLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
               isModMergerLoading={isModMergerLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
@@ -8346,7 +8790,7 @@ export function App({
               onOpenRaidBonusRewardsWorkflow={handleOpenRaidBonusRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
               onOpenStartingItemsWorkflow={handleOpenStartingItemsWorkflow}
-              onOpenNpcItemGiftWorkflow={npcItemGiftController.open}
+              onOpenNpcItemGiftWorkflow={handleOpenNpcItemGiftWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
               onOpenModMergerWorkflow={handleOpenModMergerWorkflow}
@@ -9138,7 +9582,7 @@ export function App({
             )
           ) : null}
           {activeSection === 'npcItemGift' ? (
-            npcItemGiftController.isLoading && !npcItemGiftWorkflow ? (
+            isNpcItemGiftLoading && !npcItemGiftWorkflow ? (
               <WorkflowLoadingPanel label="NPC Item Gift" />
             ) : (
               <NpcItemGiftSection
@@ -9381,8 +9825,8 @@ export function App({
           cacheTitle={isPokemonLegendsZAGame(selectedGame) ? 'Z-A Cache' : 'S/V Cache'}
           description={
             isPokemonLegendsZAGame(selectedGame)
-              ? 'This removes cached Pokemon Legends Z-A Trinity data that is not reserved for the currently active Z-A project. The next Z-A validation can rebuild it.'
-              : 'This removes cached Scarlet/Violet Trinity data that is not reserved for the currently active S/V project. The next S/V validation can rebuild it.'
+              ? 'This removes the Pokemon Legends Z-A Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
+              : 'This removes the Scarlet/Violet Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
           }
           isClearing={isSvCacheClearing}
           onCancel={() => setIsSvCacheClearConfirmOpen(false)}
@@ -15747,7 +16191,11 @@ function getPokemonPendingEditDisplayDetails(
       fieldLabel: details
         ? `Evolution slot #${details.slot + 1} ${formatPendingAction(details.action)}`
         : 'Evolution',
-      newValueLabel: formatPokemonEvolutionPendingValue(edit.newValue, details, context),
+      newValueLabel: formatPokemonEvolutionPendingValue(edit.newValue, details, {
+        itemsWorkflow: context.itemsWorkflow,
+        pokemon,
+        pokemonWorkflow: context.pokemonWorkflow
+      }),
       recordLabel: pokemon ? `${pokemon.name} (#${pokemon.personalId})` : undefined
     });
   }
@@ -16039,35 +16487,6 @@ function formatPokemonLearnsetLevelText(levelText: string | undefined) {
   }
 
   return parseOptionalInteger(levelText) === 253 ? 'Evolution' : `Lv. ${levelText}`;
-}
-
-function formatPokemonEvolutionPendingValue(
-  value: string | null | undefined,
-  details: { action: string; slot: number } | null,
-  context: PendingEditContext
-) {
-  if (!details) {
-    return formatPendingEditValue(value);
-  }
-
-  switch (details.action) {
-    case 'upsert': {
-      const [methodText, argumentText, speciesText, formText, levelText] = (value ?? '').split(':');
-      const method = formatPendingOptionValue(methodText, context.pokemonWorkflow?.evolutionMethodOptions);
-      const species = formatPokemonSpeciesPendingValue(speciesText, context.pokemonWorkflow);
-      return [method, species, formText ? `Form ${formText}` : null, levelText ? `Lv. ${levelText}` : null]
-        .filter((part): part is string => part !== null && part.length > 0)
-        .join(' / ') || formatPendingEditValue(value);
-    }
-    case 'moveUp':
-      return `Move slot #${details.slot + 1} up`;
-    case 'moveDown':
-      return `Move slot #${details.slot + 1} down`;
-    case 'remove':
-      return `Remove slot #${details.slot + 1}`;
-    default:
-      return formatPendingEditValue(value);
-  }
 }
 
 function getPokemonCompatibilityPendingFieldLabel(

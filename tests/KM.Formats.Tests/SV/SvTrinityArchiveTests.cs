@@ -51,7 +51,11 @@ public sealed class SvTrinityArchiveTests
         Assert.Equal(SvTrinityArchive.IndexSchemaVersion, index.SchemaVersion);
         Assert.Equal(2, index.Files.Count);
         Assert.Single(index.Packs);
+        Assert.Same(index.Files[0].PackName, index.Files[1].PackName);
         using var archive = SvTrinityArchive.Open(temp.Path, index: index);
+        using var secondArchive = SvTrinityArchive.Open(temp.Path, index: index);
+
+        Assert.Same(archive.CompiledIndexIdentity, secondArchive.CompiledIndexIdentity);
 
         Assert.Equal([0x10, 0x20], archive.ReadFile("avalon/data/personal_array.bin"));
         Assert.Equal([0x30], archive.ReadFile("world/data/item/itemdata/itemdata_array.bin"));

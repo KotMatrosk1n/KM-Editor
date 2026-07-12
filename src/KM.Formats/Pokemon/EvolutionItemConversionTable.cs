@@ -43,7 +43,6 @@ public static class EvolutionItemConversionTable
         ArgumentNullException.ThrowIfNull(rows);
 
         var builder = new FlatBufferBuilder(Math.Max(1024, rows.Count * 24));
-        builder.ForceDefaults = true;
         var rowOffsets = new int[rows.Count];
         for (var index = 0; index < rows.Count; index++)
         {

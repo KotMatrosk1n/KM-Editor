@@ -28,6 +28,7 @@ export type DesktopServices = {
   openPath: (path: string) => Promise<void>;
   pickFile: (options: PickFolderOptions) => Promise<string | null>;
   pickFolder: (options: PickFolderOptions) => Promise<string | null>;
+  recycleProjectBridge: () => Promise<void>;
   relaunchApp: () => Promise<void>;
   setCloseGuardEnabled: (enabled: boolean) => Promise<void>;
 };
@@ -77,6 +78,7 @@ export const desktopServices: DesktopServices = {
 
     return typeof selection === 'string' ? selection : null;
   },
+  recycleProjectBridge: () => invoke('recycle_project_bridge'),
   relaunchApp: async () => {
     ensureTauriRuntime();
 

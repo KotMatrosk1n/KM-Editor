@@ -55,6 +55,37 @@ describe('workbench store', () => {
     }
   });
 
+  it('selectively evicts payloads without losing pending edits or unrelated workflows', () => {
+    const editSession = {
+      hasPendingChanges: true,
+      pendingEdits: [{ domain: 'workflow.pokemon' }],
+      sessionId: 'pending-session'
+    };
+    const changePlan = { sessionId: 'pending-session' };
+    const itemsWorkflow = { items: [{ itemId: 1 }] };
+
+    useWorkbenchStore.setState({
+      changePlan,
+      editSession,
+      itemsWorkflow,
+      pokemonWorkflow: { pokemon: [{ personalId: 1 }] },
+      spreadsheetImportPreview: { rows: Array.from({ length: 100 }, (_, index) => index) },
+      spreadsheetImportWorkflow: { profiles: [] }
+    } as never);
+
+    useWorkbenchStore
+      .getState()
+      .evictLoadedWorkflowSections(['pokemon', 'spreadsheetImport']);
+
+    const state = useWorkbenchStore.getState();
+    expect(state.pokemonWorkflow).toBeNull();
+    expect(state.spreadsheetImportWorkflow).toBeNull();
+    expect(state.spreadsheetImportPreview).toBeNull();
+    expect(state.itemsWorkflow).toBe(itemsWorkflow);
+    expect(state.editSession).toBe(editSession);
+    expect(state.changePlan).toBe(changePlan);
+  });
+
   it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
     useWorkbenchStore.setState({
       activeSection: 'health',

@@ -259,7 +259,15 @@ public sealed class ProjectBridgeDispatcher
             var command = envelope?.Command;
             if (IsWorkflowCacheBoundary(command))
             {
-                ClearWorkflowMemoryCaches();
+                // Project and editor snapshots depend on every configured path, but reusable base indexes
+                // fingerprint their own source files. Preserve those expensive indexes across ordinary
+                // open, validation, and output-root refreshes; explicit cache controls still drop them.
+                ClearWorkflowMemoryCaches(
+                    clearReusableDataCaches: command is
+                        KmCommandNames.UpdateSvCacheSettings or
+                        KmCommandNames.ClearSvCache or
+                        KmCommandNames.UpdateZaCacheSettings or
+                        KmCommandNames.ClearZaCache);
             }
 
             var response = command switch
@@ -398,7 +406,7 @@ public sealed class ProjectBridgeDispatcher
 
             if (IsWorkflowCacheMutation(command))
             {
-                ClearWorkflowMemoryCaches();
+                ClearWorkflowMemoryCaches(clearReusableDataCaches: false);
             }
 
             return response;
@@ -3195,12 +3203,12 @@ public sealed class ProjectBridgeDispatcher
         return game is ProjectGameDto.ZA;
     }
 
-    private void ClearWorkflowMemoryCaches()
+    private void ClearWorkflowMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
-        swShWorkflowService.ClearMemoryCaches();
-        svWorkflowService.ClearMemoryCaches();
-        zaWorkflowService.ClearMemoryCaches();
+        swShWorkflowService.ClearMemoryCaches(clearReusableDataCaches);
+        svWorkflowService.ClearMemoryCaches(clearReusableDataCaches);
+        zaWorkflowService.ClearMemoryCaches(clearReusableDataCaches);
     }
 
     private static bool IsWorkflowCacheBoundary(string? command)

@@ -76,6 +76,7 @@ export function createMockDesktopServices(overrides: Partial<DesktopServices> = 
     openPath: async () => undefined,
     pickFile: async () => null,
     pickFolder: async () => null,
+    recycleProjectBridge: async () => undefined,
     relaunchApp: async () => undefined,
     setCloseGuardEnabled: async () => undefined,
     ...overrides

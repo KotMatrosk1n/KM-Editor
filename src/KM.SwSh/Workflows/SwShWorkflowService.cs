@@ -70,6 +70,7 @@ public sealed class SwShWorkflowService
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly SwShParsedDataCache parsedDataCache;
 
     public SwShWorkflowService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -107,13 +108,13 @@ public sealed class SwShWorkflowService
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShParsedDataCache? parsedDataCache = null)
     {
-        var sharedParsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
+        this.parsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SwShPokemonWorkflowService();
         this.movesWorkflowService = movesWorkflowService ?? new SwShMovesWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
-        this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(sharedParsedDataCache);
+        this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(this.parsedDataCache);
         this.bagHookWorkflowService = bagHookWorkflowService ?? new SwShBagHookWorkflowService(this.itemsWorkflowService);
         this.catchCapWorkflowService = catchCapWorkflowService ?? new SwShCatchCapWorkflowService();
         this.hyperTrainingWorkflowService = hyperTrainingWorkflowService ?? new SwShHyperTrainingWorkflowService();
@@ -216,10 +217,14 @@ public sealed class SwShWorkflowService
 
     public SwShPokemonWorkflowService SharedPokemonWorkflowService => pokemonWorkflowService;
 
-    public void ClearMemoryCaches()
+    public void ClearMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
+        if (clearReusableDataCaches)
+        {
+            parsedDataCache.Clear();
+        }
     }
 
     public SwShMovesWorkflow LoadMoves(ProjectPaths paths)

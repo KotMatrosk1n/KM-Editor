@@ -109,7 +109,7 @@ public sealed class SvCacheManagerTests
     }
 
     [Fact]
-    public void OutputRootChangesInvalidateCompletedProjectCache()
+    public void OutputRootChangesDoNotInvalidateBaseProjectCache()
     {
         using var temp = TemporaryFolder.Create();
         WriteSyntheticArchive(
@@ -127,10 +127,112 @@ public sealed class SvCacheManagerTests
         File.WriteAllText(Path.Combine(temp.OutputRootPath, "romfs_override.bin"), "changed");
         var changedStatus = cache.GetStatus(paths);
 
-        Assert.Equal(0, changedStatus.WarmupCompleted);
-        Assert.True(changedStatus.WarmupTotal > 0);
-        Assert.Equal(0, changedStatus.CacheSizeBytes);
-        Assert.Equal(0, CountProjectCacheDirectories(temp));
+        Assert.Equal(1, changedStatus.WarmupCompleted);
+        Assert.True(changedStatus.CacheSizeBytes > 0);
+        Assert.Equal(1, CountProjectCacheDirectories(temp));
+        Assert.Single(Directory.EnumerateFiles(temp.CacheRootPath, "index.json", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void BaseCacheReadsDoNotScanTheOutputRoot()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x41])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet) with
+        {
+            OutputRootPath = "invalid\0output-root",
+        };
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Balanced, 512L * 1024 * 1024, paths);
+
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+        var status = cache.GetStatus(paths);
+        var bytes = cache.ReadBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]);
+
+        Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.Equal(1, status.WarmupCompleted);
+        Assert.Equal([0x41], bytes);
+        Assert.True(cache.ContainsBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]));
+    }
+
+    [Fact]
+    public void SourceManifestCleansObsoleteCacheWithoutReadingItsIndex()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x42])]);
+        var paths = temp.CreatePaths(ProjectGame.Violet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        Assert.Equal(1, cache.WarmupStep(paths, stepIndex: 0).WarmupCompleted);
+
+        var oldProjectDirectory = Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")).Single();
+        Assert.True(File.Exists(Path.Combine(oldProjectDirectory, "source.json")));
+        File.WriteAllText(Path.Combine(oldProjectDirectory, "index.json"), "{ invalid large index }");
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x42, 0x43])]);
+
+        var refreshed = new SvCacheManager(temp.CacheRootPath).WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(1, refreshed.WarmupCompleted);
+        Assert.False(Directory.Exists(oldProjectDirectory));
+        Assert.Single(Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")));
+    }
+
+    [Fact]
+    public void StatusUsesSmallWarmupManifestWithoutReadingTheFullIndex()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x44])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Balanced, 512L * 1024 * 1024, paths);
+        Assert.Equal(1, cache.WarmupStep(paths, stepIndex: 0).WarmupCompleted);
+
+        var indexPath = Directory.EnumerateFiles(temp.CacheRootPath, "index.json", SearchOption.AllDirectories).Single();
+        Assert.Single(Directory.EnumerateFiles(temp.CacheRootPath, "warmup-paths.json", SearchOption.AllDirectories));
+        File.WriteAllText(indexPath, "{ invalid index that status must not deserialize }");
+
+        var status = new SvCacheManager(temp.CacheRootPath).GetStatus(paths);
+
+        Assert.Equal(1, status.WarmupCompleted);
+        Assert.Equal(1, status.WarmupTotal);
+    }
+
+    [Fact]
+    public void ChangingOnlyCompressionRuntimeSupersedesTheSameBaseDumpCache()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x45])]);
+        var firstSupport = Directory.CreateDirectory(Path.Combine(temp.RootPath, "support-a")).FullName;
+        var secondSupport = Directory.CreateDirectory(Path.Combine(temp.RootPath, "support-b")).FullName;
+        File.WriteAllText(Path.Combine(firstSupport, SvCompressionRuntime.RequiredFileName), "first");
+        File.WriteAllText(Path.Combine(secondSupport, SvCompressionRuntime.RequiredFileName), "second");
+        var firstPaths = temp.CreatePaths(ProjectGame.Scarlet) with
+        {
+            ScarletVioletSupportFolderPath = firstSupport,
+        };
+        var secondPaths = firstPaths with
+        {
+            ScarletVioletSupportFolderPath = secondSupport,
+        };
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Balanced, 512L * 1024 * 1024, firstPaths);
+        cache.WarmupStep(firstPaths, stepIndex: 0);
+        var oldProjectDirectory = Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")).Single();
+
+        new SvCacheManager(temp.CacheRootPath).WarmupStep(secondPaths, stepIndex: 0);
+
+        Assert.False(Directory.Exists(oldProjectDirectory));
+        Assert.Single(Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")));
     }
 
     [Fact]
@@ -232,7 +334,7 @@ public sealed class SvCacheManagerTests
     public void PerformanceWarmupBatchesTextPayloads()
     {
         using var temp = TemporaryFolder.Create();
-        var entries = Enumerable.Range(0, 5)
+        var entries = Enumerable.Range(0, 12)
             .Select(index => (
                 PackName: $"arc/messagedatEnglishscriptcommon_{index:0000}.trpak",
                 VirtualPath: $"message/dat/English/script/common_{index:0000}.dat",
@@ -245,12 +347,229 @@ public sealed class SvCacheManagerTests
         cache.UpdateSettings(SvCacheMode.Performance, 2L * 1024 * 1024 * 1024, paths);
         var warmup = cache.WarmupStep(paths, stepIndex: 0);
 
-        Assert.Equal(entries.Length, warmup.WarmupCompleted);
+        Assert.InRange(warmup.WarmupCompleted, 1, 8);
         Assert.Equal(entries.Length, warmup.WarmupTotal);
         foreach (var entry in entries)
         {
             Assert.Equal(entry.Bytes, cache.ReadBaseTrinityFile(paths, entry.VirtualPath));
         }
+    }
+
+    [Fact]
+    public void MinimalModeRetainsOneIndexUntilMemoryCacheIsCleared()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x61])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Minimal, 512L * 1024 * 1024, paths);
+
+        Assert.True(cache.ContainsBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]));
+        Assert.Contains(SvCacheManager.WarmupVirtualPaths[0], cache.GetWarmupVirtualPaths(paths));
+        Assert.True(cache.HasRetainedIndex);
+        Assert.Empty(Directory.EnumerateFiles(temp.CacheRootPath, "index.json", SearchOption.AllDirectories));
+
+        cache.ClearMemoryCache();
+
+        Assert.False(cache.HasRetainedIndex);
+    }
+
+    [Fact]
+    public void RepeatedIndexLookupsReuseBoundedDerivedCaches()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x64])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Minimal, 512L * 1024 * 1024, paths);
+
+        Assert.True(cache.ContainsBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]));
+        Assert.False(cache.ContainsBaseTrinityFile(paths, "missing/file.bin"));
+        var firstPackNames = cache.ListBaseTrinityPackNames(paths);
+
+        Assert.Same(firstPackNames, cache.ListBaseTrinityPackNames(paths));
+
+        cache.ClearMemoryCache();
+        var reloadedPackNames = cache.ListBaseTrinityPackNames(paths);
+
+        Assert.NotSame(firstPackNames, reloadedPackNames);
+        Assert.Single(reloadedPackNames);
+    }
+
+    [Fact]
+    public void OutputMutationBoundaryKeepsReusableIndexWarm()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x63])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        var workflows = new SvWorkflowService(cacheManager: cache);
+
+        Assert.True(cache.ContainsBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]));
+
+        workflows.ClearMemoryCaches(clearReusableDataCaches: false);
+        Assert.True(cache.HasRetainedIndex);
+
+        workflows.ClearMemoryCaches();
+        Assert.False(cache.HasRetainedIndex);
+    }
+
+    [Fact]
+    public void PruneEnforcesLimitInsideActiveProject()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x62])]);
+        var paths = temp.CreatePaths(ProjectGame.Violet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        cache.WarmupStep(paths, stepIndex: 0);
+
+        var projectDirectory = Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")).Single();
+        var payloadDirectory = Directory.CreateDirectory(Path.Combine(projectDirectory, "payloads")).FullName;
+        var payloadPath = Path.Combine(payloadDirectory, "oldest.bin");
+        using (var payload = File.Create(payloadPath))
+        {
+            payload.SetLength(140L * 1024 * 1024);
+        }
+        File.WriteAllText(Path.ChangeExtension(payloadPath, ".json"), "{}");
+
+        var settings = cache.UpdateSettings(SvCacheMode.Balanced, 128L * 1024 * 1024, paths);
+
+        Assert.False(File.Exists(payloadPath));
+        Assert.True(cache.GetStatus(paths).CacheSizeBytes <= settings.MaxCacheSizeBytes);
+    }
+
+    [Fact]
+    public void GetStatusPrunesOversizedPersistentCacheButDoesNotCountTransientWrites()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x65])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        var settings = cache.UpdateSettings(SvCacheMode.Balanced, 128L * 1024 * 1024, paths);
+        cache.WarmupStep(paths, stepIndex: 0);
+
+        var projectDirectory = Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")).Single();
+        var oversizedPath = Path.Combine(projectDirectory, "startup-resident.bin");
+        using (var oversized = File.Create(oversizedPath))
+        {
+            oversized.SetLength(140L * 1024 * 1024);
+        }
+
+        var tempDirectory = Directory.CreateDirectory(Path.Combine(temp.CacheRootPath, "tmp")).FullName;
+        var transientPath = Path.Combine(tempDirectory, "active-write.tmp");
+        using (var transient = File.Create(transientPath))
+        {
+            transient.SetLength(140L * 1024 * 1024);
+        }
+
+        var status = new SvCacheManager(temp.CacheRootPath).GetStatus(paths);
+
+        Assert.False(File.Exists(oversizedPath));
+        Assert.True(File.Exists(transientPath));
+        Assert.True(status.CacheSizeBytes <= settings.MaxCacheSizeBytes);
+    }
+
+    [Fact]
+    public void CapacityLimitedWarmupBecomesReadyAndMissingPayloadsStillLoadOnDemand()
+    {
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x66])]);
+        var paths = temp.CreatePaths(ProjectGame.Violet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Performance, 128L * 1024 * 1024, paths);
+        cache.GetWarmupVirtualPaths(paths);
+
+        var projectDirectory = Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")).Single();
+        using (var resident = File.Create(Path.Combine(projectDirectory, "resident.bin")))
+        {
+            resident.SetLength(140L * 1024 * 1024);
+        }
+
+        cache = new SvCacheManager(temp.CacheRootPath);
+        var limited = cache.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(limited.WarmupTotal, limited.WarmupCompleted);
+        Assert.Equal(100, limited.ProgressPercent);
+        Assert.Equal("Cache ready", limited.Phase);
+        Assert.Single(Directory.EnumerateFiles(temp.CacheRootPath, "warmup-state.json", SearchOption.AllDirectories));
+
+        var restarted = new SvCacheManager(temp.CacheRootPath);
+        var resumed = restarted.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(resumed.WarmupTotal, resumed.WarmupCompleted);
+        Assert.Empty(Directory.EnumerateFiles(temp.CacheRootPath, "index.json", SearchOption.AllDirectories));
+        Assert.Equal([0x66], restarted.ReadBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]));
+
+        restarted.UpdateSettings(SvCacheMode.Performance, 512L * 1024 * 1024, paths);
+        var expanded = restarted.WarmupStep(paths, stepIndex: 0);
+
+        Assert.Equal(expanded.WarmupTotal, expanded.WarmupCompleted);
+        Assert.Empty(Directory.EnumerateFiles(temp.CacheRootPath, "warmup-state.json", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void StartupRemovesOrphanedAtomicWriteFiles()
+    {
+        using var temp = TemporaryFolder.Create();
+        var tempDirectory = Directory.CreateDirectory(Path.Combine(temp.CacheRootPath, "tmp")).FullName;
+        var orphanPath = Path.Combine(tempDirectory, "orphan.tmp");
+        File.WriteAllText(orphanPath, "incomplete");
+        File.SetLastWriteTimeUtc(orphanPath, DateTime.UtcNow - TimeSpan.FromHours(1));
+
+        _ = new SvCacheManager(temp.CacheRootPath).GetSettings();
+
+        Assert.False(File.Exists(orphanPath));
+    }
+
+    [Fact]
+    public void PruneDoesNotBlockEditingWhenAStaleCacheFileIsTemporarilyLocked()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var temp = TemporaryFolder.Create();
+        WriteSyntheticArchive(
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x63])]);
+        var paths = temp.CreatePaths(ProjectGame.Violet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
+        cache.UpdateSettings(SvCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        cache.WarmupStep(paths, stepIndex: 0);
+
+        var projectDirectory = Directory.GetDirectories(Path.Combine(temp.CacheRootPath, "projects")).Single();
+        var payloadDirectory = Directory.CreateDirectory(Path.Combine(projectDirectory, "payloads")).FullName;
+        var payloadPath = Path.Combine(payloadDirectory, "locked.bin");
+        using (var payload = new FileStream(payloadPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+        {
+            payload.SetLength(140L * 1024 * 1024);
+            File.WriteAllText(Path.ChangeExtension(payloadPath, ".json"), "{}");
+
+            var exception = Record.Exception(
+                () => cache.UpdateSettings(SvCacheMode.Balanced, 128L * 1024 * 1024, paths));
+
+            Assert.Null(exception);
+            Assert.True(File.Exists(payloadPath));
+        }
+
+        var settings = cache.UpdateSettings(SvCacheMode.Balanced, 128L * 1024 * 1024, paths);
+
+        Assert.False(File.Exists(payloadPath));
+        Assert.True(cache.GetStatus(paths).CacheSizeBytes <= settings.MaxCacheSizeBytes);
     }
 
     private static int IndexOf(IReadOnlyList<string> paths, string virtualPath)

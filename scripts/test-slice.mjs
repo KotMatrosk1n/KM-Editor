@@ -45,6 +45,7 @@ const commandKeys = new Set();
 
 const dotnetLogger = '--logger "console;verbosity=minimal"';
 const appTimeout = '--testTimeout=30000';
+const tauriRustTests = 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-tauri-rust-tests.ps1';
 const swshHookFilters = Object.freeze({
   royalAll: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
   royalCleanup: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName~Cleanup',
@@ -98,7 +99,7 @@ const zaFeatureFilters = new Map([
   ['Encounters', 'PokemonLegendsZAWildEncountersEditWritesTrinityEncountDataTable'],
   [
     'EvolutionItems',
-    'PokemonLegendsZAEvolutionItemsUseEligibleItemIds|PokemonLegendsZAEvolutionItemAllocationUsesOnlyApprovedPriorityTiers|PokemonLegendsZAEvolutionItemAllocationProtectsActivePersonalParameters|PokemonLegendsZAEvolutionItemAllocationFailsClosedWithoutReadablePersonalData|PokemonLegendsZAEvolutionItemBatchAllocationSortsByItemId|PokemonLegendsZAEvolutionItemConversionRejectsExistingDirectUseEffects|PokemonLegendsZAEvolutionItemConversionRejectsPendingDirectUseEffects|PokemonLegendsZAItemEditWritesTrinityItemTable|PokemonLegendsZADisablingEvolutionItemRetainsItsAllocatedMapping|PokemonLegendsZAEvolutionItemCapacityFailurePlansNoWrites|PokemonLegendsZAMalformedEvolutionItemTablePlansNoWrites|PokemonLegendsZAHeldItemEvolutionsUseItemIds|PokemonLegendsZAReservedParameter50DisplaysHistoricalRazorFang|PokemonLegendsZAConversionBackedUseItemMethodsRoundTripThroughConversionTable|PokemonLegendsZALegacyRawEvolutionItemArgumentsAreMigrated',
+    'PokemonLegendsZAEvolutionItemsUseEligibleItemIds|PokemonLegendsZAEvolutionItemAllocationUsesOnlyApprovedPriorityTiers|PokemonLegendsZAEvolutionItemAllocationProtectsActivePersonalParameters|PokemonLegendsZAEvolutionItemAllocationFailsClosedWithoutReadablePersonalData|PokemonLegendsZAEvolutionItemBatchAllocationSortsByItemId|PokemonLegendsZAEvolutionItemConversionRejectsExistingDirectUseEffects|PokemonLegendsZAEvolutionItemConversionRejectsPendingDirectUseEffects|PokemonLegendsZAItemEditWritesTrinityItemTable|PokemonLegendsZALegacyMintSentinelOutputIsRecoveredBeforeItemApply|PokemonLegendsZAPartialLegacyMintSentinelPatternFailsClosed|PokemonLegendsZADisablingEvolutionItemRetainsItsAllocatedMapping|PokemonLegendsZAEvolutionItemCapacityFailurePlansNoWrites|PokemonLegendsZAMalformedEvolutionItemTablePlansNoWrites|PokemonLegendsZAHeldItemEvolutionsUseItemIds|PokemonLegendsZAReservedParameter50DisplaysHistoricalRazorFang|PokemonLegendsZAConversionBackedUseItemMethodsRoundTripThroughConversionTable|PokemonLegendsZALegacyRawEvolutionItemArgumentsAreMigrated',
   ],
   ['ExeFs', 'PokemonLegendsZATypeChart'],
   ['GameDump', 'PokemonLegendsZAGameDumpWritesImplementedCategoryFiles'],
@@ -108,7 +109,7 @@ const zaFeatureFilters = new Map([
   ],
   [
     'Items',
-    'PokemonLegendsZAProjectLoadsItemData|PokemonLegendsZAItemEditWritesTrinityItemTable|PokemonLegendsZAEvolutionItemAllocationUsesOnlyApprovedPriorityTiers|PokemonLegendsZAEvolutionItemAllocationProtectsActivePersonalParameters|PokemonLegendsZAEvolutionItemAllocationFailsClosedWithoutReadablePersonalData|PokemonLegendsZAEvolutionItemBatchAllocationSortsByItemId|PokemonLegendsZAEvolutionItemConversionRejectsExistingDirectUseEffects|PokemonLegendsZAEvolutionItemConversionRejectsPendingDirectUseEffects|PokemonLegendsZADisablingEvolutionItemRetainsItsAllocatedMapping|PokemonLegendsZAEvolutionItemCapacityFailurePlansNoWrites|PokemonLegendsZAMalformedEvolutionItemTablePlansNoWrites',
+    'PokemonLegendsZAProjectLoadsItemData|PokemonLegendsZAItemEditWritesTrinityItemTable|PokemonLegendsZALegacyMintSentinelOutputIsRecoveredBeforeItemApply|PokemonLegendsZAPartialLegacyMintSentinelPatternFailsClosed|PokemonLegendsZAEvolutionItemAllocationUsesOnlyApprovedPriorityTiers|PokemonLegendsZAEvolutionItemAllocationProtectsActivePersonalParameters|PokemonLegendsZAEvolutionItemAllocationFailsClosedWithoutReadablePersonalData|PokemonLegendsZAEvolutionItemBatchAllocationSortsByItemId|PokemonLegendsZAEvolutionItemConversionRejectsExistingDirectUseEffects|PokemonLegendsZAEvolutionItemConversionRejectsPendingDirectUseEffects|PokemonLegendsZADisablingEvolutionItemRetainsItsAllocatedMapping|PokemonLegendsZAEvolutionItemCapacityFailurePlansNoWrites|PokemonLegendsZAMalformedEvolutionItemTablePlansNoWrites',
   ],
   ['ModMerger', 'PokemonLegendsZAModMergerStagesAndAppliesTrinityRomFsMods'],
   ['Moves', 'PokemonLegendsZAProjectLoadsMoveData|PokemonLegendsZAMoveEditWritesTrinityMoveTable'],
@@ -158,7 +159,7 @@ const ignoredPrefixes = [
 const ignoredExact = new Set([
   'KM_Editor_Handoff.md',
 ]);
-const ignoredExtensions = new Set(['.docx', '.pdf']);
+const ignoredExtensions = new Set(['.docx', '.pdf', '.pyc']);
 
 if (!['changed', 'fast', 'full', 'shard'].includes(modeArg)) {
   console.error(`Unknown test slice "${modeArg}". Use changed, fast, full, or shard.`);
@@ -243,6 +244,7 @@ function addFullCommands() {
   addParallel('full-tests', 'Run full validation shards', [
     { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
     { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
+    { label: 'Run native desktop Rust tests', command: tauriRustTests },
     { label: 'Run core backend tests', command: dotnetProject('tests/KM.Core.Tests/KM.Core.Tests.csproj', '', { noBuild: true }) },
     { label: 'Run format backend tests', command: dotnetProject('tests/KM.Formats.Tests/KM.Formats.Tests.csproj', '', { noBuild: true }) },
     {
@@ -302,6 +304,7 @@ function addShardCommands(shard) {
     addParallel('desktop-shard', 'Run desktop validation', [
       { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
       { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
+      { label: 'Run native desktop Rust tests', command: tauriRustTests },
     ]);
     return;
   }
@@ -450,6 +453,11 @@ function addChangedCommands() {
 }
 
 function mapChangedFile(file) {
+  if (file === 'scripts/run-tauri-rust-tests.ps1') {
+    add('tauri-rust-tests', 'Run native desktop Rust tests', tauriRustTests);
+    return;
+  }
+
   if (file === 'package.json' || file === 'pnpm-lock.yaml') {
     addFastCommands();
     return;
@@ -525,6 +533,7 @@ function mapDesktopChange(file) {
 
   if (file.startsWith('apps/desktop/src-tauri/')) {
     add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
+    add('tauri-rust-tests', 'Run native desktop Rust tests', tauriRustTests);
     return;
   }
 
@@ -544,6 +553,12 @@ function mapDesktopChange(file) {
 
   if (file === 'apps/desktop/src/App.tsx' || file.startsWith('apps/desktop/src/testSupport/')) {
     add('desktop-app-tests', 'Run App regression tests after shell or shared fixture changes', `pnpm --dir apps/desktop test:run src/App.test.tsx ${appTimeout}`);
+    return;
+  }
+
+  const nearbyTest = nearbyDesktopTest(file);
+  if (nearbyTest) {
+    add(`desktop-test:${nearbyTest}`, `Run nearby desktop test ${nearbyTest}`, `pnpm --dir apps/desktop test:run ${nearbyTest} ${appTimeout}`);
     return;
   }
 
