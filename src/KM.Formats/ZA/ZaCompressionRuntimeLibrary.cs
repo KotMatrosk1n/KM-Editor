@@ -6,11 +6,11 @@ namespace KM.Formats.ZA;
 
 public sealed class ZaCompressionRuntimeLibrary : IDisposable
 {
-    private readonly nint libraryHandle;
+    private readonly NativeLibrarySafeHandle libraryHandle;
     private readonly RuntimeDecompress decompress;
     private bool disposed;
 
-    private ZaCompressionRuntimeLibrary(nint libraryHandle, RuntimeDecompress decompress)
+    private ZaCompressionRuntimeLibrary(NativeLibrarySafeHandle libraryHandle, RuntimeDecompress decompress)
     {
         this.libraryHandle = libraryHandle;
         this.decompress = decompress;
@@ -19,17 +19,27 @@ public sealed class ZaCompressionRuntimeLibrary : IDisposable
     public static ZaCompressionRuntimeLibrary LoadFromFolder(string? supportFolderPath)
     {
         var libraryPath = ZaCompressionRuntime.ResolveRequiredFilePath(supportFolderPath);
-        var libraryHandle = NativeLibrary.Load(libraryPath);
+        var rawLibraryHandle = NativeLibrary.Load(libraryPath);
+        NativeLibrarySafeHandle? libraryHandle = null;
 
         try
         {
-            var export = NativeLibrary.GetExport(libraryHandle, string.Concat("Oodle", "LZ_Decompress"));
+            libraryHandle = new NativeLibrarySafeHandle(rawLibraryHandle);
+            var export = NativeLibrary.GetExport(libraryHandle.DangerousGetHandle(), string.Concat("Oodle", "LZ_Decompress"));
             var decompress = Marshal.GetDelegateForFunctionPointer<RuntimeDecompress>(export);
             return new ZaCompressionRuntimeLibrary(libraryHandle, decompress);
         }
         catch
         {
-            NativeLibrary.Free(libraryHandle);
+            if (libraryHandle is null)
+            {
+                NativeLibrary.Free(rawLibraryHandle);
+            }
+            else
+            {
+                libraryHandle.Dispose();
+            }
+
             throw;
         }
     }
@@ -39,11 +49,15 @@ public sealed class ZaCompressionRuntimeLibrary : IDisposable
         ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(decompressedSize);
 
-        var input = Marshal.AllocHGlobal(compressedData.Length);
-        var output = Marshal.AllocHGlobal(decompressedSize);
+        nint input = 0;
+        nint output = 0;
+        var libraryReferenceAdded = false;
 
         try
         {
+            libraryHandle.DangerousAddRef(ref libraryReferenceAdded);
+            input = Marshal.AllocHGlobal(compressedData.Length);
+            output = Marshal.AllocHGlobal(decompressedSize);
             Marshal.Copy(compressedData.ToArray(), 0, input, compressedData.Length);
             var written = decompress(
                 input,
@@ -73,8 +87,20 @@ public sealed class ZaCompressionRuntimeLibrary : IDisposable
         }
         finally
         {
-            Marshal.FreeHGlobal(input);
-            Marshal.FreeHGlobal(output);
+            if (input != 0)
+            {
+                Marshal.FreeHGlobal(input);
+            }
+
+            if (output != 0)
+            {
+                Marshal.FreeHGlobal(output);
+            }
+
+            if (libraryReferenceAdded)
+            {
+                libraryHandle.DangerousRelease();
+            }
         }
     }
 
@@ -85,8 +111,25 @@ public sealed class ZaCompressionRuntimeLibrary : IDisposable
             return;
         }
 
-        NativeLibrary.Free(libraryHandle);
+        libraryHandle.Dispose();
         disposed = true;
+    }
+
+    private sealed class NativeLibrarySafeHandle : SafeHandle
+    {
+        public NativeLibrarySafeHandle(nint libraryHandle)
+            : base(nint.Zero, ownsHandle: true)
+        {
+            SetHandle(libraryHandle);
+        }
+
+        public override bool IsInvalid => handle == nint.Zero;
+
+        protected override bool ReleaseHandle()
+        {
+            NativeLibrary.Free(handle);
+            return true;
+        }
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

@@ -20,9 +20,6 @@
     "test:workflow": "playwright test"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.4.0",
-    "@tanstack/react-query": "^5.101.0",
-    "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.2",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "2.7.1",
@@ -32,8 +29,6 @@
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-hook-form": "^7.77.0",
-    "react-resizable-panels": "^4.11.2",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },

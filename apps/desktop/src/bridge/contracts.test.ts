@@ -70,10 +70,6 @@ import {
   updatePokemonLearnsetResponseSchema,
   updateMoveFieldRequestSchema,
   updateMoveFieldResponseSchema,
-  updateEncounterSlotFieldRequestSchema,
-  updateEncounterSlotFieldResponseSchema,
-  updatePlacementObjectFieldRequestSchema,
-  updatePlacementObjectFieldResponseSchema,
   updateShopInventoryItemRequestSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryRequestSchema,
@@ -2146,18 +2142,6 @@ describe('bridge contracts', () => {
     const updateShopResponseSchema = createBridgeResponseSchema(
       updateShopInventoryItemResponseSchema
     );
-    const updateEncounterRequestSchema = createBridgeRequestSchema(
-      updateEncounterSlotFieldRequestSchema
-    );
-    const updateEncounterResponseSchema = createBridgeResponseSchema(
-      updateEncounterSlotFieldResponseSchema
-    );
-    const updatePlacementRequestSchema = createBridgeRequestSchema(
-      updatePlacementObjectFieldRequestSchema
-    );
-    const updatePlacementResponseSchema = createBridgeResponseSchema(
-      updatePlacementObjectFieldResponseSchema
-    );
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -3008,149 +2992,6 @@ describe('bridge contracts', () => {
         label: 'Shops'
       }
     } as const;
-    const encounterSession = {
-      hasPendingChanges: true,
-      pendingEdits: [
-        {
-          domain: 'workflow.encounters',
-          field: 'probability',
-          newValue: '40',
-          recordId: 'sword:symbol:0:1122334455667788:0#2',
-          sources: [
-            {
-              layer: 'base',
-              relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
-            }
-          ],
-          summary:
-            'Set Sword Symbol Zone 0x1122334455667788 Normal slot 2 probability to 40.'
-        }
-      ],
-      sessionId: 'session-1'
-    } as const;
-    const encountersWorkflow = {
-      diagnostics: [],
-      editableFields: [
-        {
-          field: 'probability',
-          label: 'Probability',
-          maximumValue: 100,
-          minimumValue: 0,
-          valueKind: 'integer'
-        }
-      ],
-      stats: {
-        sourceFileCount: 1,
-        totalSlotCount: 1,
-        totalTableCount: 1
-      },
-      summary: {
-        availability: 'available',
-        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
-        diagnostics: [],
-        id: 'encounters',
-        label: 'Encounters and Wild Data'
-      },
-      tables: [
-        {
-          archiveMember: 'encount_symbol_k.bin',
-          area: 'Symbol',
-          encounterType: 'Normal',
-          gameVersion: 'Sword',
-          location: 'Zone 0x1122334455667788',
-          provenance: {
-            fileState: 'baseOnly',
-            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
-            sourceLayer: 'base'
-          },
-          slots: [
-            {
-              form: 1,
-              levelMax: 8,
-              levelMin: 3,
-              slot: 2,
-              speciesId: 4,
-              species: 'Charmander',
-              timeOfDay: null,
-              weather: 'Normal',
-              weight: 40
-            }
-          ],
-          tableId: 'sword:symbol:0:1122334455667788:0'
-        }
-      ]
-    } as const;
-    const placementSession = {
-      hasPendingChanges: true,
-      pendingEdits: [
-        {
-          domain: 'workflow.placement',
-          field: 'quantity',
-          newValue: '5',
-          recordId: 'a_test.bin|0|fieldItem|0|-',
-          sources: [
-            {
-              layer: 'base',
-              relativePath: 'romfs/bin/archive/field/resident/placement.gfpak'
-            }
-          ],
-          summary: 'Set Field item: Potion Quantity -> 5'
-        }
-      ],
-      sessionId: 'session-1'
-    } as const;
-    const placementWorkflow = {
-      diagnostics: [],
-      editableFields: [
-        {
-          field: 'quantity',
-          label: 'Quantity',
-          maximumValue: 999,
-          minimumValue: 0,
-          valueKind: 'integer'
-        }
-      ],
-      objects: [
-        {
-          archiveMember: 'a_test.bin',
-          chance: null,
-          chanceIndex: null,
-          itemHash: '0xAABBCCDD00112233',
-          itemId: 1,
-          itemName: 'Potion',
-          label: 'Field item: Potion',
-          map: 'Route 1',
-          objectId: 'a_test.bin|0|fieldItem|0|-',
-          objectIndex: 0,
-          objectType: 'FieldItem',
-          provenance: {
-            fileState: 'baseOnly',
-            sourceFile: 'romfs/bin/archive/field/resident/placement.gfpak',
-            sourceLayer: 'base'
-          },
-          quantity: 5,
-          rotationY: 90,
-          scriptId: 'visible_potion',
-          x: 10.5,
-          y: 0,
-          zoneIndex: 0,
-          z: -4.25
-        }
-      ],
-      stats: {
-        sourceFileCount: 3,
-        totalAreaCount: 1,
-        totalObjectCount: 1
-      },
-      summary: {
-        availability: 'available',
-        description: 'Placed objects, map coordinates, item pickups, and source provenance.',
-        diagnostics: [],
-        id: 'placement',
-        label: 'Placement'
-      }
-    } as const;
-
     expect(
       startRequestSchema.safeParse({
         command: kmCommandNames.startEditSession,
@@ -3479,63 +3320,6 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: shopSession,
           workflow: shopsWorkflow
-        }
-      }).success
-    ).toBe(true);
-
-    expect(
-      updateEncounterRequestSchema.safeParse({
-        command: kmCommandNames.updateEncounterSlotField,
-        payload: {
-          field: 'probability',
-          paths: {
-            baseExeFsPath: 'base-exefs',
-            baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output',
-            saveFilePath: null
-          },
-          session: editSession,
-          slot: 2,
-          tableId: 'sword:symbol:0:1122334455667788:0',
-          value: '40'
-        }
-      }).success
-    ).toBe(true);
-
-    expect(
-      updateEncounterResponseSchema.safeParse({
-        payload: {
-          diagnostics: [],
-          session: encounterSession,
-          workflow: encountersWorkflow
-        }
-      }).success
-    ).toBe(true);
-
-    expect(
-      updatePlacementRequestSchema.safeParse({
-        command: kmCommandNames.updatePlacementObjectField,
-        payload: {
-          field: 'quantity',
-          objectId: 'a_test.bin|0|fieldItem|0|-',
-          paths: {
-            baseExeFsPath: 'base-exefs',
-            baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output',
-            saveFilePath: null
-          },
-          session: editSession,
-          value: '5'
-        }
-      }).success
-    ).toBe(true);
-
-    expect(
-      updatePlacementResponseSchema.safeParse({
-        payload: {
-          diagnostics: [],
-          session: placementSession,
-          workflow: placementWorkflow
         }
       }).success
     ).toBe(true);

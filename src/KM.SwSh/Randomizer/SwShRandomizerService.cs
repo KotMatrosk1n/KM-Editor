@@ -1544,7 +1544,8 @@ public sealed class SwShRandomizerService
 
     private static IEnumerable<ItemCandidate> CreateItemPool(IEnumerable<SwShItemRecord> items, bool royalCandyInstalled)
     {
-        var strictPool = items
+        var materializedItems = items as IReadOnlyCollection<SwShItemRecord> ?? items.ToArray();
+        var strictPool = materializedItems
             .Where(item => IsSafeItemCandidate(item, royalCandyInstalled, strict: true))
             .Select(item => new ItemCandidate(item.ItemId, Source(item.Provenance)))
             .OrderBy(item => item.ItemId)
@@ -1554,7 +1555,7 @@ public sealed class SwShRandomizerService
             return strictPool;
         }
 
-        return items
+        return materializedItems
             .Where(item => IsSafeItemCandidate(item, royalCandyInstalled, strict: false))
             .Select(item => new ItemCandidate(item.ItemId, Source(item.Provenance)))
             .OrderBy(item => item.ItemId)
@@ -1857,10 +1858,7 @@ public sealed class SwShRandomizerService
     private static bool IsPathInsideRoot(string outputRoot, string targetPath)
     {
         var relativePath = Path.GetRelativePath(outputRoot, targetPath);
-        return !Path.IsPathRooted(relativePath)
-            && !string.Equals(relativePath, "..", StringComparison.Ordinal)
-            && !relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            && !relativePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+        return PathContainment.IsWithinRoot(relativePath);
     }
 
     private static string NormalizeRelativePath(string? relativePath)

@@ -27,7 +27,7 @@ public sealed class ByteBudgetLruCacheTests
     }
 
     [Fact]
-    public void SetRetainsOneOversizedCurrentValue()
+    public void SetDoesNotRetainAValueLargerThanTheBudget()
     {
         var cache = new ByteBudgetLruCache<int, byte[]>(maxRetainedBytes: 4);
         cache.Set(1, [0x01, 0x02], retainedBytes: 2);
@@ -35,9 +35,9 @@ public sealed class ByteBudgetLruCacheTests
         cache.Set(2, new byte[8], retainedBytes: 8);
 
         Assert.Equal(1, cache.Count);
-        Assert.Equal(8, cache.RetainedBytes);
-        Assert.False(cache.TryGetValue(1, out _));
-        Assert.True(cache.TryGetValue(2, out _));
+        Assert.Equal(2, cache.RetainedBytes);
+        Assert.True(cache.TryGetValue(1, out _));
+        Assert.False(cache.TryGetValue(2, out _));
     }
 
     [Fact]

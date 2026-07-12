@@ -20,6 +20,14 @@ public sealed class SvTextWorkflowService
     public const int DefaultQueryLimit = 500;
     public const int MaximumQueryLimit = 1000;
 
+    private static readonly EnumerationOptions RecursiveEnumeration = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = false,
+        RecurseSubdirectories = true,
+        ReturnSpecialDirectories = false,
+    };
+
     private static readonly IReadOnlyList<SvTextEditableField> EditableFields =
     [
         new SvTextEditableField(TextValueField, "Text value", "multilineText", 0, MaximumTextLength),
@@ -404,7 +412,7 @@ public sealed class SvTextWorkflowService
             return;
         }
 
-        foreach (var filePath in Directory.EnumerateFiles(messageRoot, "*.dat", SearchOption.AllDirectories))
+        foreach (var filePath in Directory.EnumerateFiles(messageRoot, "*.dat", RecursiveEnumeration))
         {
             var relativeToRoot = Path.GetRelativePath(romFsRootPath, filePath)
                 .Replace(Path.DirectorySeparatorChar, '/')

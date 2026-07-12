@@ -215,7 +215,7 @@ internal sealed class ZaWorkflowFileSource
         var outputRoot = Path.GetFullPath(paths.OutputRootPath);
         var targetPath = Path.GetFullPath(Path.Combine(outputRoot, targetRelativePath));
         var pathFromOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
-        if (pathFromOutputRoot.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(pathFromOutputRoot))
+        if (PathContainment.IsOutsideRoot(pathFromOutputRoot))
         {
             throw new InvalidOperationException($"Pokemon Legends Z-A target path '{targetRelativePath}' escapes the output root.");
         }

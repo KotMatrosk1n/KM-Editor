@@ -14,7 +14,6 @@ namespace KM.SV.Placement;
 
 internal sealed class SvPlacementEditSessionService
 {
-    private const string WorkflowName = "Placement";
     private const int AlcremieSpeciesId = (int)global::pml.common.DevID.DEV_MAHOIPPU;
 
     private readonly ProjectWorkspaceService projectWorkspaceService;

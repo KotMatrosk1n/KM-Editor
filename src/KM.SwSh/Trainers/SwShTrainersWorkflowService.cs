@@ -583,8 +583,7 @@ public sealed class SwShTrainersWorkflowService
         var targetPath = Path.GetFullPath(Path.Combine(outputRoot, normalizedRelativePath));
         var pathFromOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
 
-        return !pathFromOutputRoot.StartsWith("..", StringComparison.Ordinal)
-            && !Path.IsPathRooted(pathFromOutputRoot)
+        return PathContainment.IsWithinRoot(pathFromOutputRoot)
             ? targetPath
             : null;
     }

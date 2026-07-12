@@ -6,46 +6,42 @@ labels: bug
 assignees: ""
 ---
 
-# What happened?
-
-Describe the bug.
-
 # KM Editor version
 
-Example: `1.0.1`
+Use the version shown in KM Editor or on the installer.
 
 # Game
 
-Sword, Shield, or both.
+Sword, Shield, Scarlet, Violet, or Legends Z-A.
 
 # Editor or workflow
 
-Example: Pokemon, Wild Encounters, Trainers, Bag Hook, Royal Candy, Starting Items, Catch Cap, Project Setup, Changes.
+Name the editor or screen where the problem occurred.
 
-# Step where it failed
+# Steps to reproduce
 
-Load, edit, stage, review, save, cleanup, uninstall, launch in game, or something else.
+List the shortest repeatable steps, including the output mode if the problem happens while applying changes.
 
-# What did you expect?
+# Expected behavior
 
-Describe what should have happened.
+What should KM Editor have done?
 
-# What happened instead?
+# Actual behavior
 
-Describe what actually happened.
+What happened instead?
 
 # Diagnostics
 
-Paste any KM Editor diagnostics that appeared.
+Paste the relevant KM Editor diagnostic text. Replace local account names and private folder names with neutral placeholders.
 
 # Screenshots
 
-Add screenshots if they help.
+Add screenshots only when they clarify the issue. Crop or redact account names, local paths, notifications, and unrelated applications.
 
 # Generated output
 
-Did generated LayeredFS output change unexpectedly? If yes, describe the kind of file or folder. Do not upload copyrighted files.
+If output changed unexpectedly, name the relative file or folder and describe the change. Do not upload the file itself.
 
 # File safety
 
-Do not attach ROMs, NSPs, game dumps, private saves, tokens, personal data, or copyrighted assets.
+Do not attach game dumps, executable game files, private saves, credentials, signing material, personal data, or complete generated mods.

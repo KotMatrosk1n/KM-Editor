@@ -8,6 +8,7 @@ public sealed class ProjectFileGraphBuilder
 {
     private static readonly EnumerationOptions RecursiveEnumeration = new()
     {
+        AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
         IgnoreInaccessible = true,
         RecurseSubdirectories = true,
         ReturnSpecialDirectories = false,
@@ -58,8 +59,7 @@ public sealed class ProjectFileGraphBuilder
             return false;
         }
 
-        return paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet
-            || paths.SelectedGame is null;
+        return ProjectGameMetadata.IsScarletViolet(paths.SelectedGame);
     }
 
     private static bool HasTrinityArchive(string baseRomFsPath)

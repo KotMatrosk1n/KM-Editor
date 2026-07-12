@@ -323,16 +323,34 @@ public sealed class SvTrinityArchive : IDisposable
             throw new FileNotFoundException($"Scarlet/Violet Trinity pack '{location.PackName}' was not indexed.");
         }
 
-        if (location.PackSize > int.MaxValue)
+        if (location.PackSize < 0 || location.PackSize > int.MaxValue)
         {
             throw new InvalidDataException(
                 $"Scarlet/Violet Trinity pack '{location.PackName}' is too large to load: {location.PackSize} bytes.");
         }
 
-        var packBytes = new byte[location.PackSize];
+        if (packOffset > long.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"Scarlet/Violet Trinity pack '{location.PackName}' offset 0x{packOffset:X} is outside data.trpfs.");
+        }
+
+        var packOffsetValue = (long)packOffset;
+        var packSize = checked((int)location.PackSize);
+        byte[] packBytes;
         using (var stream = new FileStream(trpfsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            stream.Position = checked((long)packOffset);
+            if (packOffsetValue < OneFileHeaderSize
+                || packOffsetValue > stream.Length
+                || packSize > stream.Length - packOffsetValue)
+            {
+                throw new InvalidDataException(
+                    $"Scarlet/Violet Trinity pack '{location.PackName}' at offset "
+                    + $"0x{packOffsetValue:X} with length {packSize} is outside data.trpfs.");
+            }
+
+            packBytes = new byte[packSize];
+            stream.Position = packOffsetValue;
             stream.ReadExactly(packBytes);
         }
 

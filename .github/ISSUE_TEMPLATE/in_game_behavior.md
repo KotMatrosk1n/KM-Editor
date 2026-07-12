@@ -2,42 +2,42 @@
 name: In Game Behavior
 about: Report a case where KM Editor saved a change but the game behaved differently.
 title: "[In Game]: "
-labels: in game
+labels: bug
 assignees: ""
 ---
 
-# What did you edit in KM Editor?
+# KM Editor version and game
 
-Describe the editor, workflow, fields, and values.
+Give the KM Editor version and select Sword, Shield, Scarlet, Violet, or Legends Z-A.
 
-# What changed in game?
+# Edit and output method
 
-Describe what you saw.
+Name the editor, fields, and values you changed. Say which output action you used and whether other mods also replace the same files.
 
-# What did not change in game?
+# Expected and actual result
 
-Describe what you expected to change but did not.
+Describe what you expected and what happened in game instead.
 
-# Where does the player see this?
+# Reproduction steps
 
-Example: wild battle, trainer battle, bag item, summary screen, shop, raid, overworld encounter, startup gift.
+List the shortest repeatable steps from opening KM Editor through observing the result in game.
 
 # Save context
 
-Was this tested on a new save or a current save?
+Was this tested on a new save or an existing save? Mention another save only if you actually compared them.
 
 # Mod loading
 
-Did you verify that the generated mod folder is being loaded by your setup?
+Confirm that the selected Output Root is being loaded and note any higher-priority mod that may replace the same files.
 
-# Hardware or emulator
+# Runtime context (optional)
 
-Optional. Share only what you are comfortable sharing.
+Share only details that materially affect reproduction. Do not include account, device, or network identifiers.
 
 # Screenshots or notes
 
-Screenshots are welcome when they help explain the behavior.
+Crop or redact account names, local paths, notifications, and unrelated applications.
 
 # File safety
 
-Do not attach ROMs, NSPs, game dumps, private saves, tokens, personal data, or copyrighted assets.
+Do not attach game dumps, executable game files, private saves, credentials, signing material, personal data, or complete generated mods.

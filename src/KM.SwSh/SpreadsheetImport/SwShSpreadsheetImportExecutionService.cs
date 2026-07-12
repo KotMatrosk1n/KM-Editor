@@ -570,7 +570,7 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             var rows = new List<DelimitedTextRow>();
             var currentRow = new List<string>();
-            var currentCell = new StringWriter(CultureInfo.InvariantCulture);
+            using var currentCell = new StringWriter(CultureInfo.InvariantCulture);
             var inQuotes = false;
             var rowNumber = 1;
 

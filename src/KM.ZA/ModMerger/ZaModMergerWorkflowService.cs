@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.ZA;
 using KM.ZA.Workflows;
@@ -19,6 +20,13 @@ public sealed class ZaModMergerWorkflowService
     private const string DescriptorRelativePath = "romfs/" + ZaTrinityDescriptorPatcher.DescriptorVirtualPath;
     private static readonly string ManifestRelativePath = Path.Combine(".km", "za-mod-merger-manifest.json");
     private static readonly JsonSerializerOptions ManifestJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly EnumerationOptions RecursiveEnumeration = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = false,
+        RecurseSubdirectories = true,
+        ReturnSpecialDirectories = false,
+    };
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
 
@@ -513,7 +521,7 @@ public sealed class ZaModMergerWorkflowService
         var targetPath = Path.GetFullPath(Path.Combine(root, pathInsideRomFs));
         var rootFullPath = Path.GetFullPath(root);
         var relativeToRoot = Path.GetRelativePath(rootFullPath, targetPath);
-        if (relativeToRoot.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relativeToRoot))
+        if (PathContainment.IsOutsideRoot(relativeToRoot))
         {
             return null;
         }
@@ -601,7 +609,7 @@ public sealed class ZaModMergerWorkflowService
     {
         var root = ResolveFolderContentRoot(source.Path);
         var files = new List<SourceFileRecord>();
-        foreach (var filePath in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        foreach (var filePath in Directory.EnumerateFiles(root, "*", RecursiveEnumeration))
         {
             var entryPath = Path.GetRelativePath(root, filePath).Replace('\\', '/');
             var relativePath = NormalizeEntryPath(entryPath, diagnostics, source.Path);
@@ -666,7 +674,7 @@ public sealed class ZaModMergerWorkflowService
         }
 
         return Directory
-            .EnumerateDirectories(folderPath, "romfs", SearchOption.AllDirectories)
+            .EnumerateDirectories(folderPath, "romfs", RecursiveEnumeration)
             .OrderBy(path => path.Length)
             .FirstOrDefault() ?? folderPath;
     }
@@ -839,7 +847,7 @@ public sealed class ZaModMergerWorkflowService
             }
 
             var relativeToRoot = Path.GetRelativePath(root, fullDirectory);
-            if (relativeToRoot.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relativeToRoot))
+            if (PathContainment.IsOutsideRoot(relativeToRoot))
             {
                 return;
             }
@@ -898,7 +906,7 @@ public sealed class ZaModMergerWorkflowService
         var outputRoot = Path.GetFullPath(outputRootPath);
         var targetPath = Path.GetFullPath(Path.Combine(outputRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         var relativeToOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
-        if (relativeToOutputRoot.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relativeToOutputRoot))
+        if (PathContainment.IsOutsideRoot(relativeToOutputRoot))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -1155,7 +1163,7 @@ public sealed class ZaModMergerWorkflowService
             var loosePath = Path.GetFullPath(Path.Combine(looseBaseRoot, virtualPath.Replace('/', Path.DirectorySeparatorChar)));
             var root = Path.GetFullPath(looseBaseRoot);
             var relativeToRoot = Path.GetRelativePath(root, loosePath);
-            if (!relativeToRoot.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relativeToRoot) && File.Exists(loosePath))
+            if (PathContainment.IsWithinRoot(relativeToRoot) && File.Exists(loosePath))
             {
                 bytes = File.ReadAllBytes(loosePath);
                 return true;

@@ -33,6 +33,9 @@ public sealed class SwShFpsPatchService
     private const string ExcludedTitleDemoBseqRelativePath = "romfs/bin/demo/sequence/sd9010_title.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
 
+    private static readonly EnumerationOptions RecursiveEnumeration = CreateEnumerationOptions(recursive: true);
+    private static readonly EnumerationOptions TopDirectoryEnumeration = CreateEnumerationOptions(recursive: false);
+
     private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
     private static readonly string[] ExcludedBattleCameraDirectories =
     [
@@ -1113,7 +1116,7 @@ public sealed class SwShFpsPatchService
         try
         {
             return Directory
-                .EnumerateFiles(cameraRoot, "*.gfbcama", SearchOption.AllDirectories)
+                .EnumerateFiles(cameraRoot, "*.gfbcama", RecursiveEnumeration)
                 .Select(path =>
                 {
                     var relativeInsideCameraRoot = Path.GetRelativePath(cameraRoot, path).Replace('\\', '/');
@@ -1331,7 +1334,10 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            foreach (var path in Directory.EnumerateFiles(root, pattern, searchOption))
+            var enumeration = searchOption == SearchOption.AllDirectories
+                ? RecursiveEnumeration
+                : TopDirectoryEnumeration;
+            foreach (var path in Directory.EnumerateFiles(root, pattern, enumeration))
             {
                 var relativePath = $"{rootRelativePath}/{Path.GetRelativePath(root, path).Replace('\\', '/')}";
                 var normalized = NormalizeRelativePath(relativePath);
@@ -1379,7 +1385,10 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            foreach (var path in Directory.EnumerateFiles(root, pattern, searchOption))
+            var enumeration = searchOption == SearchOption.AllDirectories
+                ? RecursiveEnumeration
+                : TopDirectoryEnumeration;
+            foreach (var path in Directory.EnumerateFiles(root, pattern, enumeration))
             {
                 var relativePath = $"{rootRelativePath}/{Path.GetRelativePath(root, path).Replace('\\', '/')}";
                 var normalized = NormalizeRelativePath(relativePath);
@@ -1628,7 +1637,7 @@ public sealed class SwShFpsPatchService
         var fullRoot = Path.GetFullPath(outputRoot);
         var target = Path.GetFullPath(Path.Combine(fullRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         var relative = Path.GetRelativePath(fullRoot, target);
-        return relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative)
+        return PathContainment.IsOutsideRoot(relative)
             ? null
             : target;
     }
@@ -1740,6 +1749,17 @@ public sealed class SwShFpsPatchService
                 file: ManifestRelativePath,
                 expected: "Deletable 60FPS Patch manifest"));
         }
+    }
+
+    private static EnumerationOptions CreateEnumerationOptions(bool recursive)
+    {
+        return new EnumerationOptions
+        {
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+            RecurseSubdirectories = recursive,
+            ReturnSpecialDirectories = false,
+        };
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

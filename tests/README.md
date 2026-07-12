@@ -21,7 +21,7 @@ pnpm test:fast
 pnpm test:full
 ```
 
-`test:changed` reads changed tracked and untracked files, ignores private handoff and scratch paths, then runs the smallest useful desktop, backend, and integration checks for those paths.
+`test:changed` reads changed, added, deleted, renamed, and untracked files, ignores private handoff and scratch paths, then runs the smallest useful desktop, backend, and integration checks for those paths. Removing a desktop test runs the remaining desktop suite. When at least 20 relevant files change, changed mode switches to the bounded full plan instead of accumulating overlapping focused commands.
 
 `test:fast` is the normal confidence loop. It keeps desktop typechecking, desktop bridge and shell smoke coverage, core and format coverage, high risk Sword and Shield workflow coverage, and bridge serialization smoke coverage.
 
@@ -33,7 +33,7 @@ The full command is a time-budgeted gate. It builds backend test projects once, 
 - 240 seconds for an ordinary shard.
 - At most 4 concurrent local workers.
 
-The desktop shard allows up to 210 seconds for a cold Rust/Tauri dependency build, while the complete local gate remains capped at 270 seconds and hosted validation jobs at five minutes. Hosted validation uses the runner's installed stable toolchain when available and caches the exact Cargo registry and target by compiler version and `Cargo.lock`; incremental native tests normally finish much faster.
+The desktop shard allows up to 240 seconds for a cold Rust/Tauri dependency build, while the complete local gate remains capped at 270 seconds and hosted validation jobs at five minutes. Hosted validation uses the runner's installed stable toolchain when available and caches the exact Cargo registry and target by compiler version and `Cargo.lock`; incremental native tests normally finish much faster.
 
 Every command writes `TestResults/test-timings.json`. A command that exceeds its budget is terminated with its descendant processes so timed-out test hosts cannot keep files locked.
 
@@ -67,6 +67,8 @@ Performance baselines are also tagged with `Kind=Slow`.
 Backend test assemblies use `tests/xunit.runner.json` to enable collection parallelism with a bounded four-thread limit and report tests that run longer than ten seconds.
 
 When adding tests, put the strongest assertion at the cheapest layer that can prove it. Prefer focused workflow, format, bridge, or component tests over adding another broad App or dispatcher regression unless the bug needs the full shell.
+
+Treat narrow bug-development tests as temporary unless they protect an active safety contract that compilation or a cheaper existing test cannot prove. Before finishing a change, remove duplicate transport, fixture, and UI assertions after their production path is replaced or removed. Keep corruption guards, output ownership, cross-game boundaries, hook coexistence, lossless binary round trips, and other current failure-prevention contracts.
 
 Whole-table writers must test lossless preservation, not only the field being edited. Keep raw game sentinels such as `-1` in the serialization model, normalize them only for display, and compare every exposed field on at least one unedited row. If a FlatBuffer distinguishes an omitted default field from an explicitly serialized zero, include a binary-shape assertion in the format layer.
 

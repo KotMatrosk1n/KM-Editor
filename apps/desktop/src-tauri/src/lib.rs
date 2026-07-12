@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -16,13 +16,38 @@ const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 const MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS: usize = 8;
 const PROJECT_BRIDGE_RECYCLED_ERROR: &str =
     "Project bridge request was canceled because the bridge was recycled.";
+const SUPPORT_SEARCH_CANCELED_ERROR: &str = "Support file search was canceled.";
 const WINDOW_CLOSE_REQUESTED_EVENT: &str = "km-editor://window-close-requested";
 const SUPPORT_SEARCH_PROGRESS_EVENT: &str = "km-editor://support-file-search-progress";
+const UPDATER_TEMP_DIRECTORY_PREFIX: &str = "KM Editor-";
+const UPDATER_TEMP_DIRECTORY_MARKER: &str = "-updater-";
+const STALE_UPDATER_TEMP_DIRECTORY_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct CloseGuardState {
     is_guarded: AtomicBool,
+}
+
+#[derive(Clone, Default)]
+struct SupportSearchState {
+    generation: Arc<AtomicUsize>,
+}
+
+impl SupportSearchState {
+    fn begin_search(&self) -> usize {
+        self.generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1)
+    }
+
+    fn cancel(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn is_current(&self, generation: usize) -> bool {
+        self.generation.load(Ordering::Acquire) == generation
+    }
 }
 
 #[derive(Clone)]
@@ -409,13 +434,29 @@ fn create_directory(path: String) -> Result<(), String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-async fn find_support_file_folder(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || find_support_file_blocking(&app_handle))
-        .await
-        .map_err(|error| format!("S/V support file search task failed: {error}"))?
+async fn find_support_file_folder(
+    app_handle: tauri::AppHandle,
+    search_state: tauri::State<'_, SupportSearchState>,
+) -> Result<Option<String>, String> {
+    let search_state = search_state.inner().clone();
+    let generation = search_state.begin_search();
+    tauri::async_runtime::spawn_blocking(move || {
+        find_support_file_blocking(&app_handle, &search_state, generation)
+    })
+    .await
+    .map_err(|error| format!("S/V support file search task failed: {error}"))?
 }
 
-fn find_support_file_blocking(app_handle: &tauri::AppHandle) -> Result<Option<String>, String> {
+#[tauri::command]
+fn cancel_support_file_search(search_state: tauri::State<'_, SupportSearchState>) {
+    search_state.cancel();
+}
+
+fn find_support_file_blocking(
+    app_handle: &tauri::AppHandle,
+    search_state: &SupportSearchState,
+    generation: usize,
+) -> Result<Option<String>, String> {
     let mut searched_directories = 0_u64;
     let mut searched_files = 0_u64;
     let mut last_emit = Instant::now()
@@ -423,10 +464,12 @@ fn find_support_file_blocking(app_handle: &tauri::AppHandle) -> Result<Option<St
         .unwrap_or_else(Instant::now);
 
     for root in enumerate_filesystem_roots() {
+        ensure_support_search_is_current(search_state, generation)?;
         let root_label = root.display().to_string();
         let mut stack = vec![root.clone()];
 
         while let Some(directory) = stack.pop() {
+            ensure_support_search_is_current(search_state, generation)?;
             searched_directories = searched_directories.saturating_add(1);
             if last_emit.elapsed() >= Duration::from_millis(200) {
                 emit_support_search_progress(
@@ -444,6 +487,7 @@ fn find_support_file_blocking(app_handle: &tauri::AppHandle) -> Result<Option<St
             };
 
             for entry in entries.flatten() {
+                ensure_support_search_is_current(search_state, generation)?;
                 let path = entry.path();
                 let Ok(file_type) = entry.file_type() else {
                     continue;
@@ -476,6 +520,16 @@ fn find_support_file_blocking(app_handle: &tauri::AppHandle) -> Result<Option<St
     Ok(None)
 }
 
+fn ensure_support_search_is_current(
+    search_state: &SupportSearchState,
+    generation: usize,
+) -> Result<(), String> {
+    search_state
+        .is_current(generation)
+        .then_some(())
+        .ok_or_else(|| SUPPORT_SEARCH_CANCELED_ERROR.to_owned())
+}
+
 fn emit_support_search_progress(
     app_handle: &tauri::AppHandle,
     current_root: &str,
@@ -502,6 +556,67 @@ fn required_support_file_name() -> String {
     ["oo2", "core", "_8_", "win", "64", ".dll"].concat()
 }
 
+fn cleanup_stale_updater_temp_directories() {
+    let _ = cleanup_stale_updater_temp_directories_in(
+        &std::env::temp_dir(),
+        SystemTime::now(),
+        STALE_UPDATER_TEMP_DIRECTORY_AGE,
+    );
+}
+
+fn cleanup_stale_updater_temp_directories_in(
+    temp_root: &Path,
+    now: SystemTime,
+    minimum_age: Duration,
+) -> std::io::Result<usize> {
+    let mut removed = 0;
+
+    for entry in std::fs::read_dir(temp_root)?.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !is_tauri_updater_temp_directory_name(&name) {
+            continue;
+        }
+
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let Ok(age) = now.duration_since(modified) else {
+            continue;
+        };
+        if age < minimum_age {
+            continue;
+        }
+
+        if std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+
+    Ok(removed)
+}
+
+fn is_tauri_updater_temp_directory_name(name: &str) -> bool {
+    let Some(remainder) = name.strip_prefix(UPDATER_TEMP_DIRECTORY_PREFIX) else {
+        return false;
+    };
+    let Some((version, random_suffix)) = remainder.split_once(UPDATER_TEMP_DIRECTORY_MARKER) else {
+        return false;
+    };
+    !version.is_empty() && !random_suffix.is_empty()
+}
+
 #[cfg(windows)]
 fn enumerate_filesystem_roots() -> Vec<PathBuf> {
     ('A'..='Z')
@@ -522,6 +637,7 @@ fn set_close_guard_enabled(state: tauri::State<'_, CloseGuardState>, enabled: bo
 
 #[tauri::command]
 fn exit_app(app_handle: tauri::AppHandle) {
+    app_handle.state::<SupportSearchState>().cancel();
     shutdown_project_bridge(&app_handle);
     app_handle.exit(0);
 }
@@ -578,11 +694,14 @@ pub fn run() {
         .manage(CloseGuardState {
             is_guarded: AtomicBool::new(false),
         })
+        .manage(SupportSearchState::default())
         .manage(ProjectBridgeState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            cleanup_stale_updater_temp_directories();
+
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -594,6 +713,7 @@ pub fn run() {
             recycle_project_bridge,
             create_directory,
             find_support_file_folder,
+            cancel_support_file_search,
             open_path,
             set_close_guard_enabled,
             exit_app
@@ -607,6 +727,7 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.emit(WINDOW_CLOSE_REQUESTED_EVENT, ());
                 } else {
+                    app_handle.state::<SupportSearchState>().cancel();
                     shutdown_project_bridge(&app_handle);
                     app_handle.exit(0);
                 }
@@ -642,6 +763,24 @@ mod tests {
     }
 
     #[test]
+    fn support_search_generations_cancel_prior_work() {
+        let state = SupportSearchState::default();
+        let first = state.begin_search();
+        assert!(state.is_current(first));
+
+        let second = state.begin_search();
+        assert!(!state.is_current(first));
+        assert!(state.is_current(second));
+        assert_eq!(
+            ensure_support_search_is_current(&state, first).unwrap_err(),
+            SUPPORT_SEARCH_CANCELED_ERROR
+        );
+
+        state.cancel();
+        assert!(!state.is_current(second));
+    }
+
+    #[test]
     fn recycling_an_idle_bridge_keeps_lazy_start_state() {
         let state = ProjectBridgeState::default();
         let generation = state.generation.load(Ordering::Acquire);
@@ -650,6 +789,103 @@ mod tests {
 
         assert!(state.process.lock().unwrap().is_none());
         assert_eq!(state.generation.load(Ordering::Acquire), generation + 1);
+    }
+
+    #[test]
+    fn stale_updater_cleanup_only_removes_matching_directories() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "km-editor-updater-cleanup-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let matching_directory = temp_root.join("KM Editor-2.2.0-updater-test");
+        let second_matching_directory = temp_root.join("KM Editor-2.2.1-updater-second");
+        let unrelated_directory = temp_root.join("Another App-2.2.0-updater-test");
+        let matching_file = temp_root.join("KM Editor-2.2.0-updater-file");
+
+        std::fs::create_dir_all(&matching_directory).unwrap();
+        std::fs::create_dir_all(&second_matching_directory).unwrap();
+        std::fs::create_dir_all(&unrelated_directory).unwrap();
+        std::fs::write(&matching_file, b"not a directory").unwrap();
+
+        let removed = cleanup_stale_updater_temp_directories_in(
+            &temp_root,
+            SystemTime::now(),
+            Duration::ZERO,
+        )
+        .unwrap();
+
+        assert_eq!(removed, 2);
+        assert!(!matching_directory.exists());
+        assert!(!second_matching_directory.exists());
+        assert!(unrelated_directory.exists());
+        assert!(matching_file.exists());
+
+        std::fs::remove_dir_all(&temp_root).unwrap();
+    }
+
+    #[test]
+    fn updater_cleanup_preserves_recent_matching_directories() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "km-editor-updater-grace-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let recent_directory = temp_root.join("KM Editor-2.2.0-updater-active");
+        std::fs::create_dir_all(&recent_directory).unwrap();
+
+        let removed = cleanup_stale_updater_temp_directories_in(
+            &temp_root,
+            SystemTime::now(),
+            Duration::from_secs(60),
+        )
+        .unwrap();
+
+        assert_eq!(removed, 0);
+        assert!(recent_directory.exists());
+
+        std::fs::remove_dir_all(&temp_root).unwrap();
+    }
+
+    #[test]
+    fn nsis_configuration_keeps_stock_installer_progress_page() {
+        let config = include_str!("../tauri.conf.json");
+        let installer_hooks = include_str!("../nsis/installer-hooks.nsh");
+
+        assert!(config.contains("\"installerIcon\""));
+        assert!(config.contains("\"uninstallerIcon\""));
+        assert!(config.contains("\"installMode\": \"currentUser\""));
+        assert!(config.contains("\"upgradeCode\""));
+        for visual_override in [
+            "\"headerImage\"",
+            "\"uninstallerHeaderImage\"",
+            "\"sidebarImage\"",
+            "\"template\"",
+        ] {
+            assert!(
+                !config.contains(visual_override),
+                "NSIS visual override {visual_override} bypasses the stock installer page"
+            );
+        }
+
+        for progress_override in [
+            "IDC_PROGRESS",
+            "PBM_",
+            "InstProgressFlags",
+            "MUI_INSTFILESPAGE_PROGRESSBAR",
+            "MUI_PAGE_INSTFILES",
+        ] {
+            assert!(
+                !installer_hooks.contains(progress_override),
+                "NSIS hook override {progress_override} replaces stock installer progress behavior"
+            );
+        }
     }
 
     #[test]

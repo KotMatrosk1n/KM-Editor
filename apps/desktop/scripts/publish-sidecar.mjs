@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,51 +14,60 @@ const targetTriple = getRustTargetTriple();
 const runtimeIdentifier = getDotNetRuntimeIdentifier(targetTriple);
 const isWindowsTarget = targetTriple.includes('windows');
 const binaryExtension = isWindowsTarget ? '.exe' : '';
-const publishDirectory = resolve(
-  tauriRoot,
-  'binaries',
-  '.publish',
-  runtimeIdentifier
-);
+const binariesDirectory = resolve(tauriRoot, 'binaries');
+const publishRoot = resolve(binariesDirectory, '.publish');
+const publishDirectory = resolve(publishRoot, runtimeIdentifier);
 const projectPath = resolve(repositoryRoot, 'src', 'KM.Tools', 'KM.Tools.csproj');
 const publishedBinary = resolve(publishDirectory, `KM.Tools${binaryExtension}`);
 const stagedBinary = resolve(
-  tauriRoot,
-  'binaries',
+  binariesDirectory,
   `${sidecarBaseName}-${targetTriple}${binaryExtension}`
 );
 
-rmSync(publishDirectory, { force: true, recursive: true });
+mkdirSync(binariesDirectory, { recursive: true });
+removeStaleStagedSidecars();
+rmSync(publishRoot, { force: true, recursive: true });
 mkdirSync(publishDirectory, { recursive: true });
 
-execFileSync(
-  'dotnet',
-  [
-    'publish',
-    projectPath,
-    '-c',
-    'Release',
-    '-r',
-    runtimeIdentifier,
-    '--self-contained',
-    'true',
-    '-p:PublishSingleFile=true',
-    '-p:EnableCompressionInSingleFile=true',
-    '-p:PublishTrimmed=false',
-    '-o',
-    publishDirectory
-  ],
-  {
-    cwd: repositoryRoot,
-    stdio: 'inherit'
-  }
-);
+try {
+  execFileSync(
+    'dotnet',
+    [
+      'publish',
+      projectPath,
+      '-c',
+      'Release',
+      '-r',
+      runtimeIdentifier,
+      '--self-contained',
+      'true',
+      '-p:PublishSingleFile=true',
+      '-p:EnableCompressionInSingleFile=true',
+      '-p:PublishTrimmed=false',
+      '-o',
+      publishDirectory
+    ],
+    {
+      cwd: repositoryRoot,
+      stdio: 'inherit'
+    }
+  );
 
-assertFile(publishedBinary, 'KM.Tools publish did not produce the expected executable.');
-mkdirSync(dirname(stagedBinary), { recursive: true });
-copyFileSync(publishedBinary, stagedBinary);
+  assertFile(publishedBinary, 'KM.Tools publish did not produce the expected executable.');
+  copyFileSync(publishedBinary, stagedBinary);
+} finally {
+  rmSync(publishRoot, { force: true, recursive: true });
+}
 
 console.log(`Staged KM.Tools sidecar at ${relative(repositoryRoot, stagedBinary)}`);
+
+function removeStaleStagedSidecars() {
+  for (const entry of readdirSync(binariesDirectory, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.startsWith(`${sidecarBaseName}-`)) {
+      rmSync(resolve(binariesDirectory, entry.name), { force: true });
+    }
+  }
+}
 
 function getRustTargetTriple() {
   try {

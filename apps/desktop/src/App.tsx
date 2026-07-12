@@ -13,7 +13,6 @@ import {
   CheckCircle,
   ChevronDown,
   ClipboardCheck,
-  Copy,
   Dna,
   Download,
   Dumbbell,
@@ -90,7 +89,6 @@ import {
 import {
   type ApiDiagnostic,
   type ApplyResult,
-  type BagHookSlotRecord,
   type BagHookWorkflow,
   type BehaviorEntryRecord,
   type BehaviorField,
@@ -164,7 +162,6 @@ import {
   type RaidRewardTableRecord,
   type RaidRewardsWorkflow,
   type RandomizerConfig,
-  type RandomizerOptions,
   type RentalPokemonEditableField,
   type RentalPokemonRecord,
   type RentalPokemonWorkflow,
@@ -182,7 +179,6 @@ import {
   type SpreadsheetImportPreview,
   type SpreadsheetImportProfileRecord,
   type SpreadsheetImportWorkflow,
-  type StartingItemGrantRecord,
   type StartingItemGrantSelection,
   type StartingItemOptionRecord,
   type StartingItemsWorkflow,
@@ -201,7 +197,6 @@ import {
   type TextEntryRecord,
   type TextWorkflowQuery,
   type TextWorkflow,
-  type TypeChartSourceRecord,
   type TypeChartWorkflow,
   type TradePokemonEditableField,
   type TradePokemonRecord,
@@ -239,7 +234,6 @@ import {
   type DesktopServices,
   type NativeUpdate
 } from './desktopServices';
-import { formatDiagnosticMessage } from './diagnostics';
 import {
   maxConsecutiveNoProgressWarmupAttempts,
   updateWarmupNoProgressBudget
@@ -1424,13 +1418,20 @@ const textLikeInputTypes = new Set([
 
 function useSelectEditableFieldContents() {
   useEffect(() => {
+    let animationFrameId: number | null = null;
     const selectTarget = (target: EventTarget | null) => {
       const field = getSelectableTextField(target);
       if (field === null || field.value.length === 0) {
         return;
       }
 
-      window.requestAnimationFrame(() => selectTextFieldContents(field));
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        selectTextFieldContents(field);
+      });
     };
 
     const handleFocusIn = (event: FocusEvent) => selectTarget(event.target);
@@ -1442,6 +1443,9 @@ function useSelectEditableFieldContents() {
     return () => {
       document.removeEventListener('focusin', handleFocusIn);
       document.removeEventListener('pointerup', handlePointerUp);
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
     };
   }, []);
 }
@@ -1731,7 +1735,6 @@ export function App({
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
   const setMovesWorkflow = useWorkbenchStore((state) => state.setMovesWorkflow);
-  const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const evictLoadedWorkflowSections = useWorkbenchStore(
     (state) => state.evictLoadedWorkflowSections
   );
@@ -2045,6 +2048,10 @@ export function App({
   const editSessionRef = useRef<EditSession | null>(editSession);
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
+  const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
+  const projectValidationRunRef = useRef(0);
+  const supportSearchRunRef = useRef(0);
+  const updateCheckRunRef = useRef(0);
   const cancelDiscardActionRef = useRef<(() => void) | null>(null);
   const activeModMergerRetentionValue = useMemo(() => {
     if (isScarletVioletProject) {
@@ -3093,20 +3100,39 @@ export function App({
   }, [bridge, desktopServices, evictUnprotectedWorkflowPayloads, selectedGame]);
 
   const handleValidateProject = async () => {
+    const runId = projectValidationRunRef.current + 1;
+    projectValidationRunRef.current = runId;
     setProjectStatus('validating');
     setBridgeDiagnostics([]);
 
     try {
       const paths = createProjectPaths(draftPaths);
       const response = await bridge.validateProject({ paths });
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(draftPaths);
       }
       resetLoadedProjectState();
       setProjectHealth(response.health);
-      await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
+      await refreshWorkflows(
+        paths,
+        response.health.canOpenEditableWorkflows,
+        () => projectValidationRunRef.current === runId
+      );
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
       void startSvCacheWarmup(paths, response.health);
     } catch (error) {
+      if (
+        projectValidationRunRef.current !== runId ||
+        isStaleProjectScopeError(error)
+      ) {
+        return;
+      }
+
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     }
@@ -3294,7 +3320,29 @@ export function App({
     setIsSupportSearchPermissionOpen(true);
   };
 
+  const cancelSupportFileSearch = useCallback(() => {
+    supportSearchRunRef.current += 1;
+    setIsSupportSearchPermissionOpen(false);
+    setIsSupportSearchRunning(false);
+    setWorkProgress(null);
+    if (desktopServices.isAvailable) {
+      void desktopServices.cancelSupportFileSearch().catch(() => undefined);
+    }
+  }, [desktopServices.cancelSupportFileSearch, desktopServices.isAvailable]);
+
+  useEffect(
+    () => () => {
+      supportSearchRunRef.current += 1;
+      if (desktopServices.isAvailable) {
+        void desktopServices.cancelSupportFileSearch().catch(() => undefined);
+      }
+    },
+    [desktopServices.cancelSupportFileSearch, desktopServices.isAvailable]
+  );
+
   const handleConfirmSupportSearch = async () => {
+    const runId = supportSearchRunRef.current + 1;
+    supportSearchRunRef.current = runId;
     setIsSupportSearchPermissionOpen(false);
     setIsSupportSearchRunning(true);
     setBridgeDiagnostics([]);
@@ -3305,10 +3353,17 @@ export function App({
     try {
       unlisten = await listen<SupportSearchProgressPayload>(
         supportSearchProgressEvent,
-        (event) => setWorkProgress(createSupportSearchWorkProgress(event.payload))
+        (event) => {
+          if (supportSearchRunRef.current === runId) {
+            setWorkProgress(createSupportSearchWorkProgress(event.payload));
+          }
+        }
       );
 
       const folderPath = await desktopServices.findSupportFileFolder();
+      if (supportSearchRunRef.current !== runId) {
+        return;
+      }
 
       if (!folderPath) {
         setBridgeDiagnostics([
@@ -3333,12 +3388,22 @@ export function App({
       setProjectStatus('validating');
 
       const response = await bridge.validateProject({ paths });
+      if (supportSearchRunRef.current !== runId) {
+        return;
+      }
       if (response.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths(nextDraftPaths);
       }
       resetLoadedProjectState();
       setProjectHealth(response.health);
-      await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
+      await refreshWorkflows(
+        paths,
+        response.health.canOpenEditableWorkflows,
+        () => supportSearchRunRef.current === runId
+      );
+      if (supportSearchRunRef.current !== runId) {
+        return;
+      }
       void startSvCacheWarmup(paths, response.health);
       setBridgeDiagnostics([
         {
@@ -3348,16 +3413,50 @@ export function App({
         }
       ]);
     } catch (error) {
+      if (
+        supportSearchRunRef.current !== runId ||
+        isSupportFileSearchCancellation(error)
+      ) {
+        return;
+      }
+
       setProjectStatus('idle');
       setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not find oo2core_8_win64.dll.'));
     } finally {
       unlisten?.();
-      setIsSupportSearchRunning(false);
-      setWorkProgress(null);
+      if (supportSearchRunRef.current === runId) {
+        setIsSupportSearchRunning(false);
+        setWorkProgress(null);
+      }
     }
   };
 
+  const closeNativeUpdate = useCallback((nativeUpdate: NativeUpdate | null) => {
+    if (!nativeUpdate) {
+      return;
+    }
+
+    if (availableNativeUpdateRef.current === nativeUpdate) {
+      availableNativeUpdateRef.current = null;
+    }
+
+    void nativeUpdate.close().catch(() => undefined);
+  }, []);
+
+  useEffect(
+    () => () => {
+      updateCheckRunRef.current += 1;
+      const nativeUpdate = availableNativeUpdateRef.current;
+      availableNativeUpdateRef.current = null;
+      void nativeUpdate?.close().catch(() => undefined);
+    },
+    []
+  );
+
   const handleCheckForUpdates = useCallback(async () => {
+    const runId = updateCheckRunRef.current + 1;
+    updateCheckRunRef.current = runId;
+    closeNativeUpdate(availableNativeUpdateRef.current);
     setAvailableUpdate(null);
     setUpdateCheckStatus({
       kind: 'checking',
@@ -3370,6 +3469,10 @@ export function App({
       if (desktopServices.isAvailable) {
         try {
           const nativeUpdate = await desktopServices.checkForNativeUpdate();
+          if (updateCheckRunRef.current !== runId) {
+            void nativeUpdate?.close().catch(() => undefined);
+            return;
+          }
 
           if (!nativeUpdate) {
             setUpdateCheckStatus({
@@ -3379,6 +3482,7 @@ export function App({
             return;
           }
 
+          availableNativeUpdateRef.current = nativeUpdate;
           setAvailableUpdate({
             body: nativeUpdate.body,
             kind: 'native',
@@ -3392,6 +3496,9 @@ export function App({
           return;
         } catch (nativeError) {
           const fallbackUpdate = await fetchAvailableUpdate(appVersion);
+          if (updateCheckRunRef.current !== runId) {
+            return;
+          }
 
           if (!fallbackUpdate) {
             throw nativeError;
@@ -3410,6 +3517,9 @@ export function App({
       }
 
       const update = await fetchAvailableUpdate(appVersion);
+      if (updateCheckRunRef.current !== runId) {
+        return;
+      }
 
       if (!update) {
         setUpdateCheckStatus({
@@ -3425,23 +3535,29 @@ export function App({
         message: `KM Editor v${update.version} is available on GitHub.`
       });
     } catch (error) {
+      if (updateCheckRunRef.current !== runId) {
+        return;
+      }
+
       setUpdateCheckStatus({
         kind: 'error',
         message: toErrorMessage(error)
       });
     }
   }, [
+    closeNativeUpdate,
     desktopServices.checkForNativeUpdate,
     desktopServices.isAvailable
   ]);
 
   const handleDismissAvailableUpdate = useCallback(() => {
+    updateCheckRunRef.current += 1;
     if (availableUpdate?.kind === 'native') {
-      void availableUpdate.nativeUpdate.close().catch(() => undefined);
+      closeNativeUpdate(availableUpdate.nativeUpdate);
     }
 
     setAvailableUpdate(null);
-  }, [availableUpdate]);
+  }, [availableUpdate, closeNativeUpdate]);
 
   const handleDownloadAvailableUpdate = useCallback(async () => {
     if (!availableUpdate) {
@@ -3529,6 +3645,10 @@ export function App({
           }
         });
 
+        if (availableNativeUpdateRef.current === availableUpdate.nativeUpdate) {
+          availableNativeUpdateRef.current = null;
+        }
+        await availableUpdate.nativeUpdate.close().catch(() => undefined);
         setAvailableUpdate(null);
         setUpdateCheckStatus({
           kind: 'restarting',
@@ -5739,29 +5859,6 @@ export function App({
     ]
   );
 
-  const handleUpdateItemField = async (itemId: number, field: string, value: string) => {
-    setIsItemUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateItemField({
-        field,
-        itemId,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        value
-      });
-      setItemsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsItemUpdating(false);
-    }
-  };
-
   const handleUpdateItemFields = async (
     itemId: number,
     changes: Array<{ field: string; value: string }>
@@ -6009,29 +6106,6 @@ export function App({
     }
   };
 
-  const handleUpdateMoveField = async (moveId: number, field: string, value: string) => {
-    setIsMoveUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateMoveField({
-        field,
-        moveId,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        value
-      });
-      setMovesWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsMoveUpdating(false);
-    }
-  };
-
   const handleUpdateMoveFields = async (
     moveId: number,
     changes: Array<{ field: string; value: string }>
@@ -6207,33 +6281,6 @@ export function App({
     }
   };
 
-  const handleUpdateGiftPokemonField = async (
-    giftIndex: number,
-    field: string,
-    value: string
-  ) => {
-    setIsGiftPokemonUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateGiftPokemonField({
-        field,
-        giftIndex,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        value
-      });
-      setGiftPokemonWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsGiftPokemonUpdating(false);
-    }
-  };
-
   const handleUpdateGiftPokemonFields = async (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -6346,33 +6393,6 @@ export function App({
       return false;
     } finally {
       setIsGiftPokemonUpdating(false);
-    }
-  };
-
-  const handleUpdateTradePokemonField = async (
-    tradeIndex: number,
-    field: string,
-    value: string
-  ) => {
-    setIsTradePokemonUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateTradePokemonField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        tradeIndex,
-        value
-      });
-      setTradePokemonWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsTradePokemonUpdating(false);
     }
   };
 
@@ -6491,33 +6511,6 @@ export function App({
     }
   };
 
-  const handleUpdateStaticEncounterField = async (
-    encounterIndex: number,
-    field: string,
-    value: string
-  ) => {
-    setIsStaticEncounterUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateStaticEncounterField({
-        encounterIndex,
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        value
-      });
-      setStaticEncountersWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsStaticEncounterUpdating(false);
-    }
-  };
-
   const handleUpdateStaticEncounterFields = async (
     encounterIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -6600,33 +6593,6 @@ export function App({
       return false;
     } finally {
       setIsStaticEncounterUpdating(false);
-    }
-  };
-
-  const handleUpdateRentalPokemonField = async (
-    rentalIndex: number,
-    field: string,
-    value: string
-  ) => {
-    setIsRentalPokemonUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateRentalPokemonField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        rentalIndex,
-        session: editSession,
-        value
-      });
-      setRentalPokemonWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRentalPokemonUpdating(false);
     }
   };
 
@@ -6975,35 +6941,6 @@ export function App({
     setActiveSection('items');
   };
 
-  const handleUpdateEncounterSlotField = async (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => {
-    setIsEncounterUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateEncounterSlotField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        slot,
-        tableId,
-        value
-      });
-      setEncountersWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsEncounterUpdating(false);
-    }
-  };
-
   const handleUpdateEncounterSlotFields = async (
     tableId: string,
     slot: number,
@@ -7106,35 +7043,6 @@ export function App({
     }
   };
 
-  const handleUpdateRaidRewardField = async (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => {
-    setIsRaidRewardUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateRaidRewardField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        slot,
-        tableId,
-        value
-      });
-      setRaidRewardsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRaidRewardUpdating(false);
-    }
-  };
-
   const handleUpdateRaidRewardFields = async (
     tableId: string,
     slot: number,
@@ -7181,35 +7089,6 @@ export function App({
     }
   };
 
-  const handleUpdateRaidBonusRewardField = async (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => {
-    setIsRaidBonusRewardUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateRaidBonusRewardField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        slot,
-        tableId,
-        value
-      });
-      setRaidBonusRewardsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRaidBonusRewardUpdating(false);
-    }
-  };
-
   const handleUpdateRaidBonusRewardFields = async (
     tableId: string,
     slot: number,
@@ -7253,35 +7132,6 @@ export function App({
       return false;
     } finally {
       setIsRaidBonusRewardUpdating(false);
-    }
-  };
-
-  const handleUpdateRaidBattleSlotField = async (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => {
-    setIsRaidBattleUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await bridge.updateRaidBattleSlotField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        slot,
-        tableId,
-        value
-      });
-      setRaidBattlesWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsRaidBattleUpdating(false);
     }
   };
 
@@ -7557,31 +7407,6 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsSessionValidating(false);
-      setIsChangePlanCreating(false);
-    }
-  };
-
-  const handleCreateChangePlan = async () => {
-    if (!editSession) {
-      return;
-    }
-
-    setIsChangePlanCreating(true);
-    setBridgeDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
-    setAppliedChangePlan(null);
-
-    try {
-      const response = await bridge.createChangePlan({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setChangePlan(response.changePlan);
-      setChangePlanSessionSignature(getEditSessionSignature(editSession));
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
       setIsChangePlanCreating(false);
     }
   };
@@ -8361,58 +8186,6 @@ export function App({
     setBridgeDiagnostics([]);
   }, [clearLoadedGameTextWorkflowData, hasLoadedGameTextWorkflow, language, setBridgeDiagnostics]);
 
-  const handleApplyChangePlan = async () => {
-    if (!editSession || !changePlan) {
-      return;
-    }
-
-    setIsChangePlanApplying(true);
-    setBridgeDiagnostics([]);
-    setApplyResult(null);
-    setWorkProgress(createIndeterminateWorkProgress(
-      'Applying Changes',
-      'Writing reviewed change plan',
-      applyProgressSteps,
-      1
-    ));
-
-    try {
-      const paths = createProjectPaths(draftPaths);
-      const response = await bridge.applyChangePlan({
-        changePlan,
-        paths,
-        session: editSession
-      });
-      const hasApplyErrors = response.applyResult.diagnostics.some(
-        (diagnostic) => diagnostic.severity === 'error'
-      );
-
-      if (!hasApplyErrors) {
-        setEditSession(null);
-        setEditSessionSection(null);
-        setChangePlan(null);
-        setValidatedEditSessionSignature(null);
-        setChangePlanSessionSignature(null);
-      }
-
-      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
-        setWorkProgress(createIndeterminateWorkProgress(
-          'Applying Changes',
-          'Refreshing loaded editor data',
-          applyProgressSteps,
-          2
-        ));
-        await refreshLoadedWorkflowsAfterApply(paths);
-      }
-      setApplyResult(response.applyResult);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsChangePlanApplying(false);
-      setWorkProgress(null);
-    }
-  };
-
   const handleApplyScopedEditorChangePlan = async (section: WorkbenchSection) => {
     const panelOutput = getScopedEditorPanelOutput(section);
     if (!editSession || !panelOutput.changePlan || !scopedEditorPanelSectionIds.has(section)) {
@@ -8516,23 +8289,29 @@ export function App({
 
   const handleSelectGame = useCallback(
     (nextGame: ProjectGame) => {
+      projectValidationRunRef.current += 1;
+      cancelSupportFileSearch();
       resetLoadedProjectState();
       setBridgeDiagnostics([]);
       setExpandedWorkflowGroups(new Set());
       setSelectedGame(nextGame);
     },
     [
+      cancelSupportFileSearch,
       resetLoadedProjectState,
       setSelectedGame
     ]
   );
 
   const handleChangeGame = useCallback(() => {
+    projectValidationRunRef.current += 1;
+    cancelSupportFileSearch();
     resetLoadedProjectState();
     setBridgeDiagnostics([]);
     setExpandedWorkflowGroups(new Set());
     clearSelectedGame();
   }, [
+    cancelSupportFileSearch,
     clearSelectedGame,
     resetLoadedProjectState
   ]);
@@ -8801,7 +8580,6 @@ export function App({
                 onSearchChange={setItemSearchText}
                 onSelectItem={setSelectedItemId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateItemField={handleUpdateItemField}
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
                 selectedItemId={selectedItemId}
@@ -8815,7 +8593,6 @@ export function App({
                 onSearchChange={setItemSearchText}
                 onSelectItem={setSelectedItemId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateItemField={handleUpdateItemField}
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
                 selectedItemId={selectedItemId}
@@ -8829,7 +8606,6 @@ export function App({
                 onSearchChange={setItemSearchText}
                 onSelectItem={setSelectedItemId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateItemField={handleUpdateItemField}
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
                 selectedItemId={selectedItemId}
@@ -8904,7 +8680,6 @@ export function App({
                 onSearchChange={setMovesSearchText}
                 onSelectMove={setSelectedMoveId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateMoveField={handleUpdateMoveField}
                 onUpdateMoveFields={handleUpdateMoveFields}
                 searchText={movesSearchText}
                 selectedMoveId={selectedMoveId}
@@ -8992,7 +8767,6 @@ export function App({
                 onSelectGift={setSelectedGiftPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveGiftPokemonShinyLocks={handleRemoveGiftPokemonShinyLocks}
-                onUpdateGiftPokemonField={handleUpdateGiftPokemonField}
                 onUpdateGiftPokemonFields={handleUpdateGiftPokemonFields}
                 searchText={giftPokemonSearchText}
                 selectedGiftIndex={selectedGiftPokemonIndex}
@@ -9012,7 +8786,6 @@ export function App({
                 onSelectTrade={setSelectedTradePokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveTradePokemonShinyLocks={handleRemoveTradePokemonShinyLocks}
-                onUpdateTradePokemonField={handleUpdateTradePokemonField}
                 onUpdateTradePokemonFields={handleUpdateTradePokemonFields}
                 searchText={tradePokemonSearchText}
                 selectedTradeIndex={selectedTradePokemonIndex}
@@ -9032,7 +8805,6 @@ export function App({
                 onSelectEncounter={setSelectedStaticEncounterIndex}
                 onStartEditSession={handleStartEditSession}
                 onRemoveStaticEncounterShinyLocks={handleRemoveStaticEncounterShinyLocks}
-                onUpdateStaticEncounterField={handleUpdateStaticEncounterField}
                 onUpdateStaticEncounterFields={handleUpdateStaticEncounterFields}
                 searchText={staticEncounterSearchText}
                 selectedEncounterIndex={selectedStaticEncounterIndex}
@@ -9051,7 +8823,6 @@ export function App({
                 onSearchChange={setRentalPokemonSearchText}
                 onSelectRental={setSelectedRentalPokemonIndex}
                 onStartEditSession={handleStartEditSession}
-                onUpdateRentalPokemonField={handleUpdateRentalPokemonField}
                 onUpdateRentalPokemonFields={handleUpdateRentalPokemonFields}
                 searchText={rentalPokemonSearchText}
                 selectedRentalIndex={selectedRentalPokemonIndex}
@@ -9115,7 +8886,6 @@ export function App({
                 onSearchChange={setEncounterSearchText}
                 onSelectTable={setSelectedEncounterTableId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
@@ -9130,7 +8900,6 @@ export function App({
                 onSearchChange={setEncounterSearchText}
                 onSelectTable={setSelectedEncounterTableId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
@@ -9145,7 +8914,6 @@ export function App({
                 onSearchChange={setEncounterSearchText}
                 onSelectTable={setSelectedEncounterTableId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
@@ -9186,7 +8954,6 @@ export function App({
                 onSearchChange={setRaidRewardSearchText}
                 onSelectTable={setSelectedRaidRewardTableId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateRaidRewardField={handleUpdateRaidRewardField}
                 onUpdateRaidRewardFields={handleUpdateRaidRewardFields}
                 pendingDomain="workflow.raidRewards"
                 searchText={raidRewardSearchText}
@@ -9211,7 +8978,6 @@ export function App({
                 onSearchChange={setRaidBonusRewardSearchText}
                 onSelectTable={setSelectedRaidBonusRewardTableId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateRaidRewardField={handleUpdateRaidBonusRewardField}
                 onUpdateRaidRewardFields={handleUpdateRaidBonusRewardFields}
                 pendingDomain="workflow.raidBonusRewards"
                 searchText={raidBonusRewardSearchText}
@@ -9234,7 +9000,6 @@ export function App({
                 onSearchChange={setRaidBattleSearchText}
                 onSelectTable={setSelectedRaidBattleTableId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateRaidBattleSlotField={handleUpdateRaidBattleSlotField}
                 onUpdateRaidBattleSlotFields={handleUpdateRaidBattleSlotFields}
                 searchText={raidBattleSearchText}
                 selectedTableId={selectedRaidBattleTableId}
@@ -10379,7 +10144,6 @@ type ItemsSectionProps = {
   onSearchChange: (searchText: string) => void;
   onSelectItem: (itemId: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateItemField: (itemId: number, field: string, value: string) => void;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
@@ -10411,7 +10175,6 @@ function ItemsSection({
   onSearchChange,
   onSelectItem,
   onStartEditSession,
-  onUpdateItemField,
   onUpdateItemFields,
   searchText,
   selectedItemId,
@@ -10515,7 +10278,6 @@ function ItemsSection({
               item={selectedItem}
               editableFields={workflow.editableFields}
               onStartEditSession={onStartEditSession}
-              onUpdateItemField={onUpdateItemField}
               onUpdateItemFields={onUpdateItemFields}
             />
           </div>
@@ -10538,7 +10300,6 @@ function SelectedItemPanel({
   isItemUpdating,
   item,
   onStartEditSession,
-  onUpdateItemField,
   onUpdateItemFields
 }: {
   canEditItems: boolean;
@@ -10549,7 +10310,6 @@ function SelectedItemPanel({
   isItemUpdating: boolean;
   item: ItemRecord | null;
   onStartEditSession: () => void;
-  onUpdateItemField: (itemId: number, field: string, value: string) => void;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
@@ -11619,14 +11379,6 @@ function SelectedPokemonPanel({
   const canToggleCompatibility = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditEvolution = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditLearnset = canEditPokemon && editSession !== null && !isPokemonUpdating;
-  const parsedEvolutionMethod = parseEditableIntegerDraft(
-    evolutionMethodDraft,
-    selectedEvolutionMethodOptions
-  );
-  const parsedEvolutionArgument = parseEditableIntegerDraft(
-    evolutionArgumentDraft,
-    selectedEvolutionArgumentOptions
-  );
   const parsedEvolutionSpecies = parseEditableIntegerDraft(
     evolutionSpeciesDraft,
     pokemonSpeciesOptions
@@ -11641,11 +11393,6 @@ function SelectedPokemonPanel({
       ),
     [editorFamily, evolutionFormDraft, parsedEvolutionSpecies, pokemonSpeciesLabels]
   );
-  const parsedEvolutionForm = parseEditableIntegerDraft(
-    evolutionFormDraft,
-    selectedEvolutionFormOptions
-  );
-  const parsedEvolutionLevel = Number.parseInt(evolutionLevelDraft, 10);
   const parsedNewEvolutionMethod = parseEditableIntegerDraft(
     newEvolutionMethodDraft,
     newEvolutionMethodOptions
@@ -12753,7 +12500,6 @@ function MovesSection({
   onSearchChange,
   onSelectMove,
   onStartEditSession,
-  onUpdateMoveField,
   onUpdateMoveFields,
   searchText,
   selectedMoveId,
@@ -12765,7 +12511,6 @@ function MovesSection({
   onSearchChange: (searchText: string) => void;
   onSelectMove: (moveId: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateMoveField: (moveId: number, field: string, value: string) => void;
   onUpdateMoveFields: (
     moveId: number,
     changes: Array<{ field: string; value: string }>
@@ -12874,7 +12619,6 @@ function MovesSection({
               isMoveUpdating={isMoveUpdating}
               move={selectedMove}
               onStartEditSession={onStartEditSession}
-              onUpdateMoveField={onUpdateMoveField}
               onUpdateMoveFields={onUpdateMoveFields}
             />
           </div>
@@ -12896,7 +12640,6 @@ function SelectedMovePanel({
   isMoveUpdating,
   move,
   onStartEditSession,
-  onUpdateMoveField,
   onUpdateMoveFields
 }: {
   canEditMoves: boolean;
@@ -12906,7 +12649,6 @@ function SelectedMovePanel({
   isMoveUpdating: boolean;
   move: MoveRecord | null;
   onStartEditSession: () => void;
-  onUpdateMoveField: (moveId: number, field: string, value: string) => void;
   onUpdateMoveFields: (
     moveId: number,
     changes: Array<{ field: string; value: string }>
@@ -16530,19 +16272,6 @@ function formatShopInventoryOrderValue(value: string | null | undefined, context
     .join(' / ');
 }
 
-function formatPokemonSpeciesPendingValue(
-  value: string | null | undefined,
-  workflow: PokemonWorkflow | null
-) {
-  const speciesId = parseOptionalInteger(value);
-  if (speciesId === null) {
-    return formatPendingEditValue(value);
-  }
-
-  const pokemon = workflow?.pokemon.find((candidate) => candidate.speciesId === speciesId);
-  return pokemon ? `${speciesId.toString().padStart(3, '0')} ${pokemon.name}` : value ?? 'n/a';
-}
-
 function formatPendingOptionValue(
   value: string | null | undefined,
   options: readonly PendingEditableOption[] | undefined
@@ -17125,7 +16854,6 @@ function GiftPokemonSection({
   onSelectGift,
   onStartEditSession,
   onRemoveGiftPokemonShinyLocks,
-  onUpdateGiftPokemonField,
   onUpdateGiftPokemonFields,
   searchText,
   selectedGiftIndex,
@@ -17138,7 +16866,6 @@ function GiftPokemonSection({
   onSelectGift: (giftIndex: number | null) => void;
   onStartEditSession: () => void;
   onRemoveGiftPokemonShinyLocks: (giftIndexes: number[]) => Promise<boolean>;
-  onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -17273,7 +17000,6 @@ function GiftPokemonSection({
               isEditStarting={isEditStarting}
               isGiftPokemonUpdating={isGiftPokemonUpdating}
               onStartEditSession={onStartEditSession}
-              onUpdateGiftPokemonField={onUpdateGiftPokemonField}
               onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
             />
           </div>
@@ -17312,7 +17038,6 @@ function SelectedGiftPokemonPanel({
   isEditStarting,
   isGiftPokemonUpdating,
   onStartEditSession,
-  onUpdateGiftPokemonField,
   onUpdateGiftPokemonFields
 }: {
   canEditGifts: boolean;
@@ -17323,7 +17048,6 @@ function SelectedGiftPokemonPanel({
   isEditStarting: boolean;
   isGiftPokemonUpdating: boolean;
   onStartEditSession: () => void;
-  onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -17596,55 +17320,6 @@ function SelectedGiftPokemonPanel({
   );
 }
 
-function GiftPokemonFieldInput({
-  disabled,
-  draftValue,
-  field,
-  formOptionContext,
-  onChange
-}: {
-  disabled: boolean;
-  draftValue: string;
-  field: GiftPokemonEditableField;
-  formOptionContext?: SpeciesFormOptionContext;
-  onChange: (value: string) => void;
-}) {
-  const options = getContextualFieldOptions(field, formOptionContext);
-  const { translateLiteral } = useLocalization();
-  const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
-
-  if (options.length > 0) {
-    return (
-      <SearchableOptionInput
-        ariaLabel={localizedFieldLabel}
-        disabled={disabled}
-        title={localizedFieldHelpText}
-        onChange={onChange}
-        options={addDraftFallbackOption(
-          options,
-          draftValue,
-          draftValue === '' ? 'Custom fixed IVs' : draftValue
-        )}
-        value={draftValue}
-      />
-    );
-  }
-
-  return (
-    <input
-      aria-label={localizedFieldLabel}
-      disabled={disabled}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      title={localizedFieldHelpText}
-      onChange={(event) => onChange(event.target.value)}
-      type="number"
-      value={draftValue}
-    />
-  );
-}
-
 function TradePokemonSection({
   editSession,
   isEditStarting,
@@ -17653,7 +17328,6 @@ function TradePokemonSection({
   onSelectTrade,
   onStartEditSession,
   onRemoveTradePokemonShinyLocks,
-  onUpdateTradePokemonField,
   onUpdateTradePokemonFields,
   searchText,
   selectedTradeIndex,
@@ -17666,7 +17340,6 @@ function TradePokemonSection({
   onSelectTrade: (tradeIndex: number | null) => void;
   onStartEditSession: () => void;
   onRemoveTradePokemonShinyLocks: (tradeIndexes: number[]) => Promise<boolean>;
-  onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -17815,7 +17488,6 @@ function TradePokemonSection({
               isTradePokemonUpdating={isTradePokemonUpdating}
               isZaTradeWorkflow={isZaTradeWorkflow}
               onStartEditSession={onStartEditSession}
-              onUpdateTradePokemonField={onUpdateTradePokemonField}
               onUpdateTradePokemonFields={onUpdateTradePokemonFields}
               trade={selectedTrade}
             />
@@ -17855,7 +17527,6 @@ function SelectedTradePokemonPanel({
   isTradePokemonUpdating,
   isZaTradeWorkflow,
   onStartEditSession,
-  onUpdateTradePokemonField,
   onUpdateTradePokemonFields,
   trade
 }: {
@@ -17867,7 +17538,6 @@ function SelectedTradePokemonPanel({
   isTradePokemonUpdating: boolean;
   isZaTradeWorkflow: boolean;
   onStartEditSession: () => void;
-  onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -18178,55 +17848,6 @@ function SelectedTradePokemonPanel({
   );
 }
 
-function TradePokemonFieldInput({
-  disabled,
-  draftValue,
-  field,
-  formOptionContext,
-  onChange
-}: {
-  disabled: boolean;
-  draftValue: string;
-  field: TradePokemonEditableField;
-  formOptionContext?: SpeciesFormOptionContext;
-  onChange: (value: string) => void;
-}) {
-  const options = getContextualFieldOptions(field, formOptionContext);
-  const { translateLiteral } = useLocalization();
-  const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
-
-  if (options.length > 0) {
-    return (
-      <SearchableOptionInput
-        ariaLabel={localizedFieldLabel}
-        disabled={disabled}
-        title={localizedFieldHelpText}
-        onChange={onChange}
-        options={addDraftFallbackOption(
-          options,
-          draftValue,
-          draftValue === '' ? 'Custom fixed IVs' : draftValue
-        )}
-        value={draftValue}
-      />
-    );
-  }
-
-  return (
-    <input
-      aria-label={localizedFieldLabel}
-      disabled={disabled}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      title={localizedFieldHelpText}
-      onChange={(event) => onChange(event.target.value)}
-      type="number"
-      value={draftValue}
-    />
-  );
-}
-
 function RentalPokemonSection({
   editSession,
   isEditStarting,
@@ -18234,7 +17855,6 @@ function RentalPokemonSection({
   onSearchChange,
   onSelectRental,
   onStartEditSession,
-  onUpdateRentalPokemonField,
   onUpdateRentalPokemonFields,
   searchText,
   selectedRentalIndex,
@@ -18246,7 +17866,6 @@ function RentalPokemonSection({
   onSearchChange: (searchText: string) => void;
   onSelectRental: (rentalIndex: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateRentalPokemonField: (rentalIndex: number, field: string, value: string) => void;
   onUpdateRentalPokemonFields: (
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -18362,7 +17981,6 @@ function RentalPokemonSection({
               isEditStarting={isEditStarting}
               isRentalPokemonUpdating={isRentalPokemonUpdating}
               onStartEditSession={onStartEditSession}
-              onUpdateRentalPokemonField={onUpdateRentalPokemonField}
               onUpdateRentalPokemonFields={onUpdateRentalPokemonFields}
               rental={selectedRental}
             />
@@ -18384,7 +18002,6 @@ function SelectedRentalPokemonPanel({
   isEditStarting,
   isRentalPokemonUpdating,
   onStartEditSession,
-  onUpdateRentalPokemonField,
   onUpdateRentalPokemonFields,
   rental
 }: {
@@ -18394,7 +18011,6 @@ function SelectedRentalPokemonPanel({
   isEditStarting: boolean;
   isRentalPokemonUpdating: boolean;
   onStartEditSession: () => void;
-  onUpdateRentalPokemonField: (rentalIndex: number, field: string, value: string) => void;
   onUpdateRentalPokemonFields: (
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -18675,55 +18291,6 @@ function SelectedRentalPokemonPanel({
         <p className="empty-copy">No rental selected.</p>
       )}
     </aside>
-  );
-}
-
-function RentalPokemonFieldInput({
-  disabled,
-  draftValue,
-  field,
-  formOptionContext,
-  onChange
-}: {
-  disabled: boolean;
-  draftValue: string;
-  field: RentalPokemonEditableField;
-  formOptionContext?: SpeciesFormOptionContext;
-  onChange: (value: string) => void;
-}) {
-  const options = getContextualFieldOptions(field, formOptionContext);
-  const { translateLiteral } = useLocalization();
-  const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
-
-  if (options.length > 0) {
-    return (
-      <SearchableOptionInput
-        ariaLabel={localizedFieldLabel}
-        disabled={disabled}
-        title={localizedFieldHelpText}
-        onChange={onChange}
-        options={addDraftFallbackOption(
-          options,
-          draftValue,
-          draftValue === '' ? 'Mixed fixed IVs' : draftValue
-        )}
-        value={draftValue}
-      />
-    );
-  }
-
-  return (
-    <input
-      aria-label={localizedFieldLabel}
-      disabled={disabled}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      title={localizedFieldHelpText}
-      onChange={(event) => onChange(event.target.value)}
-      type="number"
-      value={draftValue}
-    />
   );
 }
 
@@ -19361,7 +18928,6 @@ function StaticEncountersSection({
   onSelectEncounter,
   onStartEditSession,
   onRemoveStaticEncounterShinyLocks,
-  onUpdateStaticEncounterField,
   onUpdateStaticEncounterFields,
   searchText,
   selectedEncounterIndex,
@@ -19374,7 +18940,6 @@ function StaticEncountersSection({
   onSelectEncounter: (encounterIndex: number | null) => void;
   onStartEditSession: () => void;
   onRemoveStaticEncounterShinyLocks: (encounterIndexes: number[]) => Promise<boolean>;
-  onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -19578,7 +19143,6 @@ function StaticEncountersSection({
               isEditStarting={isEditStarting}
               isStaticEncounterUpdating={isStaticEncounterUpdating}
               onStartEditSession={onStartEditSession}
-              onUpdateStaticEncounterField={onUpdateStaticEncounterField}
               onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
             />
           </div>
@@ -19618,7 +19182,6 @@ function SelectedStaticEncounterPanel({
   isEditStarting,
   isStaticEncounterUpdating,
   onStartEditSession,
-  onUpdateStaticEncounterField,
   onUpdateStaticEncounterFields
 }: {
   canEditStaticEncounters: boolean;
@@ -19628,7 +19191,6 @@ function SelectedStaticEncounterPanel({
   isEditStarting: boolean;
   isStaticEncounterUpdating: boolean;
   onStartEditSession: () => void;
-  onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -19928,55 +19490,6 @@ function SelectedStaticEncounterPanel({
         <p className="empty-copy">{translateLiteral('No static encounter selected.')}</p>
       )}
     </aside>
-  );
-}
-
-function StaticEncounterFieldInput({
-  disabled,
-  draftValue,
-  field,
-  formOptionContext,
-  onChange
-}: {
-  disabled: boolean;
-  draftValue: string;
-  field: StaticEncounterEditableField;
-  formOptionContext?: SpeciesFormOptionContext;
-  onChange: (value: string) => void;
-}) {
-  const options = getContextualFieldOptions(field, formOptionContext);
-  const { translateLiteral } = useLocalization();
-  const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
-
-  if (options.length > 0) {
-    return (
-      <SearchableOptionInput
-        ariaLabel={localizedFieldLabel}
-        disabled={disabled}
-        title={localizedFieldHelpText}
-        onChange={onChange}
-        options={addDraftFallbackOption(
-          options,
-          draftValue,
-          draftValue === '' ? 'Custom fixed IVs' : draftValue
-        )}
-        value={draftValue}
-      />
-    );
-  }
-
-  return (
-    <input
-      aria-label={localizedFieldLabel}
-      disabled={disabled}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      title={localizedFieldHelpText}
-      onChange={(event) => onChange(event.target.value)}
-      type="number"
-      value={draftValue}
-    />
   );
 }
 
@@ -21544,12 +21057,6 @@ type EncountersSectionProps = {
   onSearchChange: (searchText: string) => void;
   onSelectTable: (tableId: string | null) => void;
   onStartEditSession: () => void;
-  onUpdateEncounterSlotField: (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
   onUpdateEncounterSlotFields: (
     tableId: string,
     slot: number,
@@ -21583,7 +21090,6 @@ function EncountersSection({
   onSearchChange,
   onSelectTable,
   onStartEditSession,
-  onUpdateEncounterSlotField,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
   searchText,
@@ -21748,7 +21254,6 @@ function EncountersSection({
               onSelectSlot={setSelectedSlot}
               onSelectTable={onSelectTable}
               onStartEditSession={onStartEditSession}
-              onUpdateEncounterSlotField={onUpdateEncounterSlotField}
               onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}
               onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
               selectedSlot={selectedSlot}
@@ -21779,7 +21284,6 @@ function SelectedEncounterPanel({
   onSelectSlot,
   onSelectTable,
   onStartEditSession,
-  onUpdateEncounterSlotField,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
   selectedSlot,
@@ -21798,12 +21302,6 @@ function SelectedEncounterPanel({
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStartEditSession: () => void;
-  onUpdateEncounterSlotField: (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
   onUpdateEncounterSlotFields: (
     tableId: string,
     slot: number,
@@ -23448,7 +22946,6 @@ function RaidBattlesSection({
   onSearchChange,
   onSelectTable,
   onStartEditSession,
-  onUpdateRaidBattleSlotField,
   onUpdateRaidBattleSlotFields,
   searchText,
   selectedTableId,
@@ -23460,12 +22957,6 @@ function RaidBattlesSection({
   onSearchChange: (value: string) => void;
   onSelectTable: (tableId: string) => void;
   onStartEditSession: () => void;
-  onUpdateRaidBattleSlotField: (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
   onUpdateRaidBattleSlotFields: (
     tableId: string,
     slot: number,
@@ -23609,7 +23100,6 @@ function RaidBattlesSection({
               isRaidBattleUpdating={isRaidBattleUpdating}
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
-              onUpdateRaidBattleSlotField={onUpdateRaidBattleSlotField}
               onUpdateRaidBattleSlotFields={onUpdateRaidBattleSlotFields}
               selectedSlot={selectedSlot}
               table={selectedTable}
@@ -23634,7 +23124,6 @@ function SelectedRaidBattlePanel({
   isRaidBattleUpdating,
   onSelectSlot,
   onStartEditSession,
-  onUpdateRaidBattleSlotField,
   onUpdateRaidBattleSlotFields,
   selectedSlot,
   table
@@ -23647,12 +23136,6 @@ function SelectedRaidBattlePanel({
   isRaidBattleUpdating: boolean;
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateRaidBattleSlotField: (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
   onUpdateRaidBattleSlotFields: (
     tableId: string,
     slot: number,
@@ -24031,7 +23514,6 @@ function RaidRewardsSection({
   onSearchChange,
   onSelectTable,
   onStartEditSession,
-  onUpdateRaidRewardField,
   onUpdateRaidRewardFields,
   pendingDomain,
   searchText,
@@ -24049,12 +23531,6 @@ function RaidRewardsSection({
   onSearchChange: (value: string) => void;
   onSelectTable: (tableId: string) => void;
   onStartEditSession: () => void;
-  onUpdateRaidRewardField: (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
   onUpdateRaidRewardFields: (
     tableId: string,
     slot: number,
@@ -24184,7 +23660,6 @@ function RaidRewardsSection({
               isRaidRewardUpdating={isRaidRewardUpdating}
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
-              onUpdateRaidRewardField={onUpdateRaidRewardField}
               onUpdateRaidRewardFields={onUpdateRaidRewardFields}
               reward={selectedReward}
               sectionId={sectionId}
@@ -24210,7 +23685,6 @@ function SelectedRaidRewardPanel({
   isRaidRewardUpdating,
   onSelectSlot,
   onStartEditSession,
-  onUpdateRaidRewardField,
   onUpdateRaidRewardFields,
   reward,
   sectionId,
@@ -24224,12 +23698,6 @@ function SelectedRaidRewardPanel({
   isRaidRewardUpdating: boolean;
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateRaidRewardField: (
-    tableId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
   onUpdateRaidRewardFields: (
     tableId: string,
     slot: number,
@@ -30212,6 +29680,7 @@ function SettingsSection({
     status.kind === 'downloading' ||
     status.kind === 'installing' ||
     status.kind === 'opening' ||
+    status.kind === 'preparing' ||
     status.kind === 'restarting';
   const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
@@ -30266,6 +29735,8 @@ function SettingsSection({
           <span>
             {status.kind === 'checking'
               ? 'Checking'
+              : status.kind === 'preparing'
+                ? 'Preparing'
               : status.kind === 'downloading'
                 ? 'Downloading'
                 : status.kind === 'installing'
@@ -34424,80 +33895,6 @@ function getDynamaxAdventureVanillaRestoreChanges(encounter: DynamaxAdventureRec
     .map(({ field, value }) => ({ field, value: value!.toString() }));
 }
 
-function getItemFieldSaveLabel(field: ItemEditableField) {
-  return `Save ${field.label.replace(/\s+price$/i, '')}`;
-}
-
-function getItemPriceDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: ItemEditableField | undefined
-) {
-  const normalizedValue = draftValue.trim();
-  const parsedValue = parseEditableIntegerDraft(normalizedValue, field?.options);
-  const minimumValue = field?.minimumValue ?? null;
-  const maximumValue = field?.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      field !== undefined &&
-      currentValue !== null &&
-      inRange &&
-      parsedValue !== currentValue,
-    parsedValue
-  };
-}
-
-function getMoveDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: MoveEditableField
-) {
-  const normalizedValue = draftValue.trim();
-
-  if (field.valueKind === 'boolean') {
-    const normalizedBoolean = normalizedValue === '1' ? '1' : '0';
-    const parsedValue = normalizedBoolean === '1' ? 1 : 0;
-
-    return {
-      canSubmit: currentValue !== null && parsedValue !== currentValue,
-      normalizedValue: normalizedBoolean
-    };
-  }
-
-  const parsedValue = parseEditableIntegerDraft(normalizedValue, field.options);
-  const minimumValue = field.minimumValue ?? null;
-  const maximumValue = field.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      currentValue !== null &&
-      inRange &&
-      parsedValue !== currentValue,
-    normalizedValue: inRange && parsedValue !== null ? parsedValue.toString() : null
-  };
-}
-
-function getPokemonDraftState(pokemon: PokemonRecord, field: PokemonEditableField) {
-  const value = getEditablePersonalFieldValue(pokemon, field.field);
-
-  return value === null
-    ? null
-    : {
-        field: field.field,
-        recordId: pokemon.personalId,
-        value: value.toString()
-      };
-}
-
 type PokemonPersonalFieldDraftState = {
   error: string | null;
   isChanged: boolean;
@@ -36037,175 +35434,6 @@ function isIntegerDraftInFieldRange(
     (minimumValue === null || parsedValue >= minimumValue) &&
     (maximumValue === null || parsedValue <= maximumValue)
   );
-}
-
-function getGiftPokemonDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: GiftPokemonEditableField | undefined
-) {
-  const parsedValue = parseEditableIntegerDraft(draftValue, field?.options);
-  if (
-    field !== undefined &&
-    isPokemonInstanceIvPresetField(field.field) &&
-    parsedValue === ivPresetCustomOptionValue
-  ) {
-    return {
-      canSubmit: false,
-      parsedValue: null
-    };
-  }
-
-  const minimumValue = field?.minimumValue ?? null;
-  const maximumValue = field?.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      field !== undefined &&
-      inRange &&
-      (currentValue === null || parsedValue !== currentValue),
-    parsedValue
-  };
-}
-
-function getTradePokemonDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: TradePokemonEditableField | undefined
-) {
-  const normalizedValue = draftValue.trim();
-  const parsedValue = parseEditableIntegerDraft(normalizedValue, field?.options);
-  if (
-    field !== undefined &&
-    isPokemonInstanceIvPresetField(field.field) &&
-    parsedValue === ivPresetCustomOptionValue
-  ) {
-    return {
-      canSubmit: false,
-      parsedValue: null
-    };
-  }
-
-  const minimumValue = field?.minimumValue ?? null;
-  const maximumValue = field?.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      field !== undefined &&
-      inRange &&
-      (currentValue === null || parsedValue !== currentValue),
-    parsedValue
-  };
-}
-
-function getStaticEncounterDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: StaticEncounterEditableField | undefined
-) {
-  const normalizedValue = draftValue.trim();
-  const parsedValue = parseEditableIntegerDraft(normalizedValue, field?.options);
-  if (
-    field !== undefined &&
-    isPokemonInstanceIvPresetField(field.field) &&
-    parsedValue === ivPresetCustomOptionValue
-  ) {
-    return {
-      canSubmit: false,
-      parsedValue: null
-    };
-  }
-
-  const minimumValue = field?.minimumValue ?? null;
-  const maximumValue = field?.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      field !== undefined &&
-      inRange &&
-      (currentValue === null || parsedValue !== currentValue),
-    parsedValue
-  };
-}
-
-function getRentalPokemonDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: RentalPokemonEditableField | undefined
-) {
-  const normalizedValue = draftValue.trim();
-  const parsedValue = parseEditableIntegerDraft(normalizedValue, field?.options);
-  if (
-    field !== undefined &&
-    isPokemonInstanceIvPresetField(field.field) &&
-    parsedValue === ivPresetCustomOptionValue
-  ) {
-    return {
-      canSubmit: false,
-      parsedValue: null
-    };
-  }
-
-  const minimumValue = field?.minimumValue ?? null;
-  const maximumValue = field?.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      field !== undefined &&
-      inRange &&
-      (currentValue === null || parsedValue !== currentValue),
-    parsedValue
-  };
-}
-
-function getDynamaxAdventureDraftState(
-  draftValue: string,
-  currentValue: number | null,
-  field: DynamaxAdventureEditableField | undefined
-) {
-  const normalizedValue = draftValue.trim();
-  const parsedValue = parseEditableIntegerDraft(normalizedValue, field?.options);
-  if (
-    field !== undefined &&
-    isPokemonInstanceIvPresetField(field.field) &&
-    parsedValue === ivPresetCustomOptionValue
-  ) {
-    return {
-      canSubmit: false,
-      parsedValue: null
-    };
-  }
-
-  const minimumValue = field?.minimumValue ?? null;
-  const maximumValue = field?.maximumValue ?? null;
-  const inRange =
-    parsedValue !== null &&
-    (minimumValue === null || parsedValue >= minimumValue) &&
-    (maximumValue === null || parsedValue <= maximumValue);
-
-  return {
-    canSubmit:
-      field !== undefined &&
-      inRange &&
-      (currentValue === null || parsedValue !== currentValue),
-    parsedValue
-  };
 }
 
 function formatRaidBattleRewardLink(link: RaidBattleSlotRecord['dropRewardLink']) {
@@ -38791,6 +38019,12 @@ function toDesktopDiagnostics(error: unknown, fallbackMessage: string): ApiDiagn
       severity: 'error'
     }
   ];
+}
+
+function isSupportFileSearchCancellation(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return message === 'Support file search was canceled.';
 }
 
 function toErrorMessage(error: unknown) {

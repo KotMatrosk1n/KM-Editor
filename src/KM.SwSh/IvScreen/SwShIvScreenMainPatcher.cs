@@ -200,21 +200,6 @@ internal static class SwShIvScreenMainPatcher
         (0x0138FEA0, 0x97CFA3E0),
     ];
 
-    private static readonly (int Offset, uint[] Instructions)[] ValueWrapperSlots =
-    [
-        (0x0138F324, [0x7100003F, 0x54007400, 0x140000F6]),
-        (0x0138F704, [0x7100043F, 0x54005500, 0x14000016]),
-        (0x0138F764, [0x7100083F, 0x54005200, 0x14000086]),
-        (0x0138F984, [0x71000C3F, 0x54003D80, 0x14000072]),
-        (0x0138FB54, [0x7100103F, 0x54003280, 0x14000126]),
-        (0x0138FFF4, [0x7100143F, 0x54000D80, 0x14000016]),
-        (0x01390054, [0x7100183F, 0x54000780, 0x14000002]),
-        (0x01390064, [0x71001C3F, 0x54000680, 0x14000032]),
-        (0x01390134, [0x17CFA33B, 0x52800001, 0x14000002]),
-        (0x01390144, [0x17CFA3CB, 0x52800061, 0x14000016]),
-        (0x013901A4, [0x17CFA3B3, 0x17CFA3B2, NopInstruction]),
-    ];
-
     private static readonly int[] PayloadSlotOffsets =
     [
         0x0138F324,

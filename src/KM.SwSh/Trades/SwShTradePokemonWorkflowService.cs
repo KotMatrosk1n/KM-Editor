@@ -284,8 +284,7 @@ public sealed class SwShTradePokemonWorkflowService
             targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
         var pathFromOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
 
-        return !pathFromOutputRoot.StartsWith("..", StringComparison.Ordinal)
-            && !Path.IsPathRooted(pathFromOutputRoot)
+        return PathContainment.IsWithinRoot(pathFromOutputRoot)
             ? targetPath
             : null;
     }

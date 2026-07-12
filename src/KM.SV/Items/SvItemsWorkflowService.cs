@@ -374,7 +374,7 @@ internal sealed class SvItemsWorkflowService
         return Enum
             .GetValues<TEnum>()
             .Select(value => new SvItemEditableFieldOption(
-                Convert.ToInt32(value),
+                Convert.ToInt32(value, CultureInfo.InvariantCulture),
                 formatName(value)))
             .OrderBy(option => option.Value)
             .ToArray();

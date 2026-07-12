@@ -1,49 +1,48 @@
 # KM Editor Code of Conduct
 
-## Purpose
+## The short version
 
-KM Editor is for people making, testing, documenting, and improving Sword and Shield modding tools. The repo should stay useful for bug reports, feature work, releases, docs, wiki updates, and troubleshooting real modding problems.
+Be direct, be useful, and treat the person on the other side of the screen like a person.
 
-Direct feedback, dry humor, sarcasm, excitement, frustration, and blunt comments can all be fine when they stay focused on the work. Modding can be frustrating, and the game will not always make sense. That is part of the work.
+Modding gets technical, bugs get strange, and frustration happens. Blunt feedback, disagreement, dry humor, and the occasional "how did that even happen?" are welcome when they stay focused on the work. Harassment, cruelty, and making the project miserable for someone else are not.
 
-The line is cruelty, harassment, personal attacks, repeated bad faith behavior, or making contributors dread opening GitHub.
+## Where this applies
 
-## Expected behavior
+This code of conduct applies to KM Editor issues, pull requests, discussions, wiki contributions, release conversations, and other spaces managed by the project. It also applies when someone is representing KM Editor in another public space.
 
-Ask clear questions. Give useful bug reports. Share screenshots, diagnostics, and file names when they help explain the problem.
+## What good participation looks like
 
-Be patient with people who are learning. Some users are new to modding. Some contributors are deep in binary patch details. Both groups belong here.
+Good participation does not require formal language. It does require care.
 
-Criticize ideas, code, docs, and behavior without attacking the person. If something is broken, say what is broken and why it matters.
+* Explain what happened and provide enough context for someone else to investigate it.
+* Critique code, documentation, behavior, and decisions without attacking the person behind them.
+* Be patient with different experience levels. New modders and people who know the file formats by heart both belong here.
+* Correct mistakes clearly, accept corrections gracefully, and move the conversation forward.
+* Respect privacy, ownership, and legal boundaries when sharing screenshots, diagnostics, or examples.
+* Step back when a maintainer asks for a conversation to cool down or return to the issue.
 
-## Tone
+## What is not acceptable
 
-Jokes, sarcasm, blunt feedback, and frustration are allowed when they fit the conversation and stay focused on the work.
+The following behavior is not welcome:
 
-They should not be used to be cruel, derail work, or make an issue thread harder to use. If the joke only works because someone else is the target, rethink it.
-
-## Unacceptable behavior
-
-Harassment, slurs, threats, doxxing, spam, repeated hostile replies, deliberately misleading bug reports, and personal attacks are not welcome.
-
-Do not target people over identity, skill level, mistakes, mod choices, or how much they know about Sword and Shield internals.
-
-Do not pressure people to share private files. Do not ask for ROMs, NSPs, game dumps, paid content, private saves, tokens, or personal information.
-
-## Project boundaries
-
-This repo is for KM Editor itself. Issues and pull requests should stay focused on KM Editor bugs, workflows, docs, releases, and supported Sword and Shield modding behavior.
-
-This is not the place for console piracy, illegal file sharing, personal disputes, or fights about unrelated modding communities.
+* Harassment, threats, slurs, stalking, doxxing, or personal attacks.
+* Targeting someone because of identity, ability, experience, mistakes, or modding preferences.
+* Repeated hostile replies, bad faith arguments, spam, or deliberately misleading reports.
+* Sexualized attention or content directed at another participant.
+* Publishing someone else's private information without clear permission.
+* Pressuring anyone to provide game dumps, private saves, access tokens, personal data, paid content, or other files they should not share.
+* Using project spaces for piracy, illegal file sharing, personal disputes, or unrelated community fights.
 
 ## Moderation
 
-Maintainers may ask someone to step back, edit or hide comments, lock threads, close issues, remove wiki edits, or block users when needed.
+Maintainers may edit or hide comments, close or lock threads, remove contributions, issue warnings, or block participation when needed to keep project spaces safe and usable. Serious behavior outside the repository may also be considered when it directly affects the project or its participants.
 
-The goal is not to police every joke. The goal is to keep the repo usable and safe for people doing the work.
+Moderation decisions consider context, impact, and repeated behavior. Not every awkward comment needs a tribunal, but harmful behavior does not get a free pass because it was presented as a joke.
 
-## Reporting
+## Reporting conduct problems
 
-If something needs maintainer attention, report it through GitHub by opening an issue when that is appropriate, or by contacting a maintainer through their public GitHub profile.
+If a conduct problem can be handled safely in public, flag the relevant GitHub content. If public discussion would expose private information or place someone at risk, open only a detail-free issue asking for private contact. Do not include the conduct report itself in that issue.
 
-Do not post private information, sensitive files, ROMs, dumps, or copyrighted assets in public threads.
+Include links or screenshots that establish the relevant context, but remove unrelated personal information. Conduct reports are reviewed as privately as the available GitHub contact method allows. The project cannot promise confidentiality through a public issue.
+
+Security vulnerabilities belong under the separate [Security Policy](SECURITY.md).

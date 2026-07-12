@@ -7,7 +7,6 @@ import {
   type DynamaxAdventuresWorkflow,
   type EditSession,
   type EncountersWorkflow,
-  type EncounterTableRecord,
   type ExeFsPatchWorkflow,
   type FashionUnlockWorkflow,
   type FlagworkSaveWorkflow,
@@ -27,7 +26,6 @@ import {
   type RaidBattlesWorkflow,
   type RaidRewardsWorkflow,
   type RentalPokemonWorkflow,
-  type RoyalCandyWorkflow,
   type ShopsWorkflow,
   type SpreadsheetImportWorkflow,
   type StartingItemsWorkflow,
@@ -67,6 +65,7 @@ export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): Nativ
 
 export function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
   return {
+    cancelSupportFileSearch: async () => undefined,
     checkForNativeUpdate: async () => null,
     createDirectory: async () => undefined,
     exitApp: async () => undefined,
@@ -6013,9 +6012,6 @@ export function createMockProjectBridge(
       diagnostics: [], gigantamaxOptions: [{ label: 'Normal', value: 1 }],
       moveOptions: dynamaxAdventuresWorkflow.encounters.find((encounter) => encounter.entryIndex === request.entryIndex)?.moveOptions ?? []
     }),
-    planDynamaxAdventureSeed: (request) => Promise.resolve({
-      plan: { diagnostics: [], encounters: dynamaxAdventuresWorkflow.encounters.slice(0, 2).map((encounter) => ({ form: encounter.form, isBoss: false, row: encounter.entryIndex, species: encounter.speciesId })), npcCount: request.npcCount, rentals: dynamaxAdventuresWorkflow.encounters.slice(0, 1).map((encounter) => ({ form: encounter.form, isBoss: false, row: encounter.entryIndex, species: encounter.speciesId })), requiredRowPositions: request.requiredRows.map((row) => ({ kind: 'encounter' as const, row, slot: 0 })), seed: request.seed }
-    }), searchDynamaxAdventureSeed: (request) => Promise.resolve({ search: { diagnostics: [], limit: request.limit, maxResults: request.maxResults, npcCount: request.npcCount, results: request.maxResults > 0 ? [{ positions: request.requiredRows.map((row) => ({ kind: 'encounter' as const, row, slot: 0 })), seed: request.startSeed }] : [], startSeed: request.startSeed } }), setDynamaxAdventureSaveSeed: (request) => Promise.resolve({ result: { backupFilePath: null, checksumsValid: true, diagnostics: [], newSeed: request.seed, oldSeed: request.seed, saveFilePath: request.paths.saveFilePath, wasChanged: false } }),
     loadShopsWorkflow: () =>
       Promise.resolve({
         workflow: shopsWorkflow
@@ -7005,44 +7001,6 @@ export function createMockProjectBridge(
         }
       });
     },
-    updateEncounterSlotField: (request) =>
-      Promise.resolve({
-        diagnostics: [],
-        session: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.encounters',
-              field: request.field,
-              newValue: request.value,
-              recordId: `${request.tableId}#${request.slot}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
-                }
-              ],
-              summary: `Set Sword Symbol Zone 0x1122334455667788 Normal slot ${request.slot} probability to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
-        },
-        workflow: {
-          ...encountersWorkflow,
-          tables: encountersWorkflow.tables.map((table) =>
-            table.tableId === request.tableId
-              ? {
-                  ...table,
-                  slots: table.slots.map((slot) =>
-                    slot.slot === request.slot
-                      ? { ...slot, weight: Number.parseInt(request.value, 10) }
-                      : slot
-                  )
-                }
-              : table
-          )
-        }
-      }),
     updateRaidBattleSlotField: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -7225,37 +7183,6 @@ export function createMockProjectBridge(
                   )
                 }
               : table
-          )
-        }
-      }),
-    updatePlacementObjectField: (request) =>
-      Promise.resolve({
-        diagnostics: [],
-        session: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.placement',
-              field: request.field,
-              newValue: request.value,
-              recordId: request.objectId,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/archive/field/resident/placement.gfpak'
-                }
-              ],
-              summary: `Set Field item: Potion ${request.field} to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
-        },
-        workflow: {
-          ...placementWorkflow,
-          objects: placementWorkflow.objects.map((placedObject) =>
-            placedObject.objectId === request.objectId
-              ? { ...placedObject, quantity: Number.parseInt(request.value, 10) }
-              : placedObject
           )
         }
       }),

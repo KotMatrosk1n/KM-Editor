@@ -9,6 +9,14 @@ public static class ZaTrinityDescriptorPatcher
 {
     public const string DescriptorVirtualPath = "arc/data.trpfd";
 
+    private static readonly EnumerationOptions RecursiveEnumeration = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = false,
+        RecurseSubdirectories = true,
+        ReturnSpecialDirectories = false,
+    };
+
     public static byte[] CreateLayeredDescriptor(string baseRomFsRoot, string outputRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
@@ -135,7 +143,7 @@ public static class ZaTrinityDescriptorPatcher
 
         var root = Path.GetFullPath(romFsRoot);
         return Directory
-            .EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .EnumerateFiles(root, "*", RecursiveEnumeration)
             .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
             .Where(path => !string.Equals(path, DescriptorVirtualPath, StringComparison.OrdinalIgnoreCase));
     }

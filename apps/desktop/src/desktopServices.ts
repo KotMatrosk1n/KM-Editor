@@ -19,6 +19,7 @@ export type NativeUpdate = {
 };
 
 export type DesktopServices = {
+  cancelSupportFileSearch: () => Promise<void>;
   checkForNativeUpdate: () => Promise<NativeUpdate | null>;
   createDirectory: (path: string) => Promise<void>;
   exitApp: () => Promise<void>;
@@ -34,6 +35,7 @@ export type DesktopServices = {
 };
 
 export const desktopServices: DesktopServices = {
+  cancelSupportFileSearch: () => invoke('cancel_support_file_search'),
   checkForNativeUpdate: async () => {
     ensureTauriRuntime();
 

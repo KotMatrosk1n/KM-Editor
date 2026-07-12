@@ -85,6 +85,7 @@ const textOriginals = new WeakMap<Text, string>();
 const attributeOriginals = new WeakMap<Element, Map<string, string>>();
 const missingLiteralWarnings = new Set<string>();
 const missingKeyWarnings = new Set<string>();
+const maximumRememberedLocalizationWarnings = 500;
 const pokemonTypeLiteralKeys = new Set([
   'Normal',
   'Fire',
@@ -1218,7 +1219,7 @@ function warnMissingKey(language: LanguageCode, key: string, translated: string)
 
   const warningKey = `${language}:${key}`;
   if (!missingKeyWarnings.has(warningKey)) {
-    missingKeyWarnings.add(warningKey);
+    rememberLocalizationWarning(missingKeyWarnings, warningKey);
     console.warn(`Missing ${language} localization key: ${key}`);
   }
 }
@@ -1230,9 +1231,20 @@ function warnMissingLiteral(language: LanguageCode, literal: string, translated:
 
   const warningKey = `${language}:${literal}`;
   if (!missingLiteralWarnings.has(warningKey)) {
-    missingLiteralWarnings.add(warningKey);
+    rememberLocalizationWarning(missingLiteralWarnings, warningKey);
     console.warn(`Missing ${language} localization literal: ${literal}`);
   }
+}
+
+function rememberLocalizationWarning(warnings: Set<string>, warning: string) {
+  if (warnings.size >= maximumRememberedLocalizationWarnings) {
+    const oldestWarning = warnings.values().next().value;
+    if (oldestWarning !== undefined) {
+      warnings.delete(oldestWarning);
+    }
+  }
+
+  warnings.add(warning);
 }
 
 function isLocalizationDebugEnabled() {
