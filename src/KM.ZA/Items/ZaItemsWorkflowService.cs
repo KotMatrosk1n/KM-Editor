@@ -2,6 +2,7 @@
 
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
@@ -92,7 +93,6 @@ internal sealed class ZaItemsWorkflowService
 
     private static readonly IReadOnlyList<string> NatureNames =
     [
-        "None",
         "Hardy",
         "Lonely",
         "Brave",
@@ -136,7 +136,10 @@ internal sealed class ZaItemsWorkflowService
             .ToArray();
 
     private static readonly IReadOnlyList<ZaItemEditableFieldOption> NatureOptions =
-        CreateIndexedOptions(NatureNames);
+    [
+        new(-1, "-1 None"),
+        .. CreateIndexedOptions(NatureNames),
+    ];
 
     private static readonly IReadOnlyList<ZaItemEditableField> BaseEditableFields =
     [
@@ -167,7 +170,7 @@ internal sealed class ZaItemsWorkflowService
         Field(AccuracyBoostField, "Accuracy boost", "integer", int.MinValue, int.MaxValue),
         Field(CriticalHitBoostField, "Critical hit boost", "integer", int.MinValue, int.MaxValue),
         Field(EffectGuardField, "Effect guard", "integer", int.MinValue, int.MaxValue),
-        Field(MintNatureField, "Mint nature", "integer", 0, int.MaxValue, NatureOptions),
+        Field(MintNatureField, "Mint nature", "integer", -1, NatureNames.Count - 1, NatureOptions),
         Field(HealPowerField, "Healing power", "integer", int.MinValue, int.MaxValue),
         Field(HealPercentageField, "Heal percentage", "integer", 0, 100),
         Field(RevivalCountField, "Revival count", "integer", int.MinValue, int.MaxValue),
@@ -221,7 +224,8 @@ internal sealed class ZaItemsWorkflowService
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
-            items = LoadRecords(source, labels).ToArray();
+            var mintNatureRecovery = DetectMintNatureRecovery(project, source, diagnostics);
+            items = LoadRecords(source, labels, mintNatureRecovery.ItemIds).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -260,11 +264,60 @@ internal sealed class ZaItemsWorkflowService
             : $"Pocket {value.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    internal static string FormatNature(int value) => FormatIndexed(value, NatureNames, "Nature");
+    internal static string FormatNature(int value) => value < 0
+        ? "None"
+        : FormatIndexed(value, NatureNames, "Nature");
+
+    private ZaItemMintNatureRecovery DetectMintNatureRecovery(
+        OpenedProject project,
+        ZaWorkflowFile source,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (source.SourceLayer != ProjectFileLayer.Layered)
+        {
+            return ZaItemMintNatureRecovery.None;
+        }
+
+        try
+        {
+            var baseSource = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
+            var recovery = ZaItemMintNatureRecoveryDetector.Analyze(source.Bytes, baseSource.Bytes);
+            if (recovery.Status == ZaItemMintNatureRecoveryStatus.Detected)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    "A legacy KM output rewrote unused mint sentinels and made unrelated items target Pokemon. "
+                    + "Affected rows are treated as no-mint values and will be repaired on the next Items output.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    MintNatureField,
+                    "Only items with a real use effect or an enabled evolution-item flag target Pokemon"));
+            }
+            else if (recovery.Status == ZaItemMintNatureRecoveryStatus.Ambiguous)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Error(
+                    "The layered item table contains a partial legacy mint-sentinel pattern. "
+                    + "KM will not rewrite the mixed values because doing so would require guessing.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    MintNatureField,
+                    "Restore a clean item table or remove the affected layered item output before editing"));
+            }
+
+            return recovery;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Error(
+                $"Legacy item mint-sentinel recovery could not compare clean base data: {exception.Message}",
+                $"romfs/{ZaDataPaths.ItemDataArray}",
+                MintNatureField,
+                "Readable clean base and layered item tables"));
+            return ZaItemMintNatureRecovery.None;
+        }
+    }
 
     private static IEnumerable<ZaItemRecord> LoadRecords(
         ZaWorkflowFile source,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        IReadOnlySet<int> recoveredMintNatureItemIds)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
         var records = new List<ZaItemRecord>();
@@ -273,7 +326,11 @@ internal sealed class ZaItemsWorkflowService
             var item = table.Values(index);
             if (item is not null)
             {
-                records.Add(ToRecord(item.Value, labels, source));
+                records.Add(ToRecord(
+                    item.Value,
+                    labels,
+                    source,
+                    recoveredMintNatureItemIds.Contains(item.Value.Id) ? -1 : item.Value.MintNature));
             }
         }
 
@@ -287,7 +344,8 @@ internal sealed class ZaItemsWorkflowService
     private static ZaItemRecord ToRecord(
         ZaItemData item,
         ZaTextLabelLookup labels,
-        ZaWorkflowFile source)
+        ZaWorkflowFile source,
+        int mintNature)
     {
         var machineMoveId = item.MachineWaza;
         var machineMoveName = machineMoveId > 0 ? labels.Move(machineMoveId) : null;
@@ -303,7 +361,7 @@ internal sealed class ZaItemsWorkflowService
             FlingPower: 0,
             item.CanUseInBattle ? 1 : 0,
             FieldFlags: 0,
-            CanUseOnPokemon: CanUseOnPokemon(item),
+            CanUseOnPokemon: CanUseOnPokemon(item, mintNature),
             item.ItemType,
             item.SortNum,
             item.Id,
@@ -339,10 +397,10 @@ internal sealed class ZaItemsWorkflowService
             item.Price / 2,
             item.PriceMegaShard,
             item.PriceColorfulScrew,
-            CreateFieldValues(item),
+            CreateFieldValues(item, mintNature),
             metadata,
             SharedItemIds: [],
-            CreateDetailGroups(item, labels),
+            CreateDetailGroups(item, labels, mintNature),
             new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
@@ -408,7 +466,7 @@ internal sealed class ZaItemsWorkflowService
             [AccuracyBoostField] = 0,
             [CriticalHitBoostField] = 0,
             [EffectGuardField] = 0,
-            [MintNatureField] = 0,
+            [MintNatureField] = -1,
             [HealPowerField] = 0,
             [HealPercentageField] = 0,
             [RevivalCountField] = 0,
@@ -529,7 +587,7 @@ internal sealed class ZaItemsWorkflowService
                     Detail("Revive percentage", 0),
                     Detail("EXP gain", 0),
                     Detail("Max use level", 0),
-                    Detail("Mint nature", "0 None"),
+                    Detail("Mint nature", "-1 None"),
                     Detail("Can use on Pokemon", "No"),
                     Detail("Evolution Item", "No"),
                     Detail("Form change item", "No"),
@@ -538,7 +596,7 @@ internal sealed class ZaItemsWorkflowService
         ];
     }
 
-    internal static IReadOnlyDictionary<string, int?> CreateFieldValues(ZaItemData item)
+    internal static IReadOnlyDictionary<string, int?> CreateFieldValues(ZaItemData item, int mintNature)
     {
         return new Dictionary<string, int?>
         {
@@ -567,7 +625,7 @@ internal sealed class ZaItemsWorkflowService
             [AccuracyBoostField] = item.WorkAccuracy,
             [CriticalHitBoostField] = item.WorkCritical,
             [EffectGuardField] = item.WorkEffectGuard,
-            [MintNatureField] = NormalizeMintNature(item.MintNature),
+            [MintNatureField] = mintNature,
             [HealPowerField] = item.WorkRecvPower,
             [HealPercentageField] = item.HealPercentage,
             [RevivalCountField] = item.WorkRevival,
@@ -577,7 +635,7 @@ internal sealed class ZaItemsWorkflowService
             [FriendshipGain1Field] = item.WorkFriendly1,
             [FriendshipGain2Field] = item.WorkFriendly2,
             [FriendshipGain3Field] = item.WorkFriendly3,
-            [CanUseOnPokemonField] = CanUseOnPokemon(item) ? 1 : 0,
+            [CanUseOnPokemonField] = CanUseOnPokemon(item, mintNature) ? 1 : 0,
             [EvolutionItemField] = item.WorkEvolutional ? 1 : 0,
             [FormChangeItemField] = item.WorkFormChange ? 1 : 0,
             [EvHpField] = item.WorkStatusHp,
@@ -612,9 +670,7 @@ internal sealed class ZaItemsWorkflowService
     internal static string FormatTechnicalMachineName(int machineSlot, string machineMoveName) =>
         $"{ZaTechnicalMachineCatalog.FormatMachineLabel(machineSlot)} {machineMoveName}";
 
-    internal static int NormalizeMintNature(int value) => value < 0 ? 0 : value;
-
-    private static bool CanUseOnPokemon(ZaItemData item)
+    private static bool CanUseOnPokemon(ZaItemData item, int mintNature)
     {
         return item.WorkRecvSleep
             || item.WorkRecvPoison
@@ -628,6 +684,7 @@ internal sealed class ZaItemsWorkflowService
             || item.WorkRevival != 0
             || item.RevivePercentage != 0
             || item.ExpPointGain != 0
+            || mintNature >= 0
             || item.WorkEvolutional
             || item.WorkFormChange
             || item.WorkStatusHp != 0
@@ -681,7 +738,8 @@ internal sealed class ZaItemsWorkflowService
 
     private static IReadOnlyList<ZaItemDetailGroup> CreateDetailGroups(
         ZaItemData item,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        int mintNature)
     {
         return
         [
@@ -728,8 +786,8 @@ internal sealed class ZaItemsWorkflowService
                     Detail("Revive percentage", item.RevivePercentage),
                     Detail("EXP gain", item.ExpPointGain),
                     Detail("Max use level", item.MaxUseLevel),
-                    Detail("Mint nature", $"{NormalizeMintNature(item.MintNature).ToString(CultureInfo.InvariantCulture)} {FormatNature(NormalizeMintNature(item.MintNature))}"),
-                    Detail("Can use on Pokemon", ZaLabels.Bool(CanUseOnPokemon(item))),
+                    Detail("Mint nature", $"{mintNature.ToString(CultureInfo.InvariantCulture)} {FormatNature(mintNature)}"),
+                    Detail("Can use on Pokemon", ZaLabels.Bool(CanUseOnPokemon(item, mintNature))),
                     Detail("Evolution Item", ZaLabels.Bool(item.WorkEvolutional)),
                     Detail("Form change item", ZaLabels.Bool(item.WorkFormChange)),
                     Detail("Swap into item", item.SwapIntoId > 0 ? $"{item.SwapIntoId.ToString(CultureInfo.InvariantCulture)} {labels.Item(item.SwapIntoId)}" : "None"),

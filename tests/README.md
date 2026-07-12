@@ -25,13 +25,15 @@ pnpm test:full
 
 `test:fast` is the normal confidence loop. It keeps desktop typechecking, desktop bridge and shell smoke coverage, core and format coverage, high risk Sword and Shield workflow coverage, and bridge serialization smoke coverage.
 
-`test:full` keeps the old safety net: desktop Vitest plus the full backend solution tests.
+`test:full` keeps the old safety net: desktop Vitest, native desktop Rust tests, and the full backend solution tests.
 
 The full command is a time-budgeted gate. It builds backend test projects once, then runs bounded desktop, core/format, Sword/Shield, Scarlet/Violet, Pokemon Legends Z-A, shared bridge, and performance shards. The default limits live in `scripts/test-budgets.json`:
 
 - 270 seconds for the complete local gate.
 - 240 seconds for an ordinary shard.
 - At most 4 concurrent local workers.
+
+The desktop shard allows up to 210 seconds for a cold Rust/Tauri dependency build, while the complete local gate remains capped at 270 seconds and hosted validation jobs at five minutes. Hosted validation uses the runner's installed stable toolchain when available and caches the exact Cargo registry and target by compiler version and `Cargo.lock`; incremental native tests normally finish much faster.
 
 Every command writes `TestResults/test-timings.json`. A command that exceeds its budget is terminated with its descendant processes so timed-out test hosts cannot keep files locked.
 
@@ -65,6 +67,8 @@ Performance baselines are also tagged with `Kind=Slow`.
 Backend test assemblies use `tests/xunit.runner.json` to enable collection parallelism with a bounded four-thread limit and report tests that run longer than ten seconds.
 
 When adding tests, put the strongest assertion at the cheapest layer that can prove it. Prefer focused workflow, format, bridge, or component tests over adding another broad App or dispatcher regression unless the bug needs the full shell.
+
+Whole-table writers must test lossless preservation, not only the field being edited. Keep raw game sentinels such as `-1` in the serialization model, normalize them only for display, and compare every exposed field on at least one unedited row. If a FlatBuffer distinguishes an omitted default field from an explicitly serialized zero, include a binary-shape assertion in the format layer.
 
 Bridge dispatcher tests should prove command routing, serialization, and mapper behavior. Feature rules belong in workflow or format tests unless the bridge layer is the thing that can break them.
 

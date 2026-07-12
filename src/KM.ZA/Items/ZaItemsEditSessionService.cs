@@ -289,6 +289,8 @@ internal sealed class ZaItemsEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             var rows = ReadRows(source.Bytes);
+            var mintNatureRecovery = DetectMintNatureRecovery(project, source);
+            RestoreMintNatureSentinels(rows, mintNatureRecovery.ItemIds);
             foreach (var edit in session.PendingEdits)
             {
                 ApplyEdit(rows, edit, diagnostics);
@@ -334,6 +336,14 @@ internal sealed class ZaItemsEditSessionService
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage("Items", outputMode),
                 ZaEditSessionSupport.ItemsDomain));
+            if (mintNatureRecovery.Status == ZaItemMintNatureRecoveryStatus.Detected)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"Repaired {mintNatureRecovery.ItemIds.Count} legacy no-mint item sentinels while preserving other item edits.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MintNatureField));
+            }
         }
         catch (Exception exception)
         {
@@ -346,6 +356,32 @@ internal sealed class ZaItemsEditSessionService
         }
 
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private ZaItemMintNatureRecovery DetectMintNatureRecovery(
+        OpenedProject project,
+        ZaWorkflowFile source)
+    {
+        if (source.SourceLayer != ProjectFileLayer.Layered)
+        {
+            return ZaItemMintNatureRecovery.None;
+        }
+
+        var baseSource = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
+        return ZaItemMintNatureRecoveryDetector.Analyze(source.Bytes, baseSource.Bytes);
+    }
+
+    private static void RestoreMintNatureSentinels(
+        IEnumerable<ItemRow> rows,
+        IReadOnlySet<int> recoveredItemIds)
+    {
+        foreach (var row in rows)
+        {
+            if (recoveredItemIds.Contains(row.Id) && row.MintNature == 0)
+            {
+                row.MintNature = -1;
+            }
+        }
     }
 
     private void ValidateEvolutionItemConversions(
@@ -397,7 +433,7 @@ internal sealed class ZaItemsEditSessionService
                 $"{effectiveItem.Name} already has a direct Pokemon-use effect and cannot safely be converted without replacing that behavior.",
                 ZaEditSessionSupport.ItemsDomain,
                 field: ZaItemsWorkflowService.EvolutionItemField,
-                expected: "Held or inert item with no healing, status, form-change, experience, revival, or EV use effect"));
+                expected: "Held or inert item with no healing, status, mint, form-change, experience, revival, or EV use effect"));
         }
     }
 
@@ -417,7 +453,6 @@ internal sealed class ZaItemsEditSessionService
             ZaItemsWorkflowService.RevivalCountField,
             ZaItemsWorkflowService.RevivePercentageField,
             ZaItemsWorkflowService.ExpPointGainField,
-            ZaItemsWorkflowService.MintNatureField,
             ZaItemsWorkflowService.MachineMoveIdField,
             ZaItemsWorkflowService.FormChangeItemField,
             ZaItemsWorkflowService.EvHpField,
@@ -427,7 +462,8 @@ internal sealed class ZaItemsEditSessionService
             ZaItemsWorkflowService.EvSpecialAttackField,
             ZaItemsWorkflowService.EvSpecialDefenseField,
         ];
-        return fields.Any(field => item.FieldValues.GetValueOrDefault(field) is { } value && value != 0);
+        return HasMintNature(item.FieldValues)
+            || fields.Any(field => item.FieldValues.GetValueOrDefault(field) is { } value && value != 0);
     }
 
     private static void PrepareEvolutionItemConversions(
@@ -844,6 +880,7 @@ internal sealed class ZaItemsEditSessionService
             || IsNonZero(fieldValues, ZaItemsWorkflowService.RevivalCountField)
             || IsNonZero(fieldValues, ZaItemsWorkflowService.RevivePercentageField)
             || IsNonZero(fieldValues, ZaItemsWorkflowService.ExpPointGainField)
+            || HasMintNature(fieldValues)
             || IsEnabled(fieldValues, ZaItemsWorkflowService.EvolutionItemField)
             || IsEnabled(fieldValues, ZaItemsWorkflowService.FormChangeItemField)
             || IsNonZero(fieldValues, ZaItemsWorkflowService.EvHpField)
@@ -859,6 +896,11 @@ internal sealed class ZaItemsEditSessionService
 
     private static bool IsNonZero(IReadOnlyDictionary<string, int?> fieldValues, string field) =>
         fieldValues.TryGetValue(field, out var value) && value is not null && value != 0;
+
+    private static bool HasMintNature(IReadOnlyDictionary<string, int?> fieldValues) =>
+        fieldValues.TryGetValue(ZaItemsWorkflowService.MintNatureField, out var value)
+        && value is not null
+        && value >= 0;
 
     private static int SetFlag(int flags, int bit, bool enabled)
     {
@@ -1104,6 +1146,7 @@ internal sealed class ZaItemsEditSessionService
             CanNotHold = false,
             MachineWaza = ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineMoveId,
             MachineIndex = ZaTechnicalMachineCatalog.KnownMissingTechnicalMachineIndex,
+            MintNature = -1,
             CanUseInBattle = false,
         };
 
@@ -1202,7 +1245,11 @@ internal sealed class ZaItemsEditSessionService
                 WorkAccuracy = row.WorkAccuracy,
                 WorkCritical = row.WorkCritical,
                 WorkEffectGuard = row.WorkEffectGuard,
-                MintNature = ZaItemsWorkflowService.NormalizeMintNature(row.MintNature),
+                // Keep the game's raw sentinel. Most non-mint rows use -1 here; normalizing
+                // that to the display value 0 makes every rewritten item behave like it has
+                // a Pokemon-use effect. Display normalization belongs in the workflow model,
+                // never in the lossless row used to rebuild the game file.
+                MintNature = row.MintNature,
                 WorkRecvPower = row.WorkRecvPower,
                 HealPercentage = row.HealPercentage,
                 WorkRevival = row.WorkRevival,

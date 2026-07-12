@@ -4,10 +4,21 @@ namespace KM.SwSh.Workflows;
 
 public sealed class SwShParsedDataCache
 {
+    public const int DefaultMaximumEntryCount = 8;
+
     private readonly object syncRoot = new();
     private readonly Dictionary<SwShParsedDataCacheKey, SwShParsedDataCacheEntry> entries = new(SwShParsedDataCacheKey.Comparer);
+    private readonly LinkedList<SwShParsedDataCacheKey> recency = new();
+    private readonly int maximumEntryCount;
     private long hitCount;
     private long missCount;
+    private long evictionCount;
+
+    public SwShParsedDataCache(int maximumEntryCount = DefaultMaximumEntryCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumEntryCount, 1);
+        this.maximumEntryCount = maximumEntryCount;
+    }
 
     public SwShParsedDataCacheResult<TValue> GetOrAdd<TValue>(
         string filePath,
@@ -27,6 +38,7 @@ public sealed class SwShParsedDataCache
                 && entry.Identity.LastWriteTimeUtc == identity.LastWriteTimeUtc
                 && entry.Value is TValue cachedValue)
             {
+                MarkMostRecentlyUsed(entry.RecencyNode);
                 hitCount++;
                 return new SwShParsedDataCacheResult<TValue>(cachedValue, identity, WasCacheHit: true);
             }
@@ -38,7 +50,14 @@ public sealed class SwShParsedDataCache
 
         lock (syncRoot)
         {
-            entries[key] = new SwShParsedDataCacheEntry(identity, value);
+            if (entries.Remove(key, out var replacedEntry))
+            {
+                recency.Remove(replacedEntry.RecencyNode);
+            }
+
+            var recencyNode = recency.AddLast(key);
+            entries[key] = new SwShParsedDataCacheEntry(identity, value, recencyNode);
+            TrimToMaximumEntryCount();
         }
 
         return new SwShParsedDataCacheResult<TValue>(value, identity, WasCacheHit: false);
@@ -49,8 +68,10 @@ public sealed class SwShParsedDataCache
         lock (syncRoot)
         {
             entries.Clear();
+            recency.Clear();
             hitCount = 0;
             missCount = 0;
+            evictionCount = 0;
         }
     }
 
@@ -58,13 +79,40 @@ public sealed class SwShParsedDataCache
     {
         lock (syncRoot)
         {
-            return new SwShParsedDataCacheSnapshot(entries.Count, hitCount, missCount);
+            return new SwShParsedDataCacheSnapshot(
+                entries.Count,
+                maximumEntryCount,
+                hitCount,
+                missCount,
+                evictionCount);
+        }
+    }
+
+    private void MarkMostRecentlyUsed(LinkedListNode<SwShParsedDataCacheKey> node)
+    {
+        if (!ReferenceEquals(recency.Last, node))
+        {
+            recency.Remove(node);
+            recency.AddLast(node);
+        }
+    }
+
+    private void TrimToMaximumEntryCount()
+    {
+        while (entries.Count > maximumEntryCount && recency.First is { } leastRecentlyUsed)
+        {
+            recency.RemoveFirst();
+            if (entries.Remove(leastRecentlyUsed.Value))
+            {
+                evictionCount++;
+            }
         }
     }
 
     private sealed record SwShParsedDataCacheEntry(
         SwShParsedFileIdentity Identity,
-        object Value);
+        object Value,
+        LinkedListNode<SwShParsedDataCacheKey> RecencyNode);
 
     private sealed record SwShParsedDataCacheKey(string FullPath, Type ValueType)
     {
@@ -106,8 +154,10 @@ public sealed record SwShParsedDataCacheResult<TValue>(
 
 public sealed record SwShParsedDataCacheSnapshot(
     int EntryCount,
+    int MaximumEntryCount,
     long HitCount,
-    long MissCount);
+    long MissCount,
+    long EvictionCount);
 
 public sealed record SwShParsedFileIdentity(
     string FullPath,

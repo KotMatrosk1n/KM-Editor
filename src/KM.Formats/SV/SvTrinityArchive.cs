@@ -3,6 +3,7 @@
 using Google.FlatBuffers;
 using KM.Formats.SV.Trinity;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 
 namespace KM.Formats.SV;
 
@@ -10,14 +11,16 @@ public sealed class SvTrinityArchive : IDisposable
 {
     public const int IndexSchemaVersion = 1;
 
+    private const long PackCacheBudgetBytes = 64L * 1024 * 1024;
     private const string DescriptorRelativePath = "arc/data.trpfd";
     private const string FileSystemRelativePath = "arc/data.trpfs";
     private const int OneFileHeaderSize = 16;
 
+    private static readonly ConditionalWeakTable<SvTrinityArchiveIndex, CompiledIndexLookup> CompiledIndexes = new();
+
     private readonly string trpfsPath;
-    private readonly Dictionary<ulong, FileLocation> filesByHash;
-    private readonly Dictionary<ulong, ulong> packOffsetsByHash;
-    private readonly Dictionary<ulong, PackedArchiveCacheEntry> packCache = [];
+    private readonly CompiledIndexLookup compiledIndex;
+    private readonly ByteBudgetLruCache<ulong, PackedArchiveCacheEntry> packCache = new(PackCacheBudgetBytes);
     private readonly string? compressionSupportFolderPath;
     private SvCompressionRuntimeLibrary? compressionLibrary;
     private bool ownsCompressionLibrary;
@@ -25,14 +28,12 @@ public sealed class SvTrinityArchive : IDisposable
 
     private SvTrinityArchive(
         string trpfsPath,
-        Dictionary<ulong, FileLocation> filesByHash,
-        Dictionary<ulong, ulong> packOffsetsByHash,
+        CompiledIndexLookup compiledIndex,
         string? compressionSupportFolderPath,
         SvCompressionRuntimeLibrary? compressionLibrary)
     {
         this.trpfsPath = trpfsPath;
-        this.filesByHash = filesByHash;
-        this.packOffsetsByHash = packOffsetsByHash;
+        this.compiledIndex = compiledIndex;
         this.compressionSupportFolderPath = compressionSupportFolderPath;
         this.compressionLibrary = compressionLibrary;
         ownsCompressionLibrary = compressionLibrary is null;
@@ -64,8 +65,7 @@ public sealed class SvTrinityArchive : IDisposable
 
         return new SvTrinityArchive(
             trpfsPath,
-            BuildFileIndex(archiveIndex),
-            BuildPackOffsetIndex(archiveIndex),
+            CompiledIndexes.GetValue(archiveIndex, CreateCompiledIndex),
             compressionSupportFolderPath,
             compressionLibrary);
     }
@@ -94,19 +94,24 @@ public sealed class SvTrinityArchive : IDisposable
     public bool ContainsFile(string virtualPath)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        return filesByHash.ContainsKey(SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath)));
+        return compiledIndex.FileIndicesByHash.ContainsKey(
+            SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath)));
     }
+
+    internal object CompiledIndexIdentity => compiledIndex;
 
     public bool TryReadFile(string virtualPath, out byte[] bytes)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
         var fileHash = SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath));
-        if (!filesByHash.TryGetValue(fileHash, out var location))
+        if (!compiledIndex.FileIndicesByHash.TryGetValue(fileHash, out var locationIndex))
         {
             bytes = [];
             return false;
         }
+
+        var location = compiledIndex.Files[locationIndex];
 
         var pack = GetPack(location);
         if (!pack.FileIndicesByHash.TryGetValue(fileHash, out var fileIndex))
@@ -135,12 +140,18 @@ public sealed class SvTrinityArchive : IDisposable
             return;
         }
 
-        if (ownsCompressionLibrary)
+        try
         {
-            compressionLibrary?.Dispose();
+            if (ownsCompressionLibrary)
+            {
+                compressionLibrary?.Dispose();
+            }
         }
-
-        disposed = true;
+        finally
+        {
+            packCache.Clear();
+            disposed = true;
+        }
     }
 
     private static string ResolveRomFsRoot(string path)
@@ -200,7 +211,7 @@ public sealed class SvTrinityArchive : IDisposable
             BuildPackIndexEntries(fileSystem));
     }
 
-    private static Dictionary<ulong, FileLocation> BuildFileIndex(SvTrinityArchiveIndex index)
+    private static Dictionary<ulong, int> BuildFileIndex(SvTrinityArchiveIndex index)
     {
         if (index.SchemaVersion != IndexSchemaVersion)
         {
@@ -208,21 +219,29 @@ public sealed class SvTrinityArchive : IDisposable
                 $"Scarlet/Violet Trinity cache index schema {index.SchemaVersion} is not supported.");
         }
 
-        var result = new Dictionary<ulong, FileLocation>(index.Files.Count);
-        foreach (var file in index.Files)
+        var result = new Dictionary<ulong, int>(index.Files.Count);
+        for (var fileIndex = 0; fileIndex < index.Files.Count; fileIndex++)
         {
-            result[file.FileHash] = new FileLocation(
-                file.PackName,
-                file.PackHash,
-                file.PackSize);
+            result[index.Files[fileIndex].FileHash] = fileIndex;
         }
 
         return result;
     }
 
+    private static CompiledIndexLookup CreateCompiledIndex(SvTrinityArchiveIndex index)
+    {
+        return new CompiledIndexLookup(
+            index.Files,
+            BuildFileIndex(index),
+            BuildPackOffsetIndex(index));
+    }
+
     private static IReadOnlyList<SvTrinityArchiveFileIndexEntry> BuildFileIndexEntries(FileDescriptor descriptor)
     {
         var result = new List<SvTrinityArchiveFileIndexEntry>(descriptor.FileHashesLength);
+        var packNames = new string?[descriptor.PackNamesLength];
+        var packSizes = new long[descriptor.PacksLength];
+        var loadedPackSizes = new bool[descriptor.PacksLength];
 
         for (var index = 0; index < descriptor.FileHashesLength; index++)
         {
@@ -236,16 +255,21 @@ public sealed class SvTrinityArchive : IDisposable
                 throw new InvalidDataException($"Trinity descriptor pack index {packIndex} is invalid.");
             }
 
-            var packName = descriptor.PackNames(packIndex)
+            var packName = packNames[packIndex] ??= descriptor.PackNames(packIndex)
                 ?? throw new InvalidDataException($"Trinity descriptor pack name {packIndex} is missing.");
-            var pack = descriptor.Packs(packIndex)
-                ?? throw new InvalidDataException($"Trinity descriptor pack entry {packIndex} is missing.");
+            if (!loadedPackSizes[packIndex])
+            {
+                var pack = descriptor.Packs(packIndex)
+                    ?? throw new InvalidDataException($"Trinity descriptor pack entry {packIndex} is missing.");
+                packSizes[packIndex] = checked((long)pack.FileSize);
+                loadedPackSizes[packIndex] = true;
+            }
 
             result.Add(new SvTrinityArchiveFileIndexEntry(
                 hash,
                 packName,
                 SvTrinityPathHasher.HashPath(packName),
-                checked((long)pack.FileSize)));
+                packSizes[packIndex]));
         }
 
         return result;
@@ -287,14 +311,14 @@ public sealed class SvTrinityArchive : IDisposable
         return result;
     }
 
-    private PackedArchiveCacheEntry GetPack(FileLocation location)
+    private PackedArchiveCacheEntry GetPack(SvTrinityArchiveFileIndexEntry location)
     {
         if (packCache.TryGetValue(location.PackHash, out var cached))
         {
             return cached;
         }
 
-        if (!packOffsetsByHash.TryGetValue(location.PackHash, out var packOffset))
+        if (!compiledIndex.PackOffsetsByHash.TryGetValue(location.PackHash, out var packOffset))
         {
             throw new FileNotFoundException($"Scarlet/Violet Trinity pack '{location.PackName}' was not indexed.");
         }
@@ -320,7 +344,7 @@ public sealed class SvTrinityArchive : IDisposable
         }
 
         var entry = new PackedArchiveCacheEntry(packBytes, archive, fileIndices);
-        packCache[location.PackHash] = entry;
+        packCache.Set(location.PackHash, entry, packBytes.LongLength);
         return entry;
     }
 
@@ -365,7 +389,10 @@ public sealed class SvTrinityArchive : IDisposable
         return normalized.TrimStart('/');
     }
 
-    private sealed record FileLocation(string PackName, ulong PackHash, long PackSize);
+    private sealed record CompiledIndexLookup(
+        IReadOnlyList<SvTrinityArchiveFileIndexEntry> Files,
+        Dictionary<ulong, int> FileIndicesByHash,
+        Dictionary<ulong, ulong> PackOffsetsByHash);
 
     private sealed record PackedArchiveCacheEntry(
         byte[] Buffer,

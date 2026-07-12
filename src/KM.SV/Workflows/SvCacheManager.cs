@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -30,17 +31,46 @@ public sealed class SvCacheManager
     private const string ProjectsDirectoryName = "projects";
     private const string TempDirectoryName = "tmp";
     private const string IndexFileName = "index.json";
+    private const string SourceFileName = "source.json";
+    private const string WarmupPathsFileName = "warmup-paths.json";
+    private const string WarmupStateFileName = "warmup-state.json";
     private const string PayloadDirectoryName = "payloads";
     private const string MetadataDirectoryName = "metadata";
-    private const int TextWarmupBatchSize = 256;
+    private const int TextWarmupBatchSize = 8;
+    private static readonly TimeSpan WarmupStepTimeBudget = TimeSpan.FromMilliseconds(35);
+    private static readonly TimeSpan OrphanTempFileAge = TimeSpan.FromMinutes(10);
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly string cacheRoot;
     private readonly object syncRoot = new();
+    private SvCacheSourceFingerprint? retainedIndexSource;
+    private SvTrinityArchiveIndex? retainedIndex;
+    private HashSet<ulong>? retainedFileHashes;
+    private IReadOnlyList<string>? retainedPackNames;
+    private SvCacheSourceFingerprint? retainedWarmupPathsSource;
+    private IReadOnlyList<string>? retainedWarmupVirtualPaths;
+    private SvCacheSourceFingerprint? retainedWarmupProgressSource;
+    private SvCacheMode? retainedWarmupProgressMode;
+    private IReadOnlyList<string>? retainedWarmupProgressPaths;
+    private HashSet<string>? retainedCompletedWarmupPaths;
+    private long? retainedPersistentCacheSizeBytes;
+    private string? lastObsoleteProjectCleanupKey;
+    private bool tempCleanupCompleted;
 
     public SvCacheManager(string? cacheRoot = null)
     {
         this.cacheRoot = cacheRoot ?? ResolveDefaultCacheRoot();
+    }
+
+    internal bool HasRetainedIndex
+    {
+        get
+        {
+            lock (syncRoot)
+            {
+                return retainedIndex is not null;
+            }
+        }
     }
 
     private static JsonSerializerOptions CreateJsonOptions()
@@ -69,8 +99,18 @@ public sealed class SvCacheManager
                 return WarmupVirtualPaths;
             }
 
+            var settings = ReadSettings();
             DeleteObsoleteProjectCaches(context);
-            return GetWarmupVirtualPaths(context);
+            var warmupPaths = GetWarmupVirtualPaths(
+                context,
+                persistToDisk: settings.Mode != SvCacheMode.Minimal,
+                out var cacheChanged);
+            if (cacheChanged)
+            {
+                PruneIfNeeded(settings, context);
+            }
+
+            return warmupPaths;
         }
     }
 
@@ -170,31 +210,39 @@ public sealed class SvCacheManager
             .ToArray();
     }
 
-    private IReadOnlyList<string> GetWarmupVirtualPaths(SvCacheProjectContext context)
+    private IReadOnlyList<string> GetWarmupVirtualPaths(
+        SvCacheProjectContext context,
+        bool persistToDisk = true)
+    {
+        return GetWarmupVirtualPaths(context, persistToDisk, out _);
+    }
+
+    private IReadOnlyList<string> GetWarmupVirtualPaths(
+        SvCacheProjectContext context,
+        bool persistToDisk,
+        out bool cacheChanged)
     {
         try
         {
-            var index = GetOrBuildIndex(context);
-            var fileHashes = index.Files
-                .Select(file => file.FileHash)
-                .ToHashSet();
+            var index = GetOrBuildIndex(context, persistToDisk, out cacheChanged);
+            var warmupPaths = GetOrCreateWarmupVirtualPaths(context, index);
+            if (persistToDisk)
+            {
+                cacheChanged |= EnsureWarmupPathsManifestIsPersisted(context, warmupPaths);
+            }
 
-            return CreateOrderedWarmupVirtualPaths(CreateDiscoveredMessageWarmupPaths(index))
-                .Where(virtualPath => fileHashes.Contains(SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath))))
-                .ToArray();
+            return warmupPaths;
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
         {
+            cacheChanged = false;
             return WarmupVirtualPaths;
         }
     }
 
-    private static IEnumerable<string> CreateDiscoveredMessageWarmupPaths(SvTrinityArchiveIndex index)
+    private static IEnumerable<string> CreateDiscoveredMessageWarmupPaths(
+        IReadOnlyList<string> packNames)
     {
-        var packNames = index.Files
-            .Select(file => file.PackName)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-
         foreach (var language in SvGameTextLanguage.SupportedMessageLanguages)
         {
             foreach (var packName in packNames)
@@ -220,9 +268,11 @@ public sealed class SvCacheManager
             WriteJsonAtomic(SettingsPath, settings);
             if (previousSettings.Mode != settings.Mode)
             {
+                ClearMemoryCacheCore();
                 DeleteDirectoryIfExists(ProjectsPath);
                 DeleteDirectoryIfExists(TempPath);
                 Directory.CreateDirectory(ProjectsPath);
+                retainedPersistentCacheSizeBytes = 0;
             }
             else
             {
@@ -230,9 +280,20 @@ public sealed class SvCacheManager
                 if (activeContext is not null)
                 {
                     DeleteObsoleteProjectCaches(activeContext);
+                    if (settings.MaxCacheSizeBytes != previousSettings.MaxCacheSizeBytes)
+                    {
+                        retainedWarmupProgressSource = null;
+                        retainedWarmupProgressMode = null;
+                        retainedWarmupProgressPaths = null;
+                        retainedCompletedWarmupPaths = null;
+                        if (settings.MaxCacheSizeBytes > previousSettings.MaxCacheSizeBytes)
+                        {
+                            TryDeleteFile(GetWarmupStatePath(activeContext));
+                        }
+                    }
                 }
 
-                PruneIfNeeded(settings, activeContext?.ProjectKey);
+                PruneIfNeeded(settings, activeContext, forceSizeRefresh: true);
             }
 
             return settings;
@@ -249,8 +310,13 @@ public sealed class SvCacheManager
             if (context is not null)
             {
                 DeleteObsoleteProjectCaches(context);
+                if (Directory.Exists(context.ProjectDirectory))
+                {
+                    EnsureSourceManifestIsPersisted(context);
+                }
             }
 
+            PruneIfNeeded(settings, context, forceSizeRefresh: true);
             return CreateStatus(settings, context, activeProjectPreserved: false);
         }
     }
@@ -263,10 +329,20 @@ public sealed class SvCacheManager
             var settings = ReadSettings();
             var activeContext = TryCreateActiveProjectContext(activePaths);
 
+            ClearMemoryCacheCore();
             DeleteDirectoryIfExists(ProjectsPath);
             DeleteDirectoryIfExists(TempPath);
             Directory.CreateDirectory(ProjectsPath);
+            retainedPersistentCacheSizeBytes = 0;
             return CreateStatus(settings, activeContext, activeProjectPreserved: false);
+        }
+    }
+
+    public void ClearMemoryCache()
+    {
+        lock (syncRoot)
+        {
+            ClearMemoryCacheCore();
         }
     }
 
@@ -285,32 +361,66 @@ public sealed class SvCacheManager
             }
 
             DeleteObsoleteProjectCaches(context);
+            if (IsWarmupCapacityLimited(settings, context))
+            {
+                return CreateStatus(settings, context, activeProjectPreserved: false);
+            }
 
+            var stopwatch = Stopwatch.StartNew();
             var warmupVirtualPaths = GetWarmupVirtualPaths(context);
             if (warmupVirtualPaths.Count == 0)
             {
                 return CreateStatus(settings, context, activeProjectPreserved: false);
             }
 
-            var batch = GetWarmupBatch(settings, context, warmupVirtualPaths, stepIndex);
+            var completedPaths = GetOrCreateCompletedWarmupPaths(settings, context, warmupVirtualPaths);
+            var batch = GetWarmupBatch(warmupVirtualPaths, completedPaths, stepIndex);
             if (batch.Count == 0)
             {
                 return CreateStatus(settings, context, activeProjectPreserved: false);
             }
 
+            IReadOnlyList<string> processedPaths;
             if (settings.Mode == SvCacheMode.Performance)
             {
-                WarmupPerformanceBatch(paths, context, batch);
+                processedPaths = WarmupPerformanceBatch(paths, context, batch, stopwatch);
             }
             else
             {
-                foreach (var virtualPath in batch)
+                var processed = new List<string>(batch.Count);
+                for (var index = 0; index < batch.Count; index++)
                 {
-                    WriteVirtualMetadata(context, virtualPath);
+                    if (index > 0 && stopwatch.Elapsed >= WarmupStepTimeBudget)
+                    {
+                        break;
+                    }
+
+                    WriteVirtualMetadata(context, batch[index]);
+                    processed.Add(batch[index]);
                 }
+
+                processedPaths = processed;
             }
 
-            PruneIfNeeded(settings, context.ProjectKey);
+            var activeEntriesEvicted = PruneIfNeeded(settings, context);
+            var survivingPaths = processedPaths
+                .Where(path => IsWarmupEntryComplete(settings, context, path))
+                .Select(NormalizeVirtualPath)
+                .ToArray();
+            foreach (var survivingPath in survivingPaths)
+            {
+                completedPaths.Add(survivingPath);
+            }
+
+            if (!activeEntriesEvicted && processedPaths.Count > 0 && survivingPaths.Length == 0)
+            {
+                retainedWarmupProgressSource = null;
+                retainedWarmupProgressMode = null;
+                retainedWarmupProgressPaths = null;
+                retainedCompletedWarmupPaths = null;
+                WriteWarmupCapacityState(settings, context);
+            }
+
             return CreateStatus(settings, context, activeProjectPreserved: false);
         }
     }
@@ -331,13 +441,15 @@ public sealed class SvCacheManager
             if (settings.Mode == SvCacheMode.Performance
                 && TryReadPayload(context, normalizedVirtualPath, out var cachedBytes))
             {
+                EnsureSourceManifestIsPersisted(context);
                 TouchProjectDirectory(context);
                 return cachedBytes;
             }
 
-            var index = settings.Mode == SvCacheMode.Minimal
-                ? null
-                : GetOrBuildIndex(context);
+            var index = GetOrBuildIndex(
+                context,
+                persistToDisk: settings.Mode != SvCacheMode.Minimal,
+                out var cacheChanged);
 
             using var archive = SvTrinityArchive.Open(
                 paths.BaseRomFsPath!,
@@ -348,7 +460,12 @@ public sealed class SvCacheManager
             if (settings.Mode == SvCacheMode.Performance)
             {
                 WritePayload(context, normalizedVirtualPath, bytes);
-                PruneIfNeeded(settings, context.ProjectKey);
+                cacheChanged = true;
+            }
+
+            if (cacheChanged)
+            {
+                PruneIfNeeded(settings, context);
             }
 
             return bytes;
@@ -363,9 +480,9 @@ public sealed class SvCacheManager
         lock (syncRoot)
         {
             EnsureRoot();
-            var index = GetBaseTrinityIndex(paths);
+            var index = GetBaseTrinityIndex(paths, out var context);
             var fileHash = SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath));
-            return index.Files.Any(file => file.FileHash == fileHash);
+            return GetOrCreateFileHashes(context, index).Contains(fileHash);
         }
     }
 
@@ -376,43 +493,80 @@ public sealed class SvCacheManager
         lock (syncRoot)
         {
             EnsureRoot();
-            var index = GetBaseTrinityIndex(paths);
-            return index.Files
-                .Select(file => file.PackName)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            var index = GetBaseTrinityIndex(paths, out var context);
+            return GetOrCreatePackNames(context, index);
         }
     }
 
     private SvTrinityArchiveIndex GetOrBuildIndex(SvCacheProjectContext context)
     {
+        return GetOrBuildIndex(context, persistToDisk: true);
+    }
+
+    private SvTrinityArchiveIndex GetOrBuildIndex(
+        SvCacheProjectContext context,
+        bool persistToDisk)
+    {
+        return GetOrBuildIndex(context, persistToDisk, out _);
+    }
+
+    private SvTrinityArchiveIndex GetOrBuildIndex(
+        SvCacheProjectContext context,
+        bool persistToDisk,
+        out bool cacheChanged)
+    {
+        if (TryGetRetainedIndex(context, out var retained))
+        {
+            cacheChanged = persistToDisk && EnsureRetainedIndexIsPersisted(context, retained);
+
+            return retained;
+        }
+
+        if (!persistToDisk)
+        {
+            var transientIndex = CompactIndex(SvTrinityArchive.BuildIndex(context.RomFsRootPath));
+            RetainIndex(context, transientIndex);
+            cacheChanged = false;
+            return transientIndex;
+        }
+
         Directory.CreateDirectory(context.ProjectDirectory);
         var indexPath = Path.Combine(context.ProjectDirectory, IndexFileName);
         if (TryReadCachedIndex(context, out var cachedIndex))
         {
+            var sourceChanged = EnsureSourceManifestIsPersisted(context);
             TouchProjectDirectory(context);
+            cacheChanged = sourceChanged;
             return cachedIndex;
         }
 
-        var index = SvTrinityArchive.BuildIndex(context.RomFsRootPath);
+        var index = CompactIndex(SvTrinityArchive.BuildIndex(context.RomFsRootPath));
         var indexFile = new SvCacheIndexFile(
             CacheSchemaVersion,
             context.Source,
             index);
         WriteJsonAtomic(indexPath, indexFile);
+        WriteSourceManifest(context);
+        RetainIndex(context, index);
         TouchProjectDirectory(context);
+        cacheChanged = true;
         return index;
     }
 
     private bool TryReadCachedIndex(SvCacheProjectContext context, out SvTrinityArchiveIndex index)
     {
+        if (TryGetRetainedIndex(context, out index))
+        {
+            return true;
+        }
+
         var indexPath = Path.Combine(context.ProjectDirectory, IndexFileName);
         if (TryReadCacheIndexFile(indexPath, out var cached)
             && cached.Source == context.Source
             && cached.Index.SchemaVersion == SvTrinityArchive.IndexSchemaVersion)
         {
-            index = cached.Index;
+            index = CompactIndex(cached.Index);
+            RetainIndex(context, index);
             return true;
         }
 
@@ -420,14 +574,234 @@ public sealed class SvCacheManager
         return false;
     }
 
-    private SvTrinityArchiveIndex GetBaseTrinityIndex(ProjectPaths paths)
+    private SvTrinityArchiveIndex GetBaseTrinityIndex(
+        ProjectPaths paths,
+        out SvCacheProjectContext context)
     {
         var settings = ReadSettings();
-        var context = CreateProjectContext(paths);
+        context = CreateProjectContext(paths);
         DeleteObsoleteProjectCaches(context);
-        return settings.Mode == SvCacheMode.Minimal
-            ? SvTrinityArchive.BuildIndex(context.RomFsRootPath)
-            : GetOrBuildIndex(context);
+        var index = GetOrBuildIndex(
+            context,
+            persistToDisk: settings.Mode != SvCacheMode.Minimal,
+            out var cacheChanged);
+        if (cacheChanged)
+        {
+            PruneIfNeeded(settings, context);
+        }
+
+        return index;
+    }
+
+    private bool TryGetRetainedIndex(SvCacheProjectContext context, out SvTrinityArchiveIndex index)
+    {
+        if (retainedIndex is not null && retainedIndexSource == context.Source)
+        {
+            index = retainedIndex;
+            return true;
+        }
+
+        index = default!;
+        return false;
+    }
+
+    private void RetainIndex(SvCacheProjectContext context, SvTrinityArchiveIndex index)
+    {
+        retainedIndexSource = context.Source;
+        retainedIndex = index;
+        retainedFileHashes = null;
+        retainedPackNames = null;
+        retainedWarmupPathsSource = null;
+        retainedWarmupVirtualPaths = null;
+    }
+
+    private bool EnsureRetainedIndexIsPersisted(
+        SvCacheProjectContext context,
+        SvTrinityArchiveIndex index)
+    {
+        var indexPath = Path.Combine(context.ProjectDirectory, IndexFileName);
+        var changed = false;
+        if (!File.Exists(indexPath))
+        {
+            Directory.CreateDirectory(context.ProjectDirectory);
+            WriteJsonAtomic(
+                indexPath,
+                new SvCacheIndexFile(CacheSchemaVersion, context.Source, index));
+            changed = true;
+        }
+
+        changed |= EnsureSourceManifestIsPersisted(context);
+        if (changed)
+        {
+            TouchProjectDirectory(context);
+        }
+
+        return changed;
+    }
+
+    private bool EnsureSourceManifestIsPersisted(SvCacheProjectContext context)
+    {
+        var sourcePath = GetSourcePath(context);
+        if (File.Exists(sourcePath))
+        {
+            return false;
+        }
+
+        WriteSourceManifest(context);
+        return true;
+    }
+
+    private void WriteSourceManifest(SvCacheProjectContext context)
+    {
+        WriteJsonAtomic(
+            GetSourcePath(context),
+            new SvCacheSourceFile(CacheSchemaVersion, context.Source));
+    }
+
+    private bool EnsureWarmupPathsManifestIsPersisted(
+        SvCacheProjectContext context,
+        IReadOnlyList<string> virtualPaths)
+    {
+        var manifestPath = GetWarmupPathsPath(context);
+        if (File.Exists(manifestPath))
+        {
+            return false;
+        }
+
+        WriteJsonAtomic(
+            manifestPath,
+            new SvCacheWarmupPathsFile(CacheSchemaVersion, context.Source, virtualPaths));
+        return true;
+    }
+
+    private void ClearMemoryCacheCore()
+    {
+        retainedIndexSource = null;
+        retainedIndex = null;
+        retainedFileHashes = null;
+        retainedPackNames = null;
+        retainedWarmupPathsSource = null;
+        retainedWarmupVirtualPaths = null;
+        retainedWarmupProgressSource = null;
+        retainedWarmupProgressMode = null;
+        retainedWarmupProgressPaths = null;
+        retainedCompletedWarmupPaths = null;
+    }
+
+    private HashSet<ulong> GetOrCreateFileHashes(
+        SvCacheProjectContext context,
+        SvTrinityArchiveIndex index)
+    {
+        if (retainedFileHashes is not null
+            && retainedIndexSource == context.Source
+            && ReferenceEquals(retainedIndex, index))
+        {
+            return retainedFileHashes;
+        }
+
+        var fileHashes = index.Files
+            .Select(file => file.FileHash)
+            .ToHashSet();
+        if (retainedIndexSource == context.Source && ReferenceEquals(retainedIndex, index))
+        {
+            retainedFileHashes = fileHashes;
+        }
+
+        return fileHashes;
+    }
+
+    private IReadOnlyList<string> GetOrCreatePackNames(
+        SvCacheProjectContext context,
+        SvTrinityArchiveIndex index)
+    {
+        if (retainedPackNames is not null
+            && retainedIndexSource == context.Source
+            && ReferenceEquals(retainedIndex, index))
+        {
+            return retainedPackNames;
+        }
+
+        var packNames = Array.AsReadOnly(index.Files
+            .Select(file => file.PackName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+        if (retainedIndexSource == context.Source && ReferenceEquals(retainedIndex, index))
+        {
+            retainedPackNames = packNames;
+        }
+
+        return packNames;
+    }
+
+    private IReadOnlyList<string> GetOrCreateWarmupVirtualPaths(
+        SvCacheProjectContext context,
+        SvTrinityArchiveIndex index)
+    {
+        if (retainedWarmupVirtualPaths is not null
+            && retainedWarmupPathsSource == context.Source
+            && ReferenceEquals(retainedIndex, index))
+        {
+            return retainedWarmupVirtualPaths;
+        }
+
+        var fileHashes = GetOrCreateFileHashes(context, index);
+        var packNames = GetOrCreatePackNames(context, index);
+        var paths = CreateOrderedWarmupVirtualPaths(CreateDiscoveredMessageWarmupPaths(packNames))
+            .Where(virtualPath => fileHashes.Contains(
+                SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath))))
+            .ToArray();
+        if (retainedIndexSource == context.Source && ReferenceEquals(retainedIndex, index))
+        {
+            retainedWarmupPathsSource = context.Source;
+            retainedWarmupVirtualPaths = paths;
+        }
+
+        return paths;
+    }
+
+    private static SvTrinityArchiveIndex CompactIndex(SvTrinityArchiveIndex index)
+    {
+        var packNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (index.Files is List<SvTrinityArchiveFileIndexEntry> mutableFiles)
+        {
+            for (var fileIndex = 0; fileIndex < mutableFiles.Count; fileIndex++)
+            {
+                var file = mutableFiles[fileIndex];
+                if (!packNames.TryGetValue(file.PackName, out var packName))
+                {
+                    packName = file.PackName;
+                    packNames.Add(packName, packName);
+                }
+                else if (!ReferenceEquals(file.PackName, packName))
+                {
+                    mutableFiles[fileIndex] = file with { PackName = packName };
+                }
+            }
+
+            return index;
+        }
+
+        var compactedFiles = new SvTrinityArchiveFileIndexEntry[index.Files.Count];
+        var changed = false;
+        for (var fileIndex = 0; fileIndex < index.Files.Count; fileIndex++)
+        {
+            var file = index.Files[fileIndex];
+            if (!packNames.TryGetValue(file.PackName, out var packName))
+            {
+                packName = file.PackName;
+                packNames.Add(packName, packName);
+            }
+
+            changed |= !ReferenceEquals(file.PackName, packName);
+            compactedFiles[fileIndex] = ReferenceEquals(file.PackName, packName)
+                ? file
+                : file with { PackName = packName };
+        }
+
+        return changed
+            ? new SvTrinityArchiveIndex(index.SchemaVersion, compactedFiles, index.Packs)
+            : index;
     }
 
     private void WriteVirtualMetadata(SvCacheProjectContext context, string virtualPath)
@@ -456,9 +830,12 @@ public sealed class SvCacheManager
 
         try
         {
-            var metadata = JsonSerializer.Deserialize<SvCachePayloadMetadata>(
-                File.ReadAllBytes(metadataPath),
-                JsonOptions);
+            SvCachePayloadMetadata? metadata;
+            using (var stream = OpenJsonReadStream(metadataPath))
+            {
+                metadata = JsonSerializer.Deserialize<SvCachePayloadMetadata>(stream, JsonOptions);
+            }
+
             if (metadata is null
                 || metadata.CacheSchemaVersion != CacheSchemaVersion
                 || metadata.Source != context.Source
@@ -475,7 +852,7 @@ public sealed class SvCacheManager
                 return false;
             }
 
-            TouchProjectDirectory(context);
+            TouchCacheFile(payloadPath);
             return true;
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
@@ -486,12 +863,11 @@ public sealed class SvCacheManager
     }
 
     private IReadOnlyList<string> GetWarmupBatch(
-        SvCacheSettings settings,
-        SvCacheProjectContext context,
         IReadOnlyList<string> warmupVirtualPaths,
+        IReadOnlySet<string> completedPaths,
         int stepIndex)
     {
-        var firstIndex = FindNextIncompleteWarmupIndex(settings, context, warmupVirtualPaths, stepIndex);
+        var firstIndex = FindNextIncompleteWarmupIndex(warmupVirtualPaths, completedPaths, stepIndex);
         if (firstIndex < 0)
         {
             return Array.Empty<string>();
@@ -513,7 +889,7 @@ public sealed class SvCacheManager
                 continue;
             }
 
-            if (!IsWarmupEntryComplete(settings, context, virtualPath))
+            if (!completedPaths.Contains(virtualPath))
             {
                 batch.Add(virtualPath);
             }
@@ -523,9 +899,8 @@ public sealed class SvCacheManager
     }
 
     private int FindNextIncompleteWarmupIndex(
-        SvCacheSettings settings,
-        SvCacheProjectContext context,
         IReadOnlyList<string> warmupVirtualPaths,
+        IReadOnlySet<string> completedPaths,
         int stepIndex)
     {
         var safeStepIndex = Math.Clamp(stepIndex, 0, Math.Max(0, warmupVirtualPaths.Count - 1));
@@ -533,7 +908,7 @@ public sealed class SvCacheManager
         {
             var index = (safeStepIndex + offset) % warmupVirtualPaths.Count;
             var virtualPath = NormalizeVirtualPath(warmupVirtualPaths[index]);
-            if (!IsWarmupEntryComplete(settings, context, virtualPath))
+            if (!completedPaths.Contains(virtualPath))
             {
                 return index;
             }
@@ -561,21 +936,30 @@ public sealed class SvCacheManager
             && File.Exists(GetPayloadPath(context, virtualPath));
     }
 
-    private void WarmupPerformanceBatch(
+    private IReadOnlyList<string> WarmupPerformanceBatch(
         ProjectPaths paths,
         SvCacheProjectContext context,
-        IReadOnlyList<string> virtualPaths)
+        IReadOnlyList<string> virtualPaths,
+        Stopwatch stopwatch)
     {
+        var processed = new List<string>(virtualPaths.Count);
         var index = GetOrBuildIndex(context);
         using var archive = SvTrinityArchive.Open(
             paths.BaseRomFsPath!,
             paths.ScarletVioletSupportFolderPath,
             index: index);
 
-        foreach (var virtualPath in virtualPaths)
+        for (var pathIndex = 0; pathIndex < virtualPaths.Count; pathIndex++)
         {
+            if (pathIndex > 0 && stopwatch.Elapsed >= WarmupStepTimeBudget)
+            {
+                break;
+            }
+
+            var virtualPath = virtualPaths[pathIndex];
             if (IsWarmupPayloadComplete(context, virtualPath))
             {
+                processed.Add(virtualPath);
                 continue;
             }
 
@@ -586,7 +970,10 @@ public sealed class SvCacheManager
 
             WriteVirtualMetadata(context, virtualPath);
             WritePayload(context, virtualPath, bytes);
+            processed.Add(virtualPath);
         }
+
+        return processed;
     }
 
     private void WritePayload(SvCacheProjectContext context, string virtualPath, byte[] bytes)
@@ -616,15 +1003,18 @@ public sealed class SvCacheManager
             ? GetWarmupVirtualPathsForStatus(context)
             : Array.Empty<string>();
         var total = warmupVirtualPaths.Count;
-        var completed = context is not null && total > 0
-            ? CountCompletedWarmupEntries(settings, context, warmupVirtualPaths)
-            : 0;
+        var capacityLimited = context is not null && IsWarmupCapacityLimited(settings, context);
+        var completed = capacityLimited
+            ? total
+            : context is not null && total > 0
+                ? GetOrCreateCompletedWarmupPaths(settings, context, warmupVirtualPaths).Count
+                : 0;
         var percent = total == 0
             ? 0
             : (int)Math.Round(completed * 100.0 / total, MidpointRounding.AwayFromZero);
         var phase = settings.Mode == SvCacheMode.Minimal
             ? "Minimal mode"
-            : completed >= total && total > 0
+            : capacityLimited || completed >= total && total > 0
                 ? "Cache ready"
                 : completed == 0
                     ? "Checking cache"
@@ -634,6 +1024,7 @@ public sealed class SvCacheManager
         var message = settings.Mode switch
         {
             SvCacheMode.Minimal => "Session only cache mode is active.",
+            _ when capacityLimited => "The configured cache limit is ready with a bounded working set; uncached files load on demand.",
             SvCacheMode.Balanced when total > 0 && completed >= total => "Balanced cache metadata is ready.",
             SvCacheMode.Balanced => "Building Scarlet/Violet cache metadata.",
             SvCacheMode.Performance when total > 0 && completed >= total => "Performance cache payloads are ready.",
@@ -654,47 +1045,107 @@ public sealed class SvCacheManager
 
     private IReadOnlyList<string> GetWarmupVirtualPathsForStatus(SvCacheProjectContext context)
     {
+        if (retainedWarmupVirtualPaths is not null && retainedWarmupPathsSource == context.Source)
+        {
+            return retainedWarmupVirtualPaths;
+        }
+
+        var manifestPath = GetWarmupPathsPath(context);
         try
         {
-            if (!TryReadCachedIndex(context, out var index))
+            if (File.Exists(manifestPath))
             {
-                return WarmupVirtualPaths;
+                using var stream = OpenJsonReadStream(manifestPath);
+                var manifest = JsonSerializer.Deserialize<SvCacheWarmupPathsFile>(stream, JsonOptions);
+                if (manifest is not null
+                    && manifest.CacheSchemaVersion == CacheSchemaVersion
+                    && manifest.Source == context.Source)
+                {
+                    retainedWarmupPathsSource = context.Source;
+                    retainedWarmupVirtualPaths = manifest.VirtualPaths;
+                    return manifest.VirtualPaths;
+                }
             }
-
-            var fileHashes = index.Files
-                .Select(file => file.FileHash)
-                .ToHashSet();
-
-            return CreateOrderedWarmupVirtualPaths(CreateDiscoveredMessageWarmupPaths(index))
-                .Where(virtualPath => fileHashes.Contains(SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath))))
-                .ToArray();
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
         {
-            return WarmupVirtualPaths;
         }
+
+        return WarmupVirtualPaths;
     }
 
-    private int CountCompletedWarmupEntries(
+    private HashSet<string> GetOrCreateCompletedWarmupPaths(
         SvCacheSettings settings,
         SvCacheProjectContext context,
         IReadOnlyList<string> warmupVirtualPaths)
     {
-        var completed = 0;
-        foreach (var virtualPath in warmupVirtualPaths.Select(NormalizeVirtualPath))
+        if (retainedCompletedWarmupPaths is not null
+            && retainedWarmupProgressSource == context.Source
+            && retainedWarmupProgressMode == settings.Mode
+            && ReferenceEquals(retainedWarmupProgressPaths, warmupVirtualPaths))
         {
-            completed += IsWarmupEntryComplete(settings, context, virtualPath) ? 1 : 0;
+            return retainedCompletedWarmupPaths;
         }
 
-        return completed;
+        retainedWarmupProgressSource = context.Source;
+        retainedWarmupProgressMode = settings.Mode;
+        retainedWarmupProgressPaths = warmupVirtualPaths;
+        retainedCompletedWarmupPaths = warmupVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .Where(path => IsWarmupEntryComplete(settings, context, path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return retainedCompletedWarmupPaths;
     }
 
-    private void PruneIfNeeded(SvCacheSettings settings, string? activeProjectKey)
+    private bool IsWarmupCapacityLimited(SvCacheSettings settings, SvCacheProjectContext context)
     {
-        var currentSize = GetCacheContentSize();
+        var statePath = GetWarmupStatePath(context);
+        if (!File.Exists(statePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var stream = OpenJsonReadStream(statePath);
+            var state = JsonSerializer.Deserialize<SvCacheWarmupStateFile>(stream, JsonOptions);
+            return state is not null
+                && state.CacheSchemaVersion == CacheSchemaVersion
+                && state.Source == context.Source
+                && state.Mode == settings.Mode
+                && state.MaxCacheSizeBytes == settings.MaxCacheSizeBytes
+                && state.CapacityLimited;
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private void WriteWarmupCapacityState(SvCacheSettings settings, SvCacheProjectContext context)
+    {
+        WriteJsonAtomic(
+            GetWarmupStatePath(context),
+            new SvCacheWarmupStateFile(
+                CacheSchemaVersion,
+                context.Source,
+                settings.Mode,
+                settings.MaxCacheSizeBytes,
+                CapacityLimited: true));
+        TouchProjectDirectory(context);
+    }
+
+    private bool PruneIfNeeded(
+        SvCacheSettings settings,
+        SvCacheProjectContext? activeContext,
+        bool forceSizeRefresh = false)
+    {
+        var activeProjectKey = activeContext?.ProjectKey;
+        CleanupTempDirectory();
+        var currentSize = GetCacheContentSize(forceSizeRefresh);
         if (currentSize <= settings.MaxCacheSizeBytes || !Directory.Exists(ProjectsPath))
         {
-            return;
+            return false;
         }
 
         foreach (var directory in Directory
@@ -707,18 +1158,149 @@ public sealed class SvCacheManager
                 continue;
             }
 
-            DeleteDirectoryIfExists(directory.FullName);
+            TryDeleteDirectory(directory.FullName);
             currentSize = GetCacheContentSize();
             if (currentSize <= settings.MaxCacheSizeBytes)
             {
-                return;
+                return false;
             }
         }
+
+        if (string.IsNullOrWhiteSpace(activeProjectKey))
+        {
+            return false;
+        }
+
+        var activeEntriesEvicted = false;
+        var activeProjectDirectory = Path.Combine(ProjectsPath, activeProjectKey);
+        foreach (var candidate in GetActiveProjectEvictionCandidates(activeProjectDirectory))
+        {
+            var removedAny = false;
+            foreach (var path in candidate.Paths)
+            {
+                var removed = TryDeleteFile(path);
+                removedAny |= removed;
+            }
+
+            activeEntriesEvicted |= removedAny;
+
+            currentSize = GetCacheContentSize();
+            if (currentSize <= settings.MaxCacheSizeBytes)
+            {
+                MarkWarmupCapacityLimitedAfterEviction(settings, activeContext, activeEntriesEvicted);
+                return activeEntriesEvicted;
+            }
+        }
+
+        if (currentSize > settings.MaxCacheSizeBytes && Directory.Exists(activeProjectDirectory))
+        {
+            if (TryDeleteDirectory(activeProjectDirectory))
+            {
+                ClearMemoryCacheCore();
+                activeEntriesEvicted = true;
+            }
+        }
+
+        MarkWarmupCapacityLimitedAfterEviction(settings, activeContext, activeEntriesEvicted);
+        return activeEntriesEvicted;
+    }
+
+    private void MarkWarmupCapacityLimitedAfterEviction(
+        SvCacheSettings settings,
+        SvCacheProjectContext? activeContext,
+        bool activeEntriesEvicted)
+    {
+        if (!activeEntriesEvicted)
+        {
+            return;
+        }
+
+        retainedWarmupProgressSource = null;
+        retainedWarmupProgressMode = null;
+        retainedWarmupProgressPaths = null;
+        retainedCompletedWarmupPaths = null;
+        if (activeContext is not null && settings.Mode != SvCacheMode.Minimal)
+        {
+            WriteWarmupCapacityState(settings, activeContext);
+        }
+    }
+
+    private static IReadOnlyList<CacheEvictionCandidate> GetActiveProjectEvictionCandidates(string projectDirectory)
+    {
+        if (!Directory.Exists(projectDirectory))
+        {
+            return [];
+        }
+
+        var candidates = new List<CacheEvictionCandidate>();
+        var metadataDirectory = Path.Combine(projectDirectory, MetadataDirectoryName);
+        var virtualMetadataByKey = Directory.Exists(metadataDirectory)
+            ? Directory
+                .EnumerateFiles(metadataDirectory, "*.json")
+                .ToDictionary(
+                    path => Path.GetFileNameWithoutExtension(path)!,
+                    StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var payloadDirectory = Path.Combine(projectDirectory, PayloadDirectoryName);
+        var pairedPayloadMetadata = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Directory.Exists(payloadDirectory))
+        {
+            foreach (var payloadPath in Directory.EnumerateFiles(payloadDirectory, "*.bin"))
+            {
+                var metadataPath = Path.ChangeExtension(payloadPath, ".json");
+                var paths = new List<string> { payloadPath };
+                if (File.Exists(metadataPath))
+                {
+                    paths.Add(metadataPath);
+                }
+
+                var key = Path.GetFileNameWithoutExtension(payloadPath);
+                if (virtualMetadataByKey.Remove(key, out var virtualMetadataPath))
+                {
+                    paths.Add(virtualMetadataPath);
+                }
+
+                pairedPayloadMetadata.Add(metadataPath);
+                candidates.Add(CreateEvictionCandidate(paths));
+            }
+
+            foreach (var metadataPath in Directory.EnumerateFiles(payloadDirectory, "*.json"))
+            {
+                if (!pairedPayloadMetadata.Contains(metadataPath))
+                {
+                    var paths = new List<string> { metadataPath };
+                    var key = Path.GetFileNameWithoutExtension(metadataPath);
+                    if (virtualMetadataByKey.Remove(key, out var virtualMetadataPath))
+                    {
+                        paths.Add(virtualMetadataPath);
+                    }
+
+                    candidates.Add(CreateEvictionCandidate(paths));
+                }
+            }
+        }
+
+        candidates.AddRange(virtualMetadataByKey.Values.Select(path => CreateEvictionCandidate([path])));
+
+        return candidates.OrderBy(candidate => candidate.LastUsedUtc).ToArray();
+    }
+
+    private static CacheEvictionCandidate CreateEvictionCandidate(IReadOnlyList<string> paths)
+    {
+        var files = paths.Select(path => new FileInfo(path)).Where(file => file.Exists).ToArray();
+        return new CacheEvictionCandidate(
+            files.Select(file => file.FullName).ToArray(),
+            files.Length == 0 ? DateTime.MinValue : files.Max(file => file.LastWriteTimeUtc),
+            files.Sum(file => file.Length));
     }
 
     private void DeleteObsoleteProjectCaches(SvCacheProjectContext activeContext)
     {
-        if (!Directory.Exists(ProjectsPath))
+        if (string.Equals(
+                lastObsoleteProjectCleanupKey,
+                activeContext.ProjectKey,
+                StringComparison.OrdinalIgnoreCase)
+            || !Directory.Exists(ProjectsPath))
         {
             return;
         }
@@ -731,8 +1313,8 @@ public sealed class SvCacheManager
                 continue;
             }
 
-            var indexPath = Path.Combine(directory.FullName, IndexFileName);
-            if (!TryReadCacheIndexFile(indexPath, out var cached)
+            var sourcePath = Path.Combine(directory.FullName, SourceFileName);
+            if (!TryReadCacheSourceFile(sourcePath, out var cached)
                 || !HasSameProjectIdentity(cached.Source, activeContext.Source))
             {
                 continue;
@@ -740,19 +1322,43 @@ public sealed class SvCacheManager
 
             TryDeleteDirectory(directory.FullName);
         }
+
+        lastObsoleteProjectCleanupKey = activeContext.ProjectKey;
     }
 
     private static bool HasSameProjectIdentity(
         SvCacheSourceFingerprint cached,
         SvCacheSourceFingerprint active)
     {
-        return cached.CacheSchemaVersion == active.CacheSchemaVersion
-            && string.Equals(cached.ParserVersion, active.ParserVersion, StringComparison.Ordinal)
-            && string.Equals(cached.DecompressorVersion, active.DecompressorVersion, StringComparison.Ordinal)
-            && string.Equals(cached.SelectedGame, active.SelectedGame, StringComparison.Ordinal)
-            && cached.Descriptor == active.Descriptor
-            && cached.FileSystem == active.FileSystem
-            && cached.CompressionRuntime == active.CompressionRuntime;
+        return string.Equals(cached.SelectedGame, active.SelectedGame, StringComparison.Ordinal)
+            && string.Equals(cached.Descriptor.FullPath, active.Descriptor.FullPath, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(cached.FileSystem.FullPath, active.FileSystem.FullPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryReadCacheSourceFile(string sourcePath, out SvCacheSourceFile sourceFile)
+    {
+        if (!File.Exists(sourcePath))
+        {
+            sourceFile = default!;
+            return false;
+        }
+
+        try
+        {
+            using var stream = OpenJsonReadStream(sourcePath);
+            var cached = JsonSerializer.Deserialize<SvCacheSourceFile>(stream, JsonOptions);
+            if (cached is not null && cached.CacheSchemaVersion == CacheSchemaVersion)
+            {
+                sourceFile = cached;
+                return true;
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+        }
+
+        sourceFile = default!;
+        return false;
     }
 
     private static bool TryReadCacheIndexFile(string indexPath, out SvCacheIndexFile cacheIndex)
@@ -765,9 +1371,8 @@ public sealed class SvCacheManager
 
         try
         {
-            var cached = JsonSerializer.Deserialize<SvCacheIndexFile>(
-                File.ReadAllBytes(indexPath),
-                JsonOptions);
+            using var stream = OpenJsonReadStream(indexPath);
+            var cached = JsonSerializer.Deserialize<SvCacheIndexFile>(stream, JsonOptions);
             if (cached is not null && cached.CacheSchemaVersion == CacheSchemaVersion)
             {
                 cacheIndex = cached;
@@ -783,14 +1388,26 @@ public sealed class SvCacheManager
         return false;
     }
 
-    private static void TryDeleteDirectory(string path)
+    private bool TryDeleteDirectory(string path)
     {
         try
         {
             DeleteDirectoryIfExists(path);
+            var removed = !Directory.Exists(path);
+            if (IsPersistentCachePath(path))
+            {
+                retainedPersistentCacheSizeBytes = null;
+            }
+
+            return removed;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            if (IsPersistentCachePath(path))
+            {
+                retainedPersistentCacheSizeBytes = null;
+            }
+            return false;
         }
     }
 
@@ -842,7 +1459,7 @@ public sealed class SvCacheManager
             CreateFileStamp(descriptorPath),
             CreateFileStamp(fileSystemPath),
             runtimePath is null ? null : CreateFileStamp(runtimePath),
-            CreateDirectoryStamp(paths.OutputRootPath));
+            OutputRoot: null);
         var projectKey = CreateProjectKey(source);
         return new SvCacheProjectContext(
             romFsRoot,
@@ -870,93 +1487,6 @@ public sealed class SvCacheManager
             fileInfo.FullName,
             fileInfo.Length,
             fileInfo.LastWriteTimeUtc);
-    }
-
-    private static SvCacheDirectoryStamp? CreateDirectoryStamp(string? directoryPath)
-    {
-        if (string.IsNullOrWhiteSpace(directoryPath))
-        {
-            return null;
-        }
-
-        var fullPath = Path.GetFullPath(directoryPath);
-        var directoryInfo = new DirectoryInfo(fullPath);
-        if (!directoryInfo.Exists)
-        {
-            return new SvCacheDirectoryStamp(
-                fullPath,
-                Exists: false,
-                FileCount: 0,
-                TotalSizeBytes: 0,
-                LastWriteTimeUtc: DateTime.MinValue,
-                ContentFingerprint: string.Empty,
-                InaccessibleEntryCount: 0);
-        }
-
-        long fileCount = 0;
-        long totalSize = 0;
-        var latestWriteTimeUtc = directoryInfo.LastWriteTimeUtc;
-        var inaccessibleEntryCount = 0;
-        var entries = new List<string>();
-
-        try
-        {
-            foreach (var childDirectoryPath in Directory.EnumerateDirectories(
-                fullPath,
-                "*",
-                SearchOption.AllDirectories))
-            {
-                try
-                {
-                    var childDirectory = new DirectoryInfo(childDirectoryPath);
-                    var relativePath = Path.GetRelativePath(fullPath, childDirectory.FullName).Replace('\\', '/');
-                    latestWriteTimeUtc = latestWriteTimeUtc > childDirectory.LastWriteTimeUtc
-                        ? latestWriteTimeUtc
-                        : childDirectory.LastWriteTimeUtc;
-                    entries.Add($"d\0{relativePath}\0{childDirectory.LastWriteTimeUtc.Ticks}");
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    inaccessibleEntryCount++;
-                }
-            }
-
-            foreach (var filePath in Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(filePath);
-                    var relativePath = Path.GetRelativePath(fullPath, fileInfo.FullName).Replace('\\', '/');
-                    fileCount++;
-                    totalSize += fileInfo.Length;
-                    latestWriteTimeUtc = latestWriteTimeUtc > fileInfo.LastWriteTimeUtc
-                        ? latestWriteTimeUtc
-                        : fileInfo.LastWriteTimeUtc;
-                    entries.Add($"f\0{relativePath}\0{fileInfo.Length}\0{fileInfo.LastWriteTimeUtc.Ticks}");
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                    inaccessibleEntryCount++;
-                }
-            }
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            inaccessibleEntryCount++;
-        }
-
-        entries.Sort(StringComparer.OrdinalIgnoreCase);
-        var fingerprint = Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', entries))))
-            .ToLowerInvariant();
-        return new SvCacheDirectoryStamp(
-            fullPath,
-            Exists: true,
-            fileCount,
-            totalSize,
-            latestWriteTimeUtc,
-            fingerprint,
-            inaccessibleEntryCount);
     }
 
     private static string ResolveDefaultCacheRoot()
@@ -1011,7 +1541,8 @@ public sealed class SvCacheManager
 
         try
         {
-            var settings = JsonSerializer.Deserialize<SvCacheSettings>(File.ReadAllBytes(SettingsPath), JsonOptions);
+            using var stream = OpenJsonReadStream(SettingsPath);
+            var settings = JsonSerializer.Deserialize<SvCacheSettings>(stream, JsonOptions);
             if (settings is null)
             {
                 throw new JsonException("Cache settings file was empty.");
@@ -1036,6 +1567,11 @@ public sealed class SvCacheManager
     {
         Directory.CreateDirectory(cacheRoot);
         Directory.CreateDirectory(ProjectsPath);
+        if (!tempCleanupCompleted)
+        {
+            CleanupTempDirectory();
+            tempCleanupCompleted = true;
+        }
     }
 
     private string SettingsPath => Path.Combine(cacheRoot, SettingsFileName);
@@ -1044,9 +1580,14 @@ public sealed class SvCacheManager
 
     private string TempPath => Path.Combine(cacheRoot, TempDirectoryName);
 
-    private long GetCacheContentSize()
+    private long GetCacheContentSize(bool forceRefresh = false)
     {
-        return GetDirectorySize(ProjectsPath) + GetDirectorySize(TempPath);
+        if (forceRefresh || retainedPersistentCacheSizeBytes is null)
+        {
+            retainedPersistentCacheSizeBytes = GetDirectorySize(ProjectsPath);
+        }
+
+        return retainedPersistentCacheSizeBytes.Value;
     }
 
     private static string NormalizeVirtualPath(string virtualPath)
@@ -1090,6 +1631,21 @@ public sealed class SvCacheManager
         return Path.Combine(GetMetadataDirectory(context), $"{GetVirtualPathKey(virtualPath)}.json");
     }
 
+    private static string GetSourcePath(SvCacheProjectContext context)
+    {
+        return Path.Combine(context.ProjectDirectory, SourceFileName);
+    }
+
+    private static string GetWarmupPathsPath(SvCacheProjectContext context)
+    {
+        return Path.Combine(context.ProjectDirectory, WarmupPathsFileName);
+    }
+
+    private static string GetWarmupStatePath(SvCacheProjectContext context)
+    {
+        return Path.Combine(context.ProjectDirectory, WarmupStateFileName);
+    }
+
     private static bool IsTextMessagePath(string virtualPath)
     {
         return NormalizeVirtualPath(virtualPath)
@@ -1104,8 +1660,43 @@ public sealed class SvCacheManager
 
     private void WriteJsonAtomic<TValue>(string path, TValue value)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
-        WriteBytesAtomic(path, bytes);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        Directory.CreateDirectory(TempPath);
+        var tempPath = Path.Combine(
+            TempPath,
+            $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using (var stream = new FileStream(
+                tempPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 128 * 1024,
+                FileOptions.SequentialScan))
+            {
+                JsonSerializer.Serialize(stream, value, JsonOptions);
+            }
+
+            var previousLength = GetTrackedFileLength(path);
+            File.Move(tempPath, path, overwrite: true);
+            TrackPersistentFileReplacement(path, previousLength);
+        }
+        finally
+        {
+            TryDeleteFile(tempPath);
+        }
+    }
+
+    private static FileStream OpenJsonReadStream(string path)
+    {
+        return new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete,
+            bufferSize: 128 * 1024,
+            FileOptions.SequentialScan);
     }
 
     private void WriteBytesAtomic(string path, byte[] bytes)
@@ -1115,8 +1706,132 @@ public sealed class SvCacheManager
         var tempPath = Path.Combine(
             TempPath,
             $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        File.WriteAllBytes(tempPath, bytes);
-        File.Move(tempPath, path, overwrite: true);
+        try
+        {
+            File.WriteAllBytes(tempPath, bytes);
+            var previousLength = GetTrackedFileLength(path);
+            File.Move(tempPath, path, overwrite: true);
+            TrackPersistentFileReplacement(path, previousLength);
+        }
+        finally
+        {
+            TryDeleteFile(tempPath);
+        }
+    }
+
+    private void CleanupTempDirectory()
+    {
+        if (!Directory.Exists(TempPath))
+        {
+            return;
+        }
+
+        var cutoff = DateTime.UtcNow - OrphanTempFileAge;
+        foreach (var path in Directory.EnumerateFiles(TempPath))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(path) <= cutoff)
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static void TouchCacheFile(string path)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private bool TryDeleteFile(string path)
+    {
+        var previousLength = GetTrackedFileLength(path);
+        try
+        {
+            File.Delete(path);
+            var removed = !File.Exists(path);
+            if (removed && previousLength > 0 && retainedPersistentCacheSizeBytes is not null)
+            {
+                retainedPersistentCacheSizeBytes = Math.Max(
+                    0,
+                    retainedPersistentCacheSizeBytes.Value - previousLength);
+            }
+
+            return removed;
+        }
+        catch (IOException)
+        {
+            retainedPersistentCacheSizeBytes = null;
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            retainedPersistentCacheSizeBytes = null;
+            return false;
+        }
+    }
+
+    private long GetTrackedFileLength(string path)
+    {
+        if (retainedPersistentCacheSizeBytes is null || !IsPersistentCachePath(path))
+        {
+            return 0;
+        }
+
+        try
+        {
+            return File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            retainedPersistentCacheSizeBytes = null;
+            return 0;
+        }
+    }
+
+    private void TrackPersistentFileReplacement(string path, long previousLength)
+    {
+        if (retainedPersistentCacheSizeBytes is null || !IsPersistentCachePath(path))
+        {
+            return;
+        }
+
+        try
+        {
+            var currentLength = new FileInfo(path).Length;
+            retainedPersistentCacheSizeBytes = Math.Max(
+                0,
+                retainedPersistentCacheSizeBytes.Value - previousLength + currentLength);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            retainedPersistentCacheSizeBytes = null;
+        }
+    }
+
+    private bool IsPersistentCachePath(string path)
+    {
+        var projectsRoot = Path.GetFullPath(ProjectsPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var fullPath = Path.GetFullPath(path);
+        return fullPath.StartsWith(projectsRoot, StringComparison.OrdinalIgnoreCase);
     }
 
     private static long GetDirectorySize(string path)
@@ -1159,6 +1874,22 @@ public sealed class SvCacheManager
         SvCacheSourceFingerprint Source,
         SvTrinityArchiveIndex Index);
 
+    private sealed record SvCacheSourceFile(
+        int CacheSchemaVersion,
+        SvCacheSourceFingerprint Source);
+
+    private sealed record SvCacheWarmupPathsFile(
+        int CacheSchemaVersion,
+        SvCacheSourceFingerprint Source,
+        IReadOnlyList<string> VirtualPaths);
+
+    private sealed record SvCacheWarmupStateFile(
+        int CacheSchemaVersion,
+        SvCacheSourceFingerprint Source,
+        SvCacheMode Mode,
+        long MaxCacheSizeBytes,
+        bool CapacityLimited);
+
     private sealed record SvCachePayloadMetadata(
         int CacheSchemaVersion,
         SvCacheSourceFingerprint Source,
@@ -1177,6 +1908,11 @@ public sealed class SvCacheManager
         string ProjectKey,
         string ProjectDirectory,
         SvCacheSourceFingerprint Source);
+
+    private sealed record CacheEvictionCandidate(
+        IReadOnlyList<string> Paths,
+        DateTime LastUsedUtc,
+        long SizeBytes);
 }
 
 public sealed record SvCacheSettings(

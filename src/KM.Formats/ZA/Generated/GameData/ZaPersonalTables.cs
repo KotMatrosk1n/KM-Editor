@@ -20,6 +20,7 @@ public struct ZaSpeciesInfo : IFlatbufferObject
     public byte Reserved => p.bb.Get(p.bb_pos + 12);
     public byte Reserved1 => p.bb.Get(p.bb_pos + 13);
     public byte Reserved2 => p.bb.Get(p.bb_pos + 14);
+    public uint Reserved3 => p.bb.GetUint(p.bb_pos + 16);
 
     public void __init(int i, ByteBuffer bb) => p = new Struct(i, bb);
 
@@ -40,9 +41,11 @@ public struct ZaSpeciesInfo : IFlatbufferObject
         ushort weight,
         byte reserved,
         byte reserved1,
-        byte reserved2)
+        byte reserved2,
+        uint reserved3 = 0)
     {
-        builder.Prep(2, 16);
+        builder.Prep(4, 20);
+        builder.PutUint(reserved3);
         builder.Pad(1);
         builder.PutByte(reserved2);
         builder.PutByte(reserved1);
@@ -262,7 +265,30 @@ public struct ZaPersonal : IFlatbufferObject
     }
 
     public bool IsPresent => ReadBool(6);
-    public byte ZADexOrder => ReadByte(8);
+    public ushort ZADexOrder => ReadUshort(8);
+    public byte ZADexOrderLowByte => ReadByte(8);
+    public bool HasLegacyByteZADexOrderLayout
+    {
+        get
+        {
+            var dexOffset = p.__offset(8);
+            if (dexOffset == 0)
+            {
+                return false;
+            }
+
+            for (var fieldIndex = 0; fieldIndex < 26; fieldIndex++)
+            {
+                var vtableOffset = 4 + fieldIndex * 2;
+                if (vtableOffset != 8 && p.__offset(vtableOffset) == dexOffset + 1)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
     public byte Type1 => ReadByte(10);
     public byte Type2 => ReadByte(12);
     public ushort Ability1 => ReadUshort(14);
@@ -398,7 +424,7 @@ public struct ZaPersonal : IFlatbufferObject
     public static void Start(FlatBufferBuilder builder) => builder.StartTable(26);
     public static void AddSpecies(FlatBufferBuilder builder, Offset<ZaSpeciesInfo> offset) => builder.AddStruct(0, offset.Value, 0);
     public static void AddIsPresent(FlatBufferBuilder builder, bool value) => builder.AddBool(1, value, false);
-    public static void AddZADexOrder(FlatBufferBuilder builder, byte value) => builder.AddByte(2, value, 0);
+    public static void AddZADexOrder(FlatBufferBuilder builder, ushort value) => builder.AddUshort(2, value, 0);
     public static void AddType1(FlatBufferBuilder builder, byte value) => builder.AddByte(3, value, 0);
     public static void AddType2(FlatBufferBuilder builder, byte value) => builder.AddByte(4, value, 0);
     public static void AddAbility1(FlatBufferBuilder builder, ushort value) => builder.AddUshort(5, value, 0);
@@ -522,6 +548,22 @@ public struct ZaPersonalTable : IFlatbufferObject
         {
             var offset = p.__offset(4);
             return offset != 0 ? p.__vector_len(offset) : 0;
+        }
+    }
+
+    public bool HasLegacyByteZADexOrderLayout
+    {
+        get
+        {
+            for (var index = 0; index < EntryLength; index++)
+            {
+                if (Entry(index) is { } entry && entry.HasLegacyByteZADexOrderLayout)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 

@@ -142,10 +142,14 @@ public sealed class SvWorkflowService
         return cacheManager.WarmupStep(paths, stepIndex);
     }
 
-    public void ClearMemoryCaches()
+    public void ClearMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
+        if (clearReusableDataCaches)
+        {
+            cacheManager.ClearMemoryCache();
+        }
     }
 
     public SvWorkflowList List(ProjectPaths paths)

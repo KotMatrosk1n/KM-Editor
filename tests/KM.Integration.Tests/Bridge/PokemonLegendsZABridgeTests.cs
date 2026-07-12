@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Reflection;
 using System.Text.Json;
 using Google.FlatBuffers;
 using KM.Api.Bridge;
@@ -134,7 +135,9 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(65, bulbasaur.Abilities.Ability1);
         Assert.Equal(34, bulbasaur.Abilities.HiddenAbility);
         Assert.Equal(25, bulbasaur.DexPresence.RegionalDexIndex);
-        Assert.Equal("Z-A Dex Order", workflow.EditableFields.Single(field => field.Field == "regionalDexIndex").Label);
+        var dexOrderField = workflow.EditableFields.Single(field => field.Field == "regionalDexIndex");
+        Assert.Equal("Z-A Dex Order", dexOrderField.Label);
+        Assert.Equal(400, dexOrderField.MaximumValue);
         var learnedMove = Assert.Single(bulbasaur.Learnset);
         Assert.Equal(33, learnedMove.MoveId);
         Assert.Equal(1, learnedMove.Level);
@@ -441,7 +444,14 @@ public sealed class PokemonLegendsZABridgeTests
         using var resizeTemp = CreatePokemonLegendsZAProject();
         resizeTemp.WriteBaseRomFsFile(
             ZaDataPaths.PersonalArray,
-            CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2));
+            CreatePersonalArray(
+                evolutionCondition: 19,
+                evolutionParameter: 2,
+                evolutionSpecies: 2,
+                bulbasaurDexOrder: 173,
+                ivysaurDexOrder: 400,
+                bulbasaurSpeciesReserved3: 8,
+                ivysaurSpeciesReserved3: 4));
         var resizePaths = CreatePaths(resizeTemp);
         var resizeDispatcher = CreateDispatcherWithZaCache(resizeTemp);
         var add = Dispatch<UpdatePokemonEvolutionResponse>(
@@ -477,8 +487,21 @@ public sealed class PokemonLegendsZABridgeTests
         var resizedUltraBallParameter = resizedConversions.Single(row => row.ItemId == 2).ParameterId;
         Assert.Equal(resizedUltraBallParameter, addedEvolution.Value.Parameter);
         Assert.Equal(3, addedEvolution.Value.Species);
-        Assert.Equal(25, resizedBulbasaur.ZADexOrder);
-        Assert.Equal(26, resized.Entry(2)!.Value.ZADexOrder);
+        Assert.Equal(173, resizedBulbasaur.ZADexOrder);
+        Assert.Equal(400, resized.Entry(2)!.Value.ZADexOrder);
+        Assert.Equal(8u, resizedBulbasaur.Species!.Value.Reserved3);
+        Assert.Equal(4u, resized.Entry(2)!.Value.Species!.Value.Reserved3);
+        var resizedBulbasaurOffset = FindZaPersonalTableOffset(resizedBytes, personalId: 1);
+        var resizedDexLocation = ReadFlatBufferTableFieldLocation(
+            resizedBytes,
+            resizedBulbasaurOffset,
+            fieldIndex: 2);
+        var resizedType1Location = ReadFlatBufferTableFieldLocation(
+            resizedBytes,
+            resizedBulbasaurOffset,
+            fieldIndex: 3);
+        Assert.Equal(173, BinaryPrimitives.ReadUInt16LittleEndian(resizedBytes.AsSpan(resizedDexLocation, sizeof(ushort))));
+        Assert.NotEqual(resizedDexLocation + sizeof(byte), resizedType1Location);
     }
 
     [Fact]
@@ -875,9 +898,14 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(0, pokeBall.FieldValues["canUseOnPokemon"]);
         Assert.Equal(0, pokeBall.FieldValues["evolutionItem"]);
         Assert.Equal(0, pokeBall.FieldValues["machineMoveId"]);
-        Assert.Equal(0, pokeBall.FieldValues["mintNature"]);
+        Assert.Equal(-1, pokeBall.FieldValues["mintNature"]);
+        var mintNatureField = workflow.EditableFields.Single(field => field.Field == "mintNature");
+        Assert.Equal(-1, mintNatureField.MinimumValue);
+        Assert.Equal(24, mintNatureField.MaximumValue);
+        Assert.Contains(mintNatureField.Options, option => option.Value == -1 && option.Label == "-1 None");
+        Assert.Contains(mintNatureField.Options, option => option.Value == 0 && option.Label == "0 Hardy");
         Assert.Equal(
-            "0 None",
+            "-1 None",
             pokeBall
                 .DetailGroups
                 .Single(group => group.Label == "Effects")
@@ -1635,6 +1663,22 @@ public sealed class PokemonLegendsZABridgeTests
         var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
+        var invalidDexUpdate = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(
+                paths,
+                Session: null,
+                PersonalId: 1,
+                Field: "regionalDexIndex",
+                Value: "401"),
+            "request-za-pokemon-invalid-dex-order-update");
+        AssertSuccess(invalidDexUpdate);
+        Assert.Contains(
+            invalidDexUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.False(invalidDexUpdate.Payload.Session.HasPendingChanges);
+
         var update = Dispatch<UpdatePokemonFieldResponse>(
             dispatcher,
             KmCommandNames.UpdatePokemonField,
@@ -1643,10 +1687,25 @@ public sealed class PokemonLegendsZABridgeTests
         AssertSuccess(update);
         Assert.Equal(99, update.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).BaseStats.HP);
 
+        var dexUpdate = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(
+                paths,
+                update.Payload.Session,
+                PersonalId: 1,
+                Field: "regionalDexIndex",
+                Value: "300"),
+            "request-za-pokemon-dex-order-update");
+        AssertSuccess(dexUpdate);
+        Assert.Equal(
+            300,
+            dexUpdate.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).DexPresence.RegionalDexIndex);
+
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            new CreateChangePlanRequest(paths, dexUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-pokemon-plan");
         AssertSuccess(plan);
         Assert.True(plan.Payload!.ChangePlan.CanApply);
@@ -1655,7 +1714,7 @@ public sealed class PokemonLegendsZABridgeTests
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            new ApplyChangePlanRequest(paths, dexUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-pokemon-apply");
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
@@ -1666,6 +1725,160 @@ public sealed class PokemonLegendsZABridgeTests
         var row = written.Entry(1);
         Assert.NotNull(row);
         Assert.Equal(99, row!.Value.BaseStats!.Value.Hp);
+        Assert.Equal(300, row.Value.ZADexOrder);
+    }
+
+    [Fact]
+    public void PokemonLegendsZALegacyByteDexOrderOutputLoadsAndRepairsFromBase()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        var basePersonal = CreatePersonalArray(
+            bulbasaurDexOrder: 400,
+            ivysaurDexOrder: 256,
+            bulbasaurSpeciesReserved3: 8,
+            ivysaurSpeciesReserved3: 4,
+            ivysaurHasType1: false);
+        var legacyPersonal = CreatePersonalArray(
+            evolutionCondition: 8,
+            evolutionParameter: 17,
+            evolutionSpecies: 2,
+            bulbasaurDexOrder: 400,
+            ivysaurDexOrder: 256,
+            bulbasaurSpeciesReserved3: 8,
+            ivysaurSpeciesReserved3: 4,
+            legacyByteDexOrderLayout: true,
+            ivysaurHasType1: false,
+            ivysaurHasDexOrder: false,
+            bulbasaurPresent: false);
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, basePersonal);
+        WriteZaOutput(temp, ZaDataPaths.PersonalArray, legacyPersonal);
+        Assert.True(
+            ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(legacyPersonal))
+                .HasLegacyByteZADexOrderLayout);
+
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+        var loaded = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-za-legacy-dex-order-load");
+        AssertSuccess(loaded);
+        Assert.Contains(
+            loaded.Payload!.Workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("rewrite the output safely", StringComparison.Ordinal));
+        Assert.Equal(
+            400,
+            loaded.Payload.Workflow.Pokemon.Single(row => row.PersonalId == 1).DexPresence.RegionalDexIndex);
+        Assert.False(
+            loaded.Payload.Workflow.Pokemon.Single(row => row.PersonalId == 1).DexPresence.IsPresentInGame);
+        Assert.Equal(
+            256,
+            loaded.Payload.Workflow.Pokemon.Single(row => row.PersonalId == 2).DexPresence.RegionalDexIndex);
+
+        var update = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(paths, Session: null, PersonalId: 1, Field: "hp", Value: "99"),
+            "request-za-legacy-dex-order-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-legacy-dex-order-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-legacy-dex-order-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var repairedBytes = ReadZaOutputBytes(temp, ZaDataPaths.PersonalArray);
+        var repaired = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(repairedBytes));
+        Assert.False(repaired.HasLegacyByteZADexOrderLayout);
+        Assert.Equal(400, repaired.Entry(1)!.Value.ZADexOrder);
+        Assert.Equal(256, repaired.Entry(2)!.Value.ZADexOrder);
+        Assert.Equal(8u, repaired.Entry(1)!.Value.Species!.Value.Reserved3);
+        Assert.Equal(4u, repaired.Entry(2)!.Value.Species!.Value.Reserved3);
+        Assert.False(repaired.Entry(1)!.Value.IsPresent);
+        Assert.Equal(99, repaired.Entry(1)!.Value.BaseStats!.Value.Hp);
+        var repairedEvolution = repaired.Entry(1)!.Value.Evolutions(0);
+        Assert.NotNull(repairedEvolution);
+        Assert.Equal(8, repairedEvolution!.Value.Condition);
+        Assert.Equal(17, repairedEvolution.Value.Parameter);
+        Assert.Equal(2, repairedEvolution.Value.Species);
+        Assert.Equal(1, repaired.Entry(2)!.Value.EvolutionsLength);
+
+        var repairedBulbasaurOffset = FindZaPersonalTableOffset(repairedBytes, personalId: 1);
+        var repairedDexLocation = ReadFlatBufferTableFieldLocation(
+            repairedBytes,
+            repairedBulbasaurOffset,
+            fieldIndex: 2);
+        var repairedType1Location = ReadFlatBufferTableFieldLocation(
+            repairedBytes,
+            repairedBulbasaurOffset,
+            fieldIndex: 3);
+        Assert.Equal(400, BinaryPrimitives.ReadUInt16LittleEndian(repairedBytes.AsSpan(repairedDexLocation, sizeof(ushort))));
+        Assert.NotEqual(repairedDexLocation + sizeof(byte), repairedType1Location);
+    }
+
+    [Fact]
+    public void PokemonLegendsZALegacyOutputFailsClosedWhenBaseIsAlsoMalformed()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        var legacyPersonal = CreatePersonalArray(
+            bulbasaurDexOrder: 400,
+            ivysaurDexOrder: 256,
+            legacyByteDexOrderLayout: true,
+            ivysaurHasType1: false,
+            ivysaurHasDexOrder: false);
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, legacyPersonal);
+        WriteZaOutput(temp, ZaDataPaths.PersonalArray, legacyPersonal);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var loaded = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-za-malformed-base-load");
+        AssertSuccess(loaded);
+        Assert.Empty(loaded.Payload!.Workflow.Pokemon);
+        Assert.Contains(
+            loaded.Payload.Workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("clean base data", StringComparison.Ordinal));
+
+        var session = new EditSessionDto(
+            "za-malformed-base-session",
+            HasPendingChanges: true,
+            [
+                new PendingEditDto(
+                    "workflow.pokemon",
+                    "Set Pokemon personal record 1 HP to 99.",
+                    [new FileProvenanceDto(FileLayerDto.Layered, $"romfs/{ZaDataPaths.PersonalArray}")],
+                    RecordId: "1",
+                    Field: "hp",
+                    NewValue: "99"),
+            ]);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-malformed-base-plan");
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -1837,11 +2050,21 @@ public sealed class PokemonLegendsZABridgeTests
     public void PokemonLegendsZAItemEditWritesTrinityItemTable()
     {
         using var temp = CreatePokemonLegendsZAProject();
-        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        var baseItemData = CreateItemDataArray(includeUseGateRegressionItems: true);
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            baseItemData);
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
-            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+            CreateTextTable(
+                1231,
+                (4, "Poke Ball"),
+                (17, "Potion"),
+                (82, "Fire Stone"),
+                (218, "Soothe Bell"),
+                (328, "TM001"),
+                (1231, "Lonely Mint")));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.MoveNames("English"),
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
@@ -1930,6 +2153,13 @@ public sealed class PokemonLegendsZABridgeTests
 
         var writtenTm = ReadItem(temp, 328);
         Assert.Equal(3000, writtenTm.Price);
+        Assert.False(writtenTm.WorkEvolutional);
+        Assert.Equal(-1, writtenTm.MintNature);
+        AssertItemDataEqual(
+            ReadItem(baseItemData, 328),
+            writtenTm,
+            nameof(ZaItemData.Price),
+            nameof(ZaItemData.MachineWaza));
         var writtenPersonal = ZaPersonalTable.GetRootAsZaPersonalTable(
             new ByteBuffer(ReadZaOutputBytes(temp, ZaDataPaths.PersonalArray)));
         var writtenEntry = writtenPersonal.Entry(1)!.Value;
@@ -1948,9 +2178,33 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(45, writtenTm.MachineWaza);
         var writtenPokeBall = ReadItem(temp, 4);
         Assert.True(writtenPokeBall.WorkEvolutional);
+        Assert.Equal(-1, writtenPokeBall.MintNature);
         Assert.Equal(4, writtenPokeBall.ItemType);
         Assert.Equal(1, writtenPokeBall.Pocket);
-        Assert.Equal(50, ReadItem(temp, 17).HealPercentage);
+        AssertItemDataEqual(
+            ReadItem(baseItemData, 4),
+            writtenPokeBall,
+            nameof(ZaItemData.WorkEvolutional));
+        var writtenPotion = ReadItem(temp, 17);
+        Assert.False(writtenPotion.WorkEvolutional);
+        Assert.Equal(-1, writtenPotion.MintNature);
+        Assert.Equal(50, writtenPotion.HealPercentage);
+        AssertItemDataEqual(
+            ReadItem(baseItemData, 17),
+            writtenPotion,
+            nameof(ZaItemData.HealPercentage));
+        var writtenSootheBell = ReadItem(temp, 218);
+        Assert.False(writtenSootheBell.WorkEvolutional);
+        Assert.Equal(-1, writtenSootheBell.MintNature);
+        AssertItemDataEqual(ReadItem(baseItemData, 218), writtenSootheBell);
+        var writtenFireStone = ReadItem(temp, 82);
+        Assert.True(writtenFireStone.WorkEvolutional);
+        Assert.Equal(-1, writtenFireStone.MintNature);
+        AssertItemDataEqual(ReadItem(baseItemData, 82), writtenFireStone);
+        var writtenLonelyMint = ReadItem(temp, 1231);
+        Assert.False(writtenLonelyMint.WorkEvolutional);
+        Assert.Equal(1, writtenLonelyMint.MintNature);
+        AssertItemDataEqual(ReadItem(baseItemData, 1231), writtenLonelyMint);
 
         var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
             CreateDispatcherWithZaCache(temp),
@@ -1967,6 +2221,170 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(
             reloaded.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
             option => option.Value == 4 && option.Label == "4 Poke Ball");
+
+        var reloadedItems = Dispatch<LoadItemsWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-za-item-use-gates-reload");
+        AssertSuccess(reloadedItems);
+        Assert.True(reloadedItems.Payload!.Workflow.Items.Single(item => item.ItemId == 4).Metadata.CanUseOnPokemon);
+        Assert.False(reloadedItems.Payload.Workflow.Items.Single(item => item.ItemId == 218).Metadata.CanUseOnPokemon);
+        Assert.True(reloadedItems.Payload.Workflow.Items.Single(item => item.ItemId == 82).Metadata.CanUseOnPokemon);
+        Assert.True(reloadedItems.Payload.Workflow.Items.Single(item => item.ItemId == 1231).Metadata.CanUseOnPokemon);
+    }
+
+    [Fact]
+    public void PokemonLegendsZALegacyMintSentinelOutputIsRecoveredBeforeItemApply()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(
+                includeUseGateRegressionItems: true,
+                extraInertSentinelRows: 40));
+        WriteZaOutput(
+            temp,
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(
+                includeUseGateRegressionItems: true,
+                noMintNature: 0,
+                extraInertSentinelRows: 40));
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(
+                3039,
+                (4, "Poke Ball"),
+                (17, "Potion"),
+                (82, "Fire Stone"),
+                (218, "Soothe Bell"),
+                (328, "TM001"),
+                (1231, "Lonely Mint"),
+                (3000, "Legacy Sentinel Item")));
+        var paths = CreatePaths(temp);
+
+        var loaded = Dispatch<LoadItemsWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-za-legacy-mint-sentinel-load");
+        AssertSuccess(loaded);
+        Assert.Contains(
+            loaded.Payload!.Workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("legacy KM output", StringComparison.Ordinal));
+        var loadedSootheBell = loaded.Payload.Workflow.Items.Single(item => item.ItemId == 218);
+        Assert.Equal(-1, loadedSootheBell.FieldValues["mintNature"]);
+        Assert.False(loadedSootheBell.Metadata.CanUseOnPokemon);
+        Assert.True(loaded.Payload.Workflow.Items.Single(item => item.ItemId == 82).Metadata.CanUseOnPokemon);
+        Assert.True(loaded.Payload.Workflow.Items.Single(item => item.ItemId == 1231).Metadata.CanUseOnPokemon);
+
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(4, "evolutionItem", "1"),
+                    new ItemFieldUpdateDto(3000, "mintNature", "0"),
+                ]),
+            "request-za-legacy-mint-sentinel-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(
+                paths,
+                update.Payload!.Session,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-legacy-mint-sentinel-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-legacy-mint-sentinel-apply");
+        AssertSuccess(apply);
+        Assert.Contains(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Info
+                && diagnostic.Message.Contains("legacy no-mint item sentinels", StringComparison.Ordinal));
+
+        var writtenPokeBall = ReadItem(temp, 4);
+        Assert.True(writtenPokeBall.WorkEvolutional);
+        Assert.Equal(-1, writtenPokeBall.MintNature);
+        var writtenSootheBell = ReadItem(temp, 218);
+        Assert.False(writtenSootheBell.WorkEvolutional);
+        Assert.Equal(-1, writtenSootheBell.MintNature);
+        Assert.True(ReadItem(temp, 82).WorkEvolutional);
+        Assert.Equal(-1, ReadItem(temp, 82).MintNature);
+        Assert.Equal(1, ReadItem(temp, 1231).MintNature);
+        Assert.Equal(0, ReadItem(temp, 3000).MintNature);
+        Assert.Equal(1000, ReadItem(temp, 3000).Price);
+        Assert.Equal(-1, ReadItem(temp, 3001).MintNature);
+
+        var reloaded = Dispatch<LoadItemsWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-za-legacy-mint-sentinel-reload");
+        AssertSuccess(reloaded);
+        Assert.DoesNotContain(
+            reloaded.Payload!.Workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("legacy KM output", StringComparison.Ordinal));
+        Assert.True(reloaded.Payload.Workflow.Items.Single(item => item.ItemId == 4).Metadata.CanUseOnPokemon);
+        Assert.False(reloaded.Payload.Workflow.Items.Single(item => item.ItemId == 218).Metadata.CanUseOnPokemon);
+        Assert.True(reloaded.Payload.Workflow.Items.Single(item => item.ItemId == 3000).Metadata.CanUseOnPokemon);
+        Assert.False(reloaded.Payload.Workflow.Items.Single(item => item.ItemId == 3001).Metadata.CanUseOnPokemon);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAPartialLegacyMintSentinelPatternFailsClosed()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(extraInertSentinelRows: 40));
+        WriteZaOutput(
+            temp,
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(
+                extraInertSentinelRows: 40,
+                legacyZeroExtraRows: 36));
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        var paths = CreatePaths(temp);
+
+        var loaded = Dispatch<LoadItemsWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-za-partial-legacy-mint-sentinel-load");
+        AssertSuccess(loaded);
+        Assert.Contains(
+            loaded.Payload!.Workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("partial legacy mint-sentinel pattern", StringComparison.Ordinal));
+
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "price", "200")]),
+            "request-za-partial-legacy-mint-sentinel-update");
+        AssertSuccess(update);
+        Assert.False(update.Payload!.Session.HasPendingChanges);
+        Assert.Contains(
+            update.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -2021,10 +2439,13 @@ public sealed class PokemonLegendsZABridgeTests
     [Theory]
     [InlineData(17)]
     [InlineData(328)]
+    [InlineData(1231)]
     public void PokemonLegendsZAEvolutionItemConversionRejectsExistingDirectUseEffects(int itemId)
     {
         using var temp = CreatePokemonLegendsZAProject();
-        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(includeUseGateRegressionItems: true));
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         var paths = CreatePaths(temp);
         var update = Dispatch<UpdateItemFieldsResponse>(
@@ -2053,6 +2474,7 @@ public sealed class PokemonLegendsZABridgeTests
 
     [Theory]
     [InlineData("healPower", "25")]
+    [InlineData("mintNature", "0")]
     [InlineData("mintNature", "1")]
     public void PokemonLegendsZAEvolutionItemConversionRejectsPendingDirectUseEffects(
         string conflictingField,
@@ -2165,7 +2587,9 @@ public sealed class PokemonLegendsZABridgeTests
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemDataArray,
-            CreateItemDataArray(includeCustomEvolutionItem: true));
+            CreateItemDataArray(
+                includeCustomEvolutionItem: true,
+                customEvolutionItemsEnabled: false));
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         var paths = CreatePaths(temp);
         var update = Dispatch<UpdateItemFieldsResponse>(
@@ -2201,6 +2625,18 @@ public sealed class PokemonLegendsZABridgeTests
             ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray));
         Assert.Contains(written, row => row.ParameterId == 17 && row.ItemId == 2);
         Assert.Contains(written, row => row.ParameterId == 18 && row.ItemId == 248);
+        var writtenUltraBall = ReadItem(temp, 2);
+        Assert.True(writtenUltraBall.WorkEvolutional);
+        Assert.Equal(-1, writtenUltraBall.MintNature);
+        var writtenTwistedSpoon = ReadItem(temp, 248);
+        Assert.True(writtenTwistedSpoon.WorkEvolutional);
+        Assert.Equal(-1, writtenTwistedSpoon.MintNature);
+        var writtenTinyMushroom = ReadItem(temp, 86);
+        Assert.False(writtenTinyMushroom.WorkEvolutional);
+        Assert.Equal(-1, writtenTinyMushroom.MintNature);
+        var writtenMaliciousArmor = ReadItem(temp, 1861);
+        Assert.False(writtenMaliciousArmor.WorkEvolutional);
+        Assert.Equal(-1, writtenMaliciousArmor.MintNature);
     }
 
     [Fact]
@@ -2275,7 +2711,9 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-disable-evolution-item-apply");
         AssertSuccess(disableApply);
 
-        Assert.False(ReadItem(temp, 4).WorkEvolutional);
+        var disabledItem = ReadItem(temp, 4);
+        Assert.False(disabledItem.WorkEvolutional);
+        Assert.Equal(-1, disabledItem.MintNature);
         Assert.Contains(
             EvolutionItemConversionTable.Read(ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray)),
             row => row.ParameterId == 17 && row.ItemId == 4);
@@ -2288,6 +2726,14 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.DoesNotContain(
             reloaded.Payload!.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
             option => option.Value == 4);
+        var reloadedItems = Dispatch<LoadItemsWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-za-disable-evolution-item-items-reload");
+        AssertSuccess(reloadedItems);
+        Assert.False(
+            reloadedItems.Payload!.Workflow.Items.Single(item => item.ItemId == 4).Metadata.CanUseOnPokemon);
     }
 
     [Fact]
@@ -3671,32 +4117,54 @@ public sealed class PokemonLegendsZABridgeTests
         ushort evolutionParameter = 0,
         ushort evolutionSpecies = 1,
         byte evolutionForm = 0,
-        ushort evolutionLevel = 16)
+        ushort evolutionLevel = 16,
+        ushort bulbasaurDexOrder = 25,
+        ushort ivysaurDexOrder = 26,
+        uint bulbasaurSpeciesReserved3 = 0,
+        uint ivysaurSpeciesReserved3 = 0,
+        bool legacyByteDexOrderLayout = false,
+        bool ivysaurHasType1 = true,
+        bool ivysaurHasDexOrder = true,
+        bool bulbasaurPresent = true)
     {
         var builder = new FlatBufferBuilder(1024);
-        var empty = CreatePersonal(builder, species: 0, present: false, hp: 0, zaDexOrder: 0);
+        builder.ForceDefaults = legacyByteDexOrderLayout;
+        var empty = CreatePersonal(
+            builder,
+            species: 0,
+            present: false,
+            hp: 0,
+            zaDexOrder: 0,
+            legacyByteDexOrderLayout: legacyByteDexOrderLayout);
         var bulbasaur = CreatePersonal(
             builder,
             species: 1,
-            present: true,
+            present: bulbasaurPresent,
             hp: 45,
-            zaDexOrder: 25,
+            zaDexOrder: bulbasaurDexOrder,
             evolutionCondition,
             evolutionParameter,
             evolutionSpecies,
             evolutionForm,
-            evolutionLevel);
+            evolutionLevel,
+            legacyByteDexOrderLayout,
+            includeType1: true,
+            speciesReserved3: bulbasaurSpeciesReserved3);
         var ivysaur = CreatePersonal(
             builder,
             species: 2,
             present: true,
             hp: 60,
-            zaDexOrder: 26,
+            zaDexOrder: ivysaurDexOrder,
             evolutionCondition,
             evolutionParameter,
             evolutionSpecies,
             evolutionForm,
-            evolutionLevel);
+            evolutionLevel,
+            legacyByteDexOrderLayout,
+            includeType1: ivysaurHasType1,
+            includeDexOrder: ivysaurHasDexOrder,
+            speciesReserved3: ivysaurSpeciesReserved3);
         var charmander = CreatePersonal(
             builder,
             species: 3,
@@ -3707,7 +4175,8 @@ public sealed class PokemonLegendsZABridgeTests
             evolutionParameter,
             evolutionSpecies,
             evolutionForm,
-            evolutionLevel);
+            evolutionLevel,
+            legacyByteDexOrderLayout);
         var vector = ZaPersonalTable.CreateEntryVector(builder, [empty, bulbasaur, ivysaur, charmander]);
         ZaPersonalTable.Start(builder);
         ZaPersonalTable.AddEntry(builder, vector);
@@ -3761,7 +4230,12 @@ public sealed class PokemonLegendsZABridgeTests
         bool includeAdditionalMachines = false,
         bool includeCustomEvolutionItem = false,
         bool includePokemonItemTypes = false,
-        bool includeRestoredOvalStone = false)
+        bool includeRestoredOvalStone = false,
+        bool includeUseGateRegressionItems = false,
+        bool customEvolutionItemsEnabled = true,
+        int noMintNature = -1,
+        int extraInertSentinelRows = 0,
+        int legacyZeroExtraRows = 0)
     {
         var builder = new FlatBufferBuilder(2048);
         var pokeBall = CreateItem(
@@ -3774,7 +4248,7 @@ public sealed class PokemonLegendsZABridgeTests
             pocket: 1,
             stackCap: 999,
             sortOrder: 1,
-            mintNature: -1);
+            mintNature: noMintNature);
         var potion = CreateItem(
             builder,
             itemId: 17,
@@ -3786,7 +4260,8 @@ public sealed class PokemonLegendsZABridgeTests
             stackCap: 999,
             sortOrder: 1,
             healPower: 20,
-            canUseInBattle: true);
+            canUseInBattle: true,
+            mintNature: noMintNature);
         var tm = CreateItem(
             builder,
             itemId: 328,
@@ -3798,7 +4273,8 @@ public sealed class PokemonLegendsZABridgeTests
             stackCap: 1,
             sortOrder: 1,
             machineMoveId: 33,
-            machineIndex: -1);
+            machineIndex: -1,
+            mintNature: noMintNature);
         var rows = new List<Offset<ZaItemData>> { pokeBall, potion, tm };
         if (includeAdditionalMachines)
         {
@@ -3813,7 +4289,8 @@ public sealed class PokemonLegendsZABridgeTests
                 stackCap: 1,
                 sortOrder: 1,
                 machineMoveId: 45,
-                machineIndex: 0);
+                machineIndex: 0,
+                mintNature: noMintNature);
             var tm2 = CreateItem(
                 builder,
                 itemId: 329,
@@ -3825,7 +4302,8 @@ public sealed class PokemonLegendsZABridgeTests
                 stackCap: 1,
                 sortOrder: 2,
                 machineMoveId: 33,
-                machineIndex: 1);
+                machineIndex: 1,
+                mintNature: noMintNature);
             rows = [pokeBall, potion, tm1, tm2];
         }
 
@@ -3841,7 +4319,8 @@ public sealed class PokemonLegendsZABridgeTests
                 pocket: 1,
                 stackCap: 999,
                 sortOrder: 3,
-                workEvolutional: true));
+                workEvolutional: customEvolutionItemsEnabled,
+                mintNature: noMintNature));
             rows.Add(CreateItem(
                 builder,
                 itemId: 248,
@@ -3852,7 +4331,8 @@ public sealed class PokemonLegendsZABridgeTests
                 pocket: 2,
                 stackCap: 999,
                 sortOrder: 248,
-                workEvolutional: true));
+                workEvolutional: customEvolutionItemsEnabled,
+                mintNature: noMintNature));
             rows.Add(CreateItem(
                 builder,
                 itemId: 86,
@@ -3862,7 +4342,8 @@ public sealed class PokemonLegendsZABridgeTests
                 price: 500,
                 pocket: 3,
                 stackCap: 999,
-                sortOrder: 86));
+                sortOrder: 86,
+                mintNature: noMintNature));
             rows.Add(CreateItem(
                 builder,
                 itemId: 1861,
@@ -3873,7 +4354,8 @@ public sealed class PokemonLegendsZABridgeTests
                 pocket: 2,
                 stackCap: 999,
                 sortOrder: 1861,
-                workEvolutional: true));
+                workEvolutional: customEvolutionItemsEnabled,
+                mintNature: noMintNature));
         }
 
         if (includePokemonItemTypes)
@@ -3901,6 +4383,44 @@ public sealed class PokemonLegendsZABridgeTests
                 sortOrder: 1));
         }
 
+        if (includeUseGateRegressionItems)
+        {
+            rows.Add(CreateItem(
+                builder,
+                itemId: 82,
+                itemType: 7,
+                internalName: "HONOONOISI",
+                iconName: "item_0082",
+                price: 3000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 42,
+                workEvolutional: true,
+                mintNature: noMintNature));
+            rows.Add(CreateItem(
+                builder,
+                itemId: 218,
+                itemType: 1,
+                internalName: "YASURAGINOSUZU",
+                iconName: "item_0218",
+                price: 3000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 218,
+                mintNature: noMintNature));
+            rows.Add(CreateItem(
+                builder,
+                itemId: 1231,
+                itemType: 2,
+                internalName: "SABISIGARIMINTO",
+                iconName: "item_1231",
+                price: 20000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 1231,
+                mintNature: 1));
+        }
+
         if (includeRestoredOvalStone)
         {
             rows.Add(CreateItem(
@@ -3914,6 +4434,22 @@ public sealed class PokemonLegendsZABridgeTests
                 stackCap: 999,
                 sortOrder: 110,
                 workEvolutional: true));
+        }
+
+        for (var index = 0; index < extraInertSentinelRows; index++)
+        {
+            var itemId = 3000 + index;
+            rows.Add(CreateItem(
+                builder,
+                itemId,
+                itemType: 1,
+                internalName: $"LEGACY_SENTINEL_{itemId}",
+                iconName: $"item_{itemId:D4}",
+                price: 1000 + index,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: itemId,
+                mintNature: index < legacyZeroExtraRows ? 0 : noMintNature));
         }
 
         var vector = ZaItemDataArray.CreateValuesVector(builder, rows.ToArray());
@@ -4690,7 +5226,7 @@ public sealed class PokemonLegendsZABridgeTests
         int healPower = 0,
         bool canUseInBattle = false,
         bool workEvolutional = false,
-        int mintNature = 0)
+        int mintNature = -1)
     {
         var internalNameOffset = builder.CreateString(internalName);
         var iconNameOffset = builder.CreateString(iconName);
@@ -4770,12 +5306,16 @@ public sealed class PokemonLegendsZABridgeTests
         ushort species,
         bool present,
         byte hp,
-        byte zaDexOrder,
+        ushort zaDexOrder,
         ushort evolutionCondition = 4,
         ushort evolutionParameter = 0,
         ushort evolutionSpecies = 1,
         byte evolutionForm = 0,
-        ushort evolutionLevel = 16)
+        ushort evolutionLevel = 16,
+        bool legacyByteDexOrderLayout = false,
+        bool includeType1 = true,
+        bool includeDexOrder = true,
+        uint speciesReserved3 = 0)
     {
         ZaPersonal.StartEvolutionsVector(builder, species == 0 ? 0 : 1);
         if (species != 0)
@@ -4825,11 +5365,77 @@ public sealed class PokemonLegendsZABridgeTests
         ZaPersonal.AddAbility2(builder, 65);
         ZaPersonal.AddAbility1(builder, 65);
         ZaPersonal.AddType2(builder, 3);
-        ZaPersonal.AddType1(builder, 11);
-        ZaPersonal.AddZADexOrder(builder, zaDexOrder);
+        if (includeType1)
+        {
+            ZaPersonal.AddType1(builder, 11);
+        }
+
+        if (includeDexOrder && legacyByteDexOrderLayout)
+        {
+            builder.AddByte(2, unchecked((byte)zaDexOrder), 0);
+        }
+        else if (includeDexOrder)
+        {
+            ZaPersonal.AddZADexOrder(builder, zaDexOrder);
+        }
+
         ZaPersonal.AddIsPresent(builder, present);
-        ZaPersonal.AddSpecies(builder, ZaSpeciesInfo.Create(builder, species, form: 0, model: species, color: 3, bodyType: 1, height: 7, weight: 69, reserved: 0, reserved1: 0, reserved2: 0));
+        ZaPersonal.AddSpecies(
+            builder,
+            CreateZaSpeciesInfo(
+                builder,
+                species,
+                speciesReserved3,
+                legacyByteDexOrderLayout));
         return ZaPersonal.End(builder);
+    }
+
+    private static Offset<ZaSpeciesInfo> CreateZaSpeciesInfo(
+        FlatBufferBuilder builder,
+        ushort species,
+        uint reserved3,
+        bool legacyLayout)
+    {
+        if (!legacyLayout)
+        {
+            return ZaSpeciesInfo.Create(
+                builder,
+                species,
+                form: 0,
+                model: species,
+                color: 3,
+                bodyType: 1,
+                height: 7,
+                weight: 69,
+                reserved: 0,
+                reserved1: 0,
+                reserved2: 0,
+                reserved3: reserved3);
+        }
+
+        builder.Prep(2, 16);
+        builder.Pad(1);
+        builder.PutByte(0);
+        builder.PutByte(0);
+        builder.PutByte(0);
+        builder.PutUshort(69);
+        builder.PutUshort(7);
+        builder.PutByte(1);
+        builder.PutByte(3);
+        builder.PutUshort(species);
+        builder.PutUshort(0);
+        builder.PutUshort(species);
+        return new Offset<ZaSpeciesInfo>(builder.Offset);
+    }
+
+    private static int FindZaPersonalTableOffset(byte[] data, int personalId)
+    {
+        var rootOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0, sizeof(int)));
+        var entryVectorOffset = ReadFlatBufferVectorOffset(data, rootOffset, fieldIndex: 0);
+        var personalOffsetLocation = entryVectorOffset + sizeof(int) + personalId * sizeof(int);
+        return personalOffsetLocation
+            + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(
+                data.AsSpan(personalOffsetLocation, sizeof(uint))));
     }
 
     private static int FindZaPersonalStructVectorElementOffset(
@@ -4885,7 +5491,12 @@ public sealed class PokemonLegendsZABridgeTests
     {
         var outputPath = Path.Combine(temp.OutputRootPath, "world", "exl", "item_data", "item_data", "item_data.bin");
         Assert.True(File.Exists(outputPath));
-        var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(File.ReadAllBytes(outputPath)));
+        return ReadItem(File.ReadAllBytes(outputPath), itemId);
+    }
+
+    private static ZaItemData ReadItem(byte[] bytes, int itemId)
+    {
+        var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var row = table.Values(index);
@@ -4896,6 +5507,28 @@ public sealed class PokemonLegendsZABridgeTests
         }
 
         throw new InvalidOperationException($"Item {itemId} was not written.");
+    }
+
+    private static void AssertItemDataEqual(
+        ZaItemData expected,
+        ZaItemData actual,
+        params string[] excludedProperties)
+    {
+        var excluded = excludedProperties.ToHashSet(StringComparer.Ordinal);
+        foreach (var property in typeof(ZaItemData).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            if (property.Name == nameof(ZaItemData.ByteBuffer) || excluded.Contains(property.Name))
+            {
+                continue;
+            }
+
+            var expectedValue = property.GetValue(expected);
+            var actualValue = property.GetValue(actual);
+            Assert.True(
+                Equals(expectedValue, actualValue),
+                $"Z-A item field {property.Name} changed unexpectedly. "
+                + $"Expected {expectedValue ?? "null"}, actual {actualValue ?? "null"}.");
+        }
     }
 
     private static ZaShopLineup ReadShopLineup(TemporaryBridgeProject temp, string lineupId)

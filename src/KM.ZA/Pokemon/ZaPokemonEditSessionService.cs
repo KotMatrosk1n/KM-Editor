@@ -7,6 +7,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
@@ -374,11 +375,29 @@ internal sealed class ZaPokemonEditSessionService
             return plan;
         }
 
+        OpenedProject project;
+        IReadOnlyList<PersonalRow> rows;
         try
         {
-            var project = projectWorkspaceService.Open(paths);
+            project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            var rows = ReadRows(source.Bytes);
+            rows = ReadRows(project, source).Rows;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            var diagnostics = plan.Diagnostics
+                .Append(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon Data could not read or recover personal data: {exception.Message}",
+                    ZaEditSessionSupport.PokemonDomain,
+                    file: $"romfs/{ZaDataPaths.PersonalArray}",
+                    expected: "Readable current personal data and clean base data for legacy recovery"))
+                .ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        try
+        {
             var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
             PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
             if (!conversionState.Modified)
@@ -449,13 +468,15 @@ internal sealed class ZaPokemonEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
-            var rows = ReadRows(source.Bytes);
+            var personalArray = ReadRows(project, source);
+            var rows = personalArray.Rows;
             var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
             var migratedLegacyArguments = PrepareEvolutionItemConversions(
                 rows,
                 session.PendingEdits,
                 conversionState);
-            var requiresRebuild = RequiresPersonalArrayRebuild(rows, session.PendingEdits)
+            var requiresRebuild = personalArray.RequiresLegacyDexOrderRepair
+                || RequiresPersonalArrayRebuild(rows, session.PendingEdits)
                 || migratedLegacyArguments
                 || RequiresEncodedEvolutionRebuild(session.PendingEdits);
             foreach (var edit in session.PendingEdits)
@@ -1189,7 +1210,7 @@ internal sealed class ZaPokemonEditSessionService
                     break;
                 case ZaPokemonWorkflowService.RegionalDexIndexField:
                     row.HasZADexOrder = true;
-                    row.ZADexOrder = ToByte(value);
+                    row.ZADexOrder = ToUshort(value);
                     break;
                 default:
                     diagnostics.Add(CreateUnsupportedFieldDiagnostic(field ?? "(missing)"));
@@ -1394,17 +1415,46 @@ internal sealed class ZaPokemonEditSessionService
         }
     }
 
-    private static IReadOnlyList<PersonalRow> ReadRows(byte[] bytes)
+    private PersonalArrayRows ReadRows(OpenedProject project, ZaWorkflowFile source)
     {
-        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
+        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
+        var requiresLegacyDexOrderRepair = table.HasLegacyByteZADexOrderLayout;
+        ZaPersonalTable? baseTable = null;
+        if (requiresLegacyDexOrderRepair)
+        {
+            var baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+            baseTable = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
+            if (baseTable.Value.HasLegacyByteZADexOrderLayout)
+            {
+                throw new InvalidDataException(
+                    "Legacy Pokemon personal output cannot be repaired because the configured base table also uses the malformed byte layout.");
+            }
+        }
+
+        var baseRowsBySpecies = baseTable is { } vanilla
+            ? ZaPersonalLegacyRecovery.CreateUniqueBaseRowsBySpecies(vanilla)
+            : null;
+
         var rows = new List<PersonalRow>();
         for (var index = 0; index < table.EntryLength; index++)
         {
             var row = table.Entry(index);
-            rows.Add(row is null ? PersonalRow.Empty() : PersonalRow.From(row.Value));
+            var indexedBaseRow = baseTable is { } vanillaTable && index < vanillaTable.EntryLength
+                ? vanillaTable.Entry(index)
+                : null;
+            var baseRow = ZaPersonalLegacyRecovery.FindBaseRow(row, indexedBaseRow, baseRowsBySpecies);
+            if (requiresLegacyDexOrderRepair && row?.Species is not null && baseRow is null)
+            {
+                throw new InvalidDataException(
+                    $"Legacy Pokemon personal row {index} cannot recover its missing species metadata from base data.");
+            }
+
+            rows.Add(row is null
+                ? PersonalRow.Empty()
+                : PersonalRow.From(row.Value, baseRow, requiresLegacyDexOrderRepair));
         }
 
-        return rows;
+        return new PersonalArrayRows(rows, requiresLegacyDexOrderRepair);
     }
 
     private static byte[] WriteRows(IReadOnlyList<PersonalRow> rows)
@@ -1717,7 +1767,7 @@ internal sealed class ZaPokemonEditSessionService
                 case ZaPokemonWorkflowService.IsPresentInGameField:
                     return TryPatchBoolTableField(data, personalOffset, PersonalIsPresentFieldIndex, value != 0, field, diagnostics);
                 case ZaPokemonWorkflowService.RegionalDexIndexField:
-                    return TryPatchByteTableField(data, personalOffset, PersonalZaDexOrderFieldIndex, value, field, diagnostics);
+                    return TryPatchUShortTableField(data, personalOffset, PersonalZaDexOrderFieldIndex, value, field, diagnostics);
                 default:
                     return false;
             }
@@ -2826,7 +2876,7 @@ internal sealed class ZaPokemonEditSessionService
         public bool HasSpecies { get; set; }
         public bool IsPresent { get; set; }
         public bool HasIsPresent { get; set; }
-        public byte ZADexOrder { get; set; }
+        public ushort ZADexOrder { get; set; }
         public bool HasZADexOrder { get; set; }
         public byte Type1 { get; set; }
         public bool HasType1 { get; set; }
@@ -2880,15 +2930,27 @@ internal sealed class ZaPokemonEditSessionService
             return new PersonalRow();
         }
 
-        public static PersonalRow From(ZaPersonal row)
+        public static PersonalRow From(
+            ZaPersonal row,
+            ZaPersonal? baseRow,
+            bool hasLegacyByteDexOrderLayout)
         {
+            var recoveredSpeciesReserved3 = ZaPersonalLegacyRecovery.ResolveSpeciesReserved3(
+                row,
+                baseRow,
+                hasLegacyByteDexOrderLayout);
             var result = new PersonalRow
             {
-                Species = row.Species is { } species ? SpeciesInfoRow.From(species) : null,
+                Species = row.Species is { } species
+                    ? SpeciesInfoRow.From(species, recoveredSpeciesReserved3)
+                    : null,
                 HasSpecies = row.HasSpecies,
                 IsPresent = row.IsPresent,
                 HasIsPresent = row.HasIsPresent,
-                ZADexOrder = row.ZADexOrder,
+                ZADexOrder = ZaPersonalLegacyRecovery.ResolveZADexOrder(
+                    row,
+                    baseRow,
+                    hasLegacyByteDexOrderLayout),
                 HasZADexOrder = row.HasZADexOrder,
                 Type1 = row.Type1,
                 HasType1 = row.HasType1,
@@ -3122,6 +3184,10 @@ internal sealed class ZaPokemonEditSessionService
         }
     }
 
+    private sealed record PersonalArrayRows(
+        IReadOnlyList<PersonalRow> Rows,
+        bool RequiresLegacyDexOrderRepair);
+
     private sealed record SpeciesInfoRow(
         ushort Species,
         ushort Form,
@@ -3132,15 +3198,16 @@ internal sealed class ZaPokemonEditSessionService
         ushort Weight,
         byte Reserved,
         byte Reserved1,
-        byte Reserved2)
+        byte Reserved2,
+        uint Reserved3)
     {
-        public static readonly SpeciesInfoRow Zero = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        public static readonly SpeciesInfoRow Zero = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-        public static SpeciesInfoRow From(ZaSpeciesInfo row) =>
-            new(row.Species, row.Form, row.Model, row.Color, row.BodyType, row.Height, row.Weight, row.Reserved, row.Reserved1, row.Reserved2);
+        public static SpeciesInfoRow From(ZaSpeciesInfo row, uint reserved3) =>
+            new(row.Species, row.Form, row.Model, row.Color, row.BodyType, row.Height, row.Weight, row.Reserved, row.Reserved1, row.Reserved2, reserved3);
 
         public Offset<ZaSpeciesInfo> Write(FlatBufferBuilder builder) =>
-            ZaSpeciesInfo.Create(builder, Species, Form, Model, Color, BodyType, Height, Weight, Reserved, Reserved1, Reserved2);
+            ZaSpeciesInfo.Create(builder, Species, Form, Model, Color, BodyType, Height, Weight, Reserved, Reserved1, Reserved2, Reserved3);
     }
 
     private sealed record GenderInfoRow(byte Group, byte Ratio)

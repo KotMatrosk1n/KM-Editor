@@ -5,6 +5,7 @@ using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Core.Workflows;
+using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
@@ -27,6 +28,7 @@ internal sealed class ZaPokemonWorkflowService
     private const int LearnsetDisplayLevelMask = 0x00FF;
     private const int LearnsetMasteryLevelShift = 8;
     private const int LearnsetMasteryLevelMask = 0xFF00;
+    private const int MaximumDexOrder = 400;
 
     public const string HPField = "hp";
     public const string AttackField = "attack";
@@ -106,7 +108,7 @@ internal sealed class ZaPokemonWorkflowService
         CreateField(WeightField, "Weight", "Identity", 0, ushort.MaxValue),
         CreateField(HatchedSpeciesField, "Hatched Species", "Breeding", 0, ushort.MaxValue),
         CreateField(IsPresentInGameField, "Present In Game", "Flags", 0, 1, BooleanOptions),
-        CreateField(RegionalDexIndexField, "Z-A Dex Order", "Identity", 0, byte.MaxValue),
+        CreateField(RegionalDexIndexField, "Z-A Dex Order", "Identity", 0, MaximumDexOrder),
     ];
 
     private static readonly IReadOnlyList<ZaPokemonEditableFieldOption> TypeOptions =
@@ -344,6 +346,9 @@ internal sealed class ZaPokemonWorkflowService
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             var tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PersonalArray);
+            var requiresLegacyPersonalRecovery = ZaPersonalTable
+                .GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes))
+                .HasLegacyByteZADexOrderLayout;
             ZaEvolutionItemConversionState? conversionState = null;
             try
             {
@@ -356,15 +361,35 @@ internal sealed class ZaPokemonWorkflowService
             ZaWorkflowFile? baseSource = null;
             try
             {
-                if (conversionState is null)
+                if (conversionState is null || requiresLegacyPersonalRecovery)
                 {
                     baseSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+                    if (requiresLegacyPersonalRecovery
+                        && ZaPersonalTable
+                            .GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes))
+                            .HasLegacyByteZADexOrderLayout)
+                    {
+                        throw new InvalidDataException(
+                            "The configured base Pokemon personal table also uses the malformed byte layout.");
+                    }
                 }
             }
             catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
             {
-                // Output-only fixtures and projects can still be loaded; they simply cannot identify vanilla parameters.
+                if (requiresLegacyPersonalRecovery)
+                {
+                    throw new InvalidDataException(
+                        $"Legacy Pokemon personal output needs readable clean base data for complete recovery: {exception.Message}",
+                    exception);
+                }
             }
+            if (requiresLegacyPersonalRecovery)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    "This output uses an older malformed Pokemon layout. KM recovered it from clean base data for editing. Apply a Pokemon Data change once to rewrite the output safely.",
+                    $"romfs/{ZaDataPaths.PersonalArray}"));
+            }
+
             pokemon = LoadRecords(
                 source,
                 baseSource,
@@ -460,9 +485,13 @@ internal sealed class ZaPokemonWorkflowService
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes));
+        var hasLegacyByteDexOrderLayout = table.HasLegacyByteZADexOrderLayout;
         ZaPersonalTable? baseTable = baseSource is null
             ? null
             : ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(baseSource.Bytes));
+        var baseRowsBySpecies = baseTable is { } vanilla
+            ? ZaPersonalLegacyRecovery.CreateUniqueBaseRowsBySpecies(vanilla)
+            : null;
         for (var index = 0; index < table.EntryLength; index++)
         {
             var entry = table.Entry(index);
@@ -471,9 +500,19 @@ internal sealed class ZaPokemonWorkflowService
                 continue;
             }
 
-            var baseEntry = baseTable is { } vanillaTable && index < vanillaTable.EntryLength
+            var indexedBaseEntry = baseTable is { } vanillaTable && index < vanillaTable.EntryLength
                 ? vanillaTable.Entry(index)
                 : null;
+            var baseEntry = ZaPersonalLegacyRecovery.FindBaseRow(
+                entry,
+                indexedBaseEntry,
+                baseRowsBySpecies);
+            if (hasLegacyByteDexOrderLayout && entry.Value.Species is not null && baseEntry is null)
+            {
+                throw new InvalidDataException(
+                    $"Legacy Pokemon personal row {index} cannot recover its missing data from the configured base table.");
+            }
+
             yield return ToRecord(
                 index,
                 entry.Value,
@@ -483,7 +522,8 @@ internal sealed class ZaPokemonWorkflowService
                 labels,
                 spriteLabels,
                 tmCatalog,
-                evolutionItemArgumentLabels);
+                evolutionItemArgumentLabels,
+                hasLegacyByteDexOrderLayout);
         }
     }
 
@@ -496,7 +536,8 @@ internal sealed class ZaPokemonWorkflowService
         ZaTextLabelLookup labels,
         ZaTextLabelLookup spriteLabels,
         IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
-        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
+        IReadOnlyDictionary<int, string> evolutionItemArgumentLabels,
+        bool hasLegacyByteDexOrderLayout)
     {
         var species = entry.Species;
         var baseStatsData = entry.BaseStats;
@@ -525,7 +566,10 @@ internal sealed class ZaPokemonWorkflowService
         var genderRatio = genderData?.Ratio ?? 0;
         var eggSpecies = eggHatchData?.Species ?? 0;
         var eggForm = eggHatchData?.Form ?? 0;
-        var zaDexOrder = entry.ZADexOrder;
+        var zaDexOrder = ZaPersonalLegacyRecovery.ResolveZADexOrder(
+            entry,
+            baseEntry,
+            hasLegacyByteDexOrderLayout);
         var total = hp + attack + defense + specialAttack + specialDefense + speed;
         const int baseExperience = 0;
         var stats = new ZaPokemonBaseStats(

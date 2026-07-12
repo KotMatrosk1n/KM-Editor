@@ -45,6 +45,7 @@ import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
+import { createLoadedWorkflowEvictionState } from './workflowRetention';
 export type WorkbenchSection =
   | 'health'
   | 'workflows'
@@ -191,6 +192,7 @@ type WorkbenchState = {
   trainerSearchText: string;
   trainersWorkflow: TrainersWorkflow | null;
   workflows: WorkflowSummary[];
+  evictLoadedWorkflowSections: (sections: Iterable<WorkbenchSection>) => void;
   setDraftPath: (field: ProjectPathFieldName, value: string) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
   setApplyResult: (applyResult: ApplyResult | null) => void;
@@ -862,6 +864,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  evictLoadedWorkflowSections: (sections) => set(createLoadedWorkflowEvictionState(sections)),
   resetLoadedWorkflowData: () => set(createLoadedWorkflowResetState()),
   resetProjectSession: () => set(createProjectSessionResetState()),
   setSelectedTeraRaidRecordId: (selectedTeraRaidRecordId) =>

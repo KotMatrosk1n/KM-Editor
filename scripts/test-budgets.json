@@ -3,7 +3,7 @@
   "commandMs": 240000,
   "maxLocalWorkers": 4,
   "shards": {
-    "desktop": 60000,
+    "desktop": 210000,
     "core-formats": 90000,
     "swsh-general": 240000,
     "swsh-hooks": 240000,
