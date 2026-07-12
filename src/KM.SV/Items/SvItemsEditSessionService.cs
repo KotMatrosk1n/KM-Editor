@@ -5,8 +5,8 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SV.Items;
 using KM.SV.Data;
+using KM.SV.EvolutionItems;
 using KM.SV.Workflows;
 using System.Globalization;
 
@@ -168,6 +168,16 @@ internal sealed class SvItemsEditSessionService
             ValidatePendingEdit(workflow, edit, diagnostics);
         }
 
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateEvolutionItemUseCompatibility(workflow, session, diagnostics);
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateEvolutionItemConversions(project, session, diagnostics);
+        }
+
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
@@ -191,7 +201,7 @@ internal sealed class SvItemsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return SvEditSessionSupport.CreateSingleFileChangePlan(
+        var plan = SvEditSessionSupport.CreateSingleFileChangePlan(
             paths,
             session,
             SvEditSessionSupport.ItemsDomain,
@@ -199,6 +209,48 @@ internal sealed class SvItemsEditSessionService
             "Items",
             validation.Diagnostics,
             outputMode);
+        if (!plan.CanApply || !HasEnabledEvolutionItemEdit(session))
+        {
+            return plan;
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(session, conversionState);
+            if (!conversionState.Modified)
+            {
+                return plan;
+            }
+
+            var writeInfo = SvWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                SvDataPaths.EvolutionItemConversionArray,
+                [conversionState.SourceReference()],
+                outputMode);
+            var conversionWrite = new PlannedFileWrite(
+                writeInfo.TargetRelativePath,
+                writeInfo.Sources,
+                writeInfo.ReplacesExistingOutput,
+                "Assign enabled evolution items to approved game conversion parameters.");
+            return new ChangePlan(
+                plan.SessionId,
+                [conversionWrite, .. plan.Writes],
+                plan.Diagnostics);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            var diagnostics = plan.Diagnostics
+                .Append(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Items could not prepare evolution item conversions: {exception.Message}",
+                    SvEditSessionSupport.ItemsDomain,
+                    file: $"romfs/{SvDataPaths.EvolutionItemConversionArray}",
+                    expected: "Readable conversion table with an approved allocation slot"))
+                .ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
     }
 
     public ApplyResult ApplyChangePlan(
@@ -241,12 +293,38 @@ internal sealed class SvItemsEditSessionService
                 ApplyEdit(rows, edit, diagnostics);
             }
 
+            NormalizeEvolutionItemRows(rows, session.PendingEdits);
+
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            SvWorkflowFileSource.Write(paths, SvDataPaths.ItemDataArray, WriteRows(rows), outputMode);
+            SvEvolutionItemConversionState? conversionState = null;
+            if (HasEnabledEvolutionItemEdit(session))
+            {
+                conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
+                PrepareEvolutionItemConversions(session, conversionState);
+            }
+
+            var itemBytes = WriteRows(rows);
+            var conversionBytes = conversionState?.Modified == true
+                ? conversionState.Write()
+                : null;
+
+            if (conversionBytes is not null)
+            {
+                SvWorkflowFileSource.Write(
+                    paths,
+                    SvDataPaths.EvolutionItemConversionArray,
+                    conversionBytes,
+                    outputMode);
+                writtenFiles.Add(SvEditSessionSupport.GeneratedReference(
+                    SvDataPaths.EvolutionItemConversionArray,
+                    outputMode));
+            }
+
+            SvWorkflowFileSource.Write(paths, SvDataPaths.ItemDataArray, itemBytes, outputMode);
             writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.ItemDataArray, outputMode));
             if (outputMode == SvOutputMode.Standalone)
             {
@@ -269,6 +347,108 @@ internal sealed class SvItemsEditSessionService
         }
 
         return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private void ValidateEvolutionItemConversions(
+        OpenedProject project,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!HasEnabledEvolutionItemEdit(session))
+        {
+            return;
+        }
+
+        try
+        {
+            var conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(session, conversionState);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Evolution item conversion allocation is not valid: {exception.Message}",
+                SvEditSessionSupport.ItemsDomain,
+                file: $"romfs/{SvDataPaths.EvolutionItemConversionArray}",
+                expected: "Approved conversion capacity for every enabled item"));
+        }
+    }
+
+    private static void ValidateEvolutionItemUseCompatibility(
+        SvItemsWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
+        foreach (var itemId in GetEnabledEvolutionItemIds(session))
+        {
+            var originalItem = workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
+            var effectiveItem = effectiveWorkflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
+            if (originalItem is null
+                || effectiveItem is null
+                || !HasConflictingFieldUse(originalItem) && !HasConflictingFieldUse(effectiveItem))
+            {
+                continue;
+            }
+
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{effectiveItem.Name} already has a field-use function and cannot safely be converted without replacing that behavior.",
+                SvEditSessionSupport.ItemsDomain,
+                field: SvItemsWorkflowService.EvolutionItemField,
+                expected: "Held or inert item with no existing field-use function"));
+        }
+    }
+
+    private static bool HasConflictingFieldUse(SvItemRecord item)
+    {
+        return item.Metadata.FieldUseType is not (
+                (int)global::FieldFunctionType.FIELDFUNC_NONE or
+                (int)global::FieldFunctionType.FIELDFUNC_EVOLUTION);
+    }
+
+    private static void PrepareEvolutionItemConversions(
+        EditSession session,
+        SvEvolutionItemConversionState conversionState)
+    {
+        foreach (var itemId in GetEnabledEvolutionItemIds(session))
+        {
+            conversionState.Encode(itemId);
+        }
+    }
+
+    private static bool HasEnabledEvolutionItemEdit(EditSession session)
+    {
+        return GetEnabledEvolutionItemIds(session).Count > 0;
+    }
+
+    private static IReadOnlyList<int> GetEnabledEvolutionItemIds(EditSession session)
+    {
+        return GetEvolutionItemFinalValues(session.PendingEdits)
+            .Where(entry => entry.Value != 0)
+            .Select(entry => entry.Key)
+            .Order()
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<int, int> GetEvolutionItemFinalValues(IEnumerable<PendingEdit> edits)
+    {
+        var finalValues = new Dictionary<int, int>();
+        foreach (var edit in edits)
+        {
+            if (!string.Equals(edit.Domain, SvEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.Field, SvItemsWorkflowService.EvolutionItemField, StringComparison.Ordinal)
+                || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || !int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            {
+                continue;
+            }
+
+            finalValues[itemId] = value;
+        }
+
+        return finalValues;
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -409,10 +589,23 @@ internal sealed class SvItemsEditSessionService
 
     private static SvItemsWorkflow OverlayPendingEdits(SvItemsWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
+        var pendingEdits = edits.ToArray();
         var updatedWorkflow = workflow;
-        foreach (var edit in edits)
+        foreach (var edit in pendingEdits)
         {
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
+        }
+
+        foreach (var (itemId, value) in GetEvolutionItemFinalValues(pendingEdits))
+        {
+            updatedWorkflow = updatedWorkflow with
+            {
+                Items = updatedWorkflow.Items
+                    .Select(item => item.ItemId == itemId
+                        ? OverlayItem(updatedWorkflow, item, SvItemsWorkflowService.EvolutionItemField, value)
+                        : item)
+                    .ToArray(),
+            };
         }
 
         return updatedWorkflow;
@@ -496,7 +689,20 @@ internal sealed class SvItemsEditSessionService
             SvItemsWorkflowService.FriendshipGain1Field => item with { Metadata = metadata with { FriendshipGain1 = value } },
             SvItemsWorkflowService.FriendshipGain2Field => item with { Metadata = metadata with { FriendshipGain2 = value } },
             SvItemsWorkflowService.FriendshipGain3Field => item with { Metadata = metadata with { FriendshipGain3 = value } },
-            SvItemsWorkflowService.EvolutionItemField => item,
+            SvItemsWorkflowService.EvolutionItemField => item with
+            {
+                Metadata = metadata with
+                {
+                    FieldUseType = value != 0
+                        ? (int)global::FieldFunctionType.FIELDFUNC_EVOLUTION
+                        : metadata.FieldUseType == (int)global::FieldFunctionType.FIELDFUNC_EVOLUTION
+                            ? (int)global::FieldFunctionType.FIELDFUNC_NONE
+                            : metadata.FieldUseType,
+                    CanUseOnPokemon = value != 0
+                        || metadata.FieldUseType != (int)global::FieldFunctionType.FIELDFUNC_EVOLUTION
+                        && metadata.CanUseOnPokemon,
+                },
+            },
             SvItemsWorkflowService.MachineMoveIdField => item with
             {
                 Metadata = metadata with
@@ -508,9 +714,25 @@ internal sealed class SvItemsEditSessionService
             _ => item,
         };
 
-        return field is null
-            ? updated
-            : updated with { FieldValues = SetFieldValue(updated.FieldValues, field, value) };
+        if (field is null)
+        {
+            return updated;
+        }
+
+        var fieldValues = SetFieldValue(updated.FieldValues, field, value);
+        if (string.Equals(field, SvItemsWorkflowService.EvolutionItemField, StringComparison.Ordinal))
+        {
+            fieldValues = SetFieldValue(
+                fieldValues,
+                SvItemsWorkflowService.FieldUseTypeField,
+                updated.Metadata.FieldUseType);
+            fieldValues = SetFieldValue(
+                fieldValues,
+                SvItemsWorkflowService.CanUseOnPokemonField,
+                updated.Metadata.CanUseOnPokemon ? 1 : 0);
+        }
+
+        return updated with { FieldValues = fieldValues };
     }
 
     private static IReadOnlyDictionary<string, int?> SetFieldValue(
@@ -667,10 +889,34 @@ internal sealed class SvItemsEditSessionService
                 break;
             case SvItemsWorkflowService.EvolutionItemField:
                 row.WorkEvolutional = value;
+                if (value != 0)
+                {
+                    row.FieldFunctionType = global::FieldFunctionType.FIELDFUNC_EVOLUTION;
+                    row.WorkType = global::WorkType.WORKTYPE_EffectPokemon;
+                    row.SetToPoke = true;
+                }
+                else if (row.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_EVOLUTION)
+                {
+                    row.FieldFunctionType = global::FieldFunctionType.FIELDFUNC_NONE;
+                }
                 break;
             case SvItemsWorkflowService.MachineMoveIdField:
                 row.MachineWaza = (global::pml.common.WazaID)checked((ushort)value);
                 break;
+        }
+    }
+
+    private static void NormalizeEvolutionItemRows(
+        IReadOnlyList<ItemRow> rows,
+        IEnumerable<PendingEdit> edits)
+    {
+        foreach (var (itemId, value) in GetEvolutionItemFinalValues(edits))
+        {
+            var row = rows.FirstOrDefault(candidate => candidate.Id == itemId);
+            if (row is not null)
+            {
+                ApplyField(row, SvItemsWorkflowService.EvolutionItemField, value);
+            }
         }
     }
 
@@ -729,7 +975,7 @@ internal sealed class SvItemsEditSessionService
         public bool NoSpend { get; init; }
         public bool SetToPoke { get; set; }
         public int SlotMaxNum { get; init; }
-        public global::WorkType WorkType { get; init; }
+        public global::WorkType WorkType { get; set; }
         public int WorkCommon { get; init; }
         public int WorkEffectGuard { get; init; }
         public int WorkCritical { get; set; }

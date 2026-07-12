@@ -23,6 +23,8 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
+using KM.Core.Projects;
+using KM.Formats.Pokemon;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.Field.PokemonSpawner;
@@ -31,6 +33,7 @@ using KM.Formats.ZA.Trinity;
 using KM.Integration.Tests.Tools;
 using KM.Tools.Bridge;
 using KM.ZA.Data;
+using KM.ZA.EvolutionItems;
 using KM.ZA.Placement;
 using KM.ZA.Workflows;
 using Xunit;
@@ -151,8 +154,122 @@ public sealed class PokemonLegendsZABridgeTests
     [Fact]
     public void PokemonLegendsZAEvolutionItemsUseEligibleItemIds()
     {
+        foreach (var (storedArgument, expectedItemId, expectedName) in new[]
+                 {
+                     (3, 82, "Fire Stone"),
+                     (4, 83, "Thunder Stone"),
+                 })
+        {
+            using var vanillaTemp = CreatePokemonLegendsZAProject();
+            vanillaTemp.WriteBaseRomFsFile(
+                ZaDataPaths.PersonalArray,
+                CreatePersonalArray(evolutionCondition: 8, evolutionParameter: (ushort)storedArgument, evolutionSpecies: 2));
+            vanillaTemp.WriteBaseRomFsFile(
+                ZaDataPaths.ItemDataArray,
+                CreateItemDataArray(includePokemonItemTypes: true));
+            vanillaTemp.WriteBaseRomFsFile(
+                ZaDataPaths.ItemNames("English"),
+                CreateTextTable(expectedItemId + 1, (expectedItemId, expectedName)));
+            var vanillaDispatcher = CreateDispatcherWithZaCache(vanillaTemp);
+
+            var vanillaPokemon = Dispatch<LoadPokemonWorkflowResponse>(
+                vanillaDispatcher,
+                KmCommandNames.LoadPokemonWorkflow,
+                new LoadPokemonWorkflowRequest(CreatePaths(vanillaTemp)),
+                $"request-za-pokemon-vanilla-evolution-item-{storedArgument}");
+
+            AssertSuccess(vanillaPokemon);
+            var vanillaEvolution = Assert.Single(
+                vanillaPokemon.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+            Assert.Equal(expectedItemId, vanillaEvolution.Argument);
+            Assert.Equal(expectedName, vanillaEvolution.ArgumentValue);
+
+            var addCustomEvolution = Dispatch<UpdatePokemonEvolutionResponse>(
+                vanillaDispatcher,
+                KmCommandNames.UpdatePokemonEvolution,
+                new UpdatePokemonEvolutionRequest(
+                    CreatePaths(vanillaTemp),
+                    Session: null,
+                    PersonalId: 1,
+                    Action: "add",
+                    Slot: null,
+                    Method: 8,
+                    Argument: 248,
+                    Species: 2,
+                    Form: 0,
+                    Level: 0),
+                $"request-za-pokemon-add-before-vanilla-evolution-item-{storedArgument}");
+            AssertSuccess(addCustomEvolution);
+
+            var moveCustomEvolution = Dispatch<UpdatePokemonEvolutionResponse>(
+                vanillaDispatcher,
+                KmCommandNames.UpdatePokemonEvolution,
+                new UpdatePokemonEvolutionRequest(
+                    CreatePaths(vanillaTemp),
+                    addCustomEvolution.Payload!.Session,
+                    PersonalId: 1,
+                    Action: "moveUp",
+                    Slot: 1,
+                    Method: null,
+                    Argument: null,
+                    Species: null,
+                    Form: null,
+                    Level: null),
+                $"request-za-pokemon-move-before-vanilla-evolution-item-{storedArgument}");
+            AssertSuccess(moveCustomEvolution);
+            var reorderedEvolutions = moveCustomEvolution.Payload!.Workflow.Pokemon
+                .Single(row => row.PersonalId == 1)
+                .Evolutions;
+            Assert.Equal(248, reorderedEvolutions.Single(row => row.Slot == 0).Argument);
+            Assert.Equal(expectedItemId, reorderedEvolutions.Single(row => row.Slot == 1).Argument);
+
+            var reorderedPlan = Dispatch<CreateChangePlanResponse>(
+                vanillaDispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(
+                    CreatePaths(vanillaTemp),
+                    moveCustomEvolution.Payload.Session,
+                    ChangePlanOutputModeDto.TrinityModManager),
+                $"request-za-pokemon-reordered-vanilla-evolution-plan-{storedArgument}");
+            AssertSuccess(reorderedPlan);
+            var reorderedApply = Dispatch<ApplyChangePlanResponse>(
+                vanillaDispatcher,
+                KmCommandNames.ApplyChangePlan,
+                new ApplyChangePlanRequest(
+                    CreatePaths(vanillaTemp),
+                    moveCustomEvolution.Payload.Session,
+                    reorderedPlan.Payload!.ChangePlan,
+                    ChangePlanOutputModeDto.TrinityModManager),
+                $"request-za-pokemon-reordered-vanilla-evolution-apply-{storedArgument}");
+            AssertSuccess(reorderedApply);
+
+            var writtenConversions = EvolutionItemConversionTable.Read(
+                ReadZaOutputBytes(vanillaTemp, ZaDataPaths.EvolutionItemConversionArray));
+            var twistedSpoonParameter = writtenConversions.Single(row => row.ItemId == 248).ParameterId;
+            var writtenPersonal = ZaPersonalTable.GetRootAsZaPersonalTable(
+                new ByteBuffer(ReadZaOutputBytes(vanillaTemp, ZaDataPaths.PersonalArray)));
+            Assert.Equal(twistedSpoonParameter, writtenPersonal.Entry(1)!.Value.Evolutions(0)!.Value.Parameter);
+            Assert.Equal(storedArgument, writtenPersonal.Entry(1)!.Value.Evolutions(1)!.Value.Parameter);
+
+            var reloadedPokemon = Dispatch<LoadPokemonWorkflowResponse>(
+                CreateDispatcherWithZaCache(vanillaTemp),
+                KmCommandNames.LoadPokemonWorkflow,
+                new LoadPokemonWorkflowRequest(CreatePaths(vanillaTemp)),
+                $"request-za-pokemon-reordered-vanilla-evolution-reload-{storedArgument}");
+            AssertSuccess(reloadedPokemon);
+            var reloadedEvolutions = reloadedPokemon.Payload!.Workflow.Pokemon
+                .Single(row => row.PersonalId == 1)
+                .Evolutions;
+            Assert.Equal(248, reloadedEvolutions.Single(row => row.Slot == 0).Argument);
+            Assert.Equal(expectedItemId, reloadedEvolutions.Single(row => row.Slot == 1).Argument);
+        }
+
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 3, evolutionSpecies: 2));
+        WriteZaOutput(
+            temp,
             ZaDataPaths.PersonalArray,
             CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 86, evolutionSpecies: 2));
         temp.WriteBaseRomFsFile(
@@ -169,7 +286,8 @@ public sealed class PokemonLegendsZABridgeTests
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
                 (86, "Tiny Mushroom"),
-                (222, "Twisted Spoon"),
+                (248, "Twisted Spoon"),
+                (1861, "Malicious Armor"),
                 (2482, "Metal Alloy")));
         var dispatcher = CreateDispatcherWithZaCache(temp);
 
@@ -183,12 +301,13 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = pokemon.Payload!.Workflow;
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
-        Assert.Equal(86, evolution.Argument);
-        Assert.Equal("Tiny Mushroom", evolution.ArgumentValue);
+        Assert.Equal(1861, evolution.Argument);
+        Assert.Equal("Malicious Armor", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
-        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 222 && option.Label == "222 Twisted Spoon");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 248 && option.Label == "248 Twisted Spoon");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 1861 && option.Label == "1861 Malicious Armor");
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 81);
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 86);
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2482);
@@ -196,6 +315,29 @@ public sealed class PokemonLegendsZABridgeTests
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 86 && option.Label == "86 Tiny Mushroom");
+
+        var update = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                CreatePaths(temp),
+                Session: null,
+                PersonalId: 1,
+                Action: "add",
+                Slot: null,
+                Method: 8,
+                Argument: 86,
+                Species: 2,
+                Form: 0,
+                Level: 0),
+            "request-za-pokemon-custom-evolution-item-label");
+
+        AssertSuccess(update);
+        var updatedEvolutions = update.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions;
+        Assert.Equal(2, updatedEvolutions.Count);
+        var updatedEvolution = updatedEvolutions.Single(row => row.Slot == 1);
+        Assert.Equal(86, updatedEvolution.Argument);
+        Assert.Equal("86 Tiny Mushroom", updatedEvolution.ArgumentValue);
     }
 
     [Fact]
@@ -227,8 +369,8 @@ public sealed class PokemonLegendsZABridgeTests
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
         Assert.Equal(19, evolution.Method);
-        Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
+        Assert.Equal(81, evolution.Argument);
+        Assert.Equal("Moon Stone", evolution.ArgumentValue);
 
         var heldItemDay = workflow.EvolutionMethodOptions.Single(option => option.Value == 19);
         Assert.Contains(heldItemDay.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
@@ -253,7 +395,12 @@ public sealed class PokemonLegendsZABridgeTests
             new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-pokemon-held-item-evolution-plan");
         AssertSuccess(plan);
-        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.True(
+            plan.Payload!.ChangePlan.CanApply,
+            string.Join(Environment.NewLine, plan.Payload.ChangePlan.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Equal(
+            ZaDataPaths.EvolutionItemConversionArray,
+            plan.Payload.ChangePlan.Writes[0].TargetRelativePath);
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
@@ -261,44 +408,57 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-pokemon-held-item-evolution-apply");
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(ZaDataPaths.EvolutionItemConversionArray, apply.Payload.ApplyResult.WrittenFiles[0]);
 
         var outputPath = Path.Combine(temp.OutputRootPath, "avalon", "data", "personal_array.bin");
         var writtenBytes = File.ReadAllBytes(outputPath);
-        var evolutionOffset = FindZaPersonalStructVectorElementOffset(personalArray, personalId: 1, personalFieldIndex: 21, slot: 0, structSize: 16);
-        Assert.Equal(personalArray.Length, writtenBytes.Length);
-        Assert.All(
-            Enumerable.Range(0, writtenBytes.Length).Where(index => personalArray[index] != writtenBytes[index]),
-            index => Assert.InRange(index, evolutionOffset, evolutionOffset + 15));
 
         var written = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(writtenBytes));
         var writtenEvolution = written.Entry(1)!.Value.Evolutions(0);
         Assert.NotNull(writtenEvolution);
         Assert.Equal(20, writtenEvolution!.Value.Condition);
-        Assert.Equal(2, writtenEvolution.Value.Parameter);
+        var writtenConversions = EvolutionItemConversionTable.Read(
+            ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray));
+        var ultraBallParameter = writtenConversions.Single(row => row.ItemId == 2).ParameterId;
+        Assert.Equal(ultraBallParameter, writtenEvolution.Value.Parameter);
         Assert.Equal(3, writtenEvolution.Value.Species);
         Assert.Equal(1, writtenEvolution.Value.Form);
         Assert.Equal(24, writtenEvolution.Value.Level);
+        Assert.Equal(25, written.Entry(1)!.Value.ZADexOrder);
+        Assert.Equal(26, written.Entry(2)!.Value.ZADexOrder);
+
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-za-pokemon-held-item-evolution-reload");
+        AssertSuccess(reloaded);
+        var reloadedEvolution = Assert.Single(
+            reloaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(2, reloadedEvolution.Argument);
+        Assert.Equal("Ultra Ball", reloadedEvolution.ArgumentValue);
 
         using var resizeTemp = CreatePokemonLegendsZAProject();
         resizeTemp.WriteBaseRomFsFile(
             ZaDataPaths.PersonalArray,
             CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 2, evolutionSpecies: 2));
         var resizePaths = CreatePaths(resizeTemp);
+        var resizeDispatcher = CreateDispatcherWithZaCache(resizeTemp);
         var add = Dispatch<UpdatePokemonEvolutionResponse>(
-            dispatcher,
+            resizeDispatcher,
             KmCommandNames.UpdatePokemonEvolution,
             new UpdatePokemonEvolutionRequest(resizePaths, Session: null, PersonalId: 1, Action: "add", Slot: null, Method: 20, Argument: 2, Species: 3, Form: 1, Level: 24),
             "request-za-pokemon-held-item-evolution-add");
         AssertSuccess(add);
         var addPlan = Dispatch<CreateChangePlanResponse>(
-            dispatcher,
+            resizeDispatcher,
             KmCommandNames.CreateChangePlan,
             new CreateChangePlanRequest(resizePaths, add.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-pokemon-held-item-evolution-add-plan");
         AssertSuccess(addPlan);
         Assert.True(addPlan.Payload!.ChangePlan.CanApply);
         var addApply = Dispatch<ApplyChangePlanResponse>(
-            dispatcher,
+            resizeDispatcher,
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(resizePaths, add.Payload.Session, addPlan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-pokemon-held-item-evolution-add-apply");
@@ -312,9 +472,188 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.NotNull(addedEvolution);
         Assert.Equal(2, resizedBulbasaur.EvolutionsLength);
         Assert.Equal(20, addedEvolution!.Value.Condition);
+        var resizedConversions = EvolutionItemConversionTable.Read(
+            ReadZaOutputBytes(resizeTemp, ZaDataPaths.EvolutionItemConversionArray));
+        var resizedUltraBallParameter = resizedConversions.Single(row => row.ItemId == 2).ParameterId;
+        Assert.Equal(resizedUltraBallParameter, addedEvolution.Value.Parameter);
         Assert.Equal(3, addedEvolution.Value.Species);
         Assert.Equal(25, resizedBulbasaur.ZADexOrder);
         Assert.Equal(26, resized.Entry(2)!.Value.ZADexOrder);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAReservedParameter50DisplaysHistoricalRazorFang()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 20, evolutionParameter: 50, evolutionSpecies: 2));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(328, (50, "Rare Candy"), (327, "Razor Fang")));
+
+        var response = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(CreatePaths(temp)),
+            "request-za-reserved-evolution-parameter-50");
+
+        AssertSuccess(response);
+        var evolution = Assert.Single(
+            response.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(327, evolution.Argument);
+        Assert.Equal("Razor Fang", evolution.ArgumentValue);
+    }
+
+    [Theory]
+    [InlineData(17)]
+    [InlineData(18)]
+    [InlineData(42)]
+    public void PokemonLegendsZAConversionBackedUseItemMethodsRoundTripThroughConversionTable(int method)
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: (ushort)method, evolutionParameter: 3, evolutionSpecies: 2));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(includePokemonItemTypes: true));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(83, (82, "Fire Stone")));
+        var paths = CreatePaths(temp);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+
+        var loaded = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            $"request-za-converted-use-item-{method}-load");
+        AssertSuccess(loaded);
+        var loadedEvolution = Assert.Single(
+            loaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(method, loadedEvolution.Method);
+        Assert.Equal(82, loadedEvolution.Argument);
+        Assert.Equal("Fire Stone", loadedEvolution.ArgumentValue);
+
+        var update = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "upsert",
+                Slot: 0,
+                Method: method,
+                Argument: 82,
+                Species: 2,
+                Form: 0,
+                Level: 0),
+            $"request-za-converted-use-item-{method}-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            $"request-za-converted-use-item-{method}-plan");
+        AssertSuccess(plan);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload!.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            $"request-za-converted-use-item-{method}-apply");
+        AssertSuccess(apply);
+
+        var written = ZaPersonalTable.GetRootAsZaPersonalTable(
+            new ByteBuffer(ReadZaOutputBytes(temp, ZaDataPaths.PersonalArray)));
+        Assert.Equal(3, written.Entry(1)!.Value.Evolutions(0)!.Value.Parameter);
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            $"request-za-converted-use-item-{method}-reload");
+        AssertSuccess(reloaded);
+        Assert.Equal(
+            82,
+            Assert.Single(reloaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions).Argument);
+    }
+
+    [Fact]
+    public void PokemonLegendsZALegacyRawEvolutionItemArgumentsAreMigrated()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 3, evolutionSpecies: 2));
+        WriteZaOutput(
+            temp,
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 248, evolutionSpecies: 2));
+        WriteZaOutput(
+            temp,
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(includeCustomEvolutionItem: true));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(249, (248, "Twisted Spoon")));
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(paths, Session: null, PersonalId: 1, Field: "hp", Value: "99"),
+            "request-za-pokemon-legacy-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-legacy-evolution-item-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == ZaDataPaths.EvolutionItemConversionArray);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-pokemon-legacy-evolution-item-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var writtenConversions = EvolutionItemConversionTable.Read(
+            ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray));
+        var twistedSpoonParameter = writtenConversions.Single(row => row.ItemId == 248).ParameterId;
+        var writtenPersonal = ZaPersonalTable.GetRootAsZaPersonalTable(
+            new ByteBuffer(ReadZaOutputBytes(temp, ZaDataPaths.PersonalArray)));
+        var writtenEntry = writtenPersonal.Entry(1)!.Value;
+        Assert.Equal(99, writtenEntry.BaseStats!.Value.Hp);
+        Assert.Equal(twistedSpoonParameter, writtenEntry.Evolutions(0)!.Value.Parameter);
+        Assert.Equal(25, writtenEntry.ZADexOrder);
+
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-za-pokemon-legacy-evolution-item-reload");
+        AssertSuccess(reloaded);
+        var evolution = Assert.Single(
+            reloaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(248, evolution.Argument);
+        Assert.Equal("Twisted Spoon", evolution.ArgumentValue);
     }
 
     [Fact]
@@ -1499,6 +1838,7 @@ public sealed class PokemonLegendsZABridgeTests
     {
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
             CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
@@ -1545,28 +1885,504 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(1, updatedPokeBall.FieldValues["canUseOnPokemon"]);
         Assert.Equal(1, updatedPokeBall.FieldValues["evolutionItem"]);
 
+        var evolutionUpdate = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                paths,
+                update.Payload.Session,
+                PersonalId: 1,
+                Action: "add",
+                Slot: null,
+                Method: 8,
+                Argument: 4,
+                Species: 2,
+                Form: 0,
+                Level: 0),
+            "request-za-item-and-evolution-update");
+        AssertSuccess(evolutionUpdate);
+        Assert.Contains(
+            evolutionUpdate.Payload!.Workflow.Pokemon
+                .Single(item => item.PersonalId == 1)
+                .Evolutions,
+            evolution => evolution.Method == 8 && evolution.Argument == 4 && evolution.Species == 2);
+
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            new CreateChangePlanRequest(paths, evolutionUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-item-plan");
         AssertSuccess(plan);
-        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.True(
+            plan.Payload!.ChangePlan.CanApply,
+            string.Join(Environment.NewLine, plan.Payload.ChangePlan.Diagnostics.Select(diagnostic => diagnostic.Message)));
         Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.ItemDataArray);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.PersonalArray);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.EvolutionItemConversionArray);
 
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            new ApplyChangePlanRequest(paths, evolutionUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-item-apply");
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
         var writtenTm = ReadItem(temp, 328);
         Assert.Equal(3000, writtenTm.Price);
+        var writtenPersonal = ZaPersonalTable.GetRootAsZaPersonalTable(
+            new ByteBuffer(ReadZaOutputBytes(temp, ZaDataPaths.PersonalArray)));
+        var writtenEntry = writtenPersonal.Entry(1)!.Value;
+        Assert.Equal(1, (int)writtenEntry.Species!.Value.Species);
+        Assert.Equal(25, (int)writtenEntry.ZADexOrder);
+        var writtenConversions = EvolutionItemConversionTable.Read(
+            ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray));
+        var pokeBallParameter = writtenConversions.Single(row => row.ItemId == 4).ParameterId;
+        Assert.Equal(17, pokeBallParameter);
+        var writtenEvolution = Enumerable.Range(0, writtenEntry.EvolutionsLength)
+            .Select(index => writtenEntry.Evolutions(index)!.Value)
+            .Single(evolution => evolution.Condition == 8 && evolution.Parameter == pokeBallParameter && evolution.Species == 2);
+        Assert.Equal(8, writtenEvolution.Condition);
+        Assert.Equal(pokeBallParameter, writtenEvolution.Parameter);
+        Assert.Equal(2, writtenEvolution.Species);
         Assert.Equal(45, writtenTm.MachineWaza);
-        Assert.True(ReadItem(temp, 4).WorkEvolutional);
+        var writtenPokeBall = ReadItem(temp, 4);
+        Assert.True(writtenPokeBall.WorkEvolutional);
+        Assert.Equal(4, writtenPokeBall.ItemType);
+        Assert.Equal(1, writtenPokeBall.Pocket);
         Assert.Equal(50, ReadItem(temp, 17).HealPercentage);
+
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-za-item-evolution-reload");
+        AssertSuccess(reloaded);
+        var reloadedEvolution = reloaded.Payload!.Workflow.Pokemon
+            .Single(item => item.PersonalId == 1)
+            .Evolutions
+            .Single(evolution => evolution.Method == 8 && evolution.Species == 2);
+        Assert.Equal(4, reloadedEvolution.Argument);
+        Assert.Equal("Poke Ball", reloadedEvolution.ArgumentValue);
+        Assert.Contains(
+            reloaded.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 4 && option.Label == "4 Poke Ball");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAEvolutionItemAllocationUsesOnlyApprovedPriorityTiers()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        var project = new ProjectWorkspaceService().Open(ProjectBridgeMapper.ToCore(CreatePaths(temp)));
+        var state = ZaEvolutionItemConversionState.Load(project, new ZaWorkflowFileSource());
+        int[] expectedParameters =
+        [
+            17, 18, 42, 43, 44, 45, 46, 47, 48, 90, 91, 103, 104, 105,
+            94, 95, 96,
+            .. Enumerable.Range(53, 17),
+            .. Enumerable.Range(72, 7),
+            .. Enumerable.Range(97, 5),
+            106,
+            9, 10, 15, 19,
+            .. Enumerable.Range(26, 16),
+            49, 51, 70, 71, 79, 80, 81, 82, 87, 88, 89,
+        ];
+
+        Assert.Equal(78, expectedParameters.Length);
+        Assert.Equal(1, state.Encode(80));
+        for (var index = 0; index < expectedParameters.Length; index++)
+        {
+            Assert.Equal(expectedParameters[index], state.Encode(3000 + index));
+        }
+
+        Assert.Throws<InvalidDataException>(() => state.Encode(4000));
+        var written = EvolutionItemConversionTable.Read(state.Write());
+        Assert.Equal(
+            EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray()).Select(row => row.ParameterId),
+            written.Select(row => row.ParameterId));
+        for (var index = 0; index < expectedParameters.Length; index++)
+        {
+            Assert.Contains(
+                written,
+                row => row.ParameterId == expectedParameters[index] && row.ItemId == 3000 + index);
+        }
+
+        Assert.All(
+            written.Where(row => row.ParameterId is 11 or 12 or 13 or 14 or 50),
+            row => Assert.Equal(0, row.ItemId));
+        Assert.Contains(written, row => row.ParameterId == 92 && row.ItemId == 218);
+        Assert.Contains(written, row => row.ParameterId == 102 && row.ItemId == 765);
+        Assert.Contains(written, row => row.ParameterId == 121 && row.ItemId == 847);
+        Assert.Contains(written, row => row.ParameterId == 1691 && row.ItemId == 1691);
+    }
+
+    [Theory]
+    [InlineData(17)]
+    [InlineData(328)]
+    public void PokemonLegendsZAEvolutionItemConversionRejectsExistingDirectUseEffects(int itemId)
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        var paths = CreatePaths(temp);
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(itemId, "evolutionItem", "1")]),
+            "request-za-conflicting-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-za-conflicting-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("direct Pokemon-use effect", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("healPower", "25")]
+    [InlineData("mintNature", "1")]
+    public void PokemonLegendsZAEvolutionItemConversionRejectsPendingDirectUseEffects(
+        string conflictingField,
+        string conflictingValue)
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        var paths = CreatePaths(temp);
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(4, "evolutionItem", "1"),
+                    new ItemFieldUpdateDto(4, conflictingField, conflictingValue),
+                ]),
+            $"request-za-pending-{conflictingField}-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            $"request-za-pending-{conflictingField}-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("direct Pokemon-use effect", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PokemonLegendsZAEvolutionItemAllocationProtectsActivePersonalParameters()
+    {
+        using (var blankTierTemp = CreatePokemonLegendsZAProject())
+        {
+            blankTierTemp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+            blankTierTemp.WriteBaseRomFsFile(
+                ZaDataPaths.PersonalArray,
+                CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 17, evolutionSpecies: 2));
+            var project = new ProjectWorkspaceService().Open(
+                ProjectBridgeMapper.ToCore(CreatePaths(blankTierTemp)));
+            var state = ZaEvolutionItemConversionState.Load(project, new ZaWorkflowFileSource());
+            Assert.Equal(18, state.Encode(3000));
+        }
+
+        using var reclaimTierTemp = CreatePokemonLegendsZAProject();
+        reclaimTierTemp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        reclaimTierTemp.WriteBaseRomFsFile(
+            ZaDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 19, evolutionParameter: 9, evolutionSpecies: 2));
+        var reclaimProject = new ProjectWorkspaceService().Open(
+            ProjectBridgeMapper.ToCore(CreatePaths(reclaimTierTemp)));
+        var reclaimState = ZaEvolutionItemConversionState.Load(reclaimProject, new ZaWorkflowFileSource());
+        int[] dormantParameters =
+        [
+            17, 18, 42, 43, 44, 45, 46, 47, 48, 90, 91, 103, 104, 105,
+            94, 95, 96,
+            .. Enumerable.Range(53, 17),
+            .. Enumerable.Range(72, 7),
+            .. Enumerable.Range(97, 5),
+            106,
+        ];
+        for (var index = 0; index < dormantParameters.Length; index++)
+        {
+            Assert.Equal(dormantParameters[index], reclaimState.Encode(3000 + index));
+        }
+
+        Assert.Equal(10, reclaimState.Encode(4000));
+    }
+
+    [Fact]
+    public void PokemonLegendsZAEvolutionItemAllocationFailsClosedWithoutReadablePersonalData()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        var paths = CreatePaths(temp);
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "evolutionItem", "1")]),
+            "request-za-missing-personal-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-za-missing-personal-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("readable active Pokemon personal data", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PokemonLegendsZAEvolutionItemBatchAllocationSortsByItemId()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(includeCustomEvolutionItem: true));
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        var paths = CreatePaths(temp);
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(248, "evolutionItem", "1"),
+                    new ItemFieldUpdateDto(2, "evolutionItem", "1"),
+                ]),
+            "request-za-sorted-evolution-item-batch");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-sorted-evolution-item-batch-plan");
+        AssertSuccess(plan);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload!.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-sorted-evolution-item-batch-apply");
+        AssertSuccess(apply);
+
+        var written = EvolutionItemConversionTable.Read(
+            ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray));
+        Assert.Contains(written, row => row.ParameterId == 17 && row.ItemId == 2);
+        Assert.Contains(written, row => row.ParameterId == 18 && row.ItemId == 248);
+    }
+
+    [Fact]
+    public void PokemonLegendsZADisablingEvolutionItemRetainsItsAllocatedMapping()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(5, (4, "Poke Ball")));
+        var paths = CreatePaths(temp);
+
+        var enable = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "evolutionItem", "1")]),
+            "request-za-enable-evolution-item");
+        AssertSuccess(enable);
+        var enablePlan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, enable.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-enable-evolution-item-plan");
+        AssertSuccess(enablePlan);
+        Assert.Equal(
+            ZaDataPaths.EvolutionItemConversionArray,
+            enablePlan.Payload!.ChangePlan.Writes[0].TargetRelativePath);
+        var enableApply = Dispatch<ApplyChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                enable.Payload.Session,
+                enablePlan.Payload!.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-enable-evolution-item-apply");
+        AssertSuccess(enableApply);
+        Assert.Equal(
+            ZaDataPaths.EvolutionItemConversionArray,
+            enableApply.Payload!.ApplyResult.WrittenFiles[0]);
+
+        var disable = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "evolutionItem", "0")]),
+            "request-za-disable-evolution-item");
+        AssertSuccess(disable);
+        var disablePlan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, disable.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-disable-evolution-item-plan");
+        AssertSuccess(disablePlan);
+        Assert.DoesNotContain(
+            disablePlan.Payload!.ChangePlan.Writes,
+            write => write.TargetRelativePath.EndsWith(ZaDataPaths.EvolutionItemConversionArray, StringComparison.Ordinal));
+        var disableApply = Dispatch<ApplyChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                disable.Payload.Session,
+                disablePlan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-disable-evolution-item-apply");
+        AssertSuccess(disableApply);
+
+        Assert.False(ReadItem(temp, 4).WorkEvolutional);
+        Assert.Contains(
+            EvolutionItemConversionTable.Read(ReadZaOutputBytes(temp, ZaDataPaths.EvolutionItemConversionArray)),
+            row => row.ParameterId == 17 && row.ItemId == 4);
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-za-disable-evolution-item-reload");
+        AssertSuccess(reloaded);
+        Assert.DoesNotContain(
+            reloaded.Payload!.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 4);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAEvolutionItemCapacityFailurePlansNoWrites()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemDataArray,
+            CreateItemDataArray(includeRestoredOvalStone: true));
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        HashSet<int> approvedParameters =
+        [
+            17, 18, 42, 43, 44, 45, 46, 47, 48, 90, 91, 103, 104, 105,
+            94, 95, 96,
+            .. Enumerable.Range(53, 17),
+            .. Enumerable.Range(72, 7),
+            .. Enumerable.Range(97, 5),
+            106, 9, 10, 15, 19,
+            .. Enumerable.Range(26, 16),
+            49, 51, 70, 71, 79, 80, 81, 82, 87, 88, 89,
+        ];
+        var occupiedRows = EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray())
+            .Select((row, index) => approvedParameters.Contains(row.ParameterId) && row.ParameterId != 9
+                ? row with { ItemId = 5000 + index }
+                : row)
+            .ToArray();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.EvolutionItemConversionArray,
+            EvolutionItemConversionTable.Write(occupiedRows));
+        var paths = CreatePaths(temp);
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "evolutionItem", "1")]),
+            "request-za-exhausted-evolution-item-update");
+        AssertSuccess(update);
+
+        foreach (var requestId in new[] { "first", "second" })
+        {
+            var plan = Dispatch<CreateChangePlanResponse>(
+                CreateDispatcherWithZaCache(temp),
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, update.Payload!.Session),
+                $"request-za-exhausted-evolution-item-plan-{requestId}");
+            AssertSuccess(plan);
+            Assert.False(plan.Payload!.ChangePlan.CanApply);
+            Assert.Empty(plan.Payload.ChangePlan.Writes);
+            Assert.Contains(
+                plan.Payload.ChangePlan.Diagnostics,
+                diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                    && diagnostic.Message.Contains("No approved evolution item conversion slot", StringComparison.Ordinal));
+        }
+
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "world", "exl", "item_data", "item_data", "item_data.bin")));
+    }
+
+    [Fact]
+    public void PokemonLegendsZAMalformedEvolutionItemTablePlansNoWrites()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
+        var conflictingRows = EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray())
+            .Select(row => row.ParameterId == 17 ? row with { ItemId = 5000 } : row)
+            .Append(new EvolutionItemConversion(5001, 17))
+            .ToArray();
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.EvolutionItemConversionArray,
+            EvolutionItemConversionTable.Write(conflictingRows));
+        var paths = CreatePaths(temp);
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(4, "evolutionItem", "1")]),
+            "request-za-malformed-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithZaCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-za-malformed-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("conflicting item assignments", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -2729,8 +3545,36 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(PokemonLegendsZATitleId));
         temp.WriteBaseRomFsFile("arc/data.trpfd", []);
         temp.WriteBaseRomFsFile("arc/data.trpfs", []);
+        temp.WriteBaseRomFsFile(ZaDataPaths.EvolutionItemConversionArray, CreateEvolutionItemConversionArray());
         temp.EnsurePokemonLegendsZASupportFolder();
         return temp;
+    }
+
+    private static byte[] CreateEvolutionItemConversionArray()
+    {
+        var rows = new List<EvolutionItemConversion>
+        {
+            new(0, 66), new(280, 19), new(0, 11), new(1857, 88), new(1116, 79), new(306, 34),
+            new(0, 42), new(0, 58), new(0, 74), new(0, 94), new(0, 13), new(0, 68),
+            new(0, 105), new(0, 103), new(0, 104), new(305, 33), new(236, 16), new(0, 67),
+            new(0, 64), new(0, 53), new(0, 61), new(0, 69), new(0, 43), new(309, 37),
+            new(1582, 83), new(1592, 84), new(0, 59), new(0, 106), new(0, 63), new(0, 56),
+            new(0, 73), new(1779, 10), new(107, 7), new(298, 26), new(82, 3), new(0, 54),
+            new(0, 14), new(307, 35), new(300, 28), new(765, 102), new(0, 12), new(0, 72),
+            new(2344, 85), new(1254, 82), new(83, 4), new(2345, 87), new(229, 15), new(0, 95),
+            new(0, 48), new(303, 31), new(849, 52), new(313, 41), new(0, 47), new(312, 40),
+            new(0, 97), new(1691, 1691), new(1103, 70), new(1104, 71), new(110, 9), new(0, 44),
+            new(109, 93), new(301, 29), new(0, 96), new(84, 5), new(1858, 89), new(310, 38),
+            new(304, 32), new(0, 100), new(0, 18), new(1861, 86), new(0, 76), new(0, 46),
+            new(293, 24), new(292, 23), new(290, 21), new(291, 22), new(289, 20), new(294, 25),
+            new(0, 90), new(0, 55), new(0, 78), new(85, 6), new(0, 57), new(311, 39),
+            new(0, 65), new(0, 45), new(644, 51), new(299, 27), new(1117, 80), new(0, 50),
+            new(326, 49), new(0, 77), new(0, 60), new(80, 1), new(308, 36), new(0, 91),
+            new(81, 2), new(302, 30), new(0, 62), new(0, 17), new(0, 99), new(0, 101),
+            new(1253, 81), new(0, 98), new(108, 8), new(218, 92), new(0, 75), new(847, 121),
+        };
+
+        return EvolutionItemConversionTable.Write(rows);
     }
 
     private static ProjectPathsDto CreatePaths(TemporaryBridgeProject temp)
@@ -2760,8 +3604,17 @@ public sealed class PokemonLegendsZABridgeTests
 
     private static byte[] ReadZaOutputBytes(TemporaryBridgeProject temp, string relativePath)
     {
+        var loosePath = Path.Combine(
+            temp.OutputRootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(loosePath))
+        {
+            return File.ReadAllBytes(loosePath);
+        }
+
         return File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
+            "romfs",
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
     }
 
@@ -2907,7 +3760,8 @@ public sealed class PokemonLegendsZABridgeTests
     private static byte[] CreateItemDataArray(
         bool includeAdditionalMachines = false,
         bool includeCustomEvolutionItem = false,
-        bool includePokemonItemTypes = false)
+        bool includePokemonItemTypes = false,
+        bool includeRestoredOvalStone = false)
     {
         var builder = new FlatBufferBuilder(2048);
         var pokeBall = CreateItem(
@@ -2990,14 +3844,14 @@ public sealed class PokemonLegendsZABridgeTests
                 workEvolutional: true));
             rows.Add(CreateItem(
                 builder,
-                itemId: 222,
+                itemId: 248,
                 itemType: 1,
                 internalName: "MAGARISPOON",
-                iconName: "item_0222",
+                iconName: "item_0248",
                 price: 3000,
                 pocket: 2,
                 stackCap: 999,
-                sortOrder: 222,
+                sortOrder: 248,
                 workEvolutional: true));
             rows.Add(CreateItem(
                 builder,
@@ -3009,6 +3863,17 @@ public sealed class PokemonLegendsZABridgeTests
                 pocket: 3,
                 stackCap: 999,
                 sortOrder: 86));
+            rows.Add(CreateItem(
+                builder,
+                itemId: 1861,
+                itemType: 7,
+                internalName: "NOROINOYOROI",
+                iconName: "item_1861",
+                price: 3000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 1861,
+                workEvolutional: true));
         }
 
         if (includePokemonItemTypes)
@@ -3034,6 +3899,21 @@ public sealed class PokemonLegendsZABridgeTests
                 pocket: 7,
                 stackCap: 1,
                 sortOrder: 1));
+        }
+
+        if (includeRestoredOvalStone)
+        {
+            rows.Add(CreateItem(
+                builder,
+                itemId: 110,
+                itemType: 7,
+                internalName: "MAARUIISI",
+                iconName: "item_0110",
+                price: 3000,
+                pocket: 2,
+                stackCap: 999,
+                sortOrder: 110,
+                workEvolutional: true));
         }
 
         var vector = ZaItemDataArray.CreateValuesVector(builder, rows.ToArray());

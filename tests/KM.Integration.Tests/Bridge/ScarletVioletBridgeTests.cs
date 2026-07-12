@@ -26,7 +26,10 @@ using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
+using KM.Core.Projects;
+using KM.Formats.Pokemon;
 using KM.SV.Data;
+using KM.SV.EvolutionItems;
 using KM.SV.Workflows;
 using KM.SV.Trainers;
 using KM.Integration.Tests.Tools;
@@ -85,6 +88,14 @@ public sealed class ScarletVioletBridgeTests
     public static IEnumerable<object[]> RepresentativeScarletVioletGame()
     {
         yield return [ProjectGameDto.Scarlet, ScarletTitleId];
+    }
+
+    public static IEnumerable<object[]> RepresentativeScarletVioletGameAndConvertedUseItemMethods()
+    {
+        foreach (var method in new[] { 17, 18, 42 })
+        {
+            yield return [ProjectGameDto.Scarlet, ScarletTitleId, method];
+        }
     }
 
     public static IEnumerable<object[]> ScarletVioletBuilds()
@@ -1978,8 +1989,8 @@ public sealed class ScarletVioletBridgeTests
         var evolutionItemField = items.Payload!.Workflow.EditableFields.Single(field => field.Field == "evolutionItem");
         Assert.Equal("Evolution item", evolutionItemField.Label);
         Assert.Equal("boolean", evolutionItemField.ValueKind);
-        var masterBall = items.Payload.Workflow.Items.Single(item => item.ItemId == 1);
-        Assert.Equal(0, masterBall.FieldValues["evolutionItem"]);
+        var convertedItem = items.Payload.Workflow.Items.Single(item => item.ItemId == 3);
+        Assert.Equal(0, convertedItem.FieldValues["evolutionItem"]);
 
         var update = Dispatch<UpdateItemFieldsResponse>(
             dispatcher,
@@ -1987,13 +1998,15 @@ public sealed class ScarletVioletBridgeTests
             new UpdateItemFieldsRequest(
                 paths,
                 Session: null,
-                [new ItemFieldUpdateDto(1, "evolutionItem", "1")]),
+                [new ItemFieldUpdateDto(3, "evolutionItem", "1")]),
             "request-sv-item-evolution-flag-update");
 
         AssertSuccess(update);
         Assert.DoesNotContain(update.Payload!.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
-        var updatedItem = update.Payload.Workflow.Items.Single(item => item.ItemId == 1);
+        var updatedItem = update.Payload.Workflow.Items.Single(item => item.ItemId == 3);
         Assert.Equal(1, updatedItem.FieldValues["evolutionItem"]);
+        Assert.Equal((int)global::FieldFunctionType.FIELDFUNC_EVOLUTION, updatedItem.FieldValues["fieldUseType"]);
+        Assert.Equal(1, updatedItem.FieldValues["canUseOnPokemon"]);
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -2002,6 +2015,13 @@ public sealed class ScarletVioletBridgeTests
             "request-sv-item-evolution-flag-plan");
         AssertSuccess(plan);
         Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.EndsWith(
+            SvDataPaths.EvolutionItemConversionArray,
+            plan.Payload.ChangePlan.Writes[0].TargetRelativePath,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath.EndsWith(SvDataPaths.ItemDataArray, StringComparison.Ordinal));
 
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
@@ -2011,7 +2031,424 @@ public sealed class ScarletVioletBridgeTests
 
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
-        Assert.Equal(1, ReadItem(temp, itemId: 1).WorkEvolutional);
+        var writtenItem = ReadItem(temp, itemId: 3);
+        Assert.Equal(1, writtenItem.WorkEvolutional);
+        Assert.Equal(global::FieldFunctionType.FIELDFUNC_EVOLUTION, writtenItem.FieldFunctionType);
+        Assert.Equal(global::WorkType.WORKTYPE_EffectPokemon, writtenItem.WorkType);
+        Assert.True(writtenItem.SetToPoke);
+        Assert.Equal((global::pml.common.WazaID)33, writtenItem.MachineWaza);
+        Assert.Equal(global::ItemType.ITEMTYPE_NORMAL, writtenItem.ItemType);
+        Assert.Equal(global::FieldPocket.FPOCKET_OTHER, writtenItem.FieldPocket);
+
+        var writtenConversions = EvolutionItemConversionTable.Read(
+            ReadSvOutput(temp, SvDataPaths.EvolutionItemConversionArray));
+        Assert.Contains(writtenConversions, row => row.ParameterId == 17 && row.ItemId == 3);
+        Assert.Equal(2, writtenConversions.Count(row => row.ParameterId == 119));
+        Assert.Contains(writtenConversions, row => row.ParameterId == 119 && row.ItemId == 0);
+        Assert.Contains(writtenConversions, row => row.ParameterId == 119 && row.ItemId == 2482);
+
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-item-evolution-flag-reload");
+        AssertSuccess(reloaded);
+        Assert.Contains(
+            reloaded.Payload!.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 3 && option.Label.Contains("Legacy Move Record", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletMixedItemAndPokemonEvolutionUsesOneAllocatedMapping(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+        var evolutionUpdate = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "add",
+                Slot: null,
+                Method: 8,
+                Argument: 3,
+                Species: 2,
+                Form: 0,
+                Level: 0),
+            "request-sv-mixed-pokemon-evolution-update");
+        AssertSuccess(evolutionUpdate);
+        var itemUpdate = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                evolutionUpdate.Payload!.Session,
+                [new ItemFieldUpdateDto(3, "evolutionItem", "1")]),
+            "request-sv-mixed-evolution-item-update");
+        AssertSuccess(itemUpdate);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(
+                paths,
+                itemUpdate.Payload!.Session,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-mixed-evolution-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == SvDataPaths.ItemDataArray);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == SvDataPaths.PersonalArray);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SvDataPaths.EvolutionItemConversionArray);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                itemUpdate.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-mixed-evolution-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var conversions = EvolutionItemConversionTable.Read(
+            ReadSvOutput(temp, SvDataPaths.EvolutionItemConversionArray));
+        Assert.Contains(conversions, row => row.ParameterId == 17 && row.ItemId == 3);
+        var written = global::personal_table.GetRootAspersonal_table(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.PersonalArray)));
+        Assert.Contains(
+            Enumerable.Range(0, written.Entry(1)!.Value.EvolutionsLength)
+                .Select(index => written.Entry(1)!.Value.Evolutions(index)!.Value),
+            evolution => evolution.Condition == 8 && evolution.Parameter == 17 && evolution.Species == 2);
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-mixed-evolution-reload");
+        AssertSuccess(reloaded);
+        var reloadedEvolution = reloaded.Payload!.Workflow.Pokemon
+            .Single(row => row.PersonalId == 1)
+            .Evolutions
+            .Single(evolution => evolution.Method == 8 && evolution.Species == 2 && evolution.Argument == 3);
+        Assert.Equal("Legacy Move Record", reloadedEvolution.ArgumentValue);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletEvolutionItemAllocationPreservesDuplicate119AndUsesApprovedRows(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.EvolutionItemConversionArray,
+            EvolutionItemConversionTable.Write(
+                EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray())
+                    .Select(row => row.ParameterId == 19 ? row with { ItemId = 0 } : row)
+                    .ToArray()));
+        var paths = temp.Paths with { SelectedGame = game };
+        var project = new ProjectWorkspaceService().Open(ProjectBridgeMapper.ToCore(paths));
+        var state = SvEvolutionItemConversionState.Load(project, new SvWorkflowFileSource());
+        int[] expectedParameters =
+        [
+            17, 18, 42, 43, 44, 45, 46, 47, 48, 90, 91,
+            .. Enumerable.Range(53, 17),
+        ];
+
+        Assert.True(state.TryDecode(119, out var metalAlloyId));
+        Assert.Equal(2482, metalAlloyId);
+        for (var index = 0; index < expectedParameters.Length; index++)
+        {
+            Assert.Equal(expectedParameters[index], state.Encode(3000 + index));
+        }
+
+        Assert.Throws<InvalidDataException>(() => state.Encode(4000));
+        var written = EvolutionItemConversionTable.Read(state.Write());
+        Assert.Equal(
+            EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray()).Select(row => row.ParameterId),
+            written.Select(row => row.ParameterId));
+        Assert.Equal(2, written.Count(row => row.ParameterId == 119));
+        Assert.Contains(written, row => row.ParameterId == 119 && row.ItemId == 0);
+        Assert.Contains(written, row => row.ParameterId == 119 && row.ItemId == 2482);
+        Assert.All(
+            written.Where(row => row.ParameterId is 11 or 12 or 13 or 14),
+            row => Assert.Equal(0, row.ItemId));
+        Assert.Contains(written, row => row.ParameterId == 19 && row.ItemId == 0);
+        Assert.Contains(written, row => row.ParameterId == 50 && row.ItemId == 327);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletEvolutionItemAllocationProtectsActivePersonalParameters(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 17));
+        var paths = temp.Paths with { SelectedGame = game };
+        var project = new ProjectWorkspaceService().Open(ProjectBridgeMapper.ToCore(paths));
+        var state = SvEvolutionItemConversionState.Load(project, new SvWorkflowFileSource());
+
+        Assert.Equal(18, state.Encode(3000));
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletEvolutionItemAllocationFailsClosedWithoutReadablePersonalData(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        File.Delete(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            SvDataPaths.PersonalArray.Replace('/', Path.DirectorySeparatorChar)));
+        var paths = temp.Paths with { SelectedGame = game };
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(1, "evolutionItem", "1")]),
+            "request-sv-missing-personal-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-sv-missing-personal-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("readable active Pokemon personal data", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletEvolutionItemConversionRejectsExistingFieldUseFunctions(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(2, "evolutionItem", "1")]),
+            "request-sv-conflicting-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-sv-conflicting-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("field-use function", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletDisablingEvolutionItemRetainsItsAllocatedMapping(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+
+        var enable = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(3, "evolutionItem", "1"),
+                    new ItemFieldUpdateDto(3, "fieldUseType", "0"),
+                ]),
+            "request-sv-enable-evolution-item");
+        AssertSuccess(enable);
+        var enablePlan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, enable.Payload!.Session),
+            "request-sv-enable-evolution-item-plan");
+        AssertSuccess(enablePlan);
+        var enableApply = Dispatch<ApplyChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, enable.Payload.Session, enablePlan.Payload!.ChangePlan),
+            "request-sv-enable-evolution-item-apply");
+        AssertSuccess(enableApply);
+
+        var disable = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(3, "evolutionItem", "0")]),
+            "request-sv-disable-evolution-item");
+        AssertSuccess(disable);
+        var disablePlan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, disable.Payload!.Session),
+            "request-sv-disable-evolution-item-plan");
+        AssertSuccess(disablePlan);
+        Assert.DoesNotContain(
+            disablePlan.Payload!.ChangePlan.Writes,
+            write => write.TargetRelativePath.EndsWith(SvDataPaths.EvolutionItemConversionArray, StringComparison.Ordinal));
+        var disableApply = Dispatch<ApplyChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, disable.Payload.Session, disablePlan.Payload.ChangePlan),
+            "request-sv-disable-evolution-item-apply");
+        AssertSuccess(disableApply);
+
+        var writtenItem = ReadItem(temp, 3);
+        Assert.Equal(0, writtenItem.WorkEvolutional);
+        Assert.Equal(global::FieldFunctionType.FIELDFUNC_NONE, writtenItem.FieldFunctionType);
+        Assert.Contains(
+            EvolutionItemConversionTable.Read(ReadSvOutput(temp, SvDataPaths.EvolutionItemConversionArray)),
+            row => row.ParameterId == 17 && row.ItemId == 3);
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-disable-evolution-item-reload");
+        AssertSuccess(reloaded);
+        Assert.DoesNotContain(
+            reloaded.Payload!.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 3);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletEvolutionItemCapacityFailurePlansNoWrites(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var approvedParameters = new HashSet<int>(
+            new[] { 17, 18, 42, 43, 44, 45, 46, 47, 48, 90, 91 }
+                .Concat(Enumerable.Range(53, 17)));
+        var occupiedRows = EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray())
+            .Select((row, index) => approvedParameters.Contains(row.ParameterId)
+                ? row with { ItemId = 5000 + index }
+                : row)
+            .ToArray();
+        WriteSvOutput(
+            temp,
+            SvDataPaths.EvolutionItemConversionArray,
+            EvolutionItemConversionTable.Write(occupiedRows));
+        var paths = temp.Paths with { SelectedGame = game };
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(3, "evolutionItem", "1")]),
+            "request-sv-exhausted-evolution-item-update");
+        AssertSuccess(update);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-sv-exhausted-evolution-item-plan");
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("No approved evolution item conversion slot", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletMalformedEvolutionItemTablePlansNoWrites(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var replacedBlank119 = false;
+        var conflictingRows = EvolutionItemConversionTable.Read(CreateEvolutionItemConversionArray())
+            .Select(row =>
+            {
+                if (!replacedBlank119 && row.ParameterId == 119 && row.ItemId == 0)
+                {
+                    replacedBlank119 = true;
+                    return row with { ItemId = 5000 };
+                }
+
+                return row;
+            })
+            .ToArray();
+        WriteSvOutput(
+            temp,
+            SvDataPaths.EvolutionItemConversionArray,
+            EvolutionItemConversionTable.Write(conflictingRows));
+        var paths = temp.Paths with { SelectedGame = game };
+        var update = Dispatch<UpdateItemFieldsResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [new ItemFieldUpdateDto(3, "evolutionItem", "1")]),
+            "request-sv-malformed-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session),
+            "request-sv-malformed-evolution-item-plan");
+
+        AssertSuccess(plan);
+        Assert.False(plan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(plan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("conflicting item assignments", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -2020,7 +2457,117 @@ public sealed class ScarletVioletBridgeTests
         ProjectGameDto game,
         ulong titleId)
     {
+        foreach (var (storedArgument, expectedItemId, expectedName) in new[]
+                 {
+                     (3, 82, "Fire Stone"),
+                     (4, 83, "Thunder Stone"),
+                 })
+        {
+            using var vanillaTemp = CreateScarletVioletProject(titleId);
+            vanillaTemp.WriteBaseRomFsFile(
+                SvDataPaths.PersonalArray,
+                CreatePersonalArray(evolutionCondition: 8, evolutionParameter: (ushort)storedArgument));
+            vanillaTemp.WriteBaseRomFsFile(
+                SvDataPaths.ItemDataArray,
+                CreateItemDataArray(fireStoneEvolutionItem: true));
+            vanillaTemp.WriteBaseRomFsFile(
+                SvDataPaths.EnglishItemNames,
+                CreateTextTable(expectedItemId + 1, (expectedItemId, expectedName)));
+            var vanillaPaths = vanillaTemp.Paths with { SelectedGame = game };
+            var vanillaDispatcher = CreateDispatcherWithSvCache(vanillaTemp);
+
+            var vanillaPokemon = Dispatch<LoadPokemonWorkflowResponse>(
+                vanillaDispatcher,
+                KmCommandNames.LoadPokemonWorkflow,
+                new LoadPokemonWorkflowRequest(vanillaPaths),
+                $"request-sv-pokemon-vanilla-evolution-item-{storedArgument}");
+
+            AssertSuccess(vanillaPokemon);
+            var vanillaEvolution = Assert.Single(
+                vanillaPokemon.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+            Assert.Equal(expectedItemId, vanillaEvolution.Argument);
+            Assert.Equal(expectedName, vanillaEvolution.ArgumentValue);
+
+            var addCustomEvolution = Dispatch<UpdatePokemonEvolutionResponse>(
+                vanillaDispatcher,
+                KmCommandNames.UpdatePokemonEvolution,
+                new UpdatePokemonEvolutionRequest(
+                    vanillaPaths,
+                    Session: null,
+                    PersonalId: 1,
+                    Action: "add",
+                    Slot: null,
+                    Method: 8,
+                    Argument: 248,
+                    Species: 2,
+                    Form: 0,
+                    Level: 0),
+                $"request-sv-pokemon-add-before-vanilla-evolution-item-{storedArgument}");
+            AssertSuccess(addCustomEvolution);
+
+            var moveCustomEvolution = Dispatch<UpdatePokemonEvolutionResponse>(
+                vanillaDispatcher,
+                KmCommandNames.UpdatePokemonEvolution,
+                new UpdatePokemonEvolutionRequest(
+                    vanillaPaths,
+                    addCustomEvolution.Payload!.Session,
+                    PersonalId: 1,
+                    Action: "moveUp",
+                    Slot: 1,
+                    Method: null,
+                    Argument: null,
+                    Species: null,
+                    Form: null,
+                    Level: null),
+                $"request-sv-pokemon-move-before-vanilla-evolution-item-{storedArgument}");
+            AssertSuccess(moveCustomEvolution);
+            var reorderedEvolutions = moveCustomEvolution.Payload!.Workflow.Pokemon
+                .Single(row => row.PersonalId == 1)
+                .Evolutions;
+            Assert.Equal(248, reorderedEvolutions.Single(row => row.Slot == 0).Argument);
+            Assert.Equal(expectedItemId, reorderedEvolutions.Single(row => row.Slot == 1).Argument);
+
+            var reorderedPlan = Dispatch<CreateChangePlanResponse>(
+                vanillaDispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(vanillaPaths, moveCustomEvolution.Payload.Session),
+                $"request-sv-pokemon-reordered-vanilla-evolution-plan-{storedArgument}");
+            AssertSuccess(reorderedPlan);
+            var reorderedApply = Dispatch<ApplyChangePlanResponse>(
+                vanillaDispatcher,
+                KmCommandNames.ApplyChangePlan,
+                new ApplyChangePlanRequest(
+                    vanillaPaths,
+                    moveCustomEvolution.Payload.Session,
+                    reorderedPlan.Payload!.ChangePlan),
+                $"request-sv-pokemon-reordered-vanilla-evolution-apply-{storedArgument}");
+            AssertSuccess(reorderedApply);
+
+            var writtenConversions = EvolutionItemConversionTable.Read(
+                ReadSvOutput(vanillaTemp, SvDataPaths.EvolutionItemConversionArray));
+            var twistedSpoonParameter = writtenConversions.Single(row => row.ItemId == 248).ParameterId;
+            var writtenPersonal = global::personal_table.GetRootAspersonal_table(
+                new ByteBuffer(ReadSvOutput(vanillaTemp, SvDataPaths.PersonalArray)));
+            Assert.Equal(twistedSpoonParameter, writtenPersonal.Entry(1)!.Value.Evolutions(0)!.Value.Parameter);
+            Assert.Equal(storedArgument, writtenPersonal.Entry(1)!.Value.Evolutions(1)!.Value.Parameter);
+
+            var reloadedPokemon = Dispatch<LoadPokemonWorkflowResponse>(
+                CreateDispatcherWithSvCache(vanillaTemp),
+                KmCommandNames.LoadPokemonWorkflow,
+                new LoadPokemonWorkflowRequest(vanillaPaths),
+                $"request-sv-pokemon-reordered-vanilla-evolution-reload-{storedArgument}");
+            AssertSuccess(reloadedPokemon);
+            var reloadedEvolutions = reloadedPokemon.Payload!.Workflow.Pokemon
+                .Single(row => row.PersonalId == 1)
+                .Evolutions;
+            Assert.Equal(248, reloadedEvolutions.Single(row => row.Slot == 0).Argument);
+            Assert.Equal(expectedItemId, reloadedEvolutions.Single(row => row.Slot == 1).Argument);
+        }
+
         using var temp = CreateScarletVioletProject(titleId);
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 3));
         WriteSvOutput(
             temp,
             SvDataPaths.PersonalArray,
@@ -2031,7 +2578,8 @@ public sealed class ScarletVioletBridgeTests
             CreateItemDataArray(
                 masterBallEvolutionItem: true,
                 ultraBallEvolutionItem: true,
-                includeTinyMushroom: true));
+                includeTinyMushroom: true,
+                includeMaliciousArmor: true));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishItemNames,
             CreateTextTable(
@@ -2040,6 +2588,7 @@ public sealed class ScarletVioletBridgeTests
                 (2, "Ultra Ball"),
                 (81, "Moon Stone"),
                 (86, "Tiny Mushroom"),
+                (1861, "Malicious Armor"),
                 (2482, "Metal Alloy")));
         var paths = temp.Paths with { SelectedGame = game };
         var dispatcher = CreateDispatcherWithSvCache(temp);
@@ -2054,12 +2603,13 @@ public sealed class ScarletVioletBridgeTests
         var workflow = pokemon.Payload!.Workflow;
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
-        Assert.Equal(86, evolution.Argument);
-        Assert.Equal("Tiny Mushroom", evolution.ArgumentValue);
+        Assert.Equal(1861, evolution.Argument);
+        Assert.Equal("Malicious Armor", evolution.ArgumentValue);
 
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 1 && option.Label == "1 Master Ball");
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
+        Assert.Contains(useItem.ArgumentOptions, option => option.Value == 1861 && option.Label == "1861 Malicious Armor");
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 81);
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 86);
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2482);
@@ -2067,6 +2617,29 @@ public sealed class ScarletVioletBridgeTests
         var tradeHeldItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 6);
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
         Assert.Contains(tradeHeldItem.ArgumentOptions, option => option.Value == 86 && option.Label == "86 Tiny Mushroom");
+
+        var update = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "add",
+                Slot: null,
+                Method: 8,
+                Argument: 86,
+                Species: 2,
+                Form: 0,
+                Level: 0),
+            "request-sv-pokemon-custom-evolution-item-label");
+
+        AssertSuccess(update);
+        var updatedEvolutions = update.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions;
+        Assert.Equal(2, updatedEvolutions.Count);
+        var updatedEvolution = updatedEvolutions.Single(row => row.Slot == 1);
+        Assert.Equal(86, updatedEvolution.Argument);
+        Assert.Equal("86 Tiny Mushroom", updatedEvolution.ArgumentValue);
     }
 
     [Theory]
@@ -2101,8 +2674,8 @@ public sealed class ScarletVioletBridgeTests
         var bulbasaur = workflow.Pokemon.Single(row => row.PersonalId == 1);
         var evolution = Assert.Single(bulbasaur.Evolutions);
         Assert.Equal(19, evolution.Method);
-        Assert.Equal(2, evolution.Argument);
-        Assert.Equal("Ultra Ball", evolution.ArgumentValue);
+        Assert.Equal(81, evolution.Argument);
+        Assert.Equal("Moon Stone", evolution.ArgumentValue);
 
         var heldItemDay = workflow.EvolutionMethodOptions.Single(option => option.Value == 19);
         Assert.Contains(heldItemDay.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Ultra Ball");
@@ -2114,6 +2687,260 @@ public sealed class ScarletVioletBridgeTests
         var useItem = workflow.EvolutionMethodOptions.Single(option => option.Value == 8);
         Assert.Contains(useItem.ArgumentOptions, option => option.Value == 81 && option.Label == "81 Moon Stone");
         Assert.DoesNotContain(useItem.ArgumentOptions, option => option.Value == 2 && option.Label == "2 Moon Stone");
+
+        var update = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "upsert",
+                Slot: 0,
+                Method: 20,
+                Argument: 2,
+                Species: 2,
+                Form: 0,
+                Level: 24),
+            "request-sv-pokemon-held-item-evolution-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-pokemon-held-item-evolution-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Equal(
+            SvDataPaths.EvolutionItemConversionArray,
+            plan.Payload.ChangePlan.Writes[0].TargetRelativePath);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SvDataPaths.EvolutionItemConversionArray);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-pokemon-held-item-evolution-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(SvDataPaths.EvolutionItemConversionArray, apply.Payload.ApplyResult.WrittenFiles[0]);
+
+        var writtenConversions = EvolutionItemConversionTable.Read(
+            ReadSvOutput(temp, SvDataPaths.EvolutionItemConversionArray));
+        var ultraBallParameter = writtenConversions.Single(row => row.ItemId == 2).ParameterId;
+        var writtenPersonal = global::personal_table.GetRootAspersonal_table(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.PersonalArray)));
+        var writtenEvolution = writtenPersonal.Entry(1)!.Value.Evolutions(0)!.Value;
+        Assert.Equal(20, writtenEvolution.Condition);
+        Assert.Equal(ultraBallParameter, writtenEvolution.Parameter);
+        Assert.Equal(2, writtenEvolution.Species);
+        Assert.Equal(24, writtenEvolution.Level);
+
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-held-item-evolution-reload");
+        AssertSuccess(reloaded);
+        var reloadedEvolution = Assert.Single(
+            reloaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(2, reloadedEvolution.Argument);
+        Assert.Equal("Ultra Ball", reloadedEvolution.ArgumentValue);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletReservedParameter50DisplaysHistoricalRazorFang(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 20, evolutionParameter: 50));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(328, (50, "Rare Candy"), (327, "Razor Fang")));
+        var paths = temp.Paths with { SelectedGame = game };
+
+        var response = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-reserved-evolution-parameter-50");
+
+        AssertSuccess(response);
+        var evolution = Assert.Single(
+            response.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(327, evolution.Argument);
+        Assert.Equal("Razor Fang", evolution.ArgumentValue);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGameAndConvertedUseItemMethods))]
+    public void ScarletVioletConversionBackedUseItemMethodsRoundTripThroughConversionTable(
+        ProjectGameDto game,
+        ulong titleId,
+        int method)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: (ushort)method, evolutionParameter: 3));
+        WriteSvOutput(
+            temp,
+            SvDataPaths.ItemDataArray,
+            CreateItemDataArray(fireStoneEvolutionItem: true));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(83, (82, "Fire Stone")));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var loaded = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            $"request-sv-converted-use-item-{method}-load");
+        AssertSuccess(loaded);
+        var loadedEvolution = Assert.Single(
+            loaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(method, loadedEvolution.Method);
+        Assert.Equal(82, loadedEvolution.Argument);
+        Assert.Equal("Fire Stone", loadedEvolution.ArgumentValue);
+
+        var update = Dispatch<UpdatePokemonEvolutionResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "upsert",
+                Slot: 0,
+                Method: method,
+                Argument: 82,
+                Species: 2,
+                Form: 0,
+                Level: 0),
+            $"request-sv-converted-use-item-{method}-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            $"request-sv-converted-use-item-{method}-plan");
+        AssertSuccess(plan);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload!.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            $"request-sv-converted-use-item-{method}-apply");
+        AssertSuccess(apply);
+
+        var written = global::personal_table.GetRootAspersonal_table(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.PersonalArray)));
+        Assert.Equal(3, written.Entry(1)!.Value.Evolutions(0)!.Value.Parameter);
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            $"request-sv-converted-use-item-{method}-reload");
+        AssertSuccess(reloaded);
+        Assert.Equal(
+            82,
+            Assert.Single(reloaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions).Argument);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletBuilds))]
+    public void ScarletVioletLegacyRawEvolutionItemArgumentsAreMigrated(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 3));
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(evolutionCondition: 8, evolutionParameter: 248));
+        WriteSvOutput(
+            temp,
+            SvDataPaths.ItemDataArray,
+            CreateItemDataArray(includeTwistedSpoon: true));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(249, (248, "Twisted Spoon")));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var update = Dispatch<UpdatePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(paths, Session: null, PersonalId: 1, Field: "hp", Value: "99"),
+            "request-sv-pokemon-legacy-evolution-item-update");
+        AssertSuccess(update);
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-pokemon-legacy-evolution-item-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(
+            plan.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SvDataPaths.EvolutionItemConversionArray);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                update.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-pokemon-legacy-evolution-item-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var writtenConversions = EvolutionItemConversionTable.Read(
+            ReadSvOutput(temp, SvDataPaths.EvolutionItemConversionArray));
+        var twistedSpoonParameter = writtenConversions.Single(row => row.ItemId == 248).ParameterId;
+        var writtenPersonal = global::personal_table.GetRootAspersonal_table(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.PersonalArray)));
+        var writtenEntry = writtenPersonal.Entry(1)!.Value;
+        Assert.Equal(99, writtenEntry.BaseStats!.Value.Hp);
+        Assert.Equal(twistedSpoonParameter, writtenEntry.Evolutions(0)!.Value.Parameter);
+        Assert.Equal(1, writtenEntry.PaldeaDex!.Value.Index);
+
+        var reloaded = Dispatch<LoadPokemonWorkflowResponse>(
+            CreateDispatcherWithSvCache(temp),
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-legacy-evolution-item-reload");
+        AssertSuccess(reloaded);
+        var evolution = Assert.Single(
+            reloaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1).Evolutions);
+        Assert.Equal(248, evolution.Argument);
+        Assert.Equal("Twisted Spoon", evolution.ArgumentValue);
     }
 
     [Theory]
@@ -2814,6 +3641,7 @@ public sealed class ScarletVioletBridgeTests
             CreateTrinityDescriptor(
                 [
                     SvDataPaths.ItemDataArray,
+                    SvDataPaths.EvolutionItemConversionArray,
                     SvDataPaths.MoveDataArray,
                     SvDataPaths.PersonalArray,
                     SvDataPaths.TrainerDataArray,
@@ -2830,7 +3658,35 @@ public sealed class ScarletVioletBridgeTests
                 ]));
         temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(titleId));
+        temp.WriteBaseRomFsFile(SvDataPaths.EvolutionItemConversionArray, CreateEvolutionItemConversionArray());
         return temp;
+    }
+
+    private static byte[] CreateEvolutionItemConversionArray()
+    {
+        var rows = new List<EvolutionItemConversion>
+        {
+            new(80, 1), new(81, 2), new(82, 3), new(83, 4), new(84, 5), new(85, 6),
+            new(107, 7), new(108, 8), new(110, 9), new(1779, 10), new(0, 11), new(0, 12),
+            new(0, 13), new(0, 14), new(229, 15), new(236, 16), new(0, 17), new(0, 18),
+            new(280, 19), new(289, 20), new(290, 21), new(291, 22), new(292, 23), new(293, 24),
+            new(294, 25), new(298, 26), new(299, 27), new(300, 28), new(301, 29), new(302, 30),
+            new(303, 31), new(304, 32), new(305, 33), new(306, 34), new(307, 35), new(308, 36),
+            new(309, 37), new(310, 38), new(311, 39), new(312, 40), new(313, 41), new(0, 42),
+            new(0, 43), new(0, 44), new(0, 45), new(0, 46), new(0, 47), new(0, 48),
+            new(326, 49), new(327, 50), new(644, 51), new(849, 52), new(0, 53), new(0, 54),
+            new(0, 55), new(0, 56), new(0, 57), new(0, 58), new(0, 59), new(0, 60),
+            new(0, 61), new(0, 62), new(0, 63), new(0, 64), new(0, 65), new(0, 66),
+            new(0, 67), new(0, 68), new(0, 69), new(1103, 70), new(1104, 71), new(1109, 72),
+            new(1110, 73), new(1111, 74), new(1112, 75), new(1113, 76), new(1114, 77), new(1115, 78),
+            new(1116, 79), new(1117, 80), new(1253, 81), new(1254, 82), new(1582, 83), new(1592, 84),
+            new(2344, 85), new(1861, 86), new(2345, 87), new(1857, 88), new(1858, 89), new(0, 90),
+            new(0, 91), new(218, 92), new(109, 93), new(2403, 94), new(2404, 95), new(2402, 96),
+            new(537, 111), new(325, 112), new(252, 113), new(324, 114), new(322, 115), new(323, 116),
+            new(321, 117), new(235, 118), new(0, 119), new(2482, 119),
+        };
+
+        return EvolutionItemConversionTable.Write(rows);
     }
 
     private static ProjectBridgeDispatcher CreateDispatcherWithSvCache(TemporaryBridgeProject temp)
@@ -3480,7 +4336,10 @@ public sealed class ScarletVioletBridgeTests
     private static byte[] CreateItemDataArray(
         bool masterBallEvolutionItem = false,
         bool ultraBallEvolutionItem = false,
-        bool includeTinyMushroom = false)
+        bool includeTinyMushroom = false,
+        bool fireStoneEvolutionItem = false,
+        bool includeMaliciousArmor = false,
+        bool includeTwistedSpoon = false)
     {
         var builder = new FlatBufferBuilder(1024);
         var icon = builder.CreateString("item_0001");
@@ -3566,6 +4425,57 @@ public sealed class ScarletVioletBridgeTests
                 ItemGroup: global::ItemGroup.ITEMGROUP_NONE,
                 FieldPocket: global::FieldPocket.FPOCKET_OTHER,
                 FieldFunctionType: global::FieldFunctionType.FIELDFUNC_NONE));
+        }
+
+        if (fireStoneEvolutionItem)
+        {
+            var fireStoneIcon = builder.CreateString("item_0082");
+            rows.Add(global::ItemData.CreateItemData(
+                builder,
+                Id: 82,
+                ItemType: global::ItemType.ITEMTYPE_NORMAL,
+                IconNameOffset: fireStoneIcon,
+                Price: 3000,
+                SortNum: 82,
+                ItemGroup: global::ItemGroup.ITEMGROUP_NONE,
+                FieldPocket: global::FieldPocket.FPOCKET_OTHER,
+                FieldFunctionType: global::FieldFunctionType.FIELDFUNC_NONE,
+                WorkEvolutional: 1,
+                SetToPoke: true));
+        }
+
+        if (includeMaliciousArmor)
+        {
+            var maliciousArmorIcon = builder.CreateString("item_1861");
+            rows.Add(global::ItemData.CreateItemData(
+                builder,
+                Id: 1861,
+                ItemType: global::ItemType.ITEMTYPE_NORMAL,
+                IconNameOffset: maliciousArmorIcon,
+                Price: 3000,
+                SortNum: 1861,
+                ItemGroup: global::ItemGroup.ITEMGROUP_NONE,
+                FieldPocket: global::FieldPocket.FPOCKET_OTHER,
+                FieldFunctionType: global::FieldFunctionType.FIELDFUNC_NONE,
+                WorkEvolutional: 1,
+                SetToPoke: true));
+        }
+
+        if (includeTwistedSpoon)
+        {
+            var twistedSpoonIcon = builder.CreateString("item_0248");
+            rows.Add(global::ItemData.CreateItemData(
+                builder,
+                Id: 248,
+                ItemType: global::ItemType.ITEMTYPE_NORMAL,
+                IconNameOffset: twistedSpoonIcon,
+                Price: 3000,
+                SortNum: 248,
+                ItemGroup: global::ItemGroup.ITEMGROUP_NONE,
+                FieldPocket: global::FieldPocket.FPOCKET_OTHER,
+                FieldFunctionType: global::FieldFunctionType.FIELDFUNC_NONE,
+                WorkEvolutional: 1,
+                SetToPoke: true));
         }
 
         var vector = global::ItemDataArray.CreateValuesVector(builder, rows.ToArray());

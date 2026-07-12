@@ -1666,7 +1666,7 @@ public sealed class SwShPokemonEditSessionService
             FormatEvolutionMethodName(methodOption, evolution.Method),
             argumentKind,
             argumentLabel,
-            FormatEvolutionArgumentValue(methodOption, argumentKind, evolution.Argument));
+            FormatEvolutionArgumentValue(workflow, methodOption, argumentKind, evolution.Argument));
     }
 
     private static string FormatEvolutionMethodName(
@@ -1685,6 +1685,7 @@ public sealed class SwShPokemonEditSessionService
     }
 
     private static string FormatEvolutionArgumentValue(
+        SwShPokemonWorkflow workflow,
         SwShPokemonEvolutionMethodOption? methodOption,
         string argumentKind,
         int argument)
@@ -1695,11 +1696,18 @@ public sealed class SwShPokemonEditSessionService
             return "None";
         }
 
-        return methodOption
+        var option = methodOption
             ?.ArgumentOptions
-            .FirstOrDefault(option => option.Value == argument)
-            ?.Label
-            ?? argument.ToString(CultureInfo.InvariantCulture);
+            .FirstOrDefault(candidate => candidate.Value == argument);
+        if (option is null && string.Equals(argumentKind, "item", StringComparison.Ordinal))
+        {
+            option = workflow.EvolutionMethodOptions
+                .Where(candidate => string.Equals(candidate.ArgumentKind, "item", StringComparison.Ordinal))
+                .SelectMany(candidate => candidate.ArgumentOptions)
+                .FirstOrDefault(candidate => candidate.Value == argument);
+        }
+
+        return option?.Label ?? argument.ToString(CultureInfo.InvariantCulture);
     }
 
     private static SwShPokemonRecord ApplyPokemonLearnsetViewOperation(

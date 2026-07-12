@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 #[cfg(windows)]
@@ -21,6 +22,24 @@ struct CloseGuardState {
     is_guarded: AtomicBool,
 }
 
+#[derive(Clone, Default)]
+struct ProjectBridgeState {
+    process: Arc<Mutex<Option<ProjectBridgeProcess>>>,
+}
+
+struct ProjectBridgeProcess {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl Drop for ProjectBridgeProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SupportSearchProgress {
@@ -31,90 +50,125 @@ struct SupportSearchProgress {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-async fn project_bridge_once(
+async fn project_bridge(
     app_handle: tauri::AppHandle,
+    bridge_state: tauri::State<'_, ProjectBridgeState>,
     request_json: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || run_project_bridge_once(&app_handle, request_json))
-        .await
-        .map_err(|error| format!("Project bridge request task failed: {error}"))?
+    let bridge_state = bridge_state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        run_project_bridge_request(&app_handle, &bridge_state, request_json)
+    })
+    .await
+    .map_err(|error| format!("Project bridge request task failed: {error}"))?
 }
 
-fn run_project_bridge_once(
+fn run_project_bridge_request(
     app_handle: &tauri::AppHandle,
+    bridge_state: &ProjectBridgeState,
     request_json: String,
 ) -> Result<String, String> {
-    let mut command = resolve_project_bridge_command(app_handle)?;
+    let mut process_guard = bridge_state
+        .process
+        .lock()
+        .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
+
+    for attempt in 0..2 {
+        if process_guard.is_none() {
+            *process_guard = Some(start_project_bridge_process(app_handle)?);
+        }
+
+        let request_result = process_guard
+            .as_mut()
+            .expect("project bridge process was initialized")
+            .request(&request_json);
+        match request_result {
+            Ok(response) => return Ok(response),
+            Err(_) if attempt == 0 => {
+                *process_guard = None;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err("Project bridge request could not be completed.".to_owned())
+}
+
+impl ProjectBridgeProcess {
+    fn request(&mut self, request_json: &str) -> Result<String, String> {
+        self.stdin
+            .write_all(request_json.as_bytes())
+            .and_then(|_| self.stdin.write_all(b"\n"))
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+
+        let mut response = String::new();
+        let bytes_read = self
+            .stdout
+            .read_line(&mut response)
+            .map_err(|error| format!("Could not read the project bridge response: {error}"))?;
+        if bytes_read == 0 {
+            return Err("Project bridge runner returned an empty response.".to_owned());
+        }
+
+        while response.ends_with(['\r', '\n']) {
+            response.pop();
+        }
+
+        Ok(response)
+    }
+}
+
+fn start_project_bridge_process(
+    app_handle: &tauri::AppHandle,
+) -> Result<ProjectBridgeProcess, String> {
+    let mut command = resolve_project_bridge_command(app_handle, "bridge")?;
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("Could not start the project bridge runner: {error}"))?;
-
-    let Some(mut stdin) = child.stdin.take() else {
+    let Some(stdin) = child.stdin.take() else {
         let _ = child.kill();
         let _ = child.wait();
         return Err("Project bridge runner did not expose stdin.".to_owned());
     };
-
-    let write_result = stdin
-        .write_all(request_json.as_bytes())
-        .and_then(|_| stdin.write_all(b"\n"));
-    drop(stdin);
-
-    if let Err(error) = write_result {
+    let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!(
-            "Could not send the project bridge request: {error}"
-        ));
-    }
+        return Err("Project bridge runner did not expose stdout.".to_owned());
+    };
 
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("Could not read the project bridge response: {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        return Err(format!(
-            "Project bridge runner exited with code {:?}: {}",
-            output.status.code(),
-            stderr.trim()
-        ));
-    }
-
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|error| format!("Project bridge response was not UTF-8: {error}"))?;
-
-    // The backend bridge protocol is line-delimited so future multi-request transport can reuse it.
-    stdout
-        .lines()
-        .next()
-        .map(str::to_owned)
-        .ok_or_else(|| "Project bridge runner returned an empty response.".to_owned())
+    Ok(ProjectBridgeProcess {
+        child,
+        stdin,
+        stdout: BufReader::new(stdout),
+    })
 }
 
-fn resolve_project_bridge_command(app_handle: &tauri::AppHandle) -> Result<Command, String> {
-    if let Some(command) = resolve_bundled_bridge_command(app_handle)? {
+fn resolve_project_bridge_command(
+    app_handle: &tauri::AppHandle,
+    bridge_mode: &str,
+) -> Result<Command, String> {
+    if let Some(command) = resolve_bundled_bridge_command(app_handle, bridge_mode)? {
         return Ok(command);
     }
 
-    resolve_dev_bridge_command()
+    resolve_dev_bridge_command(bridge_mode)
 }
 
 fn resolve_bundled_bridge_command(
     app_handle: &tauri::AppHandle,
+    bridge_mode: &str,
 ) -> Result<Option<Command>, String> {
     let sidecar_command = app_handle
         .shell()
         .sidecar(BRIDGE_SIDECAR_NAME)
         .map_err(|error| format!("Could not resolve the bundled project bridge sidecar: {error}"))?
-        .arg("bridge-once");
+        .arg(bridge_mode);
     let command: Command = sidecar_command.into();
     let program_path = Path::new(command.get_program());
 
@@ -125,7 +179,7 @@ fn resolve_bundled_bridge_command(
     }
 }
 
-fn resolve_dev_bridge_command() -> Result<Command, String> {
+fn resolve_dev_bridge_command(bridge_mode: &str) -> Result<Command, String> {
     let repo_root = resolve_repo_root()?;
     let mut command = Command::new("dotnet");
     command
@@ -135,7 +189,7 @@ fn resolve_dev_bridge_command() -> Result<Command, String> {
             "src/KM.Tools",
             "--no-restore",
             "--",
-            "bridge-once",
+            bridge_mode,
         ])
         .current_dir(repo_root);
 
@@ -185,9 +239,7 @@ fn create_directory(path: String) -> Result<(), String> {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-async fn find_support_file_folder(
-    app_handle: tauri::AppHandle,
-) -> Result<Option<String>, String> {
+async fn find_support_file_folder(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || find_support_file_blocking(&app_handle))
         .await
         .map_err(|error| format!("S/V support file search task failed: {error}"))?
@@ -300,7 +352,16 @@ fn set_close_guard_enabled(state: tauri::State<'_, CloseGuardState>, enabled: bo
 
 #[tauri::command]
 fn exit_app(app_handle: tauri::AppHandle) {
+    shutdown_project_bridge(&app_handle);
     app_handle.exit(0);
+}
+
+fn shutdown_project_bridge(app_handle: &tauri::AppHandle) {
+    let bridge_state = app_handle.state::<ProjectBridgeState>();
+    let process = bridge_state.process.try_lock();
+    if let Ok(mut process) = process {
+        *process = None;
+    }
 }
 
 #[cfg(windows)]
@@ -330,7 +391,7 @@ pub fn run() {
         .manage(CloseGuardState {
             is_guarded: AtomicBool::new(false),
         })
-        // Register shell support now so the future sidecar bridge can add a narrow command allowlist.
+        .manage(ProjectBridgeState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -342,7 +403,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            project_bridge_once,
+            project_bridge,
             create_directory,
             find_support_file_folder,
             open_path,
@@ -358,6 +419,7 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.emit(WINDOW_CLOSE_REQUESTED_EVENT, ());
                 } else {
+                    shutdown_project_bridge(&app_handle);
                     app_handle.exit(0);
                 }
             }

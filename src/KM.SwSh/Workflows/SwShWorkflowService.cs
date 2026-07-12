@@ -214,6 +214,14 @@ public sealed class SwShWorkflowService
         return pokemonWorkflowService.Load(project);
     }
 
+    public SwShPokemonWorkflowService SharedPokemonWorkflowService => pokemonWorkflowService;
+
+    public void ClearMemoryCaches()
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        pokemonWorkflowService.ClearMemoryCache();
+    }
+
     public SwShMovesWorkflow LoadMoves(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);

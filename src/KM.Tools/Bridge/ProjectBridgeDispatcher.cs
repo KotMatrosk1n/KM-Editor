@@ -210,7 +210,6 @@ public sealed class ProjectBridgeDispatcher
         this.movesEditSessionService = movesEditSessionService ?? new SwShMovesEditSessionService(this.projectWorkspaceService);
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(this.projectWorkspaceService);
         this.behaviorEditSessionService = behaviorEditSessionService ?? new SwShBehaviorEditSessionService(this.projectWorkspaceService);
-        this.pokemonEditSessionService = pokemonEditSessionService ?? new SwShPokemonEditSessionService(this.projectWorkspaceService);
         this.raidBattlesEditSessionService = raidBattlesEditSessionService ?? new SwShRaidBattlesEditSessionService(this.projectWorkspaceService);
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
         this.rentalPokemonEditSessionService = rentalPokemonEditSessionService ?? new SwShRentalPokemonEditSessionService(this.projectWorkspaceService);
@@ -230,6 +229,9 @@ public sealed class ProjectBridgeDispatcher
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(
             this.projectWorkspaceService,
             modMergerWorkflowService: this.modMergerWorkflowService);
+        this.pokemonEditSessionService = pokemonEditSessionService ?? new SwShPokemonEditSessionService(
+            this.projectWorkspaceService,
+            this.swShWorkflowService.SharedPokemonWorkflowService);
         this.svWorkflowService = svWorkflowService ?? new SvWorkflowService(this.projectWorkspaceService);
         this.zaWorkflowService = zaWorkflowService ?? new ZaWorkflowService(this.projectWorkspaceService);
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
@@ -254,7 +256,13 @@ public sealed class ProjectBridgeDispatcher
                 return gameScopeFailure;
             }
 
-            return envelope?.Command switch
+            var command = envelope?.Command;
+            if (IsWorkflowCacheBoundary(command))
+            {
+                ClearWorkflowMemoryCaches();
+            }
+
+            var response = command switch
             {
                 KmCommandNames.OpenProject => DispatchOpenProject(requestJson),
                 KmCommandNames.ValidateProject => DispatchValidateProject(requestJson),
@@ -384,9 +392,16 @@ public sealed class ProjectBridgeDispatcher
                 null => SerializeFailure("bridge.missingCommand", "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
                     "bridge.unsupportedCommand",
-                    $"Bridge command '{envelope.Command}' is not supported.",
-                    envelope.RequestId),
+                    $"Bridge command '{command}' is not supported.",
+                    envelope?.RequestId),
             };
+
+            if (IsWorkflowCacheMutation(command))
+            {
+                ClearWorkflowMemoryCaches();
+            }
+
+            return response;
         }
         catch (JsonException exception)
         {
@@ -3178,6 +3193,37 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsPokemonLegendsZA(ProjectGameDto game)
     {
         return game is ProjectGameDto.ZA;
+    }
+
+    private void ClearWorkflowMemoryCaches()
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        swShWorkflowService.ClearMemoryCaches();
+        svWorkflowService.ClearMemoryCaches();
+        zaWorkflowService.ClearMemoryCaches();
+    }
+
+    private static bool IsWorkflowCacheBoundary(string? command)
+    {
+        return command is
+            KmCommandNames.OpenProject or
+            KmCommandNames.ValidateProject or
+            KmCommandNames.RefreshFileGraph or
+            KmCommandNames.UpdateSvCacheSettings or
+            KmCommandNames.ClearSvCache or
+            KmCommandNames.UpdateZaCacheSettings or
+            KmCommandNames.ClearZaCache;
+    }
+
+    private static bool IsWorkflowCacheMutation(string? command)
+    {
+        return command is
+            KmCommandNames.ApplyChangePlan or
+            KmCommandNames.ApplyModMerge or
+            KmCommandNames.ApplySvModMerge or
+            KmCommandNames.ApplyZaModMerge or
+            KmCommandNames.ApplyRandomizer or
+            KmCommandNames.RestoreRandomizer;
     }
 
     private static bool IsSwordShieldOnlyCommand(string command)

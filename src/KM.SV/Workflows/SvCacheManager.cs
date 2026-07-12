@@ -90,6 +90,7 @@ public sealed class SvCacheManager
             SvDataPaths.PersonalArray,
             SvDataPaths.MoveDataArray,
             SvDataPaths.ItemDataArray,
+            SvDataPaths.EvolutionItemConversionArray,
             SvDataPaths.FriendlyShopLineupDataArray,
             SvDataPaths.ShopWazaMachineDataArray,
             SvDataPaths.VisibleItemScenePaldeaScarlet,

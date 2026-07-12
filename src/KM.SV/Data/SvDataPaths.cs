@@ -7,6 +7,7 @@ public static class SvDataPaths
     public const string PersonalArray = "avalon/data/personal_array.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";
     public const string ItemDataArray = "world/data/item/itemdata/itemdata_array.bin";
+    public const string EvolutionItemConversionArray = "world/data/battle/plib_item_conversion/plib_item_conversion_array.bin";
     public const string FriendlyShopLineupDataArray = "world/data/ui/shop/friendlyshop/friendlyshop_lineup_data/friendlyshop_lineup_data_array.bin";
     public const string ShopWazaMachineDataArray = "world/data/ui/shop/shop_wazamachine/shop_wazamachine_data/shop_wazamachine_data_array.bin";
     public const string TrainerDataArray = "world/data/trainer/trdata/trdata_array.bin";

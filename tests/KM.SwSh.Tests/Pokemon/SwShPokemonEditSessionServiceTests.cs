@@ -209,28 +209,30 @@ public sealed class SwShPokemonEditSessionServiceTests
             temp.Paths,
             session: null,
             personalId: 1,
-            action: "upsert",
-            slot: 0,
+            action: "add",
+            slot: null,
             method: 8,
-            argument: 25,
+            argument: 2,
             species: 2,
             form: 1,
             level: 32);
 
         var pokemon = result.Workflow.Pokemon.Single(record => record.PersonalId == 1);
-        var evolution = Assert.Single(pokemon.Evolutions);
-        Assert.Equal(0, evolution.Slot);
+        Assert.Equal(2, pokemon.Evolutions.Count);
+        var evolution = pokemon.Evolutions.Single(candidate => candidate.Slot == 1);
+        Assert.Equal(1, evolution.Slot);
         Assert.Equal(8, evolution.Method);
-        Assert.Equal(25, evolution.Argument);
+        Assert.Equal(2, evolution.Argument);
+        Assert.Equal("002 TM10 (Magical Leaf)", evolution.ArgumentValue);
         Assert.Equal(2, evolution.Species);
         Assert.Equal(1, evolution.Form);
         Assert.Equal(32, evolution.Level);
         var edit = Assert.Single(result.Session.PendingEdits);
         Assert.Equal("workflow.pokemon", edit.Domain);
         Assert.Equal("1", edit.RecordId);
-        Assert.Equal("evolution:upsert:0", edit.Field);
-        Assert.Equal("8:25:2:1:32", edit.NewValue);
-        Assert.Equal("Set Bulbasaur evolution slot 0 to species 2 at level 32.", edit.Summary);
+        Assert.Equal("evolution:upsert:1", edit.Field);
+        Assert.Equal("8:2:2:1:32", edit.NewValue);
+        Assert.Equal("Add Bulbasaur evolution to species 2 at level 32.", edit.Summary);
         Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.CreateEvolutionDataPath(1));
         Assert.Empty(result.Diagnostics);
     }

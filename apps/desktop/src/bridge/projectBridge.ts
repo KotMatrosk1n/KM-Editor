@@ -617,7 +617,7 @@ const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
     return Promise.reject(new Error('Project bridge is only available in the desktop app.'));
   }
 
-  return invoke<string>('project_bridge_once', { requestJson });
+  return invoke<string>('project_bridge', { requestJson });
 };
 
 export function createProjectBridge(

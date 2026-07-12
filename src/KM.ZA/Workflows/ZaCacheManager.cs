@@ -93,6 +93,7 @@ public sealed class ZaCacheManager
             ZaDataPaths.PersonalArray,
             ZaDataPaths.MoveDataArray,
             ZaDataPaths.ItemDataArray,
+            ZaDataPaths.EvolutionItemConversionArray,
             ZaDataPaths.TrainerDataArray,
             ZaDataPaths.PokemonDataArray,
             ZaDataPaths.EncountDataArray,
