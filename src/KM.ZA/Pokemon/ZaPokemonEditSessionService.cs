@@ -9,6 +9,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
+using KM.ZA.EvolutionItems;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Pokemon;
@@ -360,7 +361,7 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return ZaEditSessionSupport.CreateSingleFileChangePlan(
+        var plan = ZaEditSessionSupport.CreateSingleFileChangePlan(
             paths,
             session,
             ZaEditSessionSupport.PokemonDomain,
@@ -368,6 +369,50 @@ internal sealed class ZaPokemonEditSessionService
             "Pokemon Data",
             validation.Diagnostics,
             outputMode);
+        if (!plan.CanApply)
+        {
+            return plan;
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
+            var rows = ReadRows(source.Bytes);
+            var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
+            if (!conversionState.Modified)
+            {
+                return plan;
+            }
+
+            var writeInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.EvolutionItemConversionArray,
+                [conversionState.SourceReference()],
+                outputMode);
+            var conversionWrite = new PlannedFileWrite(
+                writeInfo.TargetRelativePath,
+                writeInfo.Sources,
+                writeInfo.ReplacesExistingOutput,
+                "Assign custom Pokemon evolution items to game conversion parameters.");
+            return new ChangePlan(
+                plan.SessionId,
+                [conversionWrite, .. plan.Writes],
+                plan.Diagnostics);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            var diagnostics = plan.Diagnostics
+                .Append(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon Data could not prepare evolution item conversions: {exception.Message}",
+                    ZaEditSessionSupport.PokemonDomain,
+                    file: $"romfs/{ZaDataPaths.EvolutionItemConversionArray}",
+                    expected: "Readable evolution item conversion table with an unused parameter slot"))
+                .ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
     }
 
     public ApplyResult ApplyChangePlan(
@@ -405,10 +450,17 @@ internal sealed class ZaPokemonEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var rows = ReadRows(source.Bytes);
-            var requiresRebuild = RequiresPersonalArrayRebuild(rows, session.PendingEdits);
+            var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+            var migratedLegacyArguments = PrepareEvolutionItemConversions(
+                rows,
+                session.PendingEdits,
+                conversionState);
+            var requiresRebuild = RequiresPersonalArrayRebuild(rows, session.PendingEdits)
+                || migratedLegacyArguments
+                || RequiresEncodedEvolutionRebuild(session.PendingEdits);
             foreach (var edit in session.PendingEdits)
             {
-                ApplyEdit(rows, edit, diagnostics);
+                ApplyEdit(rows, edit, conversionState, diagnostics);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -422,6 +474,21 @@ internal sealed class ZaPokemonEditSessionService
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            }
+
+            var conversionBytes = conversionState.Modified
+                ? conversionState.Write()
+                : null;
+            if (conversionBytes is not null)
+            {
+                ZaWorkflowFileSource.Write(
+                    paths,
+                    ZaDataPaths.EvolutionItemConversionArray,
+                    conversionBytes,
+                    outputMode);
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.EvolutionItemConversionArray,
+                    outputMode));
             }
 
             ZaWorkflowFileSource.Write(paths, ZaDataPaths.PersonalArray, outputBytes, outputMode);
@@ -661,7 +728,7 @@ internal sealed class ZaPokemonEditSessionService
         if (TryParseEvolutionField(edit.Field, out _, out _)
             && ParseEvolutionOperation(edit, pokemon, new List<ValidationDiagnostic>()) is { } evolutionOperation)
         {
-            return ApplyEvolutionOperation(pokemon, evolutionOperation);
+            return ApplyEvolutionOperation(workflow, pokemon, evolutionOperation);
         }
 
         if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
@@ -800,6 +867,7 @@ internal sealed class ZaPokemonEditSessionService
     }
 
     private static ZaPokemonRecord ApplyEvolutionOperation(
+        ZaPokemonWorkflow workflow,
         ZaPokemonRecord pokemon,
         EvolutionOperation operation)
     {
@@ -811,17 +879,20 @@ internal sealed class ZaPokemonEditSessionService
             case AddAction:
             case UpsertAction:
                 var definition = ZaPokemonWorkflowService.GetEvolutionMethodDefinition(operation.Method ?? 0);
+                var argument = operation.Argument ?? 0;
                 var row = new ZaPokemonEvolutionRecord(
                     targetSlot,
                     operation.Method ?? 0,
-                    operation.Argument ?? 0,
+                    argument,
                     operation.Species ?? 0,
                     operation.Form ?? 0,
                     operation.Level ?? 0,
                     definition.Name,
                     definition.ArgumentKind,
                     definition.ArgumentLabel,
-                    (operation.Argument ?? 0).ToString(CultureInfo.InvariantCulture));
+                    string.Equals(definition.ArgumentKind, "item", StringComparison.Ordinal)
+                        ? FormatEvolutionItemArgumentValue(workflow, operation.Method ?? 0, argument)
+                        : argument.ToString(CultureInfo.InvariantCulture));
                 if (targetSlot < evolutions.Count)
                 {
                     evolutions[targetSlot] = row;
@@ -852,6 +923,26 @@ internal sealed class ZaPokemonEditSessionService
         {
             Evolutions = evolutions.Select((evolution, index) => evolution with { Slot = index }).ToArray(),
         };
+    }
+
+    private static string FormatEvolutionItemArgumentValue(
+        ZaPokemonWorkflow workflow,
+        int method,
+        int argument)
+    {
+        var option = workflow.EvolutionMethodOptions
+            .FirstOrDefault(candidate => candidate.Value == method)
+            ?.ArgumentOptions
+            .FirstOrDefault(candidate => candidate.Value == argument);
+        if (option is null)
+        {
+            option = workflow.EvolutionMethodOptions
+                .Where(candidate => string.Equals(candidate.ArgumentKind, "item", StringComparison.Ordinal))
+                .SelectMany(candidate => candidate.ArgumentOptions)
+                .FirstOrDefault(candidate => candidate.Value == argument);
+        }
+
+        return option?.Label ?? argument.ToString(CultureInfo.InvariantCulture);
     }
 
     private static ZaPokemonRecord OverlayCompatibility(
@@ -885,6 +976,7 @@ internal sealed class ZaPokemonEditSessionService
     private static void ApplyEdit(
         IReadOnlyList<PersonalRow> rows,
         PendingEdit edit,
+        ZaEvolutionItemConversionState conversionState,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
@@ -918,6 +1010,7 @@ internal sealed class ZaPokemonEditSessionService
             var operation = ParseEvolutionOperation(edit, null, diagnostics);
             if (operation is not null)
             {
+                operation = EncodeEvolutionOperation(operation, conversionState);
                 row.HasEvolutions = true;
                 ApplyEvolutionOperation(row.Evolutions, operation);
             }
@@ -1189,6 +1282,73 @@ internal sealed class ZaPokemonEditSessionService
                 learnset.Insert(destination, moved);
                 break;
         }
+    }
+
+    private static bool PrepareEvolutionItemConversions(
+        IReadOnlyList<PersonalRow> rows,
+        IEnumerable<PendingEdit> edits,
+        ZaEvolutionItemConversionState conversionState)
+    {
+        var migrated = false;
+        foreach (var row in rows)
+        {
+            for (var index = 0; index < row.Evolutions.Count; index++)
+            {
+                var evolution = row.Evolutions[index];
+                if (!ZaPokemonWorkflowService.UsesEvolutionItemConversion(evolution.Condition)
+                    || !conversionState.TryMigrateLegacyArgument(evolution.Parameter, out var encodedArgument))
+                {
+                    continue;
+                }
+
+                row.Evolutions[index] = evolution with { Parameter = checked((ushort)encodedArgument) };
+                migrated = true;
+            }
+        }
+
+        foreach (var edit in edits)
+        {
+            var operation = ParseEvolutionOperation(edit, pokemon: null, new List<ValidationDiagnostic>());
+            if (operation is not null
+                && operation.Action is AddAction or UpsertAction
+                && operation.Method is { } method
+                && operation.Argument is { } argument
+                && ZaPokemonWorkflowService.UsesEvolutionItemConversion(method))
+            {
+                _ = conversionState.Encode(argument);
+            }
+        }
+
+        return migrated;
+    }
+
+    private static EvolutionOperation EncodeEvolutionOperation(
+        EvolutionOperation operation,
+        ZaEvolutionItemConversionState conversionState)
+    {
+        return operation.Action is AddAction or UpsertAction
+            && operation.Method is { } method
+            && operation.Argument is { } argument
+            && ZaPokemonWorkflowService.UsesEvolutionItemConversion(method)
+                ? operation with { Argument = conversionState.Encode(argument) }
+                : operation;
+    }
+
+    private static bool RequiresEncodedEvolutionRebuild(IEnumerable<PendingEdit> edits)
+    {
+        foreach (var edit in edits)
+        {
+            var operation = ParseEvolutionOperation(edit, pokemon: null, new List<ValidationDiagnostic>());
+            if (operation is not null
+                && operation.Action is AddAction or UpsertAction
+                && operation.Method is { } method
+                && ZaPokemonWorkflowService.UsesEvolutionItemConversion(method))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void ApplyEvolutionOperation(IList<EvolutionRow> evolutions, EvolutionOperation operation)

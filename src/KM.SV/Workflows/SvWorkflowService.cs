@@ -142,6 +142,12 @@ public sealed class SvWorkflowService
         return cacheManager.WarmupStep(paths, stepIndex);
     }
 
+    public void ClearMemoryCaches()
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        pokemonWorkflowService.ClearMemoryCache();
+    }
+
     public SvWorkflowList List(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -866,6 +872,14 @@ public sealed class SvWorkflowService
             .Where(domain => domain != SvEditSessionDomain.None)
             .Distinct()
             .ToArray();
+
+        var itemsIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Items);
+        var pokemonIndex = Array.IndexOf(orderedDomains, SvEditSessionDomain.Pokemon);
+        if (itemsIndex > pokemonIndex && pokemonIndex >= 0)
+        {
+            (orderedDomains[pokemonIndex], orderedDomains[itemsIndex]) =
+                (orderedDomains[itemsIndex], orderedDomains[pokemonIndex]);
+        }
 
         domains = orderedDomains;
         return orderedDomains.Length > 1 && orderedDomains.All(IsNormalDomain);

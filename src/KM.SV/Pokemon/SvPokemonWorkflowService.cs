@@ -6,7 +6,9 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Pokemon;
 using KM.Core.Projects;
+using KM.Core.Workflows;
 using KM.SV.Data;
+using KM.SV.EvolutionItems;
 using KM.SV.Workflows;
 
 namespace KM.SV.Pokemon;
@@ -198,6 +200,38 @@ internal sealed class SvPokemonWorkflowService
                 value.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
+    private static readonly IReadOnlyDictionary<int, int> VanillaEvolutionItemParameterIds = new Dictionary<int, int>
+    {
+        [1] = 80,
+        [2] = 81,
+        [3] = 82,
+        [4] = 83,
+        [5] = 84,
+        [6] = 85,
+        [7] = 107,
+        [8] = 108,
+        [9] = 110,
+        [49] = 326,
+        [50] = 327,
+        [52] = 849,
+        [79] = 1116,
+        [80] = 1117,
+        [81] = 1253,
+        [82] = 1254,
+        [83] = 1582,
+        [84] = 1592,
+        [85] = 2344,
+        [86] = 1861,
+        [88] = 1857,
+        [89] = 1858,
+        [93] = 109,
+        [94] = 2403,
+        [95] = 2404,
+        [96] = 2402,
+        [119] = 2482,
+        [1691] = 1691,
+    };
+
     private static readonly IReadOnlyList<int> DefaultEvolutionItemIds =
     [
         80, 81, 82, 83, 84, 85, 107, 108, 109, 110, 326, 327, 849, 1116, 1117,
@@ -271,6 +305,7 @@ internal sealed class SvPokemonWorkflowService
     ];
 
     private readonly SvWorkflowFileSource fileSource;
+    private readonly ProjectWorkflowMemoryCache<SvPokemonWorkflow> memoryCache = new();
 
     public SvPokemonWorkflowService(SvWorkflowFileSource? fileSource = null)
     {
@@ -292,6 +327,24 @@ internal sealed class SvPokemonWorkflowService
     {
         ArgumentNullException.ThrowIfNull(project);
 
+        if (memoryCache.TryGet(project.Paths, out var cachedWorkflow))
+        {
+            return cachedWorkflow!;
+        }
+
+        var workflow = LoadUncached(project);
+        memoryCache.Set(project.Paths, workflow);
+        return workflow;
+    }
+
+    public void ClearMemoryCache()
+    {
+        memoryCache.Clear();
+    }
+
+    private SvPokemonWorkflow LoadUncached(OpenedProject project)
+    {
+
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
         var labels = SvTextLabelLookup.None();
@@ -305,7 +358,35 @@ internal sealed class SvPokemonWorkflowService
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
             var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels, spriteLabels, tmCatalog, evolutionItemArgumentLabels).ToArray();
+            SvEvolutionItemConversionState? conversionState = null;
+            try
+            {
+                conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                // Output-only fixtures and incomplete projects retain the guarded vanilla fallback below.
+            }
+            SvWorkflowFile? baseSource = null;
+            try
+            {
+                if (conversionState is null)
+                {
+                    baseSource = fileSource.ReadBase(project, SvDataPaths.PersonalArray);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                // Output-only fixtures and projects can still be loaded; they simply cannot identify vanilla parameters.
+            }
+            pokemon = LoadRecords(
+                source,
+                baseSource,
+                conversionState,
+                labels,
+                spriteLabels,
+                tmCatalog,
+                evolutionItemArgumentLabels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -385,12 +466,17 @@ internal sealed class SvPokemonWorkflowService
 
     private static IEnumerable<SvPokemonRecord> LoadRecords(
         SvWorkflowFile source,
+        SvWorkflowFile? baseSource,
+        SvEvolutionItemConversionState? conversionState,
         SvTextLabelLookup labels,
         SvTextLabelLookup spriteLabels,
         IReadOnlyList<SvTechnicalMachineMove> tmCatalog,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
         var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
+        global::personal_table? baseTable = baseSource is null
+            ? null
+            : global::personal_table.GetRootAspersonal_table(new ByteBuffer(baseSource.Bytes));
         for (var index = 0; index < table.EntryLength; index++)
         {
             var entry = table.Entry(index);
@@ -399,13 +485,27 @@ internal sealed class SvPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels, spriteLabels, tmCatalog, evolutionItemArgumentLabels);
+            var baseEntry = baseTable is { } vanillaTable && index < vanillaTable.EntryLength
+                ? vanillaTable.Entry(index)
+                : null;
+            yield return ToRecord(
+                index,
+                entry.Value,
+                baseEntry,
+                conversionState,
+                source,
+                labels,
+                spriteLabels,
+                tmCatalog,
+                evolutionItemArgumentLabels);
         }
     }
 
     private static SvPokemonRecord ToRecord(
         int personalId,
         global::personal entry,
+        global::personal? baseEntry,
+        SvEvolutionItemConversionState? conversionState,
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         SvTextLabelLookup spriteLabels,
@@ -532,7 +632,7 @@ internal sealed class SvPokemonWorkflowService
             baseExperience,
             height,
             weight,
-            ReadEvolutions(entry, labels, evolutionItemArgumentLabels),
+            ReadEvolutions(entry, baseEntry, conversionState, labels, evolutionItemArgumentLabels),
             ReadLearnset(entry, labels),
             ReadCompatibility(entry, labels, tmCatalog),
             new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState),
@@ -541,6 +641,8 @@ internal sealed class SvPokemonWorkflowService
 
     private static IReadOnlyList<SvPokemonEvolutionRecord> ReadEvolutions(
         global::personal entry,
+        global::personal? baseEntry,
+        SvEvolutionItemConversionState? conversionState,
         SvTextLabelLookup labels,
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels)
     {
@@ -554,10 +656,18 @@ internal sealed class SvPokemonWorkflowService
             }
 
             var method = GetEvolutionMethodDefinition(evolution.Value.Condition);
+            var argument = NormalizeEvolutionItemArgument(
+                evolution.Value.Condition,
+                evolution.Value.Parameter,
+                evolution.Value.Species,
+                evolution.Value.Form,
+                evolution.Value.Level,
+                baseEntry,
+                conversionState);
             evolutions.Add(new SvPokemonEvolutionRecord(
                 index,
                 evolution.Value.Condition,
-                evolution.Value.Parameter,
+                argument,
                 evolution.Value.Species,
                 evolution.Value.Form,
                 evolution.Value.Level,
@@ -565,13 +675,71 @@ internal sealed class SvPokemonWorkflowService
                 method.ArgumentKind,
                 method.ArgumentLabel,
                 FormatEvolutionArgument(
-                    evolution.Value.Parameter,
+                    argument,
                     method,
                     labels,
                     evolutionItemArgumentLabels)));
         }
 
         return evolutions;
+    }
+
+    private static int NormalizeEvolutionItemArgument(
+        int method,
+        int storedArgument,
+        int species,
+        int form,
+        int level,
+        global::personal? baseEntry,
+        SvEvolutionItemConversionState? conversionState)
+    {
+        if (UsesEvolutionItemConversion(method)
+            && conversionState is not null
+            && conversionState.TryDecode(storedArgument, out var convertedItemId))
+        {
+            return convertedItemId;
+        }
+
+        if (UsesEvolutionItemConversion(method)
+            && storedArgument == 50
+            && VanillaEvolutionItemParameterIds.TryGetValue(storedArgument, out var reservedItemId))
+        {
+            return reservedItemId;
+        }
+
+        if (!UsesEvolutionItemConversion(method)
+            || !VanillaEvolutionItemParameterIds.TryGetValue(storedArgument, out var itemId)
+            || baseEntry is not { } vanilla
+            || !ContainsMatchingVanillaEvolution(vanilla, method, storedArgument, species, form, level))
+        {
+            return storedArgument;
+        }
+
+        return itemId;
+    }
+
+    private static bool ContainsMatchingVanillaEvolution(
+        global::personal vanilla,
+        int method,
+        int storedArgument,
+        int species,
+        int form,
+        int level)
+    {
+        for (var index = 0; index < vanilla.EvolutionsLength; index++)
+        {
+            if (vanilla.Evolutions(index) is { } baseEvolution
+                && baseEvolution.Condition == method
+                && baseEvolution.Parameter == storedArgument
+                && baseEvolution.Species == species
+                && baseEvolution.Form == form
+                && baseEvolution.Level == level)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IReadOnlyList<SvPokemonLearnsetMove> ReadLearnset(
@@ -863,6 +1031,11 @@ internal sealed class SvPokemonWorkflowService
     private static bool IsUseItemEvolutionMethod(int method)
     {
         return method is 8 or 17 or 18 or 42;
+    }
+
+    internal static bool UsesEvolutionItemConversion(int method)
+    {
+        return method is 8 or 17 or 18 or 19 or 20 or 42;
     }
 
     private static string FormatEvolutionValueArgument(int argument, EvolutionMethodDefinition method)

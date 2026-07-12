@@ -24,5 +24,20 @@ public sealed class BridgeLineRunner
 
         return 0;
     }
+
+    public async Task<int> RunAsync(TextReader input, TextWriter output, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(output);
+
+        while (await input.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } requestJson)
+        {
+            var responseJson = dispatcher.Dispatch(requestJson);
+            await output.WriteLineAsync(responseJson.AsMemory(), cancellationToken).ConfigureAwait(false);
+            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return 0;
+    }
 }
 

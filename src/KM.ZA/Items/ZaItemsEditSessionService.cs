@@ -7,6 +7,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
+using KM.ZA.EvolutionItems;
 using KM.ZA.Workflows;
 using System.Globalization;
 
@@ -168,6 +169,16 @@ internal sealed class ZaItemsEditSessionService
             ValidatePendingEdit(workflow, edit, diagnostics);
         }
 
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateEvolutionItemUseCompatibility(workflow, session, diagnostics);
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateEvolutionItemConversions(project, session, diagnostics);
+        }
+
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -191,7 +202,7 @@ internal sealed class ZaItemsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return ZaEditSessionSupport.CreateSingleFileChangePlan(
+        var plan = ZaEditSessionSupport.CreateSingleFileChangePlan(
             paths,
             session,
             ZaEditSessionSupport.ItemsDomain,
@@ -199,6 +210,48 @@ internal sealed class ZaItemsEditSessionService
             "Items",
             validation.Diagnostics,
             outputMode);
+        if (!plan.CanApply || !HasEnabledEvolutionItemEdit(session))
+        {
+            return plan;
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(session, conversionState);
+            if (!conversionState.Modified)
+            {
+                return plan;
+            }
+
+            var writeInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.EvolutionItemConversionArray,
+                [conversionState.SourceReference()],
+                outputMode);
+            var conversionWrite = new PlannedFileWrite(
+                writeInfo.TargetRelativePath,
+                writeInfo.Sources,
+                writeInfo.ReplacesExistingOutput,
+                "Assign enabled evolution items to approved game conversion parameters.");
+            return new ChangePlan(
+                plan.SessionId,
+                [conversionWrite, .. plan.Writes],
+                plan.Diagnostics);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            var diagnostics = plan.Diagnostics
+                .Append(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Items could not prepare evolution item conversions: {exception.Message}",
+                    ZaEditSessionSupport.ItemsDomain,
+                    file: $"romfs/{ZaDataPaths.EvolutionItemConversionArray}",
+                    expected: "Readable conversion table with an approved allocation slot"))
+                .ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
     }
 
     public ApplyResult ApplyChangePlan(
@@ -246,7 +299,31 @@ internal sealed class ZaItemsEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.ItemDataArray, WriteRows(rows), outputMode);
+            ZaEvolutionItemConversionState? conversionState = null;
+            if (HasEnabledEvolutionItemEdit(session))
+            {
+                conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+                PrepareEvolutionItemConversions(session, conversionState);
+            }
+
+            var itemBytes = WriteRows(rows);
+            var conversionBytes = conversionState?.Modified == true
+                ? conversionState.Write()
+                : null;
+
+            if (conversionBytes is not null)
+            {
+                ZaWorkflowFileSource.Write(
+                    paths,
+                    ZaDataPaths.EvolutionItemConversionArray,
+                    conversionBytes,
+                    outputMode);
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.EvolutionItemConversionArray,
+                    outputMode));
+            }
+
+            ZaWorkflowFileSource.Write(paths, ZaDataPaths.ItemDataArray, itemBytes, outputMode);
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ItemDataArray, outputMode));
             if (outputMode == ZaOutputMode.Standalone)
             {
@@ -269,6 +346,126 @@ internal sealed class ZaItemsEditSessionService
         }
 
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private void ValidateEvolutionItemConversions(
+        OpenedProject project,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!HasEnabledEvolutionItemEdit(session))
+        {
+            return;
+        }
+
+        try
+        {
+            var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(session, conversionState);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Evolution item conversion allocation is not valid: {exception.Message}",
+                ZaEditSessionSupport.ItemsDomain,
+                file: $"romfs/{ZaDataPaths.EvolutionItemConversionArray}",
+                expected: "Approved conversion capacity for every enabled item"));
+        }
+    }
+
+    private static void ValidateEvolutionItemUseCompatibility(
+        ZaItemsWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
+        foreach (var itemId in GetEnabledEvolutionItemIds(session))
+        {
+            var originalItem = workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
+            var effectiveItem = effectiveWorkflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
+            if (originalItem is null
+                || effectiveItem is null
+                || !HasConflictingPokemonUseEffect(originalItem)
+                    && !HasConflictingPokemonUseEffect(effectiveItem))
+            {
+                continue;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{effectiveItem.Name} already has a direct Pokemon-use effect and cannot safely be converted without replacing that behavior.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.EvolutionItemField,
+                expected: "Held or inert item with no healing, status, form-change, experience, revival, or EV use effect"));
+        }
+    }
+
+    private static bool HasConflictingPokemonUseEffect(ZaItemRecord item)
+    {
+        string[] fields =
+        [
+            ZaItemsWorkflowService.CureSleepField,
+            ZaItemsWorkflowService.CurePoisonField,
+            ZaItemsWorkflowService.CureBurnField,
+            ZaItemsWorkflowService.CureFreezeField,
+            ZaItemsWorkflowService.CureParalyzeField,
+            ZaItemsWorkflowService.CureConfuseField,
+            ZaItemsWorkflowService.CureInfatuationField,
+            ZaItemsWorkflowService.HealPowerField,
+            ZaItemsWorkflowService.HealPercentageField,
+            ZaItemsWorkflowService.RevivalCountField,
+            ZaItemsWorkflowService.RevivePercentageField,
+            ZaItemsWorkflowService.ExpPointGainField,
+            ZaItemsWorkflowService.MintNatureField,
+            ZaItemsWorkflowService.MachineMoveIdField,
+            ZaItemsWorkflowService.FormChangeItemField,
+            ZaItemsWorkflowService.EvHpField,
+            ZaItemsWorkflowService.EvAttackField,
+            ZaItemsWorkflowService.EvDefenseField,
+            ZaItemsWorkflowService.EvSpeedField,
+            ZaItemsWorkflowService.EvSpecialAttackField,
+            ZaItemsWorkflowService.EvSpecialDefenseField,
+        ];
+        return fields.Any(field => item.FieldValues.GetValueOrDefault(field) is { } value && value != 0);
+    }
+
+    private static void PrepareEvolutionItemConversions(
+        EditSession session,
+        ZaEvolutionItemConversionState conversionState)
+    {
+        foreach (var itemId in GetEnabledEvolutionItemIds(session))
+        {
+            conversionState.Encode(itemId);
+        }
+    }
+
+    private static bool HasEnabledEvolutionItemEdit(EditSession session)
+    {
+        return GetEnabledEvolutionItemIds(session).Count > 0;
+    }
+
+    private static IReadOnlyList<int> GetEnabledEvolutionItemIds(EditSession session)
+    {
+        var finalValues = new Dictionary<int, int>();
+        foreach (var edit in session.PendingEdits)
+        {
+            if (!string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.Field, ZaItemsWorkflowService.EvolutionItemField, StringComparison.Ordinal)
+                || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || !int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            {
+                continue;
+            }
+
+            finalValues[itemId] = value;
+        }
+
+        return finalValues
+            .Where(entry => entry.Value != 0)
+            .Select(entry => entry.Key)
+            .Order()
+            .ToArray();
     }
 
     private static PendingEdit? CreatePendingEdit(

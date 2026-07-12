@@ -5,8 +5,8 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SV.EvolutionItems;
 using KM.SV.Items;
-using KM.SV.Pokemon;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -381,7 +381,7 @@ internal sealed class SvPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return SvEditSessionSupport.CreateSingleFileChangePlan(
+        var plan = SvEditSessionSupport.CreateSingleFileChangePlan(
             paths,
             session,
             SvEditSessionSupport.PokemonDomain,
@@ -389,6 +389,50 @@ internal sealed class SvPokemonEditSessionService
             "Pokemon Data",
             validation.Diagnostics,
             outputMode);
+        if (!plan.CanApply)
+        {
+            return plan;
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var source = fileSource.Read(project, SvDataPaths.PersonalArray);
+            var rows = ReadRows(source.Bytes);
+            var conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
+            if (!conversionState.Modified)
+            {
+                return plan;
+            }
+
+            var writeInfo = SvWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                SvDataPaths.EvolutionItemConversionArray,
+                [conversionState.SourceReference()],
+                outputMode);
+            var conversionWrite = new PlannedFileWrite(
+                writeInfo.TargetRelativePath,
+                writeInfo.Sources,
+                writeInfo.ReplacesExistingOutput,
+                "Assign custom Pokemon evolution items to game conversion parameters.");
+            return new ChangePlan(
+                plan.SessionId,
+                [conversionWrite, .. plan.Writes],
+                plan.Diagnostics);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            var diagnostics = plan.Diagnostics
+                .Append(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon Data could not prepare evolution item conversions: {exception.Message}",
+                    SvEditSessionSupport.PokemonDomain,
+                    file: $"romfs/{SvDataPaths.EvolutionItemConversionArray}",
+                    expected: "Readable evolution item conversion table with an unused parameter slot"))
+                .ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
     }
 
     public ApplyResult ApplyChangePlan(
@@ -426,12 +470,14 @@ internal sealed class SvPokemonEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, SvDataPaths.PersonalArray);
             var rows = ReadRows(source.Bytes);
+            var conversionState = SvEvolutionItemConversionState.Load(project, fileSource);
+            PrepareEvolutionItemConversions(rows, session.PendingEdits, conversionState);
             var baseRows = NeedsBaseRows(session.PendingEdits)
                 ? ReadRows(fileSource.ReadBase(project, SvDataPaths.PersonalArray).Bytes)
                 : rows;
             foreach (var edit in session.PendingEdits)
             {
-                ApplyEdit(rows, baseRows, edit, diagnostics);
+                ApplyEdit(rows, baseRows, edit, conversionState, diagnostics);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -439,7 +485,23 @@ internal sealed class SvPokemonEditSessionService
                 return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            SvWorkflowFileSource.Write(paths, SvDataPaths.PersonalArray, WriteRows(rows), outputMode);
+            var personalBytes = WriteRows(rows);
+            var conversionBytes = conversionState.Modified
+                ? conversionState.Write()
+                : null;
+            if (conversionBytes is not null)
+            {
+                SvWorkflowFileSource.Write(
+                    paths,
+                    SvDataPaths.EvolutionItemConversionArray,
+                    conversionBytes,
+                    outputMode);
+                writtenFiles.Add(SvEditSessionSupport.GeneratedReference(
+                    SvDataPaths.EvolutionItemConversionArray,
+                    outputMode));
+            }
+
+            SvWorkflowFileSource.Write(paths, SvDataPaths.PersonalArray, personalBytes, outputMode);
             writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.PersonalArray, outputMode));
             if (outputMode == SvOutputMode.Standalone)
             {
@@ -826,7 +888,7 @@ internal sealed class SvPokemonEditSessionService
         if (TryParseEvolutionField(edit.Field, out _, out _)
             && ParseEvolutionOperation(edit, pokemon, new List<ValidationDiagnostic>()) is { } evolutionOperation)
         {
-            return ApplyEvolutionOperation(pokemon, evolutionOperation);
+            return ApplyEvolutionOperation(workflow, pokemon, evolutionOperation);
         }
 
         if (TryParseCompatibilityField(edit.Field, out var groupId, out var slot)
@@ -1008,6 +1070,7 @@ internal sealed class SvPokemonEditSessionService
     }
 
     private static SvPokemonRecord ApplyEvolutionOperation(
+        SvPokemonWorkflow workflow,
         SvPokemonRecord pokemon,
         EvolutionOperation operation)
     {
@@ -1018,17 +1081,7 @@ internal sealed class SvPokemonEditSessionService
         {
             case AddAction:
             case UpsertAction:
-                var row = new SvPokemonEvolutionRecord(
-                    targetSlot,
-                    operation.Method ?? 0,
-                    operation.Argument ?? 0,
-                    operation.Species ?? 0,
-                    operation.Form ?? 0,
-                    operation.Level ?? 0,
-                    $"Method {operation.Method ?? 0}",
-                    "value",
-                    "Parameter",
-                    (operation.Argument ?? 0).ToString(CultureInfo.InvariantCulture));
+                var row = CreateEvolutionViewRecord(workflow, targetSlot, operation);
                 if (targetSlot < evolutions.Count)
                 {
                     evolutions[targetSlot] = row;
@@ -1054,6 +1107,70 @@ internal sealed class SvPokemonEditSessionService
         {
             Evolutions = evolutions.Select((evolution, index) => evolution with { Slot = index }).ToArray(),
         };
+    }
+
+    private static SvPokemonEvolutionRecord CreateEvolutionViewRecord(
+        SvPokemonWorkflow workflow,
+        int slot,
+        EvolutionOperation operation)
+    {
+        var method = operation.Method ?? 0;
+        var argument = operation.Argument ?? 0;
+        var methodOption = workflow.EvolutionMethodOptions.FirstOrDefault(option => option.Value == method);
+        var isItemArgument = string.Equals(methodOption?.ArgumentKind, "item", StringComparison.Ordinal);
+
+        return new SvPokemonEvolutionRecord(
+            slot,
+            method,
+            argument,
+            operation.Species ?? 0,
+            operation.Form ?? 0,
+            operation.Level ?? 0,
+            isItemArgument ? FormatEvolutionMethodName(methodOption!, method) : $"Method {method}",
+            isItemArgument ? methodOption!.ArgumentKind : "value",
+            isItemArgument ? methodOption!.ArgumentLabel : "Parameter",
+            isItemArgument
+                ? FormatEvolutionItemArgumentValue(workflow, methodOption!, argument)
+                : argument.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static string FormatEvolutionMethodName(
+        SvPokemonEvolutionMethodOption? methodOption,
+        int method)
+    {
+        if (methodOption is null)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"Method {method}");
+        }
+
+        return RemoveNumericOptionPrefix(methodOption.Label, method);
+    }
+
+    private static string FormatEvolutionItemArgumentValue(
+        SvPokemonWorkflow workflow,
+        SvPokemonEvolutionMethodOption methodOption,
+        int argument)
+    {
+        var option = methodOption.ArgumentOptions.FirstOrDefault(candidate => candidate.Value == argument);
+        if (option is null)
+        {
+            option = workflow.EvolutionMethodOptions
+                .Where(candidate => string.Equals(candidate.ArgumentKind, "item", StringComparison.Ordinal))
+                .SelectMany(candidate => candidate.ArgumentOptions)
+                .FirstOrDefault(candidate => candidate.Value == argument);
+        }
+
+        return option?.Label ?? argument.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string RemoveNumericOptionPrefix(string label, int value)
+    {
+        var separator = label.IndexOf(' ');
+        return separator > 0
+            && int.TryParse(label.AsSpan(0, separator), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            && parsed == value
+                ? label[(separator + 1)..]
+                : label;
     }
 
     private static SvPokemonRecord OverlayCompatibility(
@@ -1082,6 +1199,7 @@ internal sealed class SvPokemonEditSessionService
         IReadOnlyList<PersonalRow> rows,
         IReadOnlyList<PersonalRow> baseRows,
         PendingEdit edit,
+        SvEvolutionItemConversionState conversionState,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal))
@@ -1133,6 +1251,7 @@ internal sealed class SvPokemonEditSessionService
         if (TryParseEvolutionField(edit.Field, out _, out _)
             && ParseEvolutionOperation(edit, pokemon: null, diagnostics) is { } evolutionOperation)
         {
+            evolutionOperation = EncodeEvolutionOperation(evolutionOperation, conversionState);
             ApplyEvolutionEdit(row, evolutionOperation);
             return;
         }
@@ -1360,6 +1479,56 @@ internal sealed class SvPokemonEditSessionService
                 row.LevelupMoves.Insert(destination, moved);
                 break;
         }
+    }
+
+    private static bool PrepareEvolutionItemConversions(
+        IReadOnlyList<PersonalRow> rows,
+        IEnumerable<PendingEdit> edits,
+        SvEvolutionItemConversionState conversionState)
+    {
+        var migrated = false;
+        foreach (var row in rows)
+        {
+            for (var index = 0; index < row.Evolutions.Count; index++)
+            {
+                var evolution = row.Evolutions[index];
+                if (!SvPokemonWorkflowService.UsesEvolutionItemConversion(evolution.Condition)
+                    || !conversionState.TryMigrateLegacyArgument(evolution.Parameter, out var encodedArgument))
+                {
+                    continue;
+                }
+
+                row.Evolutions[index] = evolution with { Parameter = checked((ushort)encodedArgument) };
+                migrated = true;
+            }
+        }
+
+        foreach (var edit in edits)
+        {
+            var operation = ParseEvolutionOperation(edit, pokemon: null, new List<ValidationDiagnostic>());
+            if (operation is not null
+                && operation.Action is AddAction or UpsertAction
+                && operation.Method is { } method
+                && operation.Argument is { } argument
+                && SvPokemonWorkflowService.UsesEvolutionItemConversion(method))
+            {
+                _ = conversionState.Encode(argument);
+            }
+        }
+
+        return migrated;
+    }
+
+    private static EvolutionOperation EncodeEvolutionOperation(
+        EvolutionOperation operation,
+        SvEvolutionItemConversionState conversionState)
+    {
+        return operation.Action is AddAction or UpsertAction
+            && operation.Method is { } method
+            && operation.Argument is { } argument
+            && SvPokemonWorkflowService.UsesEvolutionItemConversion(method)
+                ? operation with { Argument = conversionState.Encode(argument) }
+                : operation;
     }
 
     private static void ApplyEvolutionEdit(PersonalRow row, EvolutionOperation operation)

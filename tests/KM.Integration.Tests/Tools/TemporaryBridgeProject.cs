@@ -36,9 +36,12 @@ internal sealed class TemporaryBridgeProject : IDisposable
         SelectedGame: null,
         PokemonLegendsZASupportFolderPath: PokemonLegendsZASupportFolderPath);
 
-    public static TemporaryBridgeProject Create()
+    public static TemporaryBridgeProject Create(string? directoryPrefix = null)
     {
-        var rootPath = Path.Combine(Path.GetTempPath(), "km-editor-bridge-tests", Guid.NewGuid().ToString("N"));
+        var directoryName = string.IsNullOrWhiteSpace(directoryPrefix)
+            ? Guid.NewGuid().ToString("N")
+            : $"{directoryPrefix}-{Guid.NewGuid():N}";
+        var rootPath = Path.Combine(Path.GetTempPath(), "km-editor-bridge-tests", directoryName);
         Directory.CreateDirectory(rootPath);
 
         return new TemporaryBridgeProject(rootPath);

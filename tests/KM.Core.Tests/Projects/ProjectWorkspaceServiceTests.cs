@@ -45,6 +45,26 @@ public sealed class ProjectWorkspaceServiceTests
     }
 
     [Fact]
+    public void OpenReusesSnapshotUntilValidationClearsTheMemoryCache()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var service = new ProjectWorkspaceService();
+
+        var first = service.Open(temp.Paths);
+        var second = service.Open(temp.Paths);
+
+        Assert.Same(first, second);
+
+        _ = service.Validate(temp.Paths);
+        var refreshed = service.Open(temp.Paths);
+
+        Assert.NotSame(first, refreshed);
+        Assert.NotEqual(first.Id, refreshed.Id);
+    }
+
+    [Fact]
     public void RefreshFileGraphReturnsEmptyGraphWhenBasePathsCannotOpen()
     {
         using var temp = TemporaryProjectFolders.Create();

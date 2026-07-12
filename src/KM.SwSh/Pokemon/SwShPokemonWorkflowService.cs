@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Core.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Moves;
@@ -13,6 +14,8 @@ namespace KM.SwSh.Pokemon;
 
 public sealed class SwShPokemonWorkflowService
 {
+    private readonly ProjectWorkflowMemoryCache<SwShPokemonWorkflow> memoryCache = new();
+
     public const string PersonalDataPath = SwShPersonalTable.PersonalDataRelativePath;
     public const string LearnsetDataPath = SwShPokemonLearnsetTable.LearnsetDataRelativePath;
     public const string EvolutionDataDirectory = SwShEvolutionSet.EvolutionDataRelativeDirectory;
@@ -340,6 +343,24 @@ public sealed class SwShPokemonWorkflowService
     public SwShPokemonWorkflow Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
+
+        if (memoryCache.TryGet(project.Paths, out var cachedWorkflow))
+        {
+            return cachedWorkflow!;
+        }
+
+        var workflow = LoadUncached(project);
+        memoryCache.Set(project.Paths, workflow);
+        return workflow;
+    }
+
+    public void ClearMemoryCache()
+    {
+        memoryCache.Clear();
+    }
+
+    private SwShPokemonWorkflow LoadUncached(OpenedProject project)
+    {
 
         var summary = CreateSummary(project);
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);

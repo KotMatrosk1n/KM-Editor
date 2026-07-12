@@ -31,6 +31,7 @@ using KM.Api.Trades;
 using KM.Api.Trainers;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
+using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.Formats.Executable;
 using KM.SwSh.BagHook;
@@ -38,8 +39,10 @@ using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.ExeFs;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.IvScreen;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
+using KM.SwSh.Workflows;
 using KM.Tools.Bridge;
 using System.Buffers.Binary;
 using System.Text.Json;
@@ -388,6 +391,40 @@ public sealed class ProjectBridgeDispatcherTests
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal("Growl", move.MoveName);
             });
+    }
+
+    [Fact]
+    public void ValidateProjectClearsTheReusablePokemonWorkflowSnapshot()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var paths = ProjectBridgeMapper.ToCore(temp.Paths with { OutputRootPath = null });
+        var workspace = new ProjectWorkspaceService();
+        var service = new SwShPokemonWorkflowService();
+        var workflowFacade = new SwShWorkflowService(
+            workspace,
+            pokemonWorkflowService: service);
+        var dispatcher = new ProjectBridgeDispatcher(
+            projectWorkspaceService: workspace,
+            pokemonEditSessionService: new SwShPokemonEditSessionService(workspace, service),
+            swShWorkflowService: workflowFacade);
+
+        var first = service.Load(workspace.Open(paths));
+        var second = service.Load(workspace.Open(paths));
+
+        Assert.Same(first, second);
+
+        var validationJson = SerializeRequest(
+            KmCommandNames.ValidateProject,
+            new ValidateProjectRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-clear-pokemon-memory-cache");
+        var validation = DeserializeResponse<ValidateProjectResponse>(dispatcher.Dispatch(validationJson));
+        Assert.Null(validation.Error);
+        var refreshed = service.Load(workspace.Open(paths));
+
+        Assert.NotSame(first, refreshed);
+        Assert.Equal(first.Pokemon.Count, refreshed.Pokemon.Count);
     }
 
     [Fact]
