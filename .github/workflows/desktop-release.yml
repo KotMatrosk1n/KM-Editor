@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  checks: read
 
 jobs:
   windows:
@@ -30,6 +31,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -107,9 +110,55 @@ jobs:
         shell: pwsh
         run: dotnet restore .\KM.Editor.slnx
 
-      - name: Run release validation
+      - name: Verify release source passed validation
         shell: pwsh
-        run: pnpm test:fast
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $parentLine = (git show -s --format='%P' $env:GITHUB_SHA).Trim()
+          $parents = @($parentLine -split '\s+' | Where-Object { $_ })
+          if ($parents.Count -ne 2) {
+            throw "Release source '$env:GITHUB_SHA' must be a validated pull request merge commit."
+          }
+
+          $validatedCommit = $parents[1]
+          git diff --quiet $validatedCommit $env:GITHUB_SHA --
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release source '$env:GITHUB_SHA' does not match validated pull request head '$validatedCommit'."
+          }
+
+          $responseJson = gh api `
+            --method GET `
+            -H 'Accept: application/vnd.github+json' `
+            "repos/$env:GITHUB_REPOSITORY/commits/$validatedCommit/check-runs?per_page=100"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not read validation checks for '$validatedCommit'."
+          }
+
+          $checkRuns = @(($responseJson | ConvertFrom-Json).check_runs)
+          $requiredChecks = @(
+            'Validation / Desktop',
+            'Validation / Core and formats',
+            'Validation / Sword and Shield general',
+            'Validation / Sword and Shield other cleanup hooks',
+            'Validation / Sword and Shield other behavior hooks',
+            'Validation / Scarlet and Violet integration',
+            'Validation / Pokemon Legends Z-A integration',
+            'Validation / Shared bridge integration'
+          )
+
+          foreach ($requiredCheck in $requiredChecks) {
+            $successfulRuns = @($checkRuns | Where-Object {
+              $_.name -eq $requiredCheck -and
+              $_.status -eq 'completed' -and
+              $_.conclusion -eq 'success'
+            })
+            if ($successfulRuns.Count -eq 0) {
+              throw "Required check '$requiredCheck' did not pass for '$validatedCommit'."
+            }
+          }
+
+          Write-Host "Release source matches validated pull request head $validatedCommit."
 
       - name: Build desktop packages
         shell: pwsh
