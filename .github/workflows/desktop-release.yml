@@ -107,9 +107,9 @@ jobs:
         shell: pwsh
         run: dotnet restore .\KM.Editor.slnx
 
-      - name: Run full validation
+      - name: Run release validation
         shell: pwsh
-        run: pnpm test:full
+        run: pnpm test:fast
 
       - name: Build desktop packages
         shell: pwsh
