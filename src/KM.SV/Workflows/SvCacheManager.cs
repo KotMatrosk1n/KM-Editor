@@ -41,6 +41,13 @@ public sealed class SvCacheManager
     private static readonly TimeSpan OrphanTempFileAge = TimeSpan.FromMinutes(10);
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly EnumerationOptions RecursiveCacheEnumeration = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = true,
+        RecurseSubdirectories = true,
+        ReturnSpecialDirectories = false,
+    };
     private readonly string cacheRoot;
     private readonly object syncRoot = new();
     private SvCacheSourceFingerprint? retainedIndexSource;
@@ -1842,7 +1849,7 @@ public sealed class SvCacheManager
         }
 
         long total = 0;
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(path, "*", RecursiveCacheEnumeration))
         {
             try
             {

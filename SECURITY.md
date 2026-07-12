@@ -2,43 +2,53 @@
 
 ## Supported versions
 
-Security fixes target the latest public KM Editor release.
+Security fixes target the latest public KM Editor release. Older releases are not guaranteed to receive backports.
 
-Please update to the newest version before reporting old behavior unless you can also reproduce the issue on the latest release.
+Before reporting an issue from an older version, update to the latest release and check whether the behavior still occurs. If updating is unsafe because of the suspected vulnerability, say so in the private report.
 
-Older releases are not guaranteed to receive backports.
+## Report security issues privately
 
-## What counts as security
+Use [GitHub Private Vulnerability Reporting](https://github.com/KotMatrosk1n/KM-Editor/security/advisories/new) for suspected vulnerabilities. Please do not open a public issue, discussion, or pull request containing exploit details.
 
-Please treat the following as security issues:
+If private reporting is unavailable, open a detail-free public issue stating only that you need a private security contact. Do not include the vulnerability, affected files, or reproduction details there.
 
-1. Release installer, updater, or download tampering.
-2. Unsafe update behavior.
-3. Path traversal or writing outside the selected output folder.
-4. Deleting or modifying base dump files.
-5. Cleanup or uninstall removing files KM Editor did not create or cannot prove it owns.
-6. Leaking local paths, private files, save data, tokens, or sensitive diagnostics.
-7. Malformed project data causing file corruption.
-8. Anything that could trick users into sharing copyrighted or private files.
+## What belongs in a security report
 
-## What is usually not security
+Security issues are problems that cross a trust, privacy, or ownership boundary. Examples include:
 
-Normal crashes, wrong Pokemon data, incorrect item behavior, bad trainer edits, encounter mistakes, UI glitches, missing docs, and gameplay balance bugs are usually regular bugs.
+* Installer, updater, signature, or release download tampering.
+* Path traversal or writes outside the output location chosen by the user.
+* Modification of base project files that KM Editor promises to treat as read only.
+* Cleanup or uninstall deleting files KM Editor does not own.
+* Unintended command execution or unsafe handling of untrusted project data.
+* Exposure of credentials, signing material, private files, personal information, or sensitive local paths.
+* A dependency vulnerability that is reachable through KM Editor.
 
-They still matter. Please report them with the normal issue templates.
+File corruption is a security concern when it crosses one of those boundaries or can destroy unrelated user data. Incorrect generated values limited to KM Editor's own output are generally correctness bugs, even when they can crash the game.
 
-## Reporting
+## What is normally a regular bug
 
-Use GitHub private vulnerability reporting when available.
+Crashes, incorrect Pokemon data, gameplay behavior, unsupported mod combinations, editor display problems, slow operations, missing features, and documentation errors usually belong in the normal issue templates.
 
-If private vulnerability reporting is not available, open a minimal public issue that says a security report is needed, without posting exploit details. You can also contact a maintainer through their public GitHub profile.
+When in doubt, report privately. The maintainer can move a report to the normal bug process without exposing sensitive details.
 
-Please include the KM Editor version, operating system, affected area, safe reproduction steps, and what files or user data could be affected.
+## What to include
 
-Do not attach ROMs, NSPs, game dumps, private saves, tokens, personal data, or copyrighted assets.
+A useful security report contains:
 
-## Handling
+* The affected KM Editor version, or commit when testing source.
+* The affected component and the security impact.
+* Safe, minimal reproduction steps.
+* The files, locations, or user data that could be affected.
+* Any conditions required for exploitation.
+* A suggested fix or mitigation, if you have one.
 
-Security reports are reviewed based on risk and user impact. Public details may wait until a fix is released.
+Use synthetic examples wherever possible. Do not attach game dumps, executable game files, copyrighted assets, private saves, credentials, signing keys, access tokens, or personal information. Redact local account names and unrelated path details from logs and screenshots.
 
-Please do not exploit the issue against other users or pressure people to share private files while testing.
+## Coordinated handling
+
+The maintainer will confirm the report, assess impact and affected versions, and coordinate a fix and disclosure when appropriate. Public details may wait until users have a safe release available.
+
+Please allow reasonable time for investigation before public disclosure. Do not test against another person's files or system, maintain access after proving the issue, disrupt release services, or pressure users to share private data.
+
+KM Editor does not promise a bug bounty or payment for security research unless the maintainer explicitly offers one in writing.

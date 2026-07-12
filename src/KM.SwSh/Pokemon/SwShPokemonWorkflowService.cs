@@ -1440,8 +1440,7 @@ public sealed class SwShPokemonWorkflowService
             targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
         var relative = Path.GetRelativePath(outputRoot, targetPath);
 
-        return relative.StartsWith("..", StringComparison.Ordinal)
-            || Path.IsPathRooted(relative)
+        return PathContainment.IsOutsideRoot(relative)
             ? null
             : targetPath;
     }

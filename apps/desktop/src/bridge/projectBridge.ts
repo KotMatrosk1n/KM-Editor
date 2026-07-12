@@ -40,12 +40,6 @@ import {
   type LoadDynamaxAdventuresWorkflowResponse,
   type PreviewDynamaxAdventureDefaultsRequest,
   type PreviewDynamaxAdventureDefaultsResponse,
-  type PlanDynamaxAdventureSeedRequest,
-  type PlanDynamaxAdventureSeedResponse,
-  type SearchDynamaxAdventureSeedRequest,
-  type SearchDynamaxAdventureSeedResponse,
-  type SetDynamaxAdventureSaveSeedRequest,
-  type SetDynamaxAdventureSaveSeedResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadMovesWorkflowRequest,
@@ -158,10 +152,6 @@ import {
   type UpdateDynamaxAdventureFieldResponse,
   type UpdateMoveFieldRequest,
   type UpdateMoveFieldResponse,
-  type UpdateEncounterSlotFieldRequest,
-  type UpdateEncounterSlotFieldResponse,
-  type UpdatePlacementObjectFieldRequest,
-  type UpdatePlacementObjectFieldResponse,
   type UpdateBehaviorEntryFieldRequest,
   type UpdateBehaviorEntryFieldResponse,
   type UpdateRaidBattleSlotFieldRequest,
@@ -204,9 +194,6 @@ import {
   loadRentalPokemonWorkflowResponseSchema,
   loadDynamaxAdventuresWorkflowResponseSchema,
   previewDynamaxAdventureDefaultsResponseSchema,
-  planDynamaxAdventureSeedResponseSchema,
-  searchDynamaxAdventureSeedResponseSchema,
-  setDynamaxAdventureSaveSeedResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
@@ -264,8 +251,6 @@ import {
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionResponseSchema,
   updatePokemonLearnsetResponseSchema,
-  updateEncounterSlotFieldResponseSchema,
-  updatePlacementObjectFieldResponseSchema,
   updateBehaviorEntryFieldResponseSchema,
   updateRaidBattleSlotFieldResponseSchema,
   updateTeraRaidFieldResponseSchema,
@@ -372,15 +357,6 @@ export type ProjectBridge = {
   previewDynamaxAdventureDefaults: (
     request: PreviewDynamaxAdventureDefaultsRequest
   ) => Promise<PreviewDynamaxAdventureDefaultsResponse>;
-  planDynamaxAdventureSeed: (
-    request: PlanDynamaxAdventureSeedRequest
-  ) => Promise<PlanDynamaxAdventureSeedResponse>;
-  searchDynamaxAdventureSeed: (
-    request: SearchDynamaxAdventureSeedRequest
-  ) => Promise<SearchDynamaxAdventureSeedResponse>;
-  setDynamaxAdventureSaveSeed: (
-    request: SetDynamaxAdventureSaveSeedRequest
-  ) => Promise<SetDynamaxAdventureSaveSeedResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
@@ -575,9 +551,6 @@ export type ProjectBridge = {
     request: UpdateDynamaxAdventureFieldRequest
   ) => Promise<UpdateDynamaxAdventureFieldResponse>;
   updateMoveField: (request: UpdateMoveFieldRequest) => Promise<UpdateMoveFieldResponse>;
-  updateEncounterSlotField: (
-    request: UpdateEncounterSlotFieldRequest
-  ) => Promise<UpdateEncounterSlotFieldResponse>;
   updateRaidBattleSlotField: (
     request: UpdateRaidBattleSlotFieldRequest
   ) => Promise<UpdateRaidBattleSlotFieldResponse>;
@@ -593,9 +566,6 @@ export type ProjectBridge = {
   updateRaidBonusRewardField: (
     request: UpdateRaidBonusRewardFieldRequest
   ) => Promise<UpdateRaidBonusRewardFieldResponse>;
-  updatePlacementObjectField: (
-    request: UpdatePlacementObjectFieldRequest
-  ) => Promise<UpdatePlacementObjectFieldResponse>;
   updateBehaviorEntryField: (
     request: UpdateBehaviorEntryFieldRequest
   ) => Promise<UpdateBehaviorEntryFieldResponse>;
@@ -897,27 +867,6 @@ export function createProjectBridge(
         kmCommandNames.previewDynamaxAdventureDefaults,
         request,
         previewDynamaxAdventureDefaultsResponseSchema
-      ),
-    planDynamaxAdventureSeed: (request) =>
-      sendProjectBridgeRequest(
-        transport,
-        kmCommandNames.planDynamaxAdventureSeed,
-        request,
-        planDynamaxAdventureSeedResponseSchema
-      ),
-    searchDynamaxAdventureSeed: (request) =>
-      sendProjectBridgeRequest(
-        transport,
-        kmCommandNames.searchDynamaxAdventureSeed,
-        request,
-        searchDynamaxAdventureSeedResponseSchema
-      ),
-    setDynamaxAdventureSaveSeed: (request) =>
-      sendProjectBridgeRequest(
-        transport,
-        kmCommandNames.setDynamaxAdventureSaveSeed,
-        request,
-        setDynamaxAdventureSaveSeedResponseSchema
       ),
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -1261,13 +1210,6 @@ export function createProjectBridge(
         request,
         updatePokemonEvolutionResponseSchema
       ),
-    updateEncounterSlotField: (request) =>
-      sendProjectBridgeRequest(
-        transport,
-        kmCommandNames.updateEncounterSlotField,
-        request,
-        updateEncounterSlotFieldResponseSchema
-      ),
     updateRaidBattleSlotField: (request) =>
       sendProjectBridgeRequest(
         transport,
@@ -1302,13 +1244,6 @@ export function createProjectBridge(
         kmCommandNames.updateRaidBonusRewardField,
         request,
         updateRaidBonusRewardFieldResponseSchema
-      ),
-    updatePlacementObjectField: (request) =>
-      sendProjectBridgeRequest(
-        transport,
-        kmCommandNames.updatePlacementObjectField,
-        request,
-        updatePlacementObjectFieldResponseSchema
       ),
     updateBehaviorEntryField: (request) =>
       sendProjectBridgeRequest(

@@ -40,17 +40,22 @@ public sealed class SwShGameTextFile
         var initialKey = BinaryPrimitives.ReadUInt32LittleEndian(data[0x08..]);
         var sectionOffset = BinaryPrimitives.ReadUInt32LittleEndian(data[0x0C..]);
 
-        if (sectionCount != 1 || initialKey != 0 || sectionOffset > int.MaxValue)
+        if (sectionCount != 1
+            || initialKey != 0
+            || sectionOffset < HeaderSize
+            || sectionOffset > int.MaxValue
+            || sectionOffset > data.Length - sizeof(uint)
+            || totalLength > int.MaxValue)
         {
             throw new InvalidDataException("Text file header is not a supported Sword/Shield text table.");
         }
 
-        if (sectionOffset + totalLength != data.Length)
+        var sectionStart = (int)sectionOffset;
+        if ((int)totalLength != data.Length - sectionStart)
         {
             throw new InvalidDataException("Text file section length does not match the file length.");
         }
 
-        var sectionStart = (int)sectionOffset;
         var sectionLength = BinaryPrimitives.ReadUInt32LittleEndian(data[sectionStart..]);
         if (sectionLength != totalLength)
         {
@@ -59,7 +64,7 @@ public sealed class SwShGameTextFile
 
         var lineTableStart = sectionStart + sizeof(uint);
         var lineTableLength = checked(lineCount * LineEntrySize);
-        if (lineTableStart + lineTableLength > data.Length)
+        if (lineTableLength > data.Length - lineTableStart)
         {
             throw new InvalidDataException("Text file line table extends past the end of the file.");
         }
@@ -72,9 +77,13 @@ public sealed class SwShGameTextFile
             var length = BinaryPrimitives.ReadUInt16LittleEndian(data[(entryOffset + 0x04)..]);
             var flags = BinaryPrimitives.ReadUInt16LittleEndian(data[(entryOffset + 0x06)..]);
             var byteLength = checked(length * sizeof(ushort));
-            var textStart = sectionStart + textOffset;
+            if (textOffset < 0 || textOffset > data.Length - sectionStart)
+            {
+                throw new InvalidDataException($"Text line {i} points outside the file.");
+            }
 
-            if (textOffset < 0 || textStart < sectionStart || textStart + byteLength > data.Length)
+            var textStart = sectionStart + textOffset;
+            if (byteLength > data.Length - textStart)
             {
                 throw new InvalidDataException($"Text line {i} points outside the file.");
             }

@@ -10,9 +10,9 @@ assignees: ""
 
 Describe the player visible goal.
 
-# Where does the player see it?
+# Game and location
 
-Example: Pokemon summary, wild encounters, trainer battle, bag, shop, raid, startup, overworld.
+Select the affected game or games and describe where the player sees the result.
 
 # Why is this useful?
 
@@ -20,7 +20,7 @@ Describe the modding use case.
 
 # Known files or references
 
-If you know relevant files, offsets, tools, or examples, list them here.
+If you know relevant public documentation or relative game paths, list them. Do not post private research files, full dumps, or executable data.
 
 # How should KM Editor make this safer or easier?
 
@@ -32,4 +32,4 @@ Screenshots, mockups, and examples are welcome. Keep it focused on behavior.
 
 # File safety
 
-Do not attach ROMs, NSPs, game dumps, private saves, tokens, personal data, or copyrighted assets.
+Do not attach game dumps, executable game files, private saves, credentials, signing material, personal data, or complete generated mods.

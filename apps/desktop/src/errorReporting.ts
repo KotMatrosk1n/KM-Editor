@@ -24,6 +24,7 @@ const errorKindPrefixes = {
 } as const satisfies Record<ReportableErrorKind, string>;
 
 const reportedGlobalErrorCodes = new Set<string>();
+const maximumRememberedGlobalErrorCodes = 100;
 let uninstallGlobalErrorHandlers: (() => void) | null = null;
 
 export function createReportableError(
@@ -117,8 +118,23 @@ function showGlobalReportableError(
     return;
   }
 
-  reportedGlobalErrorCodes.add(report.code);
+  rememberBoundedValue(
+    reportedGlobalErrorCodes,
+    report.code,
+    maximumRememberedGlobalErrorCodes
+  );
   window.alert(formatReportableErrorMessage(report));
+}
+
+function rememberBoundedValue(values: Set<string>, value: string, maximumSize: number) {
+  if (values.size >= maximumSize) {
+    const oldestValue = values.values().next().value;
+    if (oldestValue !== undefined) {
+      values.delete(oldestValue);
+    }
+  }
+
+  values.add(value);
 }
 
 function toUnknownErrorMessage(error: unknown, fallbackMessage: string) {

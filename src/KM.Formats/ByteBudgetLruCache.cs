@@ -4,7 +4,7 @@ namespace KM.Formats;
 
 /// <summary>
 /// Retains recently used values without allowing large binary buffers to grow without bound.
-/// A single value larger than the configured budget is retained so the caller can finish using it.
+/// Values larger than the configured budget are returned by their caller but are not retained.
 /// </summary>
 internal sealed class ByteBudgetLruCache<TKey, TValue>
     where TKey : notnull
@@ -46,15 +46,19 @@ internal sealed class ByteBudgetLruCache<TKey, TValue>
             Remove(key, existing);
         }
 
-        var recencyNode = recency.AddLast(key);
-        entries.Add(key, new CacheEntry(value, retainedBytes, recencyNode));
-        RetainedBytes = checked(RetainedBytes + retainedBytes);
-
-        while (RetainedBytes > maxRetainedBytes && entries.Count > 1)
+        if (retainedBytes > maxRetainedBytes)
         {
-            var oldestNode = recency.First!;
+            return;
+        }
+
+        while (RetainedBytes > maxRetainedBytes - retainedBytes && recency.First is { } oldestNode)
+        {
             Remove(oldestNode.Value, entries[oldestNode.Value]);
         }
+
+        var recencyNode = recency.AddLast(key);
+        entries.Add(key, new CacheEntry(value, retainedBytes, recencyNode));
+        RetainedBytes += retainedBytes;
     }
 
     public void Clear()

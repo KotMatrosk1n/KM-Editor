@@ -20,8 +20,8 @@ If you have wording in mind, add it here.
 
 # Screenshots
 
-Add screenshots if they help.
+Add a cropped screenshot if it helps. Redact account names, local paths, notifications, and unrelated applications.
 
 # File safety
 
-Do not attach ROMs, NSPs, game dumps, private saves, tokens, personal data, or copyrighted assets.
+Do not attach game dumps, executable game files, private saves, credentials, signing material, personal data, or complete generated mods.

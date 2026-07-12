@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Buffers.Binary;
+using System.Globalization;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 
@@ -523,7 +524,7 @@ public sealed class ProjectValidator
             return;
         }
 
-        var selectedTitleId = GetTitleId(selectedGame).ToString("X16");
+        var selectedTitleId = GetTitleId(selectedGame).ToString("X16", CultureInfo.InvariantCulture);
         if (string.Equals(folderName, selectedTitleId, StringComparison.OrdinalIgnoreCase))
         {
             outputRoot.AddDiagnostic(
@@ -535,7 +536,10 @@ public sealed class ProjectValidator
 
         var otherGame = ProjectGameMetadata.All.FirstOrDefault(info =>
             info.Game != selectedGame
-            && string.Equals(folderName, info.TitleId.ToString("X16"), StringComparison.OrdinalIgnoreCase));
+            && string.Equals(
+                folderName,
+                info.TitleId.ToString("X16", CultureInfo.InvariantCulture),
+                StringComparison.OrdinalIgnoreCase));
         if (otherGame is not null)
         {
             outputRoot.Status = ProjectPathStatus.Unsafe;

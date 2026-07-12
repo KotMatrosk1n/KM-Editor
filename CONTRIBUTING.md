@@ -1,77 +1,101 @@
 # Contributing to KM Editor
 
-## Welcome
+KM Editor supports Pokemon Sword and Shield, Pokemon Scarlet and Violet, and Pokemon Legends Z-A mod projects. Contributions are welcome across the desktop app, backend workflows, binary formats, tests, documentation, localization, and issue reports.
 
-KM Editor is a desktop app and toolchain for editing Pokemon Sword and Shield mod projects. Contributions can be code, tests, docs, wiki fixes, bug reports, release checks, UX feedback, or verified notes about in game behavior.
+The best contribution is not necessarily the largest one. A focused fix that preserves someone else's project is worth far more than a heroic rewrite that eats their output folder.
 
-Good contributions make the editor safer, clearer, or more useful for people working with real mod projects.
+## Choose the right starting point
 
-## Before opening an issue
+Before opening a new issue, search the existing issues and check the [wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki). Then choose the route that best matches the problem:
 
-Please check whether a similar issue already exists. If you open a new one, include the details that would help someone reproduce the problem.
+* **Bug Report** for editor failures, crashes, incorrect loading, or incorrect output.
+* **In Game Behavior** when KM Editor wrote output successfully but the game behaved differently.
+* **Feature Request** for a new workflow, field, format, or safety improvement.
+* **Docs or Wiki** for unclear, missing, or outdated documentation.
+* **Security Policy** for private reports involving trust boundaries, unsafe file access, private data, or release integrity.
 
-Useful details include the KM Editor version, Sword or Shield, the editor page or workflow involved, what you expected, what happened, and any diagnostics KM Editor showed.
+Please reproduce bugs on the latest public release when possible. Older releases may already contain a fixed problem.
 
-Screenshots are welcome when they explain the problem. Do not upload ROMs, NSPs, game dumps, copyrighted assets, private saves, tokens, or personal information.
+## Write a report someone can reproduce
 
-## Bug reports
+A useful report includes:
 
-For bugs, please say where the failure happened.
+* The KM Editor version and selected game.
+* The editor or workflow involved.
+* Whether the record came from the base project or an existing output override.
+* The exact actions that led to the problem.
+* What you expected and what happened instead.
+* Any diagnostic code or message shown by KM Editor.
+* Whether the problem happens with a clean output folder, when that test is safe and practical.
 
-Common stages are load, edit, stage, review, save, cleanup, uninstall, and launch in game.
+Screenshots are useful when they show the relevant control, value, or error. Crop out account names, local paths, and unrelated applications first.
 
-If generated LayeredFS output changed unexpectedly, say which kind of output changed and what you expected KM Editor to preserve. File names are useful. Copyrighted game files are not.
-
-## In game behavior reports
-
-Sometimes KM Editor saves a change successfully, but Sword or Shield does something unexpected. Those reports are useful.
-
-Please describe what you edited in KM Editor, what changed in game, what did not change in game, and where the player sees the behavior.
-
-If it matters, include whether this was a new save or an existing save, and whether you verified that the generated mod folder was loaded.
+Do not upload game dumps, executable files, copyrighted game assets, private saves, credentials, signing keys, access tokens, personal data, or complete generated mod packages. Usually a file name, diagnostic message, and short description are enough to start an investigation.
 
 ## Feature requests
 
-Start with the user goal. What are you trying to change in game, where does the player see it, and why should KM Editor support it?
+Start with the player visible or editor visible goal. Explain what you are trying to change, where the result appears, and why the current workflow falls short.
 
-Known files, offsets, references, screenshots, or examples from other tools can help. Keep the request focused on behavior and workflow, not unrelated community disputes.
-
-Good feature requests explain how KM Editor can make the task safer or easier than manual editing.
-
-## Pull requests
-
-Keep changes scoped. A small clear pull request is easier to review than a large change that mixes unrelated work.
-
-For fixes, explain the root cause and the user impact. For features, explain the workflow being improved.
-
-Backend edit or apply behavior should have relevant .NET tests. Visible desktop workflow changes should have desktop tests. Broad changes should run broader checks.
-
-Do not commit local paths, private handoff notes, generated dumps, game files, release artifacts, private saves, tokens, or copyrighted assets.
-
-If behavior changes, update docs or the wiki when needed.
+Known file names, fields, small byte patterns, public technical references, and screenshots can help. Clearly label confirmed behavior and guesses. Do not include material copied from another project unless its license permits reuse and the contribution records that provenance appropriately.
 
 ## Development setup
 
-KM Editor uses .NET, Node with pnpm, and Tauri for the desktop app.
+KM Editor uses .NET, React, TypeScript, pnpm, Rust, and Tauri. The exact supported versions and platform prerequisites are listed in the [README](README.md).
 
-Common validation commands:
+After cloning the repository, install the locked dependencies and restore the .NET solution:
 
 ```powershell
-dotnet test .\KM.Editor.slnx --no-restore
-pnpm --dir apps/desktop typecheck
-pnpm --dir apps/desktop test:run
-pnpm --dir apps/desktop build
-git diff --check
+pnpm install --frozen-lockfile
+dotnet restore .\KM.Editor.slnx
 ```
 
-Use focused tests while developing, then broaden validation when the change touches shared behavior, file writes, cleanup, or user visible workflows.
+Start the complete desktop development environment with `pnpm tauri:dev`. The root `package.json` remains the source of truth for development, build, and test scripts.
 
-## Modding safety
+The repository provides three main test scopes:
 
-Base dump paths are read only. Output folders are where generated files belong.
+| Scope | Use it for |
+| --- | --- |
+| `test:changed` | The normal development loop. It selects tests from tracked and untracked source changes. |
+| `test:fast` | A broader confidence check without the full suite cost. |
+| `test:full` | Broad changes, shared infrastructure, and release preparation. |
 
-Cleanup and uninstall code must remove only data KM Editor wrote or can prove it owns. Avoid deleting whole LayeredFS files unless ownership is clear.
+Use `test:changed:print` to inspect the selected slice before running it. Pull requests also run bounded validation jobs automatically.
 
-If a workflow edits shared files, explain how it preserves unrelated user edits and other KM Editor workflows.
+## Make changes that are safe to review
 
-Clear notes and tests make future maintenance easier.
+Keep pull requests focused. Explain the user impact and root cause for a fix, or the full user workflow for a feature.
+
+Game families have separate data formats and workflow services. Similar controls do not prove that the underlying fields behave the same way. Verify each game that a change claims to support.
+
+For anything that writes or removes files:
+
+* Treat base project paths as read only.
+* Write generated data only under the selected output root.
+* Preserve fields and files the current workflow does not own.
+* Make cleanup and uninstall remove only output KM Editor can prove it owns.
+* Fail safely when input structure, version, or ownership cannot be verified.
+
+Avoid unrelated formatting or generated file churn. Do not commit local output, caches, build artifacts, scratch research, private fixtures, internal notes, local filesystem paths, credentials, signing material, or copyrighted assets.
+
+External projects may be useful research references, but their source, namespaces, generated types, and comments do not automatically belong in KM Editor. Follow their licenses, document permitted provenance for maintainers, and use KM owned names in original project code.
+
+## Tests and documentation
+
+Add the smallest test that proves a new rule or prevents a meaningful regression. Prefer backend or format tests for binary behavior, focused component tests for visible controls, and only a small shell test when navigation or application wiring is the behavior under test.
+
+Temporary probes and highly specific debugging tests should be removed when their job is done. Keep durable coverage only where it continues to protect behavior that could realistically regress. Do not duplicate the same assertion across every layer.
+
+Update public documentation when behavior, supported fields, project setup, output ownership, or troubleshooting steps change. Public text should describe shipped behavior, not private research history or local development context.
+
+## Pull request checklist
+
+Before opening a pull request, make sure:
+
+* The change is scoped and unrelated local work is excluded.
+* Changed behavior is covered at the cheapest useful test layer.
+* Temporary files, diagnostics, and private data are absent from the diff.
+* Output ownership and cleanup behavior are explained when relevant.
+* User documentation is updated when the workflow changed.
+* The contribution is compatible with the project's [GPL 3.0 only license](LICENSE).
+
+By submitting a contribution, you agree that it may be distributed under the repository's license.

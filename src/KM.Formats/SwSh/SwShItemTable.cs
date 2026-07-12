@@ -239,7 +239,7 @@ public sealed class SwShItemTable
         }
 
         var rowsLength = checked(maxRowIndex * RowSize);
-        if (rowsStart + rowsLength > data.Length)
+        if (rowsLength > data.Length || rowsStart > data.Length - rowsLength)
         {
             throw new InvalidDataException("Item table row data extends past the end of the file.");
         }
@@ -564,7 +564,10 @@ public sealed class SwShItemTable
             throw new ArgumentOutOfRangeException(nameof(record), $"Item {record.ItemId} is not linked to a TM/TR slot.");
         }
 
-        if (machineTableOffset < 0 || machineTableOffset + (MachineTableCount * MachineTableEntrySize) > data.Length)
+        var machineTableLength = MachineTableCount * MachineTableEntrySize;
+        if (machineTableOffset < 0
+            || machineTableLength > data.Length
+            || machineTableOffset > data.Length - machineTableLength)
         {
             throw new InvalidDataException("Item machine move table is not available in this item data file.");
         }

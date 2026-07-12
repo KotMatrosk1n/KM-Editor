@@ -213,7 +213,7 @@ public sealed class SvTypeChartWorkflowService
             outputRoot,
             targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
         var pathFromOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
-        if (pathFromOutputRoot.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(pathFromOutputRoot))
+        if (PathContainment.IsOutsideRoot(pathFromOutputRoot))
         {
             return null;
         }

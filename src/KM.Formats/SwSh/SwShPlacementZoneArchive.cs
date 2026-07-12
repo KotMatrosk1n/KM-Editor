@@ -153,7 +153,7 @@ public sealed record SwShPlacementZoneArchive(
 
     public byte[] Write()
     {
-        var writer = new PlacementFlatBufferWriter();
+        using var writer = new PlacementFlatBufferWriter();
         return writer.Write(this);
     }
 
@@ -759,7 +759,7 @@ public sealed record SwShPlacementZoneArchive(
                         tableReferenceOffset: tableReferenceOffset);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(field), $"Placement raw field kind '{field.Kind}' is not supported.");
+                    throw new InvalidDataException($"Placement raw field kind '{field.Kind}' is not supported.");
             }
         }
     }
@@ -2640,7 +2640,7 @@ public sealed record SwShPlacementZoneArchive(
         }
     }
 
-    private sealed class PlacementFlatBufferWriter
+    private sealed class PlacementFlatBufferWriter : IDisposable
     {
         private readonly MemoryStream stream = new();
         private readonly BinaryWriter writer;
@@ -2648,6 +2648,11 @@ public sealed record SwShPlacementZoneArchive(
         public PlacementFlatBufferWriter()
         {
             writer = new BinaryWriter(stream);
+        }
+
+        public void Dispose()
+        {
+            writer.Dispose();
         }
 
         public byte[] Write(SwShPlacementZoneArchive archive)

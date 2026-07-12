@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.FpsPatch;
@@ -16,6 +17,14 @@ public sealed class SwShModMergerWorkflowService
     private const string WorkflowId = "modMerger";
     private const string WorkflowDomain = "workflow.modMerger";
     private const string RomFsPrefix = "romfs/";
+
+    private static readonly EnumerationOptions RecursiveEnumeration = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = false,
+        RecurseSubdirectories = true,
+        ReturnSpecialDirectories = false,
+    };
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
 
@@ -737,7 +746,7 @@ public sealed class SwShModMergerWorkflowService
         try
         {
             return Directory
-                .EnumerateFiles(romFsRoot, "*", SearchOption.AllDirectories)
+                .EnumerateFiles(romFsRoot, "*", RecursiveEnumeration)
                 .Select(path => CreateFileRecord(romFsRoot, path))
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -1527,7 +1536,7 @@ public sealed class SwShModMergerWorkflowService
         var outputRoot = Path.GetFullPath(outputRootPath);
         var targetPath = Path.GetFullPath(Path.Combine(outputRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
         var relativeToOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
-        if (relativeToOutputRoot.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relativeToOutputRoot))
+        if (PathContainment.IsOutsideRoot(relativeToOutputRoot))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

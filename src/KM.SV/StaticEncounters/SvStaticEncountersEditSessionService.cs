@@ -13,7 +13,6 @@ namespace KM.SV.StaticEncounters;
 internal sealed class SvStaticEncountersEditSessionService
 {
     private const int AlcremieSpeciesId = (int)global::pml.common.DevID.DEV_MAHOIPPU;
-    private const string WorkflowName = "Static Encounters";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvStaticEncountersWorkflowService staticEncountersWorkflowService;

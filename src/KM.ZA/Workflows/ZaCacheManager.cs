@@ -41,6 +41,13 @@ public sealed class ZaCacheManager
     private static readonly TimeSpan OrphanTempFileAge = TimeSpan.FromMinutes(10);
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly EnumerationOptions RecursiveCacheEnumeration = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = true,
+        RecurseSubdirectories = true,
+        ReturnSpecialDirectories = false,
+    };
     private static readonly IReadOnlyList<string> WarmupTextLanguages =
         ZaGameTextLanguage.SupportedMessageLanguages;
     private static readonly IReadOnlyList<string> CoreWarmupVirtualPaths = CreateCoreWarmupVirtualPaths();
@@ -1820,7 +1827,7 @@ public sealed class ZaCacheManager
         }
 
         long total = 0;
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(path, "*", RecursiveCacheEnumeration))
         {
             try
             {

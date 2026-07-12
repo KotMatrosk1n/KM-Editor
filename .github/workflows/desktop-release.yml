@@ -131,38 +131,42 @@ jobs:
               Rename-Item -LiteralPath $_.FullName -NewName $safeName
             }
 
-          $updateInstaller = Get-ChildItem $releaseDir -File -Filter '*.exe' |
-            Sort-Object Name |
-            Select-Object -First 1
+          $nsisInstallers = @(Get-ChildItem $releaseDir -File -Filter '*.exe' | Sort-Object Name)
+          $msiInstallers = @(Get-ChildItem $releaseDir -File -Filter '*.msi' | Sort-Object Name)
 
-          if ($null -eq $updateInstaller) {
-            $updateInstaller = Get-ChildItem $releaseDir -File -Filter '*.msi' |
-              Sort-Object Name |
-              Select-Object -First 1
+          if ($nsisInstallers.Count -ne 1) {
+            throw "Expected exactly one NSIS updater installer, found $($nsisInstallers.Count)."
           }
 
-          if ($null -eq $updateInstaller) {
-            throw 'Could not find a Windows installer for latest.json.'
-          }
-
-          $signaturePath = Join-Path $releaseDir "$($updateInstaller.Name).sig"
-          if (-not (Test-Path -LiteralPath $signaturePath)) {
-            throw "Could not find updater signature '$($updateInstaller.Name).sig'."
+          if ($msiInstallers.Count -ne 1) {
+            throw "Expected exactly one MSI updater installer, found $($msiInstallers.Count)."
           }
 
           $version = $env:RELEASE_TAG.TrimStart('v')
-          $assetName = [System.Uri]::EscapeDataString($updateInstaller.Name)
-          $assetUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$assetName"
-          $signature = (Get-Content -Path $signaturePath -Raw).Trim()
+          function New-UpdaterPlatform($installer) {
+            $signaturePath = Join-Path $releaseDir "$($installer.Name).sig"
+            if (-not (Test-Path -LiteralPath $signaturePath)) {
+              throw "Could not find updater signature '$($installer.Name).sig'."
+            }
+
+            $assetName = [System.Uri]::EscapeDataString($installer.Name)
+            return [ordered]@{
+              signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
+              url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$assetName"
+            }
+          }
+
+          $nsisPlatform = New-UpdaterPlatform $nsisInstallers[0]
+          $msiPlatform = New-UpdaterPlatform $msiInstallers[0]
           $latestJson = [ordered]@{
             version = $version
             notes = "See the GitHub Release notes for KM Editor $env:RELEASE_TAG."
             pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             platforms = [ordered]@{
-              'windows-x86_64' = [ordered]@{
-                signature = $signature
-                url = $assetUrl
-              }
+              'windows-x86_64-nsis' = $nsisPlatform
+              'windows-x86_64-msi' = $msiPlatform
+              # Older clients only know the generic key, so keep NSIS as their fallback.
+              'windows-x86_64' = $nsisPlatform
             }
           }
 

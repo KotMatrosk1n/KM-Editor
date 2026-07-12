@@ -26,6 +26,19 @@ node_modules/
 ## Tauri updater signing keys
 /apps/desktop/src-tauri/updater.key
 /apps/desktop/src-tauri/updater.key.pub
+*.key
+*.key.pub
+*.pem
+*.pfx
+*.p12
+
+## Native binaries and release packages
+*.dll
+*.dylib
+*.so
+*.exe
+*.msi
+*.pdb
 
 ## Test and coverage output
 TestResults/
@@ -51,14 +64,19 @@ playwright-report/
 
 ## Scratch and temporary work
 /.cache/
+/.codex-remote-attachments/
 /.scratch/
 /.tmp/
 /scratch/
 /tmp/
 /temp/
-/scratch-ghidra-da/
-/scratch-ghidra-scripts/
-/scratch-royal-candy-inspect/
+/scratch-*/
+
+## Root-level research and transfer artifacts
+/*.docx
+/*.zip
+/*.7z
+/*.rar
 
 ## Local workspace notes
 /handoff/

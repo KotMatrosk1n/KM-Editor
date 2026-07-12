@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const rawArgs = process.argv.slice(2);
@@ -46,6 +46,7 @@ const commandKeys = new Set();
 const dotnetLogger = '--logger "console;verbosity=minimal"';
 const appTimeout = '--testTimeout=30000';
 const tauriRustTests = 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-tauri-rust-tests.ps1';
+const broadChangeFileThreshold = 20;
 const swshHookFilters = Object.freeze({
   royalAll: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy',
   royalCleanup: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName~RoyalCandy&FullyQualifiedName~Cleanup',
@@ -447,6 +448,14 @@ function addChangedCommands() {
     console.log(`  ${file}`);
   }
 
+  if (relevantFiles.length >= broadChangeFileThreshold) {
+    console.log(
+      `Broad change detected (${relevantFiles.length} relevant files); using the bounded full validation plan instead of accumulating overlapping focused commands.`,
+    );
+    addFullCommands();
+    return;
+  }
+
   for (const file of relevantFiles) {
     mapChangedFile(file);
   }
@@ -538,6 +547,16 @@ function mapDesktopChange(file) {
   }
 
   if (file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
+    if (!existsSync(path.join(repoRoot, file))) {
+      add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
+      add(
+        'desktop-tests',
+        'Run all desktop Vitest tests after a desktop test was removed',
+        `pnpm --dir apps/desktop test:run ${appTimeout}`,
+      );
+      return;
+    }
+
     add(`desktop-test:${file}`, `Run changed desktop test ${file}`, `pnpm --dir apps/desktop test:run ${toDesktopPath(file)} ${appTimeout}`);
     return;
   }
@@ -934,9 +953,9 @@ function getChangedFiles() {
   const files = new Set();
   const mergeBase = execCapture('git merge-base HEAD origin/master').trim() || 'HEAD';
   const commandsToRead = [
-    `git diff --name-only --diff-filter=ACMRTUXB ${mergeBase}...HEAD`,
-    'git diff --name-only --diff-filter=ACMRTUXB',
-    'git diff --cached --name-only --diff-filter=ACMRTUXB',
+    `git diff --name-only --diff-filter=ACMRTUXBD ${mergeBase}...HEAD`,
+    'git diff --name-only --diff-filter=ACMRTUXBD',
+    'git diff --cached --name-only --diff-filter=ACMRTUXBD',
     'git ls-files --others --exclude-standard',
   ];
 
