@@ -128,7 +128,7 @@ internal sealed class ZaEncountersWorkflowService
         ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels)
     {
-        var pokemonRows = ZaPokemonDataDocument.Parse(encounterSource.Bytes)
+        var pokemonRows = ZaEncounterDataDocument.Parse(encounterSource.Bytes)
             .Entries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
             .GroupBy(entry => entry.Id!, StringComparer.Ordinal)

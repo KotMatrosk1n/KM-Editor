@@ -3353,7 +3353,7 @@ public sealed class PokemonLegendsZABridgeTests
         using var temp = CreatePokemonLegendsZAProject();
         temp.WriteBaseRomFsFile(ZaDataPaths.TrainerDataArray, CreateTrainerDataArray(signedDefaults: true));
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray(signedDefaults: true));
-        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreatePokemonDataArray(signedDefaults: true));
+        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreateEncounterDataArray(signedDefaults: true));
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
@@ -3652,6 +3652,16 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(2, written.DevNo);
         Assert.Equal(25, written.MinLevel);
         Assert.Equal(30, written.MaxLevel);
+        Assert.Equal(33, written.WazaList!.Value.Waza1);
+        Assert.Equal(17, written.HoldItem!.Value.HoldItem);
+        Assert.Equal(101, written.StrengthenValue!.Value.Hp);
+        var drop = written.ItemDropInfoList(0);
+        Assert.NotNull(drop);
+        Assert.Equal("drop_table_001", drop.Value.ItemTableId);
+        Assert.Equal(75U, drop.Value.DropProbability);
+        Assert.Equal(2, drop.Value.DropConditionListLength);
+        Assert.Equal(7, drop.Value.DropConditionList(0));
+        Assert.Equal(8, drop.Value.DropConditionList(1));
         Assert.DoesNotContain(ZaDataPaths.PokemonDataArray, apply.Payload.ApplyResult.WrittenFiles);
     }
 
@@ -3927,9 +3937,15 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(42, written.MinLevel);
         Assert.Equal(42, written.MaxLevel);
         Assert.Equal(45, written.WazaList!.Value.Waza1);
+        Assert.Equal(17, written.HoldItem!.Value.HoldItem);
+        Assert.Equal(101, written.StrengthenValue!.Value.Hp);
+        Assert.Equal("drop_table_001", written.ItemDropInfoList(0)!.Value.ItemTableId);
         var wild = ReadEncountData(temp, "wild_ignore");
         Assert.Equal(1, wild.DevNo);
         Assert.Equal(20, wild.MinLevel);
+        Assert.Equal(33, wild.WazaList!.Value.Waza1);
+        Assert.Equal(101, wild.StrengthenValue!.Value.Hp);
+        Assert.Equal(75U, wild.ItemDropInfoList(0)!.Value.DropProbability);
     }
 
     [Fact]
@@ -4572,7 +4588,7 @@ public sealed class PokemonLegendsZABridgeTests
         bool includeAlphaAndRawSpawners = false)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
-        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreatePokemonDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreateEncounterDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonSpawnerDataArray,
@@ -4591,7 +4607,7 @@ public sealed class PokemonLegendsZABridgeTests
     private static void WriteStaticEncounterFixture(TemporaryBridgeProject temp)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
-        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreatePokemonDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreateEncounterDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
         temp.WriteBaseRomFsFile(
@@ -4777,6 +4793,74 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateEncounterDataArray(bool signedDefaults = false)
+    {
+        var builder = new FlatBufferBuilder(4096);
+        var giftScene = CreateEncounterData(
+            builder,
+            "main_init_poke_1",
+            level: 0,
+            heldItem: 0,
+            move1: -1,
+            move2: -1,
+            ivHp: -1,
+            ivAttack: -1,
+            sex: 0,
+            speciesId: 1);
+        var ignored = CreateEncounterData(
+            builder,
+            "wild_ignore",
+            level: 20,
+            heldItem: 17,
+            move1: 33,
+            move2: 0,
+            ivHp: 1,
+            ivAttack: 2,
+            sex: 1,
+            speciesId: 1);
+        var trade = CreateEncounterData(
+            builder,
+            "sub_tradepoke_bulbasaur",
+            level: 5,
+            heldItem: 4,
+            move1: signedDefaults ? -1 : 33,
+            move2: 45,
+            ivHp: 31,
+            ivAttack: 30,
+            sex: signedDefaults ? -1 : 1,
+            speciesId: 1);
+        var staticEncounter = CreateEncounterData(
+            builder,
+            "static_event_ivysaur",
+            level: 35,
+            heldItem: 17,
+            move1: signedDefaults ? -1 : 33,
+            move2: 45,
+            ivHp: 10,
+            ivAttack: 11,
+            sex: signedDefaults ? -1 : 1,
+            speciesId: 2);
+        var giftPlayable = CreateEncounterData(
+            builder,
+            "test_encount_init_poke_0",
+            level: 5,
+            heldItem: 4,
+            move1: signedDefaults ? -1 : 33,
+            move2: 45,
+            ivHp: 31,
+            ivAttack: 30,
+            sex: signedDefaults ? -1 : 1,
+            speciesId: 1);
+        var rootVector = ZaEncounterDataDb.CreateRootVector(
+            builder,
+            [giftScene, ignored, trade, staticEncounter, giftPlayable]);
+        var db = ZaEncounterDataDb.Create(builder, rootVector);
+        var valuesVector = ZaEncounterDataDbArray.CreateValuesVector(builder, [db]);
+        var root = ZaEncounterDataDbArray.Create(builder, valuesVector);
+        ZaEncounterDataDbArray.FinishBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static byte[] CreatePokemonSpawnerDataArray(bool includeAlphaAndRawSpawners = false)
     {
         var builder = new FlatBufferBuilder(4096);
@@ -4951,6 +5035,70 @@ public sealed class PokemonLegendsZABridgeTests
             talentValueOffset: talentValue,
             wazaListOffset: wazaList,
             holdItemOffset: holdItemOffset);
+    }
+
+    private static Offset<ZaEncounterDataRow> CreateEncounterData(
+        FlatBufferBuilder builder,
+        string id,
+        int level,
+        int heldItem,
+        int move1,
+        int move2,
+        int ivHp,
+        int ivAttack,
+        int sex,
+        int speciesId)
+    {
+        var idOffset = builder.CreateString(id);
+        var talentValue = ZaPokemonDataTalentValue.Create(
+            builder,
+            hp: ivHp,
+            atk: ivAttack,
+            def: 29,
+            spAtk: 28,
+            spDef: 27,
+            agi: 26);
+        var strengthenValue = ZaPokemonDataTalentValue.Create(
+            builder,
+            hp: 101,
+            atk: 102,
+            def: 103,
+            spAtk: 104,
+            spDef: 105,
+            agi: 106);
+        var wazaList = ZaPokemonDataWazaList.Create(builder, move1, move2, waza3: 0, waza4: 0);
+        var holdItemOffset = ZaPokemonDataHoldItem.Create(builder, heldItem);
+        var dropTableId = builder.CreateString("drop_table_001");
+        var dropConditions = ZaEncounterItemDropInfo.CreateDropConditionListVector(builder, [7, 8]);
+        var drop = ZaEncounterItemDropInfo.Create(
+            builder,
+            dropTableId,
+            dropConditions,
+            dropProbability: 75,
+            minCount: 1,
+            maxCount: 3);
+        var drops = ZaEncounterDataRow.CreateItemDropInfoListVector(builder, [drop]);
+
+        return ZaEncounterDataRow.Create(
+            builder,
+            idOffset,
+            devNo: speciesId,
+            minLevel: level,
+            maxLevel: level,
+            sex: sex,
+            formNo: 0,
+            rare: ZaPokemonDataRareNotShiny,
+            tokusei: 2,
+            seikaku: 4,
+            talentScale: 2,
+            talentVNum: 0,
+            oyabunProbability: 0.25F,
+            oyabunAdditionalLevel: 10,
+            talentValueOffset: talentValue,
+            strengthenValueOffset: strengthenValue,
+            wazaListOffset: wazaList,
+            holdItemOffset: holdItemOffset,
+            itemDropInfoListOffset: drops);
     }
 
     private static byte[] CreateTrainerDataArray(
@@ -5576,9 +5724,33 @@ public sealed class PokemonLegendsZABridgeTests
         return ReadPokemonLikeData(temp, ZaDataPaths.PokemonDataArray, id, "PokemonData");
     }
 
-    private static ZaPokemonDataRow ReadEncountData(TemporaryBridgeProject temp, string id)
+    private static ZaEncounterDataRow ReadEncountData(TemporaryBridgeProject temp, string id)
     {
-        return ReadPokemonLikeData(temp, ZaDataPaths.EncountDataArray, id, "EncountData");
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            ZaDataPaths.EncountDataArray.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(outputPath));
+        var table = ZaEncounterDataDbArray.GetRootAsZaEncounterDataDbArray(
+            new ByteBuffer(File.ReadAllBytes(outputPath)));
+        for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
+        {
+            var group = table.Values(groupIndex);
+            if (group is null)
+            {
+                continue;
+            }
+
+            for (var rowIndex = 0; rowIndex < group.Value.RootLength; rowIndex++)
+            {
+                var row = group.Value.Root(rowIndex);
+                if (row is not null && row.Value.Id == id)
+                {
+                    return row.Value;
+                }
+            }
+        }
+
+        throw new InvalidOperationException($"EncountData row {id} was not written.");
     }
 
     private static ZaPokemonDataRow ReadPokemonLikeData(
