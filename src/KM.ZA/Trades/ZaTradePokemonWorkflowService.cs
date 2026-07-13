@@ -32,10 +32,6 @@ internal sealed class ZaTradePokemonWorkflowService
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string FlawlessIvCountField = "flawlessIvCount";
 
-    internal const int TalentModeRandom = 0;
-    internal const int TalentModeGuaranteedPerfectCount = 1;
-    internal const int TalentModeFixedValues = 2;
-
     private const string WorkflowLabel = "Trade Pokemon";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A received trade Pokemon payloads; trade requests are handled by event scripts.";
 
@@ -293,7 +289,7 @@ internal sealed class ZaTradePokemonWorkflowService
     {
         if (entry.TalentValue is not { } talentValue)
         {
-            return new ZaTradePokemonIvsRecord(0, 0, 0, 0, 0, 0);
+            return new ZaTradePokemonIvsRecord(-1, -1, -1, -1, -1, -1);
         }
 
         return new ZaTradePokemonIvsRecord(
@@ -307,28 +303,25 @@ internal sealed class ZaTradePokemonWorkflowService
 
     private static int? ReadFlawlessIvCount(ZaPokemonDataEntry entry)
     {
-        return entry.TalentScale switch
-        {
-            TalentModeRandom => 0,
-            TalentModeGuaranteedPerfectCount => entry.TalentVNum,
-            TalentModeFixedValues => null,
-            _ => entry.TalentValue is null ? 0 : null,
-        };
+        return ZaPokemonDataIvEncoding.ReadFlawlessIvCount(entry);
     }
 
     private static string FormatIvSummary(ZaPokemonDataEntry entry, ZaTradePokemonIvsRecord ivs)
     {
-        return entry.TalentScale switch
+        var flawlessIvCount = ReadFlawlessIvCount(entry);
+        if (flawlessIvCount == 0)
         {
-            TalentModeRandom => "Random IVs",
-            TalentModeGuaranteedPerfectCount => entry.TalentVNum == 1
+            return "Random IVs";
+        }
+
+        if (flawlessIvCount > 0)
+        {
+            return flawlessIvCount == 1
                 ? "1 guaranteed perfect IV"
-                : $"{entry.TalentVNum.ToString(CultureInfo.InvariantCulture)} guaranteed perfect IVs",
-            TalentModeFixedValues => FormatFixedIvSummary(ivs),
-            _ => entry.TalentValue is null
-                ? $"Talent mode {entry.TalentScale.ToString(CultureInfo.InvariantCulture)}"
-                : FormatFixedIvSummary(ivs),
-        };
+                : $"{flawlessIvCount.Value.ToString(CultureInfo.InvariantCulture)} guaranteed perfect IVs";
+        }
+
+        return FormatFixedIvSummary(ivs);
     }
 
     private static string FormatFixedIvSummary(ZaTradePokemonIvsRecord ivs)

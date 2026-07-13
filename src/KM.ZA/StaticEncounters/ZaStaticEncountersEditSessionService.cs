@@ -737,17 +737,7 @@ internal sealed class ZaStaticEncountersEditSessionService
 
     private static void SetIvPreset(ZaPokemonDataEntry row, int value)
     {
-        if (value <= 0)
-        {
-            row.TalentScale = ZaStaticEncountersWorkflowService.TalentModeRandom;
-            row.TalentVNum = 0;
-            row.TalentValue = null;
-            return;
-        }
-
-        row.TalentScale = ZaStaticEncountersWorkflowService.TalentModeGuaranteedPerfectCount;
-        row.TalentVNum = value;
-        row.TalentValue = null;
+        ZaPokemonDataIvEncoding.SetPreset(row, value);
     }
 
     private static void SetIv(
@@ -756,9 +746,7 @@ internal sealed class ZaStaticEncountersEditSessionService
         Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
     {
         _ = value;
-        row.TalentScale = ZaStaticEncountersWorkflowService.TalentModeFixedValues;
-        row.TalentVNum = 0;
-        row.TalentValue = update(row.TalentValue ?? ZaPokemonDataStatsRecord.Zero);
+        ZaPokemonDataIvEncoding.SetFixedIvs(row, update);
     }
 
     private static string FormatDisplayValue(int value, ZaStaticEncounterEditableField field)

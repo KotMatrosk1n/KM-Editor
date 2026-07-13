@@ -698,17 +698,7 @@ internal sealed class ZaGiftPokemonEditSessionService
 
     private static void SetIvPreset(ZaPokemonDataEntry row, int value)
     {
-        if (value <= 0)
-        {
-            row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeGameDefaultRandom;
-            row.TalentVNum = 0;
-            row.TalentValue = ZaGiftPokemonWorkflowService.CreateRandomIvStats();
-            return;
-        }
-
-        row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeFixedOrGuaranteed;
-        row.TalentVNum = value;
-        row.TalentValue = ZaGiftPokemonWorkflowService.CreateRandomIvStats();
+        ZaPokemonDataIvEncoding.SetPreset(row, value);
     }
 
     private static void SetIv(
@@ -717,9 +707,7 @@ internal sealed class ZaGiftPokemonEditSessionService
         Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
     {
         _ = value;
-        row.TalentScale = ZaGiftPokemonWorkflowService.TalentModeFixedOrGuaranteed;
-        row.TalentVNum = 0;
-        row.TalentValue = update(row.TalentValue ?? ZaGiftPokemonWorkflowService.CreateRandomIvStats());
+        ZaPokemonDataIvEncoding.SetFixedIvs(row, update);
     }
 
     private static string GetOptionLabel(
