@@ -46,7 +46,8 @@ public sealed record EncounterSlotRecordDto(
     string? EncounterDataId = null,
     string? EncounterKind = null,
     bool IsAlpha = false,
-    string? EncounterRecordId = null);
+    string? EncounterRecordId = null,
+    bool? ContributesToWildZoneCompletion = null);
 
 public sealed record EncounterTableRecordDto(
     string TableId,

@@ -640,7 +640,8 @@ public static class ZaBridgeMapper
             slot.EncounterDataId,
             slot.EncounterKind,
             slot.IsAlpha,
-            slot.EncounterRecordId);
+            slot.EncounterRecordId,
+            slot.ContributesToWildZoneCompletion);
     }
 
     private static EncounterProvenanceDto ToDto(ZaEncounterProvenance provenance)

@@ -5849,6 +5849,16 @@ h2 {
   text-align: left;
 }
 
+.za-encounter-group-row-with-completion {
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(180px, 0.9fr)
+    minmax(80px, 0.4fr)
+    minmax(96px, 0.55fr)
+    minmax(138px, 0.7fr);
+  min-width: 790px;
+}
+
 .za-encounter-placement-row {
   display: grid;
   grid-template-columns:
@@ -5867,6 +5877,16 @@ h2 {
   border: 0;
   border-bottom: 1px solid #26344d;
   text-align: left;
+}
+
+.za-encounter-placement-row-with-completion {
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(64px, 0.3fr)
+    minmax(96px, 0.45fr)
+    minmax(220px, 1.3fr)
+    minmax(138px, 0.7fr);
+  min-width: 790px;
 }
 
 .za-encounter-group-row:last-child,
@@ -5944,6 +5964,49 @@ button.sv-encounter-condition-row:hover {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.za-wild-zone-completion-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #ead7a6;
+}
+
+.za-wild-zone-completion-note svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #d7b35b;
+}
+
+.za-wild-zone-completion-note strong {
+  color: #ffe79a;
+}
+
+.za-wild-zone-completion-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 7px;
+  color: #ffe79a;
+  background: rgb(210 163 39 / 16%);
+  border: 1px solid rgb(210 163 39 / 46%);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.za-wild-zone-completion-status-excluded {
+  color: #d6c9a4;
+  background: rgb(101 83 39 / 20%);
+  border-color: rgb(183 151 75 / 38%);
+}
+
+.za-wild-zone-completion-status-mixed {
+  color: var(--color-warning);
 }
 
 .sv-encounter-facet-grid {
@@ -6145,6 +6208,18 @@ button.sv-encounter-condition-row:hover {
   font-weight: 900;
   line-height: 1.15;
   white-space: nowrap;
+}
+
+.slot-tab-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+}
+
+.slot-tab-button .slot-tab-pills .za-wild-zone-completion-status {
+  width: auto;
 }
 
 .read-only-slot-grid {

@@ -8,6 +8,7 @@ import {
   createChangePlanResponseSchema,
   createBridgeRequestSchema,
   createBridgeResponseSchema,
+  encounterSlotRecordSchema,
   kmCommandNames,
   listWorkflowsRequestSchema,
   listWorkflowsResponseSchema,
@@ -158,6 +159,30 @@ const fileGraph = {
 } as const;
 
 describe('bridge contracts', () => {
+  it('accepts the nullable Z-A Wild Zone completion role on encounter slots', () => {
+    const slot = {
+      form: 0,
+      levelMax: 10,
+      levelMin: 5,
+      slot: 0,
+      species: 'Fletchling',
+      speciesId: 661,
+      timeOfDay: null,
+      weather: 'Any weather',
+      weight: 100
+    };
+
+    expect(
+      [true, false, null].map(
+        (contributesToWildZoneCompletion) =>
+          encounterSlotRecordSchema.parse({
+            ...slot,
+            contributesToWildZoneCompletion
+          }).contributesToWildZoneCompletion
+      )
+    ).toEqual([true, false, null]);
+  });
+
   it('validates known command request envelopes', () => {
     const requestSchema = createBridgeRequestSchema(openProjectRequestSchema);
 

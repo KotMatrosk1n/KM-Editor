@@ -17,7 +17,15 @@
     "settings.language.ukrainian": "Українська",
     "settings.language.ukrainian.description": "Usa ucraniano para el texto de la interfaz de KM Editor.",
     "settings.language.chinese": "简体中文",
-    "settings.language.chinese.description": "Usa chino para el texto de la interfaz de KM Editor."
+    "settings.language.chinese.description": "Usa chino para el texto de la interfaz de KM Editor.",
+    "za.wildZoneCompletion.column": "Silueta del mapa",
+    "za.wildZoneCompletion.detailLabel": "Silueta del mapa",
+    "za.wildZoneCompletion.note.contributing": "Las ranuras incluidas añaden esta especie de Pokemon a la tarjeta de progreso de la Zona Salvaje. El juego muestra cada especie una sola vez, por lo que los generadores duplicados y las formas alternativas comparten una silueta.",
+    "za.wildZoneCompletion.note.excluded": "Estas ranuras están marcadas individualmente en el mapa y no añaden ninguna silueta a la tarjeta de progreso de la Zona Salvaje.",
+    "za.wildZoneCompletion.note.mixed": "Solo las ubicaciones incluidas añaden esta especie de Pokemon a la tarjeta de progreso de la Zona Salvaje. Las ubicaciones marcadas en el mapa no añaden otra silueta.",
+    "za.wildZoneCompletion.status.contributing": "Incluido",
+    "za.wildZoneCompletion.status.excluded": "No incluido",
+    "za.wildZoneCompletion.status.mixed": "Mixto"
   },
   "literals": {
     "% (": "% (",

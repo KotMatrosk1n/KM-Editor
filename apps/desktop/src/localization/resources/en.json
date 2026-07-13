@@ -17,7 +17,15 @@
     "settings.language.ukrainian": "Українська",
     "settings.language.ukrainian.description": "Use Ukrainian for KM Editor interface text.",
     "settings.language.chinese": "简体中文",
-    "settings.language.chinese.description": "Use Simplified Chinese for KM Editor interface text."
+    "settings.language.chinese.description": "Use Simplified Chinese for KM Editor interface text.",
+    "za.wildZoneCompletion.column": "Map silhouette",
+    "za.wildZoneCompletion.detailLabel": "Map silhouette",
+    "za.wildZoneCompletion.note.contributing": "Included slots add this Pokemon species to the Wild Zone completion card. The game shows each species once, so duplicate spawners and alternate forms share one silhouette.",
+    "za.wildZoneCompletion.note.excluded": "These slots are individually map-marked and do not add a silhouette to the Wild Zone completion card.",
+    "za.wildZoneCompletion.note.mixed": "Only included placements add this Pokemon species to the Wild Zone completion card. Map-marked placements do not add another silhouette.",
+    "za.wildZoneCompletion.status.contributing": "Included",
+    "za.wildZoneCompletion.status.excluded": "Not included",
+    "za.wildZoneCompletion.status.mixed": "Mixed"
   },
   "literals": {
     "% (": "% (",
