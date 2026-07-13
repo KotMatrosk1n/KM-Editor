@@ -693,26 +693,14 @@ internal sealed class ZaTradePokemonEditSessionService
 
     private static void SetIvPreset(ZaPokemonDataEntry row, int value)
     {
-        if (value <= 0)
-        {
-            row.TalentScale = ZaTradePokemonWorkflowService.TalentModeRandom;
-            row.TalentVNum = 0;
-            row.TalentValue = null;
-            return;
-        }
-
-        row.TalentScale = ZaTradePokemonWorkflowService.TalentModeGuaranteedPerfectCount;
-        row.TalentVNum = value;
-        row.TalentValue = null;
+        ZaPokemonDataIvEncoding.SetPreset(row, value);
     }
 
     private static void SetIv(
         ZaPokemonDataEntry row,
         Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
     {
-        row.TalentScale = ZaTradePokemonWorkflowService.TalentModeFixedValues;
-        row.TalentVNum = 0;
-        row.TalentValue = update(row.TalentValue ?? ZaPokemonDataStatsRecord.Zero);
+        ZaPokemonDataIvEncoding.SetFixedIvs(row, update);
     }
 
     private static string GetOptionLabel(

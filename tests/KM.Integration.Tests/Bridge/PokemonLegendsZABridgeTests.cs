@@ -3339,12 +3339,64 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(18, written.MaxLevel);
         Assert.Equal(17, written.HoldItem!.Value.HoldItem);
         Assert.Equal(45, written.WazaList!.Value.Waza1);
-        Assert.Equal(2, written.TalentScale);
+        Assert.Equal(128, written.TalentScale);
+        Assert.Equal(0, written.TalentVNum);
         Assert.Equal(31, written.TalentValue!.Value.Hp);
+        Assert.Equal(30, written.TalentValue!.Value.Atk);
 
         var gift = ReadGiftPokemonData(temp, "main_init_poke_1");
         Assert.Equal(0, gift.MinLevel);
         Assert.Equal(0, gift.MaxLevel);
+    }
+
+    [Fact]
+    public void PokemonLegendsZATradePokemonRandomIvPresetWritesCurrentSentinel()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTradePokemonFixture(temp);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdateTradePokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonFields,
+            new UpdateTradePokemonFieldsRequest(
+                paths,
+                Session: null,
+                [new TradePokemonFieldUpdateDto(0, "flawlessIvCount", "0")]),
+            "request-za-trade-pokemon-random-ivs");
+        AssertSuccess(update);
+        var trade = Assert.Single(update.Payload!.Workflow.Trades);
+        Assert.Equal(0, trade.FlawlessIvCount);
+        Assert.Equal("Random IVs", trade.IvSummary);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-trade-pokemon-random-ivs-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-trade-pokemon-random-ivs-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadGiftPokemonData(temp, "sub_tradepoke_bulbasaur");
+        Assert.Equal(127, written.TalentScale);
+        Assert.Equal(0, written.TalentVNum);
+        Assert.Equal(-1, written.TalentValue!.Value.Hp);
+        Assert.Equal(-1, written.TalentValue!.Value.Atk);
+        Assert.Equal(-1, written.TalentValue!.Value.Def);
+        Assert.Equal(-1, written.TalentValue!.Value.SpAtk);
+        Assert.Equal(-1, written.TalentValue!.Value.SpDef);
+        Assert.Equal(-1, written.TalentValue!.Value.Agi);
     }
 
     [Fact]
@@ -3960,6 +4012,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(35, encounter.Level);
         Assert.Equal(17, encounter.HeldItemId);
         Assert.Equal("Potion", encounter.HeldItem);
+        Assert.Null(encounter.FlawlessIvCount);
+        Assert.Contains("HP 10", encounter.IvSummary);
         Assert.Contains(encounter.SupportedFields, field => field == "species");
         Assert.Contains(workflow.EditableFields, field => field.Field == "move0Id" && field.Label == "Move 1");
 
@@ -3981,18 +4035,31 @@ public sealed class PokemonLegendsZABridgeTests
             new UpdateStaticEncounterFieldRequest(paths, levelUpdate.Payload!.Session, encounter.EncounterIndex, "move0Id", "45"),
             "request-za-static-encounters-move");
         AssertSuccess(moveUpdate);
-        var updatedEncounter = Assert.Single(moveUpdate.Payload!.Workflow.Encounters);
+        var ivUpdate = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(
+                paths,
+                moveUpdate.Payload!.Session,
+                encounter.EncounterIndex,
+                "flawlessIvCount",
+                "3"),
+            "request-za-static-encounters-ivs");
+        AssertSuccess(ivUpdate);
+        var updatedEncounter = Assert.Single(ivUpdate.Payload!.Workflow.Encounters);
         Assert.Equal(1, updatedEncounter.SpeciesId);
         Assert.Equal("Bulbasaur", updatedEncounter.Species);
         Assert.Contains("Bulbasaur", updatedEncounter.Label);
         Assert.DoesNotContain("Ivysaur", updatedEncounter.Label);
         Assert.Equal(42, updatedEncounter.Level);
         Assert.Equal(45, updatedEncounter.Moves[0].MoveId);
+        Assert.Equal(3, updatedEncounter.FlawlessIvCount);
+        Assert.Equal("3 guaranteed perfect IVs", updatedEncounter.IvSummary);
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, moveUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            new CreateChangePlanRequest(paths, ivUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-static-encounters-plan");
         AssertSuccess(plan);
         Assert.True(plan.Payload!.ChangePlan.CanApply);
@@ -4001,7 +4068,7 @@ public sealed class PokemonLegendsZABridgeTests
         var apply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(paths, moveUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            new ApplyChangePlanRequest(paths, ivUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-static-encounters-apply");
         AssertSuccess(apply);
         Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
@@ -4012,6 +4079,14 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(42, written.MaxLevel);
         Assert.Equal(45, written.WazaList!.Value.Waza1);
         Assert.Equal(17, written.HoldItem!.Value.HoldItem);
+        Assert.Equal(128, written.TalentScale);
+        Assert.Equal(3, written.TalentVNum);
+        Assert.Equal(-1, written.TalentValue!.Value.Hp);
+        Assert.Equal(-1, written.TalentValue!.Value.Atk);
+        Assert.Equal(-1, written.TalentValue!.Value.Def);
+        Assert.Equal(-1, written.TalentValue!.Value.SpAtk);
+        Assert.Equal(-1, written.TalentValue!.Value.SpDef);
+        Assert.Equal(-1, written.TalentValue!.Value.Agi);
         Assert.Equal(101, written.StrengthenValue!.Value.Hp);
         Assert.Equal("drop_table_001", written.ItemDropInfoList(0)!.Value.ItemTableId);
         var wild = ReadEncountData(temp, "wild_ignore");
@@ -4847,7 +4922,8 @@ public sealed class PokemonLegendsZABridgeTests
             move2: 45,
             ivHp: 31,
             ivAttack: 30,
-            sex: signedDefaults ? -1 : 1);
+            sex: signedDefaults ? -1 : 1,
+            talentScale: 128);
         var staticEncounter = CreatePokemonData(
             builder,
             "static_event_ivysaur",
@@ -4913,7 +4989,8 @@ public sealed class PokemonLegendsZABridgeTests
             ivHp: 10,
             ivAttack: 11,
             sex: signedDefaults ? -1 : 1,
-            speciesId: 2);
+            speciesId: 2,
+            talentScale: 128);
         var giftPlayable = CreateEncounterData(
             builder,
             "test_encount_init_poke_0",
@@ -5121,7 +5198,9 @@ public sealed class PokemonLegendsZABridgeTests
         int ivHp,
         int ivAttack,
         int sex,
-        int speciesId)
+        int speciesId,
+        int talentScale = 2,
+        int talentVNum = 0)
     {
         var idOffset = builder.CreateString(id);
         var talentValue = ZaPokemonDataTalentValue.Create(
@@ -5164,8 +5243,8 @@ public sealed class PokemonLegendsZABridgeTests
             rare: ZaPokemonDataRareNotShiny,
             tokusei: 2,
             seikaku: 4,
-            talentScale: 2,
-            talentVNum: 0,
+            talentScale: talentScale,
+            talentVNum: talentVNum,
             oyabunProbability: 0.25F,
             oyabunAdditionalLevel: 10,
             talentValueOffset: talentValue,

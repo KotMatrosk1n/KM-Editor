@@ -32,15 +32,6 @@ internal sealed class ZaGiftPokemonWorkflowService
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string FlawlessIvCountField = "flawlessIvCount";
 
-    internal const int TalentModeGameDefaultRandom = 127;
-    internal const int TalentModeFixedOrGuaranteed = 128;
-
-    private const int TalentModeScriptDefault = -1;
-    private const int TalentModeAlphaDefault = 255;
-    private const int LegacyTalentModeRandom = 0;
-    private const int LegacyTalentModeGuaranteedPerfectCount = 1;
-    private const int LegacyTalentModeFixedValues = 2;
-
     private const string WorkflowLabel = "Gift Pokemon";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A scripted gift Pokemon sources.";
 
@@ -376,13 +367,7 @@ internal sealed class ZaGiftPokemonWorkflowService
 
     private static int? ReadFlawlessIvCount(ZaPokemonDataEntry entry)
     {
-        var hasRandomIvValues = HasOnlyRandomIvs(entry.TalentValue);
-        if (IsGuaranteedPerfectCountMode(entry, hasRandomIvValues))
-        {
-            return entry.TalentVNum;
-        }
-
-        return IsRandomIvMode(entry, hasRandomIvValues) ? 0 : null;
+        return ZaPokemonDataIvEncoding.ReadFlawlessIvCount(entry);
     }
 
     private static string FormatIvSummary(ZaPokemonDataEntry entry, ZaGiftPokemonIvsRecord ivs)
@@ -401,46 +386,6 @@ internal sealed class ZaGiftPokemonWorkflowService
         }
 
         return FormatFixedIvSummary(ivs);
-    }
-
-    internal static ZaPokemonDataStatsRecord CreateRandomIvStats()
-    {
-        return new ZaPokemonDataStatsRecord(-1, -1, -1, -1, -1, -1);
-    }
-
-    private static bool IsGuaranteedPerfectCountMode(
-        ZaPokemonDataEntry entry,
-        bool hasRandomIvValues)
-    {
-        return entry.TalentScale == LegacyTalentModeGuaranteedPerfectCount
-            || (hasRandomIvValues
-                && entry.TalentVNum > 0
-                && (entry.TalentScale == TalentModeFixedOrGuaranteed
-                    || entry.TalentScale == TalentModeScriptDefault));
-    }
-
-    private static bool IsRandomIvMode(
-        ZaPokemonDataEntry entry,
-        bool hasRandomIvValues)
-    {
-        return entry.TalentScale == LegacyTalentModeRandom
-            || entry.TalentScale == TalentModeGameDefaultRandom
-            || entry.TalentScale == TalentModeAlphaDefault
-            || (hasRandomIvValues
-                && (entry.TalentScale == TalentModeFixedOrGuaranteed
-                    || entry.TalentScale == TalentModeScriptDefault
-                    || entry.TalentScale == LegacyTalentModeFixedValues));
-    }
-
-    private static bool HasOnlyRandomIvs(ZaPokemonDataStatsRecord? ivs)
-    {
-        return ivs is null
-            || (ivs.HP == -1
-                && ivs.Attack == -1
-                && ivs.Defense == -1
-                && ivs.SpecialAttack == -1
-                && ivs.SpecialDefense == -1
-                && ivs.Speed == -1);
     }
 
     private static string FormatFixedIvSummary(ZaGiftPokemonIvsRecord ivs)
