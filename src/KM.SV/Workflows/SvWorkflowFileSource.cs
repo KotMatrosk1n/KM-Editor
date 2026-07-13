@@ -31,25 +31,18 @@ internal sealed class SvWorkflowFileSource
         if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
         {
             var trinityModManagerPath = CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath);
-            if (File.Exists(trinityModManagerPath))
-            {
-                return new SvWorkflowFile(
-                    normalizedVirtualPath,
-                    relativePath,
-                    File.ReadAllBytes(trinityModManagerPath),
-                    ProjectFileLayer.Layered,
-                    ProjectFileGraphEntryState.LayeredOverride);
-            }
-
             var standalonePath = CombineGraphPath(project.Paths.OutputRootPath, relativePath);
-            if (File.Exists(standalonePath))
+            var looseOutput = SelectLatestLooseOutput(trinityModManagerPath, standalonePath);
+            if (looseOutput is not null)
             {
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(standalonePath),
+                    File.ReadAllBytes(looseOutput.Value.Path),
                     ProjectFileLayer.Layered,
-                    entry?.State ?? ProjectFileGraphEntryState.LayeredOverride);
+                    looseOutput.Value.IsStandalone
+                        ? entry?.State ?? ProjectFileGraphEntryState.LayeredOverride
+                        : ProjectFileGraphEntryState.LayeredOverride);
             }
 
             if (TryReadOutputArchive(project.Paths, normalizedVirtualPath, out var layeredArchiveBytes))
@@ -341,6 +334,27 @@ internal sealed class SvWorkflowFileSource
     private static string CombineGraphPath(string rootPath, string relativePath)
     {
         return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static (string Path, bool IsStandalone)? SelectLatestLooseOutput(
+        string trinityModManagerPath,
+        string standalonePath)
+    {
+        var trinityModManagerExists = File.Exists(trinityModManagerPath);
+        var standaloneExists = File.Exists(standalonePath);
+        if (!trinityModManagerExists)
+        {
+            return standaloneExists ? (standalonePath, true) : null;
+        }
+
+        if (!standaloneExists)
+        {
+            return (trinityModManagerPath, false);
+        }
+
+        return File.GetLastWriteTimeUtc(standalonePath) > File.GetLastWriteTimeUtc(trinityModManagerPath)
+            ? (standalonePath, true)
+            : (trinityModManagerPath, false);
     }
 
     private static bool TryReadOutputArchive(ProjectPaths paths, string virtualPath, out byte[] bytes)
