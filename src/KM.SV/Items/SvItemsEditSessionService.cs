@@ -898,6 +898,8 @@ internal sealed class SvItemsEditSessionService
                 else if (row.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_EVOLUTION)
                 {
                     row.FieldFunctionType = global::FieldFunctionType.FIELDFUNC_NONE;
+                    row.WorkType = global::WorkType.WORKTYPE_OTHER;
+                    row.SetToPoke = false;
                 }
                 break;
             case SvItemsWorkflowService.MachineMoveIdField:
