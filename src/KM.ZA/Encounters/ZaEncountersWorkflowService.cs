@@ -153,7 +153,7 @@ internal sealed class ZaEncountersWorkflowService
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
         var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
-        var tableCountsByLocation = new Dictionary<string, int>(StringComparer.Ordinal);
+        var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
         {
             var db = table.Values(groupIndex);
@@ -176,9 +176,9 @@ internal sealed class ZaEncountersWorkflowService
                     continue;
                 }
 
-                var locationKey = FormatLocationKey(spawner.Value);
+                var displayPosition = displayOrder[(groupIndex, spawnerIndex)];
+                var locationKey = displayPosition.LocationKey;
                 var location = FormatLocation(locationKey, labels);
-                var tableNumber = NextTableNumber(tableCountsByLocation, locationKey);
                 yield return new ZaEncounterTableRecord(
                     CreateTableId(groupIndex, spawnerIndex),
                     location,
@@ -193,7 +193,7 @@ internal sealed class ZaEncountersWorkflowService
                         spawnerSource.FileState),
                     locationKey,
                     GetLocationSort(locationKey),
-                    FormatTableLabel(locationKey, tableNumber, spawner.Value.Id, labels),
+                    FormatTableLabel(locationKey, displayPosition.Ordinal, spawner.Value.Id, labels),
                     FormatTableDetails(slots));
             }
         }
@@ -339,27 +339,9 @@ internal sealed class ZaEncountersWorkflowService
         return string.Create(CultureInfo.InvariantCulture, $"{TableIdPrefix}:{groupIndex}:{spawnerIndex}");
     }
 
-    private static string FormatLocationKey(PokemonSpawnerData spawner)
-    {
-        var objectInfo = FirstAppearanceObject(spawner);
-        var zoneInfo = objectInfo?.ZoneInfo;
-        return ZaLumioseLocationLabels.CreateLocationKey(
-            zoneInfo?.ZoneId,
-            zoneInfo?.VariationId,
-            spawner.Id);
-    }
-
     private static string FormatLocation(string locationKey, ZaTextLabelLookup labels)
     {
         return ZaLumioseLocationLabels.FormatLocation(locationKey, labels.PlaceName, labels.Pokemon);
-    }
-
-    private static int NextTableNumber(IDictionary<string, int> tableCountsByLocation, string locationKey)
-    {
-        tableCountsByLocation.TryGetValue(locationKey, out var current);
-        var next = current + 1;
-        tableCountsByLocation[locationKey] = next;
-        return next;
     }
 
     private static int? GetLocationSort(string locationKey)

@@ -68,10 +68,10 @@ function createZaEncountersWorkflow(): EncountersWorkflow {
       makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 40),
       makeSlot(1, 659, 'Bunnelby', 'encount-data:43', 60)
     ]),
-    makeTable('zone-1-spawner-2', 'Spawner 2', 'a0102_w01', [
+    makeTable('zone-1-spawner-10', 'Spawner 10', 'a0102_w01', [
       makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 50)
     ]),
-    makeTable('zone-1-spawner-3', 'Spawner 3', 'a0102_w01', [
+    makeTable('zone-1-spawner-2', 'Spawner 2', 'a0102_w01', [
       makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 100, true)
     ]),
     makeTable('zone-2-spawner-1', 'Spawner 1', 'a0201_w01', [
@@ -203,14 +203,24 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
 
     const placements = screen.getByRole('table', { name: 'Fletchling linked spawners' });
     expect(within(placements).getAllByRole('row')).toHaveLength(4);
-    const secondPlacement = within(placements).getByRole('row', {
-      name: 'Spawner 2, slot 1, probability 50, Any time, Any weather'
+    const placementRows = within(placements).getAllByRole('row').slice(1);
+    expect(placementRows[0]).toHaveAccessibleName(
+      'Spawner 1, slot 1, probability 40, Any time, Any weather'
+    );
+    expect(placementRows[1]).toHaveAccessibleName(
+      'Spawner 2, slot 1, probability 100, Any time, Any weather, Alpha'
+    );
+    expect(placementRows[2]).toHaveAccessibleName(
+      'Spawner 10, slot 1, probability 50, Any time, Any weather'
+    );
+    const tenthPlacement = within(placements).getByRole('row', {
+      name: 'Spawner 10, slot 1, probability 50, Any time, Any weather'
     });
-    await user.click(secondPlacement);
-    expect(secondPlacement).toHaveAttribute('aria-pressed', 'true');
+    await user.click(tenthPlacement);
+    expect(tenthPlacement).toHaveAttribute('aria-pressed', 'true');
     const spawnerDetail = screen.getByText('Spawner', { selector: 'dt' }).parentElement;
     expect(spawnerDetail).not.toBeNull();
-    expect(within(spawnerDetail!).getByText('Spawner 2')).toBeInTheDocument();
+    expect(within(spawnerDetail!).getByText('Spawner 10')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const minLevel = screen.getByLabelText('Min Level');
@@ -224,7 +234,7 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     expect(screen.getByLabelText('Min Level')).toHaveValue(7);
     expect(
       within(placements).getByRole('row', {
-        name: 'Spawner 3, slot 1, probability 100, Any time, Any weather, Alpha'
+        name: 'Spawner 2, slot 1, probability 100, Any time, Any weather, Alpha'
       })
     ).toBeInTheDocument();
 
