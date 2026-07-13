@@ -23,7 +23,8 @@ public sealed record SvShopInventoryRecord(
     IReadOnlyList<string> SupportedFields,
     string? PriceField,
     bool CanEditPrice,
-    int SourceIndex);
+    int SourceIndex,
+    string RowId);
 
 public sealed record SvShopRecord(
     string ShopId,

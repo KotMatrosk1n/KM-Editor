@@ -1728,6 +1728,7 @@ export const shopInventoryRecordSchema = z.strictObject({
   itemName: z.string(),
   price: z.number().int().nonnegative(),
   priceField: z.string().nullable().default(null),
+  rowId: z.string().nullable().default(null),
   slot: z.number().int().nonnegative(),
   stockLimit: z.number().int().nonnegative().nullable(),
   supportedFields: z.array(z.string()).default([])
@@ -3342,6 +3343,7 @@ export const updateDynamaxAdventureFieldResponseSchema = z.strictObject({ diagno
 export const updateShopInventoryItemRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
+  rowId: z.string().optional(),
   session: editSessionSchema.nullable(),
   shopId: z.string(),
   slot: z.number().int().nonnegative(),

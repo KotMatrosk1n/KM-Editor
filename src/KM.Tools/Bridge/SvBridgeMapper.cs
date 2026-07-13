@@ -1555,6 +1555,7 @@ public static class SvBridgeMapper
             SupportedFields = inventoryItem.SupportedFields,
             PriceField = inventoryItem.PriceField,
             CanEditPrice = inventoryItem.CanEditPrice,
+            RowId = inventoryItem.RowId,
         };
     }
 

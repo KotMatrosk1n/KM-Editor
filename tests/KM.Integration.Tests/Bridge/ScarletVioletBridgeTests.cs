@@ -339,6 +339,180 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletShopInventoryKeepsRowMetadata(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.FriendlyShopLineupDataArray,
+            CreateFriendlyShopLineupDataArray(firstSort: 10, secondSort: 30, includeUnrelatedRow: true));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+        const string removedSourceInventoryValue = """
+            {"version":1,"updateOrder":true,"rows":[{"rowId":"source:1","itemId":2}]}
+            """;
+        const string inventoryValue = """
+            {"version":1,"updateOrder":false,"rows":[{"rowId":"source:0","itemId":4},{"rowId":"source:1","itemId":4}]}
+            """;
+
+        var session = UpdateShop(
+            dispatcher,
+            paths,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "setInventory",
+            value: removedSourceInventoryValue);
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "setInventory",
+            value: inventoryValue);
+        Apply(dispatcher, paths, session);
+
+        var rows = KM.SV.Shops.SvShopsWorkflowService
+            .ReadFriendlyRows(ReadSvOutput(temp, SvDataPaths.FriendlyShopLineupDataArray))
+            .ToArray();
+        Assert.Equal(["shop_00_lineup", "shop_00_lineup", "shop_99_lineup"], rows.Select(row => row.LineupId));
+        Assert.Equal(4, rows[0].ItemId);
+        Assert.Equal(10, rows[0].SortNum);
+        Assert.Equal(CondEnum.NONE, rows[0].ConditionKind);
+        Assert.Equal(4, rows[1].ItemId);
+        Assert.Equal(30, rows[1].SortNum);
+        Assert.Equal(CondEnum.GYMBADGENUM, rows[1].ConditionKind);
+        Assert.Equal(1, rows[1].GymBadgeNum);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletShopInventoryRemainsStableAcrossRepeatedSaves(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+        const string firstInventoryValue = """
+            {"version":1,"updateOrder":true,"rows":[{"rowId":"source:1","itemId":2},{"rowId":"new:1","itemId":4},{"rowId":"source:0","itemId":1}]}
+            """;
+        const string finalInventoryValue = """
+            {"version":1,"updateOrder":false,"rows":[{"rowId":"new:1","itemId":4},{"rowId":"source:1","itemId":2}]}
+            """;
+
+        var session = UpdateShop(
+            dispatcher,
+            paths,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "setInventory",
+            value: firstInventoryValue);
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "conditionKind",
+            value: ((int)CondEnum.SCENARIO).ToString(CultureInfo.InvariantCulture),
+            rowId: "source:0");
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 2,
+            field: "conditionKind",
+            value: ((int)CondEnum.GYMBADGENUM).ToString(CultureInfo.InvariantCulture),
+            rowId: "new:1");
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 3,
+            field: "gymBadgeCount",
+            value: "5",
+            rowId: "source:1");
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "setInventory",
+            value: finalInventoryValue);
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "gymBadgeCount",
+            value: "6",
+            rowId: "source:1");
+
+        Assert.Equal(3, session.PendingEdits.Count);
+        Assert.Single(session.PendingEdits, edit => edit.Field == "setInventory" && edit.NewValue == finalInventoryValue);
+        Assert.Single(session.PendingEdits, edit => edit.RecordId?.Contains("#row:new:1", StringComparison.Ordinal) == true);
+        Assert.Single(session.PendingEdits, edit =>
+            edit.RecordId?.Contains("#row:source:1", StringComparison.Ordinal) == true
+            && edit.Field == "gymBadgeCount"
+            && edit.NewValue == "6");
+        Assert.DoesNotContain(session.PendingEdits, edit => edit.RecordId?.Contains("#row:source:0", StringComparison.Ordinal) == true);
+
+        Apply(dispatcher, paths, session);
+        var rows = KM.SV.Shops.SvShopsWorkflowService
+            .ReadFriendlyRows(ReadSvOutput(temp, SvDataPaths.FriendlyShopLineupDataArray))
+            .Where(row => row.LineupId == "shop_00_lineup")
+            .OrderBy(row => row.SortNum)
+            .ThenBy(row => row.SourceIndex)
+            .ToArray();
+        Assert.Equal([4, 2], rows.Select(row => row.ItemId));
+        Assert.Equal([0, 1], rows.Select(row => row.SortNum));
+        Assert.Equal(CondEnum.GYMBADGENUM, rows[0].ConditionKind);
+        Assert.Equal(CondEnum.GYMBADGENUM, rows[1].ConditionKind);
+        Assert.Equal(6, rows[1].GymBadgeNum);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletLegacyShopInventoryKeepsEditOrder(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var session = UpdateShop(
+            dispatcher,
+            paths,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "itemId",
+            value: "4");
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "setInventory",
+            value: "1,2");
+        Apply(dispatcher, paths, session);
+
+        Assert.Equal(1, ReadFriendlyShopItemId(temp, "shop_00_lineup", slot: 1));
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletChangePlansCanOutputForTrinityModManager(
         ProjectGameDto game,
         ulong titleId)
@@ -4092,12 +4266,16 @@ public sealed class ScarletVioletBridgeTests
         string shopId,
         int slot,
         string field,
-        string value)
+        string value,
+        string? rowId = null)
     {
         var response = Dispatch<UpdateShopInventoryItemResponse>(
             dispatcher,
             KmCommandNames.UpdateShopInventoryItem,
-            new UpdateShopInventoryItemRequest(paths, session, shopId, slot, field, value),
+            new UpdateShopInventoryItemRequest(paths, session, shopId, slot, field, value)
+            {
+                RowId = rowId,
+            },
             "request-sv-shop-update");
 
         AssertSuccess(response);
@@ -4668,16 +4846,19 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateFriendlyShopLineupDataArray()
+    private static byte[] CreateFriendlyShopLineupDataArray(
+        int firstSort = 0,
+        int secondSort = 1,
+        bool includeUnrelatedRow = false)
     {
         var builder = new FlatBufferBuilder(1024);
         var lineupId = builder.CreateString("shop_00_lineup");
-        var rows = new[]
+        var rows = new List<Offset<global::LineupData>>
         {
             global::LineupData.CreateLineupData(
                 builder,
                 lineupId,
-                sortnum: 0,
+                sortnum: firstSort,
                 item: (ItemID)1,
                 itemCondkind: CondEnum.NONE,
                 itemCondvalueOffset: default,
@@ -4685,13 +4866,27 @@ public sealed class ScarletVioletBridgeTests
             global::LineupData.CreateLineupData(
                 builder,
                 lineupId,
-                sortnum: 1,
+                sortnum: secondSort,
                 item: (ItemID)2,
                 itemCondkind: CondEnum.GYMBADGENUM,
                 itemCondvalueOffset: default,
                 gymBadgeNum: 1),
         };
-        var vector = global::LineupDataArray.CreateValuesVector(builder, rows);
+
+        if (includeUnrelatedRow)
+        {
+            var unrelatedLineupId = builder.CreateString("shop_99_lineup");
+            rows.Add(global::LineupData.CreateLineupData(
+                builder,
+                unrelatedLineupId,
+                sortnum: 7,
+                item: (ItemID)1,
+                itemCondkind: CondEnum.SCENARIO,
+                itemCondvalueOffset: default,
+                gymBadgeNum: 0));
+        }
+
+        var vector = global::LineupDataArray.CreateValuesVector(builder, rows.ToArray());
         var root = global::LineupDataArray.CreateLineupDataArray(builder, vector);
         global::LineupDataArray.FinishLineupDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
