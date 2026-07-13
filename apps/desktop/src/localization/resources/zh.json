@@ -17,7 +17,15 @@
     "settings.language.ukrainian": "Українська",
     "settings.language.ukrainian.description": "使用乌克兰文作为 KM Editor 界面文本。",
     "settings.language.chinese": "简体中文",
-    "settings.language.chinese.description": "使用简体中文作为 KM Editor 界面文本。"
+    "settings.language.chinese.description": "使用简体中文作为 KM Editor 界面文本。",
+    "za.wildZoneCompletion.column": "地图剪影",
+    "za.wildZoneCompletion.detailLabel": "地图剪影",
+    "za.wildZoneCompletion.note.contributing": "计入的槽位会将此 Pokemon 种类添加到野生区域完成卡中。游戏对每个种类只显示一次，因此重复的生成点和不同形态共用一个剪影。",
+    "za.wildZoneCompletion.note.excluded": "这些槽位已分别在地图上标记，不会向野生区域完成卡添加剪影。",
+    "za.wildZoneCompletion.note.mixed": "只有计入的位置会将此 Pokemon 种类添加到野生区域完成卡。已在地图上标记的位置不会再添加一个剪影。",
+    "za.wildZoneCompletion.status.contributing": "计入",
+    "za.wildZoneCompletion.status.excluded": "不计入",
+    "za.wildZoneCompletion.status.mixed": "混合"
   },
   "literals": {
     "% (": "%（",

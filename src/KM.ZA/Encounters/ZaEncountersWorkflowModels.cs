@@ -27,7 +27,8 @@ public sealed record ZaEncounterSlotRecord(
     string Weather,
     bool IsAlpha,
     string EncounterKind,
-    ZaEncounterProvenance PokemonProvenance);
+    ZaEncounterProvenance PokemonProvenance,
+    bool? ContributesToWildZoneCompletion);
 
 public sealed record ZaEncounterTableRecord(
     string TableId,

@@ -1793,6 +1793,7 @@ export const encounterProvenanceSchema = z.strictObject({
 });
 
 export const encounterSlotRecordSchema = z.strictObject({
+  contributesToWildZoneCompletion: z.boolean().nullable().optional(),
   encounterDataId: z.string().nullable().optional(),
   encounterKind: z.string().nullable().optional(),
   encounterRecordId: z.string().nullable().optional(),

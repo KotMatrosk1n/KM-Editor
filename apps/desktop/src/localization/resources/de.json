@@ -17,7 +17,15 @@
     "settings.language.ukrainian": "Українська",
     "settings.language.ukrainian.description": "Verwendet Ukrainisch für die Oberfläche von KM Editor.",
     "settings.language.chinese": "简体中文",
-    "settings.language.chinese.description": "Chinesisch für den Text der KM Editor Oberfläche verwenden."
+    "settings.language.chinese.description": "Chinesisch für den Text der KM Editor Oberfläche verwenden.",
+    "za.wildZoneCompletion.column": "Kartensilhouette",
+    "za.wildZoneCompletion.detailLabel": "Kartensilhouette",
+    "za.wildZoneCompletion.note.contributing": "Enthaltene Plätze fügen diese Pokemon-Spezies der Abschlusskarte der Wildzone hinzu. Das Spiel zeigt jede Spezies nur einmal, daher teilen sich doppelte Spawner und alternative Formen eine Silhouette.",
+    "za.wildZoneCompletion.note.excluded": "Diese Plätze sind einzeln auf der Karte markiert und fügen der Abschlusskarte der Wildzone keine Silhouette hinzu.",
+    "za.wildZoneCompletion.note.mixed": "Nur enthaltene Platzierungen fügen diese Pokemon-Spezies der Abschlusskarte der Wildzone hinzu. Auf der Karte markierte Platzierungen fügen keine weitere Silhouette hinzu.",
+    "za.wildZoneCompletion.status.contributing": "Enthalten",
+    "za.wildZoneCompletion.status.excluded": "Nicht enthalten",
+    "za.wildZoneCompletion.status.mixed": "Gemischt"
   },
   "literals": {
     "% (": "% (",

@@ -17,9 +17,11 @@ function makeSlot(
   species: string,
   encounterRecordId: string,
   weight: number,
-  isAlpha = false
+  isAlpha = false,
+  contributesToWildZoneCompletion: boolean | null = true
 ): EncounterSlotRecord {
   return {
+    contributesToWildZoneCompletion,
     encounterDataId: encounterRecordId,
     encounterKind: 'Wild',
     encounterRecordId,
@@ -66,13 +68,14 @@ function createZaEncountersWorkflow(): EncountersWorkflow {
   const tables = [
     makeTable('zone-1-spawner-1', 'Spawner 1', 'a0102_w01', [
       makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 40),
-      makeSlot(1, 659, 'Bunnelby', 'encount-data:43', 60)
+      makeSlot(1, 659, 'Bunnelby', 'encount-data:43', 50, false, false),
+      makeSlot(2, 16, 'Pidgey', 'encount-data:44', 10)
     ]),
     makeTable('zone-1-spawner-10', 'Spawner 10', 'a0102_w01', [
       makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 50)
     ]),
     makeTable('zone-1-spawner-2', 'Spawner 2', 'a0102_w01', [
-      makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 100, true)
+      makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 100, true, false)
     ]),
     makeTable('zone-2-spawner-1', 'Spawner 1', 'a0201_w01', [
       makeSlot(0, 661, 'Fletchling', fletchlingRecordId, 100)
@@ -93,7 +96,7 @@ function createZaEncountersWorkflow(): EncountersWorkflow {
     ],
     stats: {
       sourceFileCount: 2,
-      totalSlotCount: 5,
+      totalSlotCount: 6,
       totalTableCount: tables.length
     },
     summary: {
@@ -112,15 +115,15 @@ function createZaCategoryWorkflow(): EncountersWorkflow {
   const tables = [
     {
       ...makeTable('outzone-group', 'Lumiose Outskirts Spawn Group 1', 'outzone_lumiose', [
-        makeSlot(0, 661, 'Fletchling', sharedRecordId, 60),
-        makeSlot(1, 664, 'Scatterbug', 'encount-data:71', 40)
+        makeSlot(0, 661, 'Fletchling', sharedRecordId, 60, false, null),
+        makeSlot(1, 664, 'Scatterbug', 'encount-data:71', 40, false, null)
       ]),
       location: 'Lumiose Outskirts'
     },
     {
       ...makeTable('outzone-point', 'Lumiose Outskirts Spawn Point 1', 'outzone_lumiose', [
-        makeSlot(0, 661, 'Fletchling', sharedRecordId, 50),
-        makeSlot(1, 659, 'Bunnelby', 'encount-data:72', 50)
+        makeSlot(0, 661, 'Fletchling', sharedRecordId, 50, false, null),
+        makeSlot(1, 659, 'Bunnelby', 'encount-data:72', 50, false, null)
       ]),
       location: 'Lumiose Outskirts'
     }
@@ -187,34 +190,37 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     const user = await openZaWildEncounters(workflow);
 
     const encounterTable = await screen.findByRole('table', { name: 'Z-A linked encounters' });
-    expect(within(encounterTable).getAllByRole('row')).toHaveLength(3);
+    expect(within(encounterTable).getAllByRole('row')).toHaveLength(4);
     expect(within(encounterTable).getAllByRole('row', { name: /^Fletchling,/ })).toHaveLength(1);
     expect(
       within(encounterTable).getByRole('row', {
-        name: 'Fletchling, 3 spawners, 1 more elsewhere, levels 5 to 10, source Base'
+        name: 'Fletchling, 3 spawners, 1 more elsewhere, levels 5 to 10, source Base, Map silhouette Mixed'
       })
     ).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('2 encounters')).toBeInTheDocument();
+    expect(screen.getByText('3 encounters')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Linked placements share this Pokemon entry. It is also used by 1 spawner outside this view. Saving changes updates every linked placement.'
       )
     ).toBeInTheDocument();
+    expect(screen.getByLabelText('Map silhouette')).toHaveTextContent(
+      'Mixed: Only included placements add this Pokemon species to the Wild Zone completion card. Map-marked placements do not add another silhouette.'
+    );
 
     const placements = screen.getByRole('table', { name: 'Fletchling linked spawners' });
     expect(within(placements).getAllByRole('row')).toHaveLength(4);
     const placementRows = within(placements).getAllByRole('row').slice(1);
     expect(placementRows[0]).toHaveAccessibleName(
-      'Spawner 1, slot 1, probability 40, Any time, Any weather'
+      'Spawner 1, slot 1, probability 40, Any time, Any weather, Map silhouette Included'
     );
     expect(placementRows[1]).toHaveAccessibleName(
-      'Spawner 2, slot 1, probability 100, Any time, Any weather, Alpha'
+      'Spawner 2, slot 1, probability 100, Any time, Any weather, Alpha, Map silhouette Not included'
     );
     expect(placementRows[2]).toHaveAccessibleName(
-      'Spawner 10, slot 1, probability 50, Any time, Any weather'
+      'Spawner 10, slot 1, probability 50, Any time, Any weather, Map silhouette Included'
     );
     const tenthPlacement = within(placements).getByRole('row', {
-      name: 'Spawner 10, slot 1, probability 50, Any time, Any weather'
+      name: 'Spawner 10, slot 1, probability 50, Any time, Any weather, Map silhouette Included'
     });
     await user.click(tenthPlacement);
     expect(tenthPlacement).toHaveAttribute('aria-pressed', 'true');
@@ -228,22 +234,34 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     await user.type(minLevel, '7');
     await user.click(
       within(placements).getByRole('row', {
-        name: 'Spawner 1, slot 1, probability 40, Any time, Any weather'
+        name: 'Spawner 1, slot 1, probability 40, Any time, Any weather, Map silhouette Included'
       })
     );
     expect(screen.getByLabelText('Min Level')).toHaveValue(7);
     expect(
       within(placements).getByRole('row', {
-        name: 'Spawner 2, slot 1, probability 100, Any time, Any weather, Alpha'
+        name: 'Spawner 2, slot 1, probability 100, Any time, Any weather, Alpha, Map silhouette Not included'
       })
     ).toBeInTheDocument();
 
     await user.click(
       within(encounterTable).getByRole('row', {
-        name: 'Bunnelby, 1 spawner, levels 5 to 10, source Base'
+        name: 'Bunnelby, 1 spawner, levels 5 to 10, source Base, Map silhouette Not included'
       })
     );
     expect(screen.queryByRole('table', { name: 'Bunnelby linked spawners' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Map silhouette')).toHaveTextContent(
+      'Not included: These slots are individually map-marked and do not add a silhouette to the Wild Zone completion card.'
+    );
+
+    await user.click(
+      within(encounterTable).getByRole('row', {
+        name: 'Pidgey, 1 spawner, levels 5 to 10, source Base, Map silhouette Included'
+      })
+    );
+    expect(screen.getByLabelText('Map silhouette')).toHaveTextContent(
+      'Included: Included slots add this Pokemon species to the Wild Zone completion card. The game shows each species once, so duplicate spawners and alternate forms share one silhouette.'
+    );
   }, 30_000);
 
   it('keeps spawner category tabs as visible encounter filters', async () => {

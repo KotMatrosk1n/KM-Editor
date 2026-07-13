@@ -2,7 +2,11 @@
 
 import { describe, expect, it } from 'vitest';
 import type { EncounterSlotRecord, EncounterTableRecord } from './bridge/contracts';
-import { buildZaEncounterGroups, getZaEncounterGroupKey } from './zaEncounterGroups';
+import {
+  buildZaEncounterGroups,
+  getZaEncounterGroupKey,
+  getZaWildZoneCompletionState
+} from './zaEncounterGroups';
 
 type TestEncounterSlot = EncounterSlotRecord;
 
@@ -11,6 +15,7 @@ function makeSlot(
   overrides: Partial<TestEncounterSlot> = {}
 ): TestEncounterSlot {
   return {
+    contributesToWildZoneCompletion: null,
     encounterDataId: `encounter-${slot}`,
     encounterRecordId: `record-${slot}`,
     form: 0,
@@ -44,6 +49,28 @@ function makeTable(tableId: string, slots: TestEncounterSlot[]): EncounterTableR
 }
 
 describe('zaEncounterGroups', () => {
+  it('derives contributing, excluded, mixed, and non-applicable completion states', () => {
+    expect(
+      getZaWildZoneCompletionState([
+        makeSlot(0, { contributesToWildZoneCompletion: true }),
+        makeSlot(1, { contributesToWildZoneCompletion: true })
+      ])
+    ).toBe('contributing');
+    expect(
+      getZaWildZoneCompletionState([
+        makeSlot(0, { contributesToWildZoneCompletion: false }),
+        makeSlot(1, { contributesToWildZoneCompletion: false })
+      ])
+    ).toBe('excluded');
+    expect(
+      getZaWildZoneCompletionState([
+        makeSlot(0, { contributesToWildZoneCompletion: true }),
+        makeSlot(1, { contributesToWildZoneCompletion: false })
+      ])
+    ).toBe('mixed');
+    expect(getZaWildZoneCompletionState([makeSlot(0)])).toBe('notApplicable');
+  });
+
   it('consolidates three spawners that share one encounter record', () => {
     const tables = ['spawner-a', 'spawner-b', 'spawner-c'].map((tableId, index) =>
       makeTable(

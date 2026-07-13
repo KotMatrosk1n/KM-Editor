@@ -3908,6 +3908,42 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAWildEncountersExposeWildZoneCompletionContributionPerSlot()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp);
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonSpawnerDataArray,
+            CreateWildZoneCompletionSpawnerDataArray());
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-wild-zone-completion-slots");
+
+        AssertSuccess(load);
+        var tables = load.Payload!.Workflow.Tables;
+
+        var contributingSlot = Assert.Single(tables.Single(table => table.TableId == "za-spawner:0:0").Slots);
+        Assert.True(contributingSlot.ContributesToWildZoneCompletion);
+
+        var excludedSlot = Assert.Single(tables.Single(table => table.TableId == "za-spawner:0:1").Slots);
+        Assert.False(excludedSlot.ContributesToWildZoneCompletion);
+        Assert.Equal(contributingSlot.EncounterRecordId, excludedSlot.EncounterRecordId);
+
+        var mixedSlots = tables.Single(table => table.TableId == "za-spawner:0:2").Slots;
+        Assert.Equal(2, mixedSlots.Count);
+        Assert.Contains(mixedSlots, slot => slot.ContributesToWildZoneCompletion == true);
+        Assert.Contains(mixedSlots, slot => slot.ContributesToWildZoneCompletion == false);
+
+        var outsideWildZoneSlot = Assert.Single(tables.Single(table => table.TableId == "za-spawner:0:3").Slots);
+        Assert.Null(outsideWildZoneSlot.ContributesToWildZoneCompletion);
+    }
+
+    [Fact]
     public void PokemonLegendsZASpawnerNumbersMatchAcrossWildEncountersAndPlacement()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -5196,6 +5232,52 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateWildZoneCompletionSpawnerDataArray()
+    {
+        var builder = new FlatBufferBuilder(4096);
+        var spawners = new[]
+        {
+            CreateSpawner(
+                builder,
+                "wz1_completion_001",
+                "wild_ignore",
+                "a0102_w01",
+                100,
+                "wz1_completion_spawn_001",
+                showMapIcon: 0),
+            CreateSpawner(
+                builder,
+                "wz1_completion_002",
+                "wild_ignore",
+                "a0102_w01",
+                100,
+                "wz1_completion_spawn_002",
+                showMapIcon: 1),
+            CreateSpawner(
+                builder,
+                "wz1_completion_003",
+                "wild_ignore",
+                "a0102_w01",
+                60,
+                "wz1_completion_spawn_003",
+                showMapIcon: 0,
+                additionalEncounter: ("static_event_ivysaur", 40, 1)),
+            CreateSpawner(
+                builder,
+                "id_spn_outzone_a0201_completion",
+                "wild_ignore",
+                zoneId: null,
+                weight: 100,
+                showMapIcon: 0),
+        };
+        var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, spawners);
+        var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
+        var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);
+        var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
+        PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static byte[] CreateNumberedWildZoneSpawnerTransformArray()
     {
         var names = new[]
@@ -5226,7 +5308,9 @@ public sealed class PokemonLegendsZABridgeTests
         string? zoneId,
         int weight,
         string? appearanceObjectName = null,
-        string? encounterTag = null)
+        string? encounterTag = null,
+        int showMapIcon = 1,
+        (string EncounterDataId, int Weight, int ShowMapIcon)? additionalEncounter = null)
     {
         var encounterId = builder.CreateString(encounterDataId);
         var tagList = string.IsNullOrWhiteSpace(encounterTag)
@@ -5239,10 +5323,24 @@ public sealed class PokemonLegendsZABridgeTests
             maxCount: 2,
             additionalLevel: 0,
             tagListOffset: tagList,
-            showMapIcon: 1,
+            showMapIcon: showMapIcon,
             appearedTimeCondition: 4,
             appearedWeatherCondition: 2);
-        var encounters = PokemonSpawnerData.CreateEncountDataInfoListVector(builder, [encounter]);
+        var encounterOffsets = new List<Offset<EncountDataInfo>> { encounter };
+        if (additionalEncounter is { } additional)
+        {
+            var additionalEncounterId = builder.CreateString(additional.EncounterDataId);
+            encounterOffsets.Add(EncountDataInfo.CreateEncountDataInfo(
+                builder,
+                additionalEncounterId,
+                weight: additional.Weight,
+                maxCount: 2,
+                showMapIcon: additional.ShowMapIcon,
+                appearedTimeCondition: 4,
+                appearedWeatherCondition: 2));
+        }
+
+        var encounters = PokemonSpawnerData.CreateEncountDataInfoListVector(builder, encounterOffsets.ToArray());
         var objectName = builder.CreateString(appearanceObjectName ?? $"{spawnerName}_object");
         var appearance = CreateSpawnerAppearance(builder, objectName, zoneId);
         var appearances = PokemonSpawnerData.CreateAppearanceSpawnerObjectInfoListVector(builder, [appearance]);

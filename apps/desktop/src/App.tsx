@@ -67,8 +67,10 @@ import {
 import {
   buildZaEncounterGroups,
   getZaEncounterGroupKey,
+  getZaWildZoneCompletionState,
   type ZaEncounterGroup,
-  type ZaEncounterPlacement
+  type ZaEncounterPlacement,
+  type ZaWildZoneCompletionState
 } from './zaEncounterGroups';
 import {
   buildSvEncounterConditionRows,
@@ -21362,6 +21364,7 @@ function SelectedEncounterPanel({
   >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
+  const { t } = useLocalization();
   const defaultEncounterFields = useMemo(
     () =>
       editableFields.map((field) =>
@@ -21722,8 +21725,29 @@ function SelectedEncounterPanel({
                         <PokemonSprite className="slot-tab-sprite" name={slotSpriteLabel} preferStatic />
                         <strong>{slotBadge}</strong>
                         <span>{slotLabel}</span>
-                        {isZaEncounterTable && slot.isAlpha ? (
-                          <span className="slot-tab-pill">Alpha</span>
+                        {isZaEncounterTable &&
+                        (slot.isAlpha ||
+                          typeof slot.contributesToWildZoneCompletion === 'boolean') ? (
+                          <div className="slot-tab-pills">
+                            {slot.isAlpha ? <span className="slot-tab-pill">Alpha</span> : null}
+                            {typeof slot.contributesToWildZoneCompletion === 'boolean' ? (
+                              <span
+                                className={`slot-tab-pill za-wild-zone-completion-status za-wild-zone-completion-status-${
+                                  slot.contributesToWildZoneCompletion
+                                    ? 'contributing'
+                                    : 'excluded'
+                                }`}
+                              >
+                                {t(
+                                  getZaWildZoneCompletionStatusKey(
+                                    slot.contributesToWildZoneCompletion
+                                      ? 'contributing'
+                                      : 'excluded'
+                                  )
+                                )}
+                              </span>
+                            ) : null}
+                          </div>
                         ) : null}
                         <small>
                           {formatEncounterSlotWeightSummary(
@@ -21788,6 +21812,21 @@ function SelectedEncounterPanel({
                         S/V Conditions
                       </dt>
                       <dd>{encounterSlot.weather}</dd>
+                    </div>
+                  ) : null}
+                  {isZaEncounterTable &&
+                  typeof encounterSlot.contributesToWildZoneCompletion === 'boolean' ? (
+                    <div>
+                      <dt>{t('za.wildZoneCompletion.detailLabel')}</dt>
+                      <dd>
+                        {t(
+                          getZaWildZoneCompletionStatusKey(
+                            encounterSlot.contributesToWildZoneCompletion
+                              ? 'contributing'
+                              : 'excluded'
+                          )
+                        )}
+                      </dd>
                     </div>
                   ) : null}
                 </dl>
@@ -22107,6 +22146,7 @@ function ZaEncounterGroupBrowser({
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
 }) {
+  const { t } = useLocalization();
   const isDimensionWildTable = isZaDimensionWildEncounterTable(table);
   const dimensionWildData = useMemo(
     () => (isDimensionWildTable ? buildZaDimensionWildBrowserData(table, tables) : null),
@@ -22185,6 +22225,12 @@ function ZaEncounterGroupBrowser({
   }
 
   const selectedGroupLabel = formatZaEncounterGroupLabel(selectedGroup);
+  const showCompletionRole = visibleEncounterGroups.some(
+    (group) => getZaWildZoneCompletionState(group.placements.map(({ slot }) => slot)) !== 'notApplicable'
+  );
+  const selectedCompletionState = getZaWildZoneCompletionState(
+    selectedGroup.placements.map(({ slot }) => slot)
+  );
   const visibleSlotCount = displayedTables.reduce(
     (total, displayedTable) => total + displayedTable.slots.length,
     0
@@ -22280,23 +22326,42 @@ function ZaEncounterGroupBrowser({
       ) : null}
 
       <div className="za-encounter-group-table" role="table" aria-label="Z-A linked encounters">
-        <div className="za-encounter-group-row za-encounter-group-heading" role="row">
+        <div
+          className={`za-encounter-group-row za-encounter-group-heading ${
+            showCompletionRole ? 'za-encounter-group-row-with-completion' : ''
+          }`}
+          role="row"
+        >
           <span role="columnheader">Pokemon</span>
           <span role="columnheader">Used by</span>
           <span role="columnheader">Levels</span>
           <span role="columnheader">Source</span>
+          {showCompletionRole ? (
+            <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
+          ) : null}
         </div>
         {visibleEncounterGroups.map((group) => {
           const groupLabel = formatZaEncounterGroupLabel(group);
           const isSelected = group.key === selectedGroup.key;
           const isPending = isZaEncounterGroupPending(group, pendingRecordIds);
+          const completionState = getZaWildZoneCompletionState(
+            group.placements.map(({ slot }) => slot)
+          );
+          const completionLabel =
+            completionState === 'notApplicable'
+              ? ''
+              : t(getZaWildZoneCompletionStatusKey(completionState));
           return (
             <button
-              aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}`}
+              aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}${
+                completionLabel ? `, ${t('za.wildZoneCompletion.column')} ${completionLabel}` : ''
+              }`}
               aria-pressed={isSelected}
               className={`za-encounter-group-row ${
                 isSelected ? 'za-encounter-group-row-selected' : ''
-              } ${isPending ? 'za-encounter-group-row-pending' : ''}`}
+              } ${isPending ? 'za-encounter-group-row-pending' : ''} ${
+                showCompletionRole ? 'za-encounter-group-row-with-completion' : ''
+              }`}
               key={group.key}
               onClick={() => selectGroup(group)}
               role="row"
@@ -22308,6 +22373,18 @@ function ZaEncounterGroupBrowser({
                 {group.slot.levelMin}-{group.slot.levelMax}
               </span>
               <span role="cell">{formatZaEncounterGroupSource(group)}</span>
+              {showCompletionRole ? (
+                <span
+                  className={
+                    completionLabel
+                      ? `za-wild-zone-completion-status za-wild-zone-completion-status-${completionState}`
+                      : undefined
+                  }
+                  role="cell"
+                >
+                  {completionLabel}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -22319,22 +22396,45 @@ function ZaEncounterGroupBrowser({
           role="table"
           aria-label={`${selectedGroupLabel} linked spawners`}
         >
-          <div className="za-encounter-placement-row za-encounter-placement-heading" role="row">
+          <div
+            className={`za-encounter-placement-row za-encounter-placement-heading ${
+              selectedCompletionState !== 'notApplicable'
+                ? 'za-encounter-placement-row-with-completion'
+                : ''
+            }`}
+            role="row"
+          >
             <span role="columnheader">Spawner</span>
             <span role="columnheader">Slot</span>
             <span role="columnheader">Probability</span>
             <span role="columnheader">Conditions</span>
+            {selectedCompletionState !== 'notApplicable' ? (
+              <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
+            ) : null}
           </div>
           {selectedGroup.placements.map((placement) => {
             const placementLabel = formatZaEncounterPlacementLabel(placement, rowByTableId);
             const isSelected =
               placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot;
+            const placementCompletionState = getZaWildZoneCompletionState([placement.slot]);
+            const placementCompletionLabel =
+              placementCompletionState === 'notApplicable'
+                ? ''
+                : t(getZaWildZoneCompletionStatusKey(placementCompletionState));
             return (
               <button
-                aria-label={`${placementLabel}, slot ${placement.slot.slot + 1}, probability ${placement.slot.weight}, ${formatZaEncounterPlacementConditions(placement)}`}
+                aria-label={`${placementLabel}, slot ${placement.slot.slot + 1}, probability ${placement.slot.weight}, ${formatZaEncounterPlacementConditions(placement)}${
+                  placementCompletionLabel
+                    ? `, ${t('za.wildZoneCompletion.column')} ${placementCompletionLabel}`
+                    : ''
+                }`}
                 aria-pressed={isSelected}
                 className={`za-encounter-placement-row ${
                   isSelected ? 'za-encounter-placement-row-selected' : ''
+                } ${
+                  selectedCompletionState !== 'notApplicable'
+                    ? 'za-encounter-placement-row-with-completion'
+                    : ''
                 }`}
                 key={`${placement.table.tableId}:${placement.slot.slot}`}
                 onClick={() =>
@@ -22347,11 +22447,25 @@ function ZaEncounterGroupBrowser({
                 <span role="cell">{placement.slot.slot + 1}</span>
                 <span role="cell">{placement.slot.weight}</span>
                 <span role="cell">{formatZaEncounterPlacementConditions(placement)}</span>
+                {selectedCompletionState !== 'notApplicable' ? (
+                  <span
+                    className={
+                      placementCompletionLabel
+                        ? `za-wild-zone-completion-status za-wild-zone-completion-status-${placementCompletionState}`
+                        : undefined
+                    }
+                    role="cell"
+                  >
+                    {placementCompletionLabel}
+                  </span>
+                ) : null}
               </button>
             );
           })}
         </div>
       ) : null}
+
+      <ZaWildZoneCompletionNote state={selectedCompletionState} />
 
       {selectedGroup.slotCount > 1 || selectedGroup.outsideScopeSpawnerCount > 0 ? (
         <p className="za-encounter-shared-scope-note">
@@ -22364,6 +22478,30 @@ function ZaEncounterGroupBrowser({
       ) : null}
     </section>
   );
+}
+
+function ZaWildZoneCompletionNote({ state }: { state: ZaWildZoneCompletionState }) {
+  const { t } = useLocalization();
+  if (state === 'notApplicable') {
+    return null;
+  }
+
+  return (
+    <p
+      aria-label={t('za.wildZoneCompletion.detailLabel')}
+      className="za-encounter-shared-scope-note za-wild-zone-completion-note"
+    >
+      <MapPinned aria-hidden="true" size={16} />
+      <span>
+        <strong>{t(getZaWildZoneCompletionStatusKey(state))}:</strong>{' '}
+        {t(`za.wildZoneCompletion.note.${state}`)}
+      </span>
+    </p>
+  );
+}
+
+function getZaWildZoneCompletionStatusKey(state: Exclude<ZaWildZoneCompletionState, 'notApplicable'>) {
+  return `za.wildZoneCompletion.status.${state}`;
 }
 
 function EncounterAreaCopyConfirmationModal({

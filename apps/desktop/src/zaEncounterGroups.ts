@@ -16,6 +16,31 @@ export type ZaEncounterGroup = {
   spawnerCount: number;
 };
 
+export type ZaWildZoneCompletionState =
+  | 'contributing'
+  | 'excluded'
+  | 'mixed'
+  | 'notApplicable';
+
+export function getZaWildZoneCompletionState(
+  slots: Array<Pick<EncounterSlotRecord, 'contributesToWildZoneCompletion'>>
+): ZaWildZoneCompletionState {
+  const applicableSlots = slots
+    .map((slot) => slot.contributesToWildZoneCompletion)
+    .filter((contributes): contributes is boolean => contributes !== null && contributes !== undefined);
+  if (applicableSlots.length === 0) {
+    return 'notApplicable';
+  }
+
+  const hasContributingSlot = applicableSlots.includes(true);
+  const hasExcludedSlot = applicableSlots.includes(false);
+  if (hasContributingSlot && hasExcludedSlot) {
+    return 'mixed';
+  }
+
+  return hasContributingSlot ? 'contributing' : 'excluded';
+}
+
 export function getZaEncounterGroupKey(tableId: string, slot: EncounterSlotRecord) {
   const encounterRecordId = normalizeIdentity(slot.encounterRecordId);
   if (encounterRecordId) {

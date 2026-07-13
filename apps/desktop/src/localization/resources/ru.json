@@ -17,7 +17,15 @@
     "settings.language.ukrainian": "Українська",
     "settings.language.ukrainian.description": "Использовать украинский текст интерфейса KM Editor.",
     "settings.language.chinese": "简体中文",
-    "settings.language.chinese.description": "Использовать китайский текст интерфейса KM Editor."
+    "settings.language.chinese.description": "Использовать китайский текст интерфейса KM Editor.",
+    "za.wildZoneCompletion.column": "Силуэт на карте",
+    "za.wildZoneCompletion.detailLabel": "Силуэт на карте",
+    "za.wildZoneCompletion.note.contributing": "Включённые слоты добавляют этот вид Pokemon в карточку прогресса Дикой зоны. Игра показывает каждый вид один раз, поэтому повторяющиеся спавнеры и альтернативные формы используют один силуэт.",
+    "za.wildZoneCompletion.note.excluded": "Эти слоты отдельно отмечены на карте и не добавляют силуэт в карточку прогресса Дикой зоны.",
+    "za.wildZoneCompletion.note.mixed": "Только включённые размещения добавляют этот вид Pokemon в карточку прогресса Дикой зоны. Отмеченные на карте размещения не добавляют ещё один силуэт.",
+    "za.wildZoneCompletion.status.contributing": "Включено",
+    "za.wildZoneCompletion.status.excluded": "Не включено",
+    "za.wildZoneCompletion.status.mixed": "Смешано"
   },
   "literals": {
     "% (": "% (",

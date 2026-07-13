@@ -170,14 +170,19 @@ internal sealed class ZaEncountersWorkflowService
                     continue;
                 }
 
-                var slots = ReadSlots(spawner.Value, pokemonRows, encounterSource, labels).ToArray();
+                var displayPosition = displayOrder[(groupIndex, spawnerIndex)];
+                var locationKey = displayPosition.LocationKey;
+                var slots = ReadSlots(
+                    spawner.Value,
+                    pokemonRows,
+                    encounterSource,
+                    labels,
+                    IsNumberedWildZone(locationKey)).ToArray();
                 if (slots.Length == 0)
                 {
                     continue;
                 }
 
-                var displayPosition = displayOrder[(groupIndex, spawnerIndex)];
-                var locationKey = displayPosition.LocationKey;
                 var location = FormatLocation(locationKey, labels);
                 yield return new ZaEncounterTableRecord(
                     CreateTableId(groupIndex, spawnerIndex),
@@ -203,7 +208,8 @@ internal sealed class ZaEncountersWorkflowService
         PokemonSpawnerData spawner,
         IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows,
         ZaWorkflowFile encounterSource,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        bool isNumberedWildZone)
     {
         for (var slot = 0; slot < spawner.EncountDataInfoListLength; slot++)
         {
@@ -238,7 +244,8 @@ internal sealed class ZaEncountersWorkflowService
                 new ZaEncounterProvenance(
                     encounterSource.RelativePath,
                     encounterSource.SourceLayer,
-                    encounterSource.FileState));
+                    encounterSource.FileState),
+                isNumberedWildZone ? encounter.Value.ShowMapIcon == 0 : null);
         }
     }
 
