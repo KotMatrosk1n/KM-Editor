@@ -64,7 +64,9 @@ export function TypeChartSection({
     () => decodeTypeChartPendingValues(stagedTypeChartEdit?.newValue),
     [stagedTypeChartEdit?.newValue]
   );
-  const isUninstallStaged = stagedTypeChartEdit?.recordId === 'sv-type-chart-v1-uninstall';
+  const isUninstallStaged =
+    stagedTypeChartEdit?.recordId === 'sv-type-chart-v1-uninstall' ||
+    stagedTypeChartEdit?.recordId === 'za-type-chart-v1-uninstall';
   const cleanValues = stagedValues ?? workflowValues ?? createDefaultTypeChartValues();
   const cleanValuesKey = cleanValues.join(',');
   const [draftValues, setDraftValues] =
@@ -77,7 +79,9 @@ export function TypeChartSection({
   const isDirty = !areTypeChartValuesEqual(draftValues, cleanValues);
   const hasStagedChange = stagedValues !== null || isUninstallStaged;
   const supportsUninstall =
-    workflow?.detectedGame === 'scarlet' || workflow?.detectedGame === 'violet';
+    workflow?.detectedGame === 'scarlet' ||
+    workflow?.detectedGame === 'violet' ||
+    workflow?.detectedGame === 'za';
   const canEdit =
     workflow?.summary.availability === 'available' &&
     workflow.installStatus !== 'blocked' &&
@@ -87,6 +91,7 @@ export function TypeChartSection({
   const canStage = canEdit && isDirty;
   const canStageUninstall =
     supportsUninstall &&
+    !isUninstallStaged &&
     workflow?.summary.availability === 'available' &&
     workflow.installStatus === 'modified' &&
     !isDirty &&
