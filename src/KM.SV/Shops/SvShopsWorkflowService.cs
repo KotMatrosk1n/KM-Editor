@@ -38,6 +38,7 @@ internal sealed class SvShopsWorkflowService
 
     private const string WorkflowLabel = "Shops";
     private const string WorkflowDescription = "Edit Scarlet/Violet shop inventories, TM Machine recipes, unlocks, and source provenance.";
+    private const string SourceRowIdentityPrefix = "row:source:";
 
     private static readonly IReadOnlyDictionary<string, ShopLineupDefinition> KnownLineups =
         new Dictionary<string, ShopLineupDefinition>(StringComparer.Ordinal)
@@ -151,22 +152,62 @@ internal sealed class SvShopsWorkflowService
             diagnostics);
     }
 
-    public static string CreateInventoryRecordId(string shopId, int slot) =>
-        string.Create(CultureInfo.InvariantCulture, $"{shopId}#{slot}");
+    public static string CreateInventoryRecordId(string shopId, int slot, int? sourceIndex = null)
+    {
+        var positionalId = string.Create(CultureInfo.InvariantCulture, $"{shopId}#{slot}");
+        return sourceIndex is >= 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{positionalId}#{SourceRowIdentityPrefix}{sourceIndex}")
+            : positionalId;
+    }
 
-    public static bool TryParseInventoryRecordId(string? recordId, out string shopId, out int slot)
+    public static bool TryParseInventoryRecordId(string? recordId, out string shopId, out int slot) =>
+        TryParseInventoryRecordId(recordId, out shopId, out slot, out _);
+
+    public static bool TryParseInventoryRecordId(
+        string? recordId,
+        out string shopId,
+        out int slot,
+        out int? sourceIndex)
     {
         shopId = string.Empty;
         slot = 0;
+        sourceIndex = null;
 
-        var separatorIndex = recordId?.LastIndexOf('#') ?? -1;
-        if (separatorIndex <= 0 || separatorIndex >= recordId!.Length - 1)
+        if (string.IsNullOrEmpty(recordId))
         {
             return false;
         }
 
-        shopId = recordId[..separatorIndex];
-        return int.TryParse(recordId[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
+        var positionalId = recordId;
+        var identitySeparatorIndex = recordId.LastIndexOf('#');
+        if (identitySeparatorIndex > 0)
+        {
+            var identity = recordId[(identitySeparatorIndex + 1)..];
+            if (identity.StartsWith(SourceRowIdentityPrefix, StringComparison.Ordinal))
+            {
+                if (!int.TryParse(
+                        identity[SourceRowIdentityPrefix.Length..],
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var parsedSourceIndex)
+                    || parsedSourceIndex < 0)
+                {
+                    return false;
+                }
+
+                sourceIndex = parsedSourceIndex;
+                positionalId = recordId[..identitySeparatorIndex];
+            }
+        }
+
+        var separatorIndex = positionalId.LastIndexOf('#');
+        if (separatorIndex <= 0 || separatorIndex >= positionalId.Length - 1)
+        {
+            return false;
+        }
+
+        shopId = positionalId[..separatorIndex];
+        return int.TryParse(positionalId[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
             && slot >= 1;
     }
 
@@ -357,7 +398,8 @@ internal sealed class SvShopsWorkflowService
             displays,
             [SortOrderField, ConditionKindField, ConditionValueField, GymBadgeCountField],
             PriceField: null,
-            CanEditPrice: true);
+            CanEditPrice: true,
+            SourceIndex: row.SourceIndex);
     }
 
     private static SvShopInventoryRecord ToTechnicalMachineInventoryRecord(
@@ -422,7 +464,8 @@ internal sealed class SvShopsWorkflowService
                 RegionField,
             ],
             PriceField: LpCostField,
-            CanEditPrice: true);
+            CanEditPrice: true,
+            SourceIndex: row.SourceIndex);
     }
 
     private static ResolvedItem ResolveItem(

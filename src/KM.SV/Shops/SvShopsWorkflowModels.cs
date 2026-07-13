@@ -22,7 +22,8 @@ public sealed record SvShopInventoryRecord(
     IReadOnlyDictionary<string, string> FieldDisplayValues,
     IReadOnlyList<string> SupportedFields,
     string? PriceField,
-    bool CanEditPrice);
+    bool CanEditPrice,
+    int SourceIndex);
 
 public sealed record SvShopRecord(
     string ShopId,

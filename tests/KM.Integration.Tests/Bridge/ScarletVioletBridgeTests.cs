@@ -255,6 +255,90 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletShopEditsStayOnTheirSourceRows(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.ShopWazaMachineDataArray,
+            CreateTechnicalMachineShopDataArray(includeSecondRow: true));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var session = UpdateShop(
+            dispatcher,
+            paths,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "sortOrder",
+            value: "2");
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "lineup:shop_00_lineup",
+            slot: 1,
+            field: "conditionKind",
+            value: ((int)CondEnum.SCENARIO).ToString(CultureInfo.InvariantCulture));
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "tm:1",
+            slot: 1,
+            field: "region",
+            value: ((int)AddRegion.SUDACHI1).ToString(CultureInfo.InvariantCulture));
+        session = UpdateShop(
+            dispatcher,
+            paths,
+            session,
+            "tm:1",
+            slot: 1,
+            field: "lpCost",
+            value: "901");
+        Assert.All(session.PendingEdits, edit => Assert.Contains("#row:source:", edit.RecordId, StringComparison.Ordinal));
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session),
+            "request-sv-shop-source-row-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan),
+            "request-sv-shop-source-row-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var friendlyRows = KM.SV.Shops.SvShopsWorkflowService
+            .ReadFriendlyRows(ReadSvOutput(temp, SvDataPaths.FriendlyShopLineupDataArray))
+            .OrderBy(row => row.SourceIndex)
+            .ToArray();
+        Assert.Equal(2, friendlyRows[0].SortNum);
+        Assert.Equal(CondEnum.SCENARIO, friendlyRows[0].ConditionKind);
+        Assert.Equal(1, friendlyRows[1].SortNum);
+        Assert.Equal(CondEnum.GYMBADGENUM, friendlyRows[1].ConditionKind);
+
+        var tmRows = KM.SV.Shops.SvShopsWorkflowService
+            .ReadTechnicalMachineRows(ReadSvOutput(temp, SvDataPaths.ShopWazaMachineDataArray))
+            .OrderBy(row => row.SourceIndex)
+            .ToArray();
+        Assert.Equal(AddRegion.SUDACHI1, tmRows[0].Region);
+        Assert.Equal(901, tmRows[0].LpCost);
+        Assert.Equal(AddRegion.TITAN, tmRows[1].Region);
+        Assert.Equal(1_200, tmRows[1].LpCost);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletChangePlansCanOutputForTrinityModManager(
         ProjectGameDto game,
         ulong titleId)
@@ -4613,23 +4697,32 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateTechnicalMachineShopDataArray()
+    private static byte[] CreateTechnicalMachineShopDataArray(bool includeSecondRow = false)
     {
         var builder = new FlatBufferBuilder(1024);
-        var rows = new[]
-        {
-            global::ShopWazamachineData.CreateShopWazamachineData(
-                builder,
-                wazaNo: 36,
-                wazaItemID: (ItemID)2,
-                lp: 800,
-                cond: CondEnum.NONE,
-                condValueOffset: default,
-                item01: (ItemID)1,
-                itemNum01: 1,
-                devNo01: 1,
-                addRegion: AddRegion.TITAN),
-        };
+        var firstRow = global::ShopWazamachineData.CreateShopWazamachineData(
+            builder,
+            wazaNo: 36,
+            wazaItemID: (ItemID)2,
+            lp: 800,
+            cond: CondEnum.NONE,
+            condValueOffset: default,
+            item01: (ItemID)1,
+            itemNum01: 1,
+            devNo01: 1,
+            addRegion: AddRegion.TITAN);
+        var secondRow = global::ShopWazamachineData.CreateShopWazamachineData(
+            builder,
+            wazaNo: 45,
+            wazaItemID: (ItemID)4,
+            lp: 1_200,
+            cond: CondEnum.SCENARIO,
+            condValueOffset: default,
+            item01: (ItemID)1,
+            itemNum01: 2,
+            devNo01: 2,
+            addRegion: AddRegion.TITAN);
+        var rows = includeSecondRow ? new[] { firstRow, secondRow } : [firstRow];
         var vector = global::ShopWazamachineDataArray.CreateValuesVector(builder, rows);
         var root = global::ShopWazamachineDataArray.CreateShopWazamachineDataArray(builder, vector);
         global::ShopWazamachineDataArray.FinishShopWazamachineDataArrayBuffer(builder, root);
