@@ -3659,21 +3659,107 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Night", slot.TimeOfDay);
         Assert.Equal("Rain", slot.Weather);
         Assert.Equal("wild_ignore", slot.EncounterDataId);
-        Assert.Equal("Wild", slot.EncounterKind);
+        Assert.Equal("Alpha Chance", slot.EncounterKind);
         Assert.False(slot.IsAlpha);
+        Assert.Equal(5, slot.AlphaChancePercent);
+        Assert.Equal(10, slot.AlphaLevelBonus);
+        Assert.Equal(30, slot.LevelMax + slot.AlphaLevelBonus);
         Assert.Contains(workflow.EditableFields, field => field.Field == "speciesId" && field.Label == "Species");
         Assert.DoesNotContain(workflow.EditableFields, field => field.Field == "probability");
+        var alphaChanceField = Assert.Single(workflow.EditableFields, field => field.Field == "alphaChancePercent");
+        Assert.Equal("Alpha Chance (%)", alphaChanceField.Label);
+        Assert.Equal("integer", alphaChanceField.ValueKind);
+        Assert.Equal(0, alphaChanceField.MinimumValue);
+        Assert.Equal(100, alphaChanceField.MaximumValue);
+        var alphaLevelBonusField = Assert.Single(workflow.EditableFields, field => field.Field == "alphaLevelBonus");
+        Assert.Equal("Alpha Level Bonus", alphaLevelBonusField.Label);
+        Assert.Equal("integer", alphaLevelBonusField.ValueKind);
+        Assert.Equal(0, alphaLevelBonusField.MinimumValue);
+        Assert.Equal(100, alphaLevelBonusField.MaximumValue);
 
-        var slotUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
+        var invalidOrdinaryGuarantee = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                table.TableId,
+                slot.Slot,
+                "alphaChancePercent",
+                "100"),
+            "request-za-encounters-ordinary-guarantee");
+        AssertSuccess(invalidOrdinaryGuarantee);
+        Assert.Empty(invalidOrdinaryGuarantee.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            invalidOrdinaryGuarantee.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("shared Alpha chance", StringComparison.OrdinalIgnoreCase));
+
+        var invalidAlphaRange = Dispatch<UpdateEncounterSlotFieldsResponse>(
             dispatcher,
             KmCommandNames.UpdateEncounterSlotFields,
             new UpdateEncounterSlotFieldsRequest(
                 paths,
                 Session: null,
                 [
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMax", "95"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "alphaLevelBonus", "6"),
+                ]),
+            "request-za-encounters-invalid-alpha-range");
+        AssertSuccess(invalidAlphaRange);
+        Assert.Empty(invalidAlphaRange.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            invalidAlphaRange.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("every linked placement", StringComparison.Ordinal));
+
+        var invalidBaseRange = Dispatch<UpdateEncounterSlotFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMin", "100"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMax", "1"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "alphaLevelBonus", "1"),
+                ]),
+            "request-za-encounters-invalid-base-range");
+        AssertSuccess(invalidBaseRange);
+        Assert.Empty(invalidBaseRange.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            invalidBaseRange.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("minimum 100 is greater than maximum 1", StringComparison.Ordinal));
+
+        var orderIndependentUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "alphaLevelBonus", "81"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "alphaChancePercent", "0"),
+                ]),
+            "request-za-encounters-order-independent-alpha-range");
+        AssertSuccess(orderIndependentUpdate);
+        Assert.DoesNotContain(
+            orderIndependentUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var slotUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                orderIndependentUpdate.Payload.Session,
+                [
                     new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "speciesId", "2"),
                     new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMin", "25"),
                     new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "levelMax", "30"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "alphaChancePercent", "25"),
+                    new EncounterSlotFieldUpdateDto(table.TableId, slot.Slot, "alphaLevelBonus", "12"),
                 ]),
             "request-za-encounters-slot-fields");
         AssertSuccess(slotUpdate);
@@ -3682,6 +3768,13 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Ivysaur", updatedSlot.Species);
         Assert.Equal(25, updatedSlot.LevelMin);
         Assert.Equal(30, updatedSlot.LevelMax);
+        Assert.Equal(25, updatedSlot.AlphaChancePercent);
+        Assert.Equal(12, updatedSlot.AlphaLevelBonus);
+        Assert.Equal(42, updatedSlot.LevelMax + updatedSlot.AlphaLevelBonus);
+        Assert.Contains(
+            slotUpdate.Payload.Session.PendingEdits,
+            edit => edit.Field == "alphaChancePercent"
+                && edit.Summary.Contains("every placement linked", StringComparison.Ordinal));
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -3704,6 +3797,8 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(2, written.DevNo);
         Assert.Equal(25, written.MinLevel);
         Assert.Equal(30, written.MaxLevel);
+        Assert.Equal(25F, written.OyabunProbability);
+        Assert.Equal(12, written.OyabunAdditionalLevel);
         Assert.Equal(33, written.WazaList!.Value.Waza1);
         Assert.Equal(17, written.HoldItem!.Value.HoldItem);
         Assert.Equal(101, written.StrengthenValue!.Value.Hp);
@@ -3736,10 +3831,14 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var tables = load.Payload!.Workflow.Tables;
-        Assert.Equal(16, tables.Count);
-        var firstTable = tables[0];
+        Assert.Equal(18, tables.Count);
+        var ordinaryLinkedTables = tables
+            .Where(table => table.Slots.Count == 1 && table.Slots[0].EncounterDataId == "wild_ignore")
+            .ToArray();
+        Assert.Equal(14, ordinaryLinkedTables.Length);
+        var firstTable = ordinaryLinkedTables[0];
         var firstSlot = Assert.Single(firstTable.Slots);
-        var secondTable = tables[1];
+        var secondTable = ordinaryLinkedTables[1];
         var secondSlot = Assert.Single(secondTable.Slots);
         var encounterRecordId = Assert.IsType<string>(firstSlot.EncounterRecordId);
         Assert.Equal(encounterRecordId, secondSlot.EncounterRecordId);
@@ -3747,60 +3846,106 @@ public sealed class PokemonLegendsZABridgeTests
             .SelectMany(table => table.Slots)
             .Where(slot => slot.EncounterRecordId == encounterRecordId)
             .ToArray();
-        Assert.Equal(15, linkedSlots.Length);
+        Assert.Equal(14, linkedSlots.Length);
         var distinctSlot = Assert.Single(
             tables.SelectMany(table => table.Slots),
             slot => slot.EncounterDataId == "static_event_ivysaur");
         Assert.NotNull(distinctSlot.EncounterRecordId);
         Assert.NotEqual(encounterRecordId, distinctSlot.EncounterRecordId);
 
-        var firstUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+        var firstUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
             dispatcher,
-            KmCommandNames.UpdateEncounterSlotField,
-            new UpdateEncounterSlotFieldRequest(paths, Session: null, firstTable.TableId, firstSlot.Slot, "levelMin", "25"),
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new EncounterSlotFieldUpdateDto(firstTable.TableId, firstSlot.Slot, "levelMin", "25"),
+                    new EncounterSlotFieldUpdateDto(firstTable.TableId, firstSlot.Slot, "levelMax", "25"),
+                ]),
             "request-za-encounters-linked-first");
         AssertSuccess(firstUpdate);
         Assert.All(
             firstUpdate.Payload!.Workflow.Tables
                 .SelectMany(table => table.Slots)
                 .Where(slot => slot.EncounterRecordId == encounterRecordId),
-            slot => Assert.Equal(25, slot.LevelMin));
+            slot =>
+            {
+                Assert.Equal(25, slot.LevelMin);
+                Assert.Equal(25, slot.LevelMax);
+            });
         Assert.Equal(
             35,
             Assert.Single(
                 firstUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
                 slot => slot.EncounterRecordId == distinctSlot.EncounterRecordId).LevelMin);
 
-        var secondUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+        var secondUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
             dispatcher,
-            KmCommandNames.UpdateEncounterSlotField,
-            new UpdateEncounterSlotFieldRequest(
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
                 paths,
                 firstUpdate.Payload.Session,
-                secondTable.TableId,
-                secondSlot.Slot,
-                "levelMin",
-                "30"),
+                [
+                    new EncounterSlotFieldUpdateDto(secondTable.TableId, secondSlot.Slot, "levelMin", "30"),
+                    new EncounterSlotFieldUpdateDto(secondTable.TableId, secondSlot.Slot, "levelMax", "30"),
+                ]),
             "request-za-encounters-linked-second");
         AssertSuccess(secondUpdate);
-        var pendingEdit = Assert.Single(secondUpdate.Payload!.Session.PendingEdits);
+        Assert.Equal(2, secondUpdate.Payload!.Session.PendingEdits.Count);
+        var pendingEdit = Assert.Single(
+            secondUpdate.Payload.Session.PendingEdits,
+            edit => edit.Field == "levelMin");
         Assert.Equal(encounterRecordId, pendingEdit.RecordId);
         Assert.Equal("30", pendingEdit.NewValue);
         Assert.All(
             secondUpdate.Payload.Workflow.Tables
                 .SelectMany(table => table.Slots)
                 .Where(slot => slot.EncounterRecordId == encounterRecordId),
-            slot => Assert.Equal(30, slot.LevelMin));
+            slot =>
+            {
+                Assert.Equal(30, slot.LevelMin);
+                Assert.Equal(30, slot.LevelMax);
+            });
         Assert.Equal(
             35,
             Assert.Single(
                 secondUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
                 slot => slot.EncounterRecordId == distinctSlot.EncounterRecordId).LevelMin);
 
+        var sharedAlphaUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                secondUpdate.Payload.Session,
+                [
+                    new EncounterSlotFieldUpdateDto(secondTable.TableId, secondSlot.Slot, "alphaChancePercent", "30"),
+                    new EncounterSlotFieldUpdateDto(secondTable.TableId, secondSlot.Slot, "alphaLevelBonus", "12"),
+                ]),
+            "request-za-encounters-linked-alpha-settings");
+        AssertSuccess(sharedAlphaUpdate);
+        Assert.Equal(4, sharedAlphaUpdate.Payload!.Session.PendingEdits.Count);
+        Assert.All(
+            sharedAlphaUpdate.Payload.Workflow.Tables
+                .SelectMany(table => table.Slots)
+                .Where(slot => slot.EncounterRecordId == encounterRecordId),
+            slot =>
+            {
+                Assert.Equal(30, slot.AlphaChancePercent);
+                Assert.Equal(12, slot.AlphaLevelBonus);
+                Assert.Equal("Alpha Chance", slot.EncounterKind);
+            });
+        var unchangedDistinctSlot = Assert.Single(
+            sharedAlphaUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
+            slot => slot.EncounterRecordId == distinctSlot.EncounterRecordId);
+        Assert.Null(unchangedDistinctSlot.AlphaChancePercent);
+        Assert.Equal(10, unchangedDistinctSlot.AlphaLevelBonus);
+
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, secondUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            new CreateChangePlanRequest(paths, sharedAlphaUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
             "request-za-encounters-linked-plan");
         AssertSuccess(plan);
         Assert.True(plan.Payload!.ChangePlan.CanApply);
@@ -3810,7 +3955,7 @@ public sealed class PokemonLegendsZABridgeTests
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(
                 paths,
-                secondUpdate.Payload.Session,
+                sharedAlphaUpdate.Payload.Session,
                 plan.Payload.ChangePlan,
                 ChangePlanOutputModeDto.TrinityModManager),
             "request-za-encounters-linked-apply");
@@ -3819,7 +3964,12 @@ public sealed class PokemonLegendsZABridgeTests
             apply.Payload!.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
         Assert.Equal(30, ReadEncountData(temp, "wild_ignore").MinLevel);
+        Assert.Equal(30, ReadEncountData(temp, "wild_ignore").MaxLevel);
+        Assert.Equal(30F, ReadEncountData(temp, "wild_ignore").OyabunProbability);
+        Assert.Equal(12, ReadEncountData(temp, "wild_ignore").OyabunAdditionalLevel);
         Assert.Equal(35, ReadEncountData(temp, "static_event_ivysaur").MinLevel);
+        Assert.Equal(0.25F, ReadEncountData(temp, "static_event_ivysaur").OyabunProbability);
+        Assert.Equal(10, ReadEncountData(temp, "static_event_ivysaur").OyabunAdditionalLevel);
     }
 
     [Fact]
@@ -3838,25 +3988,134 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var workflow = load.Payload!.Workflow;
-        Assert.Equal(15, workflow.Tables.Count);
+        Assert.Equal(17, workflow.Tables.Count);
 
-        var alphaTable = workflow.Tables.Single(table => table.Slots.Any(slot => slot.IsAlpha));
+        var alphaTables = workflow.Tables.Where(table => table.Slots.Any(slot => slot.IsAlpha)).ToArray();
+        Assert.Equal(2, alphaTables.Length);
+        var alphaTable = alphaTables.Single(table => table.TableLabel == "Spawner 2");
         Assert.Equal("Wild Zone 1", alphaTable.Location);
         Assert.Equal("Spawner 2", alphaTable.TableLabel);
         Assert.Contains("Alpha", alphaTable.TableDetails);
         var alphaSlot = Assert.Single(alphaTable.Slots);
         Assert.True(alphaSlot.IsAlpha);
-        Assert.Equal("Alpha", alphaSlot.EncounterKind);
-        Assert.Equal("wild_ignore_Alpha", alphaSlot.EncounterDataId);
+        Assert.Equal("Guaranteed Alpha", alphaSlot.EncounterKind);
+        Assert.Equal("wild_guaranteed_alpha_Alpha", alphaSlot.EncounterDataId);
         Assert.Equal(1, alphaSlot.SpeciesId);
         Assert.Equal("Bulbasaur", alphaSlot.Species);
+        Assert.Equal(100, alphaSlot.AlphaChancePercent);
+        Assert.Equal(9, alphaSlot.AlphaLevelBonus);
+        Assert.Equal(29, alphaSlot.LevelMax + alphaSlot.AlphaLevelBonus);
+        var alphaRecordId = Assert.IsType<string>(alphaSlot.EncounterRecordId);
+        Assert.All(
+            alphaTables.SelectMany(table => table.Slots),
+            slot =>
+            {
+                Assert.True(slot.IsAlpha);
+                Assert.Equal("Guaranteed Alpha", slot.EncounterKind);
+                Assert.Equal(alphaRecordId, slot.EncounterRecordId);
+                Assert.Equal(100, slot.AlphaChancePercent);
+            });
+        var plainGuaranteedTable = Assert.Single(
+            workflow.Tables,
+            table => Assert.Single(table.Slots).EncounterDataId == "wild_guaranteed_plain");
+        var plainGuaranteedSlot = Assert.Single(plainGuaranteedTable.Slots);
+        Assert.False(plainGuaranteedSlot.IsAlpha);
+        Assert.Equal("Guaranteed Alpha", plainGuaranteedSlot.EncounterKind);
+        Assert.Equal(100, plainGuaranteedSlot.AlphaChancePercent);
+        Assert.NotEqual(alphaRecordId, plainGuaranteedSlot.EncounterRecordId);
+
+        var invalidGuaranteedChance = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                alphaTable.TableId,
+                alphaSlot.Slot,
+                "alphaChancePercent",
+                "99"),
+            "request-za-encounters-guaranteed-alpha-chance");
+        AssertSuccess(invalidGuaranteedChance);
+        Assert.Empty(invalidGuaranteedChance.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            invalidGuaranteedChance.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("must keep their shared Alpha chance at 100", StringComparison.Ordinal));
+
+        var invalidPlainGuaranteedChance = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                plainGuaranteedTable.TableId,
+                plainGuaranteedSlot.Slot,
+                "alphaChancePercent",
+                "99"),
+            "request-za-encounters-plain-guaranteed-alpha-chance");
+        AssertSuccess(invalidPlainGuaranteedChance);
+        Assert.Empty(invalidPlainGuaranteedChance.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            invalidPlainGuaranteedChance.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("must keep their shared Alpha chance at 100", StringComparison.Ordinal));
+
+        var unchangedPlainGuaranteedChance = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                plainGuaranteedTable.TableId,
+                plainGuaranteedSlot.Slot,
+                "alphaChancePercent",
+                "100"),
+            "request-za-encounters-plain-guaranteed-alpha-unchanged");
+        AssertSuccess(unchangedPlainGuaranteedChance);
+        Assert.DoesNotContain(
+            unchangedPlainGuaranteedChance.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var unchangedPlainPendingEdit = Assert.Single(unchangedPlainGuaranteedChance.Payload.Session.PendingEdits);
+        Assert.Equal("100", unchangedPlainPendingEdit.NewValue);
+        var unchangedPlainSlot = Assert.Single(
+            unchangedPlainGuaranteedChance.Payload.Workflow.Tables.SelectMany(table => table.Slots),
+            slot => slot.EncounterRecordId == plainGuaranteedSlot.EncounterRecordId);
+        Assert.False(unchangedPlainSlot.IsAlpha);
+        Assert.Equal("Guaranteed Alpha", unchangedPlainSlot.EncounterKind);
+
+        var guaranteedBonusUpdate = Dispatch<UpdateEncounterSlotFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new EncounterSlotFieldUpdateDto(alphaTable.TableId, alphaSlot.Slot, "alphaChancePercent", "100"),
+                    new EncounterSlotFieldUpdateDto(alphaTable.TableId, alphaSlot.Slot, "alphaLevelBonus", "12"),
+                ]),
+            "request-za-encounters-guaranteed-alpha-bonus");
+        AssertSuccess(guaranteedBonusUpdate);
+        Assert.DoesNotContain(
+            guaranteedBonusUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.All(
+            guaranteedBonusUpdate.Payload.Workflow.Tables
+                .SelectMany(table => table.Slots)
+                .Where(slot => slot.EncounterRecordId == alphaRecordId),
+            slot =>
+            {
+                Assert.True(slot.IsAlpha);
+                Assert.Equal(100, slot.AlphaChancePercent);
+                Assert.Equal(12, slot.AlphaLevelBonus);
+                Assert.Equal(32, slot.LevelMax + slot.AlphaLevelBonus);
+            });
 
         var rawTables = workflow.Tables.Where(table => table.LocationKey == "zdm406_v00").ToArray();
         Assert.Equal(2, rawTables.Length);
         Assert.All(rawTables, table => Assert.Equal("Dimension Dungeon 406 Variant 0", table.Location));
         Assert.Contains(rawTables, table => table.TableLabel == "Dimension Dungeon 406 Variant 0 Spawn Point 700");
         Assert.Contains(rawTables, table => table.TableLabel == "Dimension Dungeon 406 Variant 0 Spawn Point 701");
-        Assert.All(rawTables, table => Assert.Equal("Wild", Assert.Single(table.Slots).EncounterKind));
+        Assert.All(rawTables, table => Assert.Equal("Alpha Chance", Assert.Single(table.Slots).EncounterKind));
 
         var outzoneTable = Assert.Single(
             workflow.Tables,
@@ -3905,6 +4164,241 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.All(dimensionWildTables, table => Assert.Equal("Dimension Wild Pools", table.Location));
         Assert.Contains(dimensionWildTables, table => table.TableLabel == "Flying Type Pool 2, Rank 3, Pokemon 701");
         Assert.Contains(dimensionWildTables, table => table.TableLabel == "Flying Type Pool 2, Rank 3, Pokemon 662 Set");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAWildEncountersRejectAlphaChanceForMixedLinkedPlacements()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp, includeMixedAlphaReference: true);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounters-mixed-alpha-load");
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        var ordinaryTable = Assert.Single(
+            workflow.Tables,
+            table => Assert.Single(table.Slots).EncounterDataId == "wild_ignore");
+        var ordinarySlot = Assert.Single(ordinaryTable.Slots);
+        var mixedAlphaSlot = Assert.Single(
+            workflow.Tables.SelectMany(table => table.Slots),
+            slot => slot.EncounterDataId == "wild_ignore_Alpha");
+        Assert.Equal(ordinarySlot.EncounterRecordId, mixedAlphaSlot.EncounterRecordId);
+        Assert.False(ordinarySlot.IsAlpha);
+        Assert.True(mixedAlphaSlot.IsAlpha);
+
+        var chanceUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                ordinaryTable.TableId,
+                ordinarySlot.Slot,
+                "alphaChancePercent",
+                "25"),
+            "request-za-encounters-mixed-alpha-chance");
+        AssertSuccess(chanceUpdate);
+        Assert.Empty(chanceUpdate.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            chanceUpdate.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("both structural _Alpha and ordinary references", StringComparison.Ordinal));
+
+        var bonusUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                ordinaryTable.TableId,
+                ordinarySlot.Slot,
+                "alphaLevelBonus",
+                "12"),
+            "request-za-encounters-mixed-alpha-bonus");
+        AssertSuccess(bonusUpdate);
+        Assert.DoesNotContain(
+            bonusUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.All(
+            bonusUpdate.Payload.Workflow.Tables
+                .SelectMany(table => table.Slots)
+                .Where(slot => slot.EncounterRecordId == ordinarySlot.EncounterRecordId),
+            slot => Assert.Equal(12, slot.AlphaLevelBonus));
+    }
+
+    [Fact]
+    public void PokemonLegendsZAWildEncountersPreserveFractionalAlphaChanceAsReadOnly()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp, normalAlphaChance: 2.5F);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounters-fractional-alpha-load");
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        var table = Assert.Single(workflow.Tables);
+        var slot = Assert.Single(table.Slots);
+        Assert.Null(slot.AlphaChancePercent);
+        Assert.Equal("Alpha Chance", slot.EncounterKind);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("read-only and be preserved", StringComparison.Ordinal));
+
+        var chanceUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                table.TableId,
+                slot.Slot,
+                "alphaChancePercent",
+                "3"),
+            "request-za-encounters-fractional-alpha-edit");
+        AssertSuccess(chanceUpdate);
+        Assert.Empty(chanceUpdate.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            chanceUpdate.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("read-only", StringComparison.Ordinal));
+
+        var bonusUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                table.TableId,
+                slot.Slot,
+                "alphaLevelBonus",
+                "11"),
+            "request-za-encounters-fractional-alpha-bonus");
+        AssertSuccess(bonusUpdate);
+        Assert.DoesNotContain(
+            bonusUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, bonusUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-fractional-alpha-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                bonusUpdate.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-fractional-alpha-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var written = ReadEncountData(temp, "wild_ignore");
+        Assert.Equal(2.5F, written.OyabunProbability);
+        Assert.Equal(11, written.OyabunAdditionalLevel);
+    }
+
+    [Fact]
+    public void PokemonLegendsZAWildEncountersPreserveUnsafeAlphaLevelBonusAsReadOnly()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp, normalAlphaLevelBonus: -1);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounters-unsafe-alpha-bonus-load");
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        var table = Assert.Single(workflow.Tables);
+        var slot = Assert.Single(table.Slots);
+        Assert.Equal(5, slot.AlphaChancePercent);
+        Assert.Null(slot.AlphaLevelBonus);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("read-only and be preserved", StringComparison.Ordinal));
+
+        var bonusUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                table.TableId,
+                slot.Slot,
+                "alphaLevelBonus",
+                "12"),
+            "request-za-encounters-unsafe-alpha-bonus-edit");
+        AssertSuccess(bonusUpdate);
+        Assert.Empty(bonusUpdate.Payload!.Session.PendingEdits);
+        Assert.Contains(
+            bonusUpdate.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("read-only", StringComparison.Ordinal));
+
+        var disableAlphaUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                table.TableId,
+                slot.Slot,
+                "alphaChancePercent",
+                "0"),
+            "request-za-encounters-unsafe-alpha-bonus-disable");
+        AssertSuccess(disableAlphaUpdate);
+        Assert.DoesNotContain(
+            disableAlphaUpdate.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(
+                paths,
+                disableAlphaUpdate.Payload.Session,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-unsafe-alpha-bonus-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                disableAlphaUpdate.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-unsafe-alpha-bonus-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var written = ReadEncountData(temp, "wild_ignore");
+        Assert.Equal(0F, written.OyabunProbability);
+        Assert.Equal(-1, written.OyabunAdditionalLevel);
     }
 
     [Fact]
@@ -4858,16 +5352,25 @@ public sealed class PokemonLegendsZABridgeTests
     private static void WriteWildEncounterFixture(
         TemporaryBridgeProject temp,
         bool includeAlphaAndRawSpawners = false,
-        bool includeDistinctEncounterSpawner = false)
+        bool includeDistinctEncounterSpawner = false,
+        bool includeMixedAlphaReference = false,
+        float normalAlphaChance = 5,
+        int normalAlphaLevelBonus = 10)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
-        temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreateEncounterDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.EncountDataArray,
+            CreateEncounterDataArray(
+                wildAlphaChance: normalAlphaChance,
+                wildAlphaLevelBonus: normalAlphaLevelBonus,
+                includeGuaranteedWildRow: includeAlphaAndRawSpawners));
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonSpawnerDataArray,
             CreatePokemonSpawnerDataArray(
                 includeAlphaAndRawSpawners,
-                includeDistinctEncounterSpawner));
+                includeDistinctEncounterSpawner,
+                includeMixedAlphaReference));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
             CreatePokemonNameTextTable());
@@ -5069,7 +5572,11 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateEncounterDataArray(bool signedDefaults = false)
+    private static byte[] CreateEncounterDataArray(
+        bool signedDefaults = false,
+        float wildAlphaChance = 5,
+        int wildAlphaLevelBonus = 10,
+        bool includeGuaranteedWildRow = false)
     {
         var builder = new FlatBufferBuilder(4096);
         var giftScene = CreateEncounterData(
@@ -5093,7 +5600,9 @@ public sealed class PokemonLegendsZABridgeTests
             ivHp: 1,
             ivAttack: 2,
             sex: 1,
-            speciesId: 1);
+            speciesId: 1,
+            oyabunProbability: wildAlphaChance,
+            oyabunAdditionalLevel: wildAlphaLevelBonus);
         var trade = CreateEncounterData(
             builder,
             "sub_tradepoke_bulbasaur",
@@ -5128,9 +5637,47 @@ public sealed class PokemonLegendsZABridgeTests
             ivAttack: 30,
             sex: signedDefaults ? -1 : 1,
             speciesId: 1);
+        var rows = new List<Offset<ZaEncounterDataRow>>
+        {
+            giftScene,
+            ignored,
+            trade,
+            staticEncounter,
+            giftPlayable,
+        };
+        if (includeGuaranteedWildRow)
+        {
+            rows.Add(CreateEncounterData(
+                builder,
+                "wild_guaranteed_alpha",
+                level: 20,
+                heldItem: 17,
+                move1: 33,
+                move2: 0,
+                ivHp: 1,
+                ivAttack: 2,
+                sex: 1,
+                speciesId: 1,
+                oyabunProbability: 100,
+                oyabunAdditionalLevel: 9));
+            rows.Add(CreateEncounterData(
+                builder,
+                "wild_guaranteed_plain",
+                level: 20,
+                heldItem: 17,
+                move1: 33,
+                move2: 0,
+                ivHp: 1,
+                ivAttack: 2,
+                sex: 1,
+                speciesId: 1,
+                oyabunProbability: 100,
+                oyabunAdditionalLevel: 9));
+        }
+
         var rootVector = ZaEncounterDataDb.CreateRootVector(
             builder,
-            [giftScene, ignored, trade, staticEncounter, giftPlayable]);
+            rows.ToArray());
         var db = ZaEncounterDataDb.Create(builder, rootVector);
         var valuesVector = ZaEncounterDataDbArray.CreateValuesVector(builder, [db]);
         var root = ZaEncounterDataDbArray.Create(builder, valuesVector);
@@ -5140,7 +5687,8 @@ public sealed class PokemonLegendsZABridgeTests
 
     private static byte[] CreatePokemonSpawnerDataArray(
         bool includeAlphaAndRawSpawners = false,
-        bool includeDistinctEncounterSpawner = false)
+        bool includeDistinctEncounterSpawner = false,
+        bool includeMixedAlphaReference = false)
     {
         var builder = new FlatBufferBuilder(4096);
         var spawners = includeAlphaAndRawSpawners
@@ -5154,7 +5702,9 @@ public sealed class PokemonLegendsZABridgeTests
                     weight: 35,
                     appearanceObjectName: "wild_spawn_001",
                     encounterTag: "internal_\u6761\u4ef6"),
-                CreateSpawner(builder, "id_spn_outzone_a0201_A459", "wild_ignore_Alpha", "a0102_w01", weight: 65),
+                CreateSpawner(builder, "id_spn_outzone_a0201_A459", "wild_guaranteed_alpha_Alpha", "a0102_w01", weight: 65),
+                CreateSpawner(builder, "id_spn_outzone_a0201_A460", "wild_guaranteed_alpha_Alpha", "a0102_w01", weight: 65),
+                CreateSpawner(builder, "id_spn_outzone_a0201_A461", "wild_guaranteed_plain", "a0102_w01", weight: 65),
                 CreateSpawner(builder, "id_spn_outzone_a0201_050_BZ", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_spn_outzone_a0201_O50_BZ", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_spn_outzone_a0201_P00", "wild_ignore", zoneId: null, weight: 100),
@@ -5189,6 +5739,20 @@ public sealed class PokemonLegendsZABridgeTests
                     builder,
                     "za_wild_spawner_002",
                     "static_event_ivysaur",
+                    "a0102_w01",
+                    weight: 20),
+            ];
+        }
+
+        if (includeMixedAlphaReference)
+        {
+            spawners =
+            [
+                .. spawners,
+                CreateSpawner(
+                    builder,
+                    "za_wild_spawner_mixed_alpha",
+                    "wild_ignore_Alpha",
                     "a0102_w01",
                     weight: 20),
             ];
@@ -5464,7 +6028,9 @@ public sealed class PokemonLegendsZABridgeTests
         int sex,
         int speciesId,
         int talentScale = 2,
-        int talentVNum = 0)
+        int talentVNum = 0,
+        float oyabunProbability = 0.25F,
+        int oyabunAdditionalLevel = 10)
     {
         var idOffset = builder.CreateString(id);
         var talentValue = ZaPokemonDataTalentValue.Create(
@@ -5509,8 +6075,8 @@ public sealed class PokemonLegendsZABridgeTests
             seikaku: 4,
             talentScale: talentScale,
             talentVNum: talentVNum,
-            oyabunProbability: 0.25F,
-            oyabunAdditionalLevel: 10,
+            oyabunProbability: oyabunProbability,
+            oyabunAdditionalLevel: oyabunAdditionalLevel,
             talentValueOffset: talentValue,
             strengthenValueOffset: strengthenValue,
             wazaListOffset: wazaList,

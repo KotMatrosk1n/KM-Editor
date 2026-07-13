@@ -183,6 +183,50 @@ describe('bridge contracts', () => {
     ).toEqual([true, false, null]);
   });
 
+  it('accepts optional Z-A Alpha settings while preserving older encounter payloads', () => {
+    const legacySlot = {
+      form: 0,
+      levelMax: 10,
+      levelMin: 5,
+      slot: 0,
+      species: 'Fletchling',
+      speciesId: 661,
+      timeOfDay: null,
+      weather: 'Any weather',
+      weight: 100
+    };
+
+    expect(encounterSlotRecordSchema.parse(legacySlot)).not.toHaveProperty('alphaChancePercent');
+    expect(
+      encounterSlotRecordSchema.parse({
+        ...legacySlot,
+        alphaChancePercent: 25,
+        alphaLevelBonus: 3
+      })
+    ).toMatchObject({ alphaChancePercent: 25, alphaLevelBonus: 3 });
+    expect(
+      encounterSlotRecordSchema.parse({
+        ...legacySlot,
+        alphaChancePercent: 100,
+        alphaLevelBonus: 0,
+        isAlpha: false
+      })
+    ).toMatchObject({ alphaChancePercent: 100, alphaLevelBonus: 0, isAlpha: false });
+    expect(
+      encounterSlotRecordSchema.parse({
+        ...legacySlot,
+        alphaChancePercent: null,
+        alphaLevelBonus: null
+      })
+    ).toMatchObject({ alphaChancePercent: null, alphaLevelBonus: null });
+    expect(() =>
+      encounterSlotRecordSchema.parse({ ...legacySlot, alphaChancePercent: 12.5 })
+    ).toThrow();
+    expect(() =>
+      encounterSlotRecordSchema.parse({ ...legacySlot, alphaLevelBonus: 101 })
+    ).toThrow();
+  });
+
   it('validates known command request envelopes', () => {
     const requestSchema = createBridgeRequestSchema(openProjectRequestSchema);
 
