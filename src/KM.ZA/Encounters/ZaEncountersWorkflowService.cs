@@ -16,6 +16,8 @@ internal sealed class ZaEncountersWorkflowService
     public const string FormField = "form";
     public const string LevelMinField = "levelMin";
     public const string LevelMaxField = "levelMax";
+    public const string AlphaChancePercentField = "alphaChancePercent";
+    public const string AlphaLevelBonusField = "alphaLevelBonus";
 
     private const string WorkflowLabel = "Wild Encounters";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
@@ -58,7 +60,7 @@ internal sealed class ZaEncountersWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
-            tables = LoadTables(spawnerSource, encounterSource, labels).ToArray();
+            tables = LoadTables(spawnerSource, encounterSource, labels, diagnostics).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -144,7 +146,8 @@ internal sealed class ZaEncountersWorkflowService
     private static IEnumerable<ZaEncounterTableRecord> LoadTables(
         ZaWorkflowFile spawnerSource,
         ZaWorkflowFile encounterSource,
-        ZaTextLabelLookup labels)
+        ZaTextLabelLookup labels,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         var pokemonRows = ZaEncounterDataDocument.Parse(encounterSource.Bytes)
             .Entries
@@ -154,6 +157,8 @@ internal sealed class ZaEncountersWorkflowService
 
         var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
         var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
+        var reportedInvalidAlphaChanceSources = new HashSet<int>();
+        var reportedInvalidAlphaLevelBonusSources = new HashSet<int>();
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
         {
             var db = table.Values(groupIndex);
@@ -177,7 +182,10 @@ internal sealed class ZaEncountersWorkflowService
                     pokemonRows,
                     encounterSource,
                     labels,
-                    IsNumberedWildZone(locationKey)).ToArray();
+                    IsNumberedWildZone(locationKey),
+                    diagnostics,
+                    reportedInvalidAlphaChanceSources,
+                    reportedInvalidAlphaLevelBonusSources).ToArray();
                 if (slots.Length == 0)
                 {
                     continue;
@@ -209,7 +217,10 @@ internal sealed class ZaEncountersWorkflowService
         IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows,
         ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels,
-        bool isNumberedWildZone)
+        bool isNumberedWildZone,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ISet<int> reportedInvalidAlphaChanceSources,
+        ISet<int> reportedInvalidAlphaLevelBonusSources)
     {
         for (var slot = 0; slot < spawner.EncountDataInfoListLength; slot++)
         {
@@ -220,10 +231,42 @@ internal sealed class ZaEncountersWorkflowService
             }
 
             var encounterDataId = encounter.Value.EncountDataId ?? string.Empty;
-            var isAlpha = IsAlphaEncounter(encounterDataId);
+            var hasStructuralAlphaReference = HasStructuralAlphaReference(encounterDataId);
             var pokemon = ResolvePokemonRow(encounterDataId, pokemonRows);
             var speciesId = pokemon?.DevNo ?? 0;
             var form = pokemon?.FormNo ?? 0;
+            var alphaChancePercent = pokemon is not null
+                && TryReadAlphaChancePercent(pokemon.OyabunProbability, out var wholeAlphaChancePercent)
+                    ? wholeAlphaChancePercent
+                    : (int?)null;
+            if (pokemon is not null
+                && alphaChancePercent is null
+                && reportedInvalidAlphaChanceSources.Add(pokemon.SourceIndex))
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Shared Alpha chance for encounter row '{pokemon.Id}' is {pokemon.OyabunProbability.ToString(CultureInfo.InvariantCulture)} percent. "
+                    + "Only whole-number percentages from 0 through 100 are editable; this value will remain read-only and be preserved.",
+                    encounterSource.RelativePath,
+                    AlphaChancePercentField,
+                    "Whole-number shared Alpha chance from 0 through 100"));
+            }
+
+            var alphaLevelBonus = pokemon is not null
+                && pokemon.OyabunAdditionalLevel is >= 0 and <= 100
+                    ? pokemon.OyabunAdditionalLevel
+                    : (int?)null;
+            if (pokemon is not null
+                && alphaLevelBonus is null
+                && reportedInvalidAlphaLevelBonusSources.Add(pokemon.SourceIndex))
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Shared Alpha level bonus for encounter row '{pokemon.Id}' is {pokemon.OyabunAdditionalLevel.ToString(CultureInfo.InvariantCulture)}. "
+                    + "Only values from 0 through 100 are editable; this value will remain read-only and be preserved.",
+                    encounterSource.RelativePath,
+                    AlphaLevelBonusField,
+                    "Shared Alpha level bonus from 0 through 100"));
+            }
+
             yield return new ZaEncounterSlotRecord(
                 slot,
                 pokemon?.SourceIndex ?? -1,
@@ -239,14 +282,44 @@ internal sealed class ZaEncountersWorkflowService
                 encounter.Value.Weight,
                 FormatTimeCondition(encounter.Value.AppearedTimeCondition),
                 FormatWeatherCondition(encounter.Value.AppearedWeatherCondition),
-                isAlpha,
-                isAlpha ? "Alpha" : "Wild",
+                hasStructuralAlphaReference,
+                FormatEncounterKind(pokemon?.OyabunProbability),
                 new ZaEncounterProvenance(
                     encounterSource.RelativePath,
                     encounterSource.SourceLayer,
                     encounterSource.FileState),
-                isNumberedWildZone ? encounter.Value.ShowMapIcon == 0 : null);
+                isNumberedWildZone ? encounter.Value.ShowMapIcon == 0 : null,
+                alphaChancePercent,
+                alphaLevelBonus,
+                pokemon?.OyabunProbability > 0);
         }
+    }
+
+    private static bool TryReadAlphaChancePercent(float value, out int wholePercent)
+    {
+        if (float.IsFinite(value)
+            && value >= 0
+            && value <= 100
+            && value == MathF.Truncate(value))
+        {
+            wholePercent = checked((int)value);
+            return true;
+        }
+
+        wholePercent = 0;
+        return false;
+    }
+
+    private static string FormatEncounterKind(float? alphaChancePercent)
+    {
+        return alphaChancePercent switch
+        {
+            100 => "Guaranteed Alpha",
+            > 0 and < 100 => "Alpha Chance",
+            0 => "Wild",
+            null => "Unresolved",
+            _ => "Invalid Alpha Chance",
+        };
     }
 
     private static ZaPokemonDataEntry? ResolvePokemonRow(
@@ -273,7 +346,7 @@ internal sealed class ZaEncountersWorkflowService
         return null;
     }
 
-    private static bool IsAlphaEncounter(string encounterDataId)
+    private static bool HasStructuralAlphaReference(string encounterDataId)
     {
         return ZaEncounterDataIds.IsAlphaSpawnerEncounterDataId(encounterDataId);
     }
@@ -305,6 +378,8 @@ internal sealed class ZaEncountersWorkflowService
             new(FormField, "Form", "integer", 0, short.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(LevelMinField, "Min Level", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(LevelMaxField, "Max Level", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(AlphaChancePercentField, "Alpha Chance (%)", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(AlphaLevelBonusField, "Alpha Level Bonus", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
         ];
     }
 

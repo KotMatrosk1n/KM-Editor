@@ -90,8 +90,8 @@ internal class ZaPokemonDataEntry
     public int Seikaku { get; set; }
     public int TalentScale { get; set; }
     public int TalentVNum { get; set; }
-    public float OyabunProbability { get; init; }
-    public int OyabunAdditionalLevel { get; init; }
+    public float OyabunProbability { get; set; }
+    public int OyabunAdditionalLevel { get; set; }
     public IReadOnlyList<ZaPokemonDataActivationConditionRecord> ActivationConditions { get; init; } =
         Array.Empty<ZaPokemonDataActivationConditionRecord>();
     public ZaPokemonDataStatsRecord? TalentValue { get; set; }

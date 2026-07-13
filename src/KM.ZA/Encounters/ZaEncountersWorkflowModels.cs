@@ -28,7 +28,10 @@ public sealed record ZaEncounterSlotRecord(
     bool IsAlpha,
     string EncounterKind,
     ZaEncounterProvenance PokemonProvenance,
-    bool? ContributesToWildZoneCompletion);
+    bool? ContributesToWildZoneCompletion,
+    int? AlphaChancePercent,
+    int? AlphaLevelBonus,
+    bool HasAlphaChance);
 
 public sealed record ZaEncounterTableRecord(
     string TableId,

@@ -1793,6 +1793,8 @@ export const encounterProvenanceSchema = z.strictObject({
 });
 
 export const encounterSlotRecordSchema = z.strictObject({
+  alphaChancePercent: z.number().int().min(0).max(100).nullable().optional(),
+  alphaLevelBonus: z.number().int().min(0).max(100).nullable().optional(),
   contributesToWildZoneCompletion: z.boolean().nullable().optional(),
   encounterDataId: z.string().nullable().optional(),
   encounterKind: z.string().nullable().optional(),

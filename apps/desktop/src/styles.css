@@ -5889,6 +5889,27 @@ h2 {
   min-width: 790px;
 }
 
+.za-encounter-placement-row-with-alpha {
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(64px, 0.3fr)
+    minmax(96px, 0.45fr)
+    minmax(220px, 1.3fr)
+    minmax(138px, 0.7fr);
+  min-width: 790px;
+}
+
+.za-encounter-placement-row-with-alpha-and-completion {
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(64px, 0.3fr)
+    minmax(96px, 0.45fr)
+    minmax(220px, 1.3fr)
+    minmax(138px, 0.7fr)
+    minmax(138px, 0.7fr);
+  min-width: 940px;
+}
+
 .za-encounter-group-row:last-child,
 .za-encounter-placement-row:last-child {
   border-bottom: 0;

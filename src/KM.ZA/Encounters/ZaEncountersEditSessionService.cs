@@ -74,6 +74,17 @@ internal sealed class ZaEncountersEditSessionService
             return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
+        var candidateWorkflow = OverlayPendingEdit(workflow, pendingEdit);
+        if (AffectsSharedLevelRange(pendingEdit.Field))
+        {
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidateFinalSharedLevelRanges(candidateWorkflow, [slotRecord.PokemonDataSourceIndex], diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) > errorCount)
+            {
+                return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
+            }
+        }
+
         var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
         return new ZaEncountersEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
@@ -107,6 +118,7 @@ internal sealed class ZaEncountersEditSessionService
 
         var updatedSession = currentSession;
         var effectiveWorkflow = workflow;
+        var sharedLevelRangeSources = new HashSet<int>();
         foreach (var update in updates)
         {
             if (string.IsNullOrWhiteSpace(update.TableId)
@@ -149,6 +161,17 @@ internal sealed class ZaEncountersEditSessionService
 
             updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
             effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            if (AffectsSharedLevelRange(pendingEdit.Field))
+            {
+                sharedLevelRangeSources.Add(slot.PokemonDataSourceIndex);
+            }
+        }
+
+        var finalRangeErrorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
+        if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) > finalRangeErrorCount)
+        {
+            return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
         return new ZaEncountersEditResult(
@@ -174,6 +197,7 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics);
 
         var effectiveWorkflow = workflow;
+        var sharedLevelRangeSources = new HashSet<int>();
         foreach (var edit in session.PendingEdits)
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -181,8 +205,15 @@ internal sealed class ZaEncountersEditSessionService
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
             {
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
+                if (AffectsSharedLevelRange(edit.Field)
+                    && TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out var sourceIndex))
+                {
+                    sharedLevelRangeSources.Add(sourceIndex);
+                }
             }
         }
+
+        ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -332,6 +363,25 @@ internal sealed class ZaEncountersEditSessionService
             return null;
         }
 
+        if (!ValidateSharedAlphaChance(
+                workflow,
+                slot.PokemonDataSourceIndex,
+                normalizedField,
+                parsedValue.Value,
+                diagnostics))
+        {
+            return null;
+        }
+
+        if (!ValidateSharedAlphaLevelBonus(
+                workflow,
+                slot.PokemonDataSourceIndex,
+                normalizedField,
+                diagnostics))
+        {
+            return null;
+        }
+
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.EncountersDomain,
             CreateSummary(table, slot, editableField, parsedValue.Value),
@@ -363,7 +413,7 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        if (!TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out _))
+        if (!TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out var sourceIndex))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -384,6 +434,17 @@ internal sealed class ZaEncountersEditSessionService
         if (parsedValue is not null)
         {
             ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
+            ValidateSharedAlphaChance(
+                workflow,
+                sourceIndex,
+                edit.Field,
+                parsedValue.Value,
+                diagnostics);
+            ValidateSharedAlphaLevelBonus(
+                workflow,
+                sourceIndex,
+                edit.Field,
+                diagnostics);
         }
     }
 
@@ -406,6 +467,170 @@ internal sealed class ZaEncountersEditSessionService
             $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
             "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
             diagnostics);
+    }
+
+    private static bool ValidateSharedAlphaChance(
+        ZaEncountersWorkflow workflow,
+        int sourceIndex,
+        string? field,
+        int value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(field, ZaEncountersWorkflowService.AlphaChancePercentField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var linkedSlots = workflow.Tables
+            .SelectMany(table => table.Slots)
+            .Where(slot => slot.PokemonDataSourceIndex == sourceIndex)
+            .ToArray();
+        if (linkedSlots.Any(slot => slot.AlphaChancePercent is null))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Shared Alpha chance is read-only because the source encounter row does not contain a whole-number percentage from 0 through 100.",
+                ZaEditSessionSupport.EncountersDomain,
+                field: ZaEncountersWorkflowService.AlphaChancePercentField,
+                expected: "Preserve the source value or restore a whole-number shared Alpha chance before editing"));
+            return false;
+        }
+
+        var hasStructuralAlphaReference = linkedSlots.Any(slot => slot.IsAlpha);
+        var hasOrdinaryReference = linkedSlots.Any(slot => !slot.IsAlpha);
+        if (hasStructuralAlphaReference && hasOrdinaryReference)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Shared Alpha chance cannot be edited because this encounter row is linked by both structural _Alpha and ordinary references.",
+                ZaEditSessionSupport.EncountersDomain,
+                field: ZaEncountersWorkflowService.AlphaChancePercentField,
+                expected: "Encounter row linked only by structural _Alpha references or only by ordinary references"));
+            return false;
+        }
+
+        var hasGuaranteedAlphaChance = linkedSlots.Any(slot => slot.AlphaChancePercent == 100);
+        if ((hasStructuralAlphaReference || hasGuaranteedAlphaChance) && value != 100)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Guaranteed Alpha encounter rows must keep their shared Alpha chance at 100 percent.",
+                ZaEditSessionSupport.EncountersDomain,
+                field: ZaEncountersWorkflowService.AlphaChancePercentField,
+                expected: "100 for a structural _Alpha reference or an existing 100-percent encounter row"));
+            return false;
+        }
+
+        if (!hasStructuralAlphaReference && !hasGuaranteedAlphaChance && value > 99)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Ordinary encounter rows must keep their shared Alpha chance between 0 and 99 percent.",
+                ZaEditSessionSupport.EncountersDomain,
+                field: ZaEncountersWorkflowService.AlphaChancePercentField,
+                expected: "Whole-number percent from 0 through 99 for an ordinary encounter row"));
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool AffectsSharedLevelRange(string? field)
+    {
+        return field is ZaEncountersWorkflowService.LevelMaxField
+            or ZaEncountersWorkflowService.LevelMinField
+            or ZaEncountersWorkflowService.AlphaChancePercentField
+            or ZaEncountersWorkflowService.AlphaLevelBonusField;
+    }
+
+    private static bool ValidateSharedAlphaLevelBonus(
+        ZaEncountersWorkflow workflow,
+        int sourceIndex,
+        string? field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(field, ZaEncountersWorkflowService.AlphaLevelBonusField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var hasUnsupportedBonus = workflow.Tables
+            .SelectMany(table => table.Slots)
+            .Where(slot => slot.PokemonDataSourceIndex == sourceIndex)
+            .Any(slot => slot.AlphaLevelBonus is null);
+        if (!hasUnsupportedBonus)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Shared Alpha level bonus is read-only because the source encounter row is outside the supported range from 0 through 100.",
+            ZaEditSessionSupport.EncountersDomain,
+            field: ZaEncountersWorkflowService.AlphaLevelBonusField,
+            expected: "Preserve the unsupported source value"));
+        return false;
+    }
+
+    private static void ValidateFinalSharedLevelRanges(
+        ZaEncountersWorkflow workflow,
+        IEnumerable<int> sourceIndexes,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var slotsBySourceIndex = workflow.Tables
+            .SelectMany(table => table.Slots)
+            .GroupBy(slot => slot.PokemonDataSourceIndex)
+            .ToDictionary(group => group.Key, group => group.First());
+        foreach (var sourceIndex in sourceIndexes.Distinct())
+        {
+            if (!slotsBySourceIndex.TryGetValue(sourceIndex, out var slot))
+            {
+                continue;
+            }
+
+            if (slot.LevelMin > slot.LevelMax)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Shared encounter level range is invalid: minimum {slot.LevelMin.ToString(CultureInfo.InvariantCulture)} "
+                    + $"is greater than maximum {slot.LevelMax.ToString(CultureInfo.InvariantCulture)} for every linked placement.",
+                    ZaEditSessionSupport.EncountersDomain,
+                    field: ZaEncountersWorkflowService.LevelMinField,
+                    expected: "Shared minimum level less than or equal to shared maximum level after all batch updates"));
+                continue;
+            }
+
+            if (!slot.HasAlphaChance)
+            {
+                continue;
+            }
+
+            if (slot.AlphaLevelBonus is not int alphaLevelBonus)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Shared Alpha level range cannot be changed while its source Alpha level bonus is outside the supported range from 0 through 100.",
+                    ZaEditSessionSupport.EncountersDomain,
+                    field: ZaEncountersWorkflowService.AlphaLevelBonusField,
+                    expected: "Preserve the unsupported source bonus or disable Alpha chance before changing the shared Alpha level range"));
+                continue;
+            }
+
+            var alphaLevelMaximum = (long)slot.LevelMax + alphaLevelBonus;
+            if (alphaLevelMaximum <= 100)
+            {
+                continue;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shared Alpha level range is invalid: base maximum {slot.LevelMax.ToString(CultureInfo.InvariantCulture)} "
+                + $"plus bonus {alphaLevelBonus.ToString(CultureInfo.InvariantCulture)} would produce level {alphaLevelMaximum.ToString(CultureInfo.InvariantCulture)} "
+                + "for every linked placement.",
+                ZaEditSessionSupport.EncountersDomain,
+                field: ZaEncountersWorkflowService.AlphaLevelBonusField,
+                expected: "When shared Alpha chance is above 0 percent, base maximum level plus Alpha level bonus must be at most 100"));
+        }
     }
 
     private static ZaEncountersWorkflow OverlayPendingEdits(
@@ -471,6 +696,18 @@ internal sealed class ZaEncountersEditSessionService
             },
             ZaEncountersWorkflowService.LevelMinField => slot with { LevelMin = value },
             ZaEncountersWorkflowService.LevelMaxField => slot with { LevelMax = value },
+            ZaEncountersWorkflowService.AlphaChancePercentField => slot with
+            {
+                AlphaChancePercent = value,
+                HasAlphaChance = value > 0,
+                EncounterKind = value switch
+                {
+                    100 => "Guaranteed Alpha",
+                    > 0 => "Alpha Chance",
+                    _ => "Wild",
+                },
+            },
+            ZaEncountersWorkflowService.AlphaLevelBonusField => slot with { AlphaLevelBonus = value },
             _ => slot,
         };
     }
@@ -575,6 +812,12 @@ internal sealed class ZaEncountersEditSessionService
             case ZaEncountersWorkflowService.LevelMaxField:
                 row.MaxLevel = value;
                 break;
+            case ZaEncountersWorkflowService.AlphaChancePercentField:
+                row.OyabunProbability = value;
+                break;
+            case ZaEncountersWorkflowService.AlphaLevelBonusField:
+                row.OyabunAdditionalLevel = value;
+                break;
         }
     }
 
@@ -585,7 +828,7 @@ internal sealed class ZaEncountersEditSessionService
             $"Encounter field '{field}' is not supported by Pokemon Legends Z-A Wild Encounters yet.",
             ZaEditSessionSupport.EncountersDomain,
             field: "field",
-            expected: "speciesId, form, levelMin, or levelMax");
+            expected: "speciesId, form, levelMin, levelMax, alphaChancePercent, or alphaLevelBonus");
     }
 
     private static string CreateSummary(
@@ -604,6 +847,10 @@ internal sealed class ZaEncountersEditSessionService
                 $"Set {table.Location} slot {slot.Slot} minimum level to {value}.",
             ZaEncountersWorkflowService.LevelMaxField =>
                 $"Set {table.Location} slot {slot.Slot} maximum level to {value}.",
+            ZaEncountersWorkflowService.AlphaChancePercentField =>
+                $"Set the shared Alpha chance to {value} percent for every placement linked to {slot.EncounterRecordId}.",
+            ZaEncountersWorkflowService.AlphaLevelBonusField =>
+                $"Set the shared Alpha level bonus to +{value} for every placement linked to {slot.EncounterRecordId}.",
             _ => $"Set {table.Location} slot {slot.Slot} {field.Label.ToLowerInvariant()} to {value}.",
         };
     }

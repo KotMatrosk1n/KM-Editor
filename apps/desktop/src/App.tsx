@@ -1358,6 +1358,8 @@ const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
 const encounterLevelMinFieldName = 'levelMin';
 const encounterLevelMaxFieldName = 'levelMax';
+const zaEncounterAlphaChanceFieldName = 'alphaChancePercent';
+const zaEncounterAlphaLevelBonusFieldName = 'alphaLevelBonus';
 const encounterClearFieldNames = [
   encounterSpeciesFieldName,
   encounterFormFieldName,
@@ -6983,7 +6985,7 @@ export function App({
       setEncountersWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
-      return true;
+      return !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -16515,7 +16517,34 @@ function getEncounterEditableFieldGroup(field: NumericEditableField) {
     return 'Probability';
   }
 
+  if (
+    field.field === zaEncounterAlphaChanceFieldName ||
+    field.field === zaEncounterAlphaLevelBonusFieldName
+  ) {
+    return 'Shared Alpha Settings';
+  }
+
   return 'Encounter Data';
+}
+
+function contextualizeZaEncounterField(
+  field: NumericEditableField,
+  slot: EncounterSlotRecord | null,
+  editorFamily: EditorUiFamily
+) {
+  if (
+    editorFamily !== 'za' ||
+    !slot ||
+    field.field !== zaEncounterAlphaChanceFieldName ||
+    isZaGuaranteedAlphaSlot(slot)
+  ) {
+    return field;
+  }
+
+  return {
+    ...field,
+    maximumValue: Math.min(field.maximumValue ?? 99, 99)
+  };
 }
 
 function getRaidBattleEditableFieldGroup(field: NumericEditableField) {
@@ -21367,8 +21396,8 @@ function SelectedEncounterPanel({
   const { t } = useLocalization();
   const defaultEncounterFields = useMemo(
     () =>
-      editableFields.map((field) =>
-        toNumericEditableControlField(
+      editableFields.map((field) => {
+        const numericField = toNumericEditableControlField(
           field,
           encounterSlot
             ? getContextualFieldOptions(field, {
@@ -21376,9 +21405,17 @@ function SelectedEncounterPanel({
                 speciesId: encounterSlot.speciesId
               })
             : undefined
-        )
-      ),
-    [editableFields, encounterSlot?.species, encounterSlot?.speciesId]
+        );
+        return contextualizeZaEncounterField(numericField, encounterSlot, editorFamily);
+      }),
+    [
+      editableFields,
+      editorFamily,
+      encounterSlot?.alphaChancePercent,
+      encounterSlot?.isAlpha,
+      encounterSlot?.species,
+      encounterSlot?.speciesId
+    ]
   );
   const encounterDraftDefaults = useMemo(
     () =>
@@ -21389,7 +21426,10 @@ function SelectedEncounterPanel({
         : {},
     [
       defaultEncounterFields,
+      encounterSlot?.alphaChancePercent,
+      encounterSlot?.alphaLevelBonus,
       encounterSlot?.form,
+      encounterSlot?.isAlpha,
       encounterSlot?.levelMax,
       encounterSlot?.levelMin,
       encounterSlot?.slot,
@@ -21407,6 +21447,87 @@ function SelectedEncounterPanel({
   const drafts = encounterDraftKey
     ? draftsBySlotKey[encounterDraftKey] ?? encounterDraftDefaults
     : {};
+  const isSelectedZaGuaranteedAlpha =
+    editorFamily === 'za' && encounterSlot !== null && isZaGuaranteedAlphaSlot(encounterSlot);
+  const linkedZaAlphaReferenceKinds = useMemo(() => {
+    const result = { hasOrdinary: false, hasSpecial: false };
+    if (editorFamily !== 'za' || !encounterDraftKey) {
+      return result;
+    }
+
+    for (const candidateTable of tables) {
+      for (const candidateSlot of candidateTable.slots) {
+        if (
+          getZaEncounterGroupKey(candidateTable.tableId, candidateSlot) !== encounterDraftKey
+        ) {
+          continue;
+        }
+
+        if (candidateSlot.isAlpha === true) {
+          result.hasSpecial = true;
+        } else {
+          result.hasOrdinary = true;
+        }
+      }
+    }
+
+    return result;
+  }, [editorFamily, encounterDraftKey, tables]);
+  const hasMixedLinkedZaAlphaReferences =
+    linkedZaAlphaReferenceKinds.hasSpecial && linkedZaAlphaReferenceKinds.hasOrdinary;
+  const isSelectedZaAlphaChanceUnavailable =
+    editorFamily === 'za' &&
+    encounterSlot !== null &&
+    getZaAlphaChancePercent(encounterSlot) === null;
+  const isSelectedZaAlphaLevelBonusUnavailable =
+    editorFamily === 'za' &&
+    encounterSlot !== null &&
+    typeof encounterSlot.alphaLevelBonus !== 'number';
+  const isZaAlphaChanceReadOnly =
+    isSelectedZaGuaranteedAlpha ||
+    linkedZaAlphaReferenceKinds.hasSpecial ||
+    isSelectedZaAlphaChanceUnavailable;
+  const selectedPlacementDrafts = useMemo(() => {
+    if (!encounterSlot) {
+      return drafts;
+    }
+
+    let nextDrafts = drafts;
+    if (isZaAlphaChanceReadOnly) {
+      const fixedChance = getEditableEncounterFieldValue(
+        encounterSlot,
+        zaEncounterAlphaChanceFieldName
+      );
+      nextDrafts = {
+        ...nextDrafts,
+        [zaEncounterAlphaChanceFieldName]: fixedChance?.toString() ?? ''
+      };
+    }
+    if (isSelectedZaAlphaLevelBonusUnavailable) {
+      nextDrafts = {
+        ...nextDrafts,
+        [zaEncounterAlphaLevelBonusFieldName]: ''
+      };
+    }
+    return nextDrafts;
+  }, [
+    drafts,
+    encounterSlot,
+    isSelectedZaAlphaLevelBonusUnavailable,
+    isZaAlphaChanceReadOnly
+  ]);
+  const alphaChanceDisabledReason = isSelectedZaAlphaChanceUnavailable
+    ? t('za.alphaSettings.unavailableDisabled')
+    : hasMixedLinkedZaAlphaReferences
+      ? t('za.alphaSettings.mixedDisabled')
+      : isSelectedZaGuaranteedAlpha
+        ? t('za.alphaSettings.guaranteedDisabled')
+        : linkedZaAlphaReferenceKinds.hasSpecial
+          ? t('za.alphaSettings.specialReferenceDisabled')
+          : undefined;
+  const alphaLevelBonusDisabledReason = isSelectedZaAlphaLevelBonusUnavailable
+    ? t('za.alphaSettings.levelBonusUnavailableDisabled')
+    : undefined;
   const encounterFormOptionContext = useMemo(
     () =>
       encounterSlot
@@ -21414,24 +21535,25 @@ function SelectedEncounterPanel({
             defaultEncounterFields.find(
               (field) => field.field === encounterSpeciesFieldName
             ) ?? null,
-            drafts[encounterSpeciesFieldName],
+            selectedPlacementDrafts[encounterSpeciesFieldName],
             encounterSlot.species,
             encounterSlot.speciesId,
             undefined,
             editorFamily
           )
         : undefined,
-    [defaultEncounterFields, drafts, editorFamily, encounterSlot]
+    [defaultEncounterFields, selectedPlacementDrafts, editorFamily, encounterSlot]
   );
   const encounterFields = useMemo(
     () =>
-      editableFields.map((field) =>
-        toNumericEditableControlField(
+      editableFields.map((field) => {
+        const numericField = toNumericEditableControlField(
           field,
           encounterSlot ? getContextualFieldOptions(field, encounterFormOptionContext) : undefined
-        )
-      ),
-    [editableFields, encounterFormOptionContext, encounterSlot]
+        );
+        return contextualizeZaEncounterField(numericField, encounterSlot, editorFamily);
+      }),
+    [editableFields, encounterFormOptionContext, encounterSlot, editorFamily]
   );
   const encounterFieldGroups = useMemo(
     () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
@@ -21441,10 +21563,10 @@ function SelectedEncounterPanel({
     () =>
       getTrainerDraftSummary(
         encounterFields,
-        drafts,
+        selectedPlacementDrafts,
         encounterSlot ? (field) => getEditableEncounterFieldValue(encounterSlot, field) : null
       ),
-    [drafts, encounterFields, encounterSlot]
+    [selectedPlacementDrafts, encounterFields, encounterSlot]
   );
   useRegisterEditorDraftDirty('encounters', countFieldDraftRecords(draftsBySlotKey) > 0);
   const canSaveEncounterDrafts =
@@ -21464,6 +21586,26 @@ function SelectedEncounterPanel({
   );
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const workflowHasZaAlphaChanceField = editableFields.some(
+    (field) => field.field === zaEncounterAlphaChanceFieldName
+  );
+  const workflowHasZaAlphaLevelBonusField = editableFields.some(
+    (field) => field.field === zaEncounterAlphaLevelBonusFieldName
+  );
+  const zaAlphaChanceDisplay =
+    isZaEncounterTable && encounterSlot
+      ? formatZaAlphaChance(encounterSlot, t) ??
+        (workflowHasZaAlphaChanceField ? t('za.alphaSettings.unavailable') : null)
+      : null;
+  const zaAlphaLevelBonusDisplay =
+    isZaEncounterTable && encounterSlot
+      ? formatZaAlphaLevelBonus(encounterSlot, t) ??
+        (workflowHasZaAlphaLevelBonusField
+          ? t('za.alphaSettings.unavailable')
+          : null)
+      : null;
+  const zaAlphaLevelRangeDisplay =
+    isZaEncounterTable && encounterSlot ? formatZaAlphaLevelRange(encounterSlot, t) : null;
   const canClearEncounterSlot =
     table !== null &&
     encounterSlot !== null &&
@@ -21796,6 +21938,24 @@ function SelectedEncounterPanel({
                     <dt>{isSvEncounterTable ? 'Lot weight' : 'Probability'}</dt>
                     <dd>{encounterSlot.weight}</dd>
                   </div>
+                  {zaAlphaChanceDisplay ? (
+                    <div>
+                      <dt>{t('za.alphaSettings.chanceLabel')}</dt>
+                      <dd>{zaAlphaChanceDisplay}</dd>
+                    </div>
+                  ) : null}
+                  {zaAlphaLevelBonusDisplay ? (
+                    <div>
+                      <dt>{t('za.alphaSettings.levelBonusLabel')}</dt>
+                      <dd>{zaAlphaLevelBonusDisplay}</dd>
+                    </div>
+                  ) : null}
+                  {zaAlphaLevelRangeDisplay ? (
+                    <div>
+                      <dt>{t('za.alphaSettings.levelRangeLabel')}</dt>
+                      <dd>{zaAlphaLevelRangeDisplay}</dd>
+                    </div>
+                  ) : null}
                   {isSvEncounterTable ? (
                     <div>
                       <dt title="Calculated from this slot's lot weight divided by the selected condition row's total lot weight.">
@@ -21841,7 +22001,7 @@ function SelectedEncounterPanel({
                             encounterSlot,
                             field.field
                           );
-                          const draftValue = drafts[field.field] ?? '';
+                          const draftValue = selectedPlacementDrafts[field.field] ?? '';
                           const draftState = getTrainerFieldDraftState(
                             draftValue,
                             currentValue,
@@ -21855,6 +22015,13 @@ function SelectedEncounterPanel({
                                 !canEditEncounters ||
                                 editSession === null ||
                                 isEncounterUpdating
+                              }
+                              disabledReason={
+                                field.field === zaEncounterAlphaChanceFieldName
+                                  ? alphaChanceDisabledReason
+                                  : field.field === zaEncounterAlphaLevelBonusFieldName
+                                    ? alphaLevelBonusDisabledReason
+                                    : undefined
                               }
                               draftState={draftState}
                               draftValue={draftValue}
@@ -22231,6 +22398,27 @@ function ZaEncounterGroupBrowser({
   const selectedCompletionState = getZaWildZoneCompletionState(
     selectedGroup.placements.map(({ slot }) => slot)
   );
+  const selectedGroupHasAlphaSettings = selectedGroup.placements.some(({ slot }) =>
+    hasZaAlphaSettings(slot)
+  );
+  const selectedGroupHasOrdinaryAlphaReference = selectedGroup.placements.some(
+    ({ slot }) => slot.isAlpha !== true
+  );
+  const selectedGroupHasSpecialAlphaReference = selectedGroup.placements.some(
+    ({ slot }) => slot.isAlpha === true
+  );
+  const selectedGroupHasMixedAlphaReferences =
+    selectedGroupHasOrdinaryAlphaReference && selectedGroupHasSpecialAlphaReference;
+  const showPlacementAlphaChance = selectedGroup.placements.some(
+    ({ slot }) => slot.alphaChancePercent !== undefined || slot.isAlpha === true
+  );
+  const placementLayoutClass = showPlacementAlphaChance
+    ? selectedCompletionState !== 'notApplicable'
+      ? 'za-encounter-placement-row-with-alpha-and-completion'
+      : 'za-encounter-placement-row-with-alpha'
+    : selectedCompletionState !== 'notApplicable'
+      ? 'za-encounter-placement-row-with-completion'
+      : '';
   const visibleSlotCount = displayedTables.reduce(
     (total, displayedTable) => total + displayedTable.slots.length,
     0
@@ -22397,17 +22585,16 @@ function ZaEncounterGroupBrowser({
           aria-label={`${selectedGroupLabel} linked spawners`}
         >
           <div
-            className={`za-encounter-placement-row za-encounter-placement-heading ${
-              selectedCompletionState !== 'notApplicable'
-                ? 'za-encounter-placement-row-with-completion'
-                : ''
-            }`}
+            className={`za-encounter-placement-row za-encounter-placement-heading ${placementLayoutClass}`}
             role="row"
           >
             <span role="columnheader">Spawner</span>
             <span role="columnheader">Slot</span>
             <span role="columnheader">Probability</span>
             <span role="columnheader">Conditions</span>
+            {showPlacementAlphaChance ? (
+              <span role="columnheader">{t('za.alphaSettings.chanceLabel')}</span>
+            ) : null}
             {selectedCompletionState !== 'notApplicable' ? (
               <span role="columnheader">{t('za.wildZoneCompletion.column')}</span>
             ) : null}
@@ -22421,9 +22608,16 @@ function ZaEncounterGroupBrowser({
               placementCompletionState === 'notApplicable'
                 ? ''
                 : t(getZaWildZoneCompletionStatusKey(placementCompletionState));
+            const placementAlphaChanceLabel = showPlacementAlphaChance
+              ? formatZaAlphaChance(placement.slot, t) ?? t('za.alphaSettings.unavailable')
+              : null;
             return (
               <button
                 aria-label={`${placementLabel}, slot ${placement.slot.slot + 1}, probability ${placement.slot.weight}, ${formatZaEncounterPlacementConditions(placement)}${
+                  placementAlphaChanceLabel
+                    ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
+                    : ''
+                }${
                   placementCompletionLabel
                     ? `, ${t('za.wildZoneCompletion.column')} ${placementCompletionLabel}`
                     : ''
@@ -22431,11 +22625,7 @@ function ZaEncounterGroupBrowser({
                 aria-pressed={isSelected}
                 className={`za-encounter-placement-row ${
                   isSelected ? 'za-encounter-placement-row-selected' : ''
-                } ${
-                  selectedCompletionState !== 'notApplicable'
-                    ? 'za-encounter-placement-row-with-completion'
-                    : ''
-                }`}
+                } ${placementLayoutClass}`}
                 key={`${placement.table.tableId}:${placement.slot.slot}`}
                 onClick={() =>
                   onSelectReference(placement.table.tableId, placement.slot.slot)
@@ -22447,6 +22637,9 @@ function ZaEncounterGroupBrowser({
                 <span role="cell">{placement.slot.slot + 1}</span>
                 <span role="cell">{placement.slot.weight}</span>
                 <span role="cell">{formatZaEncounterPlacementConditions(placement)}</span>
+                {placementAlphaChanceLabel ? (
+                  <span role="cell">{placementAlphaChanceLabel}</span>
+                ) : null}
                 {selectedCompletionState !== 'notApplicable' ? (
                   <span
                     className={
@@ -22469,11 +22662,29 @@ function ZaEncounterGroupBrowser({
 
       {selectedGroup.slotCount > 1 || selectedGroup.outsideScopeSpawnerCount > 0 ? (
         <p className="za-encounter-shared-scope-note">
-          Linked placements share this Pokemon entry.
+          {t(
+            selectedGroup.slotCount === 1
+              ? 'za.sharedPlacements.summary.one'
+              : 'za.sharedPlacements.summary.many',
+            { count: selectedGroup.slotCount }
+          )}{' '}
+          {t(
+            selectedGroupHasMixedAlphaReferences
+              ? 'za.sharedPlacements.sharedFields.mixed'
+              : selectedGroupHasAlphaSettings
+                ? 'za.sharedPlacements.sharedFields.alpha'
+                : 'za.sharedPlacements.sharedFields.basic'
+          )}{' '}
+          {t('za.sharedPlacements.specificFields')}{' '}
+          {selectedGroupHasAlphaSettings ? `${t('za.sharedPlacements.alphaRolls')} ` : ''}
           {selectedGroup.outsideScopeSpawnerCount > 0
-            ? ` It is also used by ${formatZaEncounterSpawnerCount(selectedGroup.outsideScopeSpawnerCount)} outside this view.`
-            : ''}{' '}
-          Saving changes updates every linked placement.
+            ? t(
+                selectedGroup.outsideScopeSpawnerCount === 1
+                  ? 'za.sharedPlacements.outside.one'
+                  : 'za.sharedPlacements.outside.many',
+                { count: selectedGroup.outsideScopeSpawnerCount }
+              )
+            : ''}
         </p>
       ) : null}
     </section>
@@ -32972,6 +33183,86 @@ function formatZaEncounterGroupCount(count: number) {
   return count === 1 ? '1 encounter' : `${count} encounters`;
 }
 
+type ZaLocalizationFormatter = (
+  key: string,
+  params?: Record<string, string | number>
+) => string;
+
+function getZaAlphaChancePercent(slot: EncounterSlotRecord) {
+  return typeof slot.alphaChancePercent === 'number' ? slot.alphaChancePercent : null;
+}
+
+function isZaGuaranteedAlphaSlot(slot: EncounterSlotRecord) {
+  const chance = getZaAlphaChancePercent(slot);
+  return chance !== null && chance >= 100;
+}
+
+function formatZaAlphaChance(
+  slot: EncounterSlotRecord,
+  translate: ZaLocalizationFormatter
+) {
+  if (isZaGuaranteedAlphaSlot(slot)) {
+    return translate('za.alphaSettings.guaranteed');
+  }
+
+  const chance = getZaAlphaChancePercent(slot);
+  if (chance === null) {
+    return null;
+  }
+
+  return chance === 0
+    ? translate('za.alphaSettings.none')
+    : translate('za.alphaSettings.perSpawn', { chance });
+}
+
+function formatZaAlphaLevelBonus(
+  slot: EncounterSlotRecord,
+  translate: ZaLocalizationFormatter
+) {
+  const bonus = slot.alphaLevelBonus;
+  if (typeof bonus !== 'number') {
+    return null;
+  }
+
+  if (!isZaGuaranteedAlphaSlot(slot) && getZaAlphaChancePercent(slot) === 0) {
+    return translate('za.alphaSettings.levelBonusInactive', { bonus });
+  }
+
+  return translate(
+    bonus === 1 ? 'za.alphaSettings.levelBonus.one' : 'za.alphaSettings.levelBonus.many',
+    { bonus }
+  );
+}
+
+function formatZaAlphaLevelRange(
+  slot: EncounterSlotRecord,
+  translate: ZaLocalizationFormatter
+) {
+  const bonus = slot.alphaLevelBonus;
+  const chance = getZaAlphaChancePercent(slot);
+  if (
+    typeof bonus !== 'number' ||
+    (!isZaGuaranteedAlphaSlot(slot) && (chance === null || chance <= 0))
+  ) {
+    return null;
+  }
+
+  return translate('za.alphaSettings.levelRange', {
+    baseMax: slot.levelMax,
+    baseMin: slot.levelMin,
+    bonus,
+    max: slot.levelMax + bonus,
+    min: slot.levelMin + bonus
+  });
+}
+
+function hasZaAlphaSettings(slot: EncounterSlotRecord) {
+  return (
+    slot.alphaChancePercent !== undefined ||
+    slot.alphaLevelBonus !== undefined
+  );
+}
+
 function formatZaEncounterGroupLabel(group: ZaEncounterGroup) {
   return formatSpeciesFormLabel(
     group.slot.species,
@@ -33743,6 +34034,10 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
       return encounterSlot.levelMin;
     case encounterLevelMaxFieldName:
       return encounterSlot.levelMax;
+    case zaEncounterAlphaChanceFieldName:
+      return encounterSlot.alphaChancePercent ?? null;
+    case zaEncounterAlphaLevelBonusFieldName:
+      return encounterSlot.alphaLevelBonus ?? null;
     default:
       return null;
   }
