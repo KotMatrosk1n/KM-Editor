@@ -122,11 +122,21 @@ export function HyperspaceBypassSection({
 
               <div className="encounter-edit-form">
                 <div className="form-actions">
-                  <button className="primary-button" disabled={!canStageInstall || isStaging} onClick={onStageInstall} type="button">
+                  <button
+                    className="primary-button"
+                    disabled={!canStageInstall || isStaging || isInstallStaged || isChangePlanApplying}
+                    onClick={onStageInstall}
+                    type="button"
+                  >
                     <Wrench aria-hidden="true" size={16} />
                     <span>{isStaging ? 'Staging' : installLabel}</span>
                   </button>
-                  <button className="danger-button" disabled={!canStageUninstall || isStaging} onClick={onStageUninstall} type="button">
+                  <button
+                    className="danger-button"
+                    disabled={!canStageUninstall || isStaging || isUninstallStaged || isChangePlanApplying}
+                    onClick={onStageUninstall}
+                    type="button"
+                  >
                     <Trash2 aria-hidden="true" size={16} />
                     <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
                   </button>
