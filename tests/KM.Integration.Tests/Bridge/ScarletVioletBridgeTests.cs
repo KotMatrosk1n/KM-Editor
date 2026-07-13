@@ -1216,18 +1216,35 @@ public sealed class ScarletVioletBridgeTests
         var paths = temp.Paths with { SelectedGame = game };
         var dispatcher = CreateDispatcherWithSvCache(temp);
 
+        var staleFashionStage = Dispatch<StageFashionUnlockInstallResponse>(
+            dispatcher,
+            KmCommandNames.StageFashionUnlockInstall,
+            new StageFashionUnlockInstallRequest(paths, Session: null),
+            "request-sv-fashion-stale-source-stage");
+        AssertSuccess(staleFashionStage);
+        AssertMainSource(Assert.Single(staleFashionStage.Payload!.Session.PendingEdits).Sources, FileLayerDto.Base);
+        var staleFashionPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, staleFashionStage.Payload.Session),
+            "request-sv-fashion-stale-source-plan");
+        AssertSuccess(staleFashionPlan);
+        AssertMainSource(Assert.Single(staleFashionPlan.Payload!.ChangePlan.Writes).Sources, FileLayerDto.Base);
+
         var hyperspaceStage = Dispatch<StageHyperspaceBypassInstallResponse>(
             dispatcher,
             KmCommandNames.StageHyperspaceBypassInstall,
             new StageHyperspaceBypassInstallRequest(paths, Session: null),
             "request-sv-hyperspace-before-fashion-stage");
         AssertSuccess(hyperspaceStage);
+        AssertMainSource(Assert.Single(hyperspaceStage.Payload!.Session.PendingEdits).Sources, FileLayerDto.Base);
         var hyperspacePlan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
             new CreateChangePlanRequest(paths, hyperspaceStage.Payload!.Session),
             "request-sv-hyperspace-before-fashion-plan");
         AssertSuccess(hyperspacePlan);
+        AssertMainSource(Assert.Single(hyperspacePlan.Payload!.ChangePlan.Writes).Sources, FileLayerDto.Base);
         var hyperspaceApply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
@@ -1236,18 +1253,58 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(hyperspaceApply);
         Assert.DoesNotContain(hyperspaceApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
+        var refreshedHyperspacePlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, hyperspaceStage.Payload.Session),
+            "request-sv-hyperspace-refreshed-source-plan");
+        AssertSuccess(refreshedHyperspacePlan);
+        AssertMainSource(Assert.Single(refreshedHyperspacePlan.Payload!.ChangePlan.Writes).Sources, FileLayerDto.Layered);
+        var staleHyperspaceApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, hyperspaceStage.Payload.Session, hyperspacePlan.Payload.ChangePlan),
+            "request-sv-hyperspace-stale-source-apply");
+        AssertSuccess(staleHyperspaceApply);
+        Assert.Empty(staleHyperspaceApply.Payload!.ApplyResult.WrittenFiles);
+        Assert.Contains(
+            staleHyperspaceApply.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+
+        var refreshedFashionPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, staleFashionStage.Payload.Session),
+            "request-sv-fashion-refreshed-source-plan");
+        AssertSuccess(refreshedFashionPlan);
+        AssertMainSource(Assert.Single(refreshedFashionPlan.Payload!.ChangePlan.Writes).Sources, FileLayerDto.Layered);
+        var staleFashionApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, staleFashionStage.Payload.Session, staleFashionPlan.Payload.ChangePlan),
+            "request-sv-fashion-stale-source-apply");
+        AssertSuccess(staleFashionApply);
+        Assert.Empty(staleFashionApply.Payload!.ApplyResult.WrittenFiles);
+        Assert.Contains(
+            staleFashionApply.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+
         var fashionStage = Dispatch<StageFashionUnlockInstallResponse>(
             dispatcher,
             KmCommandNames.StageFashionUnlockInstall,
             new StageFashionUnlockInstallRequest(paths, Session: null),
             "request-sv-fashion-after-hyperspace-stage");
         AssertSuccess(fashionStage);
+        AssertMainSource(Assert.Single(fashionStage.Payload!.Session.PendingEdits).Sources, FileLayerDto.Layered);
         var fashionPlan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
             KmCommandNames.CreateChangePlan,
             new CreateChangePlanRequest(paths, fashionStage.Payload!.Session),
             "request-sv-fashion-after-hyperspace-plan");
         AssertSuccess(fashionPlan);
+        AssertMainSource(Assert.Single(fashionPlan.Payload!.ChangePlan.Writes).Sources, FileLayerDto.Layered);
         var fashionApply = Dispatch<ApplyChangePlanResponse>(
             dispatcher,
             KmCommandNames.ApplyChangePlan,
@@ -1262,6 +1319,21 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal(
             (SvFashionUnlockBridgeFixtures.ReturnTrueFirst, SvFashionUnlockBridgeFixtures.ReturnTrueSecond),
             SvFashionUnlockBridgeFixtures.ReadPatchInstructions(installedOutput));
+
+        var hyperspaceRefreshStage = Dispatch<StageHyperspaceBypassInstallResponse>(
+            dispatcher,
+            KmCommandNames.StageHyperspaceBypassInstall,
+            new StageHyperspaceBypassInstallRequest(paths, Session: null),
+            "request-sv-hyperspace-refresh-source-stage");
+        AssertSuccess(hyperspaceRefreshStage);
+        AssertMainSource(Assert.Single(hyperspaceRefreshStage.Payload!.Session.PendingEdits).Sources, FileLayerDto.Layered);
+        var hyperspaceRefreshPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, hyperspaceRefreshStage.Payload.Session),
+            "request-sv-hyperspace-refresh-source-plan");
+        AssertSuccess(hyperspaceRefreshPlan);
+        AssertMainSource(Assert.Single(hyperspaceRefreshPlan.Payload!.ChangePlan.Writes).Sources, FileLayerDto.Layered);
 
         var uninstallStage = Dispatch<StageFashionUnlockUninstallResponse>(
             dispatcher,
@@ -5738,6 +5810,15 @@ public sealed class ScarletVioletBridgeTests
         var response = JsonSerializer.Deserialize<BridgeResponse<TPayload>>(responseJson, BridgeJson.SerializerOptions);
         Assert.NotNull(response);
         return response;
+    }
+
+    private static void AssertMainSource(
+        IReadOnlyList<FileProvenanceDto> sources,
+        FileLayerDto expectedLayer)
+    {
+        var source = Assert.Single(sources);
+        Assert.Equal(expectedLayer, source.Layer);
+        Assert.Equal("exefs/main", source.RelativePath);
     }
 
     private sealed record ScarletFixtureSet(

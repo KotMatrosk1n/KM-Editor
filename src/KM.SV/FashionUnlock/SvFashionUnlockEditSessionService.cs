@@ -52,11 +52,24 @@ public sealed class SvFashionUnlockEditSessionService
             return new SvFashionUnlockEditResult(workflow, currentSession, diagnostics);
         }
 
+        var source = SvFashionUnlockWorkflowService.ResolveWorkflowFile(
+            project,
+            SvFashionUnlockWorkflowService.ExeFsMainPath);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fashion Unlock source could not be resolved.",
+                file: SvFashionUnlockWorkflowService.ExeFsMainPath,
+                expected: "Readable exefs/main source"));
+            return new SvFashionUnlockEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
             PendingEdits = currentSession.PendingEdits
                 .Where(edit => !string.Equals(edit.Domain, FashionUnlockEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingInstallEdit())
+                .Append(CreatePendingInstallEdit([CreateSourceReference(source.Entry)]))
                 .ToArray(),
         };
 
@@ -195,6 +208,20 @@ public sealed class SvFashionUnlockEditSessionService
         }
 
         var isUninstall = IsUninstallSession(session);
+        var project = projectWorkspaceService.Open(paths);
+        var source = SvFashionUnlockWorkflowService.ResolveWorkflowFile(
+            project,
+            SvFashionUnlockWorkflowService.ExeFsMainPath);
+        if (!isUninstall && source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fashion Unlock source could not be resolved.",
+                file: SvFashionUnlockWorkflowService.ExeFsMainPath,
+                expected: "Readable exefs/main source"));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
         var writes = new[]
         {
             new PlannedFileWrite(
@@ -204,7 +231,7 @@ public sealed class SvFashionUnlockEditSessionService
                         new ProjectFileReference(ProjectFileLayer.Generated, SvFashionUnlockWorkflowService.ExeFsMainPath),
                         new ProjectFileReference(ProjectFileLayer.Base, SvFashionUnlockWorkflowService.ExeFsMainPath),
                     ]
-                    : [new ProjectFileReference(ProjectFileLayer.Base, SvFashionUnlockWorkflowService.ExeFsMainPath)],
+                    : [CreateSourceReference(source!.Entry)],
                 File.Exists(targetPath),
                 isUninstall
                     ? "Uninstall Fashion Unlock from exefs/main while preserving other generated ExeFS edits."
@@ -481,12 +508,12 @@ public sealed class SvFashionUnlockEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static PendingEdit CreatePendingInstallEdit()
+    private static PendingEdit CreatePendingInstallEdit(IReadOnlyList<ProjectFileReference> sources)
     {
         return new PendingEdit(
             FashionUnlockEditDomain,
             "Stage Fashion Unlock install.",
-            [new ProjectFileReference(ProjectFileLayer.Base, SvFashionUnlockWorkflowService.ExeFsMainPath)],
+            sources,
             InstallRecordId,
             InstallField,
             "true");
@@ -519,6 +546,14 @@ public sealed class SvFashionUnlockEditSessionService
     private static bool IsUninstallEdit(PendingEdit edit)
     {
         return string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal);
+    }
+
+    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
+    {
+        var layer = entry.LayeredFile is not null
+            ? ProjectFileLayer.Layered
+            : ProjectFileLayer.Base;
+        return new ProjectFileReference(layer, entry.RelativePath);
     }
 
     private static string? ResolveOutputPath(
@@ -575,16 +610,17 @@ public sealed class SvFashionUnlockEditSessionService
             return false;
         }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
+        var reviewedWrites = reviewedPlan.Writes
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
+        var currentWrites = currentPlan.Writes
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
 
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        return reviewedWrites
+            .Zip(currentWrites)
+            .All(pair => string.Equals(pair.First.TargetRelativePath, pair.Second.TargetRelativePath, StringComparison.Ordinal)
+                && pair.First.Sources.SequenceEqual(pair.Second.Sources));
     }
 
     private static ApplyResult CreateApplyResult(
