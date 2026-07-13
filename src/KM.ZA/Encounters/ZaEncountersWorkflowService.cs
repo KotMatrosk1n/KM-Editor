@@ -21,6 +21,7 @@ internal sealed class ZaEncountersWorkflowService
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
     private const string GameVersionLabel = "Pokemon Legends ZA";
     private const string TableIdPrefix = "za-spawner";
+    private const string PokemonDataRecordIdPrefix = "encount-data:";
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -95,6 +96,23 @@ internal sealed class ZaEncountersWorkflowService
     internal static string CreateSlotRecordId(string tableId, int slot)
     {
         return string.Create(CultureInfo.InvariantCulture, $"{tableId}#{slot}");
+    }
+
+    internal static string CreatePokemonDataRecordId(int sourceIndex)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{PokemonDataRecordIdPrefix}{sourceIndex}");
+    }
+
+    internal static bool TryParsePokemonDataRecordId(string? recordId, out int sourceIndex)
+    {
+        sourceIndex = -1;
+        return recordId?.StartsWith(PokemonDataRecordIdPrefix, StringComparison.Ordinal) == true
+            && int.TryParse(
+                recordId[PokemonDataRecordIdPrefix.Length..],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out sourceIndex)
+            && sourceIndex >= 0;
     }
 
     internal static bool TryParseSlotRecordId(string? recordId, out string tableId, out int slot)

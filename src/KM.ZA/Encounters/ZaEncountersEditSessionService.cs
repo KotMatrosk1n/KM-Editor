@@ -336,7 +336,7 @@ internal sealed class ZaEncountersEditSessionService
             ZaEditSessionSupport.EncountersDomain,
             CreateSummary(table, slot, editableField, parsedValue.Value),
             new ProjectFileReference(slot.PokemonProvenance.SourceLayer, slot.PokemonProvenance.SourceFile),
-            ZaEncountersWorkflowService.CreateSlotRecordId(table.TableId, slot.Slot),
+            ZaEncountersWorkflowService.CreatePokemonDataRecordId(slot.PokemonDataSourceIndex),
             normalizedField,
             parsedValue.Value.ToString(CultureInfo.InvariantCulture));
     }
@@ -363,15 +363,14 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        if (!ZaEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot)
-            || workflow.Tables.FirstOrDefault(table => table.TableId == tableId)?.Slots.All(row => row.Slot != slot) != false)
+        if (!TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out _))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending encounter edit targets a slot that is not loaded.",
+                "Pending encounter edit targets an encounter data row that is not loaded.",
                 ZaEditSessionSupport.EncountersDomain,
                 field: "slot",
-                expected: "Existing Pokemon Legends Z-A encounter slot"));
+                expected: "Existing Pokemon Legends Z-A encounter data row"));
             return;
         }
 
@@ -425,7 +424,7 @@ internal sealed class ZaEncountersEditSessionService
     private static ZaEncountersWorkflow OverlayPendingEdit(ZaEncountersWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.EncountersDomain, StringComparison.Ordinal)
-            || !ZaEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot)
+            || !TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out var sourceIndex)
             || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
         {
             return workflow;
@@ -434,14 +433,14 @@ internal sealed class ZaEncountersEditSessionService
         return workflow with
         {
             Tables = workflow.Tables
-                .Select(table => table.TableId == tableId
-                    ? table with
-                    {
-                        Slots = table.Slots
-                            .Select(row => row.Slot == slot ? OverlaySlot(workflow, row, edit.Field, value) : row)
-                            .ToArray(),
-                    }
-                    : table)
+                .Select(table => table with
+                {
+                    Slots = table.Slots
+                        .Select(row => row.PokemonDataSourceIndex == sourceIndex
+                            ? OverlaySlot(workflow, row, edit.Field, value)
+                            : row)
+                        .ToArray(),
+                })
                 .ToArray(),
         };
     }
@@ -504,7 +503,7 @@ internal sealed class ZaEncountersEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.EncountersDomain, StringComparison.Ordinal)
-            || !ZaEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot)
+            || !TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out var sourceIndex)
             || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -515,13 +514,7 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        var slotRecord = workflow.Tables
-            .FirstOrDefault(candidate => string.Equals(candidate.TableId, tableId, StringComparison.Ordinal))
-            ?.Slots
-            .FirstOrDefault(candidate => candidate.Slot == slot);
-        var row = slotRecord is null || slotRecord.PokemonDataSourceIndex < 0
-            ? null
-            : document.Entries.FirstOrDefault(candidate => candidate.SourceIndex == slotRecord.PokemonDataSourceIndex);
+        var row = document.Entries.FirstOrDefault(candidate => candidate.SourceIndex == sourceIndex);
         if (row is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -534,6 +527,33 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         ApplyField(row, edit.Field, value);
+    }
+
+    private static bool TryResolvePokemonDataSourceIndex(
+        ZaEncountersWorkflow workflow,
+        string? recordId,
+        out int sourceIndex)
+    {
+        if (ZaEncountersWorkflowService.TryParsePokemonDataRecordId(recordId, out sourceIndex))
+        {
+            var resolvedSourceIndex = sourceIndex;
+            return workflow.Tables
+                .SelectMany(table => table.Slots)
+                .Any(slot => slot.PokemonDataSourceIndex == resolvedSourceIndex);
+        }
+
+        if (ZaEncountersWorkflowService.TryParseSlotRecordId(recordId, out var tableId, out var slot))
+        {
+            sourceIndex = workflow.Tables
+                .FirstOrDefault(candidate => string.Equals(candidate.TableId, tableId, StringComparison.Ordinal))
+                ?.Slots
+                .FirstOrDefault(candidate => candidate.Slot == slot)
+                ?.PokemonDataSourceIndex ?? -1;
+            return sourceIndex >= 0;
+        }
+
+        sourceIndex = -1;
+        return false;
     }
 
     private static void ApplyField(
