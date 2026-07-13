@@ -3666,6 +3666,80 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAWildEncountersSynchronizeSlotsLinkedToTheSameDataRow()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp, includeAlphaAndRawSpawners: true);
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounters-linked-load");
+
+        AssertSuccess(load);
+        var tables = load.Payload!.Workflow.Tables;
+        Assert.Equal(15, tables.Count);
+        var firstTable = tables[0];
+        var firstSlot = Assert.Single(firstTable.Slots);
+        var secondTable = tables[1];
+        var secondSlot = Assert.Single(secondTable.Slots);
+
+        var firstUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(paths, Session: null, firstTable.TableId, firstSlot.Slot, "levelMin", "25"),
+            "request-za-encounters-linked-first");
+        AssertSuccess(firstUpdate);
+        Assert.All(
+            firstUpdate.Payload!.Workflow.Tables.SelectMany(table => table.Slots),
+            slot => Assert.Equal(25, slot.LevelMin));
+
+        var secondUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                firstUpdate.Payload.Session,
+                secondTable.TableId,
+                secondSlot.Slot,
+                "levelMin",
+                "30"),
+            "request-za-encounters-linked-second");
+        AssertSuccess(secondUpdate);
+        var pendingEdit = Assert.Single(secondUpdate.Payload!.Session.PendingEdits);
+        Assert.Equal("30", pendingEdit.NewValue);
+        Assert.All(
+            secondUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
+            slot => Assert.Equal(30, slot.LevelMin));
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, secondUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-linked-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                secondUpdate.Payload.Session,
+                plan.Payload.ChangePlan,
+                ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-linked-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(30, ReadEncountData(temp, "wild_ignore").MinLevel);
+    }
+
+    [Fact]
     public void PokemonLegendsZAWildEncountersDescribeAlphaAndRawSpawnerLocations()
     {
         using var temp = CreatePokemonLegendsZAProject();
