@@ -1607,6 +1607,76 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(RepresentativeScarletVioletGame))]
+    public void ScarletVioletPokemonCompatibilityRemovesTheIntendedMoves(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.PersonalArray,
+            CreatePersonalArray(
+                eggMoves: [33, 45, 349],
+                reminderMoves: [349, 45, 33]));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var session = UpdatePokemonField(
+            dispatcher,
+            paths,
+            personalId: 1,
+            field: "compatibility:egg:0",
+            value: "0");
+        session = UpdatePokemonField(dispatcher, paths, session, personalId: 1, field: "hp", value: "46");
+        session = UpdatePokemonField(
+            dispatcher,
+            paths,
+            session,
+            personalId: 1,
+            field: "compatibility:reminder:0",
+            value: "0");
+        session = UpdatePokemonField(
+            dispatcher,
+            paths,
+            session,
+            personalId: 1,
+            field: "compatibility:egg:1",
+            value: "0");
+        session = UpdatePokemonField(
+            dispatcher,
+            paths,
+            session,
+            personalId: 1,
+            field: "compatibility:reminder:1",
+            value: "0");
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session),
+            "request-sv-compatibility-removal-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan),
+            "request-sv-compatibility-removal-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadPersonal(temp, personalId: 1);
+        var eggMoves = Enumerable.Range(0, written.EggMovesLength).Select(written.EggMoves).ToArray();
+        var reminderMoves = Enumerable.Range(0, written.ReminderMovesLength).Select(written.ReminderMoves).ToArray();
+        Assert.Equal(new ushort[] { 349 }, eggMoves);
+        Assert.Equal(new ushort[] { 33 }, reminderMoves);
+        Assert.Equal(46, written.BaseStats!.Value.Hp);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepresentativeScarletVioletGame))]
     public void ScarletVioletProjectLoadsEnglishMessageLabels(
         ProjectGameDto game,
         ulong titleId)
@@ -4658,7 +4728,9 @@ public sealed class ScarletVioletBridgeTests
         ushort evolutionCondition = 4,
         ushort evolutionParameter = 0,
         ushort evolutionSpecies = 2,
-        byte evolutionForm = 0)
+        byte evolutionForm = 0,
+        IReadOnlyList<ushort>? eggMoves = null,
+        IReadOnlyList<ushort>? reminderMoves = null)
     {
         var builder = new FlatBufferBuilder(2048);
         var empty = CreatePersonal(builder, species: 0, hp: 0, level: 0, evolutionLevel: 0);
@@ -4671,7 +4743,9 @@ public sealed class ScarletVioletBridgeTests
             evolutionCondition: evolutionCondition,
             evolutionParameter: evolutionParameter,
             evolutionSpecies: evolutionSpecies,
-            evolutionForm: evolutionForm);
+            evolutionForm: evolutionForm,
+            eggMoves: eggMoves,
+            reminderMoves: reminderMoves);
         var charmander = CreatePersonal(
             builder,
             species: 4,
@@ -4722,11 +4796,13 @@ public sealed class ScarletVioletBridgeTests
         ushort evolutionCondition = 4,
         ushort evolutionParameter = 0,
         ushort evolutionSpecies = 2,
-        byte evolutionForm = 0)
+        byte evolutionForm = 0,
+        IReadOnlyList<ushort>? eggMoves = null,
+        IReadOnlyList<ushort>? reminderMoves = null)
     {
         var tmMoves = global::personal.CreateTmMovesVector(builder, species == 0 ? [] : [(ushort)36]);
-        var eggMoves = global::personal.CreateEggMovesVector(builder, []);
-        var reminderMoves = global::personal.CreateReminderMovesVector(builder, []);
+        var eggMoveVector = global::personal.CreateEggMovesVector(builder, eggMoves?.ToArray() ?? []);
+        var reminderMoveVector = global::personal.CreateReminderMovesVector(builder, reminderMoves?.ToArray() ?? []);
 
         IReadOnlyList<(ushort Move, ushort Level)> moves = species == 0
             ? Array.Empty<(ushort Move, ushort Level)>()
@@ -4761,8 +4837,8 @@ public sealed class ScarletVioletBridgeTests
 
         global::personal.Startpersonal(builder);
         global::personal.AddLevelupMoves(builder, levelupMoves);
-        global::personal.AddReminderMoves(builder, reminderMoves);
-        global::personal.AddEggMoves(builder, eggMoves);
+        global::personal.AddReminderMoves(builder, reminderMoveVector);
+        global::personal.AddEggMoves(builder, eggMoveVector);
         global::personal.AddTmMoves(builder, tmMoves);
         global::personal.AddEvolutions(builder, evolutions);
         global::personal.AddBaseStats(builder, global::stat_info.Createstat_info(builder, hp, 49, 49, 65, 65, 45));
