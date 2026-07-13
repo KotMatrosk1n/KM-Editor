@@ -560,9 +560,10 @@ public sealed class SvWorkflowService
         string shopId,
         int slot,
         string field,
-        string value)
+        string value,
+        string? rowId = null)
     {
-        return shopsEditSessionService.UpdateInventoryItem(paths, session, shopId, slot, field, value);
+        return shopsEditSessionService.UpdateInventoryItem(paths, session, shopId, slot, field, value, rowId);
     }
 
     public SvPlacementEditResult UpdatePlacementObjectField(

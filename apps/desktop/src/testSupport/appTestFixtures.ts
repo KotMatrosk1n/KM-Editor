@@ -45,6 +45,7 @@ import {
 } from '../bridge/contracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
+import { parseShopInventoryUpdateItemIds } from '../features/shops/shopInventoryUpdate';
 import { getApplyMessage, getValidationMessage } from './appTestFixtureMessages';
 import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures'; import { createFpsPatchBridgeFixture } from './fpsPatchTestFixtures';
 import { createGameDumpBridgeFixture } from './gameDumpTestFixtures';
@@ -2820,6 +2821,7 @@ export function createMockProjectBridge(
             itemName: 'Potion',
             price: 300,
             priceField: null,
+            rowId: null,
             slot: 1,
             stockLimit: null,
             supportedFields: []
@@ -2833,6 +2835,7 @@ export function createMockProjectBridge(
             itemName: 'Antidote',
             price: 200,
             priceField: null,
+            rowId: null,
             slot: 2,
             stockLimit: null,
             supportedFields: []
@@ -6934,10 +6937,7 @@ export function createMockProjectBridge(
     updateShopInventoryItem: (request) => {
       const orderedItemIds =
         request.field === 'setInventory'
-          ? request.value
-              .split(',')
-              .filter((value) => value.length > 0)
-              .map((value) => Number.parseInt(value, 10))
+          ? parseShopInventoryUpdateItemIds(request.value)
           : null;
       const formatItem = (itemId: number, slot: number) => {
         const item = itemsWorkflow.items.find((candidate) => candidate.itemId === itemId);
@@ -6951,6 +6951,7 @@ export function createMockProjectBridge(
           itemName: item?.name ?? `Item ${itemId}`,
           price: item?.buyPrice ?? 0,
           priceField: null,
+          rowId: null,
           slot,
           stockLimit: null,
           supportedFields: []

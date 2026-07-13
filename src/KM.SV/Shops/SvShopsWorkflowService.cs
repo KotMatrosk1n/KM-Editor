@@ -35,10 +35,12 @@ internal sealed class SvShopsWorkflowService
     public const string RegionField = "region";
     public const int MinimumItemId = 0;
     public const int MaximumItemId = 65_535;
+    public const string SourceRowIdPrefix = "source:";
+    public const string NewRowIdPrefix = "new:";
 
     private const string WorkflowLabel = "Shops";
     private const string WorkflowDescription = "Edit Scarlet/Violet shop inventories, TM Machine recipes, unlocks, and source provenance.";
-    private const string SourceRowIdentityPrefix = "row:source:";
+    private const string RecordRowIdentityPrefix = "row:";
 
     private static readonly IReadOnlyDictionary<string, ShopLineupDefinition> KnownLineups =
         new Dictionary<string, ShopLineupDefinition>(StringComparer.Ordinal)
@@ -154,11 +156,32 @@ internal sealed class SvShopsWorkflowService
 
     public static string CreateInventoryRecordId(string shopId, int slot, int? sourceIndex = null)
     {
-        var positionalId = string.Create(CultureInfo.InvariantCulture, $"{shopId}#{slot}");
         return sourceIndex is >= 0
-            ? string.Create(CultureInfo.InvariantCulture, $"{positionalId}#{SourceRowIdentityPrefix}{sourceIndex}")
-            : positionalId;
+            ? CreateInventoryRecordId(shopId, slot, CreateSourceRowId(sourceIndex.Value))
+            : string.Create(CultureInfo.InvariantCulture, $"{shopId}#{slot}");
     }
+
+    public static string CreateInventoryRecordId(string shopId, int slot, string rowId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rowId);
+        if (!IsValidRowId(rowId))
+        {
+            throw new ArgumentException("Shop row identity is not valid.", nameof(rowId));
+        }
+
+        var positionalId = string.Create(CultureInfo.InvariantCulture, $"{shopId}#{slot}");
+        return string.Create(CultureInfo.InvariantCulture, $"{positionalId}#{RecordRowIdentityPrefix}{rowId}");
+    }
+
+    public static string CreateSourceRowId(int sourceIndex) =>
+        string.Create(CultureInfo.InvariantCulture, $"{SourceRowIdPrefix}{sourceIndex}");
+
+    public static bool IsValidRowId(string? rowId) =>
+        TryParseRowNumber(rowId, SourceRowIdPrefix, allowZero: true, out _)
+        || TryParseRowNumber(rowId, NewRowIdPrefix, allowZero: false, out _);
+
+    public static bool TryParseSourceRowId(string? rowId, out int sourceIndex) =>
+        TryParseRowNumber(rowId, SourceRowIdPrefix, allowZero: true, out sourceIndex);
 
     public static bool TryParseInventoryRecordId(string? recordId, out string shopId, out int slot) =>
         TryParseInventoryRecordId(recordId, out shopId, out slot, out _);
@@ -169,9 +192,22 @@ internal sealed class SvShopsWorkflowService
         out int slot,
         out int? sourceIndex)
     {
+        var parsed = TryParseInventoryRecordRowId(recordId, out shopId, out slot, out var rowId);
+        sourceIndex = TryParseSourceRowId(rowId, out var parsedSourceIndex)
+            ? parsedSourceIndex
+            : null;
+        return parsed;
+    }
+
+    public static bool TryParseInventoryRecordRowId(
+        string? recordId,
+        out string shopId,
+        out int slot,
+        out string? rowId)
+    {
         shopId = string.Empty;
         slot = 0;
-        sourceIndex = null;
+        rowId = null;
 
         if (string.IsNullOrEmpty(recordId))
         {
@@ -183,19 +219,15 @@ internal sealed class SvShopsWorkflowService
         if (identitySeparatorIndex > 0)
         {
             var identity = recordId[(identitySeparatorIndex + 1)..];
-            if (identity.StartsWith(SourceRowIdentityPrefix, StringComparison.Ordinal))
+            if (identity.StartsWith(RecordRowIdentityPrefix, StringComparison.Ordinal))
             {
-                if (!int.TryParse(
-                        identity[SourceRowIdentityPrefix.Length..],
-                        NumberStyles.None,
-                        CultureInfo.InvariantCulture,
-                        out var parsedSourceIndex)
-                    || parsedSourceIndex < 0)
+                var parsedRowId = identity[RecordRowIdentityPrefix.Length..];
+                if (!IsValidRowId(parsedRowId))
                 {
                     return false;
                 }
 
-                sourceIndex = parsedSourceIndex;
+                rowId = parsedRowId;
                 positionalId = recordId[..identitySeparatorIndex];
             }
         }
@@ -209,6 +241,18 @@ internal sealed class SvShopsWorkflowService
         shopId = positionalId[..separatorIndex];
         return int.TryParse(positionalId[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
             && slot >= 1;
+    }
+
+    private static bool TryParseRowNumber(
+        string? rowId,
+        string prefix,
+        bool allowZero,
+        out int value)
+    {
+        value = 0;
+        return rowId?.StartsWith(prefix, StringComparison.Ordinal) == true
+            && int.TryParse(rowId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out value)
+            && (allowZero ? value >= 0 : value >= 1);
     }
 
     public static bool IsFriendlyShopId(string shopId, out string lineupId)
@@ -399,7 +443,8 @@ internal sealed class SvShopsWorkflowService
             [SortOrderField, ConditionKindField, ConditionValueField, GymBadgeCountField],
             PriceField: null,
             CanEditPrice: true,
-            SourceIndex: row.SourceIndex);
+            SourceIndex: row.SourceIndex,
+            RowId: CreateSourceRowId(row.SourceIndex));
     }
 
     private static SvShopInventoryRecord ToTechnicalMachineInventoryRecord(
@@ -465,7 +510,8 @@ internal sealed class SvShopsWorkflowService
             ],
             PriceField: LpCostField,
             CanEditPrice: true,
-            SourceIndex: row.SourceIndex);
+            SourceIndex: row.SourceIndex,
+            RowId: CreateSourceRowId(row.SourceIndex));
     }
 
     private static ResolvedItem ResolveItem(
@@ -699,6 +745,8 @@ internal sealed class SvShopsWorkflowService
         string ConditionValue,
         int GymBadgeNum)
     {
+        public string RowId { get; init; } = CreateSourceRowId(SourceIndex);
+
         public static FriendlyShopRow From(int sourceIndex, global::LineupData row) =>
             new(
                 sourceIndex,

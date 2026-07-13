@@ -306,6 +306,11 @@ import {
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
 import {
+  createShopInventoryUpdateValue,
+  getNextShopInventoryDraftId,
+  parseShopInventoryUpdateItemIds
+} from './features/shops/shopInventoryUpdate';
+import {
   ShinyRateSection,
   formatShinyRatePendingValue
 } from './features/shiny-rate/ShinyRateSection';
@@ -6872,10 +6877,11 @@ export function App({
       let nextItemsWorkflow = itemsWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of inventoryChanges) {
+      for (const change of rowFieldChanges) {
         const response = await bridge.updateShopInventoryItem({
           field: change.field,
           paths: createProjectPaths(draftPaths),
+          rowId: change.rowId,
           session: nextSession,
           shopId,
           slot: change.slot,
@@ -6886,10 +6892,11 @@ export function App({
         nextDiagnostics = response.diagnostics;
       }
 
-      for (const change of rowFieldChanges) {
+      for (const change of inventoryChanges) {
         const response = await bridge.updateShopInventoryItem({
           field: change.field,
           paths: createProjectPaths(draftPaths),
+          rowId: change.rowId,
           session: nextSession,
           shopId,
           slot: change.slot,
@@ -16255,10 +16262,7 @@ function getPokemonCompatibilityPendingFieldLabel(
 }
 
 function formatShopInventoryOrderValue(value: string | null | undefined, context: PendingEditContext) {
-  const itemIds = (value ?? '')
-    .split(',')
-    .map((part) => parseOptionalInteger(part))
-    .filter((itemId): itemId is number => itemId !== null);
+  const itemIds = parseShopInventoryUpdateItemIds(value);
 
   if (itemIds.length === 0) {
     return 'n/a';
@@ -19724,7 +19728,7 @@ function SelectedShopPanel({
         shop?.inventory.map((item) => [item.slot, item.itemId.toString()]) ?? []
       ),
       newItemIdDraft: (itemIdOptions[0]?.value ?? 0).toString(),
-      nextAddedRowId: 1,
+      nextAddedRowId: getNextShopInventoryDraftId(shop?.inventory ?? []),
       priceDrafts: {},
       rowOrder: shop?.inventory.map((item) => getShopExistingRowKey(item.slot)) ?? [],
       removedSlots: []
@@ -19774,18 +19778,23 @@ function SelectedShopPanel({
       return [];
     }
 
-    const finalItemIds: number[] = [];
+    const finalRows: Array<{ itemId: number; rowId: string | null }> = [];
     for (const item of shopInventoryRows) {
       if (item.parsedItemId === null) {
         return [];
       }
 
       if (item.parsedItemId !== shopNoneItemId) {
-        finalItemIds.push(item.parsedItemId);
+        finalRows.push({ itemId: item.parsedItemId, rowId: item.rowId });
       }
     }
 
-    if (areNumberArraysEqual(finalItemIds, shop.inventory.map((item) => item.itemId))) {
+    const value = createShopInventoryUpdateValue(
+      shop.editorFamily,
+      shop.inventory.map((item) => ({ itemId: item.itemId, rowId: item.rowId })),
+      finalRows
+    );
+    if (value === null) {
       return [];
     }
 
@@ -19793,7 +19802,7 @@ function SelectedShopPanel({
       {
         field: shopSetInventoryFieldName,
         slot: 1,
-        value: finalItemIds.join(',')
+        value
       }
     ];
   }, [itemIdField, shop, shopInventoryRows]);
@@ -19849,6 +19858,7 @@ function SelectedShopPanel({
 
       changes.push({
         field: field.field,
+        rowId: selectedInventoryItem.rowId ?? undefined,
         slot: selectedInventoryItem.slot,
         value: draftValue
       });
@@ -20835,6 +20845,7 @@ function createShopInventoryDraftRows(
           price,
           priceDraft,
           priceField: inventoryItem.priceField,
+          rowId: inventoryItem.rowId ?? key,
           sourceSlot,
           stockLimit: isOriginalItem ? inventoryItem.stockLimit : null,
           supportedFields: inventoryItem.supportedFields
@@ -20875,6 +20886,7 @@ function createShopInventoryDraftRows(
         price,
         priceDraft,
         priceField: null,
+        rowId: key,
         sourceSlot: null,
         stockLimit: null,
         supportedFields: []
@@ -34312,6 +34324,7 @@ type TrinityOutputConfirmationState = { mode: ChangePlanOutputMode };
 
 type ShopInventoryDraftChange = {
   field: string;
+  rowId?: string;
   slot: number;
   value: string;
 };
@@ -34351,6 +34364,7 @@ type ShopInventoryDraftRow = {
   price: number;
   priceDraft: string;
   priceField: string | null;
+  rowId: string;
   sourceSlot: number | null;
   stockLimit: number | null;
   supportedFields: string[];
@@ -34655,10 +34669,6 @@ function parseEditableIntegerDraft(value: string, options?: EditableFieldOption[
 
   const prefixMatch = normalizedValue.match(/^-?\d+/);
   return prefixMatch ? Number.parseInt(prefixMatch[0], 10) : null;
-}
-
-function areNumberArraysEqual(left: readonly number[], right: readonly number[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function areStringArraysEqual(left: readonly string[], right: readonly string[]) {

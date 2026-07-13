@@ -33,6 +33,8 @@ public sealed record ShopInventoryRecordDto(
     public string? PriceField { get; init; }
 
     public bool CanEditPrice { get; init; } = true;
+
+    public string? RowId { get; init; }
 }
 
 public sealed record ShopRecordDto(
@@ -91,7 +93,10 @@ public sealed record UpdateShopInventoryItemRequest(
     string ShopId,
     int Slot,
     string Field,
-    string Value);
+    string Value)
+{
+    public string? RowId { get; init; }
+}
 
 public sealed record UpdateShopInventoryItemResponse(
     ShopsWorkflowDto Workflow,

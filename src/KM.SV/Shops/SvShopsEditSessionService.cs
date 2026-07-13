@@ -7,11 +7,14 @@ using KM.Core.Projects;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
+using System.Text.Json;
 
 namespace KM.SV.Shops;
 
 internal sealed class SvShopsEditSessionService
 {
+    private static readonly JsonSerializerOptions InventoryJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
     private readonly SvShopsWorkflowService shopsWorkflowService;
@@ -32,7 +35,8 @@ internal sealed class SvShopsEditSessionService
         string shopId,
         int slot,
         string field,
-        string value)
+        string value,
+        string? rowId = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(shopId);
@@ -56,6 +60,7 @@ internal sealed class SvShopsEditSessionService
         }
 
         var selectedShop = workflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId);
+        var loadedShop = loadedWorkflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId);
         if (selectedShop is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -66,13 +71,21 @@ internal sealed class SvShopsEditSessionService
             return new SvShopsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(workflow, selectedShop, slot, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(
+            workflow,
+            selectedShop,
+            loadedShop,
+            slot,
+            rowId,
+            field,
+            value,
+            diagnostics);
         if (pendingEdit is null)
         {
             return new SvShopsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingShopEdit(currentSession, pendingEdit);
         return new SvShopsEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -96,7 +109,7 @@ internal sealed class SvShopsEditSessionService
             diagnostics);
 
         var validationWorkflow = workflow;
-        foreach (var edit in session.PendingEdits)
+        foreach (var edit in OrderPendingEdits(session.PendingEdits))
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidatePendingEdit(validationWorkflow, edit, diagnostics);
@@ -222,7 +235,7 @@ internal sealed class SvShopsEditSessionService
             var tmSource = fileSource.Read(project, SvDataPaths.ShopWazaMachineDataArray);
             var tmRows = SvShopsWorkflowService.ReadTechnicalMachineRows(tmSource.Bytes).ToList();
 
-            foreach (var edit in session.PendingEdits)
+            foreach (var edit in OrderPendingEdits(session.PendingEdits))
             {
                 ApplyEdit(friendlyRows, tmRows, edit, diagnostics);
             }
@@ -276,7 +289,9 @@ internal sealed class SvShopsEditSessionService
     private static PendingEdit? CreatePendingEdit(
         SvShopsWorkflow workflow,
         SvShopRecord shop,
+        SvShopRecord? sourceIdentityShop,
         int slot,
+        string? requestedRowId,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -286,7 +301,19 @@ internal sealed class SvShopsEditSessionService
         var isSetInventory = string.Equals(normalizedField, SvShopsWorkflowService.SetInventoryField, StringComparison.Ordinal);
         var isAdd = string.Equals(normalizedField, SvShopsWorkflowService.AddItemField, StringComparison.Ordinal);
         var isRemove = string.Equals(normalizedField, SvShopsWorkflowService.RemoveItemField, StringComparison.Ordinal);
-        var inventoryItem = shop.Inventory.FirstOrDefault(item => item.Slot == slot);
+        if (requestedRowId is not null && !SvShopsWorkflowService.IsValidRowId(requestedRowId))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shop row identity '{requestedRowId}' is not valid.",
+                field: "rowId",
+                expected: "Existing S/V shop row identity"));
+            return null;
+        }
+
+        var inventoryItem = requestedRowId is not null
+            ? shop.Inventory.FirstOrDefault(item => item.RowId == requestedRowId)
+            : shop.Inventory.FirstOrDefault(item => item.Slot == slot);
 
         if ((isSetInventory || isAdd || isRemove) && !shop.CanEditInventoryOrder)
         {
@@ -300,7 +327,11 @@ internal sealed class SvShopsEditSessionService
 
         if (isSetInventory)
         {
-            if (!ValidateInventoryList(normalizedValue, diagnostics, normalizedField))
+            if (!ValidateInventoryUpdate(
+                    normalizedValue,
+                    sourceIdentityShop ?? shop,
+                    diagnostics,
+                    normalizedField))
             {
                 return null;
             }
@@ -332,6 +363,11 @@ internal sealed class SvShopsEditSessionService
                 field: "slot",
                 expected: "Existing shop inventory slot"));
             return null;
+        }
+
+        if (inventoryItem is not null)
+        {
+            slot = inventoryItem.Slot;
         }
 
         if (isRemove)
@@ -382,7 +418,7 @@ internal sealed class SvShopsEditSessionService
             SvEditSessionSupport.ShopsDomain,
             $"Set {shop.Name} slot {slot} {editableField.Label.ToLowerInvariant()} to {displayValue}.",
             new ProjectFileReference(shop.Provenance.SourceLayer, shop.Provenance.SourceFile),
-            CreateRecordId(shop.ShopId, slot, inventoryItem!.SourceIndex),
+            CreateRecordId(shop.ShopId, slot, inventoryItem!.RowId),
             normalizedField,
             normalizedValue);
     }
@@ -401,7 +437,7 @@ internal sealed class SvShopsEditSessionService
             return;
         }
 
-        if (!TryParseRecordId(edit.RecordId, out var shopId, out var slot, out var sourceIndex)
+        if (!TryParseRecordRowId(edit.RecordId, out var shopId, out var slot, out var rowId)
             || workflow.Shops.FirstOrDefault(shop => shop.ShopId == shopId) is not { } shop)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -412,9 +448,9 @@ internal sealed class SvShopsEditSessionService
             return;
         }
 
-        if (sourceIndex is { } targetSourceIndex)
+        if (rowId is not null)
         {
-            var target = shop.Inventory.FirstOrDefault(item => item.SourceIndex == targetSourceIndex);
+            var target = shop.Inventory.FirstOrDefault(item => item.RowId == rowId);
             if (target is null)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -428,13 +464,21 @@ internal sealed class SvShopsEditSessionService
             slot = target.Slot;
         }
 
-        _ = CreatePendingEdit(workflow, shop, slot, edit.Field ?? string.Empty, edit.NewValue ?? string.Empty, diagnostics);
+        _ = CreatePendingEdit(
+            workflow,
+            shop,
+            sourceIdentityShop: null,
+            slot,
+            rowId,
+            edit.Field ?? string.Empty,
+            edit.NewValue ?? string.Empty,
+            diagnostics);
     }
 
     private static SvShopsWorkflow OverlayPendingEdits(SvShopsWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
-        foreach (var edit in edits)
+        foreach (var edit in OrderPendingEdits(edits))
         {
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
         }
@@ -442,10 +486,67 @@ internal sealed class SvShopsEditSessionService
         return updatedWorkflow;
     }
 
+    private static EditSession ReplacePendingShopEdit(EditSession session, PendingEdit pendingEdit)
+    {
+        var includedRowIds = string.Equals(
+                pendingEdit.Field,
+                SvShopsWorkflowService.SetInventoryField,
+                StringComparison.Ordinal)
+            && ParseInventoryUpdate(pendingEdit.NewValue ?? string.Empty) is { IsStructured: true } inventoryUpdate
+                ? inventoryUpdate.Rows.Select(row => row.RowId!).ToHashSet(StringComparer.Ordinal)
+                : null;
+
+        var pendingEdits = session.PendingEdits
+            .Where(edit => !ShouldReplaceOrPrunePendingEdit(edit, pendingEdit, includedRowIds))
+            .Append(pendingEdit)
+            .ToArray();
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool ShouldReplaceOrPrunePendingEdit(
+        PendingEdit candidate,
+        PendingEdit pendingEdit,
+        IReadOnlySet<string>? includedRowIds)
+    {
+        if (!string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+            || !TryParseRecordRowId(pendingEdit.RecordId, out var pendingShopId, out _, out var pendingRowId)
+            || !TryParseRecordRowId(candidate.RecordId, out var candidateShopId, out _, out var candidateRowId)
+            || !string.Equals(candidateShopId, pendingShopId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.Equals(pendingEdit.Field, SvShopsWorkflowService.SetInventoryField, StringComparison.Ordinal))
+        {
+            if (string.Equals(candidate.Field, SvShopsWorkflowService.SetInventoryField, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (includedRowIds is not null
+                && candidateRowId is not null
+                && !includedRowIds.Contains(candidateRowId))
+            {
+                return true;
+            }
+        }
+
+        if (pendingRowId is not null
+            && candidateRowId is not null
+            && string.Equals(candidateRowId, pendingRowId, StringComparison.Ordinal)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
+    }
+
     private static SvShopsWorkflow OverlayPendingEdit(SvShopsWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.ShopsDomain, StringComparison.Ordinal)
-            || !TryParseRecordId(edit.RecordId, out var shopId, out var slot, out var sourceIndex))
+            || !TryParseRecordRowId(edit.RecordId, out var shopId, out var slot, out var rowId))
         {
             return workflow;
         }
@@ -453,7 +554,7 @@ internal sealed class SvShopsEditSessionService
         return workflow with
         {
             Shops = workflow.Shops
-                .Select(shop => shop.ShopId == shopId ? OverlayShop(workflow, shop, slot, sourceIndex, edit) : shop)
+                .Select(shop => shop.ShopId == shopId ? OverlayShop(workflow, shop, slot, rowId, edit) : shop)
                 .ToArray(),
         };
     }
@@ -462,23 +563,32 @@ internal sealed class SvShopsEditSessionService
         SvShopsWorkflow workflow,
         SvShopRecord shop,
         int slot,
-        int? sourceIndex,
+        string? rowId,
         PendingEdit edit)
     {
         if (edit.Field == SvShopsWorkflowService.SetInventoryField && shop.CanEditInventoryOrder)
         {
-            var nextItems = ParseInventoryList(edit.NewValue ?? string.Empty);
-            if (nextItems is null)
+            var update = ParseInventoryUpdate(edit.NewValue ?? string.Empty);
+            if (update is null)
             {
                 return shop;
             }
 
+            if (update.IsStructured)
+            {
+                return OverlayStructuredInventoryUpdate(workflow, shop, update);
+            }
+
             var inventoryByIndex = shop.Inventory.OrderBy(item => item.Slot).ToArray();
-            var nextInventory = nextItems
-                .Select((itemId, index) =>
+            var nextInventory = update.Rows
+                .Select((row, index) =>
                 {
                     var source = inventoryByIndex.ElementAtOrDefault(index);
-                    return OverlayInventoryItemId(workflow, source ?? CreatePlaceholderInventoryRecord(index + 1), index + 1, itemId);
+                    return OverlayInventoryItemId(
+                        workflow,
+                        source ?? CreatePlaceholderInventoryRecord(index + 1),
+                        index + 1,
+                        row.ItemId);
                 })
                 .ToArray();
 
@@ -521,7 +631,7 @@ internal sealed class SvShopsEditSessionService
         }
 
         var overlayedInventory = shop.Inventory
-            .Select(item => IsInventoryTarget(item, slot, sourceIndex)
+            .Select(item => IsInventoryTarget(item, slot, rowId)
                 ? OverlayInventoryField(workflow, item, edit.Field, edit.NewValue ?? string.Empty)
                 : item)
             .ToArray();
@@ -532,6 +642,103 @@ internal sealed class SvShopsEditSessionService
             InventorySummary = SvShopsWorkflowService.FormatInventorySummary(overlayedInventory),
         };
     }
+
+    private static SvShopRecord OverlayStructuredInventoryUpdate(
+        SvShopsWorkflow workflow,
+        SvShopRecord shop,
+        InventoryUpdate update)
+    {
+        var currentInventory = shop.Inventory.OrderBy(item => item.Slot).ToArray();
+        var inventoryByRowId = currentInventory.ToDictionary(item => item.RowId, StringComparer.Ordinal);
+        if (update.Rows.Any(row =>
+                row.RowId is null
+                || (row.RowId.StartsWith(SvShopsWorkflowService.SourceRowIdPrefix, StringComparison.Ordinal)
+                    && !inventoryByRowId.ContainsKey(row.RowId))))
+        {
+            return shop;
+        }
+
+        var nextInventory = update.Rows
+            .Select((row, index) =>
+            {
+                var source = inventoryByRowId.GetValueOrDefault(row.RowId!)
+                    ?? CreatePlaceholderInventoryRecord(index + 1, row.RowId);
+                return OverlayInventoryItemId(workflow, source, index + 1, row.ItemId);
+            })
+            .ToArray();
+
+        var rewriteSortOrder = RequiresSortRewrite(
+            currentInventory.Select(item => item.RowId),
+            nextInventory.Select(item => item.RowId));
+        var currentRowIds = currentInventory.Select(item => item.RowId).ToHashSet(StringComparer.Ordinal);
+        if (!rewriteSortOrder
+            && nextInventory.Any(item => !currentRowIds.Contains(item.RowId))
+            && currentInventory
+                .Where(item => nextInventory.Any(candidate => candidate.RowId == item.RowId))
+                .Select(GetInventorySortOrder)
+                .DefaultIfEmpty(-1)
+                .Max() == int.MaxValue)
+        {
+            rewriteSortOrder = true;
+        }
+
+        if (rewriteSortOrder)
+        {
+            nextInventory = nextInventory
+                .Select((item, index) => OverlayInventoryField(
+                    workflow,
+                    item,
+                    SvShopsWorkflowService.SortOrderField,
+                    index.ToString(CultureInfo.InvariantCulture)))
+                .ToArray();
+        }
+        else
+        {
+            nextInventory = AssignAppendedInventorySortOrders(workflow, currentInventory, nextInventory);
+        }
+
+        return shop with
+        {
+            Inventory = nextInventory,
+            InventorySummary = SvShopsWorkflowService.FormatInventorySummary(nextInventory),
+        };
+    }
+
+    private static SvShopInventoryRecord[] AssignAppendedInventorySortOrders(
+        SvShopsWorkflow workflow,
+        IReadOnlyList<SvShopInventoryRecord> currentInventory,
+        IReadOnlyList<SvShopInventoryRecord> nextInventory)
+    {
+        var currentRowIds = currentInventory.Select(item => item.RowId).ToHashSet(StringComparer.Ordinal);
+        var nextSortOrder = currentInventory
+            .Where(item => nextInventory.Any(candidate => candidate.RowId == item.RowId))
+            .Select(GetInventorySortOrder)
+            .DefaultIfEmpty(-1)
+            .Max();
+
+        return nextInventory
+            .Select(item =>
+            {
+                if (currentRowIds.Contains(item.RowId))
+                {
+                    return item;
+                }
+
+                nextSortOrder++;
+                return OverlayInventoryField(
+                    workflow,
+                    item,
+                    SvShopsWorkflowService.SortOrderField,
+                    nextSortOrder.ToString(CultureInfo.InvariantCulture));
+            })
+            .ToArray();
+    }
+
+    private static int GetInventorySortOrder(SvShopInventoryRecord item) =>
+        item.FieldValues.TryGetValue(SvShopsWorkflowService.SortOrderField, out var value)
+        && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var sortOrder)
+            ? sortOrder
+            : item.Slot - 1;
 
     private static SvShopInventoryRecord OverlayInventoryField(
         SvShopsWorkflow workflow,
@@ -577,9 +784,9 @@ internal sealed class SvShopsEditSessionService
         };
     }
 
-    private static bool IsInventoryTarget(SvShopInventoryRecord item, int slot, int? sourceIndex) =>
-        sourceIndex is { } targetSourceIndex
-            ? item.SourceIndex == targetSourceIndex
+    private static bool IsInventoryTarget(SvShopInventoryRecord item, int slot, string? rowId) =>
+        rowId is not null
+            ? item.RowId == rowId
             : item.Slot == slot;
 
     private static SvShopInventoryRecord OverlayInventoryItemId(
@@ -612,7 +819,7 @@ internal sealed class SvShopsEditSessionService
         };
     }
 
-    private static SvShopInventoryRecord CreatePlaceholderInventoryRecord(int slot) =>
+    private static SvShopInventoryRecord CreatePlaceholderInventoryRecord(int slot, string? rowId = null) =>
         new(
             slot,
             0,
@@ -640,7 +847,8 @@ internal sealed class SvShopsEditSessionService
             ],
             PriceField: null,
             CanEditPrice: true,
-            SourceIndex: -1);
+            SourceIndex: -1,
+            RowId: rowId ?? string.Create(CultureInfo.InvariantCulture, $"{SvShopsWorkflowService.NewRowIdPrefix}{slot}"));
 
     private static void ApplyEdit(
         List<SvShopsWorkflowService.FriendlyShopRow> friendlyRows,
@@ -648,7 +856,7 @@ internal sealed class SvShopsEditSessionService
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!TryParseRecordId(edit.RecordId, out var shopId, out var slot, out var sourceIndex))
+        if (!TryParseRecordRowId(edit.RecordId, out var shopId, out var slot, out var rowId))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -659,13 +867,13 @@ internal sealed class SvShopsEditSessionService
 
         if (SvShopsWorkflowService.IsFriendlyShopId(shopId, out var lineupId))
         {
-            ApplyFriendlyEdit(friendlyRows, lineupId, slot, sourceIndex, edit, diagnostics);
+            ApplyFriendlyEdit(friendlyRows, lineupId, slot, rowId, edit, diagnostics);
             return;
         }
 
         if (SvShopsWorkflowService.IsTechnicalMachineShopId(shopId, out var region))
         {
-            ApplyTechnicalMachineEdit(tmRows, region, slot, sourceIndex, edit, diagnostics);
+            ApplyTechnicalMachineEdit(tmRows, region, slot, rowId, edit, diagnostics);
             return;
         }
 
@@ -680,7 +888,7 @@ internal sealed class SvShopsEditSessionService
         List<SvShopsWorkflowService.FriendlyShopRow> rows,
         string lineupId,
         int slot,
-        int? sourceIndex,
+        string? rowId,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -692,26 +900,32 @@ internal sealed class SvShopsEditSessionService
 
         if (edit.Field == SvShopsWorkflowService.SetInventoryField)
         {
-            var itemIds = ParseInventoryList(edit.NewValue ?? string.Empty);
-            if (itemIds is null)
+            var update = ParseInventoryUpdate(edit.NewValue ?? string.Empty);
+            if (update is null)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    "Pending S/V shop inventory list is not valid for apply.",
+                    "Pending S/V shop inventory value is not valid for apply.",
                     field: edit.Field,
-                    expected: "Comma-separated item IDs"));
+                    expected: "Version 1 row inventory or comma-separated item IDs"));
+                return;
+            }
+
+            if (update.IsStructured)
+            {
+                ApplyStructuredFriendlyInventoryUpdate(rows, lineupId, group, update, diagnostics);
                 return;
             }
 
             rows.RemoveAll(row => string.Equals(row.LineupId, lineupId, StringComparison.Ordinal));
-            var nextRows = itemIds.Select((itemId, index) =>
+            var nextRows = update.Rows.Select((inventoryRow, index) =>
             {
                 var source = group.ElementAtOrDefault(index);
                 return new SvShopsWorkflowService.FriendlyShopRow(
                     source?.SourceIndex ?? index,
                     lineupId,
                     index,
-                    itemId,
+                    inventoryRow.ItemId,
                     source?.ConditionKind ?? CondEnum.NONE,
                     source?.ConditionValue ?? string.Empty,
                     source?.GymBadgeNum ?? 0);
@@ -720,9 +934,9 @@ internal sealed class SvShopsEditSessionService
             return;
         }
 
-        var row = sourceIndex is { } targetSourceIndex
+        var row = rowId is not null
             ? rows.FirstOrDefault(candidate =>
-                candidate.SourceIndex == targetSourceIndex
+                candidate.RowId == rowId
                 && string.Equals(candidate.LineupId, lineupId, StringComparison.Ordinal))
             : group.ElementAtOrDefault(slot - 1);
         if (row is null)
@@ -773,11 +987,142 @@ internal sealed class SvShopsEditSessionService
         ReplaceFriendlyRow(rows, row, updatedRow);
     }
 
+    private static void ApplyStructuredFriendlyInventoryUpdate(
+        List<SvShopsWorkflowService.FriendlyShopRow> rows,
+        string lineupId,
+        IReadOnlyList<SvShopsWorkflowService.FriendlyShopRow> currentDisplayRows,
+        InventoryUpdate update,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var currentByRowId = currentDisplayRows.ToDictionary(row => row.RowId, StringComparer.Ordinal);
+        var nextSourceIndex = rows.Select(row => row.SourceIndex).DefaultIfEmpty(-1).Max() + 1;
+        var desiredRows = new List<SvShopsWorkflowService.FriendlyShopRow>(update.Rows.Count);
+        foreach (var inventoryRow in update.Rows)
+        {
+            if (inventoryRow.RowId is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending S/V shop row identity is missing.",
+                    field: SvShopsWorkflowService.SetInventoryField,
+                    expected: "Version 1 row inventory"));
+                return;
+            }
+
+            SvShopsWorkflowService.FriendlyShopRow source;
+            if (currentByRowId.TryGetValue(inventoryRow.RowId, out var currentRow))
+            {
+                source = currentRow;
+            }
+            else if (inventoryRow.RowId.StartsWith(SvShopsWorkflowService.NewRowIdPrefix, StringComparison.Ordinal))
+            {
+                source = new SvShopsWorkflowService.FriendlyShopRow(
+                    nextSourceIndex++,
+                    lineupId,
+                    0,
+                    0,
+                    CondEnum.NONE,
+                    string.Empty,
+                    0)
+                {
+                    RowId = inventoryRow.RowId,
+                };
+            }
+            else
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"S/V shop row '{inventoryRow.RowId}' is not present in lineup '{lineupId}'.",
+                    field: SvShopsWorkflowService.SetInventoryField,
+                    expected: "Rows from the selected S/V shop"));
+                return;
+            }
+
+            desiredRows.Add(source with { ItemId = inventoryRow.ItemId });
+        }
+
+        var rewriteSortOrder = RequiresSortRewrite(
+            currentDisplayRows.Select(row => row.RowId),
+            desiredRows.Select(row => row.RowId));
+        if (!rewriteSortOrder)
+        {
+            var retainedRowIds = desiredRows.Select(row => row.RowId).ToHashSet(StringComparer.Ordinal);
+            var maxRetainedSortOrder = currentDisplayRows
+                .Where(row => retainedRowIds.Contains(row.RowId))
+                .Select(row => row.SortNum)
+                .DefaultIfEmpty(-1)
+                .Max();
+            if (maxRetainedSortOrder == int.MaxValue
+                && desiredRows.Any(row => !currentByRowId.ContainsKey(row.RowId)))
+            {
+                rewriteSortOrder = true;
+            }
+            else
+            {
+                desiredRows = desiredRows
+                    .Select(row => currentByRowId.ContainsKey(row.RowId)
+                        ? row
+                        : row with { SortNum = ++maxRetainedSortOrder })
+                    .ToList();
+            }
+        }
+
+        if (rewriteSortOrder)
+        {
+            desiredRows = desiredRows
+                .Select((row, index) => row with { SortNum = index })
+                .ToList();
+        }
+
+        RebuildFriendlyRows(rows, lineupId, desiredRows, currentByRowId.Keys);
+    }
+
+    private static void RebuildFriendlyRows(
+        List<SvShopsWorkflowService.FriendlyShopRow> rows,
+        string lineupId,
+        IReadOnlyList<SvShopsWorkflowService.FriendlyShopRow> desiredRows,
+        IEnumerable<string> existingRowIds)
+    {
+        var desiredByRowId = desiredRows.ToDictionary(row => row.RowId, StringComparer.Ordinal);
+        var existingRowIdSet = existingRowIds.ToHashSet(StringComparer.Ordinal);
+        var newRows = desiredRows.Where(row => !existingRowIdSet.Contains(row.RowId)).ToArray();
+        var lastLineupIndex = rows.FindLastIndex(row => string.Equals(row.LineupId, lineupId, StringComparison.Ordinal));
+        var rebuilt = new List<SvShopsWorkflowService.FriendlyShopRow>(rows.Count + newRows.Length);
+
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var current = rows[index];
+            if (!string.Equals(current.LineupId, lineupId, StringComparison.Ordinal))
+            {
+                rebuilt.Add(current);
+                continue;
+            }
+
+            if (desiredByRowId.TryGetValue(current.RowId, out var retained))
+            {
+                rebuilt.Add(retained);
+            }
+
+            if (index == lastLineupIndex)
+            {
+                rebuilt.AddRange(newRows);
+            }
+        }
+
+        if (lastLineupIndex < 0)
+        {
+            rebuilt.AddRange(desiredRows);
+        }
+
+        rows.Clear();
+        rows.AddRange(rebuilt);
+    }
+
     private static void ApplyTechnicalMachineEdit(
         List<SvShopsWorkflowService.TechnicalMachineRow> rows,
         AddRegion region,
         int slot,
-        int? sourceIndex,
+        string? rowId,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -786,7 +1131,7 @@ internal sealed class SvShopsEditSessionService
             .OrderBy(row => row.WazaItemId)
             .ThenBy(row => row.SourceIndex)
             .ToArray();
-        var row = sourceIndex is { } targetSourceIndex
+        var row = SvShopsWorkflowService.TryParseSourceRowId(rowId, out var targetSourceIndex)
             ? rows.FirstOrDefault(candidate => candidate.SourceIndex == targetSourceIndex)
             : group.ElementAtOrDefault(slot - 1);
         if (row is null)
@@ -945,22 +1290,90 @@ internal sealed class SvShopsEditSessionService
             diagnostics);
     }
 
-    private static bool ValidateInventoryList(
+    private static bool ValidateInventoryUpdate(
         string value,
+        SvShopRecord shop,
         ICollection<ValidationDiagnostic> diagnostics,
         string field)
     {
-        if (ParseInventoryList(value) is not null)
+        var update = ParseInventoryUpdate(value);
+        if (update is not null)
         {
-            return true;
+            if (!update.IsStructured)
+            {
+                return true;
+            }
+
+            var availableRowIds = shop.Inventory.Select(item => item.RowId).ToHashSet(StringComparer.Ordinal);
+            var unknownSourceRow = update.Rows.FirstOrDefault(row =>
+                row.RowId?.StartsWith(SvShopsWorkflowService.SourceRowIdPrefix, StringComparison.Ordinal) == true
+                && !availableRowIds.Contains(row.RowId));
+            if (unknownSourceRow is null)
+            {
+                return true;
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shop row '{unknownSourceRow.RowId}' is not present in '{shop.Name}'.",
+                field: field,
+                expected: "Rows from the selected S/V shop"));
+            return false;
         }
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Error,
-            "Shop inventory value must be a comma-separated list of item IDs.",
+            "Shop inventory value must be version 1 row data or a comma-separated list of item IDs.",
             field: field,
-            expected: "Comma-separated item IDs"));
+            expected: "Version 1 row inventory or comma-separated item IDs"));
         return false;
+    }
+
+    private static InventoryUpdate? ParseInventoryUpdate(string value)
+    {
+        if (!value.TrimStart().StartsWith('{'))
+        {
+            var itemIds = ParseInventoryList(value);
+            return itemIds is null
+                ? null
+                : new InventoryUpdate(
+                    IsStructured: false,
+                    itemIds.Select(itemId => new InventoryUpdateRow(null, itemId)).ToArray());
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<StructuredInventoryPayload>(value, InventoryJsonOptions);
+            if (payload is not { Version: 1, UpdateOrder: not null, Rows: not null })
+            {
+                return null;
+            }
+
+            var rowIds = new HashSet<string>(StringComparer.Ordinal);
+            var rows = new List<InventoryUpdateRow>(payload.Rows.Length);
+            foreach (var row in payload.Rows)
+            {
+                if (!SvShopsWorkflowService.IsValidRowId(row.RowId)
+                    || !rowIds.Add(row.RowId!)
+                    || row.ItemId < 0
+                    || row.ItemId > ushort.MaxValue)
+                {
+                    return null;
+                }
+
+                rows.Add(new InventoryUpdateRow(row.RowId, row.ItemId));
+            }
+
+            return new InventoryUpdate(IsStructured: true, rows);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
     }
 
     private static int[]? ParseInventoryList(string value)
@@ -985,6 +1398,67 @@ internal sealed class SvShopsEditSessionService
 
         return values.ToArray();
     }
+
+    private static IReadOnlyList<PendingEdit> OrderPendingEdits(IEnumerable<PendingEdit> edits)
+    {
+        return edits
+            .Select((edit, index) => new { Edit = edit, Index = index })
+            .OrderBy(entry => IsStructuredInventoryEdit(entry.Edit) ? 0 : 1)
+            .ThenBy(entry => entry.Index)
+            .Select(entry => entry.Edit)
+            .ToArray();
+    }
+
+    private static bool IsStructuredInventoryEdit(PendingEdit edit) =>
+        string.Equals(edit.Field, SvShopsWorkflowService.SetInventoryField, StringComparison.Ordinal)
+        && ParseInventoryUpdate(edit.NewValue ?? string.Empty) is { IsStructured: true };
+
+    private static bool RequiresSortRewrite(
+        IEnumerable<string> currentRowIds,
+        IEnumerable<string> desiredRowIds)
+    {
+        var current = currentRowIds.ToArray();
+        var desired = desiredRowIds.ToArray();
+        var desiredSet = desired.ToHashSet(StringComparer.Ordinal);
+        var currentSet = current.ToHashSet(StringComparer.Ordinal);
+        var retainedCurrent = current.Where(desiredSet.Contains).ToArray();
+        var retainedDesired = desired.Where(currentSet.Contains).ToArray();
+        if (!retainedCurrent.SequenceEqual(retainedDesired, StringComparer.Ordinal))
+        {
+            return true;
+        }
+
+        var encounteredNewRow = false;
+        foreach (var rowId in desired)
+        {
+            if (currentSet.Contains(rowId))
+            {
+                if (encounteredNewRow)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                encounteredNewRow = true;
+            }
+        }
+
+        return false;
+    }
+
+    private sealed record InventoryUpdate(
+        bool IsStructured,
+        IReadOnlyList<InventoryUpdateRow> Rows);
+
+    private sealed record InventoryUpdateRow(string? RowId, int ItemId);
+
+    private sealed record StructuredInventoryPayload(
+        int Version,
+        bool? UpdateOrder,
+        StructuredInventoryPayloadRow[]? Rows);
+
+    private sealed record StructuredInventoryPayloadRow(string? RowId, int ItemId);
 
     private static bool FieldMatchesShop(SvShopRecord shop, string field)
     {
@@ -1023,18 +1497,18 @@ internal sealed class SvShopsEditSessionService
     private static string CreateRecordId(string shopId, int slot) =>
         SvShopsWorkflowService.CreateInventoryRecordId(shopId, slot);
 
-    private static string CreateRecordId(string shopId, int slot, int sourceIndex) =>
-        SvShopsWorkflowService.CreateInventoryRecordId(shopId, slot, sourceIndex);
+    private static string CreateRecordId(string shopId, int slot, string rowId) =>
+        SvShopsWorkflowService.CreateInventoryRecordId(shopId, slot, rowId);
 
     private static bool TryParseRecordId(string? recordId, out string shopId, out int slot) =>
         SvShopsWorkflowService.TryParseInventoryRecordId(recordId, out shopId, out slot);
 
-    private static bool TryParseRecordId(
+    private static bool TryParseRecordRowId(
         string? recordId,
         out string shopId,
         out int slot,
-        out int? sourceIndex) =>
-        SvShopsWorkflowService.TryParseInventoryRecordId(recordId, out shopId, out slot, out sourceIndex);
+        out string? rowId) =>
+        SvShopsWorkflowService.TryParseInventoryRecordRowId(recordId, out shopId, out slot, out rowId);
 
     private static IReadOnlyList<string> GetTouchedVirtualPaths(EditSession session)
     {
