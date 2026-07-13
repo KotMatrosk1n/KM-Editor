@@ -202,6 +202,7 @@ internal sealed class ZaPlacementWorkflowService
             var source = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
             sourceFiles.Add(source.RelativePath);
             var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(source.Bytes));
+            var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
             var contexts = new Dictionary<string, ZaPlacementSpawnerContext>(StringComparer.Ordinal);
             for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
             {
@@ -223,7 +224,8 @@ internal sealed class ZaPlacementWorkflowService
                         contexts,
                         spawner.Value,
                         groupIndex,
-                        spawnerIndex);
+                        spawnerIndex,
+                        displayOrder[(groupIndex, spawnerIndex)]);
                 }
             }
 
@@ -242,7 +244,8 @@ internal sealed class ZaPlacementWorkflowService
         IDictionary<string, ZaPlacementSpawnerContext> contexts,
         PokemonSpawnerData spawner,
         int groupIndex,
-        int spawnerIndex)
+        int spawnerIndex,
+        ZaPokemonSpawnerDisplayPosition displayPosition)
     {
         for (var objectIndex = 0; objectIndex < spawner.AppearanceSpawnerObjectInfoListLength; objectIndex++)
         {
@@ -265,14 +268,15 @@ internal sealed class ZaPlacementWorkflowService
                     appearance.Value.ZoneInfo?.VariationId ?? string.Empty,
                     appearance.Value.AppearanceInfo?.MinCount ?? 0,
                     appearance.Value.AppearanceInfo?.MaxCount ?? 0,
-                    LocationKey: string.Empty,
+                    LocationKey: displayPosition.LocationKey,
                     "spawner.encounterRows",
                     "Encounter Rows",
                     spawner.EncountDataInfoListLength,
                     PrimaryData: string.Empty,
                     DisplayLabel: string.Empty,
                     DisplayMap: string.Empty,
-                    FormatTags(appearance.Value)));
+                    FormatTags(appearance.Value),
+                    displayPosition.Ordinal));
         }
     }
 
@@ -371,7 +375,8 @@ internal sealed class ZaPlacementWorkflowService
                     primaryData,
                     itemBallLabel,
                     itemBallMap,
-                    string.Join(", ", tableIds)));
+                    string.Join(", ", tableIds),
+                    spawnerIndex + 1));
         }
     }
 
@@ -601,14 +606,16 @@ internal sealed class ZaPlacementWorkflowService
 
         if (context is not null)
         {
-            var locationKey = ZaLumioseLocationLabels.CreateLocationKey(
-                context.ZoneId,
-                context.VariationId,
-                context.SpawnerId);
+            var locationKey = string.IsNullOrWhiteSpace(context.LocationKey)
+                ? ZaLumioseLocationLabels.CreateLocationKey(
+                    context.ZoneId,
+                    context.VariationId,
+                    context.SpawnerId)
+                : context.LocationKey;
             if (ZaLumioseLocationLabels.IsNumberedWildZone(locationKey))
             {
                 var location = ZaLumioseLocationLabels.FormatLocation(locationKey, labels.PlaceName, labels.Pokemon);
-                return $"{location} Spawner {(context.SpawnerIndex + 1).ToString(CultureInfo.InvariantCulture)}";
+                return $"{location} Spawner {context.DisplayOrdinal.ToString(CultureInfo.InvariantCulture)}";
             }
 
             if (!string.IsNullOrWhiteSpace(context.SpawnerId))
@@ -664,7 +671,8 @@ internal sealed class ZaPlacementWorkflowService
             PrimaryData: string.Empty,
             DisplayLabel: label,
             DisplayMap: string.IsNullOrWhiteSpace(map) ? "Item Ball Spawners" : map,
-            Tags: string.Empty);
+            Tags: string.Empty,
+            DisplayOrdinal: row.RowIndex + 1);
     }
 
     private static string FormatItemBallTablePreview(
@@ -946,7 +954,8 @@ internal sealed class ZaPlacementWorkflowService
         string PrimaryData,
         string DisplayLabel,
         string DisplayMap,
-        string Tags);
+        string Tags,
+        int DisplayOrdinal);
 
     private sealed record CategorySeed(
         string Id,

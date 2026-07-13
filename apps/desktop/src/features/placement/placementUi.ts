@@ -314,7 +314,7 @@ export function buildPlacementObjectGroups(
     });
   }
 
-  return [...groups.entries()].map(([key, group]) => {
+  const objectGroups = [...groups.entries()].map(([key, group]) => {
     const objects = [...group.objects].sort(comparePlacementObjectsForGroup);
     const objectGroup = {
       key,
@@ -329,6 +329,26 @@ export function buildPlacementObjectGroups(
       preview: formatPlacementGroupPreview(objectGroup)
     };
   });
+
+  if (!options.groupPokemonSpawners || !objects.some(isZaPokemonSpawnerPlacementObject)) {
+    return objectGroups;
+  }
+
+  const numberedWildZones = objectGroups
+    .filter((group) => isZaNumberedWildZonePlacementGroup(group.label))
+    .sort((left, right) =>
+      comparePlacementNaturalLabels(left.label, right.label) || left.key.localeCompare(right.key)
+    );
+  let wildZoneIndex = 0;
+  return objectGroups.map((group) =>
+    isZaNumberedWildZonePlacementGroup(group.label)
+      ? numberedWildZones[wildZoneIndex++]!
+      : group
+  );
+}
+
+function isZaNumberedWildZonePlacementGroup(label: string) {
+  return /^Wild Zone\s+\d+$/i.test(label.trim());
 }
 
 export function getPlacementObjectGroupTabs(
@@ -896,7 +916,7 @@ function formatWildZonePlacementTail(tail: string) {
     return '';
   }
 
-  if (/^Variant\s+\d+/i.test(normalized)) {
+  if (/^(?:Variant|Spawner|Spawn Point)\s+\d+/i.test(normalized)) {
     return normalized;
   }
 
@@ -1040,7 +1060,7 @@ function formatPlacementSubgroupLabel(
     return mainDungeonInfo.floorLabel;
   }
 
-  const wildZoneInfo = parseZaWildZonePlacement(object.map) ?? parseZaWildZonePlacement(object.label);
+  const wildZoneInfo = parseZaWildZonePlacement(object.label) ?? parseZaWildZonePlacement(object.map);
   if (wildZoneInfo?.tailLabel) {
     const variantMatch = wildZoneInfo.tailLabel.match(/^(Variant\s+\d+)/i);
     return variantMatch?.[1] ?? 'Spawners';
@@ -1104,7 +1124,7 @@ function comparePlacementObjectsForGroup(left: PlacedObjectRecord, right: Placed
     return leftRank - rightRank;
   }
 
-  return left.label.localeCompare(right.label) ||
+  return comparePlacementNaturalLabels(left.label, right.label) ||
     left.objectIndex - right.objectIndex ||
     left.objectId.localeCompare(right.objectId);
 }
@@ -1145,8 +1165,8 @@ function formatPlacementGroupPreview(group: PlacementObjectGroup) {
       return [mainDungeonInfo.floorLabel, mainDungeonInfo.tailLabel].filter(Boolean).join(': ');
     }
 
-    const wildZoneInfo = parseZaWildZonePlacement(group.objects[0]!.map) ??
-      parseZaWildZonePlacement(group.objects[0]!.label);
+    const wildZoneInfo = parseZaWildZonePlacement(group.objects[0]!.label) ??
+      parseZaWildZonePlacement(group.objects[0]!.map);
     if (wildZoneInfo?.tailLabel) {
       return wildZoneInfo.tailLabel;
     }
@@ -1286,7 +1306,7 @@ function formatPlacementObjectTabLabel(
     return mainDungeonInfo.tailLabel;
   }
 
-  const wildZoneInfo = parseZaWildZonePlacement(object.map) ?? parseZaWildZonePlacement(object.label);
+  const wildZoneInfo = parseZaWildZonePlacement(object.label) ?? parseZaWildZonePlacement(object.map);
   if (wildZoneInfo?.tailLabel) {
     return wildZoneInfo.tailLabel.replace(/^Variant\s+\d+\s*/i, '').trim() || wildZoneInfo.tailLabel;
   }

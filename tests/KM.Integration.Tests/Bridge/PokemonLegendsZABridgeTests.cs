@@ -3908,6 +3908,62 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZASpawnerNumbersMatchAcrossWildEncountersAndPlacement()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp);
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonSpawnerDataArray,
+            CreateNumberedWildZoneSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonSpawnerTransformArray,
+            CreateNumberedWildZoneSpawnerTransformArray());
+        var dispatcher = CreateDispatcherWithZaCache(temp);
+        var paths = CreatePaths(temp);
+
+        var encountersLoad = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounter-spawner-order");
+        var placementLoad = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-za-placement-spawner-order");
+
+        AssertSuccess(encountersLoad);
+        AssertSuccess(placementLoad);
+        var encounterTables = encountersLoad.Payload!.Workflow.Tables;
+        Assert.Equal("Spawner 1", encounterTables.Single(table => table.TableId == "za-spawner:0:0").TableLabel);
+        Assert.Equal("Spawner 1", encounterTables.Single(table => table.TableId == "za-spawner:0:1").TableLabel);
+        Assert.Equal("Spawner 2", encounterTables.Single(table => table.TableId == "za-spawner:0:2").TableLabel);
+        Assert.Equal("Spawner 2", encounterTables.Single(table => table.TableId == "za-spawner:0:3").TableLabel);
+        Assert.Equal("Spawner 10", encounterTables.Single(table => table.TableId == "za-spawner:0:11").TableLabel);
+
+        var placementObjects = placementLoad.Payload!.Workflow.Objects;
+        Assert.Equal(
+            "Wild Zone 1 Spawner 1",
+            placementObjects.Single(placedObject => placedObject.ItemHash == "wz1_spawn_001").Label);
+        Assert.Equal(
+            "Wild Zone 1 Spawner 2",
+            placementObjects.Single(placedObject => placedObject.ItemHash == "wz1_spawn_002").Label);
+        Assert.Equal(
+            "Wild Zone 1 Spawner 10",
+            placementObjects.Single(placedObject => placedObject.ItemHash == "wz1_spawn_010").Label);
+        Assert.Equal(
+            "Wild Zone 2 Spawner 1",
+            placementObjects.Single(placedObject => placedObject.ItemHash == "wz2_spawn_001").Label);
+        Assert.Equal(
+            "Wild Zone 2 Spawner 2",
+            placementObjects.Single(placedObject => placedObject.ItemHash == "wz2_spawn_002").Label);
+        Assert.DoesNotContain(
+            "Spawner",
+            placementObjects.Single(placedObject => placedObject.ItemHash == "transform_only_row").Label,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PokemonLegendsZAPlacementEditWritesSpawnerTransformTable()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -5108,6 +5164,59 @@ public sealed class PokemonLegendsZABridgeTests
         var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
         PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateNumberedWildZoneSpawnerDataArray()
+    {
+        var builder = new FlatBufferBuilder(8192);
+        var spawners = new List<Offset<PokemonSpawnerData>>
+        {
+            CreateSpawner(builder, "wz2_data_001", "wild_ignore", "a0103_w01", 100, "wz2_spawn_001"),
+            CreateSpawner(builder, "wz1_data_001", "wild_ignore", "a0102_w01", 100, "wz1_spawn_001"),
+            CreateSpawner(builder, "wz1_data_002", "wild_ignore", "a0102_w01", 100, "wz1_spawn_002"),
+            CreateSpawner(builder, "wz2_data_002", "wild_ignore", "a0103_w01", 100, "wz2_spawn_002"),
+        };
+        for (var ordinal = 3; ordinal <= 10; ordinal++)
+        {
+            var suffix = ordinal.ToString("000", CultureInfo.InvariantCulture);
+            spawners.Add(CreateSpawner(
+                builder,
+                $"wz1_data_{suffix}",
+                "wild_ignore",
+                "a0102_w01",
+                100,
+                $"wz1_spawn_{suffix}"));
+        }
+
+        var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, spawners.ToArray());
+        var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
+        var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);
+        var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
+        PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateNumberedWildZoneSpawnerTransformArray()
+    {
+        var names = new[]
+        {
+            "wz1_spawn_010",
+            "wz1_spawn_002",
+            "wz2_spawn_002",
+            "wz1_spawn_001",
+            "wz2_spawn_001",
+            "transform_only_row",
+        };
+        var rows = names
+            .Select((name, index) => new ZaSpawnerTransformRow(
+                0,
+                index,
+                name,
+                new ZaSpawnerTransformVector(index, 0, 0),
+                new ZaSpawnerTransformVector(0, 0, 0),
+                true))
+            .ToArray();
+        return ZaSpawnerTransformDocument.Create([new ZaSpawnerTransformGroup(0, rows)]).Write();
     }
 
     private static Offset<PokemonSpawnerData> CreateSpawner(

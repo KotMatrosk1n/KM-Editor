@@ -35,6 +35,33 @@ it('keeps placement grouping, staging, and object summaries coherent', () => {
     'Sector 2 Outside Wild Zone'
   ]);
 
+  const numberedWildZones = buildPlacementObjectGroups(
+    [
+      createPlacementObject(10, 'Wild Zone 10 Spawner 1', 'Wild Zone 10 - Bleu District, Sector 1'),
+      createPlacementObject(500, 'Boss Battle Test', 'Boss Battles'),
+      createPlacementObject(110, 'Wild Zone 1 Spawner 10', 'Wild Zone 1 - Vert District, Sector 2'),
+      createPlacementObject(20, 'Wild Zone 2 Spawner 1', 'Wild Zone 2 - Magenta District, Sector 1'),
+      createPlacementObject(102, 'Wild Zone 1 Spawner 2', 'Wild Zone 1 - Vert District, Sector 2'),
+      createPlacementObject(101, 'Wild Zone 1 Spawner 1', 'Wild Zone 1 - Vert District, Sector 2'),
+      createPlacementObject(111, 'Wild Zone 1 Spawner 11', 'Wild Zone 1 - Vert District, Sector 2')
+    ],
+    { groupPokemonSpawners: true }
+  );
+  expect(numberedWildZones.map((group) => group.label)).toEqual([
+    'Wild Zone 1',
+    'Boss Battle Test',
+    'Wild Zone 2',
+    'Wild Zone 10'
+  ]);
+  const wildZoneOneSubgroups = getPlacementObjectSubgroups(numberedWildZones[0]!);
+  expect(wildZoneOneSubgroups.map((subgroup) => subgroup.label)).toEqual(['Spawners']);
+  expect(wildZoneOneSubgroups[0]!.tabs.map((tab) => tab.label)).toEqual([
+    'Spawner 1',
+    'Spawner 2',
+    'Spawner 10',
+    'Spawner 11'
+  ]);
+
   const trainer = {
     ...createPlacementObject(2, 'Trainer: Hop', 'Route 1'),
     categoryId: 'npcsTrainers',

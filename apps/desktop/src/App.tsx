@@ -32692,7 +32692,10 @@ function compareZaEncounterSpawnerTables(
       return rankRank;
     }
 
-    return leftDimensionWild.spawnerLabel.localeCompare(rightDimensionWild.spawnerLabel);
+    return compareZaEncounterNaturalLabels(
+      leftDimensionWild.spawnerLabel,
+      rightDimensionWild.spawnerLabel
+    );
   }
 
   const leftCategory = getZaEncounterSpawnerCategory(left);
@@ -32702,7 +32705,7 @@ function compareZaEncounterSpawnerTables(
   }
 
   if (leftCategory.label !== rightCategory.label) {
-    return leftCategory.label.localeCompare(rightCategory.label);
+    return compareZaEncounterNaturalLabels(leftCategory.label, rightCategory.label);
   }
 
   const leftNumber = parseTrailingInteger(left.tableLabel);
@@ -32711,7 +32714,11 @@ function compareZaEncounterSpawnerTables(
     return leftNumber - rightNumber;
   }
 
-  return left.tableId.localeCompare(right.tableId);
+  const labelRank = compareZaEncounterNaturalLabels(
+    left.tableLabel ?? left.tableId,
+    right.tableLabel ?? right.tableId
+  );
+  return labelRank || left.tableId.localeCompare(right.tableId);
 }
 
 function compareZaDimensionWildEntries(
@@ -32735,6 +32742,13 @@ function compareNullableNumbers(left: number | null, right: number | null) {
   }
 
   return 0;
+}
+
+function compareZaEncounterNaturalLabels(left: string, right: string) {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  });
 }
 
 function parseTrailingInteger(value: string | null | undefined) {
