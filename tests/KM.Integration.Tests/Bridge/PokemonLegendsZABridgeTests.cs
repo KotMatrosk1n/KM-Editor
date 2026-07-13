@@ -5060,7 +5060,8 @@ public sealed class PokemonLegendsZABridgeTests
                     "wild_ignore",
                     "a0102_w01",
                     weight: 35,
-                    appearanceObjectName: "wild_spawn_001"),
+                    appearanceObjectName: "wild_spawn_001",
+                    encounterTag: "internal_\u6761\u4ef6"),
                 CreateSpawner(builder, "id_spn_outzone_a0201_A459", "wild_ignore_Alpha", "a0102_w01", weight: 65),
                 CreateSpawner(builder, "id_spn_outzone_a0201_050_BZ", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_spn_outzone_a0201_O50_BZ", "wild_ignore", zoneId: null, weight: 100),
@@ -5084,7 +5085,8 @@ public sealed class PokemonLegendsZABridgeTests
                     "wild_ignore",
                     "a0102_w01",
                     weight: 35,
-                    appearanceObjectName: "wild_spawn_001"),
+                    appearanceObjectName: "wild_spawn_001",
+                    encounterTag: "internal_\u6761\u4ef6"),
             ];
         if (includeDistinctEncounterSpawner)
         {
@@ -5114,15 +5116,20 @@ public sealed class PokemonLegendsZABridgeTests
         string encounterDataId,
         string? zoneId,
         int weight,
-        string? appearanceObjectName = null)
+        string? appearanceObjectName = null,
+        string? encounterTag = null)
     {
         var encounterId = builder.CreateString(encounterDataId);
+        var tagList = string.IsNullOrWhiteSpace(encounterTag)
+            ? default
+            : EncountDataInfo.CreateTagListVector(builder, [builder.CreateString(encounterTag)]);
         var encounter = EncountDataInfo.CreateEncountDataInfo(
             builder,
             encounterId,
             weight: weight,
             maxCount: 2,
             additionalLevel: 0,
+            tagListOffset: tagList,
             showMapIcon: 1,
             appearedTimeCondition: 4,
             appearedWeatherCondition: 2);

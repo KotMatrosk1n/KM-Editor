@@ -232,7 +232,7 @@ internal sealed class ZaEncountersWorkflowService
                 pokemon?.MaxLevel ?? 0,
                 encounter.Value.Weight,
                 FormatTimeCondition(encounter.Value.AppearedTimeCondition),
-                FormatWeatherCondition(encounter.Value.AppearedWeatherCondition, encounter.Value),
+                FormatWeatherCondition(encounter.Value.AppearedWeatherCondition),
                 isAlpha,
                 isAlpha ? "Alpha" : "Wild",
                 new ZaEncounterProvenance(
@@ -483,9 +483,9 @@ internal sealed class ZaEncountersWorkflowService
         };
     }
 
-    private static string FormatWeatherCondition(int value, EncountDataInfo encounter)
+    private static string FormatWeatherCondition(int value)
     {
-        var weather = value switch
+        return value switch
         {
             0 => "Any weather",
             1 => "Clear",
@@ -494,18 +494,5 @@ internal sealed class ZaEncountersWorkflowService
             4 => "Fog",
             _ => $"Weather condition {value.ToString(CultureInfo.InvariantCulture)}",
         };
-
-        if (encounter.TagListLength == 0)
-        {
-            return weather;
-        }
-
-        var tags = Enumerable
-            .Range(0, encounter.TagListLength)
-            .Select(encounter.TagList)
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        return tags.Length == 0 ? weather : $"{weather}; {string.Join(", ", tags)}";
     }
 }
