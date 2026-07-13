@@ -76,7 +76,7 @@ internal sealed class ZaPokemonDataGroup
     }
 }
 
-internal sealed class ZaPokemonDataEntry
+internal class ZaPokemonDataEntry
 {
     public int SourceIndex { get; init; }
     public string? Id { get; init; }

@@ -229,7 +229,7 @@ internal sealed class ZaStaticEncountersWorkflowService
         ZaTextLabelLookup labels,
         IReadOnlySet<string> wildEncounterIds)
     {
-        var document = ZaPokemonDataDocument.Parse(source.Bytes);
+        var document = ZaEncounterDataDocument.Parse(source.Bytes);
         return document.Entries
             .Where(entry => IsStaticPokemonId(entry.Id, wildEncounterIds))
             .Select((entry, encounterIndex) => ToRecord(encounterIndex, entry, source, labels))

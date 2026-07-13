@@ -252,7 +252,7 @@ internal sealed class ZaEncountersEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var workflow = encountersWorkflowService.Load(project);
             var source = fileSource.Read(project, ZaDataPaths.EncountDataArray);
-            var document = ZaPokemonDataDocument.Parse(source.Bytes);
+            var document = ZaEncounterDataDocument.Parse(source.Bytes);
             foreach (var edit in session.PendingEdits)
             {
                 ApplyEdit(workflow, document, edit, diagnostics);
@@ -499,7 +499,7 @@ internal sealed class ZaEncountersEditSessionService
 
     private static void ApplyEdit(
         ZaEncountersWorkflow workflow,
-        ZaPokemonDataDocument document,
+        ZaEncounterDataDocument document,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
