@@ -1,16 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { type ProjectGame } from './contracts';
+import { type OpenProjectRequest } from './contracts';
 import { type ProjectBridge } from './projectBridge';
 
-export type ProjectScopePaths = {
-  baseExeFsPath: string | null;
-  baseRomFsPath: string | null;
-  gameTextLanguage?: string | null;
-  outputRootPath: string | null;
-  saveFilePath: string | null;
-  selectedGame: ProjectGame | null;
-};
+export type ProjectScopePaths = OpenProjectRequest['paths'];
 
 type ProjectScopedRequest = {
   paths?: ProjectScopePaths | null;
@@ -67,7 +60,9 @@ export function createProjectScopeKey(paths: ProjectScopePaths) {
     baseExeFsPath: paths.baseExeFsPath,
     gameTextLanguage: paths.gameTextLanguage ?? null,
     outputRootPath: paths.outputRootPath,
-    saveFilePath: paths.saveFilePath
+    saveFilePath: paths.saveFilePath,
+    scarletVioletSupportFolderPath: paths.scarletVioletSupportFolderPath ?? null,
+    pokemonLegendsZASupportFolderPath: paths.pokemonLegendsZASupportFolderPath ?? null
   });
 }
 

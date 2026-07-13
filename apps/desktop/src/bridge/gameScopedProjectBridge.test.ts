@@ -27,6 +27,15 @@ const violetPaths = {
   selectedGame: 'violet' as const
 };
 
+const zaPaths = {
+  baseExeFsPath: 'za-exefs',
+  baseRomFsPath: 'za-romfs',
+  gameTextLanguage: 'en',
+  outputRootPath: 'za-output',
+  saveFilePath: null,
+  selectedGame: 'za' as const
+};
+
 describe('createGameScopedProjectBridge', () => {
   it('returns responses when the selected project scope still matches', async () => {
     const baseBridge = {
@@ -89,6 +98,33 @@ describe('createGameScopedProjectBridge', () => {
     await expect(response).rejects.toMatchObject({
       currentScope: createProjectScopeKey(swordPaths),
       requestScope: createProjectScopeKey(chineseSwordPaths)
+    });
+  });
+
+  it.each([
+    [
+      'S/V',
+      { ...violetPaths, scarletVioletSupportFolderPath: 'sv-support-a' },
+      { ...violetPaths, scarletVioletSupportFolderPath: 'sv-support-b' }
+    ],
+    [
+      'Z-A',
+      { ...zaPaths, pokemonLegendsZASupportFolderPath: 'za-support-a' },
+      { ...zaPaths, pokemonLegendsZASupportFolderPath: 'za-support-b' }
+    ]
+  ])('uses the %s support folder as part of the scope', async (_game, requestPaths, nextPaths) => {
+    let currentPaths: ProjectScopePaths = requestPaths;
+    const baseBridge = {
+      loadPokemonWorkflow: vi.fn(async () => ({ workflow: { summary: { id: 'pokemon' } } }))
+    } as unknown as ProjectBridge;
+    const scopedBridge = createGameScopedProjectBridge(baseBridge, () => currentPaths);
+
+    const response = scopedBridge.loadPokemonWorkflow({ paths: requestPaths });
+    currentPaths = nextPaths;
+
+    await expect(response).rejects.toMatchObject({
+      currentScope: createProjectScopeKey(nextPaths),
+      requestScope: createProjectScopeKey(requestPaths)
     });
   });
 });
