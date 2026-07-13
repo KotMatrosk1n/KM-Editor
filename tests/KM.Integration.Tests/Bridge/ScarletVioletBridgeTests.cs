@@ -2314,6 +2314,9 @@ public sealed class ScarletVioletBridgeTests
             new ApplyChangePlanRequest(paths, enable.Payload.Session, enablePlan.Payload!.ChangePlan),
             "request-sv-enable-evolution-item-apply");
         AssertSuccess(enableApply);
+        var enabledItem = ReadItem(temp, 3);
+        Assert.Equal(global::WorkType.WORKTYPE_EffectPokemon, enabledItem.WorkType);
+        Assert.True(enabledItem.SetToPoke);
 
         var disable = Dispatch<UpdateItemFieldsResponse>(
             CreateDispatcherWithSvCache(temp),
@@ -2343,6 +2346,8 @@ public sealed class ScarletVioletBridgeTests
         var writtenItem = ReadItem(temp, 3);
         Assert.Equal(0, writtenItem.WorkEvolutional);
         Assert.Equal(global::FieldFunctionType.FIELDFUNC_NONE, writtenItem.FieldFunctionType);
+        Assert.Equal(global::WorkType.WORKTYPE_OTHER, writtenItem.WorkType);
+        Assert.False(writtenItem.SetToPoke);
         Assert.Contains(
             EvolutionItemConversionTable.Read(ReadSvOutput(temp, SvDataPaths.EvolutionItemConversionArray)),
             row => row.ParameterId == 17 && row.ItemId == 3);
