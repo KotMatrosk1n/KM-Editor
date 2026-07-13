@@ -15,6 +15,7 @@ public sealed record ZaEncounterProvenance(
 public sealed record ZaEncounterSlotRecord(
     int Slot,
     int PokemonDataSourceIndex,
+    string? EncounterRecordId,
     string EncounterDataId,
     int SpeciesId,
     string Species,

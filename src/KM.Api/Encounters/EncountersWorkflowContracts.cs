@@ -45,7 +45,8 @@ public sealed record EncounterSlotRecordDto(
     string Weather,
     string? EncounterDataId = null,
     string? EncounterKind = null,
-    bool IsAlpha = false);
+    bool IsAlpha = false,
+    string? EncounterRecordId = null);
 
 public sealed record EncounterTableRecordDto(
     string TableId,

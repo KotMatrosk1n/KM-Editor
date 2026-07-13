@@ -639,7 +639,8 @@ public static class ZaBridgeMapper
             slot.Weather,
             slot.EncounterDataId,
             slot.EncounterKind,
-            slot.IsAlpha);
+            slot.IsAlpha,
+            slot.EncounterRecordId);
     }
 
     private static EncounterProvenanceDto ToDto(ZaEncounterProvenance provenance)
