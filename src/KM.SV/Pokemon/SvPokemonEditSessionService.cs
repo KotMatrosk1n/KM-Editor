@@ -475,9 +475,25 @@ internal sealed class SvPokemonEditSessionService
             var baseRows = NeedsBaseRows(session.PendingEdits)
                 ? ReadRows(fileSource.ReadBase(project, SvDataPaths.PersonalArray).Bytes)
                 : rows;
+            var deferredCompatibilityRemovals = new List<(PendingEdit Edit, string GroupId, int Slot)>();
             foreach (var edit in session.PendingEdits)
             {
-                ApplyEdit(rows, baseRows, edit, conversionState, diagnostics);
+                if (IsIndexedCompatibilityRemoval(edit, out var groupId, out var slot))
+                {
+                    deferredCompatibilityRemovals.Add((edit, groupId, slot));
+                }
+                else
+                {
+                    ApplyEdit(rows, baseRows, edit, conversionState, diagnostics);
+                }
+            }
+
+            foreach (var group in deferredCompatibilityRemovals.GroupBy(candidate => (candidate.Edit.RecordId, candidate.GroupId)))
+            {
+                foreach (var removal in group.OrderByDescending(candidate => candidate.Slot))
+                {
+                    ApplyEdit(rows, baseRows, removal.Edit, conversionState, diagnostics);
+                }
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -1605,6 +1621,14 @@ internal sealed class SvPokemonEditSessionService
         {
             moves.RemoveAt(slot);
         }
+    }
+
+    private static bool IsIndexedCompatibilityRemoval(PendingEdit edit, out string groupId, out int slot)
+    {
+        return TryParseCompatibilityField(edit.Field, out groupId, out slot)
+            && string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && groupId is "egg" or "reminder"
+            && string.Equals(edit.NewValue, "0", StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<PersonalRow> ReadRows(byte[] bytes)
