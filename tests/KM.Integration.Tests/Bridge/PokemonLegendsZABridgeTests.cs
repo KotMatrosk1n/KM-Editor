@@ -3721,7 +3721,10 @@ public sealed class PokemonLegendsZABridgeTests
     public void PokemonLegendsZAWildEncountersSynchronizeSlotsLinkedToTheSameDataRow()
     {
         using var temp = CreatePokemonLegendsZAProject();
-        WriteWildEncounterFixture(temp, includeAlphaAndRawSpawners: true);
+        WriteWildEncounterFixture(
+            temp,
+            includeAlphaAndRawSpawners: true,
+            includeDistinctEncounterSpawner: true);
         var dispatcher = CreateDispatcherWithZaCache(temp);
         var paths = CreatePaths(temp);
 
@@ -3733,11 +3736,23 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var tables = load.Payload!.Workflow.Tables;
-        Assert.Equal(15, tables.Count);
+        Assert.Equal(16, tables.Count);
         var firstTable = tables[0];
         var firstSlot = Assert.Single(firstTable.Slots);
         var secondTable = tables[1];
         var secondSlot = Assert.Single(secondTable.Slots);
+        var encounterRecordId = Assert.IsType<string>(firstSlot.EncounterRecordId);
+        Assert.Equal(encounterRecordId, secondSlot.EncounterRecordId);
+        var linkedSlots = tables
+            .SelectMany(table => table.Slots)
+            .Where(slot => slot.EncounterRecordId == encounterRecordId)
+            .ToArray();
+        Assert.Equal(15, linkedSlots.Length);
+        var distinctSlot = Assert.Single(
+            tables.SelectMany(table => table.Slots),
+            slot => slot.EncounterDataId == "static_event_ivysaur");
+        Assert.NotNull(distinctSlot.EncounterRecordId);
+        Assert.NotEqual(encounterRecordId, distinctSlot.EncounterRecordId);
 
         var firstUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
             dispatcher,
@@ -3746,8 +3761,15 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-encounters-linked-first");
         AssertSuccess(firstUpdate);
         Assert.All(
-            firstUpdate.Payload!.Workflow.Tables.SelectMany(table => table.Slots),
+            firstUpdate.Payload!.Workflow.Tables
+                .SelectMany(table => table.Slots)
+                .Where(slot => slot.EncounterRecordId == encounterRecordId),
             slot => Assert.Equal(25, slot.LevelMin));
+        Assert.Equal(
+            35,
+            Assert.Single(
+                firstUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
+                slot => slot.EncounterRecordId == distinctSlot.EncounterRecordId).LevelMin);
 
         var secondUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
             dispatcher,
@@ -3762,10 +3784,18 @@ public sealed class PokemonLegendsZABridgeTests
             "request-za-encounters-linked-second");
         AssertSuccess(secondUpdate);
         var pendingEdit = Assert.Single(secondUpdate.Payload!.Session.PendingEdits);
+        Assert.Equal(encounterRecordId, pendingEdit.RecordId);
         Assert.Equal("30", pendingEdit.NewValue);
         Assert.All(
-            secondUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
+            secondUpdate.Payload.Workflow.Tables
+                .SelectMany(table => table.Slots)
+                .Where(slot => slot.EncounterRecordId == encounterRecordId),
             slot => Assert.Equal(30, slot.LevelMin));
+        Assert.Equal(
+            35,
+            Assert.Single(
+                secondUpdate.Payload.Workflow.Tables.SelectMany(table => table.Slots),
+                slot => slot.EncounterRecordId == distinctSlot.EncounterRecordId).LevelMin);
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -3789,6 +3819,7 @@ public sealed class PokemonLegendsZABridgeTests
             apply.Payload!.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
         Assert.Equal(30, ReadEncountData(temp, "wild_ignore").MinLevel);
+        Assert.Equal(35, ReadEncountData(temp, "static_event_ivysaur").MinLevel);
     }
 
     [Fact]
@@ -4734,14 +4765,17 @@ public sealed class PokemonLegendsZABridgeTests
 
     private static void WriteWildEncounterFixture(
         TemporaryBridgeProject temp,
-        bool includeAlphaAndRawSpawners = false)
+        bool includeAlphaAndRawSpawners = false,
+        bool includeDistinctEncounterSpawner = false)
     {
         temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.EncountDataArray, CreateEncounterDataArray());
         temp.WriteBaseRomFsFile(ZaDataPaths.PersonalArray, CreatePersonalArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonSpawnerDataArray,
-            CreatePokemonSpawnerDataArray(includeAlphaAndRawSpawners));
+            CreatePokemonSpawnerDataArray(
+                includeAlphaAndRawSpawners,
+                includeDistinctEncounterSpawner));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.PokemonNames("English"),
             CreatePokemonNameTextTable());
@@ -5012,7 +5046,9 @@ public sealed class PokemonLegendsZABridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreatePokemonSpawnerDataArray(bool includeAlphaAndRawSpawners = false)
+    private static byte[] CreatePokemonSpawnerDataArray(
+        bool includeAlphaAndRawSpawners = false,
+        bool includeDistinctEncounterSpawner = false)
     {
         var builder = new FlatBufferBuilder(4096);
         var spawners = includeAlphaAndRawSpawners
@@ -5050,6 +5086,20 @@ public sealed class PokemonLegendsZABridgeTests
                     weight: 35,
                     appearanceObjectName: "wild_spawn_001"),
             ];
+        if (includeDistinctEncounterSpawner)
+        {
+            spawners =
+            [
+                .. spawners,
+                CreateSpawner(
+                    builder,
+                    "za_wild_spawner_002",
+                    "static_event_ivysaur",
+                    "a0102_w01",
+                    weight: 20),
+            ];
+        }
+
         var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, spawners);
         var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
         var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);

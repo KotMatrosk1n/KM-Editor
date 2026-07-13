@@ -65,6 +65,12 @@ import {
   formatEncounterSlotWeightSummary
 } from './encounterWeights';
 import {
+  buildZaEncounterGroups,
+  getZaEncounterGroupKey,
+  type ZaEncounterGroup,
+  type ZaEncounterPlacement
+} from './zaEncounterGroups';
+import {
   buildSvEncounterConditionRows,
   buildSvEncounterLocationRows,
   getSvEncounterLocationKey,
@@ -16041,10 +16047,35 @@ function getEncounterPendingEditDisplayDetails(
   context: PendingEditContext,
   editorLabel: string
 ) {
+  const workflow = context.encountersWorkflow;
   const [tableId, slotText] = (edit.recordId ?? '').split('#');
   const slot = parseOptionalInteger(slotText);
-  const table = context.encountersWorkflow?.tables.find((candidate) => candidate.tableId === tableId);
-  const slotRecord = slot === null ? null : table?.slots.find((candidate) => candidate.slot === slot);
+  let table = workflow?.tables.find((candidate) => candidate.tableId === tableId);
+  let slotRecord = slot === null ? null : table?.slots.find((candidate) => candidate.slot === slot);
+  if (!slotRecord && edit.recordId) {
+    for (const candidateTable of workflow?.tables ?? []) {
+      const candidateSlot = candidateTable.slots.find(
+        (candidate) => candidate.encounterRecordId === edit.recordId
+      );
+      if (candidateSlot) {
+        table = candidateTable;
+        slotRecord = candidateSlot;
+        break;
+      }
+    }
+  }
+
+  const sharedSpawnerCount = edit.recordId
+    ? new Set(
+        (workflow?.tables ?? [])
+          .filter((candidateTable) =>
+            candidateTable.slots.some(
+              (candidateSlot) => candidateSlot.encounterRecordId === edit.recordId
+            )
+          )
+          .map((candidateTable) => candidateTable.tableId)
+      ).size
+    : 0;
   const field = findPendingEditableField(context.encountersWorkflow?.editableFields, edit.field);
 
   return createPendingEditDisplayDetails(edit, {
@@ -16053,7 +16084,9 @@ function getEncounterPendingEditDisplayDetails(
     newValueLabel: formatPendingEditValue(edit.newValue, field),
     recordLabel:
       table && slotRecord
-        ? `${table.location} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${slotRecord.slot}: ${slotRecord.species}`
+        ? `${table.location} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${slotRecord.slot}: ${slotRecord.species}${
+            sharedSpawnerCount > 1 ? `, shared by ${formatZaEncounterSpawnerCount(sharedSpawnerCount)}` : ''
+          }`
         : table
           ? `${table.location} ${table.encounterType} ${table.gameVersion}`
           : undefined
@@ -21144,7 +21177,7 @@ function EncountersSection({
     [selectedTable, selectedTableIsScarletViolet, workflow]
   );
   const canEditEncounters = workflow?.summary.availability === 'available';
-  const pendingEncounterTableIds = getPendingEncounterTableIds(editSession);
+  const pendingEncounterTableIds = getPendingEncounterTableIds(editSession, workflow);
 
   useEffect(() => {
     if (!selectedTable) {
@@ -21363,7 +21396,11 @@ function SelectedEncounterPanel({
     ]
   );
   const encounterDraftKey =
-    table && encounterSlot ? `${table.tableId}:${encounterSlot.slot}` : null;
+    table && encounterSlot
+      ? editorFamily === 'za'
+        ? getZaEncounterGroupKey(table.tableId, encounterSlot)
+        : `${table.tableId}:${encounterSlot.slot}`
+      : null;
   const drafts = encounterDraftKey
     ? draftsBySlotKey[encounterDraftKey] ?? encounterDraftDefaults
     : {};
@@ -21540,8 +21577,13 @@ function SelectedEncounterPanel({
             />
           ) : null}
           {isZaEncounterTable ? (
-            <ZaEncounterSpawnerBrowser
-              onSelectTable={onSelectTable}
+            <ZaEncounterGroupBrowser
+              onSelectReference={(tableId, slot) => {
+                onSelectSlot(slot);
+                onSelectTable(tableId);
+              }}
+              pendingRecordIds={getPendingEncounterRecordIds(editSession)}
+              selectedSlot={selectedSlot}
               table={table}
               tables={tables}
             />
@@ -22052,12 +22094,16 @@ function SvEncounterConditionBrowser({
   );
 }
 
-function ZaEncounterSpawnerBrowser({
-  onSelectTable,
+function ZaEncounterGroupBrowser({
+  onSelectReference,
+  pendingRecordIds,
+  selectedSlot,
   table,
   tables
 }: {
-  onSelectTable: (tableId: string | null) => void;
+  onSelectReference: (tableId: string, slot: number) => void;
+  pendingRecordIds: ReadonlySet<string>;
+  selectedSlot: number | null;
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
 }) {
@@ -22074,39 +22120,84 @@ function ZaEncounterSpawnerBrowser({
     () => (!dimensionWildData ? buildZaEncounterSpawnerCategoryData(table, spawnerRows) : null),
     [dimensionWildData, spawnerRows, table]
   );
-  const selectedDimensionWildRow =
-    dimensionWildData?.rows.find((row) => row.tableId === table.tableId) ??
-    dimensionWildData?.rows[0] ??
-    null;
-  const selectedRow =
-    spawnerRows.find((row) => row.tableId === table.tableId) ?? spawnerRows[0] ?? null;
-  const selectedCategoryRow =
-    spawnerCategoryData?.rows.find((row) => row.tableId === table.tableId) ??
-    spawnerCategoryData?.rows[0] ??
-    null;
-  const selectedDisplayRow = dimensionWildData
-    ? selectedDimensionWildRow
-    : spawnerCategoryData
-      ? selectedCategoryRow
-      : selectedRow;
   const displayedRows = dimensionWildData
     ? dimensionWildData.rows
     : spawnerCategoryData
       ? spawnerCategoryData.rows
       : spawnerRows;
-  const slotCount = displayedRows.reduce((total, row) => total + row.slotCount, 0);
+  const groupingRows = dimensionWildData ? dimensionWildData.rows : spawnerRows;
+  const tableById = useMemo(
+    () => new Map(tables.map((candidate) => [candidate.tableId, candidate])),
+    [tables]
+  );
+  const groupingTables = useMemo(
+    () =>
+      groupingRows
+        .map((row) => tableById.get(row.tableId))
+        .filter((candidate): candidate is EncounterTableRecord => candidate !== undefined),
+    [groupingRows, tableById]
+  );
+  const encounterGroups = useMemo(
+    () => buildZaEncounterGroups(groupingTables, tables),
+    [groupingTables, tables]
+  );
+  const displayedTableIds = new Set(displayedRows.map((row) => row.tableId));
+  const displayedTables = displayedRows
+    .map((row) => tableById.get(row.tableId))
+    .filter((candidate): candidate is EncounterTableRecord => candidate !== undefined);
+  const visibleEncounterGroups = encounterGroups.filter((group) =>
+    group.placements.some((placement) => displayedTableIds.has(placement.table.tableId))
+  );
+  const rowByTableId = new Map(
+    [...spawnerRows, ...(dimensionWildData?.rows ?? [])].map((row) => [row.tableId, row])
+  );
+  const selectedGroup =
+    visibleEncounterGroups.find((group) =>
+      group.placements.some(
+        (placement) =>
+          placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot
+      )
+    ) ?? visibleEncounterGroups[0] ?? null;
 
-  if (!selectedDisplayRow) {
+  const selectReferenceForTable = (tableId: string) => {
+    const nextSlot = tableById.get(tableId)?.slots[0];
+    if (nextSlot) {
+      onSelectReference(tableId, nextSlot.slot);
+    }
+  };
+
+  const selectGroup = (group: ZaEncounterGroup) => {
+    const currentPlacement = group.placements.find(
+      (placement) =>
+        placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot
+    );
+    const displayedPlacement = group.placements.find((placement) =>
+      displayedTableIds.has(placement.table.tableId)
+    );
+    const placement = currentPlacement ?? displayedPlacement ?? group.placements[0];
+    if (placement) {
+      onSelectReference(placement.table.tableId, placement.slot.slot);
+    }
+  };
+
+  if (!selectedGroup) {
     return null;
   }
 
+  const selectedGroupLabel = formatZaEncounterGroupLabel(selectedGroup);
+  const visibleSlotCount = displayedTables.reduce(
+    (total, displayedTable) => total + displayedTable.slots.length,
+    0
+  );
+
   return (
-    <section className="za-encounter-spawner-browser" aria-label="Legends Z-A wild zone spawners">
+    <section className="za-encounter-group-browser" aria-label="Legends Z-A linked wild encounters">
       <div className="sv-encounter-browser-summary">
         <span>{table.location}</span>
-        <span>{formatZaEncounterSpawnerCount(displayedRows.length)}</span>
+        <span>{formatZaEncounterGroupCount(visibleEncounterGroups.length)}</span>
+        <span>{formatZaEncounterSpawnerCount(displayedTables.length)}</span>
         <span>
-          {slotCount} {slotCount === 1 ? 'slot' : 'slots'} in this zone
+          {visibleSlotCount} {visibleSlotCount === 1 ? 'slot' : 'slots'} in this view
         </span>
       </div>
 
@@ -22124,7 +22215,7 @@ function ZaEncounterSpawnerBrowser({
                 key={poolTab.key}
                 onClick={() => {
                   if (poolTab.tableId !== table.tableId) {
-                    onSelectTable(poolTab.tableId);
+                    selectReferenceForTable(poolTab.tableId);
                   }
                 }}
                 role="tab"
@@ -22148,7 +22239,7 @@ function ZaEncounterSpawnerBrowser({
                 key={rankTab.key}
                 onClick={() => {
                   if (rankTab.tableId !== table.tableId) {
-                    onSelectTable(rankTab.tableId);
+                    selectReferenceForTable(rankTab.tableId);
                   }
                 }}
                 role="tab"
@@ -22175,7 +22266,7 @@ function ZaEncounterSpawnerBrowser({
               key={categoryTab.key}
               onClick={() => {
                 if (categoryTab.tableId !== table.tableId) {
-                  onSelectTable(categoryTab.tableId);
+                  selectReferenceForTable(categoryTab.tableId);
                 }
               }}
               role="tab"
@@ -22188,36 +22279,89 @@ function ZaEncounterSpawnerBrowser({
         </div>
       ) : null}
 
-      <div className="za-encounter-spawner-table" role="table" aria-label="Z-A zone spawners">
-        <div className="za-encounter-spawner-row za-encounter-spawner-heading" role="row">
-          <span role="columnheader">Spawner</span>
-          <span role="columnheader">Slots</span>
-          <span role="columnheader">Preview</span>
+      <div className="za-encounter-group-table" role="table" aria-label="Z-A linked encounters">
+        <div className="za-encounter-group-row za-encounter-group-heading" role="row">
+          <span role="columnheader">Pokemon</span>
+          <span role="columnheader">Used by</span>
+          <span role="columnheader">Levels</span>
           <span role="columnheader">Source</span>
         </div>
-        {displayedRows.map((row) => (
-          <button
-            aria-pressed={row.tableId === table.tableId}
-            className={`za-encounter-spawner-row ${
-              row.tableId === table.tableId ? 'za-encounter-spawner-row-selected' : ''
-            }`}
-            key={row.tableId}
-            onClick={() => {
-              if (row.tableId !== table.tableId) {
-                onSelectTable(row.tableId);
-              }
-            }}
-            role="row"
-            title={`${row.label}: ${row.details}`}
-            type="button"
-          >
-            <span role="cell">{row.label}</span>
-            <span role="cell">{row.slotCount}</span>
-            <span role="cell">{row.details}</span>
-            <span role="cell">{row.sourceLayer}</span>
-          </button>
-        ))}
+        {visibleEncounterGroups.map((group) => {
+          const groupLabel = formatZaEncounterGroupLabel(group);
+          const isSelected = group.key === selectedGroup.key;
+          const isPending = isZaEncounterGroupPending(group, pendingRecordIds);
+          return (
+            <button
+              aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}`}
+              aria-pressed={isSelected}
+              className={`za-encounter-group-row ${
+                isSelected ? 'za-encounter-group-row-selected' : ''
+              } ${isPending ? 'za-encounter-group-row-pending' : ''}`}
+              key={group.key}
+              onClick={() => selectGroup(group)}
+              role="row"
+              type="button"
+            >
+              <span role="cell">{groupLabel}</span>
+              <span role="cell">{formatZaEncounterGroupUsage(group)}</span>
+              <span role="cell">
+                {group.slot.levelMin}-{group.slot.levelMax}
+              </span>
+              <span role="cell">{formatZaEncounterGroupSource(group)}</span>
+            </button>
+          );
+        })}
       </div>
+
+      {selectedGroup.slotCount > 1 ? (
+        <div
+          className="za-encounter-placement-table"
+          role="table"
+          aria-label={`${selectedGroupLabel} linked spawners`}
+        >
+          <div className="za-encounter-placement-row za-encounter-placement-heading" role="row">
+            <span role="columnheader">Spawner</span>
+            <span role="columnheader">Slot</span>
+            <span role="columnheader">Probability</span>
+            <span role="columnheader">Conditions</span>
+          </div>
+          {selectedGroup.placements.map((placement) => {
+            const placementLabel = formatZaEncounterPlacementLabel(placement, rowByTableId);
+            const isSelected =
+              placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot;
+            return (
+              <button
+                aria-label={`${placementLabel}, slot ${placement.slot.slot + 1}, probability ${placement.slot.weight}, ${formatZaEncounterPlacementConditions(placement)}`}
+                aria-pressed={isSelected}
+                className={`za-encounter-placement-row ${
+                  isSelected ? 'za-encounter-placement-row-selected' : ''
+                }`}
+                key={`${placement.table.tableId}:${placement.slot.slot}`}
+                onClick={() =>
+                  onSelectReference(placement.table.tableId, placement.slot.slot)
+                }
+                role="row"
+                type="button"
+              >
+                <span role="cell">{placementLabel}</span>
+                <span role="cell">{placement.slot.slot + 1}</span>
+                <span role="cell">{placement.slot.weight}</span>
+                <span role="cell">{formatZaEncounterPlacementConditions(placement)}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {selectedGroup.slotCount > 1 || selectedGroup.outsideScopeSpawnerCount > 0 ? (
+        <p className="za-encounter-shared-scope-note">
+          Linked placements share this Pokemon entry.
+          {selectedGroup.outsideScopeSpawnerCount > 0
+            ? ` It is also used by ${formatZaEncounterSpawnerCount(selectedGroup.outsideScopeSpawnerCount)} outside this view.`
+            : ''}{' '}
+          Saving changes updates every linked placement.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -32672,6 +32816,75 @@ function formatZaEncounterSpawnerCount(count: number) {
   return count === 1 ? '1 spawner' : `${count} spawners`;
 }
 
+function formatZaEncounterGroupCount(count: number) {
+  return count === 1 ? '1 encounter' : `${count} encounters`;
+}
+
+function formatZaEncounterGroupLabel(group: ZaEncounterGroup) {
+  return formatSpeciesFormLabel(
+    group.slot.species,
+    group.slot.form,
+    group.slot.speciesId,
+    'za'
+  );
+}
+
+function formatZaEncounterGroupUsage(group: ZaEncounterGroup) {
+  const parts = [formatZaEncounterSpawnerCount(group.spawnerCount)];
+  if (group.slotCount !== group.spawnerCount) {
+    parts.push(`${group.slotCount} slots`);
+  }
+
+  if (group.outsideScopeSpawnerCount > 0) {
+    parts.push(`${group.outsideScopeSpawnerCount} more elsewhere`);
+  }
+
+  return parts.join(', ');
+}
+
+function formatZaEncounterGroupSource(group: ZaEncounterGroup) {
+  const layers = Array.from(
+    new Set(
+      group.placements.map((placement) =>
+        formatSourceLayer(placement.table.provenance.sourceLayer)
+      )
+    )
+  );
+  return layers.length === 1 ? layers[0]! : `${layers.length} layers`;
+}
+
+function formatZaEncounterPlacementLabel(
+  placement: ZaEncounterPlacement,
+  rowsByTableId: ReadonlyMap<string, ZaEncounterSpawnerRow>
+) {
+  return (
+    rowsByTableId.get(placement.table.tableId)?.label ??
+    placement.table.tableLabel ??
+    placement.table.tableId
+  );
+}
+
+function formatZaEncounterPlacementConditions(placement: ZaEncounterPlacement) {
+  const conditions = [
+    placement.slot.timeOfDay ?? 'Any time',
+    placement.slot.weather || 'Any weather',
+    placement.slot.isAlpha ? 'Alpha' : null
+  ].filter((condition): condition is string => condition !== null);
+  return conditions.join(', ');
+}
+
+function isZaEncounterGroupPending(
+  group: ZaEncounterGroup,
+  pendingRecordIds: ReadonlySet<string>
+) {
+  return group.placements.some(
+    (placement) =>
+      (placement.slot.encounterRecordId != null &&
+        pendingRecordIds.has(placement.slot.encounterRecordId)) ||
+      pendingRecordIds.has(`${placement.table.tableId}#${placement.slot.slot}`)
+  );
+}
+
 function createEncounterAreaCopyRequest(
   selectedSourceTable: EncounterTableRecord,
   tables: EncounterTableRecord[],
@@ -35575,12 +35788,45 @@ function getPendingShopIds(editSession: EditSession | null) {
   );
 }
 
-function getPendingEncounterTableIds(editSession: EditSession | null) {
+function getPendingEncounterRecordIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.encounters' && edit.recordId)
-      .map((edit) => edit.recordId!.split('#')[0])
+      .map((edit) => edit.recordId!)
   );
+}
+
+function getPendingEncounterTableIds(
+  editSession: EditSession | null,
+  workflow: EncountersWorkflow | null
+) {
+  const pendingRecordIds = getPendingEncounterRecordIds(editSession);
+  const tableIds = new Set<string>();
+
+  for (const table of workflow?.tables ?? []) {
+    if (
+      table.slots.some(
+        (slot) =>
+          (slot.encounterRecordId != null && pendingRecordIds.has(slot.encounterRecordId)) ||
+          pendingRecordIds.has(`${table.tableId}#${slot.slot}`)
+      )
+    ) {
+      tableIds.add(table.tableId);
+    }
+  }
+
+  for (const recordId of pendingRecordIds) {
+    if (!recordId.includes('#')) {
+      continue;
+    }
+
+    const tableId = recordId.split('#')[0];
+    if (tableId) {
+      tableIds.add(tableId);
+    }
+  }
+
+  return tableIds;
 }
 
 function getPendingTeraRaidRecordIds(editSession: EditSession | null) {

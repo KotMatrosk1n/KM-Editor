@@ -221,6 +221,7 @@ internal sealed class ZaEncountersWorkflowService
             yield return new ZaEncounterSlotRecord(
                 slot,
                 pokemon?.SourceIndex ?? -1,
+                pokemon is null ? null : CreatePokemonDataRecordId(pokemon.SourceIndex),
                 encounterDataId,
                 speciesId,
                 pokemon is null
