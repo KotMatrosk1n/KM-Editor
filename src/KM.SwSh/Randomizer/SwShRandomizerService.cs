@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.SwSh.Encounters;
 using KM.SwSh.Gifts;
 using KM.SwSh.Items;
@@ -28,6 +29,7 @@ public sealed class SwShRandomizerService
     private const string PokemonEditDomain = "workflow.pokemon";
     private const string EncountersEditDomain = "workflow.encounters";
     private const string RandomizerManifestRelativePath = ".km-editor/randomizer-manifest.json";
+    private const string RandomizerBackupDirectoryRelativePath = ".km-editor/randomizer-backups";
     private const int RoyalCandyItemId = 1128;
     private const int PokemonTypeShapeChangeChancePercent = 30;
     private const int ZacianSpeciesId = 888;
@@ -70,6 +72,8 @@ public sealed class SwShRandomizerService
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
     private readonly SwShTypeChartWorkflowService typeChartWorkflowService;
     private readonly SwShTypeChartEditSessionService typeChartEditSessionService;
+
+    internal Action<SwShRandomizerRestoreMutationStage, string>? RestoreMutationHook { get; init; }
 
     public SwShRandomizerService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -141,6 +145,26 @@ public sealed class SwShRandomizerService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(config);
 
+        if (!SwShOutputRollbackScope.TryResolveStableOutputPaths(
+            paths,
+            out var stablePaths,
+            out var stableRootFailure))
+        {
+            var failedConfig = PrepareConfig(config);
+            return new SwShRandomizerApplyResult(
+                failedConfig,
+                SwShRandomizerSeedCodec.Export(failedConfig),
+                CreateApplyResult(
+                [
+                    CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        stableRootFailure ?? "Randomizer could not resolve Output Root safely.",
+                        expected: "Stable physical Output Root"),
+                ]));
+        }
+
+        paths = stablePaths;
+
         var build = BuildDomainPlans(paths, config);
         var normalizedConfig = build.Config;
         var exportedSeed = build.Seed;
@@ -152,9 +176,11 @@ public sealed class SwShRandomizerService
             return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, CreateApplyResult(diagnostics));
         }
 
+        var reviewedDomainPlans = new List<(RandomizerDomainPlan Domain, ChangePlan Plan)>();
         foreach (var domainPlan in domainPlans)
         {
             var previewPlan = domainPlan.CreateChangePlan(paths, domainPlan.Session);
+            reviewedDomainPlans.Add((domainPlan, previewPlan));
             diagnostics.AddRange(previewPlan.Diagnostics);
         }
 
@@ -163,47 +189,139 @@ public sealed class SwShRandomizerService
             return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, CreateApplyResult(diagnostics));
         }
 
-        var appliedWrites = new List<ProjectFileReference>();
-        var manifestWrites = new List<PlannedFileWrite>();
-        foreach (var domainPlan in domainPlans)
+        var rollbackTargets = reviewedDomainPlans
+            .SelectMany(item => item.Plan.Writes)
+            .Select(write => write.TargetRelativePath)
+            .Append(RandomizerManifestRelativePath);
+        if (!SwShOutputRollbackScope.TryCapture(
+            paths,
+            rollbackTargets,
+            out var rollbackScope,
+            out var captureFailure))
         {
-            var currentPlan = domainPlan.CreateChangePlan(paths, domainPlan.Session);
-            diagnostics.AddRange(currentPlan.Diagnostics);
-            if (!currentPlan.CanApply)
-            {
-                break;
-            }
-
-            var applyResult = domainPlan.ApplyChangePlan(paths, domainPlan.Session, currentPlan);
-            appliedWrites.AddRange(applyResult.WrittenFiles);
-            manifestWrites.AddRange(applyResult.Manifest.Writes);
-            diagnostics.AddRange(applyResult.Diagnostics);
-            if (applyResult.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-            {
-                break;
-            }
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Randomizer could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable existing outputs and writable temporary storage"));
+            return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, CreateApplyResult(diagnostics));
         }
 
-        var uniqueWrittenFiles = appliedWrites
-            .DistinctBy(file => $"{file.Layer}:{file.RelativePath}", StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        RecordRandomizerManifest(paths, uniqueWrittenFiles, diagnostics);
+        var outputRollback = rollbackScope!;
+        using (outputRollback)
+        {
+            var restoreCapture = CaptureRandomizerRestoreState(
+                paths,
+                reviewedDomainPlans.SelectMany(item => item.Plan.Writes),
+                diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                CleanupCapturedRandomizerBackups(paths, restoreCapture, diagnostics);
+                outputRollback.Commit();
+                return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, CreateApplyResult(diagnostics));
+            }
 
-        var aggregateApplyId = Guid.NewGuid().ToString("N");
-        var appliedAt = DateTimeOffset.UtcNow;
-        var aggregateResult = new ApplyResult(
-            aggregateApplyId,
-            appliedAt,
-            uniqueWrittenFiles,
-            new WriteManifest(
+            var appliedWrites = new List<ProjectFileReference>();
+            var manifestWrites = new List<PlannedFileWrite>();
+            foreach (var (domainPlan, _) in reviewedDomainPlans)
+            {
+                try
+                {
+                    var currentPlan = domainPlan.CreateChangePlan(paths, domainPlan.Session);
+                    diagnostics.AddRange(currentPlan.Diagnostics);
+                    if (!currentPlan.CanApply)
+                    {
+                        break;
+                    }
+
+                    var applyResult = domainPlan.ApplyChangePlan(paths, domainPlan.Session, currentPlan);
+                    appliedWrites.AddRange(applyResult.WrittenFiles);
+                    manifestWrites.AddRange(applyResult.Manifest.Writes);
+                    diagnostics.AddRange(applyResult.Diagnostics);
+                    if (applyResult.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                    {
+                        break;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Randomizer domain apply failed: {exception.Message}",
+                        expected: "Every selected Randomizer domain applied successfully"));
+                    break;
+                }
+            }
+
+            if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                var writtenFilesBeforeManifest = appliedWrites
+                    .DistinctBy(file => $"{file.Layer}:{file.RelativePath}", StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                RecordRandomizerManifest(paths, writtenFilesBeforeManifest, restoreCapture, diagnostics);
+            }
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                CleanupCapturedRandomizerBackups(paths, restoreCapture, diagnostics);
+                RollbackFailedApply(outputRollback, appliedWrites, manifestWrites, diagnostics);
+            }
+            else
+            {
+                outputRollback.Commit();
+            }
+
+            var uniqueWrittenFiles = appliedWrites
+                .DistinctBy(file => $"{file.Layer}:{file.RelativePath}", StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var aggregateApplyId = Guid.NewGuid().ToString("N");
+            var appliedAt = DateTimeOffset.UtcNow;
+            var aggregateResult = new ApplyResult(
                 aggregateApplyId,
                 appliedAt,
-                manifestWrites
-                    .DistinctBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
-                    .ToArray()),
-            CollapseDiagnostics(diagnostics));
+                uniqueWrittenFiles,
+                new WriteManifest(
+                    aggregateApplyId,
+                    appliedAt,
+                    manifestWrites
+                        .DistinctBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
+                        .ToArray()),
+                CollapseDiagnostics(diagnostics));
 
-        return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, aggregateResult);
+            return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, aggregateResult);
+        }
+    }
+
+    private static void RollbackFailedApply(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> appliedWrites,
+        ICollection<PlannedFileWrite> manifestWrites,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        appliedWrites.Clear();
+        manifestWrites.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Randomizer apply failed and all output changes were rolled back."));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Randomizer rollback failed: {failure.Message}",
+                file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                appliedWrites.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
     }
 
     private RandomizerBuildResult BuildDomainPlans(ProjectPaths paths, SwShRandomizerConfig config)
@@ -353,6 +471,19 @@ public sealed class SwShRandomizerService
         ArgumentNullException.ThrowIfNull(paths);
 
         var diagnostics = new List<ValidationDiagnostic>();
+        if (!SwShOutputRollbackScope.TryResolveStableOutputPaths(
+            paths,
+            out var stablePaths,
+            out var stableRootFailure))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                stableRootFailure ?? "Randomizer could not resolve Output Root safely.",
+                expected: "Stable physical Output Root"));
+            return CreateApplyResult(diagnostics);
+        }
+
+        paths = stablePaths;
         var project = projectWorkspaceService.Open(paths);
         if (!project.Health.CanOpenEditableWorkflows)
         {
@@ -377,7 +508,17 @@ public sealed class SwShRandomizerService
         }
 
         var manifestPath = ResolveOutputPath(project.Paths, RandomizerManifestRelativePath);
-        if (manifestPath is null || !File.Exists(manifestPath))
+        if (manifestPath is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer restore manifest path is not a physical path inside Output Root.",
+                file: RandomizerManifestRelativePath,
+                expected: "Physical manifest path inside Output Root"));
+            return CreateApplyResult(diagnostics);
+        }
+
+        if (!File.Exists(manifestPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -387,11 +528,12 @@ public sealed class SwShRandomizerService
         }
 
         RandomizerRestoreManifest? manifest;
+        RestoreFilePreimage manifestPreimage;
         try
         {
-            manifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(
-                File.ReadAllText(manifestPath),
-                JsonOptions);
+            var manifestBytes = File.ReadAllBytes(manifestPath);
+            manifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(manifestBytes, JsonOptions);
+            manifestPreimage = RestoreFilePreimage.ForFile(manifestBytes);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -403,23 +545,24 @@ public sealed class SwShRandomizerService
             return CreateApplyResult(diagnostics);
         }
 
-        if (manifest is null || manifest.Version != 1)
+        if (manifest is null || manifest.Version is not (1 or 2))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Randomizer restore manifest version is not supported.",
                 file: RandomizerManifestRelativePath,
-                expected: "KM Editor Randomizer restore manifest version 1"));
+                expected: "KM Editor Randomizer restore manifest version 1 or 2"));
             return CreateApplyResult(diagnostics);
         }
 
-        var restoredFiles = new List<ProjectFileReference>();
-        foreach (var relativePath in (manifest.WrittenRelativePaths ?? Array.Empty<string>())
-            .Select(NormalizeRelativePath)
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        var preparedEntries = new List<PreparedRandomizerRestoreEntry>();
+        var consumedBackups = new Dictionary<string, PreparedRandomizerBackup>(StringComparer.OrdinalIgnoreCase);
+        var remainingEntries = new List<RandomizerRestoreEntry>();
+        foreach (var manifestEntry in CreateRestoreEntries(manifest)
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase))
         {
+            var relativePath = NormalizeRelativePath(manifestEntry.RelativePath);
+            var entry = manifestEntry with { RelativePath = relativePath };
             if (!IsLayeredFsRelativePath(relativePath))
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -427,6 +570,7 @@ public sealed class SwShRandomizerService
                     "Skipped a tracked Randomizer path because it is outside romfs/exefs.",
                     file: relativePath,
                     expected: "Randomizer-owned romfs or exefs path"));
+                remainingEntries.Add(entry);
                 continue;
             }
 
@@ -438,51 +582,255 @@ public sealed class SwShRandomizerService
                     "Skipped a tracked Randomizer path because it resolves outside Output Root.",
                     file: relativePath,
                     expected: "Path contained by Output Root"));
+                remainingEntries.Add(entry);
                 continue;
             }
 
             try
             {
-                if (File.Exists(targetPath))
+                var targetPreimage = CaptureRestoreFilePreimage(targetPath);
+                if (targetPreimage.Kind == RestoreFileKind.Missing)
                 {
-                    File.Delete(targetPath);
-                    restoredFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, relativePath));
-                    DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, targetPath);
+                    preparedEntries.Add(new PreparedRandomizerRestoreEntry(
+                        relativePath,
+                        targetPath,
+                        targetPreimage,
+                        RandomizerRestoreMutationKind.AcknowledgeMissing,
+                        Backup: null));
+                    TryPrepareConsumedBackup(project.Paths, entry, consumedBackups);
+                    if (entry.OriginalExisted == true)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Warning,
+                            "Preserved a later file deletion instead of recreating the pre-Randomizer output.",
+                            file: relativePath,
+                            expected: "Later user changes remain untouched"));
+                    }
+
+                    continue;
+                }
+
+                if (targetPreimage.Kind != RestoreFileKind.File)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Randomizer output could not be restored because the tracked target is not a file.",
+                        file: relativePath,
+                        expected: "Tracked Randomizer output file"));
+                    remainingEntries.Add(entry);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(entry.RandomizedSha256))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Warning,
+                        "Preserved a legacy tracked Randomizer file because its ownership cannot be verified safely.",
+                        file: relativePath,
+                        expected: "Version 2 manifest with a Randomizer output hash"));
+                    remainingEntries.Add(entry);
+                    continue;
+                }
+
+                if (!string.Equals(targetPreimage.Sha256, entry.RandomizedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Warning,
+                        "Preserved a tracked Randomizer file because it changed after Randomizer apply.",
+                        file: relativePath,
+                        expected: "Current file matching the recorded Randomizer output hash"));
+                    remainingEntries.Add(entry);
+                    continue;
+                }
+
+                if (entry.OriginalExisted is null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Warning,
+                        "Preserved a tracked Randomizer file because its pre-Randomizer ownership is unknown.",
+                        file: relativePath,
+                        expected: "Version 2 manifest with pre-Randomizer ownership"));
+                    remainingEntries.Add(entry);
+                    continue;
+                }
+
+                PreparedRandomizerBackup? preparedBackup = null;
+                if (entry.OriginalExisted == true)
+                {
+                    preparedBackup = PrepareRequiredRandomizerBackup(project.Paths, entry, relativePath, diagnostics);
+                    if (preparedBackup is null)
+                    {
+                        remainingEntries.Add(entry);
+                        continue;
+                    }
+
+                    consumedBackups[preparedBackup.RelativePath] = preparedBackup;
+                }
+                else
+                {
+                    TryPrepareConsumedBackup(project.Paths, entry, consumedBackups);
+                }
+
+                preparedEntries.Add(new PreparedRandomizerRestoreEntry(
+                    relativePath,
+                    targetPath,
+                    targetPreimage,
+                    entry.OriginalExisted == true
+                        ? RandomizerRestoreMutationKind.RestoreBackup
+                        : RandomizerRestoreMutationKind.DeleteCreatedOutput,
+                    preparedBackup));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Randomizer output file could not be prepared for restore: {ex.Message}",
+                    file: relativePath,
+                    expected: "Readable generated output and backup files"));
+                remainingEntries.Add(entry);
+            }
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(diagnostics);
+        }
+
+        var rollbackPaths = preparedEntries
+            .Select(entry => entry.RelativePath)
+            .Concat(consumedBackups.Keys)
+            .Append(RandomizerManifestRelativePath);
+        if (!SwShOutputRollbackScope.TryCapture(
+            project.Paths,
+            rollbackPaths,
+            out var rollbackScope,
+            out var captureFailure))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Randomizer restore could not snapshot output before changes: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable tracked outputs, backups, and restore manifest"));
+            return CreateApplyResult(diagnostics);
+        }
+
+        var restoredFiles = new List<ProjectFileReference>();
+        var outputRollback = rollbackScope!;
+        using (outputRollback)
+        {
+            foreach (var preparedEntry in preparedEntries)
+            {
+                try
+                {
+                    RestoreMutationHook?.Invoke(
+                        SwShRandomizerRestoreMutationStage.BeforeTargetMutation,
+                        preparedEntry.RelativePath);
+                    EnsureRestoreMutationTarget(
+                        project.Paths,
+                        preparedEntry.RelativePath,
+                        preparedEntry.TargetPath,
+                        preparedEntry.TargetPreimage);
+                    if (preparedEntry.Mutation == RandomizerRestoreMutationKind.AcknowledgeMissing)
+                    {
+                        continue;
+                    }
+
+                    if (preparedEntry.Mutation == RandomizerRestoreMutationKind.DeleteCreatedOutput)
+                    {
+                        File.Delete(preparedEntry.TargetPath);
+                        DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, preparedEntry.TargetPath);
+                    }
+                    else
+                    {
+                        var backup = preparedEntry.Backup!;
+                        EnsureRestoreMutationTarget(
+                            project.Paths,
+                            backup.RelativePath,
+                            backup.Path,
+                            backup.Preimage);
+                        File.Copy(backup.Path, preparedEntry.TargetPath, overwrite: true);
+                    }
+
+                    restoredFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, preparedEntry.RelativePath));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Randomizer output file could not be restored: {ex.Message}",
+                        file: preparedEntry.RelativePath,
+                        expected: "Unchanged writable generated output file"));
+                    return RollbackFailedRestore(outputRollback, restoredFiles, diagnostics);
+                }
+            }
+
+            try
+            {
+                RestoreMutationHook?.Invoke(
+                    SwShRandomizerRestoreMutationStage.BeforeManifestMutation,
+                    RandomizerManifestRelativePath);
+                EnsureRestoreMutationTarget(
+                    project.Paths,
+                    RandomizerManifestRelativePath,
+                    manifestPath,
+                    manifestPreimage);
+                if (remainingEntries.Count == 0)
+                {
+                    File.Delete(manifestPath);
+                    DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, manifestPath);
+                }
+                else
+                {
+                    WriteRandomizerManifest(manifestPath, remainingEntries);
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Randomizer output file could not be restored: {ex.Message}",
-                    file: relativePath,
-                    expected: "Deletable generated output file"));
-            }
-        }
-
-        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
-        {
-            try
-            {
-                File.Delete(manifestPath);
-                DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, manifestPath);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"Randomizer restore manifest could not be deleted: {ex.Message}",
+                    $"Randomizer restore manifest could not be updated: {ex.Message}",
                     file: RandomizerManifestRelativePath,
-                    expected: "Deletable Randomizer restore manifest"));
+                    expected: "Unchanged writable Randomizer restore manifest"));
+                return RollbackFailedRestore(outputRollback, restoredFiles, diagnostics);
             }
 
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                restoredFiles.Count == 0
-                    ? "Restore Vanilla Values completed. No tracked Randomizer output files were present."
-                    : $"Restore Vanilla Values removed {restoredFiles.Count.ToString(CultureInfo.InvariantCulture)} tracked Randomizer output file(s).",
-                expected: "Generated Randomizer files removed from Output Root"));
+            foreach (var backup in consumedBackups.Values.OrderBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    RestoreMutationHook?.Invoke(
+                        SwShRandomizerRestoreMutationStage.BeforeBackupDeletion,
+                        backup.RelativePath);
+                    EnsureRestoreMutationTarget(
+                        project.Paths,
+                        backup.RelativePath,
+                        backup.Path,
+                        backup.Preimage);
+                    File.Delete(backup.Path);
+                    DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, backup.Path);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Randomizer backup could not be consumed: {ex.Message}",
+                        file: backup.RelativePath,
+                        expected: "Unchanged deletable Randomizer backup"));
+                    return RollbackFailedRestore(outputRollback, restoredFiles, diagnostics);
+                }
+            }
+
+            outputRollback.Commit();
         }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            restoredFiles.Count == 0
+                ? "Restore Vanilla Values completed without replacing or deleting any tracked output files."
+                : $"Restore Vanilla Values safely restored {restoredFiles.Count.ToString(CultureInfo.InvariantCulture)} tracked Randomizer output file(s).",
+            expected: remainingEntries.Count == 0
+                ? "Randomizer outputs restored to their pre-apply state"
+                : "Later changes retained; unresolved entries remain tracked"));
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
@@ -492,6 +840,152 @@ public sealed class SwShRandomizerService
             restoredFiles,
             new WriteManifest(applyId, appliedAt, Array.Empty<PlannedFileWrite>()),
             diagnostics);
+    }
+
+    private static PreparedRandomizerBackup? PrepareRequiredRandomizerBackup(
+        ProjectPaths paths,
+        RandomizerRestoreEntry entry,
+        string ownerRelativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var backupRelativePath = NormalizeRelativePath(entry.OriginalBackupRelativePath);
+        var backupPath = IsRandomizerBackupRelativePath(backupRelativePath)
+            ? ResolveOutputPath(paths, backupRelativePath)
+            : null;
+        if (backupPath is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer could not restore the pre-existing output because its backup path is invalid.",
+                file: ownerRelativePath,
+                expected: "Randomizer backup contained by Output Root"));
+            return null;
+        }
+
+        var backupPreimage = CaptureRestoreFilePreimage(backupPath);
+        if (backupPreimage.Kind != RestoreFileKind.File)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer could not restore the pre-existing output because its backup is missing.",
+                file: ownerRelativePath,
+                expected: "Readable Randomizer backup under Output Root"));
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.OriginalSha256)
+            || !string.Equals(backupPreimage.Sha256, entry.OriginalSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer could not restore the pre-existing output because its backup failed verification.",
+                file: ownerRelativePath,
+                expected: "Backup matching the recorded pre-Randomizer hash"));
+            return null;
+        }
+
+        return new PreparedRandomizerBackup(backupRelativePath, backupPath, backupPreimage);
+    }
+
+    private static void TryPrepareConsumedBackup(
+        ProjectPaths paths,
+        RandomizerRestoreEntry entry,
+        IDictionary<string, PreparedRandomizerBackup> consumedBackups)
+    {
+        var backupRelativePath = NormalizeRelativePath(entry.OriginalBackupRelativePath);
+        if (!IsRandomizerBackupRelativePath(backupRelativePath))
+        {
+            return;
+        }
+
+        var backupPath = ResolveOutputPath(paths, backupRelativePath);
+        if (backupPath is null)
+        {
+            return;
+        }
+
+        var backupPreimage = CaptureRestoreFilePreimage(backupPath);
+        if (backupPreimage.Kind == RestoreFileKind.File)
+        {
+            consumedBackups[backupRelativePath] = new PreparedRandomizerBackup(
+                backupRelativePath,
+                backupPath,
+                backupPreimage);
+        }
+    }
+
+    private static RestoreFilePreimage CaptureRestoreFilePreimage(string path)
+    {
+        if (File.Exists(path))
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+            return new RestoreFilePreimage(
+                RestoreFileKind.File,
+                stream.Length,
+                Convert.ToHexString(SHA256.HashData(stream)));
+        }
+
+        return Directory.Exists(path)
+            ? new RestoreFilePreimage(RestoreFileKind.Directory, 0, null)
+            : new RestoreFilePreimage(RestoreFileKind.Missing, 0, null);
+    }
+
+    private static void EnsureRestoreMutationTarget(
+        ProjectPaths paths,
+        string relativePath,
+        string preparedPath,
+        RestoreFilePreimage expected)
+    {
+        var resolvedPath = ResolveOutputPath(paths, relativePath);
+        var pathComparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (resolvedPath is null
+            || !string.Equals(
+                Path.GetFullPath(resolvedPath),
+                Path.GetFullPath(preparedPath),
+                pathComparison))
+        {
+            throw new IOException("The tracked path changed after Randomizer restore validation.");
+        }
+
+        var actual = CaptureRestoreFilePreimage(resolvedPath);
+        if (actual != expected)
+        {
+            throw new IOException("The tracked file changed after Randomizer restore validation.");
+        }
+    }
+
+    private static ApplyResult RollbackFailedRestore(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> restoredFiles,
+        List<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        restoredFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Randomizer restore failed and all output, backup, and manifest changes were rolled back."));
+        }
+        else
+        {
+            foreach (var failure in rollbackFailures)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Randomizer restore rollback failed: {failure.Message}",
+                    file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                    expected: "Tracked outputs, backups, and restore manifest restored to their exact pre-restore state"));
+            }
+        }
+
+        return CreateApplyResult(diagnostics);
     }
 
     internal static IReadOnlyList<int> CreateRaidRewardItemPool(IEnumerable<SwShItemRecord> items, bool royalCandyInstalled)
@@ -1755,9 +2249,174 @@ public sealed class SwShRandomizerService
             .ToArray();
     }
 
+    private static RandomizerRestoreCapture CaptureRandomizerRestoreState(
+        ProjectPaths paths,
+        IEnumerable<PlannedFileWrite> plannedWrites,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var entries = new Dictionary<string, RandomizerRestoreEntry>(StringComparer.OrdinalIgnoreCase);
+        var newRelativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var createdBackupRelativePaths = new List<string>();
+        var manifestPath = ResolveOutputPath(paths, RandomizerManifestRelativePath);
+        if (manifestPath is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer restore state could not be captured because Output Root is not writable.",
+                file: RandomizerManifestRelativePath,
+                expected: "Writable path under Output Root"));
+            return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths);
+        }
+
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                var existingManifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(
+                    File.ReadAllText(manifestPath),
+                    JsonOptions);
+                if (existingManifest is null || existingManifest.Version is not (1 or 2))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Randomizer cannot apply while the existing restore manifest version is unsupported.",
+                        file: RandomizerManifestRelativePath,
+                        expected: "KM Editor Randomizer restore manifest version 1 or 2"));
+                    return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths);
+                }
+
+                foreach (var entry in CreateRestoreEntries(existingManifest))
+                {
+                    var relativePath = NormalizeRelativePath(entry.RelativePath);
+                    if (IsLayeredFsRelativePath(relativePath))
+                    {
+                        entries[relativePath] = entry with { RelativePath = relativePath };
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Randomizer cannot safely apply because the existing restore manifest could not be read: {ex.Message}",
+                    file: RandomizerManifestRelativePath,
+                    expected: "Readable Randomizer restore manifest"));
+                return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths);
+            }
+        }
+
+        var plannedPaths = plannedWrites
+            .Select(write => NormalizeRelativePath(write.TargetRelativePath))
+            .Where(IsLayeredFsRelativePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var relativePath in plannedPaths)
+        {
+            if (entries.TryGetValue(relativePath, out var existingEntry))
+            {
+                try
+                {
+                    var currentPath = ResolveOutputPath(paths, relativePath);
+                    var stillMatchesRecordedRandomizerOutput = currentPath is not null
+                        && File.Exists(currentPath)
+                        && !string.IsNullOrWhiteSpace(existingEntry.RandomizedSha256)
+                        && string.Equals(
+                            ComputeFileSha256(currentPath),
+                            existingEntry.RandomizedSha256,
+                            StringComparison.OrdinalIgnoreCase);
+                    if (!stillMatchesRecordedRandomizerOutput)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            "Randomizer apply is blocked because a tracked output changed after an earlier apply. Restore or move the later-edited file before applying Randomizer again.",
+                            file: relativePath,
+                            expected: "Current file matching the recorded Randomizer output hash"));
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Randomizer could not verify existing restore ownership: {ex.Message}",
+                        file: relativePath,
+                        expected: "Readable tracked Randomizer output"));
+                }
+
+                continue;
+            }
+
+            var targetPath = ResolveOutputPath(paths, relativePath);
+            if (targetPath is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Randomizer restore state could not resolve a planned output under Output Root.",
+                    file: relativePath,
+                    expected: "Path contained by Output Root"));
+                continue;
+            }
+
+            try
+            {
+                RandomizerRestoreEntry entry;
+                if (File.Exists(targetPath))
+                {
+                    var backupRelativePath = CreateRandomizerBackupRelativePath(relativePath);
+                    var backupPath = ResolveOutputPath(paths, backupRelativePath);
+                    if (backupPath is null)
+                    {
+                        throw new IOException("The Randomizer backup path is not a physical path inside Output Root.");
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
+                    File.Copy(targetPath, backupPath, overwrite: true);
+
+                    var originalSha256 = ComputeFileSha256(targetPath);
+                    if (!string.Equals(originalSha256, ComputeFileSha256(backupPath), StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new IOException("The pre-Randomizer backup did not match its source file.");
+                    }
+
+                    entry = new RandomizerRestoreEntry(
+                        relativePath,
+                        OriginalExisted: true,
+                        OriginalSha256: originalSha256,
+                        OriginalBackupRelativePath: backupRelativePath,
+                        RandomizedSha256: null);
+                    createdBackupRelativePaths.Add(backupRelativePath);
+                }
+                else
+                {
+                    entry = new RandomizerRestoreEntry(
+                        relativePath,
+                        OriginalExisted: false,
+                        OriginalSha256: null,
+                        OriginalBackupRelativePath: null,
+                        RandomizedSha256: null);
+                }
+
+                entries[relativePath] = entry;
+                newRelativePaths.Add(relativePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Randomizer could not capture the pre-apply output for safe restoration: {ex.Message}",
+                    file: relativePath,
+                    expected: "Readable output and writable Randomizer backup directory"));
+            }
+        }
+
+        return new RandomizerRestoreCapture(entries, newRelativePaths, createdBackupRelativePaths);
+    }
+
     private static void RecordRandomizerManifest(
         ProjectPaths paths,
         IReadOnlyList<ProjectFileReference> writtenFiles,
+        RandomizerRestoreCapture restoreCapture,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var trackedPaths = writtenFiles
@@ -1767,6 +2426,26 @@ public sealed class SwShRandomizerService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var trackedPathSet = trackedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var entries = restoreCapture.Entries
+            .Where(item => !restoreCapture.NewRelativePaths.Contains(item.Key) || trackedPathSet.Contains(item.Key))
+            .ToDictionary(item => item.Key, item => item.Value, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var backupRelativePath in restoreCapture.CreatedBackupRelativePaths)
+        {
+            var owner = restoreCapture.Entries.FirstOrDefault(item =>
+                string.Equals(item.Value.OriginalBackupRelativePath, backupRelativePath, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(owner.Key) && trackedPathSet.Contains(owner.Key))
+            {
+                continue;
+            }
+
+            TryDeleteRandomizerBackup(
+                paths,
+                new RandomizerRestoreEntry(string.Empty, null, null, backupRelativePath, null),
+                diagnostics);
+        }
+
         if (trackedPaths.Length == 0)
         {
             return;
@@ -1783,48 +2462,37 @@ public sealed class SwShRandomizerService
             return;
         }
 
-        var mergedPaths = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var relativePath in trackedPaths)
-        {
-            mergedPaths.Add(relativePath);
-        }
-
-        if (File.Exists(manifestPath))
         {
             try
             {
-                var existingManifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(
-                    File.ReadAllText(manifestPath),
-                    JsonOptions);
-                if (existingManifest?.Version == 1)
+                var targetPath = ResolveOutputPath(paths, relativePath);
+                if (targetPath is null || !File.Exists(targetPath))
                 {
-                    foreach (var relativePath in (existingManifest.WrittenRelativePaths ?? Array.Empty<string>()).Select(NormalizeRelativePath))
-                    {
-                        if (IsLayeredFsRelativePath(relativePath))
-                        {
-                            mergedPaths.Add(relativePath);
-                        }
-                    }
+                    throw new IOException("The reported Randomizer output file does not exist.");
                 }
+
+                entries.TryGetValue(relativePath, out var entry);
+                entry ??= new RandomizerRestoreEntry(relativePath, null, null, null, null);
+                entries[relativePath] = entry with
+                {
+                    RelativePath = relativePath,
+                    RandomizedSha256 = ComputeFileSha256(targetPath),
+                };
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"Existing Randomizer restore manifest could not be merged and will be replaced: {ex.Message}",
-                    file: RandomizerManifestRelativePath,
-                    expected: "Readable Randomizer restore manifest"));
+                    DiagnosticSeverity.Error,
+                    $"Randomizer output ownership could not be recorded: {ex.Message}",
+                    file: relativePath,
+                    expected: "Readable generated Randomizer output"));
             }
         }
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
-            var manifest = new RandomizerRestoreManifest(
-                Version: 1,
-                UpdatedAt: DateTimeOffset.UtcNow,
-                WrittenRelativePaths: mergedPaths.ToArray());
-            File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
+            WriteRandomizerManifest(manifestPath, entries.Values);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -1836,23 +2504,116 @@ public sealed class SwShRandomizerService
         }
     }
 
-    private static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    private static void CleanupCapturedRandomizerBackups(
+        ProjectPaths paths,
+        RandomizerRestoreCapture restoreCapture,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath)
-            || string.IsNullOrWhiteSpace(targetRelativePath)
-            || Path.IsPathRooted(targetRelativePath))
+        foreach (var backupRelativePath in restoreCapture.CreatedBackupRelativePaths)
         {
-            return null;
+            TryDeleteRandomizerBackup(
+                paths,
+                new RandomizerRestoreEntry(string.Empty, null, null, backupRelativePath, null),
+                diagnostics);
+        }
+    }
+
+    private static IReadOnlyList<RandomizerRestoreEntry> CreateRestoreEntries(RandomizerRestoreManifest manifest)
+    {
+        if (manifest.Version == 2)
+        {
+            return (manifest.Entries ?? Array.Empty<RandomizerRestoreEntry>())
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.RelativePath))
+                .DistinctBy(entry => NormalizeRelativePath(entry.RelativePath), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
 
-        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
-        var targetPath = Path.GetFullPath(Path.Combine(
-            outputRoot,
-            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        return (manifest.WrittenRelativePaths ?? Array.Empty<string>())
+            .Select(NormalizeRelativePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(path => new RandomizerRestoreEntry(path, null, null, null, null))
+            .ToArray();
+    }
 
-        return IsPathInsideRoot(outputRoot, targetPath)
-            ? targetPath
-            : null;
+    private static void WriteRandomizerManifest(
+        string manifestPath,
+        IEnumerable<RandomizerRestoreEntry> entries)
+    {
+        var normalizedEntries = entries
+            .Select(entry => entry with { RelativePath = NormalizeRelativePath(entry.RelativePath) })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.RelativePath))
+            .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
+        var manifest = new RandomizerRestoreManifest(
+            Version: 2,
+            UpdatedAt: DateTimeOffset.UtcNow,
+            WrittenRelativePaths: normalizedEntries.Select(entry => entry.RelativePath).ToArray(),
+            Entries: normalizedEntries);
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
+    }
+
+    private static string CreateRandomizerBackupRelativePath(string relativePath)
+    {
+        var pathHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(relativePath.ToUpperInvariant())));
+        return $"{RandomizerBackupDirectoryRelativePath}/{pathHash}.bin";
+    }
+
+    private static string ComputeFileSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    private static bool IsRandomizerBackupRelativePath(string relativePath)
+    {
+        return relativePath.StartsWith($"{RandomizerBackupDirectoryRelativePath}/", StringComparison.OrdinalIgnoreCase)
+            && !Path.IsPathRooted(relativePath)
+            && !relativePath.Split('/').Any(part => string.Equals(part, "..", StringComparison.Ordinal));
+    }
+
+    private static void TryDeleteRandomizerBackup(
+        ProjectPaths paths,
+        RandomizerRestoreEntry entry,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var backupRelativePath = NormalizeRelativePath(entry.OriginalBackupRelativePath);
+        if (!IsRandomizerBackupRelativePath(backupRelativePath))
+        {
+            return;
+        }
+
+        var backupPath = ResolveOutputPath(paths, backupRelativePath);
+        if (backupPath is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(backupPath))
+            {
+                File.Delete(backupPath);
+                DeleteEmptyParentDirectories(paths.OutputRootPath!, backupPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Randomizer backup could not be deleted: {ex.Message}",
+                file: backupRelativePath,
+                expected: "Deletable Randomizer backup"));
+        }
+    }
+
+    private static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        return SwShOutputRollbackScope.ResolvePhysicalContainedPath(
+            paths.OutputRootPath,
+            targetRelativePath);
     }
 
     private static bool IsPathInsideRoot(string outputRoot, string targetPath)
@@ -1890,6 +2651,16 @@ public sealed class SwShRandomizerService
                 Path.TrimEndingDirectorySeparator(outputRoot),
                 StringComparison.OrdinalIgnoreCase))
         {
+            var relativePath = NormalizeRelativePath(Path.GetRelativePath(outputRoot, directory));
+            var currentDirectory = SwShOutputRollbackScope.ResolvePhysicalContainedPath(
+                outputRoot,
+                relativePath);
+            if (currentDirectory is null
+                || !string.Equals(currentDirectory, directory, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
             if (Directory.EnumerateFileSystemEntries(directory).Any())
             {
                 break;
@@ -2214,5 +2985,65 @@ public sealed class SwShRandomizerService
     private sealed record RandomizerRestoreManifest(
         int Version,
         DateTimeOffset UpdatedAt,
-        IReadOnlyList<string> WrittenRelativePaths);
+        IReadOnlyList<string>? WrittenRelativePaths = null,
+        IReadOnlyList<RandomizerRestoreEntry>? Entries = null);
+
+    private sealed record RandomizerRestoreEntry(
+        string RelativePath,
+        bool? OriginalExisted,
+        string? OriginalSha256,
+        string? OriginalBackupRelativePath,
+        string? RandomizedSha256);
+
+    private sealed record RandomizerRestoreCapture(
+        IReadOnlyDictionary<string, RandomizerRestoreEntry> Entries,
+        IReadOnlySet<string> NewRelativePaths,
+        IReadOnlyList<string> CreatedBackupRelativePaths);
+
+    private sealed record PreparedRandomizerRestoreEntry(
+        string RelativePath,
+        string TargetPath,
+        RestoreFilePreimage TargetPreimage,
+        RandomizerRestoreMutationKind Mutation,
+        PreparedRandomizerBackup? Backup);
+
+    private sealed record PreparedRandomizerBackup(
+        string RelativePath,
+        string Path,
+        RestoreFilePreimage Preimage);
+
+    private readonly record struct RestoreFilePreimage(
+        RestoreFileKind Kind,
+        long Length,
+        string? Sha256)
+    {
+        public static RestoreFilePreimage ForFile(byte[] bytes)
+        {
+            return new RestoreFilePreimage(
+                RestoreFileKind.File,
+                bytes.LongLength,
+                Convert.ToHexString(SHA256.HashData(bytes)));
+        }
+    }
+
+    private enum RandomizerRestoreMutationKind
+    {
+        AcknowledgeMissing,
+        DeleteCreatedOutput,
+        RestoreBackup,
+    }
+
+    private enum RestoreFileKind
+    {
+        Missing,
+        File,
+        Directory,
+    }
+}
+
+internal enum SwShRandomizerRestoreMutationStage
+{
+    BeforeTargetMutation,
+    BeforeManifestMutation,
+    BeforeBackupDeletion,
 }

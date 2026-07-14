@@ -50,9 +50,21 @@ public sealed record SwShEvolutionSet(IReadOnlyList<SwShEvolutionRecord> Evoluti
         }
 
         var output = new byte[FileSize];
-        for (var index = 0; index < evolutions.Count; index++)
+        var occupiedSlots = new HashSet<int>();
+        foreach (var evolution in evolutions)
         {
-            WriteRecord(evolutions[index], output.AsSpan(index * RecordSize, RecordSize));
+            if ((uint)evolution.Slot >= MaxEvolutionCount)
+            {
+                throw new InvalidDataException(
+                    $"Evolution slot {evolution.Slot} is outside the supported range 0-{MaxEvolutionCount - 1}.");
+            }
+
+            if (!occupiedSlots.Add(evolution.Slot))
+            {
+                throw new InvalidDataException($"Evolution slot {evolution.Slot} is duplicated.");
+            }
+
+            WriteRecord(evolution, output.AsSpan(evolution.Slot * RecordSize, RecordSize));
         }
 
         return output;

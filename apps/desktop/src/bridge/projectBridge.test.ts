@@ -103,6 +103,34 @@ const fileGraph = {
 } as const;
 
 describe('projectBridge', () => {
+  it('sends the reviewed Mod Merger token with apply requests', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.applyModMerge({
+        mergeMode: 'smart',
+        modDirectory1: 'mod-1',
+        modDirectory2: 'mod-2',
+        paths: editableProjectPaths,
+        resolutions: [],
+        reviewToken: 'review-token-123',
+        selectedDirectory1Files: ['romfs/bin/data.bin'],
+        selectedDirectory2Files: ['romfs/bin/data.bin']
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'modMerger.apply',
+      payload: {
+        reviewToken: 'review-token-123'
+      }
+    });
+  });
+
   it('sends typed project open requests through the configured transport', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {

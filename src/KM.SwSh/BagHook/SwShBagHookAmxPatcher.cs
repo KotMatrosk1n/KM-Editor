@@ -28,6 +28,10 @@ internal sealed record SwShBagHookAnalysis(
     string Message,
     IReadOnlyList<SwShBagHookSlotState> Slots);
 
+internal sealed record SwShBagHookRestoreResult(
+    byte[] Data,
+    bool IsBaseEquivalent);
+
 internal static class SwShBagHookAmxPatcher
 {
     public const int SlotCount = 20;
@@ -178,6 +182,139 @@ internal static class SwShBagHookAmxPatcher
         return patched;
     }
 
+    public static SwShBagHookRestoreResult RestoreFromBase(byte[] data, byte[] baseData)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(baseData);
+
+        var baseAnalysis = Analyze(baseData);
+        if (baseAnalysis.Kind != SwShBagHookInstallKind.NotInstalled)
+        {
+            throw new InvalidDataException($"Base Bag-event script is not a supported unmodified Bag Hook source: {baseAnalysis.Message}");
+        }
+
+        var normalizedData = MigrateLegacyCodeMarkerIfNeeded(data) ?? data.ToArray();
+        var analysis = Analyze(normalizedData);
+        if (analysis.Kind != SwShBagHookInstallKind.InstalledV2)
+        {
+            throw new InvalidDataException($"Bag Hook V2 cannot be safely restored from this script: {analysis.Message}");
+        }
+
+        var decoded = Decode(normalizedData);
+        var decodedBase = Decode(baseData);
+        ValidateRestoreBaseLayout(decoded, decodedBase);
+
+        var codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
+        var bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize)
+            ?? throw new InvalidDataException("Bag Hook call site is not a readable local AMX CALL.");
+        if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out _, out var markerPlacement)
+            || markerPlacement != MarkerPlacement.DataSection)
+        {
+            throw new InvalidDataException("Bag Hook V2 does not have its expected terminal data marker.");
+        }
+
+        if (bagProcCell + HookCodeCellCount != codeCells.Length)
+        {
+            throw new InvalidDataException("Bag Hook V2 procedure is not terminal in the AMX code section. Refusing to remove code that may be referenced by another mod.");
+        }
+
+        var nativeHashes = ReadNativeHashes(decoded.Expanded, decoded.Header);
+        ExpectNative(nativeHashes, FreedNativeIndex, AddItemNativeHash);
+        ExpectCell(codeCells, DuplicateNativeCallCell + 1, DuplicateNativeIndex, "Bag Hook duplicate native operand");
+
+        var baseCodeCells = ReadCells(
+            decodedBase.Expanded,
+            decodedBase.Header.Cod,
+            decodedBase.Header.Dat - decodedBase.Header.Cod,
+            decodedBase.CellSize);
+        ValidateSupportedVanillaShape(decodedBase, baseCodeCells, requireFreedNativeHash: true);
+        ExpectLocalCall(
+            baseCodeCells,
+            GrantStubCallerCell,
+            OriginalNoOpGrantStubCell,
+            decodedBase.CellSize,
+            "Base Bag-event no-op caller");
+
+        var hookCodeLength = HookCodeCellCount * decoded.CellSize;
+        var markerLength = HookMarkerCellCount * decoded.CellSize;
+        var totalOwnedLength = hookCodeLength + markerLength;
+        if (decoded.Header.Dat < hookCodeLength
+            || decoded.Header.Hea < totalOwnedLength
+            || decoded.Header.Stp < totalOwnedLength)
+        {
+            throw new InvalidDataException("Bag Hook AMX bounds are too small to remove the owned hook regions safely.");
+        }
+
+        var restoredHeader = decoded.Header with
+        {
+            Dat = decoded.Header.Dat - hookCodeLength,
+            Hea = decoded.Header.Hea - totalOwnedLength,
+            Stp = decoded.Header.Stp - totalOwnedLength,
+        };
+        var expectedRestoredDat = decoded.Header.Cod + bagProcCell * decoded.CellSize;
+        var retainedDataLength = decoded.Header.Hea - decoded.Header.Dat - markerLength;
+        if (restoredHeader.Dat != expectedRestoredDat
+            || retainedDataLength < 0
+            || restoredHeader.Hea != restoredHeader.Dat + retainedDataLength
+            || restoredHeader.Stp < restoredHeader.Hea)
+        {
+            throw new InvalidDataException("Bag Hook AMX bounds do not match the owned terminal code and data regions.");
+        }
+
+        var restoredExpanded = new byte[restoredHeader.Hea];
+        Array.Copy(decoded.Expanded, 0, restoredExpanded, 0, decoded.Header.Cod);
+        Array.Copy(
+            decoded.Expanded,
+            decoded.Header.Cod,
+            restoredExpanded,
+            restoredHeader.Cod,
+            bagProcCell * decoded.CellSize);
+        Array.Copy(
+            decoded.Expanded,
+            decoded.Header.Dat,
+            restoredExpanded,
+            restoredHeader.Dat,
+            retainedDataLength);
+
+        WriteCell(
+            restoredExpanded,
+            restoredHeader.Cod + (DuplicateNativeCallCell + 1) * decoded.CellSize,
+            baseCodeCells[DuplicateNativeCallCell + 1],
+            decoded.CellSize);
+        WriteCell(
+            restoredExpanded,
+            restoredHeader.Cod + (GrantStubCallerCell + 1) * decoded.CellSize,
+            baseCodeCells[GrantStubCallerCell + 1],
+            decoded.CellSize);
+
+        var baseNativeHashes = ReadNativeHashes(decodedBase.Expanded, decodedBase.Header);
+        ExpectNative(baseNativeHashes, FreedNativeIndex, DuplicatedNativeHash);
+        WriteAmxHeaderFields(restoredExpanded, restoredHeader);
+        WriteNativeHash(restoredExpanded, restoredHeader, FreedNativeIndex, baseNativeHashes[FreedNativeIndex]);
+
+        var restoredPrefix = normalizedData[..restoredHeader.Cod].ToArray();
+        WriteAmxHeaderFields(restoredPrefix, restoredHeader);
+        WriteNativeHash(restoredPrefix, restoredHeader, FreedNativeIndex, baseNativeHashes[FreedNativeIndex]);
+        var restored = BuildCompactAmxPreservingRetainedCells(
+            normalizedData,
+            decoded,
+            restoredPrefix,
+            restoredHeader,
+            restoredExpanded,
+            bagProcCell);
+        VerifyExpandedMemory(restored, restoredExpanded);
+
+        var restoredAnalysis = Analyze(restored);
+        if (restoredAnalysis.Kind != SwShBagHookInstallKind.NotInstalled)
+        {
+            throw new InvalidDataException($"Restored Bag-event script did not return to the supported no-hook shape: {restoredAnalysis.Message}");
+        }
+
+        return new SwShBagHookRestoreResult(
+            restored,
+            ExpandedMemoryEquals(restored, baseData));
+    }
+
     public static byte[] ApplySlotPatches(byte[] data, IReadOnlyList<SwShBagHookSlotPatch> patches)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -247,6 +384,40 @@ internal static class SwShBagHookAmxPatcher
             SwShBagHookInstallKind.Conflict,
             message,
             CreateEmptySlots("conflict", "Slot state cannot be trusted until the Bag-event script conflict is resolved."));
+    }
+
+    private static void ValidateRestoreBaseLayout(DecodedAmx current, DecodedAmx baseAmx)
+    {
+        if (current.CellSize != baseAmx.CellSize
+            || current.Header.Magic != baseAmx.Header.Magic
+            || current.Header.DefSize != baseAmx.Header.DefSize
+            || current.Header.Cod != baseAmx.Header.Cod
+            || current.Header.Publics != baseAmx.Header.Publics
+            || current.Header.Natives != baseAmx.Header.Natives
+            || current.Header.Libraries != baseAmx.Header.Libraries
+            || current.Header.PubVars != baseAmx.Header.PubVars
+            || current.Header.Tags != baseAmx.Header.Tags
+            || current.Header.NameTable != baseAmx.Header.NameTable)
+        {
+            throw new InvalidDataException("Current and base Bag-event scripts do not share the same AMX table layout.");
+        }
+    }
+
+    private static bool ExpandedMemoryEquals(byte[] left, byte[] right)
+    {
+        var decodedLeft = Decode(left);
+        var decodedRight = Decode(right);
+        if (decodedLeft.CellSize != decodedRight.CellSize
+            || decodedLeft.Expanded.Length != decodedRight.Expanded.Length)
+        {
+            return false;
+        }
+
+        var leftExpanded = decodedLeft.Expanded.ToArray();
+        var rightExpanded = decodedRight.Expanded.ToArray();
+        BinaryPrimitives.WriteInt32LittleEndian(leftExpanded.AsSpan(0x00), 0);
+        BinaryPrimitives.WriteInt32LittleEndian(rightExpanded.AsSpan(0x00), 0);
+        return leftExpanded.AsSpan().SequenceEqual(rightExpanded);
     }
 
     private static byte[]? MigrateLegacyCodeMarkerIfNeeded(byte[] data)
@@ -454,14 +625,14 @@ internal static class SwShBagHookAmxPatcher
             throw new InvalidDataException("Bag-event script is not compact AMX; the Bag Hook patcher expects the vanilla compact layout.");
         }
 
-        var expanded = ExpandAmxIfNeeded(data, header, cellSize);
-        VerifyCompactRoundTrip(data, header, expanded, cellSize);
+        var expansion = ExpandCompactAmx(data, header, cellSize);
+        VerifyCompactRoundTrip(data, header, expansion.Expanded, cellSize);
         if (header.Publics != header.Natives)
         {
             throw new InvalidDataException("Bag-event script has public entries; refusing to patch without public-table analysis.");
         }
 
-        return new DecodedAmx(header, cellSize, expanded);
+        return new DecodedAmx(header, cellSize, expansion.Expanded, expansion.CompactCellSpans);
     }
 
     private static void ValidateSupportedVanillaShape(
@@ -561,7 +732,7 @@ internal static class SwShBagHookAmxPatcher
         Array.Copy(decoded.Expanded, decoded.Header.Dat, patchedExpanded, patchedHeader.Dat, decoded.Header.Hea - decoded.Header.Dat);
         Array.Copy(decoded.Expanded, codeMarkerOffset, patchedExpanded, decoded.Header.Hea - markerLength, markerLength);
         WriteAmxHeaderFields(patchedExpanded, patchedHeader);
-        return new DecodedAmx(patchedHeader, decoded.CellSize, patchedExpanded);
+        return new DecodedAmx(patchedHeader, decoded.CellSize, patchedExpanded, CompactCellSpans: null);
     }
 
     private static bool TryReadDataMarker(DecodedAmx decoded)
@@ -656,11 +827,11 @@ internal static class SwShBagHookAmxPatcher
 
     private static byte[] ExpandAmxIfNeeded(byte[] data, SwShAmxHeader header, int cellSize)
     {
-        if ((header.Flags & PawnFlagCompact) == 0)
-        {
-            return data;
-        }
+        return ExpandCompactAmx(data, header, cellSize).Expanded;
+    }
 
+    private static CompactAmxExpansion ExpandCompactAmx(byte[] data, SwShAmxHeader header, int cellSize)
+    {
         if (header.Hea < header.Cod || header.Size < header.Cod || header.Size > data.Length)
         {
             throw new InvalidDataException("AMX compact header has inconsistent code/data bounds.");
@@ -676,8 +847,10 @@ internal static class SwShBagHookAmxPatcher
             throw new InvalidDataException($"Expanded AMX memory size 0x{dst:X} is not aligned to {cellSize}-byte cells.");
         }
 
+        var spans = new CompactCellSpan[dst / cellSize];
         while (src > 0)
         {
+            var encodedEnd = src;
             ulong cell = 0;
             var shift = 0;
             var signSource = 0;
@@ -705,6 +878,7 @@ internal static class SwShBagHookAmxPatcher
                 throw new InvalidDataException("AMX compact expansion produced more cells than the header allows.");
             }
 
+            spans[dst / cellSize] = new CompactCellSpan(header.Cod + src, encodedEnd - src);
             WriteCell(expanded, header.Cod + dst, cell, cellSize);
         }
 
@@ -713,7 +887,7 @@ internal static class SwShBagHookAmxPatcher
             throw new InvalidDataException($"AMX compact expansion stopped with 0x{dst:X} bytes unwritten.");
         }
 
-        return expanded;
+        return new CompactAmxExpansion(expanded, spans);
     }
 
     private static void VerifyCompactRoundTrip(byte[] original, SwShAmxHeader header, byte[] expanded, int cellSize)
@@ -742,39 +916,116 @@ internal static class SwShBagHookAmxPatcher
         return result;
     }
 
+    private static byte[] BuildCompactAmxPreservingRetainedCells(
+        byte[] original,
+        DecodedAmx originalDecoded,
+        byte[] restoredPrefix,
+        SwShAmxHeader restoredHeader,
+        byte[] restoredExpanded,
+        int bagProcCell)
+    {
+        var cellSize = originalDecoded.CellSize;
+        var spans = originalDecoded.CompactCellSpans
+            ?? throw new InvalidDataException("Bag Hook compact cell provenance is unavailable for safe restoration.");
+        var originalCellCount = (originalDecoded.Header.Hea - originalDecoded.Header.Cod) / cellSize;
+        var originalCodeCellCount = (originalDecoded.Header.Dat - originalDecoded.Header.Cod) / cellSize;
+        var markerStartCell = originalCellCount - HookMarkerCellCount;
+        var restoredCellCount = (restoredHeader.Hea - restoredHeader.Cod) / cellSize;
+        var retainedCellCount = bagProcCell + markerStartCell - originalCodeCellCount;
+        if (spans.Count != originalCellCount
+            || markerStartCell < originalCodeCellCount
+            || retainedCellCount != restoredCellCount
+            || restoredPrefix.Length != restoredHeader.Cod)
+        {
+            throw new InvalidDataException("Bag Hook compact cell layout does not match the retained code and data regions.");
+        }
+
+        var compact = new List<byte>(Math.Max(0, originalDecoded.Header.Size - originalDecoded.Header.Cod));
+        var restoredCell = 0;
+        AppendRange(sourceStart: 0, sourceEnd: bagProcCell);
+        AppendRange(sourceStart: originalCodeCellCount, sourceEnd: markerStartCell);
+        if (restoredCell != restoredCellCount)
+        {
+            throw new InvalidDataException("Bag Hook compact restoration did not emit the expected retained cell count.");
+        }
+
+        var result = new byte[restoredHeader.Cod + compact.Count];
+        Array.Copy(restoredPrefix, result, restoredPrefix.Length);
+        compact.CopyTo(result, restoredHeader.Cod);
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(0), result.Length);
+        return result;
+
+        void AppendRange(int sourceStart, int sourceEnd)
+        {
+            for (var sourceCell = sourceStart; sourceCell < sourceEnd; sourceCell++, restoredCell++)
+            {
+                var sourceOffset = originalDecoded.Header.Cod + sourceCell * cellSize;
+                var restoredOffset = restoredHeader.Cod + restoredCell * cellSize;
+                var sourceValue = ReadCell(originalDecoded.Expanded, sourceOffset, cellSize);
+                var restoredValue = ReadCell(restoredExpanded, restoredOffset, cellSize);
+                if (sourceValue != restoredValue)
+                {
+                    compact.AddRange(CompactAmxCell(restoredValue, cellSize));
+                    continue;
+                }
+
+                var span = spans[sourceCell];
+                if (span.Offset < originalDecoded.Header.Cod
+                    || span.Length <= 0
+                    || span.Offset + span.Length > original.Length)
+                {
+                    throw new InvalidDataException("Bag Hook compact cell provenance points outside the current AMX file.");
+                }
+
+                for (var index = 0; index < span.Length; index++)
+                {
+                    compact.Add(original[span.Offset + index]);
+                }
+            }
+        }
+    }
+
     private static byte[] CompactAmxMemory(byte[] expanded, SwShAmxHeader header, int cellSize)
     {
         var compact = new List<byte>(Math.Max(0, header.Size - header.Cod));
         for (var offset = header.Cod; offset < header.Hea; offset += cellSize)
         {
-            var signed = SignedCellValue(ReadCell(expanded, offset, cellSize), cellSize);
-            var chunks = new List<byte>();
-            var value = signed;
-            while (true)
-            {
-                var payload = (byte)(value & 0x7F);
-                chunks.Add(payload);
-                value >>= 7;
-                var signBitSet = (payload & 0x40) != 0;
-                if ((value == 0 && !signBitSet) || (value == -1 && signBitSet))
-                {
-                    break;
-                }
-            }
-
-            for (var i = chunks.Count - 1; i >= 0; i--)
-            {
-                var current = chunks[i];
-                if (i != 0)
-                {
-                    current |= 0x80;
-                }
-
-                compact.Add(current);
-            }
+            compact.AddRange(CompactAmxCell(ReadCell(expanded, offset, cellSize), cellSize));
         }
 
         return compact.ToArray();
+    }
+
+    private static byte[] CompactAmxCell(ulong cell, int cellSize)
+    {
+        var signed = SignedCellValue(cell, cellSize);
+        var chunks = new List<byte>();
+        var value = signed;
+        while (true)
+        {
+            var payload = (byte)(value & 0x7F);
+            chunks.Add(payload);
+            value >>= 7;
+            var signBitSet = (payload & 0x40) != 0;
+            if ((value == 0 && !signBitSet) || (value == -1 && signBitSet))
+            {
+                break;
+            }
+        }
+
+        var compact = new byte[chunks.Count];
+        for (var index = chunks.Count - 1; index >= 0; index--)
+        {
+            var current = chunks[index];
+            if (index != 0)
+            {
+                current |= 0x80;
+            }
+
+            compact[chunks.Count - 1 - index] = current;
+        }
+
+        return compact;
     }
 
     private static void VerifyExpandedMemory(byte[] compactData, byte[] expectedExpanded)
@@ -905,7 +1156,16 @@ internal static class SwShBagHookAmxPatcher
     private sealed record DecodedAmx(
         SwShAmxHeader Header,
         int CellSize,
-        byte[] Expanded);
+        byte[] Expanded,
+        IReadOnlyList<CompactCellSpan>? CompactCellSpans);
+
+    private sealed record CompactAmxExpansion(
+        byte[] Expanded,
+        IReadOnlyList<CompactCellSpan> CompactCellSpans);
+
+    private readonly record struct CompactCellSpan(
+        int Offset,
+        int Length);
 
     private sealed record SwShAmxHeader(
         int Size,

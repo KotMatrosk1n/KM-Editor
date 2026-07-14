@@ -7,6 +7,7 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
+using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
 using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
@@ -38,6 +39,11 @@ public sealed class SwShRoyalCandyEditSessionService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService();
+    }
+
+    public void ClearMemoryCache()
+    {
+        royalCandyWorkflowService.ClearMemoryCache();
     }
 
     public SwShRoyalCandyEditResult StageWorkflow(
@@ -212,77 +218,130 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         var isCleanup = string.Equals(workflowId, UninstallWorkflowId, StringComparison.Ordinal);
-
-        foreach (var write in currentPlan.Writes)
+        if (!SwShOutputRollbackScope.TryCapture(
+            paths,
+            currentPlan.Writes.Select(write => write.TargetRelativePath),
+            out var rollbackScope,
+            out var captureFailure))
         {
-            var targetPath = ResolveOutputPath(paths, write.TargetRelativePath, diagnostics);
-            if (targetPath is null)
-            {
-                continue;
-            }
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Royal Candy could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable existing outputs and writable temporary storage"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
 
-            try
+        var outputRollback = rollbackScope!;
+        using (outputRollback)
+        {
+            foreach (var write in currentPlan.Writes)
             {
-                if (isCleanup)
+                var targetPath = ResolveOutputPath(paths, write.TargetRelativePath, diagnostics);
+                if (targetPath is null)
                 {
-                    if (!File.Exists(targetPath))
+                    break;
+                }
+
+                try
+                {
+                    if (isCleanup)
                     {
-                        diagnostics.Add(CreateDiagnostic(
-                            DiagnosticSeverity.Error,
-                            $"Royal Candy cleanup target '{write.TargetRelativePath}' no longer exists. Review the change plan again before applying.",
-                            file: write.TargetRelativePath,
-                            expected: "Existing reviewed LayeredFS output file"));
+                        if (!File.Exists(targetPath))
+                        {
+                            diagnostics.Add(CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                $"Royal Candy cleanup target '{write.TargetRelativePath}' no longer exists. Review the change plan again before applying.",
+                                file: write.TargetRelativePath,
+                                expected: "Existing reviewed LayeredFS output file"));
+                            break;
+                        }
+
+                        if (!SwShRoyalCandyCleanup.TryApplyCleanupTarget(
+                            paths,
+                            targetPath,
+                            write.TargetRelativePath,
+                            RoyalCandyEditDomain,
+                            diagnostics,
+                            clearBagHookSlot: true))
+                        {
+                            diagnostics.Add(CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                $"Royal Candy cleanup could not complete reviewed target '{write.TargetRelativePath}'.",
+                                file: write.TargetRelativePath,
+                                expected: "Every reviewed cleanup target restored successfully"));
+                            break;
+                        }
+
+                        writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
                         continue;
                     }
 
-                    if (!SwShRoyalCandyCleanup.TryApplyCleanupTarget(
-                        paths,
-                        targetPath,
-                        write.TargetRelativePath,
-                        RoyalCandyEditDomain,
-                        diagnostics,
-                        clearBagHookSlot: true))
+                    var errorCountBeforeOutput = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+                    var output = CreateOutputBytes(project, selectedWorkflow, levelCaps, write.TargetRelativePath, diagnostics);
+                    if (output is null)
                     {
-                        continue;
+                        if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCountBeforeOutput)
+                        {
+                            diagnostics.Add(CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                $"Royal Candy did not produce reviewed output '{write.TargetRelativePath}'.",
+                                file: write.TargetRelativePath,
+                                expected: "Output bytes for every reviewed target"));
+                        }
+
+                        break;
                     }
 
+                    Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                    File.WriteAllBytes(targetPath, output);
                     writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
-                    continue;
                 }
-
-                var output = CreateOutputBytes(project, selectedWorkflow, levelCaps, write.TargetRelativePath, diagnostics);
-                if (output is null)
+                catch (InvalidDataException exception)
                 {
-                    continue;
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Royal Candy source file '{write.TargetRelativePath}' could not be decoded: {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Supported Sword/Shield source data"));
+                    break;
                 }
+                catch (IOException exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Royal Candy output file '{write.TargetRelativePath}' could not be written: {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Writable output root"));
+                    break;
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Royal Candy output file '{write.TargetRelativePath}' could not be written: {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Writable output root"));
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Royal Candy apply failed unexpectedly for '{write.TargetRelativePath}': {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Every reviewed output applied successfully"));
+                    break;
+                }
+            }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                File.WriteAllBytes(targetPath, output);
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
-            }
-            catch (InvalidDataException exception)
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Royal Candy source file '{write.TargetRelativePath}' could not be decoded: {exception.Message}",
-                    file: write.TargetRelativePath,
-                    expected: "Supported Sword/Shield source data"));
+                RollbackFailedApply(outputRollback, writtenFiles, diagnostics);
             }
-            catch (IOException exception)
+            else
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Royal Candy output file '{write.TargetRelativePath}' could not be written: {exception.Message}",
-                    file: write.TargetRelativePath,
-                    expected: "Writable output root"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Royal Candy output file '{write.TargetRelativePath}' could not be written: {exception.Message}",
-                    file: write.TargetRelativePath,
-                    expected: "Writable output root"));
+                outputRollback.Commit();
             }
         }
 
@@ -296,6 +355,35 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private static void RollbackFailedApply(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        writtenFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Royal Candy apply failed and all output changes were rolled back."));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Royal Candy rollback failed: {failure.Message}",
+                file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
     }
 
     private static bool CanStage(

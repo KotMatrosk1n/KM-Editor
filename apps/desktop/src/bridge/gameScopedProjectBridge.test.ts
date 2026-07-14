@@ -81,6 +81,62 @@ describe('createGameScopedProjectBridge', () => {
     });
   });
 
+  it('rejects a response after the project generation changes even when paths change back', async () => {
+    let currentGeneration = 4;
+    const baseBridge = {
+      updateRentalPokemonField: vi.fn(async () => ({
+        diagnostics: [],
+        session: { hasPendingChanges: true, pendingEdits: [], sessionId: 'stale-session' },
+        workflow: { summary: { id: 'rentalPokemon' } }
+      }))
+    } as unknown as ProjectBridge;
+    const scopedBridge = createGameScopedProjectBridge(
+      baseBridge,
+      () => swordPaths,
+      () => currentGeneration
+    );
+
+    const response = scopedBridge.updateRentalPokemonField({
+      field: 'level',
+      paths: swordPaths,
+      rentalIndex: 0,
+      session: { hasPendingChanges: false, pendingEdits: [], sessionId: 'session-1' },
+      value: '65'
+    });
+    currentGeneration += 2;
+
+    await expect(response).rejects.toMatchObject({
+      currentGeneration: 6,
+      currentScope: createProjectScopeKey(swordPaths),
+      requestGeneration: 4,
+      requestScope: createProjectScopeKey(swordPaths)
+    });
+  });
+
+  it('maps a rejected stale request to a stale project scope error', async () => {
+    let currentPaths: ProjectScopePaths = swordPaths;
+    let rejectRequest!: (reason: Error) => void;
+    const baseBridge = {
+      loadPlacementWorkflow: vi.fn(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRequest = reject;
+          })
+      )
+    } as unknown as ProjectBridge;
+    const scopedBridge = createGameScopedProjectBridge(baseBridge, () => currentPaths);
+
+    const response = scopedBridge.loadPlacementWorkflow({ paths: swordPaths });
+    currentPaths = violetPaths;
+    rejectRequest(new Error('Old project failure'));
+
+    await expect(response).rejects.toMatchObject({
+      currentScope: createProjectScopeKey(violetPaths),
+      message: 'Ignored a project bridge response for a game or project that is no longer selected.',
+      requestScope: createProjectScopeKey(swordPaths)
+    });
+  });
+
   it('uses game text language as part of the scope', async () => {
     let currentPaths: ProjectScopePaths = swordPaths;
     const chineseSwordPaths = {

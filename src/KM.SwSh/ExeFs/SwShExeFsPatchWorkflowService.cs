@@ -27,6 +27,11 @@ public sealed class SwShExeFsPatchWorkflowService
         this.parsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
     }
 
+    public void ClearMemoryCache()
+    {
+        parsedDataCache.Clear();
+    }
+
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);

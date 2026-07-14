@@ -367,6 +367,392 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShTypeChartWorkflowService.ExeFsMainPath);
     }
 
+    [Fact]
+    public void ApplyRollsBackEarlierDomainsWhenALaterDomainFails()
+    {
+        using var temp = CreateRandomizerProject();
+        var blockedMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        Directory.CreateDirectory(blockedMainPath);
+        var service = new SwShRandomizerService();
+
+        var result = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizePokemonStats = true,
+            StatHp = true,
+            RandomizeTypeChart = true,
+        }));
+
+        Assert.Contains(result.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            result.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("all output changes were rolled back", StringComparison.Ordinal));
+        Assert.Empty(result.ApplyResult.WrittenFiles);
+        Assert.Empty(result.ApplyResult.Manifest.Writes);
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.True(Directory.Exists(blockedMainPath));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
+    }
+
+    [Fact]
+    public void ApplyRejectsOutputThroughSymbolicLinkBelowOutputRoot()
+    {
+        using var temp = CreateRandomizerProject();
+        var externalRoot = Directory.CreateDirectory(Path.Combine(temp.RootPath, "external-output")).FullName;
+        var externalMainPath = Path.Combine(externalRoot, "main");
+        var originalMain = File.ReadAllBytes(Path.Combine(temp.BaseExeFsPath, "main"));
+        File.WriteAllBytes(externalMainPath, originalMain);
+        var linkPath = Path.Combine(temp.OutputRootPath, "exefs");
+        if (!TryCreateDirectorySymbolicLink(linkPath, externalRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            var result = new SwShRandomizerService().Apply(
+                temp.Paths,
+                CreateConfig(SwShRandomizerOptions.Empty with { RandomizeTypeChart = true }));
+
+            Assert.Contains(
+                result.ApplyResult.Diagnostics,
+                diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                    && diagnostic.Message.Contains("snapshot output before apply", StringComparison.Ordinal));
+            Assert.Empty(result.ApplyResult.WrittenFiles);
+            Assert.Equal(originalMain, File.ReadAllBytes(externalMainPath));
+            Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(linkPath))
+            {
+                Directory.Delete(linkPath);
+            }
+        }
+    }
+
+    [Fact]
+    public void ApplyAllowsConfiguredOutputRootSymbolicLink()
+    {
+        using var temp = CreateRandomizerProject();
+        var rootLink = Path.Combine(temp.RootPath, "output-link");
+        if (!TryCreateDirectorySymbolicLink(rootLink, temp.OutputRootPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var result = new SwShRandomizerService().Apply(
+                temp.Paths with { OutputRootPath = rootLink },
+                CreateConfig(SwShRandomizerOptions.Empty with { RandomizeTypeChart = true }));
+
+            Assert.DoesNotContain(
+                result.ApplyResult.Diagnostics,
+                diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
+        }
+        finally
+        {
+            if (Directory.Exists(rootLink))
+            {
+                Directory.Delete(rootLink);
+            }
+        }
+    }
+
+    [Fact]
+    public void RestoreReinstatesPreExistingLayeredOutputInsteadOfDeletingIt()
+    {
+        using var temp = CreateRandomizerProject();
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var originalLayeredMain = ModifyNsoDataByte(
+            File.ReadAllBytes(Path.Combine(temp.BaseExeFsPath, "main")),
+            offset: 0,
+            value: 0x6A);
+        temp.WriteOutputFile("exefs/main", originalLayeredMain);
+        var service = new SwShRandomizerService();
+
+        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+        }));
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.NotEqual(originalLayeredMain, File.ReadAllBytes(outputMainPath));
+
+        var restore = service.Restore(temp.Paths);
+
+        Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(originalLayeredMain, File.ReadAllBytes(outputMainPath));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
+    }
+
+    [Fact]
+    public void RestoreRollsBackEarlierTargetAndRetainsBackupsAndManifestWhenLaterTargetFails()
+    {
+        using var temp = CreateRandomizerProject();
+        var mainRelativePath = SwShTypeChartWorkflowService.ExeFsMainPath;
+        var personalRelativePath = SwShPokemonWorkflowService.PersonalDataPath;
+        var originalMain = ModifyNsoDataByte(
+            File.ReadAllBytes(Path.Combine(temp.BaseExeFsPath, "main")),
+            offset: 0,
+            value: 0x6A);
+        var originalPersonal = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            personalRelativePath["romfs/".Length..].Replace('/', Path.DirectorySeparatorChar)));
+        temp.WriteOutputFile(mainRelativePath, originalMain);
+        temp.WriteOutputFile(personalRelativePath, originalPersonal);
+
+        var applyService = new SwShRandomizerService();
+        var apply = applyService.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizePokemonStats = true,
+            StatHp = true,
+            RandomizeTypeChart = true,
+        }));
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var mainPath = ResolveOutputPath(temp, mainRelativePath);
+        var personalPath = ResolveOutputPath(temp, personalRelativePath);
+        var manifestPath = ResolveOutputPath(temp, ".km-editor/randomizer-manifest.json");
+        var randomizedMain = File.ReadAllBytes(mainPath);
+        var randomizedPersonal = File.ReadAllBytes(personalPath);
+        var manifestBeforeRestore = File.ReadAllBytes(manifestPath);
+        var backupsBeforeRestore = SnapshotRandomizerBackups(temp);
+        Assert.Equal(2, backupsBeforeRestore.Count);
+
+        var restoreService = new SwShRandomizerService
+        {
+            RestoreMutationHook = (stage, relativePath) =>
+            {
+                if (stage == SwShRandomizerRestoreMutationStage.BeforeTargetMutation
+                    && string.Equals(relativePath, personalRelativePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new IOException("Injected later target failure.");
+                }
+            },
+        };
+
+        var restore = restoreService.Restore(temp.Paths);
+
+        Assert.Contains(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            restore.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("changes were rolled back", StringComparison.Ordinal));
+        Assert.Empty(restore.WrittenFiles);
+        Assert.Equal(randomizedMain, File.ReadAllBytes(mainPath));
+        Assert.Equal(randomizedPersonal, File.ReadAllBytes(personalPath));
+        Assert.Equal(manifestBeforeRestore, File.ReadAllBytes(manifestPath));
+        AssertRandomizerBackupsEqual(backupsBeforeRestore, SnapshotRandomizerBackups(temp));
+    }
+
+    [Fact]
+    public void RestoreRollsBackTargetAndRetainsBackupWhenManifestWriteFails()
+    {
+        using var temp = CreateRandomizerProject();
+        var mainRelativePath = SwShTypeChartWorkflowService.ExeFsMainPath;
+        var personalRelativePath = SwShPokemonWorkflowService.PersonalDataPath;
+        var originalMain = ModifyNsoDataByte(
+            File.ReadAllBytes(Path.Combine(temp.BaseExeFsPath, "main")),
+            offset: 0,
+            value: 0x6A);
+        temp.WriteOutputFile(mainRelativePath, originalMain);
+
+        var applyService = new SwShRandomizerService();
+        var apply = applyService.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizePokemonStats = true,
+            StatHp = true,
+            RandomizeTypeChart = true,
+        }));
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var mainPath = ResolveOutputPath(temp, mainRelativePath);
+        var personalPath = ResolveOutputPath(temp, personalRelativePath);
+        var laterPersonal = File.ReadAllBytes(personalPath);
+        laterPersonal[0] ^= 0xFF;
+        File.WriteAllBytes(personalPath, laterPersonal);
+        var manifestPath = ResolveOutputPath(temp, ".km-editor/randomizer-manifest.json");
+        var randomizedMain = File.ReadAllBytes(mainPath);
+        var manifestBeforeRestore = File.ReadAllBytes(manifestPath);
+        var backupsBeforeRestore = SnapshotRandomizerBackups(temp);
+        Assert.Single(backupsBeforeRestore);
+
+        var restoreService = new SwShRandomizerService
+        {
+            RestoreMutationHook = (stage, _) =>
+            {
+                if (stage == SwShRandomizerRestoreMutationStage.BeforeManifestMutation)
+                {
+                    throw new IOException("Injected manifest write failure.");
+                }
+            },
+        };
+
+        var restore = restoreService.Restore(temp.Paths);
+
+        Assert.Contains(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            restore.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("changes were rolled back", StringComparison.Ordinal));
+        Assert.Empty(restore.WrittenFiles);
+        Assert.Equal(randomizedMain, File.ReadAllBytes(mainPath));
+        Assert.Equal(laterPersonal, File.ReadAllBytes(personalPath));
+        Assert.Equal(manifestBeforeRestore, File.ReadAllBytes(manifestPath));
+        AssertRandomizerBackupsEqual(backupsBeforeRestore, SnapshotRandomizerBackups(temp));
+    }
+
+    [Fact]
+    public void RestoreDeletesOutputCreatedByRandomizerWhenItIsUnchanged()
+    {
+        using var temp = CreateRandomizerProject();
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var service = new SwShRandomizerService();
+
+        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+        }));
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(outputMainPath));
+
+        var restore = service.Restore(temp.Paths);
+
+        Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(outputMainPath));
+    }
+
+    [Fact]
+    public void RestorePreservesOutputChangedAfterRandomizerApply()
+    {
+        using var temp = CreateRandomizerProject();
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var service = new SwShRandomizerService();
+        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+        }));
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var laterEditedMain = ModifyNsoDataByte(File.ReadAllBytes(outputMainPath), offset: 1, value: 0x7B);
+        File.WriteAllBytes(outputMainPath, laterEditedMain);
+
+        var restore = service.Restore(temp.Paths);
+
+        Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            restore.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("changed after Randomizer apply", StringComparison.Ordinal));
+        Assert.Equal(laterEditedMain, File.ReadAllBytes(outputMainPath));
+        Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
+    }
+
+    [Fact]
+    public void ReapplyBlocksChangedOutputAndRestoreStillPreservesTheLaterEdit()
+    {
+        using var temp = CreateRandomizerProject();
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var service = new SwShRandomizerService();
+        var config = CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+        });
+        var firstApply = service.Apply(temp.Paths, config);
+        Assert.DoesNotContain(firstApply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var laterEditedMain = ModifyNsoDataByte(File.ReadAllBytes(outputMainPath), offset: 1, value: 0x7B);
+        File.WriteAllBytes(outputMainPath, laterEditedMain);
+
+        var reapply = service.Apply(temp.Paths, config);
+
+        Assert.Contains(
+            reapply.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("changed after an earlier apply", StringComparison.Ordinal));
+        Assert.Empty(reapply.ApplyResult.WrittenFiles);
+        Assert.Equal(laterEditedMain, File.ReadAllBytes(outputMainPath));
+
+        var restore = service.Restore(temp.Paths);
+
+        Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            restore.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("changed after Randomizer apply", StringComparison.Ordinal));
+        Assert.Equal(laterEditedMain, File.ReadAllBytes(outputMainPath));
+        Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
+    }
+
+    [Fact]
+    public void RestorePreservesLegacyManifestOutputWithoutVerifiableOwnership()
+    {
+        using var temp = CreateRandomizerProject();
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var layeredMain = File.ReadAllBytes(Path.Combine(temp.BaseExeFsPath, "main"));
+        temp.WriteOutputFile("exefs/main", layeredMain);
+        temp.WriteOutputFile(
+            ".km-editor/randomizer-manifest.json",
+            """
+            {
+              "version": 1,
+              "updatedAt": "2026-01-01T00:00:00+00:00",
+              "writtenRelativePaths": ["exefs/main"]
+            }
+            """);
+
+        var restore = new SwShRandomizerService().Restore(temp.Paths);
+
+        Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            restore.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("legacy tracked Randomizer file", StringComparison.Ordinal));
+        Assert.Equal(layeredMain, File.ReadAllBytes(outputMainPath));
+    }
+
+    [Fact]
+    public void RestoreRejectsOutputThroughSymbolicLinkBelowOutputRoot()
+    {
+        using var temp = CreateRandomizerProject();
+        var service = new SwShRandomizerService();
+        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+        }));
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var randomizedMain = File.ReadAllBytes(outputMainPath);
+        var externalRoot = Directory.CreateDirectory(Path.Combine(temp.RootPath, "external-output")).FullName;
+        var externalMainPath = Path.Combine(externalRoot, "main");
+        File.Move(outputMainPath, externalMainPath);
+        Directory.Delete(Path.GetDirectoryName(outputMainPath)!);
+        var linkPath = Path.Combine(temp.OutputRootPath, "exefs");
+        if (!TryCreateDirectorySymbolicLink(linkPath, externalRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            var restore = service.Restore(temp.Paths);
+
+            Assert.Contains(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            Assert.Empty(restore.WrittenFiles);
+            Assert.Equal(randomizedMain, File.ReadAllBytes(externalMainPath));
+            Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(linkPath))
+            {
+                Directory.Delete(linkPath);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(ProjectGame.Sword, "encount_symbol_k.bin")]
     [InlineData(ProjectGame.Shield, "encount_symbol_t.bin")]
@@ -450,6 +836,38 @@ public sealed class SwShRandomizerOptionCoverageTests
     private static SwShRandomizerConfig CreateConfig(SwShRandomizerOptions options)
     {
         return new SwShRandomizerConfig("verify-options", options, RollSeed: "roll-fixed");
+    }
+
+    private static string ResolveOutputPath(TemporarySwShProject temp, string relativePath)
+    {
+        return Path.Combine(
+            temp.OutputRootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static IReadOnlyDictionary<string, byte[]> SnapshotRandomizerBackups(TemporarySwShProject temp)
+    {
+        var backupRoot = ResolveOutputPath(temp, ".km-editor/randomizer-backups");
+        return Directory.Exists(backupRoot)
+            ? Directory.GetFiles(backupRoot, "*", SearchOption.AllDirectories)
+                .ToDictionary(
+                    path => Path.GetRelativePath(backupRoot, path).Replace('\\', '/'),
+                    File.ReadAllBytes,
+                    StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void AssertRandomizerBackupsEqual(
+        IReadOnlyDictionary<string, byte[]> expected,
+        IReadOnlyDictionary<string, byte[]> actual)
+    {
+        Assert.Equal(
+            expected.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase),
+            actual.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
+        foreach (var (relativePath, expectedBytes) in expected)
+        {
+            Assert.Equal(expectedBytes, actual[relativePath]);
+        }
     }
 
     private static TemporarySwShProject CreateRandomizerProject(ProjectGame game = ProjectGame.Sword)
@@ -895,6 +1313,29 @@ public sealed class SwShRandomizerOptionCoverageTests
             .CopyTo(ro.AsSpan(SwShTypeChartMainPatcher.SwordRoChartOffset));
 
         return CreateNso(text, ro, data, BuildIdForGame(game));
+    }
+
+    private static byte[] ModifyNsoDataByte(byte[] mainBytes, int offset, byte value)
+    {
+        var main = NsoFile.Parse(mainBytes);
+        var data = main.Data.DecompressedData.ToArray();
+        data[offset] = value;
+        return main.Write(dataDecompressedData: data);
+    }
+
+    private static bool TryCreateDirectorySymbolicLink(string linkPath, string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException
+            or IOException
+            or PlatformNotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static byte[] BuildIdForGame(ProjectGame game)

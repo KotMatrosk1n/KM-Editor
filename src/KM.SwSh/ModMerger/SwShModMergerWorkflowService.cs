@@ -27,10 +27,18 @@ public sealed class SwShModMergerWorkflowService
     };
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly Action<int, string>? beforeCommitOutput;
 
     public SwShModMergerWorkflowService(ProjectWorkspaceService? projectWorkspaceService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+    }
+
+    internal SwShModMergerWorkflowService(Action<int, string> beforeCommitOutput)
+        : this()
+    {
+        this.beforeCommitOutput = beforeCommitOutput
+            ?? throw new ArgumentNullException(nameof(beforeCommitOutput));
     }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -101,6 +109,15 @@ public sealed class SwShModMergerWorkflowService
         var workflow = Load(paths, modDirectory1, modDirectory2);
         var diagnostics = workflow.Diagnostics.ToList();
         var normalizedMergeMode = NormalizeMergeMode(mergeMode);
+        var reviewTokenBefore = ComputeReviewToken(
+            paths,
+            modDirectory1,
+            modDirectory2,
+            selectedDirectory1Files,
+            selectedDirectory2Files,
+            normalizedMergeMode,
+            resolutions,
+            diagnostics);
         var plan = BuildPlan(
             paths,
             modDirectory1,
@@ -111,11 +128,58 @@ public sealed class SwShModMergerWorkflowService
             includeOutputs: false,
             resolutions,
             diagnostics);
-        var preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+        var reviewTokenAfter = ComputeReviewToken(
+            paths,
+            modDirectory1,
+            modDirectory2,
+            selectedDirectory1Files,
+            selectedDirectory2Files,
+            normalizedMergeMode,
+            resolutions,
+            diagnostics);
+        if ((reviewTokenBefore is not null || reviewTokenAfter is not null)
+            && (reviewTokenBefore is null
+                || reviewTokenAfter is null
+                || !string.Equals(reviewTokenBefore, reviewTokenAfter, StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Mod Merger sources changed while the preview was being prepared. Stage the merge again.",
+                expected: "Stable selected source files"));
+        }
+
+        var preview = CreatePreview(
+            normalizedMergeMode,
+            reviewTokenAfter ?? string.Empty,
+            plan.Files,
+            plan.Conflicts,
+            diagnostics);
 
         return new SwShModMergerStageResult(workflow, preview, diagnostics);
     }
 
+    internal SwShModMergerApplyResult ApplyWithoutReviewForTesting(
+        ProjectPaths paths,
+        string? modDirectory1,
+        string? modDirectory2,
+        IReadOnlyList<string> selectedDirectory1Files,
+        IReadOnlyList<string> selectedDirectory2Files,
+        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
+        string? mergeMode = null)
+    {
+        return ApplyCore(
+            paths,
+            modDirectory1,
+            modDirectory2,
+            selectedDirectory1Files,
+            selectedDirectory2Files,
+            resolutions,
+            mergeMode,
+            reviewToken: null,
+            requireReviewToken: false);
+    }
+
+    [Obsolete("Call Stage, review the preview, then call ApplyReviewed with its ReviewToken.")]
     public SwShModMergerApplyResult Apply(
         ProjectPaths paths,
         string? modDirectory1,
@@ -132,7 +196,70 @@ public sealed class SwShModMergerWorkflowService
 
         var workflow = Load(paths, modDirectory1, modDirectory2);
         var diagnostics = workflow.Diagnostics.ToList();
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Direct Mod Merger apply is no longer supported. Call Stage, review the preview, then call ApplyReviewed with the preview ReviewToken.",
+            expected: "Stage followed by ApplyReviewed with ReviewToken"));
+        var preview = CreatePreview(
+            NormalizeMergeMode(mergeMode),
+            reviewToken: string.Empty,
+            files: [],
+            conflicts: [],
+            diagnostics: diagnostics);
+
+        return new SwShModMergerApplyResult(workflow, preview, [], diagnostics);
+    }
+
+    public SwShModMergerApplyResult ApplyReviewed(
+        ProjectPaths paths,
+        string? modDirectory1,
+        string? modDirectory2,
+        IReadOnlyList<string> selectedDirectory1Files,
+        IReadOnlyList<string> selectedDirectory2Files,
+        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
+        string? mergeMode,
+        string? reviewToken)
+    {
+        return ApplyCore(
+            paths,
+            modDirectory1,
+            modDirectory2,
+            selectedDirectory1Files,
+            selectedDirectory2Files,
+            resolutions,
+            mergeMode,
+            reviewToken,
+            requireReviewToken: true);
+    }
+
+    private SwShModMergerApplyResult ApplyCore(
+        ProjectPaths paths,
+        string? modDirectory1,
+        string? modDirectory2,
+        IReadOnlyList<string> selectedDirectory1Files,
+        IReadOnlyList<string> selectedDirectory2Files,
+        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
+        string? mergeMode,
+        string? reviewToken,
+        bool requireReviewToken)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(selectedDirectory1Files);
+        ArgumentNullException.ThrowIfNull(selectedDirectory2Files);
+        ArgumentNullException.ThrowIfNull(resolutions);
+
+        var workflow = Load(paths, modDirectory1, modDirectory2);
+        var diagnostics = workflow.Diagnostics.ToList();
         var normalizedMergeMode = NormalizeMergeMode(mergeMode);
+        var currentTokenBefore = ComputeReviewToken(
+            paths,
+            modDirectory1,
+            modDirectory2,
+            selectedDirectory1Files,
+            selectedDirectory2Files,
+            normalizedMergeMode,
+            resolutions,
+            diagnostics);
         var plan = BuildPlan(
             paths,
             modDirectory1,
@@ -143,16 +270,68 @@ public sealed class SwShModMergerWorkflowService
             includeOutputs: true,
             resolutions,
             diagnostics);
-        var preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+        var currentTokenAfter = ComputeReviewToken(
+            paths,
+            modDirectory1,
+            modDirectory2,
+            selectedDirectory1Files,
+            selectedDirectory2Files,
+            normalizedMergeMode,
+            resolutions,
+            diagnostics);
+        if ((currentTokenBefore is not null || currentTokenAfter is not null)
+            && (currentTokenBefore is null
+                || currentTokenAfter is null
+                || !string.Equals(currentTokenBefore, currentTokenAfter, StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Mod Merger sources changed while the merge was being prepared. Stage the merge again before applying.",
+                expected: "Stable selected source files"));
+        }
+
+        if (requireReviewToken && string.IsNullOrWhiteSpace(reviewToken))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Stage and review the Mod Merger preview before applying.",
+                expected: "Current staged Mod Merger review token"));
+        }
+        else if (reviewToken is not null
+            && (currentTokenAfter is null
+                || !string.Equals(reviewToken, currentTokenAfter, StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Mod Merger preview is stale because a selected source, project path, or output target changed. Stage the merge again before applying.",
+                expected: "Selected sources, project paths, and output targets matching the staged preview"));
+        }
+
+        var activeReviewToken = currentTokenAfter ?? string.Empty;
+        var preview = CreatePreview(
+            normalizedMergeMode,
+            activeReviewToken,
+            plan.Files,
+            plan.Conflicts,
+            diagnostics);
         var writtenFiles = new List<string>();
 
         if (!preview.CanApply)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Resolve every Mod Merger conflict before applying the merge.",
-                expected: "Conflict-free merge preview"));
-            preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+            if (preview.UnresolvedConflictCount > 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Resolve every Mod Merger conflict before applying the merge.",
+                    expected: "Conflict-free merge preview"));
+            }
+
+            preview = CreatePreview(
+                normalizedMergeMode,
+                activeReviewToken,
+                plan.Files,
+                plan.Conflicts,
+                diagnostics);
             return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
         }
 
@@ -164,68 +343,54 @@ public sealed class SwShModMergerWorkflowService
                 "Mod Merger apply requires an Output Root.",
                 field: "outputRootPath",
                 expected: "Writable LayeredFS output directory"));
-            preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+            preview = CreatePreview(normalizedMergeMode, activeReviewToken, plan.Files, plan.Conflicts, diagnostics);
             return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
         }
 
         if (!ValidatePlanIntegrity(plan.Outputs, diagnostics))
         {
-            preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+            preview = CreatePreview(normalizedMergeMode, activeReviewToken, plan.Files, plan.Conflicts, diagnostics);
             return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
         }
 
-        foreach (var output in plan.Outputs)
-        {
-            var targetPath = ResolveOutputPath(outputRoot, output.RelativePath, diagnostics);
-            if (targetPath is null)
+        var expectedCommitToken = reviewToken ?? currentTokenAfter;
+        writtenFiles.AddRange(WriteOutputsTransactionally(
+            outputRoot,
+            plan.Outputs,
+            diagnostics,
+            () =>
             {
-                ClearOutputContents(output);
-                continue;
-            }
-
-            try
-            {
-                WriteVerifiedOutput(targetPath, output);
-                writtenFiles.Add(output.RelativePath);
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Merged file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable Output Root file"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Merged file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable Output Root file"));
-            }
-            catch (InvalidDataException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Merged file failed integrity verification: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Verified output bytes matching the merge plan"));
-            }
-            finally
-            {
-                ClearOutputContents(output);
-            }
-        }
+                var preCommitToken = ComputeReviewToken(
+                    paths,
+                    modDirectory1,
+                    modDirectory2,
+                    selectedDirectory1Files,
+                    selectedDirectory2Files,
+                    normalizedMergeMode,
+                    resolutions,
+                    diagnostics);
+                return expectedCommitToken is not null
+                    && string.Equals(expectedCommitToken, preCommitToken, StringComparison.Ordinal);
+            },
+            beforeCommitOutput));
 
         if (writtenFiles.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
+            activeReviewToken = ComputeReviewToken(
+                paths,
+                modDirectory1,
+                modDirectory2,
+                selectedDirectory1Files,
+                selectedDirectory2Files,
+                normalizedMergeMode,
+                resolutions,
+                diagnostics) ?? string.Empty;
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 $"Applied {writtenFiles.Count} merged RomFS file{(writtenFiles.Count == 1 ? string.Empty : "s")} to Output Root."));
         }
 
-        preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+        preview = CreatePreview(normalizedMergeMode, activeReviewToken, plan.Files, plan.Conflicts, diagnostics);
         return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
     }
 
@@ -281,12 +446,20 @@ public sealed class SwShModMergerWorkflowService
 
         AddFpsPatchOverlapDiagnostics(selected, diagnostics);
 
-        var resolutionMap = resolutions
-            .Where(resolution => !string.IsNullOrWhiteSpace(resolution.ConflictId))
-            .ToDictionary(
-                resolution => resolution.ConflictId,
-                resolution => resolution.Source,
-                StringComparer.Ordinal);
+        var resolutionMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var resolution in resolutions.Where(candidate => !string.IsNullOrWhiteSpace(candidate.ConflictId)))
+        {
+            if (resolutionMap.TryAdd(resolution.ConflictId, resolution.Source))
+            {
+                continue;
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Mod Merger conflict resolution was submitted more than once.",
+                file: resolution.ConflictId,
+                expected: "One resolution per conflict"));
+        }
 
         foreach (var relativePath in selected)
         {
@@ -332,11 +505,14 @@ public sealed class SwShModMergerWorkflowService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var supportKind = GetSupportKind(relativePath);
-        var modPath1 = ResolveModFilePath(root1, relativePath);
-        var modPath2 = ResolveModFilePath(root2, relativePath);
-        var basePath = string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
-            ? null
-            : Path.Combine(paths.BaseRomFsPath, GetRelativeInsideRomFs(relativePath));
+        var modPath1 = ResolveModFilePath(root1, relativePath, diagnostics);
+        var modPath2 = ResolveModFilePath(root2, relativePath, diagnostics);
+        var basePath = ResolveBaseFilePath(paths.BaseRomFsPath, relativePath, diagnostics);
+        if (modPath1 is null || modPath2 is null)
+        {
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
+            return;
+        }
 
         var hasMod1File = File.Exists(modPath1);
         var hasMod2File = File.Exists(modPath2);
@@ -584,7 +760,13 @@ public sealed class SwShModMergerWorkflowService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var supportKind = GetSupportKind(relativePath);
-        var modPath = ResolveModFilePath(root, relativePath);
+        var modPath = ResolveModFilePath(root, relativePath, diagnostics);
+        if (modPath is null)
+        {
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
+            return;
+        }
+
         if (!File.Exists(modPath))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -785,7 +967,7 @@ public sealed class SwShModMergerWorkflowService
             "mergeable");
     }
 
-    private static string? ResolveRomFsRoot(string directory)
+    private static string? ResolveRomFsRoot(string? directory)
     {
         if (string.IsNullOrWhiteSpace(directory))
         {
@@ -807,9 +989,80 @@ public sealed class SwShModMergerWorkflowService
         return Directory.Exists(childRomFs) ? childRomFs : null;
     }
 
-    private static string ResolveModFilePath(string romFsRoot, string relativePath)
+    private static string? ResolveModFilePath(
+        string romFsRoot,
+        string relativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return Path.Combine(romFsRoot, GetRelativeInsideRomFs(relativePath));
+        var relativeInsideRomFs = GetRelativeInsideRomFs(relativePath);
+        if (Path.IsPathRooted(relativeInsideRomFs))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Selected Mod Merger path is rooted outside the RomFS source.",
+                file: relativePath,
+                expected: "RomFS path contained by the selected mod directory"));
+            return null;
+        }
+
+        var fullRoot = Path.GetFullPath(romFsRoot);
+        var fullPath = Path.GetFullPath(Path.Combine(fullRoot, relativeInsideRomFs));
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(fullRoot, fullPath)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Selected Mod Merger path escapes the RomFS source.",
+                file: relativePath,
+                expected: "RomFS path contained by the selected mod directory"));
+            return null;
+        }
+
+        if (TraversesReparsePointBelowRoot(fullRoot, fullPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Selected Mod Merger path traverses a symbolic link or junction below the RomFS source.",
+                file: relativePath,
+                expected: "Physical path contained by the selected mod directory"));
+            return null;
+        }
+
+        return fullPath;
+    }
+
+    private static string? ResolveBaseFilePath(
+        string? baseRomFsPath,
+        string relativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(baseRomFsPath))
+        {
+            return null;
+        }
+
+        var fullRoot = Path.GetFullPath(baseRomFsPath);
+        var fullPath = Path.GetFullPath(Path.Combine(fullRoot, GetRelativeInsideRomFs(relativePath)));
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(fullRoot, fullPath)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Vanilla base file path escapes Base RomFS.",
+                file: relativePath,
+                expected: "Base file physically contained by Base RomFS"));
+            return null;
+        }
+
+        if (TraversesReparsePointBelowRoot(fullRoot, fullPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Vanilla base file path traverses a symbolic link or junction below Base RomFS.",
+                file: relativePath,
+                expected: "Base file physically contained by Base RomFS"));
+            return null;
+        }
+
+        return fullPath;
     }
 
     private static string GetRelativeInsideRomFs(string relativePath)
@@ -838,7 +1091,15 @@ public sealed class SwShModMergerWorkflowService
                 continue;
             }
 
-            if (path.Contains("../", StringComparison.Ordinal) || path.Contains("/..", StringComparison.Ordinal))
+            var relativeInsideRomFs = path[RomFsPrefix.Length..];
+            var segments = relativeInsideRomFs.Split('/');
+            if (string.IsNullOrWhiteSpace(relativeInsideRomFs)
+                || segments.Any(segment => string.IsNullOrEmpty(segment)
+                    || string.Equals(segment, ".", StringComparison.Ordinal)
+                    || string.Equals(segment, "..", StringComparison.Ordinal)
+                    || segment.Contains(':')
+                    || segment.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                || Path.IsPathRooted(relativeInsideRomFs.Replace('/', Path.DirectorySeparatorChar)))
             {
                 continue;
             }
@@ -849,8 +1110,149 @@ public sealed class SwShModMergerWorkflowService
         return normalized;
     }
 
+    private static string? ComputeReviewToken(
+        ProjectPaths paths,
+        string? modDirectory1,
+        string? modDirectory2,
+        IReadOnlyList<string> selectedDirectory1Files,
+        IReadOnlyList<string> selectedDirectory2Files,
+        string mergeMode,
+        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var root1 = ResolveRomFsRoot(modDirectory1);
+        var root2 = ResolveRomFsRoot(modDirectory2);
+        if (root1 is null || root2 is null)
+        {
+            return null;
+        }
+
+        var selected1 = NormalizeSelectedFiles(selectedDirectory1Files);
+        var selected2 = NormalizeSelectedFiles(selectedDirectory2Files);
+        var selected = selected1
+            .Union(selected2, StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (selected.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            AppendHashText(hash, "swsh-mod-merger-review-v2\n");
+            AppendHashText(hash, $"game:{paths.SelectedGame}\n");
+            AppendHashText(hash, $"base-romfs:{NormalizeReviewPath(paths.BaseRomFsPath)}\n");
+            AppendHashText(hash, $"base-exefs:{NormalizeReviewPath(paths.BaseExeFsPath)}\n");
+            AppendHashText(hash, $"output-root:{NormalizeReviewPath(paths.OutputRootPath)}\n");
+            AppendHashText(hash, $"mod1-root:{NormalizeReviewPath(root1)}\n");
+            AppendHashText(hash, $"mod2-root:{NormalizeReviewPath(root2)}\n");
+            AppendHashText(hash, $"mode:{mergeMode}\n");
+            foreach (var resolution in resolutions
+                .OrderBy(candidate => candidate.ConflictId, StringComparer.Ordinal)
+                .ThenBy(candidate => candidate.Source, StringComparer.Ordinal))
+            {
+                AppendHashText(hash, $"resolution:{resolution.ConflictId}:{resolution.Source}\n");
+            }
+
+            foreach (var relativePath in selected)
+            {
+                var fromMod1 = selected1.Contains(relativePath);
+                var fromMod2 = selected2.Contains(relativePath);
+                AppendHashText(hash, $"file:{relativePath}:mod1={fromMod1}:mod2={fromMod2}\n");
+                if (fromMod1)
+                {
+                    AppendFileHash(hash, "mod1", ResolveModFilePath(root1, relativePath, diagnostics));
+                }
+
+                if (fromMod2)
+                {
+                    AppendFileHash(hash, "mod2", ResolveModFilePath(root2, relativePath, diagnostics));
+                }
+
+                if (fromMod1 && fromMod2)
+                {
+                    var basePath = ResolveBaseFilePath(paths.BaseRomFsPath, relativePath, diagnostics);
+                    AppendFileHash(hash, "base", basePath);
+                }
+
+                var outputPath = string.IsNullOrWhiteSpace(paths.OutputRootPath)
+                    ? null
+                    : ResolveOutputPath(paths.OutputRootPath, relativePath, diagnostics);
+                AppendFileHash(hash, "output", outputPath);
+            }
+
+            return Convert.ToHexString(hash.GetHashAndReset());
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Mod Merger source fingerprint could not be read: {exception.Message}",
+                expected: "Readable selected source files"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Mod Merger source fingerprint could not be read: {exception.Message}",
+                expected: "Readable selected source files"));
+        }
+
+        return null;
+    }
+
+    private static void AppendFileHash(IncrementalHash hash, string label, string? filePath)
+    {
+        AppendHashText(hash, $"{label}:");
+        if (filePath is null || !File.Exists(filePath))
+        {
+            AppendHashText(hash, "missing\n");
+            return;
+        }
+
+        var fileInfo = new FileInfo(filePath);
+        AppendHashText(hash, $"length={fileInfo.Length}\n");
+        using var stream = new FileStream(
+            filePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            64 * 1024,
+            FileOptions.SequentialScan);
+        var buffer = new byte[64 * 1024];
+        int bytesRead;
+        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            hash.AppendData(buffer, 0, bytesRead);
+        }
+
+        AppendHashText(hash, "\n");
+    }
+
+    private static void AppendHashText(IncrementalHash hash, string value)
+    {
+        hash.AppendData(Encoding.UTF8.GetBytes(value));
+    }
+
+    private static string NormalizeReviewPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return "<missing>";
+        }
+
+        var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path))
+            .Replace('\\', '/');
+        return OperatingSystem.IsWindows()
+            ? normalized.ToUpperInvariant()
+            : normalized;
+    }
+
     private static SwShModMergerPreview CreatePreview(
         string mergeMode,
+        string reviewToken,
         IReadOnlyList<SwShModMergerFilePreviewRecord> files,
         IReadOnlyList<SwShModMergerConflictRecord> conflicts,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
@@ -872,6 +1274,7 @@ public sealed class SwShModMergerWorkflowService
             canApply,
             status,
             mergeMode,
+            reviewToken,
             files.Count,
             readyFileCount,
             conflictFileCount,
@@ -1428,28 +1831,212 @@ public sealed class SwShModMergerWorkflowService
         return isValid;
     }
 
-    private static void WriteVerifiedOutput(string targetPath, MergeOutput output)
+    private static IReadOnlyList<string> WriteOutputsTransactionally(
+        string outputRoot,
+        IReadOnlyList<MergeOutput> outputs,
+        ICollection<ValidationDiagnostic> diagnostics,
+        Func<bool>? canCommit = null,
+        Action<int, string>? beforeCommitOutput = null)
+    {
+        var preparedOutputs = new List<PreparedMergeOutput>();
+        var createdDirectories = new List<string>();
+        var writtenFiles = new List<string>();
+        MergeOutput? activeOutput = null;
+
+        try
+        {
+            foreach (var output in outputs)
+            {
+                activeOutput = output;
+                var targetPath = ResolveOutputPath(outputRoot, output.RelativePath, diagnostics);
+                if (targetPath is null)
+                {
+                    return Array.Empty<string>();
+                }
+
+                preparedOutputs.Add(PrepareOutput(
+                    outputRoot,
+                    targetPath,
+                    output,
+                    createdDirectories,
+                    diagnostics));
+            }
+
+            if (canCommit is not null && !canCommit())
+            {
+                throw new InvalidDataException(
+                    "Selected Mod Merger sources or output targets changed after review.");
+            }
+
+            for (var index = 0; index < preparedOutputs.Count; index++)
+            {
+                var preparedOutput = preparedOutputs[index];
+                activeOutput = preparedOutput.Output;
+                beforeCommitOutput?.Invoke(index, preparedOutput.TargetPath);
+                VerifyTargetMatchesPreimage(preparedOutput);
+                File.Move(
+                    preparedOutput.TempPath,
+                    preparedOutput.TargetPath,
+                    overwrite: preparedOutput.TargetPreimage.Exists);
+                preparedOutput.IsCommitted = true;
+                VerifyFileContents(preparedOutput.TargetPath, preparedOutput.Output);
+                writtenFiles.Add(preparedOutput.Output.RelativePath);
+            }
+
+            return writtenFiles;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            var rollbackFailures = RollBackPreparedOutputs(preparedOutputs, diagnostics);
+            writtenFiles.Clear();
+            writtenFiles.AddRange(rollbackFailures);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                rollbackFailures.Count == 0
+                    ? $"Merged output transaction failed and all output changes were rolled back: {exception.Message}"
+                    : $"Merged output transaction failed and rollback was incomplete for {rollbackFailures.Count} output file(s): {exception.Message}",
+                file: activeOutput?.RelativePath,
+                expected: "All selected outputs written and verified together"));
+            return writtenFiles;
+        }
+        finally
+        {
+            foreach (var preparedOutput in preparedOutputs)
+            {
+                TryDeleteTransactionFile(
+                    preparedOutput.TempPath,
+                    "temporary output",
+                    preparedOutput.Output.RelativePath,
+                    diagnostics);
+                if (!preparedOutput.RollbackFailed)
+                {
+                    TryDeleteTransactionFile(
+                        preparedOutput.BackupPath,
+                        "rollback backup",
+                        preparedOutput.Output.RelativePath,
+                        diagnostics);
+                }
+            }
+
+            TryDeleteCreatedDirectories(outputRoot, createdDirectories, diagnostics);
+
+            foreach (var output in outputs)
+            {
+                ClearOutputContents(output);
+            }
+        }
+    }
+
+    private static PreparedMergeOutput PrepareOutput(
+        string outputRoot,
+        string targetPath,
+        MergeOutput output,
+        ICollection<string> createdDirectories,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         ValidateOutputContents(output);
+        if (Directory.Exists(targetPath))
+        {
+            throw new IOException($"Output target '{output.RelativePath}' is a directory.");
+        }
+
         var directory = Path.GetDirectoryName(targetPath)
             ?? throw new IOException("Output target directory could not be resolved.");
-        Directory.CreateDirectory(directory);
+        CreateOutputDirectory(outputRoot, directory, createdDirectories);
 
-        var tempPath = Path.Combine(
-            directory,
-            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        var nonce = Guid.NewGuid().ToString("N");
+        var fileName = Path.GetFileName(targetPath);
+        var tempPath = Path.Combine(directory, $".{fileName}.{nonce}.tmp");
+        var backupPath = Path.Combine(directory, $".{fileName}.{nonce}.bak");
+        var targetExisted = File.Exists(targetPath);
+
         try
         {
             File.WriteAllBytes(tempPath, output.Contents);
             VerifyFileContents(tempPath, output);
-            File.Move(tempPath, targetPath, overwrite: true);
-            VerifyFileContents(targetPath, output);
+            OutputTargetPreimage targetPreimage;
+            if (targetExisted)
+            {
+                File.Copy(targetPath, backupPath, overwrite: false);
+                targetPreimage = CaptureExistingTargetPreimage(backupPath);
+            }
+            else
+            {
+                targetPreimage = OutputTargetPreimage.Missing;
+            }
+
+            return new PreparedMergeOutput(
+                output,
+                targetPath,
+                tempPath,
+                backupPath,
+                targetPreimage);
         }
         catch
         {
-            TryDeleteFile(tempPath);
+            TryDeleteTransactionFile(
+                tempPath,
+                "temporary output",
+                output.RelativePath,
+                diagnostics);
+            TryDeleteTransactionFile(
+                backupPath,
+                "rollback backup",
+                output.RelativePath,
+                diagnostics);
             throw;
         }
+    }
+
+    private static IReadOnlyList<string> RollBackPreparedOutputs(
+        IReadOnlyList<PreparedMergeOutput> preparedOutputs,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var failures = new List<string>();
+        foreach (var preparedOutput in preparedOutputs.Reverse())
+        {
+            if (!preparedOutput.IsCommitted)
+            {
+                continue;
+            }
+
+            try
+            {
+                if (preparedOutput.TargetPreimage.Exists)
+                {
+                    EnsureTargetStillContainsCommittedOutput(preparedOutput);
+                    File.Copy(preparedOutput.BackupPath, preparedOutput.TargetPath, overwrite: true);
+                    if (!FileMatchesFingerprint(
+                        preparedOutput.TargetPath,
+                        preparedOutput.TargetPreimage.Length,
+                        preparedOutput.TargetPreimage.Sha256))
+                    {
+                        throw new IOException("The restored output does not match its rollback backup.");
+                    }
+                }
+                else if (Directory.Exists(preparedOutput.TargetPath))
+                {
+                    throw new IOException("Rollback target is now a directory and was left untouched.");
+                }
+                else if (File.Exists(preparedOutput.TargetPath))
+                {
+                    EnsureTargetStillContainsCommittedOutput(preparedOutput);
+                    File.Delete(preparedOutput.TargetPath);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                preparedOutput.RollbackFailed = true;
+                failures.Add(preparedOutput.Output.RelativePath);
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Merged output rollback could not restore the original file without overwriting a concurrent change: {exception.Message}",
+                    file: preparedOutput.Output.RelativePath,
+                    expected: "Original output restored after a failed merge"));
+            }
+        }
+
+        return failures;
     }
 
     private static void ValidateOutputContents(MergeOutput output)
@@ -1501,20 +2088,149 @@ public sealed class SwShModMergerWorkflowService
         return Convert.ToHexString(sha256.ComputeHash(stream));
     }
 
-    private static void TryDeleteFile(string path)
+    private static OutputTargetPreimage CaptureExistingTargetPreimage(string path)
+    {
+        var fileInfo = new FileInfo(path);
+        return new OutputTargetPreimage(
+            Exists: true,
+            fileInfo.Length,
+            ComputeFileSha256(path));
+    }
+
+    private static void VerifyTargetMatchesPreimage(PreparedMergeOutput preparedOutput)
+    {
+        var preimage = preparedOutput.TargetPreimage;
+        if (!preimage.Exists)
+        {
+            if (File.Exists(preparedOutput.TargetPath) || Directory.Exists(preparedOutput.TargetPath))
+            {
+                throw new InvalidDataException(
+                    $"Output target '{preparedOutput.Output.RelativePath}' was created after review.");
+            }
+
+            return;
+        }
+
+        if (!FileMatchesFingerprint(
+            preparedOutput.TargetPath,
+            preimage.Length,
+            preimage.Sha256))
+        {
+            throw new InvalidDataException(
+                $"Output target '{preparedOutput.Output.RelativePath}' changed after review.");
+        }
+    }
+
+    private static void EnsureTargetStillContainsCommittedOutput(PreparedMergeOutput preparedOutput)
+    {
+        if (!FileMatchesFingerprint(
+            preparedOutput.TargetPath,
+            preparedOutput.Output.ExpectedLength,
+            preparedOutput.Output.Sha256))
+        {
+            throw new IOException("Rollback target changed after commit and was left untouched.");
+        }
+    }
+
+    private static bool FileMatchesFingerprint(string path, long expectedLength, string expectedSha256)
+    {
+        if (Directory.Exists(path) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        var fileInfo = new FileInfo(path);
+        return fileInfo.Length == expectedLength
+            && string.Equals(
+                ComputeFileSha256(path),
+                expectedSha256,
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void CreateOutputDirectory(
+        string outputRoot,
+        string directory,
+        ICollection<string> createdDirectories)
+    {
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(outputRoot));
+        var fullDirectory = Path.GetFullPath(directory);
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(fullRoot, fullDirectory)))
+        {
+            throw new IOException("Output target directory escapes Output Root.");
+        }
+
+        var current = fullDirectory;
+        while (!PathsEqual(current, fullRoot) && !Directory.Exists(current))
+        {
+            createdDirectories.Add(current);
+            current = Path.GetDirectoryName(current)
+                ?? throw new IOException("Output target directory ancestry could not be resolved.");
+        }
+
+        Directory.CreateDirectory(fullDirectory);
+    }
+
+    private static void TryDeleteCreatedDirectories(
+        string outputRoot,
+        IEnumerable<string> createdDirectories,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var directory in createdDirectories
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .OrderByDescending(path => path.Length))
+        {
+            try
+            {
+                if (!Directory.Exists(directory)
+                    || Directory.EnumerateFileSystemEntries(directory).Any())
+                {
+                    continue;
+                }
+
+                Directory.Delete(directory, recursive: false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Mod Merger could not remove an empty transaction-created output directory: {exception.Message}",
+                    file: Path.GetRelativePath(outputRoot, directory).Replace(Path.DirectorySeparatorChar, '/'),
+                    expected: "No empty transaction-created output directories left behind"));
+            }
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        return string.Equals(
+            Path.TrimEndingDirectorySeparator(left),
+            Path.TrimEndingDirectorySeparator(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    private static void TryDeleteTransactionFile(
+        string path,
+        string artifact,
+        string relativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         try
         {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
+            File.Delete(path);
         }
-        catch (IOException)
+        catch (FileNotFoundException)
         {
         }
-        catch (UnauthorizedAccessException)
+        catch (DirectoryNotFoundException)
         {
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Mod Merger could not remove its {artifact}: {exception.Message}",
+                file: relativePath,
+                expected: "Transaction artifacts removed after apply"));
         }
     }
 
@@ -1546,7 +2262,58 @@ public sealed class SwShModMergerWorkflowService
             return null;
         }
 
+        if (TraversesReparsePointBelowRoot(outputRoot, targetPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Merged output path traverses a symbolic link or junction below Output Root.",
+                file: relativePath,
+                expected: "Physical output path inside Output Root"));
+            return null;
+        }
+
         return targetPath;
+    }
+
+    private static bool TraversesReparsePointBelowRoot(string fullRoot, string fullPath)
+    {
+        var relativePath = Path.GetRelativePath(fullRoot, fullPath);
+        if (PathContainment.IsOutsideRoot(relativePath))
+        {
+            return true;
+        }
+
+        var currentPath = fullRoot;
+        foreach (var segment in relativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            currentPath = Path.Combine(currentPath, segment);
+            try
+            {
+                var attributes = File.GetAttributes(currentPath);
+                if (attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    FileSystemInfo entry = attributes.HasFlag(FileAttributes.Directory)
+                        ? new DirectoryInfo(currentPath)
+                        : new FileInfo(currentPath);
+                    if (entry.LinkTarget is not null)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                break;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                break;
+            }
+        }
+
+        return false;
     }
 
     private static ValidationDiagnostic CreateDiagnostic(
@@ -1575,4 +2342,40 @@ public sealed class SwShModMergerWorkflowService
         byte[] Contents,
         long ExpectedLength,
         string Sha256);
+
+    private sealed class PreparedMergeOutput
+    {
+        public PreparedMergeOutput(
+            MergeOutput output,
+            string targetPath,
+            string tempPath,
+            string backupPath,
+            OutputTargetPreimage targetPreimage)
+        {
+            Output = output;
+            TargetPath = targetPath;
+            TempPath = tempPath;
+            BackupPath = backupPath;
+            TargetPreimage = targetPreimage;
+        }
+
+        public MergeOutput Output { get; }
+
+        public string TargetPath { get; }
+
+        public string TempPath { get; }
+
+        public string BackupPath { get; }
+
+        public OutputTargetPreimage TargetPreimage { get; }
+
+        public bool IsCommitted { get; set; }
+
+        public bool RollbackFailed { get; set; }
+    }
+
+    private sealed record OutputTargetPreimage(bool Exists, long Length, string Sha256)
+    {
+        public static OutputTargetPreimage Missing { get; } = new(false, 0, string.Empty);
+    }
 }

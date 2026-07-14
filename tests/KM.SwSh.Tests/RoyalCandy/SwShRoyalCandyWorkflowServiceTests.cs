@@ -238,6 +238,57 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
                 && output.Provenance.SourceLayer == ProjectFileLayer.Layered);
     }
 
+    [Fact]
+    public void ApplyRollsBackEarlierOutputsWhenALaterTargetCannotBeWritten()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(
+            temp.Paths,
+            workflowId: "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var failingWrite = plan.Writes
+            .Skip(1)
+            .Last(write => !File.Exists(OutputPath(temp, write.TargetRelativePath)));
+        var failingPath = OutputPath(temp, failingWrite.TargetRelativePath);
+        Directory.CreateDirectory(failingPath);
+        var originalFiles = plan.Writes.ToDictionary(
+            write => write.TargetRelativePath,
+            write => File.Exists(OutputPath(temp, write.TargetRelativePath))
+                ? File.ReadAllBytes(OutputPath(temp, write.TargetRelativePath))
+                : null,
+            StringComparer.OrdinalIgnoreCase);
+
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("all output changes were rolled back", StringComparison.Ordinal));
+        Assert.Empty(apply.WrittenFiles);
+        Assert.True(Directory.Exists(failingPath));
+        foreach (var write in plan.Writes)
+        {
+            var outputPath = OutputPath(temp, write.TargetRelativePath);
+            var original = originalFiles[write.TargetRelativePath];
+            if (original is null)
+            {
+                Assert.False(File.Exists(outputPath));
+            }
+            else
+            {
+                Assert.Equal(original, File.ReadAllBytes(outputPath));
+            }
+        }
+    }
+
     private static void WriteRoyalCandyBaseInputs(TemporarySwShProject temp)
     {
         temp.WriteBaseRomFsFile(
@@ -281,6 +332,13 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
 
         var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static string OutputPath(TemporarySwShProject temp, string relativePath)
+    {
+        return Path.Combine(
+            temp.OutputRootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static byte[] CreateCompactRoyalCandyItemTable()

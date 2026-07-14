@@ -67,6 +67,10 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShRentalPokemonWorkflowService.NatureField).Options,
             option => option.Value == 3 && option.Label == "Adamant (+Atk/-Sp.Atk)");
+        var levelField = workflow.EditableFields.Single(
+            field => field.Field == SwShRentalPokemonWorkflowService.LevelField);
+        Assert.Equal(SwShRentalPokemonArchive.MinimumPokemonLevel, levelField.MinimumValue);
+        Assert.Equal(SwShRentalPokemonArchive.MaximumPokemonLevel, levelField.MaximumValue);
     }
 
     [Fact]

@@ -10,13 +10,22 @@ type ProjectScopedRequest = {
 };
 
 export class StaleProjectScopeError extends Error {
+  public readonly currentGeneration: number | null;
   public readonly currentScope: string;
+  public readonly requestGeneration: number | null;
   public readonly requestScope: string;
 
-  public constructor(requestScope: string, currentScope: string) {
+  public constructor(
+    requestScope: string,
+    currentScope: string,
+    requestGeneration: number | null = null,
+    currentGeneration: number | null = null
+  ) {
     super('Ignored a project bridge response for a game or project that is no longer selected.');
     this.name = 'StaleProjectScopeError';
+    this.currentGeneration = currentGeneration;
     this.currentScope = currentScope;
+    this.requestGeneration = requestGeneration;
     this.requestScope = requestScope;
   }
 }
@@ -27,7 +36,8 @@ export function isStaleProjectScopeError(error: unknown) {
 
 export function createGameScopedProjectBridge(
   bridge: ProjectBridge,
-  getCurrentPaths: () => ProjectScopePaths
+  getCurrentPaths: () => ProjectScopePaths,
+  getCurrentGeneration?: () => number
 ): ProjectBridge {
   return new Proxy(bridge, {
     get(target, property, receiver) {
@@ -38,19 +48,66 @@ export function createGameScopedProjectBridge(
 
       return async (...args: unknown[]) => {
         const requestScope = getProjectScopeFromRequest(args[0]);
-        const response = await value.apply(target, args);
+        const requestGeneration = requestScope ? (getCurrentGeneration?.() ?? null) : null;
+        let response: unknown;
 
-        if (requestScope) {
-          const currentScope = createProjectScopeKey(getCurrentPaths());
-          if (requestScope !== currentScope) {
-            throw new StaleProjectScopeError(requestScope, currentScope);
+        try {
+          response = await value.apply(target, args);
+        } catch (error) {
+          const staleScopeError = getStaleProjectScopeError(
+            requestScope,
+            requestGeneration,
+            getCurrentPaths,
+            getCurrentGeneration
+          );
+          if (staleScopeError) {
+            throw staleScopeError;
           }
+
+          throw error;
+        }
+
+        const staleScopeError = getStaleProjectScopeError(
+          requestScope,
+          requestGeneration,
+          getCurrentPaths,
+          getCurrentGeneration
+        );
+        if (staleScopeError) {
+          throw staleScopeError;
         }
 
         return response;
       };
     }
   }) as ProjectBridge;
+}
+
+function getStaleProjectScopeError(
+  requestScope: string | null,
+  requestGeneration: number | null,
+  getCurrentPaths: () => ProjectScopePaths,
+  getCurrentGeneration?: () => number
+) {
+  if (!requestScope) {
+    return null;
+  }
+
+  const currentScope = createProjectScopeKey(getCurrentPaths());
+  const currentGeneration = getCurrentGeneration?.() ?? null;
+  if (
+    requestScope === currentScope &&
+    (requestGeneration === null || requestGeneration === currentGeneration)
+  ) {
+    return null;
+  }
+
+  return new StaleProjectScopeError(
+    requestScope,
+    currentScope,
+    requestGeneration,
+    currentGeneration
+  );
 }
 
 export function createProjectScopeKey(paths: ProjectScopePaths) {

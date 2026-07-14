@@ -488,6 +488,7 @@ export const applyModMergeRequestSchema = z.strictObject({
   modDirectory1: z.string().nullable(),
   modDirectory2: z.string().nullable(),
   paths: projectPathsSchema,
+  reviewToken: z.string().min(1),
   resolutions: z.array(modMergerConflictResolutionSchema),
   selectedDirectory1Files: z.array(z.string()),
   selectedDirectory2Files: z.array(z.string())
@@ -3073,6 +3074,7 @@ export const modMergerPreviewSchema = z.strictObject({
   files: z.array(modMergerFilePreviewRecordSchema),
   mergeMode: modMergerMergeModeSchema,
   readyFileCount: z.number().int().nonnegative(),
+  reviewToken: z.string(),
   selectedFileCount: z.number().int().nonnegative(),
   status: z.string(),
   unresolvedConflictCount: z.number().int().nonnegative()
@@ -3464,6 +3466,7 @@ export const validateEditSessionResponseSchema = z.strictObject({
 export const plannedFileWriteSchema = z.strictObject({
   reason: z.string(),
   replacesExistingOutput: z.boolean(),
+  sourceFingerprint: z.string().nullable().optional(),
   sources: z.array(projectFileReferenceSchema),
   targetRelativePath: z.string()
 });

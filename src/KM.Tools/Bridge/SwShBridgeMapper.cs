@@ -1756,6 +1756,7 @@ public static class SwShBridgeMapper
             preview.CanApply,
             preview.Status,
             preview.MergeMode,
+            preview.ReviewToken,
             preview.SelectedFileCount,
             preview.ReadyFileCount,
             preview.ConflictFileCount,

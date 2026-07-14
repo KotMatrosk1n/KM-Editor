@@ -98,7 +98,7 @@ public sealed class SwShPokemonDataTableTests
         record[0x07] = 3;
         record[0x08] = 45;
         record[0x09] = 1;
-        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x0A), 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x0A), 0xD000);
         BinaryPrimitives.WriteInt16LittleEndian(record.AsSpan(0x0C), 10);
         BinaryPrimitives.WriteInt16LittleEndian(record.AsSpan(0x0E), 20);
         BinaryPrimitives.WriteInt16LittleEndian(record.AsSpan(0x10), 30);
@@ -148,7 +148,36 @@ public sealed class SwShPokemonDataTableTests
         Assert.True(reparsed.CanNotDynamax);
         Assert.Equal(401, reparsed.CrownDexIndex);
         Assert.Equal(0xCC, written[0x60]);
+        Assert.Equal(0xD00C, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0A)));
         Assert.Equal(0xF0 | 0x1 | 0x4, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x5A)));
+    }
+
+    [Fact]
+    public void PersonalTableWholeTableWriteLeavesUntouchedRecordsByteExact()
+    {
+        var source = Enumerable.Range(0, SwShPersonalTable.RecordSize * 2)
+            .Select(index => unchecked((byte)((index * 37) + 11)))
+            .ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(source.AsSpan(0x0A), 0xB321);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            source.AsSpan(SwShPersonalTable.RecordSize + 0x0A),
+            0xE654);
+        var parsed = SwShPersonalTable.Parse(source);
+        var records = parsed.Records.ToArray();
+        records[0] = records[0] with { HP = records[0].HP == 255 ? 254 : records[0].HP + 1 };
+
+        var written = SwShPersonalTable.Write(records, source);
+
+        Assert.Equal(0xB000, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0A)) & 0xF000);
+        Assert.Equal(
+            source.AsSpan(SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ToArray(),
+            written.AsSpan(SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize).ToArray());
+        var changedOffsets = source
+            .Select((value, index) => (value, index))
+            .Where(entry => entry.value != written[entry.index])
+            .Select(entry => entry.index)
+            .ToArray();
+        Assert.Equal([0], changedOffsets);
     }
 
     [Fact]
@@ -256,7 +285,7 @@ public sealed class SwShPokemonDataTableTests
     }
 
     [Fact]
-    public void EvolutionSetWritesCompactedRowsAndClearsTrailingSlots()
+    public void EvolutionSetWritesRowsToTheirPhysicalSlots()
     {
         var written = SwShEvolutionSet.Write(
         [
@@ -270,21 +299,23 @@ public sealed class SwShPokemonDataTableTests
             parsed.Evolutions,
             evolution =>
             {
-                Assert.Equal(0, evolution.Slot);
+                Assert.Equal(2, evolution.Slot);
                 Assert.Equal(4, evolution.Method);
                 Assert.Equal(2, evolution.Species);
                 Assert.Equal(16, evolution.Level);
             },
             evolution =>
             {
-                Assert.Equal(1, evolution.Slot);
+                Assert.Equal(7, evolution.Slot);
                 Assert.Equal(7, evolution.Method);
                 Assert.Equal(25, evolution.Argument);
                 Assert.Equal(3, evolution.Species);
                 Assert.Equal(1, evolution.Form);
                 Assert.Equal(32, evolution.Level);
             });
-        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(SwShEvolutionSet.RecordSize * 2)));
+        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(written));
+        Assert.Equal(4, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(SwShEvolutionSet.RecordSize * 2)));
+        Assert.Equal(7, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(SwShEvolutionSet.RecordSize * 7)));
     }
 
     private static void WriteEvolution(

@@ -587,13 +587,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setChangePlan: (changePlan) => set({ changePlan }),
   setDraftPath: (field, value) =>
     set((state) => {
+      if (state.draftPaths[field] === value) {
+        return state;
+      }
+
       const draftPaths = {
         ...state.draftPaths,
         [field]: value
       };
       saveProjectPathDraft(draftPaths);
 
-      return { draftPaths };
+      return {
+        ...createProjectSessionResetState(),
+        draftPaths
+      };
     }),
   clearSelectedGame: () =>
     set((state) => {

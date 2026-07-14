@@ -27,6 +27,11 @@ public sealed class SwShExeFsPatchEditSessionService
         this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService();
     }
 
+    public void ClearMemoryCache()
+    {
+        exeFsPatchWorkflowService.ClearMemoryCache();
+    }
+
     public SwShExeFsPatchEditResult StagePatch(
         ProjectPaths paths,
         string patchId,

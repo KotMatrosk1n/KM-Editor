@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Workflows;
@@ -54,11 +55,17 @@ public sealed class SwShBagHookEditSessionService
             return new SwShBagHookEditResult(workflow, currentSession, diagnostics);
         }
 
+        var source = ResolveInstallSource(project, diagnostics);
+        if (source is null)
+        {
+            return new SwShBagHookEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
             PendingEdits = currentSession.PendingEdits
                 .Where(edit => !string.Equals(edit.Domain, BagHookEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit())
+                .Append(CreatePendingEdit(CreateSourceReference(source.GraphEntry)))
                 .ToArray(),
         };
 
@@ -183,7 +190,7 @@ public sealed class SwShBagHookEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var writes = IsUninstallEdit(edit)
             ? CreateUninstallWrites(project, paths, diagnostics)
-            : CreateInstallWrites(paths, diagnostics);
+            : CreateInstallWrites(project, paths, diagnostics);
 
         if (writes.Count == 0)
         {
@@ -295,63 +302,129 @@ public sealed class SwShBagHookEditSessionService
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        foreach (var write in currentPlan.Writes)
+        var preparedBagRestore = PrepareBagHookRestore(paths, currentPlan, diagnostics);
+        if (preparedBagRestore is null)
         {
-            var targetPath = ResolveOutputPath(paths, write.TargetRelativePath, diagnostics);
-            if (targetPath is null)
-            {
-                continue;
-            }
+            return;
+        }
 
-            if (!File.Exists(targetPath))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Bag Hook uninstall target '{write.TargetRelativePath}' no longer exists. Review the change plan again before applying.",
-                    file: write.TargetRelativePath,
-                    expected: "Existing reviewed LayeredFS output file"));
-                continue;
-            }
+        if (!SwShOutputRollbackScope.TryCapture(
+            paths,
+            currentPlan.Writes.Select(write => write.TargetRelativePath),
+            out var rollbackScope,
+            out var captureFailure))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable existing outputs and writable temporary storage"));
+            return;
+        }
 
-            try
+        var outputRollback = rollbackScope!;
+        using (outputRollback)
+        {
+            var orderedWrites = currentPlan.Writes.OrderBy(write => string.Equals(
+                write.TargetRelativePath,
+                SwShBagHookWorkflowService.BagEventScriptPath,
+                StringComparison.OrdinalIgnoreCase)
+                ? 0
+                : 1);
+            foreach (var write in orderedWrites)
             {
-                var changed = SwShRoyalCandyCleanup.IsCleanupOutputPath(write.TargetRelativePath)
-                    ? SwShRoyalCandyCleanup.TryApplyCleanupTarget(
-                        paths,
-                        targetPath,
-                        write.TargetRelativePath,
-                        BagHookEditDomain,
-                        diagnostics,
-                        clearBagHookSlot: false)
-                    : DeleteOutput(targetPath);
-                if (changed)
+                var isBagHookOutput = string.Equals(
+                    write.TargetRelativePath,
+                    SwShBagHookWorkflowService.BagEventScriptPath,
+                    StringComparison.OrdinalIgnoreCase);
+                var targetPath = isBagHookOutput
+                    ? preparedBagRestore.TargetPath
+                    : ResolveOutputPath(paths, write.TargetRelativePath, diagnostics);
+                if (targetPath is null)
                 {
+                    break;
+                }
+
+                if (!File.Exists(targetPath))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Bag Hook uninstall target '{write.TargetRelativePath}' no longer exists. Review the change plan again before applying.",
+                        file: write.TargetRelativePath,
+                        expected: "Existing reviewed LayeredFS output file"));
+                    break;
+                }
+
+                try
+                {
+                    var changed = isBagHookOutput
+                        ? ApplyBagHookRestore(preparedBagRestore, diagnostics)
+                        : SwShRoyalCandyCleanup.IsCleanupOutputPath(write.TargetRelativePath)
+                        ? SwShRoyalCandyCleanup.TryApplyCleanupTarget(
+                            paths,
+                            targetPath,
+                            write.TargetRelativePath,
+                            BagHookEditDomain,
+                            diagnostics,
+                            clearBagHookSlot: false)
+                        : DeleteOutput(targetPath);
+                    if (!changed)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            $"Bag Hook uninstall could not complete reviewed target '{write.TargetRelativePath}'.",
+                            file: write.TargetRelativePath,
+                            expected: "Every reviewed uninstall target restored successfully"));
+                        break;
+                    }
+
                     writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
                 }
+                catch (InvalidDataException exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Bag Hook uninstall target '{write.TargetRelativePath}' could not be restored: {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Supported Sword/Shield LayeredFS output"));
+                    break;
+                }
+                catch (IOException exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Bag Hook uninstall target '{write.TargetRelativePath}' could not be removed: {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Writable output root"));
+                    break;
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Bag Hook uninstall target '{write.TargetRelativePath}' could not be removed: {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Writable output root"));
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Bag Hook uninstall failed unexpectedly for '{write.TargetRelativePath}': {exception.Message}",
+                        file: write.TargetRelativePath,
+                        expected: "Every reviewed uninstall target restored successfully"));
+                    break;
+                }
             }
-            catch (InvalidDataException exception)
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Bag Hook uninstall target '{write.TargetRelativePath}' could not be restored: {exception.Message}",
-                    file: write.TargetRelativePath,
-                    expected: "Supported Sword/Shield LayeredFS output"));
+                RollbackFailedUninstall(outputRollback, writtenFiles, diagnostics);
             }
-            catch (IOException exception)
+            else
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Bag Hook uninstall target '{write.TargetRelativePath}' could not be removed: {exception.Message}",
-                    file: write.TargetRelativePath,
-                    expected: "Writable output root"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Bag Hook uninstall target '{write.TargetRelativePath}' could not be removed: {exception.Message}",
-                    file: write.TargetRelativePath,
-                    expected: "Writable output root"));
+                outputRollback.Commit();
             }
         }
 
@@ -359,8 +432,136 @@ public sealed class SwShBagHookEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Uninstalled Bag Hook V2 and removed dependent Royal Candy and Starting Items LayeredFS output."));
+                "Uninstalled Bag Hook V2 and removed dependent Royal Candy and Starting Items changes."));
         }
+    }
+
+    private static void RollbackFailedUninstall(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        writtenFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Bag Hook uninstall failed and all output changes were rolled back."));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall rollback failed: {failure.Message}",
+                file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
+    }
+
+    private static PreparedBagHookRestore? PrepareBagHookRestore(
+        ProjectPaths paths,
+        ChangePlan currentPlan,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var bagWrite = currentPlan.Writes.FirstOrDefault(write => string.Equals(
+            write.TargetRelativePath,
+            SwShBagHookWorkflowService.BagEventScriptPath,
+            StringComparison.OrdinalIgnoreCase));
+        if (bagWrite is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Bag Hook uninstall plan does not contain the Bag-event script target.",
+                file: SwShBagHookWorkflowService.BagEventScriptPath,
+                expected: "Reviewed Bag Hook output target"));
+            return null;
+        }
+
+        var targetPath = ResolveOutputPath(paths, bagWrite.TargetRelativePath, diagnostics);
+        if (targetPath is null)
+        {
+            return null;
+        }
+
+        if (!File.Exists(targetPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall target '{bagWrite.TargetRelativePath}' no longer exists. Review the change plan again before applying.",
+                file: bagWrite.TargetRelativePath,
+                expected: "Existing reviewed LayeredFS output file"));
+            return null;
+        }
+
+        var basePath = ResolveBaseSourcePath(paths, bagWrite.TargetRelativePath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Bag Hook uninstall requires the matching base Bag-event script so owned cells can be restored safely.",
+                file: bagWrite.TargetRelativePath,
+                expected: "Readable base romfs Bag-event script"));
+            return null;
+        }
+
+        try
+        {
+            var restore = SwShBagHookAmxPatcher.RestoreFromBase(
+                File.ReadAllBytes(targetPath),
+                File.ReadAllBytes(basePath));
+            return new PreparedBagHookRestore(targetPath, restore);
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall target '{bagWrite.TargetRelativePath}' could not be restored: {exception.Message}",
+                file: bagWrite.TargetRelativePath,
+                expected: "Supported terminal Bag Hook V2 layout"));
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall inputs could not be read: {exception.Message}",
+                file: bagWrite.TargetRelativePath,
+                expected: "Readable Bag Hook output and base romfs source"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall inputs could not be read: {exception.Message}",
+                file: bagWrite.TargetRelativePath,
+                expected: "Readable Bag Hook output and base romfs source"));
+        }
+
+        return null;
+    }
+
+    private static bool ApplyBagHookRestore(
+        PreparedBagHookRestore prepared,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (prepared.Restore.IsBaseEquivalent)
+        {
+            File.Delete(prepared.TargetPath);
+            return true;
+        }
+
+        File.WriteAllBytes(prepared.TargetPath, prepared.Restore.Data);
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            "Removed Bag Hook owned cells and preserved unrelated Bag-event script edits in LayeredFS output.",
+            file: SwShBagHookWorkflowService.BagEventScriptPath));
+        return true;
     }
 
     private static bool CanStageInstall(
@@ -447,11 +648,13 @@ public sealed class SwShBagHookEditSessionService
     }
 
     private static IReadOnlyList<PlannedFileWrite> CreateInstallWrites(
+        OpenedProject project,
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (targetPath is null)
+        var source = ResolveInstallSource(project, diagnostics);
+        if (targetPath is null || source is null)
         {
             return Array.Empty<PlannedFileWrite>();
         }
@@ -460,7 +663,7 @@ public sealed class SwShBagHookEditSessionService
         [
             new PlannedFileWrite(
                 SwShBagHookWorkflowService.BagEventScriptPath,
-                [new ProjectFileReference(ProjectFileLayer.Base, SwShBagHookWorkflowService.BagEventScriptPath)],
+                [CreateSourceReference(source.GraphEntry)],
                 File.Exists(targetPath),
                 "Install Bag Hook V2 with 20 disabled startup item grant slots. The hook grants no items by itself."),
         ];
@@ -509,15 +712,54 @@ public sealed class SwShBagHookEditSessionService
         return writes.Values.ToArray();
     }
 
-    private static PendingEdit CreatePendingEdit()
+    private static PendingEdit CreatePendingEdit(ProjectFileReference source)
     {
         return new PendingEdit(
             BagHookEditDomain,
             "Stage Bag Hook install: 20 disabled startup item grant slots.",
-            [new ProjectFileReference(ProjectFileLayer.Base, SwShBagHookWorkflowService.BagEventScriptPath)],
+            [source],
             RecordId: InstallRecordId,
             Field: InstallField,
             NewValue: "v2-empty");
+    }
+
+    private static WorkflowFileSource? ResolveInstallSource(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var entry = project.FileGraph.Entries.FirstOrDefault(candidate => string.Equals(
+            candidate.RelativePath,
+            SwShBagHookWorkflowService.BagEventScriptPath,
+            StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Bag Hook source could not be resolved.",
+                file: SwShBagHookWorkflowService.BagEventScriptPath,
+                expected: "Readable Bag Hook script source"));
+            return null;
+        }
+
+        var sourcePath = SwShBagHookWorkflowService.ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Bag Hook source could not be read.",
+                file: entry.RelativePath,
+                expected: "Readable current script source"));
+            return null;
+        }
+
+        return new WorkflowFileSource(entry, sourcePath);
+    }
+
+    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
+    {
+        return new ProjectFileReference(
+            entry.LayeredFile is not null ? ProjectFileLayer.Layered : ProjectFileLayer.Base,
+            entry.RelativePath);
     }
 
     private static PendingEdit CreateUninstallPendingEdit()
@@ -604,6 +846,19 @@ public sealed class SwShBagHookEditSessionService
         return targetPath;
     }
 
+    private static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+            || !targetRelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return Path.Combine(
+            paths.BaseRomFsPath,
+            targetRelativePath["romfs/".Length..].Replace('/', Path.DirectorySeparatorChar));
+    }
+
     private static bool DeleteOutput(string targetPath)
     {
         File.Delete(targetPath);
@@ -680,4 +935,8 @@ public sealed class SwShBagHookEditSessionService
     private sealed record WorkflowFileSource(
         ProjectFileGraphEntry GraphEntry,
         string AbsolutePath);
+
+    private sealed record PreparedBagHookRestore(
+        string TargetPath,
+        SwShBagHookRestoreResult Restore);
 }

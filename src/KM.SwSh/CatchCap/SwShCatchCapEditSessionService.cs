@@ -340,7 +340,7 @@ public sealed class SwShCatchCapEditSessionService
                 File.ReadAllBytes(targetPath),
                 baseBytes,
                 paths.SelectedGame);
-            if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
+            if (SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(restored, baseBytes))
             {
                 File.Delete(targetPath);
             }
@@ -710,11 +710,6 @@ public sealed class SwShCatchCapEditSessionService
         }
 
         return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
-    }
-
-    private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
-    {
-        return SwShIndependentExeFsHookDetector.ContainsAny(mainBytes);
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

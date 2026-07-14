@@ -64,7 +64,15 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'encountersPokemonSources',
     label: 'Encounters & Pokemon Sources',
-    sectionIds: ['encounters', 'staticEncounters', 'giftPokemon', 'tradePokemon', 'teraRaids', 'raidBattles']
+    sectionIds: [
+      'encounters',
+      'staticEncounters',
+      'giftPokemon',
+      'tradePokemon',
+      'rentalPokemon',
+      'teraRaids',
+      'raidBattles'
+    ]
   },
   { id: 'economy', label: 'Economy', sectionIds: ['shops', 'raidRewards', 'raidBonusRewards'] },
   { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'profanityFilter', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
