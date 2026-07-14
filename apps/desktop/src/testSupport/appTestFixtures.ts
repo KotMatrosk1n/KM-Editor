@@ -4382,6 +4382,235 @@ export function createMockProjectBridge(
   };
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
+  let currentStaticEncountersWorkflow = staticEncountersWorkflow;
+  const targetSameStaticEncounter = (firstRecordId: string, secondRecordId: string) => {
+    if (firstRecordId === secondRecordId) {
+      return true;
+    }
+
+    const firstMatch = /^static:(\d+)(?::([0-9A-F]+))?$/i.exec(firstRecordId);
+    const secondMatch = /^static:(\d+)(?::([0-9A-F]+))?$/i.exec(secondRecordId);
+    if (!firstMatch || !secondMatch) {
+      return false;
+    }
+
+    return firstMatch[2] && secondMatch[2]
+      ? firstMatch[2].toUpperCase() === secondMatch[2].toUpperCase()
+      : firstMatch[1] === secondMatch[1];
+  };
+  const staticIvFields = new Set([
+    'ivHp',
+    'ivAttack',
+    'ivDefense',
+    'ivSpecialAttack',
+    'ivSpecialDefense',
+    'ivSpeed'
+  ]);
+  const staticFieldsConflict = (firstField: string | null, secondField: string) =>
+    firstField === secondField ||
+    (firstField === 'flawlessIvCount' && staticIvFields.has(secondField)) ||
+    (secondField === 'flawlessIvCount' && firstField !== null && staticIvFields.has(firstField));
+  const stageStaticEncounterUpdates = (
+    updates: ReadonlyArray<{
+      encounterId?: string;
+      encounterIndex: number;
+      field: string;
+      value: string;
+    }>,
+    session: EditSession | null
+  ) => {
+    const identityMismatch = updates.find((update) => {
+      const indexMatches = currentStaticEncountersWorkflow.encounters.filter(
+        (encounter) => encounter.encounterIndex === update.encounterIndex
+      );
+      if (update.encounterId === undefined) {
+        return indexMatches.length !== 1;
+      }
+
+      const identityMatches = currentStaticEncountersWorkflow.encounters.filter(
+        (encounter) => encounter.encounterId === update.encounterId
+      );
+      return (
+        indexMatches.length !== 1 ||
+        indexMatches[0]?.encounterId !== update.encounterId ||
+        identityMatches.length !== 1
+      );
+    });
+    if (identityMismatch) {
+      return Promise.resolve({
+        diagnostics: [
+          {
+            domain: 'workflow.staticEncounters',
+            expected: 'The exact staged Static Encounter index and encounter ID pair',
+            field: identityMismatch.field,
+            message: 'Static encounter identity changed. Reload and stage the edit again.',
+            severity: 'error' as const
+          }
+        ],
+        session: session ?? {
+          hasPendingChanges: false,
+          pendingEdits: [],
+          sessionId: 'session-1'
+        },
+        workflow: currentStaticEncountersWorkflow
+      });
+    }
+
+    for (const update of updates) {
+      const value = Number.parseInt(update.value, 10);
+      const statField = /^([ei])v(Hp|Attack|Defense|SpecialAttack|SpecialDefense|Speed)$/.exec(
+        update.field
+      );
+      const moveField = /^move([0-3])Id$/.exec(update.field);
+      currentStaticEncountersWorkflow = {
+        ...currentStaticEncountersWorkflow,
+        encounters: currentStaticEncountersWorkflow.encounters.map((encounter) => {
+          if (encounter.encounterIndex !== update.encounterIndex) {
+            return encounter;
+          }
+
+          const nextEncounter = { ...encounter };
+          const editableField = currentStaticEncountersWorkflow.editableFields.find(
+            (field) => field.field === update.field
+          );
+          const optionLabel = editableField?.options.find((option) => option.value === value)?.label;
+          if (statField) {
+            const statsKey = statField[1] === 'e' ? 'evs' : 'ivs';
+            const statKey = `${statField[2][0].toLowerCase()}${statField[2].slice(1)}` as
+              | 'hp'
+              | 'attack'
+              | 'defense'
+              | 'specialAttack'
+              | 'specialDefense'
+              | 'speed';
+            nextEncounter[statsKey] = {
+              ...nextEncounter[statsKey],
+              [statKey]: value
+            };
+          } else if (moveField) {
+            const slot = Number.parseInt(moveField[1], 10);
+            nextEncounter.moves = nextEncounter.moves.map((move) =>
+              move.slot === slot
+                ? {
+                    ...move,
+                    move: optionLabel?.replace(/^\d+\s+/, '') ?? move.move,
+                    moveId: value
+                  }
+                : move
+            );
+          } else {
+            switch (update.field) {
+              case 'species':
+                nextEncounter.speciesId = value;
+                nextEncounter.species = optionLabel?.replace(/^\d+\s+/, '') ?? encounter.species;
+                break;
+              case 'heldItemId':
+                nextEncounter.heldItemId = value;
+                nextEncounter.heldItem =
+                  value === 0 ? null : optionLabel?.replace(/^\d+\s+/, '') ?? encounter.heldItem;
+                break;
+              case 'ability':
+                nextEncounter.ability = value;
+                nextEncounter.abilityLabel =
+                  encounter.abilityOptions.find((option) => option.value === value)?.label ??
+                  optionLabel ??
+                  encounter.abilityLabel;
+                break;
+              case 'nature':
+                nextEncounter.nature = value;
+                nextEncounter.natureLabel = optionLabel ?? encounter.natureLabel;
+                break;
+              case 'gender':
+                nextEncounter.gender = value;
+                nextEncounter.genderLabel = optionLabel ?? encounter.genderLabel;
+                break;
+              case 'shinyLock':
+                nextEncounter.shinyLock = value;
+                nextEncounter.shinyLockLabel = optionLabel ?? encounter.shinyLockLabel;
+                break;
+              case 'encounterScenario':
+                nextEncounter.encounterScenario = value;
+                nextEncounter.encounterScenarioLabel =
+                  optionLabel ?? encounter.encounterScenarioLabel;
+                break;
+              case 'form':
+              case 'level':
+              case 'dynamaxLevel':
+              case 'flawlessIvCount':
+                nextEncounter[update.field] = value;
+                break;
+              case 'canGigantamax':
+                nextEncounter.canGigantamax = value !== 0;
+                break;
+              default:
+                nextEncounter.fieldValues = {
+                  ...nextEncounter.fieldValues,
+                  [update.field]: update.value
+                };
+                break;
+            }
+          }
+
+          if (statField?.[1] === 'i') {
+            nextEncounter.ivSummary = `HP ${nextEncounter.ivs.hp} / Atk ${nextEncounter.ivs.attack} / Def ${nextEncounter.ivs.defense} / SpA ${nextEncounter.ivs.specialAttack} / SpD ${nextEncounter.ivs.specialDefense} / Spe ${nextEncounter.ivs.speed}`;
+          }
+          nextEncounter.label = `Static ${nextEncounter.encounterIndex
+            .toString()
+            .padStart(3, '0')}: ${nextEncounter.species}${
+            nextEncounter.form === 0 ? '' : ` (Form ${nextEncounter.form})`
+          } Lv. ${nextEncounter.level}`;
+          return nextEncounter;
+        })
+      };
+    }
+
+    let pendingEdits = [...(session?.pendingEdits ?? [])];
+    for (const update of updates) {
+      const encounterId =
+        update.encounterId ??
+        currentStaticEncountersWorkflow.encounters.find(
+          (encounter) => encounter.encounterIndex === update.encounterIndex
+        )?.encounterId;
+      const encounterKey = encounterId?.replace(/^0x/i, '').toUpperCase().padStart(16, '0');
+      const recordId = `static:${update.encounterIndex}${
+        encounterKey ? `:${encounterKey}` : ''
+      }`;
+      const pendingEdit = {
+        domain: 'workflow.staticEncounters',
+        field: update.field,
+        newValue: update.value,
+        recordId,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/script_event_data/event_encount_data.bin'
+          }
+        ],
+        summary: `Set Static ${update.encounterIndex
+          .toString()
+          .padStart(3, '0')} ${update.field} to ${update.value}.`
+      };
+      pendingEdits = [
+        ...pendingEdits.filter(
+          (edit) =>
+            edit.domain !== pendingEdit.domain ||
+            !targetSameStaticEncounter(edit.recordId ?? '', pendingEdit.recordId) ||
+            !staticFieldsConflict(edit.field ?? null, pendingEdit.field)
+        ),
+        pendingEdit
+      ];
+    }
+
+    return Promise.resolve({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: pendingEdits.length > 0,
+        pendingEdits,
+        sessionId: session?.sessionId ?? 'session-1'
+      },
+      workflow: currentStaticEncountersWorkflow
+    });
+  };
   const createDynamaxAdventurePlanWrites = (session: EditSession): ChangePlan['writes'] => {
     const requiresMainPatch = session.pendingEdits.some((edit) =>
       ['species', 'form', 'gigantamaxState'].includes(edit.field ?? '')
@@ -6004,7 +6233,7 @@ export function createMockProjectBridge(
       }),
     loadStaticEncountersWorkflow: () =>
       Promise.resolve({
-        workflow: staticEncountersWorkflow
+        workflow: currentStaticEncountersWorkflow
       }),
     loadRentalPokemonWorkflow: () =>
       Promise.resolve({
@@ -6703,57 +6932,10 @@ export function createMockProjectBridge(
         workflow: currentTradePokemonWorkflow
       });
     },
-    updateStaticEncounterField: (request) => {
-      const value = Number.parseInt(request.value, 10);
-
-      return Promise.resolve({
-        diagnostics: [],
-        session: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.staticEncounters',
-              field: request.field,
-              newValue: request.value,
-              recordId: `static:${request.encounterIndex}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/script_event_data/event_encount_data.bin'
-                }
-              ],
-              summary: `Set Static 000 ${request.field} to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
-        },
-        workflow: {
-          ...staticEncountersWorkflow,
-          encounters: staticEncountersWorkflow.encounters.map((encounter) =>
-            encounter.encounterIndex === request.encounterIndex
-              ? {
-                  ...encounter,
-                  ivs:
-                    request.field === 'ivHp'
-                      ? {
-                          ...encounter.ivs,
-                          hp: value
-                        }
-                      : encounter.ivs,
-                  ivSummary:
-                    request.field === 'ivHp'
-                      ? `HP ${value} / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28`
-                      : encounter.ivSummary,
-                  level: request.field === 'level' ? value : encounter.level,
-                  shinyLock: request.field === 'shinyLock' ? value : encounter.shinyLock,
-                  shinyLockLabel:
-                    request.field === 'shinyLock' ? 'Random' : encounter.shinyLockLabel
-                }
-              : encounter
-          )
-        }
-      });
-    },
+    updateStaticEncounterField: (request) =>
+      stageStaticEncounterUpdates([request], request.session),
+    updateStaticEncounterFields: (request) =>
+      stageStaticEncounterUpdates(request.updates, request.session),
     updateRentalPokemonField: (request) => {
       const value = Number.parseInt(request.value, 10);
 

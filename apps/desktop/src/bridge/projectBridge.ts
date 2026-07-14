@@ -146,6 +146,7 @@ import {
   type UpdateTradePokemonFieldResponse,
   type UpdateStaticEncounterFieldRequest,
   type UpdateStaticEncounterFieldResponse,
+  type UpdateStaticEncounterFieldsRequest,
   type UpdateRentalPokemonFieldRequest,
   type UpdateRentalPokemonFieldResponse,
   type UpdateDynamaxAdventureFieldRequest,
@@ -543,6 +544,9 @@ export type ProjectBridge = {
   ) => Promise<UpdateTradePokemonFieldResponse>;
   updateStaticEncounterField: (
     request: UpdateStaticEncounterFieldRequest
+  ) => Promise<UpdateStaticEncounterFieldResponse>;
+  updateStaticEncounterFields: (
+    request: UpdateStaticEncounterFieldsRequest
   ) => Promise<UpdateStaticEncounterFieldResponse>;
   updateRentalPokemonField: (
     request: UpdateRentalPokemonFieldRequest
@@ -1165,6 +1169,13 @@ export function createProjectBridge(
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateStaticEncounterField,
+        request,
+        updateStaticEncounterFieldResponseSchema
+      ),
+    updateStaticEncounterFields: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateStaticEncounterFields,
         request,
         updateStaticEncounterFieldResponseSchema
       ),

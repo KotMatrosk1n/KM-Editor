@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using System.Buffers.Binary;
 using Xunit;
 
 namespace KM.Formats.Tests;
@@ -153,6 +154,78 @@ public sealed class SwShStaticEncounterArchiveTests
             () => archive.WriteEdits([new SwShStaticEncounterEdit(0, SwShStaticEncounterField.DynamaxLevel, 11)]));
     }
 
+    [Fact]
+    public void ParsedArchiveNoOpIsByteIdenticalIncludingTrailingData()
+    {
+        var original = CreateArchive().Write().Concat(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }).ToArray();
+        var parsed = SwShStaticEncounterArchive.Parse(original);
+
+        var output = parsed.WriteEdits([]);
+
+        Assert.Equal(original, output);
+    }
+
+    [Fact]
+    public void ParsedArchivePatchesOnlyTheTargetScalarByte()
+    {
+        var original = CreateArchive().Write().Concat(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }).ToArray();
+        var parsed = SwShStaticEncounterArchive.Parse(original);
+
+        var output = parsed.WriteEdits(
+        [
+            new SwShStaticEncounterEdit(0, SwShStaticEncounterField.Level, 71),
+        ]);
+
+        Assert.Equal(original.Length, output.Length);
+        Assert.Equal(original[^4..], output[^4..]);
+        Assert.Single(original.Zip(output), pair => pair.First != pair.Second);
+        Assert.Equal(71, SwShStaticEncounterArchive.Parse(output).Encounters[0].Level);
+    }
+
+    [Fact]
+    public void ParsedArchiveRejectsChangingAnOmittedDefaultField()
+    {
+        var source = CreateArchive().Write();
+        OmitEncounterField(source, encounterIndex: 0, fieldIndex: 15);
+        var parsed = SwShStaticEncounterArchive.Parse(source);
+
+        var exception = Assert.Throws<InvalidDataException>(() => parsed.WriteEdits(
+        [
+            new SwShStaticEncounterEdit(0, SwShStaticEncounterField.Level, 71),
+        ]));
+
+        Assert.Contains("omitted from the source FlatBuffer", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IndividualRandomIvEditPreservesMixedIvArray()
+    {
+        var original = SwShStaticEncounterArchive.Parse(CreateArchive().Write());
+
+        var output = original.WriteEdits(
+        [
+            new SwShStaticEncounterEdit(0, SwShStaticEncounterField.IvAttack, -1),
+        ]);
+
+        Assert.Equal(
+            new SwShStaticEncounterStats(31, -1, 29, 27, 26, 28),
+            SwShStaticEncounterArchive.Parse(output).Encounters[0].Ivs);
+    }
+
+    [Theory]
+    [InlineData(SwShStaticEncounterField.Level, 0)]
+    [InlineData(SwShStaticEncounterField.Level, 101)]
+    [InlineData(SwShStaticEncounterField.EncounterScenario, 20)]
+    [InlineData(SwShStaticEncounterField.EvHp, 253)]
+    [InlineData(SwShStaticEncounterField.Gender, 3)]
+    public void WriteEditsRejectsSemanticRangeViolations(SwShStaticEncounterField field, int value)
+    {
+        var archive = CreateArchive();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => archive.WriteEdits([new SwShStaticEncounterEdit(0, field, value)]));
+    }
+
     internal static SwShStaticEncounterArchive CreateArchive()
     {
         return new SwShStaticEncounterArchive(
@@ -200,5 +273,24 @@ public sealed class SwShStaticEncounterArchiveTests
                 0,
                 [0, 0, 0, 0]),
         ]);
+    }
+
+    private static void OmitEncounterField(byte[] data, int encounterIndex, int fieldIndex)
+    {
+        var rootTableOffset = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data));
+        var rootVtableOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(rootTableOffset));
+        var rootVtableStart = rootTableOffset - rootVtableOffset;
+        var vectorFieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(rootVtableStart + 4));
+        var vectorReferenceOffset = rootTableOffset + vectorFieldOffset;
+        var vectorOffset = vectorReferenceOffset
+            + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(vectorReferenceOffset)));
+        var elementOffset = vectorOffset + sizeof(uint) + (encounterIndex * sizeof(uint));
+        var encounterTableOffset = elementOffset
+            + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(elementOffset)));
+        var encounterVtableOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(encounterTableOffset));
+        var encounterVtableStart = encounterTableOffset - encounterVtableOffset;
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(encounterVtableStart + 4 + (fieldIndex * sizeof(ushort))),
+            0);
     }
 }

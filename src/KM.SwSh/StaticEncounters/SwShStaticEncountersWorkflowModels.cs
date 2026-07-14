@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.StaticEncounters;
@@ -53,7 +54,12 @@ public sealed record SwShStaticEncounterEntry(
     IReadOnlyList<SwShStaticEncounterMoveRecord> Moves,
     SwShStaticEncounterProvenance Provenance)
 {
+    public ulong EncounterKey { get; init; }
+
     public IReadOnlyList<SwShStaticEncounterEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShStaticEncounterEditableFieldOption>();
+
+    public IReadOnlyList<SwShStaticEncounterEditableFieldOption> GenderOptions { get; init; } =
         Array.Empty<SwShStaticEncounterEditableFieldOption>();
 }
 
@@ -91,4 +97,8 @@ public sealed record SwShStaticEncountersWorkflow(
     IReadOnlyList<SwShStaticEncounterEntry> Encounters,
     IReadOnlyList<SwShStaticEncounterEditableField> EditableFields,
     SwShStaticEncountersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal SwShPokemonAbilityOptionResolver AbilityResolver { get; init; } =
+        SwShPokemonAbilityOptionResolver.Empty;
+}

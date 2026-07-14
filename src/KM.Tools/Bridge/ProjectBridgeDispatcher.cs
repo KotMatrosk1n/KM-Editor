@@ -305,6 +305,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateTradePokemonFields => DispatchUpdateTradePokemonFields(requestJson),
                 KmCommandNames.LoadStaticEncountersWorkflow => DispatchLoadStaticEncountersWorkflow(requestJson),
                 KmCommandNames.UpdateStaticEncounterField => DispatchUpdateStaticEncounterField(requestJson),
+                KmCommandNames.UpdateStaticEncounterFields => DispatchUpdateStaticEncounterFields(requestJson),
                 KmCommandNames.LoadRentalPokemonWorkflow => DispatchLoadRentalPokemonWorkflow(requestJson),
                 KmCommandNames.UpdateRentalPokemonField => DispatchUpdateRentalPokemonField(requestJson),
                 KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
@@ -1115,12 +1116,34 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.EncounterIndex,
                 request.Payload.Field,
                 request.Payload.Value))
-                : SwShBridgeMapper.ToDto(staticEncountersEditSessionService.UpdateField(
+                : SwShBridgeMapper.ToDto(staticEncountersEditSessionService.UpdateFields(
                     paths,
                     session,
-                    request.Payload.EncounterIndex,
-                    request.Payload.Field,
-                    request.Payload.Value));
+                    [new SwShStaticEncounterFieldUpdate(
+                        request.Payload.EncounterIndex,
+                        request.Payload.Field,
+                        request.Payload.Value,
+                        request.Payload.EncounterId)]));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateStaticEncounterFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateStaticEncounterFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SwShStaticEncounterFieldUpdate(
+                update.EncounterIndex,
+                update.Field,
+                update.Value,
+                update.EncounterId))
+            .ToArray();
+        var response = SwShBridgeMapper.ToDto(
+            staticEncountersEditSessionService.UpdateFields(paths, session, updates));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3364,6 +3387,7 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsSwordShieldOnlyCommand(string command)
     {
         return command is
+            KmCommandNames.UpdateStaticEncounterFields or
             KmCommandNames.LoadRentalPokemonWorkflow or
             KmCommandNames.UpdateRentalPokemonField or
             KmCommandNames.LoadDynamaxAdventuresWorkflow or

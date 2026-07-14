@@ -61,6 +61,7 @@ import {
   updateGiftPokemonFieldResponseSchema,
   updateRentalPokemonFieldRequestSchema,
   updateRentalPokemonFieldResponseSchema,
+  updateStaticEncounterFieldsRequestSchema,
   updateTradePokemonFieldRequestSchema,
   updateTradePokemonFieldResponseSchema,
   updatePokemonFieldRequestSchema,
@@ -248,6 +249,45 @@ describe('bridge contracts', () => {
     expect(parsed.command).toBe('project.open');
     expect(parsed.payload.paths.gameTextLanguage).toBe('es');
     expect(parsed.payload.paths.selectedGame).toBe('shield');
+  });
+
+  it('validates identity-aware static encounter field batches', () => {
+    const requestSchema = createBridgeRequestSchema(updateStaticEncounterFieldsRequestSchema);
+    const request = {
+      command: kmCommandNames.updateStaticEncounterFields,
+      payload: {
+        paths: {
+          baseExeFsPath: 'base-exefs',
+          baseRomFsPath: 'base-romfs',
+          outputRootPath: 'output',
+          saveFilePath: null,
+          selectedGame: 'sword'
+        },
+        session: null,
+        updates: [
+          {
+            encounterId: '0x0102030405060708',
+            encounterIndex: 0,
+            field: 'level',
+            value: '55'
+          },
+          {
+            encounterIndex: 0,
+            field: 'shinyLock',
+            value: '0'
+          }
+        ]
+      },
+      requestId: 'request-static-fields'
+    };
+
+    expect(requestSchema.parse(request)).toMatchObject(request);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: { ...request.payload, updates: [] }
+      }).success
+    ).toBe(false);
   });
 
   it('validates success and failure response envelopes', () => {

@@ -115,6 +115,24 @@ public sealed class SwShStaticEncountersWorkflowServiceTests
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.staticEncounters");
     }
 
+    [Fact]
+    public void LoadDoesNotTreatTheLgpeLegacyPathAsSwordShieldStaticData()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/script_event_data/event_encount.bin",
+            CreateStaticEncounterTable(new SwShStaticEncounterStats(-1, -1, -1, -1, -1, -1)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShStaticEncountersWorkflowService().Load(project);
+
+        Assert.Empty(workflow.Encounters);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Expected == SwShStaticEncountersWorkflowService.StaticEncounterDataPath);
+    }
+
     internal static void WriteStaticEncounterFixture(TemporarySwShProject temp)
     {
         temp.WriteBaseRomFsFile(

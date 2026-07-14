@@ -116,10 +116,7 @@ internal static class SwShWorkflowDependencyValidator
             ],
             SwShWorkflowIds.StaticEncounters =>
             [
-                AnyFile(
-                    "static encounter data",
-                    SwShStaticEncountersWorkflowService.StaticEncounterDataPath,
-                    SwShStaticEncountersWorkflowService.LegacyStaticEncounterDataPath),
+                File("static encounter data", SwShStaticEncountersWorkflowService.StaticEncounterDataPath),
                 AnyPrefix("static encounter lookup text", CommonMessagePrefixes(project)),
             ],
             SwShWorkflowIds.RentalPokemon =>

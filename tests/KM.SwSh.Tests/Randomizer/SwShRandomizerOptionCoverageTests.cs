@@ -122,6 +122,16 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Contains(edits, edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain && edit.Field == SwShStaticEncountersWorkflowService.SpeciesField);
         Assert.Contains(edits, edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain && edit.Field == SwShStaticEncountersWorkflowService.FormField);
         Assert.Contains(edits, edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain && edit.Field == SwShStaticEncountersWorkflowService.CanGigantamaxField && edit.NewValue == "0");
+        Assert.All(
+            edits.Where(edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain),
+            edit =>
+            {
+                Assert.True(SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(
+                    edit.RecordId,
+                    out _,
+                    out var encounterId));
+                Assert.NotNull(encounterId);
+            });
         Assert.Contains(edits, edit => edit.Domain == SwShGiftPokemonWorkflowService.GiftPokemonEditDomain && edit.Field == SwShGiftPokemonWorkflowService.SpeciesField);
         Assert.Contains(edits, edit => edit.Domain == SwShGiftPokemonWorkflowService.GiftPokemonEditDomain && edit.Field == SwShGiftPokemonWorkflowService.FormField);
         Assert.Contains(edits, edit => edit.Domain == SwShGiftPokemonWorkflowService.GiftPokemonEditDomain && edit.Field == SwShGiftPokemonWorkflowService.CanGigantamaxField && edit.NewValue == "0");
@@ -169,7 +179,10 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.DoesNotContain(
             edits,
             edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain
-                && edit.RecordId == SwShStaticEncountersWorkflowService.CreateEncounterRecordId(0));
+                && SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(
+                    edit.RecordId,
+                    out var encounterIndex)
+                && encounterIndex == 0);
         Assert.DoesNotContain(
             edits,
             edit => edit.Domain == SwShGiftPokemonWorkflowService.GiftPokemonEditDomain

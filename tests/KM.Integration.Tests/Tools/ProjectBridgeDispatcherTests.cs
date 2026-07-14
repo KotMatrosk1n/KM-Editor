@@ -660,12 +660,96 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Grookey", encounter.Species);
         Assert.Equal(50, encounter.Level);
         Assert.Equal("Hidden Ability", encounter.AbilityLabel);
+        Assert.Contains(encounter.GenderOptions, option => option.Value == 2 && option.Label == "Female");
         Assert.Equal("Never Shiny", encounter.ShinyLockLabel);
         Assert.Equal("Calyrex", encounter.EncounterScenarioLabel);
         Assert.Equal("0x0102030405060708", encounter.EncounterId);
         Assert.Equal("romfs/bin/script_event_data/event_encount_data.bin", encounter.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, encounter.Provenance.SourceLayer);
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivHp");
+    }
+
+    [Fact]
+    public void DispatchUpdateStaticEncounterFieldsStagesOneAtomicSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteStaticEncounterBridgeFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateStaticEncounterFields,
+            new UpdateStaticEncounterFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new StaticEncounterFieldUpdateDto(
+                        EncounterIndex: 0,
+                        Field: "level",
+                        Value: "55",
+                        EncounterId: "0x0102030405060708"),
+                    new StaticEncounterFieldUpdateDto(
+                        EncounterIndex: 0,
+                        Field: "shinyLock",
+                        Value: "0",
+                        EncounterId: "0x0102030405060708"),
+                ]),
+            requestId: "request-static-encounter-fields-update");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateStaticEncounterFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-static-encounter-fields-update", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.DoesNotContain(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(2, response.Payload.Session.PendingEdits.Count);
+        var encounter = response.Payload.Workflow.Encounters[0];
+        Assert.Equal(55, encounter.Level);
+        Assert.Equal(0, encounter.ShinyLock);
+
+        var mismatchedSingleJson = SerializeRequest(
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(
+                temp.Paths,
+                Session: null,
+                EncounterIndex: 0,
+                Field: "level",
+                Value: "60",
+                EncounterId: "0x9999999999999999"),
+            requestId: "request-static-encounter-identity-mismatch");
+        var mismatchedSingle = DeserializeResponse<UpdateStaticEncounterFieldResponse>(
+            new ProjectBridgeDispatcher().Dispatch(mismatchedSingleJson));
+
+        Assert.NotNull(mismatchedSingle.Payload);
+        Assert.False(mismatchedSingle.Payload.Session.HasPendingChanges);
+        Assert.Contains(
+            mismatchedSingle.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var mismatchedBatchJson = SerializeRequest(
+            KmCommandNames.UpdateStaticEncounterFields,
+            new UpdateStaticEncounterFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new StaticEncounterFieldUpdateDto(
+                        EncounterIndex: 0,
+                        Field: "level",
+                        Value: "60",
+                        EncounterId: "0x9999999999999999"),
+                ]),
+            requestId: "request-static-encounter-fields-identity-mismatch");
+        var mismatchedBatch = DeserializeResponse<UpdateStaticEncounterFieldResponse>(
+            new ProjectBridgeDispatcher().Dispatch(mismatchedBatchJson));
+
+        Assert.NotNull(mismatchedBatch.Payload);
+        Assert.False(mismatchedBatch.Payload.Session.HasPendingChanges);
+        Assert.Contains(
+            mismatchedBatch.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -4320,6 +4404,28 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("bridge.gameMismatch", response.Error.Code);
         Assert.Contains("Sword/Shield", response.Error.Message);
         Assert.Equal("request-swsh-only", response.RequestId);
+
+        var staticRequestJson = SerializeRequest(
+            KmCommandNames.UpdateStaticEncounterFields,
+            new UpdateStaticEncounterFieldsRequest(
+                temp.Paths with { SelectedGame = ProjectGameDto.Scarlet },
+                Session: null,
+                Updates:
+                [
+                    new StaticEncounterFieldUpdateDto(
+                        EncounterIndex: 0,
+                        Field: "level",
+                        Value: "55",
+                        EncounterId: "0x0102030405060708"),
+                ]),
+            requestId: "request-swsh-static-fields-only");
+
+        var staticResponse = DeserializeResponse<object>(
+            new ProjectBridgeDispatcher().Dispatch(staticRequestJson));
+        Assert.Null(staticResponse.Payload);
+        Assert.NotNull(staticResponse.Error);
+        Assert.Equal("bridge.gameMismatch", staticResponse.Error.Code);
+        Assert.Contains("Sword/Shield", staticResponse.Error.Message);
     }
 
     [Fact]

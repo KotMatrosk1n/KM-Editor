@@ -23,6 +23,7 @@ export const kmCommandNameValues = [
   'tradePokemon.field.update', 'tradePokemon.fields.update',
   'staticEncounters.load',
   'staticEncounters.field.update',
+  'staticEncounters.fields.update',
   'rentalPokemon.load',
   'rentalPokemon.field.update',
   'dynamaxAdventures.load',
@@ -132,6 +133,7 @@ export const kmCommandNames = {
   updateTradePokemonFields: 'tradePokemon.fields.update',
   loadStaticEncountersWorkflow: 'staticEncounters.load',
   updateStaticEncounterField: 'staticEncounters.field.update',
+  updateStaticEncounterFields: 'staticEncounters.fields.update',
   loadRentalPokemonWorkflow: 'rentalPokemon.load',
   updateRentalPokemonField: 'rentalPokemon.field.update',
   loadDynamaxAdventuresWorkflow: 'dynamaxAdventures.load',
@@ -1478,6 +1480,7 @@ export const staticEncounterRecordSchema = z.strictObject({
   form: z.number().int().nonnegative(),
   gender: z.number().int(),
   genderLabel: z.string(),
+  genderOptions: z.array(staticEncounterEditableFieldOptionSchema).optional(),
   heldItem: z.string().nullable(),
   heldItemId: z.number().int().nonnegative(),
   ivs: staticEncounterStatsSchema,
@@ -3317,11 +3320,25 @@ export const updateTradePokemonFieldResponseSchema = z.strictObject({
 });
 
 export const updateStaticEncounterFieldRequestSchema = z.strictObject({
+  encounterId: z.string().optional(),
   encounterIndex: z.number().int().nonnegative(),
   field: z.string(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
   value: z.string()
+});
+
+export const staticEncounterFieldUpdateSchema = z.strictObject({
+  encounterId: z.string().optional(),
+  encounterIndex: z.number().int().nonnegative(),
+  field: z.string(),
+  value: z.string()
+});
+
+export const updateStaticEncounterFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(staticEncounterFieldUpdateSchema).min(1)
 });
 
 export const updateStaticEncounterFieldResponseSchema = z.strictObject({
@@ -4000,6 +4017,10 @@ export type UpdateStaticEncounterFieldRequest = z.infer<
 >;
 export type UpdateStaticEncounterFieldResponse = z.infer<
   typeof updateStaticEncounterFieldResponseSchema
+>;
+export type StaticEncounterFieldUpdate = z.infer<typeof staticEncounterFieldUpdateSchema>;
+export type UpdateStaticEncounterFieldsRequest = z.infer<
+  typeof updateStaticEncounterFieldsRequestSchema
 >;
 export type UpdateRentalPokemonFieldRequest = z.infer<
   typeof updateRentalPokemonFieldRequestSchema

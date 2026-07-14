@@ -1219,6 +1219,7 @@ public sealed class SwShRandomizerService
         AddWorkflowErrors(workflow.Diagnostics, diagnostics);
         var rng = DeterministicRandom.Create(generationKey, "staticEncounters");
         var edits = new List<PendingEdit>();
+        var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
 
         foreach (var encounter in workflow.Encounters.OrderBy(encounter => encounter.EncounterIndex))
         {
@@ -1228,22 +1229,35 @@ public sealed class SwShRandomizerService
             }
 
             var target = rng.Pick(pokemonTargets);
-            var recordId = SwShStaticEncountersWorkflowService.CreateEncounterRecordId(encounter.EncounterIndex);
+            var recordId = SwShStaticEncountersWorkflowService.CreateEncounterRecordId(
+                encounter.EncounterIndex,
+                encounter.EncounterKey);
             var source = Source(encounter.Provenance);
+            IReadOnlyList<ProjectFileReference> sources = personalSource is null
+                ? [source]
+                :
+                [
+                    source,
+                    new ProjectFileReference(
+                        personalSource.GraphEntry.LayeredFile is not null
+                            ? ProjectFileLayer.Layered
+                            : ProjectFileLayer.Base,
+                        personalSource.GraphEntry.RelativePath),
+                ];
             edits.Add(CreateEdit(
                 SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
                 $"Randomize static encounter {encounter.Label} species",
                 recordId,
                 SwShStaticEncountersWorkflowService.SpeciesField,
                 target.SpeciesId,
-                source));
+                sources));
             edits.Add(CreateEdit(
                 SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
                 $"Randomize static encounter {encounter.Label} form",
                 recordId,
                 SwShStaticEncountersWorkflowService.FormField,
                 target.Form,
-                source));
+                sources));
             if (encounter.CanGigantamax)
             {
                 edits.Add(CreateEdit(
@@ -1252,7 +1266,7 @@ public sealed class SwShRandomizerService
                     recordId,
                     SwShStaticEncountersWorkflowService.CanGigantamaxField,
                     0,
-                    source));
+                    sources));
             }
         }
 
@@ -2143,10 +2157,21 @@ public sealed class SwShRandomizerService
         int value,
         ProjectFileReference source)
     {
+        return CreateEdit(domain, summary, recordId, field, value, [source]);
+    }
+
+    private static PendingEdit CreateEdit(
+        string domain,
+        string summary,
+        string recordId,
+        string field,
+        int value,
+        IReadOnlyList<ProjectFileReference> sources)
+    {
         return new PendingEdit(
             domain,
             summary,
-            [source],
+            sources,
             recordId,
             field,
             value.ToString(CultureInfo.InvariantCulture));
