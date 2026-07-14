@@ -291,6 +291,7 @@ import {
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
+import { canStageAdvancedEditorAction } from './features/advanced-editors/stageActionGuard';
 import { GameDumpSection } from './features/game-dump/GameDumpSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
 import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
@@ -1519,6 +1520,12 @@ export function App({
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
   const draftPathsRef = useRef(draftPaths);
   const languageRef = useRef(language);
+  const projectScopeGenerationRef = useRef(0);
+  const projectScopeLanguageRef = useRef(language);
+  if (projectScopeLanguageRef.current !== language) {
+    projectScopeLanguageRef.current = language;
+    projectScopeGenerationRef.current += 1;
+  }
   draftPathsRef.current = draftPaths;
   languageRef.current = language;
   const createProjectPaths = useCallback(
@@ -1532,8 +1539,10 @@ export function App({
   );
   const bridge = useMemo(
     () =>
-      createGameScopedProjectBridge(unscopedBridge, () =>
-        createProjectPaths(draftPathsRef.current)
+      createGameScopedProjectBridge(
+        unscopedBridge,
+        () => createProjectPaths(draftPathsRef.current),
+        () => projectScopeGenerationRef.current
       ),
     [createProjectPaths, unscopedBridge]
   );
@@ -2018,6 +2027,7 @@ export function App({
   const [isSupportSearchRunning, setIsSupportSearchRunning] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
+  const [isEditSessionMutating, setIsEditSessionMutating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
   const [lazyLoadedWorkflowSections, setLazyLoadedWorkflowSections] = useState<
     Set<WorkbenchSection>
@@ -2064,9 +2074,15 @@ export function App({
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
   const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
+  const editSessionOperationRunRef = useRef(0);
+  const editSessionMutationGenerationRef = useRef(0);
+  const editSessionMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const editSessionMutationTokenRef = useRef(0);
+  const pendingEditSessionMutationTokensRef = useRef(new Set<number>());
   const projectValidationRunRef = useRef(0);
   const supportSearchRunRef = useRef(0);
   const updateCheckRunRef = useRef(0);
+  const modMergerReviewRevisionRef = useRef(0);
   const cancelDiscardActionRef = useRef<(() => void) | null>(null);
   const activeModMergerRetentionValue = useMemo(() => {
     if (isScarletVioletProject) {
@@ -2226,6 +2242,8 @@ export function App({
   const visibleDynamaxAdventureChangePlan = isDynamaxAdventureChangePlanCurrent
     ? dynamaxAdventureChangePlan
     : null;
+  const isEditSessionOperationBusy =
+    isSessionValidating || isChangePlanCreating || isChangePlanApplying;
   const canSaveValidatedChanges =
     pendingEditCount > 0 &&
     isEditSessionValidated &&
@@ -2234,6 +2252,7 @@ export function App({
     visibleChangePlan.writes.length > 0 &&
     !isChangePlanApplying &&
     !isChangePlanCreating &&
+    !isEditSessionMutating &&
     !isSessionValidating;
   const activeSectionHasLoadedWorkflow = getLoadedWorkflowStateForSection(activeSection, {
     bagHookWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
@@ -2571,6 +2590,13 @@ export function App({
   }, [evictWorkflowPayloads]);
 
   const clearPendingEditState = useCallback(() => {
+    editSessionOperationRunRef.current += 1;
+    editSessionMutationGenerationRef.current += 1;
+    editSessionMutationQueueRef.current = Promise.resolve();
+    pendingEditSessionMutationTokensRef.current.clear();
+    setIsEditSessionMutating(false);
+    setIsSessionValidating(false);
+    setIsChangePlanCreating(false);
     editSessionRef.current = null;
     setEditSession(null);
     setEditSessionSection(null);
@@ -2586,6 +2612,7 @@ export function App({
   }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
 
   const resetLoadedProjectState = useCallback(() => {
+    projectScopeGenerationRef.current += 1;
     svCacheWarmupRunRef.current += 1;
     setIsSvCacheWarming(false);
     setSvCacheStatus(null);
@@ -2594,8 +2621,44 @@ export function App({
     clearLoadedWorkflowData();
   }, [clearLoadedWorkflowData, clearPendingEditState, resetProjectSession]);
 
+  const handleSetDraftPath = useCallback(
+    (field: ProjectPathFieldName, value: string) => {
+      if (draftPathsRef.current[field] === value) {
+        return;
+      }
+
+      projectValidationRunRef.current += 1;
+      supportSearchRunRef.current += 1;
+      setIsSupportSearchPermissionOpen(false);
+      setIsSupportSearchRunning(false);
+      setWorkProgress(null);
+      if (desktopServices.isAvailable && isSupportSearchRunning) {
+        void desktopServices.cancelSupportFileSearch().catch(() => undefined);
+      }
+      resetLoadedProjectState();
+      setBridgeDiagnostics([]);
+      setDraftPath(field, value);
+    },
+    [
+      desktopServices.cancelSupportFileSearch,
+      desktopServices.isAvailable,
+      isSupportSearchRunning,
+      resetLoadedProjectState,
+      setDraftPath
+    ]
+  );
+
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
+      if (
+        isSessionValidating ||
+        isChangePlanCreating ||
+        isChangePlanApplying ||
+        pendingEditSessionMutationTokensRef.current.size > 0
+      ) {
+        return;
+      }
+
       cancelDiscardActionRef.current = onDiscard ?? null;
 
       if (editSession) {
@@ -2606,7 +2669,13 @@ export function App({
       onDiscard?.();
       clearPendingEditState();
     },
-    [clearPendingEditState, editSession]
+    [
+      clearPendingEditState,
+      editSession,
+      isChangePlanApplying,
+      isChangePlanCreating,
+      isSessionValidating
+    ]
   );
 
   const requestEditorExit = useCallback(
@@ -2632,6 +2701,10 @@ export function App({
   const handleNavigateSection = useCallback(
     (destination: WorkbenchSection) => {
       if (destination === activeSection) {
+        return;
+      }
+
+      if (isEditSessionOperationBusy) {
         return;
       }
 
@@ -2695,6 +2768,7 @@ export function App({
       editSession,
       editSessionCanBeSharedAcrossNormalEditors,
       editSessionSection,
+      isEditSessionOperationBusy,
       selectedGame,
       setActiveSection
     ]
@@ -2707,6 +2781,10 @@ export function App({
   const handleConfirmExitDiscard = useCallback(async () => {
     const prompt = exitPrompt;
     if (!prompt) {
+      return;
+    }
+
+    if (isSessionValidating || isChangePlanCreating || isChangePlanApplying) {
       return;
     }
 
@@ -2769,6 +2847,9 @@ export function App({
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
     exitPrompt,
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isSessionValidating,
     setActiveSection,
     setBridgeDiagnostics
   ]);
@@ -3117,6 +3198,7 @@ export function App({
   const handleValidateProject = async () => {
     const runId = projectValidationRunRef.current + 1;
     projectValidationRunRef.current = runId;
+    projectScopeGenerationRef.current += 1;
     setProjectStatus('validating');
     setBridgeDiagnostics([]);
 
@@ -3141,14 +3223,14 @@ export function App({
       }
       void startSvCacheWarmup(paths, response.health);
     } catch (error) {
-      if (
-        projectValidationRunRef.current !== runId ||
-        isStaleProjectScopeError(error)
-      ) {
+      if (projectValidationRunRef.current !== runId) {
         return;
       }
 
       setProjectStatus('idle');
+      if (isStaleProjectScopeError(error)) {
+        return;
+      }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     }
   };
@@ -3210,7 +3292,7 @@ export function App({
       });
 
       if (selectedPath) {
-        setDraftPath(pathField.field, selectedPath);
+        handleSetDraftPath(pathField.field, selectedPath);
       }
     } catch (error) {
       setBridgeDiagnostics(toDesktopDiagnostics(error, `Could not choose ${pathField.label}.`));
@@ -3271,6 +3353,9 @@ export function App({
       return;
     }
 
+    const runId = projectValidationRunRef.current + 1;
+    projectValidationRunRef.current = runId;
+    projectScopeGenerationRef.current += 1;
     setIsOutputRootCreating(true);
     setProjectStatus('validating');
     setBridgeDiagnostics([]);
@@ -3281,6 +3366,9 @@ export function App({
         outputRootPath: null
       };
       const validationResponse = await bridge.validateProject({ paths: validationPaths });
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
       setProjectHealth(validationResponse.health);
 
       if (!validationResponse.health.canOpenReadOnlyWorkflows) {
@@ -3295,13 +3383,21 @@ export function App({
       }
 
       await desktopServices.createDirectory(outputRootPath);
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
+      resetLoadedProjectState();
       setDraftPath('outputRootPath', outputRootPath);
+      setProjectStatus('validating');
 
       const nextPaths = {
         ...validationPaths,
         outputRootPath
       };
       const nextResponse = await bridge.validateProject({ paths: nextPaths });
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
       if (nextResponse.health.canOpenEditableWorkflows) {
         rememberValidatedProjectPaths({
           ...draftPaths,
@@ -3310,10 +3406,23 @@ export function App({
       }
       resetLoadedProjectState();
       setProjectHealth(nextResponse.health);
-      await refreshWorkflows(nextPaths, nextResponse.health.canOpenEditableWorkflows);
+      await refreshWorkflows(
+        nextPaths,
+        nextResponse.health.canOpenEditableWorkflows,
+        () => projectValidationRunRef.current === runId
+      );
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
       void startSvCacheWarmup(nextPaths, nextResponse.health);
     } catch (error) {
+      if (projectValidationRunRef.current !== runId) {
+        return;
+      }
       setProjectStatus('idle');
+      if (isStaleProjectScopeError(error)) {
+        return;
+      }
       setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not create the output root folder.'));
     } finally {
       setIsOutputRootCreating(false);
@@ -3399,11 +3508,18 @@ export function App({
         [supportFolderField]: folderPath
       };
       const paths = createProjectPaths(nextDraftPaths);
+      const projectRunId = projectValidationRunRef.current + 1;
+      projectValidationRunRef.current = projectRunId;
+      projectScopeGenerationRef.current += 1;
+      resetLoadedProjectState();
       setDraftPath(supportFolderField, folderPath);
       setProjectStatus('validating');
 
       const response = await bridge.validateProject({ paths });
-      if (supportSearchRunRef.current !== runId) {
+      if (
+        supportSearchRunRef.current !== runId ||
+        projectValidationRunRef.current !== projectRunId
+      ) {
         return;
       }
       if (response.health.canOpenEditableWorkflows) {
@@ -3414,9 +3530,14 @@ export function App({
       await refreshWorkflows(
         paths,
         response.health.canOpenEditableWorkflows,
-        () => supportSearchRunRef.current === runId
+        () =>
+          supportSearchRunRef.current === runId &&
+          projectValidationRunRef.current === projectRunId
       );
-      if (supportSearchRunRef.current !== runId) {
+      if (
+        supportSearchRunRef.current !== runId ||
+        projectValidationRunRef.current !== projectRunId
+      ) {
         return;
       }
       void startSvCacheWarmup(paths, response.health);
@@ -4941,6 +5062,7 @@ export function App({
   };
 
   const resetModMergerPlan = () => {
+    modMergerReviewRevisionRef.current += 1;
     setModMergerPreview(null);
     setModMergerApplyResult(null);
     setModMergerResolutions({});
@@ -5318,6 +5440,7 @@ export function App({
       return;
     }
 
+    const reviewRevision = modMergerReviewRevisionRef.current;
     setIsModMergerStaging(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
@@ -5338,6 +5461,9 @@ export function App({
         selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
         selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
       });
+      if (modMergerReviewRevisionRef.current !== reviewRevision) {
+        return;
+      }
       setModMergerWorkflow(response.workflow);
       setModMergerPreview(response.preview);
     } catch (error) {
@@ -5352,10 +5478,28 @@ export function App({
     conflictId: string,
     source: ModMergerConflictResolution['source']
   ) => {
+    const currentSource =
+      modMergerResolutions[conflictId] ??
+      modMergerPreview?.conflicts.find((conflict) => conflict.conflictId === conflictId)?.resolution;
+    if (currentSource === source) {
+      return;
+    }
+
+    modMergerReviewRevisionRef.current += 1;
     setModMergerResolutions((current) => ({
       ...current,
       [conflictId]: source
     }));
+    setModMergerPreview((current) =>
+      current
+        ? {
+            ...current,
+            canApply: false,
+            reviewToken: ''
+          }
+        : current
+    );
+    setModMergerApplyResult(null);
   };
 
   const handleApplyModMerge = async () => {
@@ -5445,6 +5589,10 @@ export function App({
       return;
     }
 
+    if (!modMergerPreview?.canApply || !modMergerPreview.reviewToken) {
+      return;
+    }
+
     setIsModMergerApplying(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
@@ -5462,6 +5610,7 @@ export function App({
         modDirectory1: modMergerDirectory1.trim() || null,
         modDirectory2: modMergerDirectory2.trim() || null,
         paths,
+        reviewToken: modMergerPreview.reviewToken,
         resolutions: getModMergerResolutionList(),
         selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
         selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
@@ -5837,7 +5986,12 @@ export function App({
 
   const handleRemovePendingEdit = useCallback(
     (editIndex: number) => {
-      if (!editSession || editIndex < 0 || editIndex >= editSession.pendingEdits.length) {
+      if (
+        pendingEditSessionMutationTokensRef.current.size > 0 ||
+        !editSession ||
+        editIndex < 0 ||
+        editIndex >= editSession.pendingEdits.length
+      ) {
         return;
       }
 
@@ -5874,6 +6028,50 @@ export function App({
     ]
   );
 
+  const runEditSessionMutation = async <T extends { session: EditSession },>(
+    mutation: (session: EditSession | null) => Promise<T>,
+    commit: (response: T) => void
+  ) => {
+    if (isEditSessionOperationBusy) {
+      return null;
+    }
+
+    const mutationToken = editSessionMutationTokenRef.current + 1;
+    editSessionMutationTokenRef.current = mutationToken;
+    pendingEditSessionMutationTokensRef.current.add(mutationToken);
+    setIsEditSessionMutating(true);
+    const generation = editSessionMutationGenerationRef.current;
+    const queuedMutation = editSessionMutationQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (editSessionMutationGenerationRef.current !== generation) {
+          return null;
+        }
+
+        const response = await mutation(editSessionRef.current);
+        if (editSessionMutationGenerationRef.current !== generation) {
+          return null;
+        }
+
+        editSessionRef.current = response.session;
+        setEditSession(response.session);
+        commit(response);
+        return response;
+      });
+
+    editSessionMutationQueueRef.current = queuedMutation.then(
+      () => undefined,
+      () => undefined
+    );
+
+    try {
+      return await queuedMutation;
+    } finally {
+      pendingEditSessionMutationTokensRef.current.delete(mutationToken);
+      setIsEditSessionMutating(pendingEditSessionMutationTokensRef.current.size > 0);
+    }
+  };
+
   const handleUpdateItemFields = async (
     itemId: number,
     changes: Array<{ field: string; value: string }>
@@ -5887,44 +6085,54 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = itemsWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = itemsWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateItemFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            itemId,
-            value: change.value
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updateItemField({
-            field: change.field,
-            itemId,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            value: change.value
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateItemFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: changes.map((change) => ({
+                field: change.field,
+                itemId,
+                value: change.value
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const change of changes) {
+              const updateResponse = await bridge.updateItemField({
+                field: change.field,
+                itemId,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                value: change.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return {
+            diagnostics: nextDiagnostics,
+            session: nextSession!,
+            workflow: nextWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setItemsWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setItemsWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -5939,16 +6147,20 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updatePokemonField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        personalId,
-        session: editSession,
-        value
-      });
-      setPokemonWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
+      await runEditSessionMutation(
+        (session) =>
+          bridge.updatePokemonField({
+            field,
+            paths: createProjectPaths(draftPaths),
+            personalId,
+            session,
+            value
+          }),
+        (response) => {
+          setPokemonWorkflow(response.workflow);
+          setEditValidationDiagnostics(response.diagnostics);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -5971,80 +6183,90 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = pokemonWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = pokemonWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (
-        changes.length > 0 &&
-        (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame))
-      ) {
-        const response = await bridge.updatePokemonFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            personalId,
-            value: change.value
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updatePokemonField({
-            field: change.field,
-            paths: createProjectPaths(draftPaths),
-            personalId,
-            session: nextSession,
-            value: change.value
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (
+            changes.length > 0 &&
+            (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame))
+          ) {
+            const updateResponse = await bridge.updatePokemonFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: changes.map((change) => ({
+                field: change.field,
+                personalId,
+                value: change.value
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const change of changes) {
+              const updateResponse = await bridge.updatePokemonField({
+                field: change.field,
+                paths: createProjectPaths(draftPaths),
+                personalId,
+                session: nextSession,
+                value: change.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          for (const evolutionChange of evolutionChanges) {
+            const updateResponse = await bridge.updatePokemonEvolution({
+              action: evolutionChange.action,
+              argument: evolutionChange.argument,
+              form: evolutionChange.form,
+              level: evolutionChange.level,
+              method: evolutionChange.method,
+              paths: createProjectPaths(draftPaths),
+              personalId,
+              session: nextSession,
+              slot: evolutionChange.slot,
+              species: evolutionChange.species
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
+
+          for (const learnsetChange of learnsetChanges) {
+            const updateResponse = await bridge.updatePokemonLearnset({
+              action: learnsetChange.action,
+              level: learnsetChange.level,
+              moveId: learnsetChange.moveId,
+              paths: createProjectPaths(draftPaths),
+              personalId,
+              session: nextSession,
+              slot: learnsetChange.slot
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
+
+          return {
+            diagnostics: nextDiagnostics,
+            session: nextSession!,
+            workflow: nextWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setPokemonWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      for (const evolutionChange of evolutionChanges) {
-        const response = await bridge.updatePokemonEvolution({
-          action: evolutionChange.action,
-          argument: evolutionChange.argument,
-          form: evolutionChange.form,
-          level: evolutionChange.level,
-          method: evolutionChange.method,
-          paths: createProjectPaths(draftPaths),
-          personalId,
-          session: nextSession,
-          slot: evolutionChange.slot,
-          species: evolutionChange.species
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
-
-      for (const learnsetChange of learnsetChanges) {
-        const response = await bridge.updatePokemonLearnset({
-          action: learnsetChange.action,
-          level: learnsetChange.level,
-          moveId: learnsetChange.moveId,
-          paths: createProjectPaths(draftPaths),
-          personalId,
-          session: nextSession,
-          slot: learnsetChange.slot
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
-
-      if (nextWorkflow) {
-        setPokemonWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6065,18 +6287,22 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updatePokemonLearnset({
-        action,
-        level,
-        moveId,
-        paths: createProjectPaths(draftPaths),
-        personalId,
-        session: editSession,
-        slot
-      });
-      setPokemonWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
+      await runEditSessionMutation(
+        (session) =>
+          bridge.updatePokemonLearnset({
+            action,
+            level,
+            moveId,
+            paths: createProjectPaths(draftPaths),
+            personalId,
+            session,
+            slot
+          }),
+        (response) => {
+          setPokemonWorkflow(response.workflow);
+          setEditValidationDiagnostics(response.diagnostics);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -6099,21 +6325,25 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updatePokemonEvolution({
-        action,
-        argument,
-        form,
-        level,
-        method,
-        paths: createProjectPaths(draftPaths),
-        personalId,
-        session: editSession,
-        slot,
-        species
-      });
-      setPokemonWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
+      await runEditSessionMutation(
+        (session) =>
+          bridge.updatePokemonEvolution({
+            action,
+            argument,
+            form,
+            level,
+            method,
+            paths: createProjectPaths(draftPaths),
+            personalId,
+            session,
+            slot,
+            species
+          }),
+        (response) => {
+          setPokemonWorkflow(response.workflow);
+          setEditValidationDiagnostics(response.diagnostics);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -6134,44 +6364,54 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = movesWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = movesWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateMoveFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            moveId,
-            value: change.value
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updateMoveField({
-            field: change.field,
-            moveId,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            value: change.value
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateMoveFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: changes.map((change) => ({
+                field: change.field,
+                moveId,
+                value: change.value
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const change of changes) {
+              const updateResponse = await bridge.updateMoveField({
+                field: change.field,
+                moveId,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                value: change.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return {
+            diagnostics: nextDiagnostics,
+            session: nextSession!,
+            workflow: nextWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setMovesWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setMovesWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6186,17 +6426,21 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateTextEntry({
-        paths: createProjectPaths(draftPaths),
-        query: createTextWorkflowQuery(selectedGame, textSearchText),
-        session: editSession,
-        textKey,
-        value
-      });
-      setTextWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-      return true;
+      const response = await runEditSessionMutation(
+        (session) =>
+          bridge.updateTextEntry({
+            paths: createProjectPaths(draftPaths),
+            query: createTextWorkflowQuery(selectedGame, textSearchText),
+            session,
+            textKey,
+            value
+          }),
+        (updateResponse) => {
+          setTextWorkflow(updateResponse.workflow);
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6216,17 +6460,21 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateTrainerField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        slot,
-        trainerId,
-        value
-      });
-      setTrainersWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
+      await runEditSessionMutation(
+        (session) =>
+          bridge.updateTrainerField({
+            field,
+            paths: createProjectPaths(draftPaths),
+            session,
+            slot,
+            trainerId,
+            value
+          }),
+        (response) => {
+          setTrainersWorkflow(response.workflow);
+          setEditValidationDiagnostics(response.diagnostics);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -6248,46 +6496,56 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = trainersWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = trainersWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateTrainerFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            slot,
-            trainerId,
-            value: change.value
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updateTrainerField({
-            field: change.field,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            slot,
-            trainerId,
-            value: change.value
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateTrainerFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: changes.map((change) => ({
+                field: change.field,
+                slot,
+                trainerId,
+                value: change.value
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const change of changes) {
+              const updateResponse = await bridge.updateTrainerField({
+                field: change.field,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                slot,
+                trainerId,
+                value: change.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return {
+            diagnostics: nextDiagnostics,
+            session: nextSession!,
+            workflow: nextWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setTrainersWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setTrainersWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6309,44 +6567,50 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = giftPokemonWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = giftPokemonWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateGiftPokemonFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            giftIndex,
-            value: change.value
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updateGiftPokemonField({
-            field: change.field,
-            giftIndex,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            value: change.value
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateGiftPokemonFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: changes.map((change) => ({
+                field: change.field,
+                giftIndex,
+                value: change.value
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const change of changes) {
+              const updateResponse = await bridge.updateGiftPokemonField({
+                field: change.field,
+                giftIndex,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                value: change.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setGiftPokemonWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setGiftPokemonWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6365,44 +6629,50 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = giftPokemonWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = giftPokemonWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateGiftPokemonFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: giftIndexes.map((giftIndex) => ({
-            field: giftShinyLockFieldName,
-            giftIndex,
-            value: '0'
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const giftIndex of giftIndexes) {
-          const response = await bridge.updateGiftPokemonField({
-            field: giftShinyLockFieldName,
-            giftIndex,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            value: '0'
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateGiftPokemonFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: giftIndexes.map((giftIndex) => ({
+                field: giftShinyLockFieldName,
+                giftIndex,
+                value: '0'
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const giftIndex of giftIndexes) {
+              const updateResponse = await bridge.updateGiftPokemonField({
+                field: giftShinyLockFieldName,
+                giftIndex,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                value: '0'
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setGiftPokemonWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setGiftPokemonWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6424,44 +6694,50 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = tradePokemonWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = tradePokemonWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateTradePokemonFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: changes.map((change) => ({
-            field: change.field,
-            tradeIndex,
-            value: change.value
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const change of changes) {
-          const response = await bridge.updateTradePokemonField({
-            field: change.field,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            tradeIndex,
-            value: change.value
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateTradePokemonFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: changes.map((change) => ({
+                field: change.field,
+                tradeIndex,
+                value: change.value
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const change of changes) {
+              const updateResponse = await bridge.updateTradePokemonField({
+                field: change.field,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                tradeIndex,
+                value: change.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setTradePokemonWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setTradePokemonWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6480,44 +6756,50 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = tradePokemonWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = tradePokemonWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-        const response = await bridge.updateTradePokemonFields({
-          paths: createProjectPaths(draftPaths),
-          session: editSession,
-          updates: tradeIndexes.map((tradeIndex) => ({
-            field: giftShinyLockFieldName,
-            tradeIndex,
-            value: '0'
-          }))
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      } else {
-        for (const tradeIndex of tradeIndexes) {
-          const response = await bridge.updateTradePokemonField({
-            field: giftShinyLockFieldName,
-            paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            tradeIndex,
-            value: '0'
-          });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
+          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
+            const updateResponse = await bridge.updateTradePokemonFields({
+              paths: createProjectPaths(draftPaths),
+              session,
+              updates: tradeIndexes.map((tradeIndex) => ({
+                field: giftShinyLockFieldName,
+                tradeIndex,
+                value: '0'
+              }))
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          } else {
+            for (const tradeIndex of tradeIndexes) {
+              const updateResponse = await bridge.updateTradePokemonField({
+                field: giftShinyLockFieldName,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                tradeIndex,
+                value: '0'
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = updateResponse.diagnostics;
+            }
+          }
+
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setTradePokemonWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
-      }
-
-      if (nextWorkflow) {
-        setTradePokemonWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6539,29 +6821,35 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = staticEncountersWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = staticEncountersWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateStaticEncounterField({
-          encounterIndex,
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of changes) {
+            const updateResponse = await bridge.updateStaticEncounterField({
+              encounterIndex,
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              value: change.value
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setStaticEncountersWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setStaticEncountersWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6580,29 +6868,35 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = staticEncountersWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = staticEncountersWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const encounterIndex of encounterIndexes) {
-        const response = await bridge.updateStaticEncounterField({
-          encounterIndex,
-          field: giftShinyLockFieldName,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          value: '0'
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const encounterIndex of encounterIndexes) {
+            const updateResponse = await bridge.updateStaticEncounterField({
+              encounterIndex,
+              field: giftShinyLockFieldName,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              value: '0'
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setStaticEncountersWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setStaticEncountersWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6624,29 +6918,35 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = rentalPokemonWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = rentalPokemonWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateRentalPokemonField({
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          rentalIndex,
-          session: nextSession,
-          value: change.value
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of changes) {
+            const updateResponse = await bridge.updateRentalPokemonField({
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              rentalIndex,
+              session: nextSession,
+              value: change.value
+            });
+            nextSession = updateResponse.session;
+            nextWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setRentalPokemonWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setRentalPokemonWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6751,9 +7051,17 @@ export function App({
   };
 
   const handleValidateDynamaxAdventureEditSession = async () => {
-    if (!editSession) {
+    if (!editSession || pendingEditSessionMutationTokensRef.current.size > 0) {
       return;
     }
+
+    const runId = editSessionOperationRunRef.current + 1;
+    editSessionOperationRunRef.current = runId;
+    const initialSessionSignature = getEditSessionSignature(editSession);
+    let operationSessionSignature = initialSessionSignature;
+    const isCurrentOperation = () =>
+      editSessionOperationRunRef.current === runId &&
+      getEditSessionSignature(editSessionRef.current) === operationSessionSignature;
 
     setIsSessionValidating(true);
     setIsChangePlanCreating(true);
@@ -6774,14 +7082,19 @@ export function App({
         paths: createProjectPaths(draftPaths),
         session: editSession
       });
+      if (!isCurrentOperation()) {
+        return;
+      }
       const nextSessionSignature = getEditSessionSignature(response.session);
-      setEditSession(response.session);
-      setEditSessionSection(
-        response.session.pendingEdits.length > 0 ? 'dynamaxAdventures' : null
-      );
-      setDynamaxAdventurePanelDiagnostics(response.diagnostics);
 
       if (!response.isValid || nextSessionSignature === null) {
+        operationSessionSignature = nextSessionSignature;
+        editSessionRef.current = response.session;
+        setEditSession(response.session);
+        setEditSessionSection(
+          response.session.pendingEdits.length > 0 ? 'dynamaxAdventures' : null
+        );
+        setDynamaxAdventurePanelDiagnostics(response.diagnostics);
         return;
       }
 
@@ -6789,13 +7102,28 @@ export function App({
         paths: createProjectPaths(draftPaths),
         session: response.session
       });
+      if (!isCurrentOperation()) {
+        return;
+      }
+      operationSessionSignature = nextSessionSignature;
+      editSessionRef.current = response.session;
+      setEditSession(response.session);
+      setEditSessionSection(
+        response.session.pendingEdits.length > 0 ? 'dynamaxAdventures' : null
+      );
+      setDynamaxAdventurePanelDiagnostics(response.diagnostics);
       setDynamaxAdventureChangePlan(planResponse.changePlan);
       setDynamaxAdventureChangePlanSessionSignature(nextSessionSignature);
     } catch (error) {
+      if (!isCurrentOperation()) {
+        return;
+      }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      setIsSessionValidating(false);
-      setIsChangePlanCreating(false);
+      if (editSessionOperationRunRef.current === runId) {
+        setIsSessionValidating(false);
+        setIsChangePlanCreating(false);
+      }
     }
   };
 
@@ -6882,64 +7210,76 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextShopsWorkflow = shopsWorkflow;
-      let nextItemsWorkflow = itemsWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextShopsWorkflow = shopsWorkflow;
+          let nextItemsWorkflow = itemsWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of rowFieldChanges) {
-        const response = await bridge.updateShopInventoryItem({
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          rowId: change.rowId,
-          session: nextSession,
-          shopId,
-          slot: change.slot,
-          value: change.value
-        });
-        nextSession = response.session;
-        nextShopsWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of rowFieldChanges) {
+            const updateResponse = await bridge.updateShopInventoryItem({
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              rowId: change.rowId,
+              session: nextSession,
+              shopId,
+              slot: change.slot,
+              value: change.value
+            });
+            nextSession = updateResponse.session;
+            nextShopsWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      for (const change of inventoryChanges) {
-        const response = await bridge.updateShopInventoryItem({
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          rowId: change.rowId,
-          session: nextSession,
-          shopId,
-          slot: change.slot,
-          value: change.value
-        });
-        nextSession = response.session;
-        nextShopsWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of inventoryChanges) {
+            const updateResponse = await bridge.updateShopInventoryItem({
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              rowId: change.rowId,
+              session: nextSession,
+              shopId,
+              slot: change.slot,
+              value: change.value
+            });
+            nextSession = updateResponse.session;
+            nextShopsWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      for (const change of priceChanges) {
-        const response = await bridge.updateItemField({
-          field: buyPriceFieldName,
-          itemId: change.itemId,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
-        });
-        nextSession = response.session;
-        nextItemsWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of priceChanges) {
+            const updateResponse = await bridge.updateItemField({
+              field: buyPriceFieldName,
+              itemId: change.itemId,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              value: change.value
+            });
+            nextSession = updateResponse.session;
+            nextItemsWorkflow = updateResponse.workflow;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextItemsWorkflow) {
-        setItemsWorkflow(nextItemsWorkflow);
-      }
-
-      if (nextShopsWorkflow) {
-        setShopsWorkflow(overlayShopWorkflowItemPrices(nextShopsWorkflow, priceChanges));
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return {
+            diagnostics: nextDiagnostics,
+            itemsWorkflow: nextItemsWorkflow,
+            session: nextSession!,
+            shopsWorkflow: nextShopsWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.itemsWorkflow) {
+            setItemsWorkflow(updateResponse.itemsWorkflow);
+          }
+          if (updateResponse.shopsWorkflow) {
+            setShopsWorkflow(
+              overlayShopWorkflowItemPrices(updateResponse.shopsWorkflow, priceChanges)
+            );
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6972,20 +7312,27 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateEncounterSlotFields({
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        updates: changes.map((change) => ({
-          field: change.field,
-          slot,
-          tableId,
-          value: change.value
-        }))
-      });
-      setEncountersWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-      return !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+      const response = await runEditSessionMutation(
+        (session) =>
+          bridge.updateEncounterSlotFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
+              field: change.field,
+              slot,
+              tableId,
+              value: change.value
+            }))
+          }),
+        (updateResponse) => {
+          setEncountersWorkflow(updateResponse.workflow);
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return (
+        response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7026,31 +7373,33 @@ export function App({
         50
       ));
 
-      const response = await bridge.updateEncounterSlotFields({
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        updates: nonEmptyUpdates.flatMap((update) =>
-          update.changes.map((change) => ({
-            field: change.field,
-            slot: update.slot,
-            tableId: update.tableId,
-            value: change.value
-          }))
-        )
-      });
-
-      setWorkProgress(createDeterminateWorkProgress(
-        'Applying Encounter Copy',
-        'Refreshing encounter tables',
-        encounterAreaCopyProgressSteps,
-        2,
-        100
-      ));
-
-      setEncountersWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-      return true;
+      const response = await runEditSessionMutation(
+        (session) =>
+          bridge.updateEncounterSlotFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: nonEmptyUpdates.flatMap((update) =>
+              update.changes.map((change) => ({
+                field: change.field,
+                slot: update.slot,
+                tableId: update.tableId,
+                value: change.value
+              }))
+            )
+          }),
+        (updateResponse) => {
+          setWorkProgress(createDeterminateWorkProgress(
+            'Applying Encounter Copy',
+            'Refreshing encounter tables',
+            encounterAreaCopyProgressSteps,
+            2,
+            100
+          ));
+          setEncountersWorkflow(updateResponse.workflow);
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7074,30 +7423,36 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = raidRewardsWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = raidRewardsWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateRaidRewardField({
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          slot,
-          tableId,
-          value: change.value
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of changes) {
+            const updateResponse = await bridge.updateRaidRewardField({
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              slot,
+              tableId,
+              value: change.value
+            });
+            nextWorkflow = updateResponse.workflow;
+            nextSession = updateResponse.session;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setRaidRewardsWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setRaidRewardsWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7120,30 +7475,36 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = raidBonusRewardsWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = raidBonusRewardsWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateRaidBonusRewardField({
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          slot,
-          tableId,
-          value: change.value
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of changes) {
+            const updateResponse = await bridge.updateRaidBonusRewardField({
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              slot,
+              tableId,
+              value: change.value
+            });
+            nextWorkflow = updateResponse.workflow;
+            nextSession = updateResponse.session;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setRaidBonusRewardsWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setRaidBonusRewardsWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7166,30 +7527,36 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = raidBattlesWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = raidBattlesWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateRaidBattleSlotField({
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          slot,
-          tableId,
-          value: change.value
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of changes) {
+            const updateResponse = await bridge.updateRaidBattleSlotField({
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              slot,
+              tableId,
+              value: change.value
+            });
+            nextWorkflow = updateResponse.workflow;
+            nextSession = updateResponse.session;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setRaidBattlesWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setRaidBattlesWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7208,17 +7575,21 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateTeraRaidField({
-        field,
-        paths: createProjectPaths(draftPaths),
-        recordId,
-        session: editSession,
-        value
-      });
-      setTeraRaidsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-      return true;
+      const response = await runEditSessionMutation(
+        (session) =>
+          bridge.updateTeraRaidField({
+            field,
+            paths: createProjectPaths(draftPaths),
+            recordId,
+            session,
+            value
+          }),
+        (updateResponse) => {
+          setTeraRaidsWorkflow(updateResponse.workflow);
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7240,19 +7611,23 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateTeraRaidFields({
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        updates: changes.map((change) => ({
-          field: change.field,
-          recordId,
-          value: change.value
-        }))
-      });
-      setTeraRaidsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-      return true;
+      const response = await runEditSessionMutation(
+        (session) =>
+          bridge.updateTeraRaidFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
+              field: change.field,
+              recordId,
+              value: change.value
+            }))
+          }),
+        (updateResponse) => {
+          setTeraRaidsWorkflow(updateResponse.workflow);
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7274,63 +7649,76 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updatePlacementObjectFields({
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        updates: changes.map((change) => ({
-          field: change.field,
-          objectId,
-          value: change.value
-        }))
-      });
-      const stagedObject = response.workflow?.objects.find(
-        (placedObject) => placedObject.objectId === objectId
-      ) ?? response.updatedObjects?.find(
-        (placedObject) => placedObject.objectId === objectId
-      );
-      const stagedAllChanges = stagedObject !== undefined &&
-        placementObjectChangesAreStaged(response.session, stagedObject, changes);
-      const nextDiagnostics: ApiDiagnostic[] = stagedAllChanges
-        ? response.diagnostics
-        : [
-            ...response.diagnostics,
-            {
-              domain: 'workflow.placement',
-              message: 'Placement changes were not staged.',
-              severity: 'error'
-            }
-          ];
-      const hasErrors = nextDiagnostics.some(
-        (diagnostic) => diagnostic.severity === 'error'
-      );
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.updatePlacementObjectFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
+              field: change.field,
+              objectId,
+              value: change.value
+            }))
+          });
+          const stagedObject =
+            updateResponse.workflow?.objects.find(
+              (placedObject) => placedObject.objectId === objectId
+            ) ??
+            updateResponse.updatedObjects?.find(
+              (placedObject) => placedObject.objectId === objectId
+            );
+          const stagedAllChanges =
+            stagedObject !== undefined &&
+            placementObjectChangesAreStaged(updateResponse.session, stagedObject, changes);
+          const diagnostics: ApiDiagnostic[] = stagedAllChanges
+            ? updateResponse.diagnostics
+            : [
+                ...updateResponse.diagnostics,
+                {
+                  domain: 'workflow.placement',
+                  message: 'Placement changes were not staged.',
+                  severity: 'error'
+                }
+              ];
+          const hasErrors = diagnostics.some((diagnostic) => diagnostic.severity === 'error');
 
-      setEditValidationDiagnostics(nextDiagnostics);
-      if (hasErrors) {
-        return false;
-      }
+          let nextWorkflow = updateResponse.workflow ?? placementWorkflow;
+          if (
+            !hasErrors &&
+            nextWorkflow &&
+            updateResponse.updatedObjects &&
+            updateResponse.updatedObjects.length > 0
+          ) {
+            const updatesById = new Map(
+              updateResponse.updatedObjects.map((placedObject) => [
+                placedObject.objectId,
+                placedObject
+              ])
+            );
+            nextWorkflow = {
+              ...nextWorkflow,
+              objects: nextWorkflow.objects.map((placedObject) => {
+                const update = updatesById.get(placedObject.objectId);
+                return update ? mergePlacementObjectUpdate(placedObject, update) : placedObject;
+              })
+            };
+          }
 
-      let nextWorkflow = response.workflow ?? placementWorkflow;
-      if (nextWorkflow && response.updatedObjects && response.updatedObjects.length > 0) {
-        const updatesById = new Map(
-          response.updatedObjects.map((placedObject) => [placedObject.objectId, placedObject])
-        );
-        nextWorkflow = {
-          ...nextWorkflow,
-          objects: nextWorkflow.objects.map(
-            (placedObject) => {
-              const update = updatesById.get(placedObject.objectId);
-              return update
-                ? mergePlacementObjectUpdate(placedObject, update)
-                : placedObject;
-            }
-          )
-        };
-      }
-      if (nextWorkflow) {
-        setPlacementWorkflow(nextWorkflow);
-      }
-      setEditSession(response.session);
-      return true;
+          return {
+            diagnostics,
+            hasErrors,
+            session: hasErrors ? session! : updateResponse.session,
+            workflow: nextWorkflow
+          };
+        },
+        (updateResponse) => {
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+          if (!updateResponse.hasErrors && updateResponse.workflow) {
+            setPlacementWorkflow(updateResponse.workflow);
+          }
+        }
+      );
+      return response !== null && !response.hasErrors;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7352,29 +7740,35 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = behaviorWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
+      const response = await runEditSessionMutation(
+        async (session) => {
+          let nextSession = session;
+          let nextWorkflow = behaviorWorkflow;
+          let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateBehaviorEntryField({
-          entryId,
-          field: change.field,
-          paths: createProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
-        });
-        nextWorkflow = response.workflow;
-        nextSession = response.session;
-        nextDiagnostics = response.diagnostics;
-      }
+          for (const change of changes) {
+            const updateResponse = await bridge.updateBehaviorEntryField({
+              entryId,
+              field: change.field,
+              paths: createProjectPaths(draftPaths),
+              session: nextSession,
+              value: change.value
+            });
+            nextWorkflow = updateResponse.workflow;
+            nextSession = updateResponse.session;
+            nextDiagnostics = updateResponse.diagnostics;
+          }
 
-      if (nextWorkflow) {
-        setBehaviorWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-      return true;
+          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+        },
+        (updateResponse) => {
+          if (updateResponse.workflow) {
+            setBehaviorWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7384,9 +7778,17 @@ export function App({
   };
 
   const handleValidateEditSession = async () => {
-    if (!editSession) {
+    if (!editSession || pendingEditSessionMutationTokensRef.current.size > 0) {
       return;
     }
+
+    const runId = editSessionOperationRunRef.current + 1;
+    editSessionOperationRunRef.current = runId;
+    const initialSessionSignature = getEditSessionSignature(editSession);
+    let operationSessionSignature = initialSessionSignature;
+    const isCurrentOperation = () =>
+      editSessionOperationRunRef.current === runId &&
+      getEditSessionSignature(editSessionRef.current) === operationSessionSignature;
 
     setIsSessionValidating(true);
     setIsChangePlanCreating(true);
@@ -7403,9 +7805,14 @@ export function App({
         paths: createProjectPaths(draftPaths),
         session: editSession
       });
+      if (!isCurrentOperation()) {
+        return;
+      }
       const nextSessionSignature = getEditSessionSignature(response.session);
 
       if (!response.isValid || nextSessionSignature === null) {
+        operationSessionSignature = nextSessionSignature;
+        editSessionRef.current = response.session;
         setEditSession(response.session);
         setEditValidationDiagnostics(response.diagnostics);
         return;
@@ -7415,23 +7822,44 @@ export function App({
         paths: createProjectPaths(draftPaths),
         session: response.session
       });
+      if (!isCurrentOperation()) {
+        return;
+      }
+      operationSessionSignature = nextSessionSignature;
+      editSessionRef.current = response.session;
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
       setValidatedEditSessionSignature(nextSessionSignature);
       setChangePlan(planResponse.changePlan);
       setChangePlanSessionSignature(nextSessionSignature);
     } catch (error) {
+      if (!isCurrentOperation()) {
+        return;
+      }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      setIsSessionValidating(false);
-      setIsChangePlanCreating(false);
+      if (editSessionOperationRunRef.current === runId) {
+        setIsSessionValidating(false);
+        setIsChangePlanCreating(false);
+      }
     }
   };
 
   const handleCreateScopedEditorChangePlan = async (section: WorkbenchSection) => {
-    if (!editSession || !scopedEditorPanelSectionIds.has(section)) {
+    if (
+      !editSession ||
+      pendingEditSessionMutationTokensRef.current.size > 0 ||
+      !scopedEditorPanelSectionIds.has(section)
+    ) {
       return;
     }
+
+    const runId = editSessionOperationRunRef.current + 1;
+    editSessionOperationRunRef.current = runId;
+    const sessionSignature = getEditSessionSignature(editSession);
+    const isCurrentOperation = () =>
+      editSessionOperationRunRef.current === runId &&
+      getEditSessionSignature(editSessionRef.current) === sessionSignature;
 
     setIsChangePlanCreating(true);
     setBridgeDiagnostics([]);
@@ -7456,6 +7884,9 @@ export function App({
         paths: createProjectPaths(draftPaths),
         session: editSession
       });
+      if (!isCurrentOperation()) {
+        return;
+      }
       setScopedEditorPanelStates((currentStates) => ({
         ...currentStates,
         [section]: {
@@ -7466,14 +7897,24 @@ export function App({
         }
       }));
     } catch (error) {
+      if (!isCurrentOperation()) {
+        return;
+      }
       setScopedEditorPanelDiagnostics(section, toBridgeDiagnostics(error));
     } finally {
-      setIsChangePlanCreating(false);
+      if (editSessionOperationRunRef.current === runId) {
+        setIsChangePlanCreating(false);
+      }
     }
   };
 
   const handleSaveValidatedChanges = async (outputMode?: ChangePlanOutputMode) => {
-    if (!editSession || !visibleChangePlan || !canSaveValidatedChanges) {
+    if (
+      !editSession ||
+      !visibleChangePlan ||
+      !canSaveValidatedChanges ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
       return;
     }
 
@@ -7553,6 +7994,8 @@ export function App({
 
       if (!hasApplyErrors) {
         setAppliedChangePlan(planToApply);
+        editSessionMutationGenerationRef.current += 1;
+        editSessionMutationQueueRef.current = Promise.resolve();
         editSessionRef.current = null;
         setEditSession(null);
         setEditSessionSection(null);
@@ -8365,6 +8808,7 @@ export function App({
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={section.label}
                 className="nav-button"
+                disabled={isEditSessionOperationBusy}
                 key={section.id}
                 onClick={() => handleNavigateSection(section.id)}
                 type="button"
@@ -8416,6 +8860,7 @@ export function App({
                           aria-current={isActive ? 'page' : undefined}
                           aria-label={section.label}
                           className="nav-button nav-child-button"
+                          disabled={isEditSessionOperationBusy}
                           key={section.id}
                           onClick={() => handleNavigateSection(section.id)}
                           type="button"
@@ -8440,6 +8885,7 @@ export function App({
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={section.label}
                 className="nav-button"
+                disabled={isEditSessionOperationBusy}
                 key={section.id}
                 onClick={() => handleNavigateSection(section.id)}
                 type="button"
@@ -8508,7 +8954,7 @@ export function App({
               onOpenOutputRoot={handleOpenOutputRoot}
               onPickProjectPath={handlePickProjectPath}
               onRequestSupportSearch={handleRequestSupportSearch}
-              onSetDraftPath={setDraftPath}
+              onSetDraftPath={handleSetDraftPath}
               onValidateProject={handleValidateProject}
               pendingEditCount={pendingEditCount}
               projectStatus={projectStatus}
@@ -9573,6 +10019,7 @@ export function App({
               isEditSessionValidated={isEditSessionValidated}
               isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
+              isEditSessionMutating={isEditSessionMutating}
               isSessionValidating={isSessionValidating}
               supportsTrinityOutput={supportsTrinityOutput}
               onCancelEditSession={handleCancelEditSession}
@@ -9643,6 +10090,9 @@ export function App({
         <ExitPromptModal
           kind={exitPrompt.kind}
           allowGoToChanges={exitPrompt.allowGoToChanges ?? true}
+          isDiscardBlocked={
+            isSessionValidating || isChangePlanCreating || isChangePlanApplying
+          }
           mode={exitPrompt.mode}
           onConfirmDiscard={handleConfirmExitDiscard}
           onDeclineDiscard={handleDeclineExitDiscard}
@@ -16001,10 +16451,20 @@ function getTrainerPendingEditDisplayDetails(
   const trainer = context.trainersWorkflow?.trainers.find(
     (candidate) => candidate.trainerId === trainerId
   );
+  const trainerClass =
+    edit.field === classBallIdFieldName
+      ? context.trainersWorkflow?.trainers.find(
+          (candidate) => candidate.trainerClassId === trainerId
+        )
+      : null;
   const trainerPokemon = slot === null ? null : trainer?.team.find((pokemon) => pokemon.slot === slot);
   const field = findPendingEditableField(context.trainersWorkflow?.editableFields, edit.field);
   const recordLabel =
-    trainer && trainerPokemon
+    trainerClass
+      ? `${trainerClass.trainerClass} class (#${trainerClass.trainerClassId})`
+      : edit.field === classBallIdFieldName && trainerId !== null
+        ? `Trainer class #${trainerId}`
+        : trainer && trainerPokemon
       ? `${trainer.name} (#${trainer.trainerId}) party slot #${trainerPokemon.slot + 1}: ${
           trainerPokemon.species
         }`
@@ -18636,6 +19096,8 @@ function SelectedDynamaxAdventurePanel({
     encounter !== null &&
     canEditDynamaxAdventures &&
     !isDynamaxAdventureUpdating &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
     adventureDraftSummary.changedFields.length > 0 &&
     adventureDraftSummary.invalidFields.length === 0;
   const hasPendingDynamaxAdventureChange =
@@ -26082,20 +26544,38 @@ function BagHookSection({
   );
   const isInstallStaged = stagedBagHookEdit?.recordId === 'bag-hook-v2';
   const isUninstallStaged = stagedBagHookEdit?.recordId === 'bag-hook-v2-uninstall';
-  const canStageInstall =
-    workflow?.summary.availability === 'available' &&
-    (workflow.installStatus === 'available' || workflow.installStatus === 'repairable');
-  const canStageUninstall =
-    workflow?.summary.availability === 'available' &&
-    (workflow.installStatus === 'installed' || workflow.installStatus === 'repairable');
+  const canStageInstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      (workflow.installStatus === 'available' || workflow.installStatus === 'repairable'),
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isInstallStaged,
+    isStaging
+  });
+  const canStageUninstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      (workflow.installStatus === 'installed' || workflow.installStatus === 'repairable'),
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isUninstallStaged,
+    isStaging
+  });
   const stageInstallLabel = workflow?.installStatus === 'repairable' ? 'Stage Repair' : 'Stage Install';
-  const canReviewPlan = (isInstallStaged || isUninstallStaged) && !isChangePlanCreating;
+  const canReviewPlan =
+    (isInstallStaged || isUninstallStaged) &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    !isStaging;
   const canApplyPlan =
     (isInstallStaged || isUninstallStaged) &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
 
   useEffect(() => {
     if (selectedRecord && selectedRecord.slot !== selectedSlot) {
@@ -26228,7 +26708,7 @@ function BagHookSection({
                       <button
                         aria-busy={isStaging || undefined}
                         className="primary-button"
-                        disabled={!canStageInstall || isStaging}
+                        disabled={!canStageInstall}
                         onClick={onStageInstall}
                         type="button"
                       >
@@ -26242,7 +26722,7 @@ function BagHookSection({
                       <button
                         aria-busy={isStaging || undefined}
                         className="danger-button"
-                        disabled={!canStageUninstall || isStaging}
+                        disabled={!canStageUninstall}
                         onClick={onStageUninstall}
                         type="button"
                       >
@@ -26356,19 +26836,34 @@ function IvScreenSection({
   const isInstallStaged = stagedIvScreenEdit?.recordId === 'iv-screen-v1-install';
   const isUninstallStaged = stagedIvScreenEdit?.recordId === 'iv-screen-v1-uninstall';
   const hasStagedChange = isInstallStaged || isUninstallStaged;
-  const canStageInstall =
-    workflow?.summary.availability === 'available' &&
-    workflow.installStatus !== 'blocked' &&
-    workflow.installStatus !== 'foreign';
-  const canStageUninstall =
-    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
-  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const canStageInstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      workflow.installStatus !== 'blocked' &&
+      workflow.installStatus !== 'foreign',
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isInstallStaged,
+    isStaging
+  });
+  const canStageUninstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' && workflow.installStatus === 'installed',
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isUninstallStaged,
+    isStaging
+  });
+  const canReviewPlan =
+    hasStagedChange && !isChangePlanCreating && !isChangePlanApplying && !isStaging;
   const canApplyPlan =
     hasStagedChange &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
   const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
 
   return (
@@ -26459,7 +26954,7 @@ function IvScreenSection({
                   <button
                     aria-busy={isStaging || undefined}
                     className="primary-button"
-                    disabled={!canStageInstall || isStaging}
+                    disabled={!canStageInstall}
                     onClick={onStageInstall}
                     type="button"
                   >
@@ -26473,7 +26968,7 @@ function IvScreenSection({
                   <button
                     aria-busy={isStaging || undefined}
                     className="danger-button"
-                    disabled={!canStageUninstall || isStaging}
+                    disabled={!canStageUninstall}
                     onClick={onStageUninstall}
                     type="button"
                   >
@@ -26596,23 +27091,34 @@ function HyperTrainingSection({
   const hasStagedChange =
     stagedHyperTrainingEdit?.recordId === 'hyper-training-minimum-level' &&
     stagedMinimumLevel !== null;
-  const canStage =
-    workflow?.summary.availability === 'available' &&
-    workflow.installStatus !== 'blocked' &&
-    normalizedMinimumLevel !== null &&
-    !isStaging;
+  const canStage = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      workflow.installStatus !== 'blocked' &&
+      normalizedMinimumLevel !== null,
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: normalizedMinimumLevel === stagedMinimumLevel,
+    isStaging
+  });
   const canRestore =
     workflow?.summary.availability === 'available' &&
     workflow.installStatus !== 'blocked' &&
     !isStaging &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    stagedMinimumLevel !== vanillaMinimumLevel &&
     currentMinimumLevel !== vanillaMinimumLevel;
-  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const canReviewPlan =
+    hasStagedChange && !isChangePlanCreating && !isChangePlanApplying && !isStaging;
   const canApplyPlan =
     hasStagedChange &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
   const sliderValue =
     normalizedMinimumLevel ?? clampHyperTrainingLevel(currentMinimumLevel, minimumAllowed, maximumAllowed);
 
@@ -26899,19 +27405,34 @@ function GymUniformRemovalSection({
   const isUninstallStaged =
     stagedGymUniformRemovalEdit?.recordId === 'gym-uniform-removal-v1-uninstall';
   const hasStagedChange = isInstallStaged || isUninstallStaged;
-  const canStageInstall =
-    workflow?.summary.availability === 'available' &&
-    workflow.installStatus !== 'blocked' &&
-    workflow.installStatus !== 'foreign';
-  const canStageUninstall =
-    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
-  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const canStageInstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      workflow.installStatus !== 'blocked' &&
+      workflow.installStatus !== 'foreign',
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isInstallStaged,
+    isStaging
+  });
+  const canStageUninstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' && workflow.installStatus === 'installed',
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isUninstallStaged,
+    isStaging
+  });
+  const canReviewPlan =
+    hasStagedChange && !isChangePlanCreating && !isChangePlanApplying && !isStaging;
   const canApplyPlan =
     hasStagedChange &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
   const installLabel =
     workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
 
@@ -27027,7 +27548,7 @@ function GymUniformRemovalSection({
                   <button
                     aria-busy={isStaging || undefined}
                     className="primary-button"
-                    disabled={!canStageInstall || isStaging}
+                    disabled={!canStageInstall}
                     onClick={onStageInstall}
                     type="button"
                   >
@@ -27041,7 +27562,7 @@ function GymUniformRemovalSection({
                   <button
                     aria-busy={isStaging || undefined}
                     className="danger-button"
-                    disabled={!canStageUninstall || isStaging}
+                    disabled={!canStageUninstall}
                     onClick={onStageUninstall}
                     type="button"
                   >
@@ -27207,20 +27728,38 @@ function CatchCapSection({
   const isCatchCapUninstallStaged =
     stagedCatchCapEdit?.recordId === 'catch-cap-v1-uninstall';
   const hasStagedCatchCapChange = isCatchCapStaged || isCatchCapUninstallStaged;
-  const canStage =
-    workflow?.summary.availability === 'available' &&
-    workflow.installStatus !== 'blocked' &&
-    workflow.installStatus !== 'foreign' &&
-    !hasInputError;
-  const canStageUninstall =
-    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
-  const canReviewPlan = hasStagedCatchCapChange && !isChangePlanCreating;
+  const canStage = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      workflow.installStatus !== 'blocked' &&
+      workflow.installStatus !== 'foreign' &&
+      !hasInputError,
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isCatchCapStaged && !hasLocalDrafts,
+    isStaging
+  });
+  const canStageUninstall = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' && workflow.installStatus === 'installed',
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isCatchCapUninstallStaged,
+    isStaging
+  });
+  const canReviewPlan =
+    hasStagedCatchCapChange &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    !isStaging;
   const canApplyPlan =
     hasStagedCatchCapChange &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
 
   useEffect(() => {
     setCapInputs(
@@ -27390,7 +27929,7 @@ function CatchCapSection({
                       <button
                         aria-busy={isStaging || undefined}
                         className="primary-button"
-                        disabled={!canStage || isStaging}
+                        disabled={!canStage}
                         onClick={() => onStageCaps(selectedCaps)}
                         type="button"
                       >
@@ -27404,7 +27943,7 @@ function CatchCapSection({
                       <button
                         aria-busy={isStaging || undefined}
                         className="danger-button"
-                        disabled={!canStageUninstall || isStaging}
+                        disabled={!canStageUninstall}
                         onClick={onStageUninstall}
                         type="button"
                       >
@@ -28121,25 +28660,48 @@ function SelectedRoyalCandyPanel({
     levelCap: levelCap.selectedLevelCap,
     slot: levelCap.slot
   }));
-  const canStage =
-    selectedWorkflow !== null &&
-    (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
-      selectedWorkflow.workflowId === 'royal-candy-story-limits' ||
-      selectedWorkflow.workflowId === 'royal-candy-uninstall') &&
-    (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning') &&
-    !hasLevelCapInputError;
-  const canUseStageButton = canStage || canShowDependencyWarning;
+  const hasLevelCapLocalDrafts = parsedLevelCaps.some((levelCap) => {
+    const currentValue =
+      stagedRoyalCandyLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString();
+    return levelCap.rawValue.trim() !== currentValue;
+  });
+  const isSelectedWorkflowStageCurrent =
+    isSelectedWorkflowStaged && (!isStoryLimitWorkflow || !hasLevelCapLocalDrafts);
+  const canStage = canStageAdvancedEditorAction({
+    isAllowed:
+      selectedWorkflow !== null &&
+      (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
+        selectedWorkflow.workflowId === 'royal-candy-story-limits' ||
+        selectedWorkflow.workflowId === 'royal-candy-uninstall') &&
+      (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning') &&
+      !hasLevelCapInputError,
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isSelectedWorkflowStageCurrent,
+    isStaging
+  });
+  const canUseStageButton =
+    (canStage || (canShowDependencyWarning && !isSelectedWorkflowStageCurrent)) &&
+    !isStaging &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying;
   const canEditLevelCaps =
     isStoryLimitWorkflow &&
     selectedWorkflow !== null &&
     (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
-  const canReviewPlan = isSelectedWorkflowStaged && !isChangePlanCreating;
+  const canReviewPlan =
+    isSelectedWorkflowStaged &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    !isStaging;
   const canApplyPlan =
     isSelectedWorkflowStaged &&
     changePlan !== null &&
     changePlan.canApply &&
     changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
 
   useEffect(() => {
     if (!isStoryLimitWorkflow) {
@@ -28291,7 +28853,7 @@ function SelectedRoyalCandyPanel({
                 <button
                   aria-busy={isStaging || undefined}
                   className="primary-button"
-                  disabled={!canUseStageButton || isStaging}
+                  disabled={!canUseStageButton}
                   onClick={() => {
                     if (selectedWorkflow) {
                       onStageWorkflow(
@@ -28491,19 +29053,37 @@ function StartingItemsSection({
       slot: grant.slot
     }));
   const isStartingItemsStaged = stagedStartingItemsEdit?.recordId === 'starting-items';
-  const canStage =
-    workflow?.summary.availability === 'available' &&
-    workflow.installStatus === 'available' &&
-    !hasInputError &&
-    selectedGrants.every((grant) => Number.isFinite(grant.quantity));
+  const canStage = canStageAdvancedEditorAction({
+    isAllowed:
+      workflow?.summary.availability === 'available' &&
+      workflow.installStatus === 'available' &&
+      !hasInputError &&
+      selectedGrants.every((grant) => Number.isFinite(grant.quantity)),
+    isChangePlanApplying,
+    isChangePlanCreating,
+    isCurrent: isStartingItemsStaged && !hasLocalDrafts,
+    isStaging
+  });
   const canShowDependencyWarning = getStartingItemsDependencyWarning(workflow) !== null;
-  const canReviewPlan = isStartingItemsStaged && !isChangePlanCreating;
+  const canUseStageButton =
+    (canStage ||
+      (canShowDependencyWarning && (!isStartingItemsStaged || hasLocalDrafts))) &&
+    !isStaging &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying;
+  const canReviewPlan =
+    isStartingItemsStaged &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    !isStaging;
   const canApplyPlan =
     isStartingItemsStaged &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isChangePlanApplying &&
+    !isChangePlanCreating &&
+    !isStaging;
 
   useEffect(() => {
     setGrantInputs(
@@ -28721,7 +29301,7 @@ function StartingItemsSection({
                       <button
                         aria-busy={isStaging || undefined}
                         className="primary-button"
-                        disabled={!(canStage || canShowDependencyWarning) || isStaging}
+                        disabled={!canUseStageButton}
                         onClick={() => onStageGrants(selectedGrants)}
                         type="button"
                       >
@@ -30416,6 +30996,7 @@ function ChangesSection({
   isEditSessionValidated,
   isChangePlanApplying,
   isChangePlanCreating,
+  isEditSessionMutating,
   supportsTrinityOutput,
   isSessionValidating,
   onCancelEditSession,
@@ -30433,6 +31014,7 @@ function ChangesSection({
   isEditSessionValidated: boolean;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
+  isEditSessionMutating: boolean;
   supportsTrinityOutput: boolean;
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
@@ -30474,7 +31056,12 @@ function ChangesSection({
           <button
             aria-busy={isPendingValidationBusy || undefined}
             className="secondary-button"
-            disabled={pendingEdits.length === 0 || isSessionValidating || isChangePlanApplying}
+            disabled={
+              pendingEdits.length === 0 ||
+              isEditSessionMutating ||
+              isSessionValidating ||
+              isChangePlanApplying
+            }
             onClick={onValidateEditSession}
             type="button"
           >
@@ -30553,7 +31140,13 @@ function ChangesSection({
           )}
           <button
             className="danger-button"
-            disabled={!editSession}
+            disabled={
+              !editSession ||
+              isEditSessionMutating ||
+              isSessionValidating ||
+              isChangePlanCreating ||
+              isChangePlanApplying
+            }
             onClick={onCancelEditSession}
             type="button"
           >
@@ -30576,7 +31169,12 @@ function ChangesSection({
                   <button
                     aria-label={`Remove pending change ${index + 1}: ${edit.summary}`}
                     className="danger-button icon-button pending-edit-remove-button"
-                    disabled={isSessionValidating || isChangePlanCreating || isChangePlanApplying}
+                    disabled={
+                      isEditSessionMutating ||
+                      isSessionValidating ||
+                      isChangePlanCreating ||
+                      isChangePlanApplying
+                    }
                     onClick={() => onRemovePendingEdit(index)}
                     title="Remove this pending change"
                     type="button"
@@ -31077,6 +31675,7 @@ function DependencyWarningModal({
 
 function ExitPromptModal({
   allowGoToChanges,
+  isDiscardBlocked,
   kind,
   mode,
   onConfirmDiscard,
@@ -31085,6 +31684,7 @@ function ExitPromptModal({
   onStay
 }: {
   allowGoToChanges: boolean;
+  isDiscardBlocked: boolean;
   kind: ExitPromptState['kind'];
   mode: ExitPromptState['mode'];
   onConfirmDiscard: () => void;
@@ -31132,7 +31732,12 @@ function ExitPromptModal({
         <div className="modal-actions">
           {isConfirmMode ? (
             <>
-              <button className="danger-button" onClick={onConfirmDiscard} type="button">
+              <button
+                className="danger-button"
+                disabled={isDiscardBlocked}
+                onClick={onConfirmDiscard}
+                type="button"
+              >
                 <Trash2 aria-hidden="true" size={16} />
                 <span>{isEditorSwitchPrompt ? 'Switch and Revert' : 'Yes, Discard'}</span>
               </button>

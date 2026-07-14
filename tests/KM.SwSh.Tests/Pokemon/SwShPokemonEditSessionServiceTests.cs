@@ -378,6 +378,75 @@ public sealed class SwShPokemonEditSessionServiceTests
         Assert.False(SwShPersonalTable.Parse(baseBytes).Records[1].TechnicalMachines[0]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ApplyChangePlanRollsBackEarlierOutputWhenLaterTargetFails(bool hasExistingPersonalOutput)
+    {
+        using var temp = CreateEditableProject();
+        var personalOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar));
+        byte[]? originalPersonalOutput = null;
+        if (hasExistingPersonalOutput)
+        {
+            originalPersonalOutput = File.ReadAllBytes(Path.Combine(
+                temp.BaseRomFsPath,
+                SwShPokemonWorkflowService.PersonalDataPath["romfs/".Length..]
+                    .Replace('/', Path.DirectorySeparatorChar)));
+            originalPersonalOutput[0x60] ^= 0x5A;
+            temp.WriteOutputFile(SwShPokemonWorkflowService.PersonalDataPath, originalPersonalOutput);
+        }
+
+        var service = new SwShPokemonEditSessionService();
+        var personalUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "99");
+        var learnsetUpdate = service.UpdateLearnset(
+            temp.Paths,
+            personalUpdate.Session,
+            personalId: 1,
+            action: "upsert",
+            slot: 1,
+            moveId: 345,
+            level: 7);
+        var learnsetOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.LearnsetDataPath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(learnsetOutputPath);
+        var plan = service.CreateChangePlan(temp.Paths, learnsetUpdate.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, learnsetUpdate.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.File == SwShPokemonWorkflowService.LearnsetDataPath);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("rolled back", StringComparison.OrdinalIgnoreCase));
+        if (originalPersonalOutput is null)
+        {
+            Assert.False(File.Exists(personalOutputPath));
+        }
+        else
+        {
+            Assert.Equal(originalPersonalOutput, File.ReadAllBytes(personalOutputPath));
+        }
+
+        Assert.True(Directory.Exists(learnsetOutputPath));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(temp.OutputRootPath, "*", SearchOption.AllDirectories),
+            path => path.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".bak", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public void ApplyChangePlanCanRemoveAndRestoreAllEvYields()
     {
@@ -590,6 +659,155 @@ public sealed class SwShPokemonEditSessionServiceTests
         Assert.Equal(4, baseEvolution.Method);
         Assert.Equal(2, baseEvolution.Species);
         Assert.Equal(16, baseEvolution.Level);
+    }
+
+    [Fact]
+    public void ConsecutiveLearnsetRemovalsFromTheSameVisibleSlotAccumulate()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var first = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "remove",
+            slot: 0,
+            moveId: null,
+            level: null);
+        var second = service.UpdateLearnset(
+            temp.Paths,
+            first.Session,
+            personalId: 1,
+            action: "remove",
+            slot: 0,
+            moveId: null,
+            level: null);
+
+        Assert.Equal(2, second.Session.PendingEdits.Count);
+        Assert.Empty(second.Workflow.Pokemon.Single(record => record.PersonalId == 1).Learnset);
+
+        var plan = service.CreateChangePlan(temp.Paths, second.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, second.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.LearnsetDataPath.Replace('/', Path.DirectorySeparatorChar)));
+        Assert.Empty(SwShPokemonLearnsetTable.Parse(outputBytes).Records[1].Moves);
+    }
+
+    [Fact]
+    public void EvolutionEditsPreserveSparsePhysicalSlots()
+    {
+        using var temp = CreateEditableProject();
+        var targetRelativePath = SwShPokemonWorkflowService.CreateEvolutionDataPath(1);
+        temp.WriteBaseRomFsFile(
+            targetRelativePath["romfs/".Length..],
+            SwShEvolutionSet.Write(
+            [
+                new SwShEvolutionRecord(2, 4, 0, 2, 0, 16),
+                new SwShEvolutionRecord(7, 7, 25, 3, 1, 32),
+            ]));
+        var service = new SwShPokemonEditSessionService();
+
+        var update = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 7,
+            method: 8,
+            argument: 2,
+            species: 4,
+            form: 0,
+            level: 40);
+        var remove = service.UpdateEvolution(
+            temp.Paths,
+            update.Session,
+            personalId: 1,
+            action: "remove",
+            slot: 2,
+            method: null,
+            argument: null,
+            species: null,
+            form: null,
+            level: null);
+
+        Assert.Empty(remove.Diagnostics);
+        var pendingEvolution = Assert.Single(
+            remove.Workflow.Pokemon.Single(record => record.PersonalId == 1).Evolutions);
+        Assert.Equal(7, pendingEvolution.Slot);
+        Assert.Equal(4, pendingEvolution.Species);
+
+        var plan = service.CreateChangePlan(temp.Paths, remove.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, remove.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputEvolution = Assert.Single(SwShEvolutionSet.Parse(outputBytes).Evolutions);
+        Assert.Equal(7, outputEvolution.Slot);
+        Assert.Equal(8, outputEvolution.Method);
+        Assert.Equal(2, outputEvolution.Argument);
+        Assert.Equal(4, outputEvolution.Species);
+        Assert.Equal(40, outputEvolution.Level);
+    }
+
+    [Fact]
+    public void ConsecutiveEvolutionRemovalsOfTheNewlyVisibleRowAccumulate()
+    {
+        using var temp = CreateEditableProject();
+        var targetRelativePath = SwShPokemonWorkflowService.CreateEvolutionDataPath(1);
+        temp.WriteBaseRomFsFile(
+            targetRelativePath["romfs/".Length..],
+            SwShEvolutionSet.Write(
+            [
+                new SwShEvolutionRecord(0, 4, 0, 2, 0, 16),
+                new SwShEvolutionRecord(1, 4, 0, 3, 0, 32),
+            ]));
+        var service = new SwShPokemonEditSessionService();
+
+        var first = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "remove",
+            slot: 0,
+            method: null,
+            argument: null,
+            species: null,
+            form: null,
+            level: null);
+        var newlyVisibleSlot = Assert.Single(
+            first.Workflow.Pokemon.Single(record => record.PersonalId == 1).Evolutions).Slot;
+        var second = service.UpdateEvolution(
+            temp.Paths,
+            first.Session,
+            personalId: 1,
+            action: "remove",
+            slot: newlyVisibleSlot,
+            method: null,
+            argument: null,
+            species: null,
+            form: null,
+            level: null);
+
+        Assert.Equal(2, second.Session.PendingEdits.Count);
+        Assert.Empty(second.Workflow.Pokemon.Single(record => record.PersonalId == 1).Evolutions);
+
+        var plan = service.CreateChangePlan(temp.Paths, second.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, second.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        Assert.Empty(SwShEvolutionSet.Parse(outputBytes).Evolutions);
     }
 
     [Fact]

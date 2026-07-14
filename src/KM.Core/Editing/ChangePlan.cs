@@ -22,4 +22,5 @@ public sealed record PlannedFileWrite(
     string TargetRelativePath,
     IReadOnlyList<ProjectFileReference> Sources,
     bool ReplacesExistingOutput,
-    string Reason);
+    string Reason,
+    string? SourceFingerprint = null);

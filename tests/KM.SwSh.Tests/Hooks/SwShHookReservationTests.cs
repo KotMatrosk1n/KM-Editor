@@ -817,6 +817,56 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryLimitsRestoreClearsOwnedCaveGraphAndReturnsToBase(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            baseMain,
+            [
+                new SwShRoyalCandyStoryLevelCap(
+                    35,
+                    0x123456789ABCDEF0UL,
+                    "Work milestone",
+                    SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+                    WorkMinimum: 530),
+                new SwShRoyalCandyStoryLevelCap(
+                    20,
+                    0x0FEDCBA987654321UL,
+                    "Flag milestone"),
+            ],
+            game);
+        var baseNso = NsoFile.Parse(baseMain);
+        var patchedText = NsoFile.Parse(patchedMain).Text.DecompressedData;
+        var storyCaveGraph = ReadRoyalCandyStoryCaveGraph(
+            patchedText,
+            baseNso.Text.DecompressedData);
+
+        var restoredMain = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
+            patchedMain,
+            baseMain,
+            game);
+        var restoredNso = NsoFile.Parse(restoredMain);
+
+        Assert.True(storyCaveGraph.Length > 4);
+        Assert.Contains(0x007BB20C, storyCaveGraph);
+        Assert.Contains(0x007BB3C8, storyCaveGraph);
+        Assert.All(
+            storyCaveGraph,
+            offset => Assert.Equal(
+                baseNso.Text.DecompressedData.AsSpan(offset, 0x0C).ToArray(),
+                restoredNso.Text.DecompressedData.AsSpan(offset, 0x0C).ToArray()));
+        Assert.Equal(baseNso.BuildId, restoredNso.BuildId);
+        Assert.Equal(baseNso.Text.DecompressedData, restoredNso.Text.DecompressedData);
+        Assert.Equal(baseNso.Ro.DecompressedData, restoredNso.Ro.DecompressedData);
+        Assert.Equal(baseNso.Data.DecompressedData, restoredNso.Data.DecompressedData);
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.NotInstalled,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(restoredMain, game).Kind);
+    }
+
+    [Theory]
     [MemberData(nameof(RoyalCandyBuildVariants))]
     public void RoyalCandyPatchesSharedAllowedConsumableRoute(ProjectGame game, string workflowId)
     {
@@ -1051,6 +1101,24 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapCleanupPreservesUnrecognizedMainEdits(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyCatchCap(paths);
+        WriteUnownedMainEdit(paths);
+
+        ApplyCatchCapCleanup(paths);
+
+        AssertUnownedMainEditPreserved(paths);
+        Assert.Equal(
+            SwShCatchCapInstallKind.NotInstalled,
+            SwShCatchCapMainPatcher.Analyze(File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)), game).Kind);
+    }
+
+    [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
     public void IvScreenCleanupPreservesCatchCapAndRoyalCandy(ProjectGame game, string workflowId)
     {
@@ -1160,6 +1228,44 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void IvScreenCleanupPreservesUnrecognizedMainEdits(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyIvScreen(paths);
+        WriteUnownedMainEdit(paths);
+
+        ApplyIvScreenCleanup(paths);
+
+        AssertUnownedMainEditPreserved(paths);
+        Assert.Equal(
+            SwShIvScreenInstallKind.NotInstalled,
+            SwShIvScreenMainPatcher.Analyze(File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)), game).Kind);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyCleanupPreservesUnrecognizedMainEdits(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        WriteUnownedMainEdit(paths);
+
+        ApplyRoyalCandyCleanup(paths);
+
+        AssertUnownedMainEditPreserved(paths);
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.NotInstalled,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+                File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)),
+                game).Kind);
+    }
+
+    [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
     public void BagHookCleanupRemovesExeFsAndPreservesRomFsWhenRoyalCandyWasOnlyExeFsMod(ProjectGame game, string workflowId)
     {
@@ -1262,6 +1368,157 @@ public sealed class SwShHookReservationTests
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
+    }
+
+    [Fact]
+    public void BagHookCleanupPreservesUnrelatedBagEventEditsAndRemovesDependentFeatures()
+    {
+        const ulong editBeforeInstall = 0x12345678UL;
+        const ulong editAfterInstall = 1UL;
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(bagPath)!);
+        File.WriteAllBytes(
+            bagPath,
+            PatchTestCodeCell(
+                File.ReadAllBytes(BasePath(paths, SwShBagHookWorkflowService.BagEventScriptPath)),
+                cellIndex: 100,
+                editBeforeInstall));
+
+        InstallEmptyBagHook(paths);
+        ApplyStartingItems(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+        File.WriteAllBytes(
+            bagPath,
+            UseRedundantTestCellEncoding(
+                PatchTestCodeCell(File.ReadAllBytes(bagPath), cellIndex: 101, editAfterInstall),
+                cellIndex: 101));
+        var unrelatedEncoding = ReadTestCompactCellEncoding(File.ReadAllBytes(bagPath), cellIndex: 101);
+
+        ApplyBagHookCleanup(paths);
+
+        Assert.True(File.Exists(bagPath));
+        var restored = File.ReadAllBytes(bagPath);
+        Assert.Equal(SwShBagHookInstallKind.NotInstalled, SwShBagHookAmxPatcher.Analyze(restored).Kind);
+        var decoded = DecodeTestAmx(restored);
+        var codeCells = ReadTestCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, cellSize: 8);
+        Assert.Equal(editBeforeInstall, codeCells[100]);
+        Assert.Equal(editAfterInstall, codeCells[101]);
+        Assert.Equal(unrelatedEncoding, ReadTestCompactCellEncoding(restored, cellIndex: 101));
+        Assert.Equal(5022, codeCells.Length);
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
+    }
+
+    [Fact]
+    public void BagHookCleanupRefusesNonterminalHookWithoutChangingReviewedOutputs()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        ApplyStartingItems(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var mainPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        var shopPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var nonterminal = AppendTestCodeCell(File.ReadAllBytes(bagPath), 89);
+        Assert.Equal(SwShBagHookInstallKind.InstalledV2, SwShBagHookAmxPatcher.Analyze(nonterminal).Kind);
+        File.WriteAllBytes(bagPath, nonterminal);
+        var mainBefore = File.ReadAllBytes(mainPath);
+        var shopBefore = File.ReadAllBytes(shopPath);
+
+        var service = new SwShBagHookEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("not terminal", StringComparison.Ordinal));
+        Assert.Equal(nonterminal, File.ReadAllBytes(bagPath));
+        Assert.Equal(mainBefore, File.ReadAllBytes(mainPath));
+        Assert.Equal(shopBefore, File.ReadAllBytes(shopPath));
+    }
+
+    [Fact]
+    public async Task BagHookCleanupRollsBackAllReviewedOutputsWhenLateTargetDisappears()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        ApplyStartingItems(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+
+        var service = new SwShBagHookEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+        var outputsBefore = plan.Writes.ToDictionary(
+            write => write.TargetRelativePath,
+            write => File.ReadAllBytes(OutputPath(paths, write.TargetRelativePath)),
+            StringComparer.OrdinalIgnoreCase);
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var lateTargetRelativePath = plan.Writes
+            .Where(write => !string.Equals(
+                write.TargetRelativePath,
+                SwShBagHookWorkflowService.BagEventScriptPath,
+                StringComparison.OrdinalIgnoreCase))
+            .Last()
+            .TargetRelativePath;
+        var lateTargetPath = OutputPath(paths, lateTargetRelativePath);
+        var sabotageStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var sabotage = Task.Run(
+            async () =>
+            {
+                sabotageStarted.SetResult();
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+                while (File.Exists(bagPath))
+                {
+                    if (DateTime.UtcNow >= deadline)
+                    {
+                        throw new TimeoutException("Bag Hook cleanup did not reach the Bag-event output.");
+                    }
+
+                    await Task.Delay(5, TestContext.Current.CancellationToken);
+                }
+
+                File.Delete(lateTargetPath);
+            },
+            TestContext.Current.CancellationToken);
+        await sabotageStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        await sabotage;
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.File == lateTargetRelativePath
+                && diagnostic.Message.Contains("no longer exists", StringComparison.Ordinal));
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("rolled back", StringComparison.Ordinal));
+        Assert.All(
+            outputsBefore,
+            output =>
+            {
+                var restoredPath = OutputPath(paths, output.Key);
+                Assert.True(File.Exists(restoredPath));
+                Assert.Equal(output.Value, File.ReadAllBytes(restoredPath));
+            });
     }
 
     [Theory]
@@ -1414,6 +1671,27 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShBagHookAmxPatcher.RoyalCandyItemId, slot1.ItemId);
         Assert.Equal(1, slot1.Quantity);
         Assert.DoesNotContain("legacy code-section marker", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BagHookRestoreFromBaseRemovesOwnedCurrentAndLegacyLayouts()
+    {
+        var baseData = CreateVanillaBagEventScript();
+        var installed = SwShBagHookAmxPatcher.ApplySlotPatches(
+            SwShBagHookAmxPatcher.InstallEmptyHook(baseData),
+            [new SwShBagHookSlotPatch(2, 50, 3)]);
+
+        var currentRestore = SwShBagHookAmxPatcher.RestoreFromBase(installed, baseData);
+        var legacyRestore = SwShBagHookAmxPatcher.RestoreFromBase(
+            MoveTestMarkerFromDataToCode(installed),
+            baseData);
+
+        Assert.True(currentRestore.IsBaseEquivalent);
+        Assert.True(legacyRestore.IsBaseEquivalent);
+        Assert.Equal(baseData, currentRestore.Data);
+        Assert.Equal(baseData, legacyRestore.Data);
+        Assert.Equal(SwShBagHookInstallKind.NotInstalled, SwShBagHookAmxPatcher.Analyze(currentRestore.Data).Kind);
+        Assert.Equal(SwShBagHookInstallKind.NotInstalled, SwShBagHookAmxPatcher.Analyze(legacyRestore.Data).Kind);
     }
 
     [Fact]
@@ -1891,6 +2169,25 @@ public sealed class SwShHookReservationTests
         File.WriteAllBytes(targetPath, SwShGameTextFile.Write(lines));
     }
 
+    private static void WriteUnownedMainEdit(ProjectPaths paths)
+    {
+        const int unownedTextOffset = 0x100;
+        var targetPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        var main = NsoFile.Parse(File.ReadAllBytes(targetPath));
+        var text = main.Text.DecompressedData.ToArray();
+        text[unownedTextOffset] = 0x5A;
+        File.WriteAllBytes(targetPath, main.Write(textDecompressedData: text));
+    }
+
+    private static void AssertUnownedMainEditPreserved(ProjectPaths paths)
+    {
+        const int unownedTextOffset = 0x100;
+        var targetPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.True(File.Exists(targetPath));
+        var main = NsoFile.Parse(File.ReadAllBytes(targetPath));
+        Assert.Equal(0x5A, main.Text.DecompressedData[unownedTextOffset]);
+    }
+
     private static void AssertRestoredRoyalCandyTextRow(
         ProjectPaths paths,
         string relativePath,
@@ -2324,6 +2621,49 @@ public sealed class SwShHookReservationTests
         return targets.ToArray();
     }
 
+    private static int[] ReadRoyalCandyStoryCaveGraph(byte[] patchedText, byte[] baseText)
+    {
+        int[] storyBranches = [0x007BB208, 0x007BB3C4];
+        var pending = new Queue<int>(storyBranches.Select(offset => DecodeConditionalBranchTarget(
+            ReadInstruction(patchedText, offset),
+            offset)));
+        var visited = new HashSet<int>();
+        while (pending.Count > 0)
+        {
+            var offset = pending.Dequeue();
+            if (offset < 0
+                || offset + 0x0C > patchedText.Length
+                || !baseText.AsSpan(offset, 0x0C).SequenceEqual(new byte[0x0C])
+                || patchedText.AsSpan(offset, 0x0C).SequenceEqual(new byte[0x0C])
+                || !visited.Add(offset))
+            {
+                continue;
+            }
+
+            for (var instructionOffset = offset; instructionOffset < offset + 0x0C; instructionOffset += 4)
+            {
+                var instruction = ReadInstruction(patchedText, instructionOffset);
+                int? target = null;
+                if ((instruction & 0x7C000000u) == 0x14000000u)
+                {
+                    target = DecodeBranchTarget(instruction, instructionOffset);
+                }
+                else if ((instruction & 0xFF000010u) == 0x54000000u
+                    || (instruction & 0x7E000000u) == 0x34000000u)
+                {
+                    target = DecodeConditionalBranchTarget(instruction, instructionOffset);
+                }
+
+                if (target is not null)
+                {
+                    pending.Enqueue(target.Value);
+                }
+            }
+        }
+
+        return visited.Order().ToArray();
+    }
+
     private static int ResolveRoyalCandyStoryHelperOffset(byte[] text)
     {
         const int storyUseGateBranchOffset = 0x007BB208;
@@ -2527,6 +2867,85 @@ public sealed class SwShHookReservationTests
             libraries: libraries,
             nameTable: libraries);
         return data;
+    }
+
+    private static byte[] PatchTestCodeCell(byte[] data, int cellIndex, ulong value)
+    {
+        var decoded = DecodeTestAmx(data);
+        var codeCellCount = (decoded.Header.Dat - decoded.Header.Cod) / 8;
+        Assert.InRange(cellIndex, 0, codeCellCount - 1);
+        WriteTestCell(decoded.Expanded, decoded.Header.Cod + cellIndex * 8, value);
+        return BuildTestCompactAmx(data[..decoded.Header.Cod], decoded.Header, decoded.Expanded);
+    }
+
+    private static byte[] UseRedundantTestCellEncoding(byte[] data, int cellIndex)
+    {
+        var span = ReadTestCompactCellSpans(data)[cellIndex];
+        var result = new byte[data.Length + 1];
+        data.AsSpan(0, span.Offset).CopyTo(result);
+        result[span.Offset] = 0x80;
+        data.AsSpan(span.Offset).CopyTo(result.AsSpan(span.Offset + 1));
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(0x00), result.Length);
+        var originalExpanded = DecodeTestAmx(data).Expanded;
+        var redundantExpanded = DecodeTestAmx(result).Expanded;
+        BinaryPrimitives.WriteInt32LittleEndian(originalExpanded.AsSpan(0x00), 0);
+        BinaryPrimitives.WriteInt32LittleEndian(redundantExpanded.AsSpan(0x00), 0);
+        Assert.Equal(originalExpanded, redundantExpanded);
+        return result;
+    }
+
+    private static byte[] ReadTestCompactCellEncoding(byte[] data, int cellIndex)
+    {
+        var span = ReadTestCompactCellSpans(data)[cellIndex];
+        return data.AsSpan(span.Offset, span.Length).ToArray();
+    }
+
+    private static TestCompactCellSpan[] ReadTestCompactCellSpans(byte[] data)
+    {
+        var header = ReadTestHeader(data);
+        var cellCount = (header.Hea - header.Cod) / 8;
+        var spans = new TestCompactCellSpan[cellCount];
+        var source = header.Size - header.Cod;
+        var cell = cellCount;
+        while (source > 0)
+        {
+            var encodedEnd = source;
+            do
+            {
+                source--;
+            } while (source > 0 && (data[header.Cod + source - 1] & 0x80) != 0);
+
+            spans[--cell] = new TestCompactCellSpan(header.Cod + source, encodedEnd - source);
+        }
+
+        Assert.Equal(0, cell);
+        return spans;
+    }
+
+    private static byte[] AppendTestCodeCell(byte[] data, ulong value)
+    {
+        var decoded = DecodeTestAmx(data);
+        const int cellSize = 8;
+        var appendedHeader = decoded.Header with
+        {
+            Dat = decoded.Header.Dat + cellSize,
+            Hea = decoded.Header.Hea + cellSize,
+            Stp = decoded.Header.Stp + cellSize,
+        };
+        var appendedExpanded = new byte[appendedHeader.Hea];
+        Array.Copy(decoded.Expanded, 0, appendedExpanded, 0, decoded.Header.Dat);
+        WriteTestCell(appendedExpanded, decoded.Header.Dat, value);
+        Array.Copy(
+            decoded.Expanded,
+            decoded.Header.Dat,
+            appendedExpanded,
+            appendedHeader.Dat,
+            decoded.Header.Hea - decoded.Header.Dat);
+        WriteAmxHeaderFields(appendedExpanded, appendedHeader);
+        return BuildTestCompactAmx(
+            appendedExpanded[..appendedHeader.Cod],
+            appendedHeader,
+            appendedExpanded);
     }
 
     private static byte[] MoveTestMarkerFromDataToCode(byte[] safeBagHook)
@@ -2741,6 +3160,8 @@ public sealed class SwShHookReservationTests
     }
 
     private sealed record TestAmx(TestAmxHeader Header, byte[] Expanded);
+
+    private readonly record struct TestCompactCellSpan(int Offset, int Length);
 
     private sealed record TestAmxHeader(
         int Size,

@@ -75,6 +75,8 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
         data[0x09] = checked((byte)record.EvolutionStage);
 
         var evYield =
+            (BinaryPrimitives.ReadUInt16LittleEndian(data[0x0A..]) & 0xF000)
+            |
             (record.EVYieldHP & 0x3)
             | ((record.EVYieldAttack & 0x3) << 2)
             | ((record.EVYieldDefense & 0x3) << 4)

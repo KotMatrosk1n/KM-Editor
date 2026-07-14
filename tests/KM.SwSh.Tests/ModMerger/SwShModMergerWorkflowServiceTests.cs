@@ -2,6 +2,7 @@
 
 using KM.SwSh.ModMerger;
 using KM.SwSh.Tests.Items;
+using System.Reflection;
 using Xunit;
 
 namespace KM.SwSh.Tests.ModMerger;
@@ -9,6 +10,54 @@ namespace KM.SwSh.Tests.ModMerger;
 public sealed class SwShModMergerWorkflowServiceTests
 {
     private const string TestPath = "romfs/bin/test.bin";
+
+    [Fact]
+    public void LegacyApplyIsAnObsoleteMigrationSurface()
+    {
+        var applyMethod = Assert.Single(
+            typeof(SwShModMergerWorkflowService).GetMethods(BindingFlags.Instance | BindingFlags.Public),
+            method => method.Name == "Apply");
+        var obsolete = Assert.Single(applyMethod.GetCustomAttributes<ObsoleteAttribute>());
+
+        Assert.False(obsolete.IsError);
+        Assert.Contains("ApplyReviewed", obsolete.Message, StringComparison.Ordinal);
+        Assert.Contains("ReviewToken", obsolete.Message, StringComparison.Ordinal);
+        Assert.Equal(7, applyMethod.GetParameters().Length);
+        Assert.True(applyMethod.GetParameters()[6].HasDefaultValue);
+    }
+
+    [Fact]
+    public void LegacyApplyReturnsMigrationErrorWithoutWriting()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        temp.WriteBaseRomFsFile("bin/test.bin", [0, 0, 0]);
+        temp.WriteOutputFile(TestPath, [9, 9, 9]);
+        WriteFile(modDirectory1, TestPath, [1, 0, 0]);
+        WriteFile(modDirectory2, TestPath, [0, 0, 2]);
+
+#pragma warning disable CS0618
+        var result = new SwShModMergerWorkflowService().Apply(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [TestPath],
+            []);
+#pragma warning restore CS0618
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Equal([9, 9, 9], ReadOutputFile(temp, TestPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Stage", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("ApplyReviewed", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("ReviewToken", StringComparison.Ordinal));
+        AssertNoModMergerTempFiles(temp);
+    }
 
     [Fact]
     public void LoadScansRomFsFilesAndIgnoresExeFsFiles()
@@ -103,7 +152,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         WriteFile(modDirectory1, TestPath, [1, 0, 0, 0]);
         WriteFile(modDirectory2, TestPath, [0, 0, 2, 0]);
 
-        var result = new SwShModMergerWorkflowService().Apply(
+        var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -119,6 +168,558 @@ public sealed class SwShModMergerWorkflowServiceTests
         Assert.Equal([1, 0, 2, 0], ReadOutputFile(temp, TestPath));
         Assert.Equal([7, 7, 7], ReadOutputFile(temp, "romfs/bin/other.bin"));
         AssertNoModMergerTempFiles(temp);
+
+        var repeated = new SwShModMergerWorkflowService().ApplyReviewed(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [TestPath],
+            [],
+            mergeMode: null,
+            reviewToken: result.Preview.ReviewToken);
+
+        Assert.True(repeated.Preview.CanApply);
+        Assert.Equal([TestPath], repeated.WrittenFiles);
+    }
+
+    [Fact]
+    public void ApplyReviewedRejectsSelectedSourceChangedAfterStage()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, TestPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [8]);
+        temp.WriteOutputFile(TestPath, [7, 7, 7]);
+        var service = new SwShModMergerWorkflowService();
+        var stage = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            []);
+        Assert.True(
+            stage.Preview.CanApply,
+            string.Join(Environment.NewLine, stage.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.False(string.IsNullOrWhiteSpace(stage.Preview.ReviewToken));
+
+        WriteFile(modDirectory1, TestPath, [4, 5, 6]);
+        var result = service.ApplyReviewed(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            [],
+            mergeMode: null,
+            reviewToken: stage.Preview.ReviewToken);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Equal([7, 7, 7], ReadOutputFile(temp, TestPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("preview is stale", StringComparison.OrdinalIgnoreCase));
+        AssertNoModMergerTempFiles(temp);
+    }
+
+    [Fact]
+    public void ApplyReviewedRejectsPreviewReplayedAgainstDifferentOutputRoot()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, TestPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [8]);
+        var service = new SwShModMergerWorkflowService();
+        var stage = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            []);
+        Assert.True(stage.Preview.CanApply);
+        var otherOutputRoot = Directory.CreateDirectory(
+            Path.Combine(temp.RootPath, "other-output")).FullName;
+
+        var result = service.ApplyReviewed(
+            temp.Paths with { OutputRootPath = otherOutputRoot },
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            [],
+            mergeMode: null,
+            reviewToken: stage.Preview.ReviewToken);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.False(File.Exists(Path.Combine(otherOutputRoot, "romfs", "bin", "test.bin")));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("preview is stale", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ApplyReviewedRejectsOutputChangedAfterStage()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, TestPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [8]);
+        temp.WriteOutputFile(TestPath, [4, 4, 4]);
+        var service = new SwShModMergerWorkflowService();
+        var stage = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            []);
+        Assert.True(stage.Preview.CanApply);
+
+        temp.WriteOutputFile(TestPath, [9, 9, 9]);
+        var result = service.ApplyReviewed(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            [],
+            mergeMode: null,
+            reviewToken: stage.Preview.ReviewToken);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Equal([9, 9, 9], ReadOutputFile(temp, TestPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("preview is stale", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ApplyReviewedPreservesExistingTargetChangedImmediatelyBeforePromotion()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, TestPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
+        temp.WriteOutputFile(TestPath, [4, 4, 4]);
+        var concurrentBytes = new byte[] { 9, 9, 9 };
+        var service = new SwShModMergerWorkflowService((index, targetPath) =>
+        {
+            if (index == 0)
+            {
+                File.WriteAllBytes(targetPath, concurrentBytes);
+            }
+        });
+        var stage = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            []);
+        Assert.True(stage.Preview.CanApply);
+
+        var result = service.ApplyReviewed(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            [],
+            mergeMode: null,
+            reviewToken: stage.Preview.ReviewToken);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Equal(concurrentBytes, ReadOutputFile(temp, TestPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("changed after review", StringComparison.OrdinalIgnoreCase));
+        AssertNoModMergerTempFiles(temp);
+    }
+
+    [Fact]
+    public void ApplyReviewedPreservesMissingTargetCollisionImmediatelyBeforePromotion()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, TestPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
+        var concurrentBytes = new byte[] { 8, 8, 8 };
+        var service = new SwShModMergerWorkflowService((index, targetPath) =>
+        {
+            if (index == 0)
+            {
+                File.WriteAllBytes(targetPath, concurrentBytes);
+            }
+        });
+        var stage = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            []);
+        Assert.True(stage.Preview.CanApply);
+
+        var result = service.ApplyReviewed(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [],
+            [],
+            mergeMode: null,
+            reviewToken: stage.Preview.ReviewToken);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Equal(concurrentBytes, ReadOutputFile(temp, TestPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("created after review", StringComparison.OrdinalIgnoreCase));
+        AssertNoModMergerTempFiles(temp);
+    }
+
+    [Theory]
+    [InlineData("romfs//outside.bin")]
+    [InlineData("romfs/C:/Windows/win.ini")]
+    [InlineData("romfs/bin/../outside.bin")]
+    public void StageRejectsSelectedPathsThatCanEscapeRomFs(string selectedPath)
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, "romfs/bin/inside.bin", [1]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [2]);
+
+        var stage = new SwShModMergerWorkflowService().Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [selectedPath],
+            [],
+            []);
+
+        Assert.False(stage.Preview.CanApply);
+        Assert.Empty(stage.Preview.Files);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("Select at least one RomFS file", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StageRejectsSelectedSourceThroughSymbolicLinkBelowModRoot()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        var externalPath = Path.Combine(temp.RootPath, "external-source.bin");
+        File.WriteAllBytes(externalPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
+        var linkPath = Path.Combine(modDirectory1, "romfs", "bin", "linked.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(linkPath)!);
+        if (!TryCreateFileSymbolicLink(linkPath, externalPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var stage = new SwShModMergerWorkflowService().Stage(
+                temp.Paths,
+                modDirectory1,
+                modDirectory2,
+                ["romfs/bin/linked.bin"],
+                [],
+                []);
+
+            Assert.False(stage.Preview.CanApply);
+            Assert.Contains(
+                stage.Diagnostics,
+                diagnostic => diagnostic.Message.Contains("symbolic link or junction", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            File.Delete(linkPath);
+        }
+    }
+
+    [Fact]
+    public void ApplyRejectsOutputThroughSymbolicLinkBelowOutputRoot()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        WriteFile(modDirectory1, TestPath, [1, 2, 3]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
+        var externalPath = Path.Combine(temp.RootPath, "external-output.bin");
+        File.WriteAllBytes(externalPath, [9, 9, 9]);
+        var linkPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "test.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(linkPath)!);
+        if (!TryCreateFileSymbolicLink(linkPath, externalPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
+                temp.Paths,
+                modDirectory1,
+                modDirectory2,
+                [TestPath],
+                [],
+                []);
+
+            Assert.False(result.Preview.CanApply);
+            Assert.Empty(result.WrittenFiles);
+            Assert.Equal([9, 9, 9], File.ReadAllBytes(externalPath));
+            Assert.Contains(
+                result.Diagnostics,
+                diagnostic => diagnostic.Message.Contains("symbolic link or junction", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            File.Delete(linkPath);
+        }
+    }
+
+    [Fact]
+    public void ApplyRollsBackAllOutputsWhenAnyTargetCannotBePrepared()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string firstPath = "romfs/bin/a.bin";
+        const string blockedPath = "romfs/bin/b.bin";
+        WriteFile(modDirectory1, firstPath, [1, 2, 3]);
+        WriteFile(modDirectory2, blockedPath, [4, 5, 6]);
+        temp.WriteOutputFile(firstPath, [9, 9, 9]);
+        Directory.CreateDirectory(Path.Combine(temp.OutputRootPath, "romfs", "bin", "b.bin"));
+
+        var service = new SwShModMergerWorkflowService();
+        var result = service.ApplyWithoutReviewForTesting(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [firstPath],
+            [blockedPath],
+            []);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.Equal([9, 9, 9], ReadOutputFile(temp, firstPath));
+        Assert.True(Directory.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "b.bin")));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("rolled back", StringComparison.OrdinalIgnoreCase));
+        AssertNoModMergerTempFiles(temp);
+    }
+
+    [Fact]
+    public void ApplyRemovesTransactionCreatedDirectoriesWhenPreparationFails()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string preparedPath = "romfs/a-new/nested/a.bin";
+        const string blockedPath = "romfs/z-existing/b.bin";
+        WriteFile(modDirectory1, preparedPath, [1, 2, 3]);
+        WriteFile(modDirectory2, blockedPath, [4, 5, 6]);
+        var createdDirectory = Path.Combine(temp.OutputRootPath, "romfs", "a-new");
+        var blockedTarget = Path.Combine(temp.OutputRootPath, "romfs", "z-existing", "b.bin");
+        Directory.CreateDirectory(blockedTarget);
+        Assert.False(Directory.Exists(createdDirectory));
+
+        var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [preparedPath],
+            [blockedPath],
+            []);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.False(Directory.Exists(createdDirectory));
+        Assert.True(Directory.Exists(blockedTarget));
+        AssertNoModMergerTempFiles(temp);
+    }
+
+    [Fact]
+    public void ApplyRollsBackAnEarlierCommitWhenALaterCommitFails()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string firstPath = "romfs/bin/a.bin";
+        const string blockedPath = "romfs/bin/b.bin";
+        WriteFile(modDirectory1, firstPath, [1, 2, 3]);
+        WriteFile(modDirectory2, blockedPath, [4, 5, 6]);
+        var service = new SwShModMergerWorkflowService((index, targetPath) =>
+        {
+            if (index == 1)
+            {
+                Directory.CreateDirectory(targetPath);
+            }
+        });
+
+        var result = service.ApplyWithoutReviewForTesting(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [firstPath],
+            [blockedPath],
+            []);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Empty(result.WrittenFiles);
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "a.bin")));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("all output changes were rolled back", StringComparison.OrdinalIgnoreCase));
+        AssertNoModMergerTempFiles(temp);
+    }
+
+    [Fact]
+    public void ApplyReportsTargetAndRetainsBackupWhenRollbackCannotRestoreIt()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string firstPath = "romfs/bin/a.bin";
+        const string blockedPath = "romfs/bin/b.bin";
+        WriteFile(modDirectory1, firstPath, [1, 2, 3]);
+        WriteFile(modDirectory2, blockedPath, [4, 5, 6]);
+        temp.WriteOutputFile(firstPath, [9, 9, 9]);
+        var firstTargetPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "a.bin");
+        var service = new SwShModMergerWorkflowService((index, targetPath) =>
+        {
+            if (index != 1)
+            {
+                return;
+            }
+
+            File.Delete(firstTargetPath);
+            Directory.CreateDirectory(firstTargetPath);
+            Directory.CreateDirectory(targetPath);
+        });
+
+        var result = service.ApplyWithoutReviewForTesting(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [firstPath],
+            [blockedPath],
+            []);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Equal([firstPath], result.WrittenFiles);
+        Assert.True(Directory.Exists(firstTargetPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("rollback was incomplete", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.File == firstPath
+                && diagnostic.Message.Contains("could not restore", StringComparison.OrdinalIgnoreCase));
+        Assert.Single(Directory.EnumerateFiles(temp.OutputRootPath, "*.bak", SearchOption.AllDirectories));
+        Assert.Empty(Directory.EnumerateFiles(temp.OutputRootPath, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void ApplyReportsNewOutputThatCannotBeRemovedDuringRollback()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string firstPath = "romfs/bin/a.bin";
+        const string blockedPath = "romfs/bin/b.bin";
+        WriteFile(modDirectory1, firstPath, [1, 2, 3]);
+        WriteFile(modDirectory2, blockedPath, [4, 5, 6]);
+        var firstTargetPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "a.bin");
+        var service = new SwShModMergerWorkflowService((index, targetPath) =>
+        {
+            if (index != 1)
+            {
+                return;
+            }
+
+            File.Delete(firstTargetPath);
+            Directory.CreateDirectory(firstTargetPath);
+            Directory.CreateDirectory(targetPath);
+        });
+
+        var result = service.ApplyWithoutReviewForTesting(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [firstPath],
+            [blockedPath],
+            []);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Equal([firstPath], result.WrittenFiles);
+        Assert.True(Directory.Exists(firstTargetPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("rollback was incomplete", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.File == firstPath
+                && diagnostic.Message.Contains("could not restore", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(Directory.EnumerateFiles(temp.OutputRootPath, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void ApplyRollbackPreservesConcurrentFileAtPreviouslyMissingTarget()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string firstPath = "romfs/bin/a.bin";
+        const string blockedPath = "romfs/bin/b.bin";
+        WriteFile(modDirectory1, firstPath, [1, 2, 3]);
+        WriteFile(modDirectory2, blockedPath, [4, 5, 6]);
+        var firstTargetPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "a.bin");
+        var concurrentBytes = new byte[] { 7, 7, 7 };
+        var service = new SwShModMergerWorkflowService((index, targetPath) =>
+        {
+            if (index != 1)
+            {
+                return;
+            }
+
+            File.WriteAllBytes(firstTargetPath, concurrentBytes);
+            Directory.CreateDirectory(targetPath);
+        });
+
+        var result = service.ApplyWithoutReviewForTesting(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [firstPath],
+            [blockedPath],
+            []);
+
+        Assert.False(result.Preview.CanApply);
+        Assert.Equal([firstPath], result.WrittenFiles);
+        Assert.Equal(concurrentBytes, File.ReadAllBytes(firstTargetPath));
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.File == firstPath
+                && diagnostic.Message.Contains("concurrent change", StringComparison.OrdinalIgnoreCase));
+        AssertNoModMergerTempFiles(temp);
     }
 
     [Theory]
@@ -133,7 +734,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         WriteFile(modDirectory1, TestPath, [1, 0, 0]);
         WriteFile(modDirectory2, TestPath, [0, 2, 0]);
 
-        var result = new SwShModMergerWorkflowService().Apply(
+        var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -182,7 +783,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         Assert.Equal("needsChoice", Assert.Single(smartStage.Preview.Files, file => file.RelativePath == overlapPath).MergeKind);
         var smartConflict = Assert.Single(smartStage.Preview.Conflicts);
 
-        var smartApply = service.Apply(
+        var smartApply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -197,7 +798,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         Assert.Equal([1, 0, 2, 0], ReadOutputFile(temp, mergeablePath));
         Assert.Equal([0, 4, 0, 0], ReadOutputFile(temp, overlapPath));
 
-        var mod1Apply = service.Apply(
+        var mod1Apply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -213,7 +814,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         Assert.Equal([1, 0, 0, 0], ReadOutputFile(temp, mergeablePath));
         Assert.Equal([0, 3, 0, 0], ReadOutputFile(temp, overlapPath));
 
-        var mod2Apply = service.Apply(
+        var mod2Apply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -336,7 +937,7 @@ public sealed class SwShModMergerWorkflowServiceTests
             .Select(conflict => new SwShModMergerConflictResolution(conflict.ConflictId, "mod2"))
             .ToArray();
 
-        var smartApply = service.Apply(
+        var smartApply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -350,7 +951,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         AssertPlainSummary(FindFile(smartApply.Preview, overlapPath), "manualChoice", "Choice applied", "byte overlap");
         AssertPlainSummary(FindFile(smartApply.Preview, lengthPath), "manualChoice", "whole-file conflict", "Mod Directory 2");
 
-        var priorityApply = service.Apply(
+        var priorityApply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -389,7 +990,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         var conflict = Assert.Single(stage.Preview.Conflicts);
         Assert.Null(conflict.Resolution);
 
-        var apply = service.Apply(
+        var apply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -399,6 +1000,42 @@ public sealed class SwShModMergerWorkflowServiceTests
 
         Assert.True(apply.Preview.CanApply);
         Assert.Equal([0, 2, 0], ReadOutputFile(temp, TestPath));
+    }
+
+    [Fact]
+    public void StageRejectsDuplicateConflictResolutionsWithoutThrowing()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        temp.WriteBaseRomFsFile("bin/test.bin", [0, 0, 0]);
+        WriteFile(modDirectory1, TestPath, [0, 1, 0]);
+        WriteFile(modDirectory2, TestPath, [0, 2, 0]);
+        var service = new SwShModMergerWorkflowService();
+        var initial = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [TestPath],
+            []);
+        var conflict = Assert.Single(initial.Preview.Conflicts);
+
+        var duplicate = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [TestPath],
+            [TestPath],
+            [
+                new SwShModMergerConflictResolution(conflict.ConflictId, "mod1"),
+                new SwShModMergerConflictResolution(conflict.ConflictId, "mod2"),
+            ]);
+
+        Assert.False(duplicate.Preview.CanApply);
+        Assert.Contains(
+            duplicate.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("submitted more than once", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -421,7 +1058,7 @@ public sealed class SwShModMergerWorkflowServiceTests
             []);
         var conflict = Assert.Single(stage.Preview.Conflicts);
 
-        var apply = service.Apply(
+        var apply = service.ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -470,7 +1107,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         WriteFile(modDirectory1, "romfs/bin/dir1-only.bin", [9]);
         WriteFile(modDirectory2, "romfs/bin/dir2-only.bin", [8, 8]);
 
-        var result = new SwShModMergerWorkflowService().Apply(
+        var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -507,7 +1144,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         WriteFile(modDirectory2, TestPath, [0, 0, 2, 0]);
         WriteFile(temp.OutputRootPath, "romfs/bin/unrelated.bin", [7, 7, 7]);
 
-        var result = new SwShModMergerWorkflowService().Apply(
+        var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -533,7 +1170,7 @@ public sealed class SwShModMergerWorkflowServiceTests
         WriteFile(modDirectory1, nestedPath, [1, 0, 0, 3, 0]);
         WriteFile(modDirectory2, nestedPath, [0, 0, 2, 0, 4]);
 
-        var result = new SwShModMergerWorkflowService().Apply(
+        var result = new SwShModMergerWorkflowService().ApplyWithoutReviewForTesting(
             temp.Paths,
             modDirectory1,
             modDirectory2,
@@ -618,6 +1255,19 @@ public sealed class SwShModMergerWorkflowServiceTests
         File.WriteAllBytes(path, contents);
     }
 
+    private static bool TryCreateFileSymbolicLink(string linkPath, string targetPath)
+    {
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+        {
+            return false;
+        }
+    }
+
     private static byte[] ReadOutputFile(TemporarySwShProject temp, string relativePath)
     {
         var path = Path.Combine(
@@ -640,6 +1290,7 @@ public sealed class SwShModMergerWorkflowServiceTests
     private static void AssertNoModMergerTempFiles(TemporarySwShProject temp)
     {
         Assert.Empty(Directory.EnumerateFiles(temp.OutputRootPath, "*.tmp", SearchOption.AllDirectories));
+        Assert.Empty(Directory.EnumerateFiles(temp.OutputRootPath, "*.bak", SearchOption.AllDirectories));
     }
 
     private static void ForceFullCollection()

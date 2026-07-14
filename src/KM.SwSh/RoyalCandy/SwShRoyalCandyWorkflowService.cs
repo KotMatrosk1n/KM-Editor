@@ -103,6 +103,11 @@ public sealed class SwShRoyalCandyWorkflowService
         this.bagHookWorkflowService = bagHookWorkflowService ?? new SwShBagHookWorkflowService();
     }
 
+    public void ClearMemoryCache()
+    {
+        exeFsPatchWorkflowService.ClearMemoryCache();
+    }
+
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);

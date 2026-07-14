@@ -51,6 +51,7 @@ using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
+using KM.SwSh.Editing;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.FairyGymBoosts;
@@ -101,6 +102,8 @@ namespace KM.Tools.Bridge;
 
 public sealed class ProjectBridgeDispatcher
 {
+    private static readonly object SwShApplySyncRoot = new();
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShDynamaxAdventuresEditSessionService dynamaxAdventuresEditSessionService;
     private readonly SwShDynamaxAdventureSeedPlanningService dynamaxAdventureSeedPlanningService;
@@ -2234,7 +2237,7 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyModMerge(string requestJson)
     {
         var request = DeserializeRequest<ApplyModMergeRequest>(requestJson);
-        var result = modMergerWorkflowService.Apply(
+        var result = modMergerWorkflowService.ApplyReviewed(
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             request.Payload.ModDirectory1,
             request.Payload.ModDirectory2,
@@ -2243,7 +2246,8 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
                 resolution.ConflictId,
                 resolution.Source)).ToArray(),
-            request.Payload.MergeMode);
+            request.Payload.MergeMode,
+            request.Payload.ReviewToken);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2602,11 +2606,34 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var changePlan = IsPokemonLegendsZA(paths)
-            ? zaWorkflowService.CreateChangePlan(paths, session, ZaBridgeMapper.ToCore(request.Payload.OutputMode))
-            : IsScarletViolet(paths)
-            ? svWorkflowService.CreateChangePlan(paths, session, SvBridgeMapper.ToCore(request.Payload.OutputMode))
-            : CreateSwShChangePlan(paths, session);
+        var isPokemonLegendsZA = IsPokemonLegendsZA(paths);
+        var isScarletViolet = IsScarletViolet(paths);
+        ChangePlan changePlan;
+        if (isPokemonLegendsZA)
+        {
+            changePlan = zaWorkflowService.CreateChangePlan(
+                paths,
+                session,
+                ZaBridgeMapper.ToCore(request.Payload.OutputMode));
+        }
+        else if (isScarletViolet)
+        {
+            changePlan = svWorkflowService.CreateChangePlan(
+                paths,
+                session,
+                SvBridgeMapper.ToCore(request.Payload.OutputMode));
+        }
+        else
+        {
+            lock (SwShApplySyncRoot)
+            {
+                ClearCriticalSwShApplyCaches();
+                changePlan = SwShChangePlanSourceGuard.Capture(
+                    paths,
+                    CreateSwShChangePlan(paths, session));
+            }
+        }
+
         var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
 
         return SerializeSuccess(response, request.RequestId);
@@ -2618,14 +2645,95 @@ public sealed class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
-        var applyResult = IsPokemonLegendsZA(paths)
+        var isPokemonLegendsZA = IsPokemonLegendsZA(paths);
+        var isScarletViolet = IsScarletViolet(paths);
+        var applyResult = isPokemonLegendsZA
             ? zaWorkflowService.ApplyChangePlan(paths, session, changePlan, ZaBridgeMapper.ToCore(request.Payload.OutputMode))
-            : IsScarletViolet(paths)
+            : isScarletViolet
             ? svWorkflowService.ApplyChangePlan(paths, session, changePlan, SvBridgeMapper.ToCore(request.Payload.OutputMode))
-            : ApplySwShChangePlan(paths, session, changePlan);
+            : ApplyVerifiedSwShChangePlan(paths, session, changePlan);
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private ApplyResult ApplyVerifiedSwShChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
+        lock (SwShApplySyncRoot)
+        {
+            ClearCriticalSwShApplyCaches();
+            var currentPlan = CreateSwShChangePlan(paths, session);
+            if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var verifiedScope,
+                out var sourceDiagnostics))
+            {
+                return CreateStaleSourceApplyResult(
+                    reviewedPlan,
+                    sourceDiagnostics
+                        .Append(CreateStaleSwShPlanDiagnostic())
+                        .ToArray());
+            }
+
+            using var applyScope = verifiedScope!;
+            if (!ChangePlanReview.Matches(reviewedPlan, applyScope.CurrentPlan))
+            {
+                var staleDiagnostics = SwShChangePlanSourceGuard.Validate(paths, reviewedPlan).ToList();
+                staleDiagnostics.Add(CreateStaleSwShPlanDiagnostic());
+                return CreateStaleSourceApplyResult(
+                    reviewedPlan,
+                    staleDiagnostics);
+            }
+
+            var snapshotPlan = CreateSwShChangePlan(applyScope.ApplyPaths, session);
+            if (!applyScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedSnapshotPlan))
+            {
+                return CreateStaleSourceApplyResult(
+                    reviewedPlan,
+                    preparedSnapshotPlan.Diagnostics
+                        .Append(CreateStaleSwShPlanDiagnostic())
+                        .ToArray());
+            }
+
+            var snapshotResult = ApplySwShChangePlan(
+                applyScope.ApplyPaths,
+                session,
+                preparedSnapshotPlan);
+            var result = applyScope.Commit(snapshotResult);
+            if (result.WrittenFiles.Count > 0)
+            {
+                ClearCriticalSwShApplyCaches();
+            }
+
+            return result;
+        }
+    }
+
+    private static ValidationDiagnostic CreateStaleSwShPlanDiagnostic()
+    {
+        return new ValidationDiagnostic(
+            DiagnosticSeverity.Error,
+            "Reviewed change plan is stale. Its files, sources, or planned changes no longer match.",
+            Domain: "workflow.changePlan",
+            Expected: "Review the current Sword/Shield change plan before applying");
+    }
+
+    private static ApplyResult CreateStaleSourceApplyResult(
+        ChangePlan reviewedPlan,
+        IReadOnlyList<ValidationDiagnostic> diagnostics)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            Array.Empty<ProjectFileReference>(),
+            new WriteManifest(applyId, appliedAt, reviewedPlan.Writes),
+            diagnostics);
     }
 
     private SwShEditSessionValidation ValidateSwShEditSession(ProjectPaths paths, EditSession session)
@@ -2863,6 +2971,8 @@ public sealed class ProjectBridgeDispatcher
             {
                 break;
             }
+
+            ClearCriticalSwShApplyCaches();
         }
 
         return CreateCombinedApplyResult(
@@ -2871,6 +2981,14 @@ public sealed class ProjectBridgeDispatcher
             currentPlan,
             writtenFiles.Distinct().ToArray(),
             diagnostics);
+    }
+
+    private void ClearCriticalSwShApplyCaches()
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        swShWorkflowService.ClearMemoryCaches(clearReusableDataCaches: true);
+        exeFsPatchEditSessionService.ClearMemoryCache();
+        royalCandyEditSessionService.ClearMemoryCache();
     }
 
     private static ApplyResult CreateCombinedApplyResult(

@@ -84,7 +84,12 @@ public sealed class SwShRentalPokemonWorkflowService
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(FormField, "Form", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue, FormOptions),
-        CreateField(LevelField, "Level", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
+        CreateField(
+            LevelField,
+            "Level",
+            "integer",
+            SwShRentalPokemonArchive.MinimumPokemonLevel,
+            SwShRentalPokemonArchive.MaximumPokemonLevel),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability slot", "integer", 0, 2, AbilityOptions),

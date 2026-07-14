@@ -4244,6 +4244,7 @@ export function createMockProjectBridge(
       files: selectedFiles,
       mergeMode: 'smart',
       readyFileCount: selectedFiles.length,
+      reviewToken: `fixture-review:${selectedDirectory1Files.join(',')}|${selectedDirectory2Files.join(',')}`,
       selectedFileCount: selectedFiles.length,
       status: selectedFiles.length > 0 ? 'ready' : 'empty',
       unresolvedConflictCount: 0

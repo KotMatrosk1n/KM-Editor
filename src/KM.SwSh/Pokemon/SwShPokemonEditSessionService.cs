@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -455,23 +456,50 @@ public sealed class SwShPokemonEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var project = projectWorkspaceService.Open(paths);
-        var personalEdits = session.PendingEdits.Where(IsPersonalDataEdit).ToArray();
-        if (personalEdits.Length > 0)
+        if (!SwShOutputRollbackScope.TryCapture(
+            paths,
+            currentPlan.Writes.Select(write => write.TargetRelativePath),
+            out var rollbackScope,
+            out var captureFailure))
         {
-            ApplyPersonalDataEdits(paths, project, personalEdits, writtenFiles, diagnostics);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon Data could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable existing outputs and writable temporary storage"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var learnsetEdits = session.PendingEdits.Where(IsLearnsetEdit).ToArray();
-        if (learnsetEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        var outputRollback = rollbackScope!;
+        using (outputRollback)
         {
-            ApplyLearnsetEdits(paths, project, learnsetEdits, writtenFiles, diagnostics);
-        }
+            var project = projectWorkspaceService.Open(paths);
+            var personalEdits = session.PendingEdits.Where(IsPersonalDataEdit).ToArray();
+            if (personalEdits.Length > 0)
+            {
+                ApplyPersonalDataEdits(paths, project, personalEdits, writtenFiles, diagnostics);
+            }
 
-        var evolutionEdits = session.PendingEdits.Where(IsEvolutionEdit).ToArray();
-        if (evolutionEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
-        {
-            ApplyEvolutionEdits(paths, project, evolutionEdits, writtenFiles, diagnostics);
+            var learnsetEdits = session.PendingEdits.Where(IsLearnsetEdit).ToArray();
+            if (learnsetEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                ApplyLearnsetEdits(paths, project, learnsetEdits, writtenFiles, diagnostics);
+            }
+
+            var evolutionEdits = session.PendingEdits.Where(IsEvolutionEdit).ToArray();
+            if (evolutionEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                ApplyEvolutionEdits(paths, project, evolutionEdits, writtenFiles, diagnostics);
+            }
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                RollbackFailedApply(outputRollback, writtenFiles, diagnostics);
+            }
+            else
+            {
+                outputRollback.Commit();
+            }
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error) && writtenFiles.Count > 0)
@@ -482,6 +510,35 @@ public sealed class SwShPokemonEditSessionService
         }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private static void RollbackFailedApply(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        writtenFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Pokemon Data apply failed and all output changes were rolled back."));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon Data rollback failed: {failure.Message}",
+                file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
     }
 
     private static bool CanEditPokemon(
@@ -847,7 +904,7 @@ public sealed class SwShPokemonEditSessionService
         }
 
         var normalizedSlot = normalizedAction == EvolutionAddAction
-            ? selectedPokemon.Evolutions.Count
+            ? FindFirstAvailableEvolutionSlot(selectedPokemon.Evolutions)
             : slot;
         var fieldAction = normalizedAction == EvolutionAddAction
             ? EvolutionUpsertAction
@@ -1263,43 +1320,51 @@ public sealed class SwShPokemonEditSessionService
             diagnostics.Add(CreateEvolutionRangeDiagnostic("level", "level", byte.MaxValue));
         }
 
+        if (operation.Slot >= SwShEvolutionSet.MaxEvolutionCount)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon evolution slot must be between 0 and {SwShEvolutionSet.MaxEvolutionCount - 1}.",
+                field: "slot",
+                expected: "Safe Pokemon evolution slot"));
+        }
+
         if (pokemon is null)
         {
             return;
         }
 
-        var count = pokemon.Evolutions.Count;
+        var orderedEvolutions = pokemon.Evolutions
+            .OrderBy(evolution => evolution.Slot)
+            .ToArray();
+        var targetIndex = Array.FindIndex(
+            orderedEvolutions,
+            evolution => evolution.Slot == operation.Slot);
+        var count = orderedEvolutions.Length;
         switch (operation.Action)
         {
-            case EvolutionUpsertAction when operation.Slot > count:
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Pokemon evolution row edits must target an existing row or the next empty row.",
-                    field: "slot",
-                    expected: "Existing or next Pokemon evolution row"));
-                break;
-            case EvolutionUpsertAction when operation.Slot == count && count >= SwShEvolutionSet.MaxEvolutionCount:
+            case EvolutionUpsertAction when targetIndex < 0 && count >= SwShEvolutionSet.MaxEvolutionCount:
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     $"Pokemon evolution files support at most {SwShEvolutionSet.MaxEvolutionCount} rows.",
                     field: "slot",
                     expected: "Pokemon evolution file with room for another row"));
                 break;
-            case EvolutionRemoveAction when operation.Slot >= count:
+            case EvolutionRemoveAction when targetIndex < 0:
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     "Pokemon evolution remove must target an existing row.",
                     field: "slot",
                     expected: "Existing Pokemon evolution row"));
                 break;
-            case EvolutionMoveUpAction when operation.Slot <= 0 || operation.Slot >= count:
+            case EvolutionMoveUpAction when targetIndex <= 0:
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     "Pokemon evolution move-up must target a row below the first row.",
                     field: "slot",
                     expected: "Pokemon evolution row that can move up"));
                 break;
-            case EvolutionMoveDownAction when operation.Slot < 0 || operation.Slot >= count - 1:
+            case EvolutionMoveDownAction when targetIndex < 0 || targetIndex >= count - 1:
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     "Pokemon evolution move-down must target a row above the last row.",
@@ -1409,6 +1474,21 @@ public sealed class SwShPokemonEditSessionService
             $"{EvolutionFieldPrefix}:{action}:{slot?.ToString(CultureInfo.InvariantCulture) ?? string.Empty}");
     }
 
+    private static int FindFirstAvailableEvolutionSlot(
+        IReadOnlyList<SwShPokemonEvolutionRecord> evolutions)
+    {
+        var occupiedSlots = evolutions.Select(evolution => evolution.Slot).ToHashSet();
+        for (var slot = 0; slot < SwShEvolutionSet.MaxEvolutionCount; slot++)
+        {
+            if (!occupiedSlots.Contains(slot))
+            {
+                return slot;
+            }
+        }
+
+        return SwShEvolutionSet.MaxEvolutionCount;
+    }
+
     private static string CreateEvolutionValue(
         int? method,
         int? argument,
@@ -1469,6 +1549,16 @@ public sealed class SwShPokemonEditSessionService
                         string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
                         && (IsGlobalExpYieldEdit(edit)
                             || string.Equals(edit.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))))
+                    .Append(pendingEdit)
+                    .ToArray(),
+            };
+        }
+
+        if (IsOrderedRowOperation(pendingEdit))
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
                     .Append(pendingEdit)
                     .ToArray(),
             };
@@ -1972,7 +2062,9 @@ public sealed class SwShPokemonEditSessionService
                 evolution.Species,
                 evolution.Form,
                 evolution.Level))
+            .OrderBy(evolution => evolution.Slot)
             .ToList();
+        var targetIndex = evolutions.FindIndex(evolution => evolution.Slot == operation.Slot);
 
         switch (operation.Action)
         {
@@ -1982,8 +2074,8 @@ public sealed class SwShPokemonEditSessionService
                     && operation.Species is not null
                     && operation.Form is not null
                     && operation.Level is not null
-                    && operation.Slot < evolutions.Count:
-                evolutions[operation.Slot] = new SwShEvolutionRecord(
+                    && targetIndex >= 0:
+                evolutions[targetIndex] = new SwShEvolutionRecord(
                     operation.Slot,
                     operation.Method.Value,
                     operation.Argument.Value,
@@ -1997,7 +2089,9 @@ public sealed class SwShPokemonEditSessionService
                     && operation.Species is not null
                     && operation.Form is not null
                     && operation.Level is not null
-                    && operation.Slot == evolutions.Count:
+                    && targetIndex < 0
+                    && operation.Slot < SwShEvolutionSet.MaxEvolutionCount
+                    && evolutions.Count < SwShEvolutionSet.MaxEvolutionCount:
                 evolutions.Add(new SwShEvolutionRecord(
                     operation.Slot,
                     operation.Method.Value,
@@ -2006,35 +2100,32 @@ public sealed class SwShPokemonEditSessionService
                     operation.Form.Value,
                     operation.Level.Value));
                 break;
-            case EvolutionRemoveAction when operation.Slot < evolutions.Count:
-                evolutions.RemoveAt(operation.Slot);
+            case EvolutionRemoveAction when targetIndex >= 0:
+                evolutions.RemoveAt(targetIndex);
                 break;
-            case EvolutionMoveUpAction when operation.Slot > 0 && operation.Slot < evolutions.Count:
-                (evolutions[operation.Slot - 1], evolutions[operation.Slot]) = (evolutions[operation.Slot], evolutions[operation.Slot - 1]);
+            case EvolutionMoveUpAction when targetIndex > 0:
+                SwapEvolutionPayloads(evolutions, targetIndex, targetIndex - 1);
                 break;
-            case EvolutionMoveDownAction when operation.Slot >= 0 && operation.Slot < evolutions.Count - 1:
-                (evolutions[operation.Slot + 1], evolutions[operation.Slot]) = (evolutions[operation.Slot], evolutions[operation.Slot + 1]);
+            case EvolutionMoveDownAction when targetIndex >= 0 && targetIndex < evolutions.Count - 1:
+                SwapEvolutionPayloads(evolutions, targetIndex, targetIndex + 1);
                 break;
         }
 
         return record with
         {
-            Evolutions = NormalizeEvolutionSlots(evolutions),
+            Evolutions = evolutions.OrderBy(evolution => evolution.Slot).ToArray(),
         };
     }
 
-    private static IReadOnlyList<SwShEvolutionRecord> NormalizeEvolutionSlots(
-        IReadOnlyList<SwShEvolutionRecord> evolutions)
+    private static void SwapEvolutionPayloads(
+        IList<SwShEvolutionRecord> evolutions,
+        int sourceIndex,
+        int destinationIndex)
     {
-        return evolutions
-            .Select((evolution, index) => new SwShEvolutionRecord(
-                index,
-                evolution.Method,
-                evolution.Argument,
-                evolution.Species,
-                evolution.Form,
-                evolution.Level))
-            .ToArray();
+        var source = evolutions[sourceIndex];
+        var destination = evolutions[destinationIndex];
+        evolutions[sourceIndex] = destination with { Slot = source.Slot };
+        evolutions[destinationIndex] = source with { Slot = destination.Slot };
     }
 
     private static SwShPokemonLearnsetRecord ApplyLearnsetOperation(
@@ -2763,6 +2854,22 @@ public sealed class SwShPokemonEditSessionService
     {
         return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
             && edit.Field?.StartsWith($"{EvolutionFieldPrefix}:", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsOrderedRowOperation(PendingEdit edit)
+    {
+        if (!string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return edit.Field?.StartsWith($"{LearnsetFieldPrefix}:{LearnsetRemoveAction}:", StringComparison.Ordinal) == true
+            || edit.Field?.StartsWith($"{LearnsetFieldPrefix}:{LearnsetMoveUpAction}:", StringComparison.Ordinal) == true
+            || edit.Field?.StartsWith($"{LearnsetFieldPrefix}:{LearnsetMoveDownAction}:", StringComparison.Ordinal) == true
+            || edit.Field?.StartsWith($"{LearnsetFieldPrefix}:{LearnsetMoveToAction}:", StringComparison.Ordinal) == true
+            || edit.Field?.StartsWith($"{EvolutionFieldPrefix}:{EvolutionRemoveAction}:", StringComparison.Ordinal) == true
+            || edit.Field?.StartsWith($"{EvolutionFieldPrefix}:{EvolutionMoveUpAction}:", StringComparison.Ordinal) == true
+            || edit.Field?.StartsWith($"{EvolutionFieldPrefix}:{EvolutionMoveDownAction}:", StringComparison.Ordinal) == true;
     }
 
     private static ProjectFileReference CreateSourceReference(

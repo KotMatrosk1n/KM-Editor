@@ -1211,6 +1211,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         RoyalCandyPatchLayout layout)
     {
         var seeds = new List<int>();
+        var trustedStoryRoots = new HashSet<int>();
         foreach (var check in UiRouteChecks)
         {
             var branchOffset = check.CompareOffset + 4;
@@ -1220,6 +1221,10 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 && TryDecodeConditionalBranchTarget(instruction, branchOffset, out var target))
             {
                 seeds.Add(target);
+                if (IsVerifiedStoryItemCheckRoot(currentText, baseText, check, target))
+                {
+                    trustedStoryRoots.Add(target);
+                }
             }
         }
 
@@ -1266,7 +1271,31 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             seeds.Add(storyClampTarget);
         }
 
-        ClearReachableCodeCaves(currentText, baseText, seeds);
+        ClearReachableCodeCaves(currentText, baseText, seeds, trustedStoryRoots);
+    }
+
+    private static bool IsVerifiedStoryItemCheckRoot(
+        ReadOnlySpan<byte> currentText,
+        ReadOnlySpan<byte> baseText,
+        RareCandyUiCheck check,
+        int target)
+    {
+        if ((check.CompareOffset != StoryUseGateCompareOffset
+                && check.CompareOffset != StoryQuantityMaxCompareOffset)
+            || target != check.PassOffset
+            || !IsBaseZeroUnreservedCave(baseText, target, 0x0C)
+            || !TryReadInstruction(currentText, target, out var compare)
+            || compare != EncodeCmpImmediate(check.ItemRegister, RoyalCandyItemId)
+            || !TryReadInstruction(currentText, target + 4, out var nonRoyalBranch)
+            || nonRoyalBranch != EncodeConditionalBranch(target + 4, check.FailOffset, Arm64Condition.NE)
+            || !TryReadInstruction(currentText, target + 8, out var logicBranch)
+            || !IsUnconditionalBranch(logicBranch)
+            || !TryDecodeBranchTarget(logicBranch, target + 8, out var logicTarget))
+        {
+            return false;
+        }
+
+        return IsRestorableCodeCave(baseText, logicTarget, 0x0C);
     }
 
     private static void AddVirtualInventoryHookSeed(
@@ -1286,12 +1315,24 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
     private static void ClearReachableCodeCaves(byte[] currentText, ReadOnlySpan<byte> baseText, IEnumerable<int> seeds)
     {
+        ClearReachableCodeCaves(currentText, baseText, seeds, new HashSet<int>());
+    }
+
+    private static void ClearReachableCodeCaves(
+        byte[] currentText,
+        ReadOnlySpan<byte> baseText,
+        IEnumerable<int> seeds,
+        IReadOnlySet<int> trustedBelowBoundaryRoots)
+    {
         var pending = new Queue<int>(seeds);
         var visited = new HashSet<int>();
         while (pending.Count > 0)
         {
             var offset = pending.Dequeue();
-            if (!visited.Add(offset) || !IsRestorableCodeCave(baseText, offset, 0x0C))
+            var isRestorable = trustedBelowBoundaryRoots.Contains(offset)
+                ? IsBaseZeroUnreservedCave(baseText, offset, 0x0C)
+                : IsRestorableCodeCave(baseText, offset, 0x0C);
+            if (!visited.Add(offset) || !isRestorable)
             {
                 continue;
             }
@@ -1304,7 +1345,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 }
             }
 
-            currentText.AsSpan(offset, 0x0C).Clear();
+            baseText.Slice(offset, 0x0C).CopyTo(currentText.AsSpan(offset, 0x0C));
         }
     }
 
@@ -1347,6 +1388,12 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private static bool IsRestorableCodeCave(ReadOnlySpan<byte> baseText, int offset, int length)
     {
         return offset >= RareCandyUiHookCodeCaveSearchStart
+            && IsBaseZeroUnreservedCave(baseText, offset, length);
+    }
+
+    private static bool IsBaseZeroUnreservedCave(ReadOnlySpan<byte> baseText, int offset, int length)
+    {
+        return offset >= 0
             && offset % 4 == 0
             && offset + length <= baseText.Length
             && baseText.Slice(offset, length).IndexOfAnyExcept((byte)0) < 0

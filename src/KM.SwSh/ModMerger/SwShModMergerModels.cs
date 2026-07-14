@@ -62,6 +62,7 @@ public sealed record SwShModMergerPreview(
     bool CanApply,
     string Status,
     string MergeMode,
+    string ReviewToken,
     int SelectedFileCount,
     int ReadyFileCount,
     int ConflictFileCount,

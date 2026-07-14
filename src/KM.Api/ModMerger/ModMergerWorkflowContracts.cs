@@ -31,7 +31,8 @@ public sealed record ApplyModMergeRequest(
     IReadOnlyList<string> SelectedDirectory1Files,
     IReadOnlyList<string> SelectedDirectory2Files,
     IReadOnlyList<ModMergerConflictResolutionDto> Resolutions,
-    string? MergeMode = null);
+    string? MergeMode = null,
+    string? ReviewToken = null);
 
 public sealed record ModMergerFileRecordDto(
     string RelativePath,
@@ -79,6 +80,7 @@ public sealed record ModMergerPreviewDto(
     bool CanApply,
     string Status,
     string MergeMode,
+    string ReviewToken,
     int SelectedFileCount,
     int ReadyFileCount,
     int ConflictFileCount,

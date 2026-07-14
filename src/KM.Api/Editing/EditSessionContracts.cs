@@ -68,7 +68,8 @@ public sealed record PlannedFileWriteDto(
     string TargetRelativePath,
     IReadOnlyList<FileProvenanceDto> Sources,
     bool ReplacesExistingOutput,
-    string Reason);
+    string Reason,
+    string? SourceFingerprint = null);
 
 public sealed record ApplyResultDto(
     string ApplyId,

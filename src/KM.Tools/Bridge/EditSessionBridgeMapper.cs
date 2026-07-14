@@ -75,7 +75,8 @@ public static class EditSessionBridgeMapper
             write.TargetRelativePath,
             write.Sources.Select(ToDto).ToArray(),
             write.ReplacesExistingOutput,
-            write.Reason);
+            write.Reason,
+            write.SourceFingerprint);
     }
 
     private static PlannedFileWrite ToCore(PlannedFileWriteDto write)
@@ -84,7 +85,8 @@ public static class EditSessionBridgeMapper
             write.TargetRelativePath,
             write.Sources.Select(ToCore).ToArray(),
             write.ReplacesExistingOutput,
-            write.Reason);
+            write.Reason,
+            write.SourceFingerprint);
     }
 
     private static PendingEditDto ToDto(PendingEdit edit)

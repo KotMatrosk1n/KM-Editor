@@ -36,6 +36,7 @@ using KM.Formats.SwSh;
 using KM.Formats.Executable;
 using KM.SwSh.BagHook;
 using KM.SwSh.DynamaxAdventures;
+using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.IvScreen;
@@ -1913,6 +1914,74 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchCombinedRaidRewardEditsPreserveDropAndBonusChanges()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var dropWorkflow = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-combined-raid-drop-load"))).Payload!.Workflow;
+        var bonusWorkflow = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBonusRewardsWorkflow,
+            new LoadRaidBonusRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-combined-raid-bonus-load"))).Payload!.Workflow;
+        var session = DeserializeResponse<StartEditSessionResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StartEditSession,
+            new StartEditSessionRequest(temp.Paths),
+            requestId: "request-combined-raid-start"))).Payload!.Session;
+
+        var dropUpdate = DeserializeResponse<UpdateRaidRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidRewardField,
+            new UpdateRaidRewardFieldRequest(
+                temp.Paths,
+                session,
+                dropWorkflow.Tables.Single(table => table.RewardKind == "drop").TableId,
+                Slot: 2,
+                Field: "star5Value",
+                Value: "77"),
+            requestId: "request-combined-raid-drop-update"))).Payload!;
+        var bonusUpdate = DeserializeResponse<UpdateRaidBonusRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidBonusRewardField,
+            new UpdateRaidBonusRewardFieldRequest(
+                temp.Paths,
+                dropUpdate.Session,
+                Assert.Single(bonusWorkflow.Tables).TableId,
+                Slot: 1,
+                Field: "star1Value",
+                Value: "88"),
+            requestId: "request-combined-raid-bonus-update"))).Payload!;
+
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, bonusUpdate.Session),
+            requestId: "request-combined-raid-plan"))).Payload!.ChangePlan;
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, bonusUpdate.Session, plan),
+            requestId: "request-combined-raid-apply"))).Payload!.ApplyResult;
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(apply.WrittenFiles));
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var dropArchive = SwShNestHoleRewardArchive.Parse(outputPack.GetFileByName("nest_hole_drop_rewards.bin"));
+        var bonusArchive = SwShNestHoleRewardArchive.Parse(outputPack.GetFileByName("nest_hole_bonus_rewards.bin"));
+        Assert.Equal(77u, dropArchive.Tables[0].Rewards[1].Values[4]);
+        Assert.Equal(88u, bonusArchive.Tables[0].Rewards[0].Values[0]);
+    }
+
+    [Fact]
     public void DispatchLoadPlacementWorkflowReturnsRealPlacedObjects()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2244,6 +2313,94 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));
         Assert.Contains(EncodeCmpImmediate(register: 22, immediate: 1128), ReadAlignedInstructions(outputText));
         Assert.Equal(NsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+    }
+
+    [Fact]
+    public void DispatchCreateChangePlanClearsPreservedMetadataExeFsCache()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageResponse = DeserializeResponse<StageExeFsPatchResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StageExeFsPatch,
+            new StageExeFsPatchRequest(
+                temp.Paths,
+                SwShExeFsPatchWorkflowService.MainPatchId,
+                Session: null),
+            requestId: "request-exefs-cache-stage")));
+        Assert.NotNull(stageResponse.Payload);
+
+        var baseMainPath = Path.Combine(temp.BaseExeFsPath, "main");
+        var originalWriteTime = File.GetLastWriteTimeUtc(baseMainPath);
+        var replacementBytes = File.ReadAllBytes(baseMainPath);
+        replacementBytes[0] ^= 0xFF;
+        File.WriteAllBytes(baseMainPath, replacementBytes);
+        File.SetLastWriteTimeUtc(baseMainPath, originalWriteTime);
+
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-exefs-cache-plan")));
+
+        Assert.NotNull(planResponse.Payload);
+        Assert.False(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchApplyChangePlanClearsPreservedMetadataExeFsCache()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageResponse = DeserializeResponse<StageExeFsPatchResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StageExeFsPatch,
+            new StageExeFsPatchRequest(
+                temp.Paths,
+                SwShExeFsPatchWorkflowService.MainPatchId,
+                Session: null),
+            requestId: "request-exefs-apply-cache-stage")));
+        Assert.NotNull(stageResponse.Payload);
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-exefs-apply-cache-plan")));
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+
+        var baseMainPath = Path.Combine(temp.BaseExeFsPath, "main");
+        var originalWriteTime = File.GetLastWriteTimeUtc(baseMainPath);
+        var replacementBytes = File.ReadAllBytes(baseMainPath);
+        replacementBytes[0] ^= 0xFF;
+        File.WriteAllBytes(baseMainPath, replacementBytes);
+        File.SetLastWriteTimeUtc(baseMainPath, originalWriteTime);
+        var forgedReviewedPlan = EditSessionBridgeMapper.ToDto(
+            SwShChangePlanSourceGuard.Capture(
+                ProjectBridgeMapper.ToCore(temp.Paths),
+                EditSessionBridgeMapper.ToCore(planResponse.Payload.ChangePlan)));
+        Assert.NotEqual(
+            Assert.Single(planResponse.Payload.ChangePlan.Writes).SourceFingerprint,
+            Assert.Single(forgedReviewedPlan.Writes).SourceFingerprint);
+
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                forgedReviewedPlan),
+            requestId: "request-exefs-apply-cache-apply")));
+
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Empty(applyResponse.Payload.ApplyResult.WrittenFiles);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
     }
 
     [Fact]
@@ -3519,7 +3676,8 @@ public sealed class ProjectBridgeDispatcherTests
                     modDirectory2,
                     [relativePath, directory1OnlyPath],
                     [relativePath, directory2OnlyPath],
-                    []),
+                    [],
+                    ReviewToken: stageResponse.Payload.Preview.ReviewToken),
                 requestId: "request-mod-merger-apply")));
 
         Assert.Null(applyResponse.Error);
@@ -3798,6 +3956,7 @@ public sealed class ProjectBridgeDispatcherTests
         var write = Assert.Single(response.Payload.ChangePlan.Writes);
         Assert.Equal("romfs/bin/pml/item/item.dat", write.TargetRelativePath);
         Assert.Equal(FileLayerDto.Base, Assert.Single(write.Sources).Layer);
+        Assert.False(string.IsNullOrWhiteSpace(write.SourceFingerprint));
     }
 
     [Fact]
@@ -3869,6 +4028,52 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.DoesNotContain(
             response.Payload.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchApplyChangePlanRejectsSourceChangedAfterReview()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "buyPrice", Value: "450"),
+            requestId: "request-items-edit"));
+        var sessionResponse = DeserializeResponse<UpdateItemFieldResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var planResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-change-plan"));
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(planResponseJson);
+        Assert.NotNull(planResponse.Payload);
+
+        var baseItemPath = Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item.dat");
+        var changedBaseBytes = File.ReadAllBytes(baseItemPath);
+        changedBaseBytes[0x7A] = 0x2D;
+        File.WriteAllBytes(baseItemPath, changedBaseBytes);
+        var responseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, sessionResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-stale-change-plan-apply"));
+        var response = DeserializeResponse<ApplyChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.ApplyResult.WrittenFiles);
+        Assert.Contains(
+            response.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("source file changed", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "pml",
+            "item",
+            "item.dat")));
     }
 
     [Fact]

@@ -84,9 +84,15 @@ export const workflowDefinitions: Array<{
     icon: MapPin
   },
   {
+    id: 'rentalPokemon',
+    label: 'Rental Pokemon',
+    description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
+    icon: Dna
+  },
+  {
     id: 'shops',
     label: 'Shops',
-    description: 'Shop inventories, prices, stock limits, and source provenance.',
+    description: 'Shop inventories, item metadata, and source provenance.',
     icon: Store
   },
   {

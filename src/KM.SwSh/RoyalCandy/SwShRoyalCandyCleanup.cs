@@ -121,7 +121,7 @@ internal static class SwShRoyalCandyCleanup
             File.ReadAllBytes(targetPath),
             baseBytes,
             paths.SelectedGame);
-        if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
+        if (SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(restored, baseBytes))
         {
             File.Delete(targetPath);
         }
@@ -387,11 +387,6 @@ internal static class SwShRoyalCandyCleanup
         }
 
         return false;
-    }
-
-    private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
-    {
-        return SwShIndependentExeFsHookDetector.ContainsAny(mainBytes);
     }
 
     private static bool IsShopDataOutput(string relativePath)

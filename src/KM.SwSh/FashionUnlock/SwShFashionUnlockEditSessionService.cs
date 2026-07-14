@@ -53,11 +53,24 @@ public sealed class SwShFashionUnlockEditSessionService
             return new SwShFashionUnlockEditResult(workflow, currentSession, diagnostics);
         }
 
+        var source = SwShFashionUnlockWorkflowService.ResolveWorkflowFile(
+            project,
+            SwShFashionUnlockWorkflowService.ExeFsMainPath);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fashion Unlock source could not be resolved.",
+                file: SwShFashionUnlockWorkflowService.ExeFsMainPath,
+                expected: "Readable exefs/main source"));
+            return new SwShFashionUnlockEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
             PendingEdits = currentSession.PendingEdits
                 .Where(edit => !string.Equals(edit.Domain, FashionUnlockEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingInstallEdit())
+                .Append(CreatePendingInstallEdit([CreateSourceReference(source.Entry)]))
                 .ToArray(),
         };
 
@@ -185,6 +198,20 @@ public sealed class SwShFashionUnlockEditSessionService
         }
 
         var isUninstall = IsUninstallSession(session);
+        var project = projectWorkspaceService.Open(paths);
+        var source = SwShFashionUnlockWorkflowService.ResolveWorkflowFile(
+            project,
+            SwShFashionUnlockWorkflowService.ExeFsMainPath);
+        if (!isUninstall && source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fashion Unlock source could not be resolved.",
+                file: SwShFashionUnlockWorkflowService.ExeFsMainPath,
+                expected: "Readable exefs/main source"));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
         var writes = new[]
         {
             new PlannedFileWrite(
@@ -194,7 +221,7 @@ public sealed class SwShFashionUnlockEditSessionService
                         new ProjectFileReference(ProjectFileLayer.Generated, SwShFashionUnlockWorkflowService.ExeFsMainPath),
                         new ProjectFileReference(ProjectFileLayer.Base, SwShFashionUnlockWorkflowService.ExeFsMainPath),
                     ]
-                    : [new ProjectFileReference(ProjectFileLayer.Base, SwShFashionUnlockWorkflowService.ExeFsMainPath)],
+                    : [CreateSourceReference(source!.Entry)],
                 File.Exists(targetPath),
                 isUninstall
                     ? "Uninstall Fashion Unlock from exefs/main while preserving other generated ExeFS edits."
@@ -449,15 +476,22 @@ public sealed class SwShFashionUnlockEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static PendingEdit CreatePendingInstallEdit()
+    private static PendingEdit CreatePendingInstallEdit(IReadOnlyList<ProjectFileReference> sources)
     {
         return new PendingEdit(
             FashionUnlockEditDomain,
             "Stage Fashion Unlock install.",
-            [new ProjectFileReference(ProjectFileLayer.Base, SwShFashionUnlockWorkflowService.ExeFsMainPath)],
+            sources,
             InstallRecordId,
             InstallField,
             "true");
+    }
+
+    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
+    {
+        return new ProjectFileReference(
+            entry.LayeredFile is not null ? ProjectFileLayer.Layered : ProjectFileLayer.Base,
+            entry.RelativePath);
     }
 
     private static PendingEdit CreatePendingUninstallEdit()

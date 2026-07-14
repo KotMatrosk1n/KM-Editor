@@ -54,11 +54,17 @@ public sealed class SwShHyperTrainingEditSessionService
             return new SwShHyperTrainingEditResult(workflow, currentSession, diagnostics);
         }
 
+        var sources = ResolvePendingSources(project, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShHyperTrainingEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
             PendingEdits = currentSession.PendingEdits
                 .Where(edit => !string.Equals(edit.Domain, HyperTrainingEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit(minimumLevel))
+                .Append(CreatePendingEdit(minimumLevel, sources))
                 .ToArray(),
         };
 
@@ -478,19 +484,53 @@ public sealed class SwShHyperTrainingEditSessionService
         return minimumLevel;
     }
 
-    private static PendingEdit CreatePendingEdit(int minimumLevel)
+    private static PendingEdit CreatePendingEdit(
+        int minimumLevel,
+        IReadOnlyList<ProjectFileReference> sources)
     {
         return new PendingEdit(
             HyperTrainingEditDomain,
             string.Create(CultureInfo.InvariantCulture, $"Stage Hyper Training minimum level Lv.{minimumLevel}."),
-            [
-                new ProjectFileReference(ProjectFileLayer.Base, SwShHyperTrainingWorkflowService.ScriptPath),
-                new ProjectFileReference(ProjectFileLayer.Base, SwShHyperTrainingWorkflowService.EnglishDialoguePath),
-                new ProjectFileReference(ProjectFileLayer.Base, SwShHyperTrainingWorkflowService.ExeFsMainPath),
-            ],
+            sources,
             RecordId,
             MinimumLevelField,
             minimumLevel.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static IReadOnlyList<ProjectFileReference> ResolvePendingSources(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sources = new List<ProjectFileReference>();
+        foreach (var relativePath in new[]
+        {
+            SwShHyperTrainingWorkflowService.ScriptPath,
+            SwShHyperTrainingWorkflowService.ExeFsMainPath,
+        })
+        {
+            var source = SwShHyperTrainingWorkflowService.ResolveWorkflowFile(project, relativePath);
+            if (source is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Hyper Training source could not be resolved.",
+                    file: relativePath,
+                    expected: "Readable current Hyper Training source"));
+                continue;
+            }
+
+            sources.Add(CreateSourceReference(source.Entry));
+        }
+
+        var dialogueSource = SwShHyperTrainingWorkflowService.ResolveWorkflowFile(
+            project,
+            SwShHyperTrainingWorkflowService.EnglishDialoguePath);
+        if (dialogueSource is not null)
+        {
+            sources.Add(CreateSourceReference(dialogueSource.Entry));
+        }
+
+        return sources;
     }
 
     private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
