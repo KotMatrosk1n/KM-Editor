@@ -37,6 +37,7 @@ const commonWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   randomizer: 'Randomizer',
   rentalPokemon: 'Rental-Pokemon-Editor',
   royalCandy: 'Royal-Candy',
+  settings: 'Settings',
   shinyRate: 'Shiny-Rate',
   shops: 'Shops-Editor',
   spreadsheetImport: 'Dump-Importer',

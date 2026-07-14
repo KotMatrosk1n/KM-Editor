@@ -191,6 +191,10 @@ button > span {
   white-space: normal;
 }
 
+.game-choice-button-full-row {
+  grid-column: 1 / -1;
+}
+
 .game-choice-button:hover {
   background: linear-gradient(135deg, #27217a, var(--color-accent));
   border-color: rgb(109 115 255 / 72%);
@@ -240,6 +244,7 @@ button > span {
 
 .brand {
   display: flex;
+  position: relative;
   align-items: center;
   gap: 12px;
   min-height: 52px;
@@ -299,6 +304,13 @@ button > span {
   border: 1px solid #31415f;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.sidebar:not(.sidebar-compact) .sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  right: -18px;
+  transform: translateY(-50%);
 }
 
 .sidebar-toggle:hover {
