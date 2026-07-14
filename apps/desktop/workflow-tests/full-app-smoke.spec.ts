@@ -43,6 +43,10 @@ test.describe('full app smoke pass', () => {
         await assertNoRuntimeIssues(page, runtimeIssues);
       }
 
+      await assertActiveWorkflowNavigationVisible(page);
+      await page.getByRole('button', { name: 'Expand sidebar' }).click();
+      await assertActiveWorkflowNavigationVisible(page);
+
       await openPrimarySection(page, 'Project Setup');
       await assertNoRuntimeIssues(page, runtimeIssues);
       await openPrimarySection(page, 'Changes');
@@ -273,9 +277,39 @@ async function openWorkflow(page: Page, workflowLabel: string) {
   const nav = page.getByRole('navigation', { name: 'Workspace' });
   await nav.getByRole('button', { exact: true, name: workflowLabel }).click();
   await expect(page.getByRole('heading', { level: 1, name: workflowLabel })).toBeVisible();
+  await assertActiveWorkflowNavigationVisible(page);
   await expect(page.getByText(new RegExp(`Open ${escapeRegExp(workflowLabel)} from Workflows`))).toHaveCount(
     0
   );
+}
+
+async function assertActiveWorkflowNavigationVisible(page: Page) {
+  const geometry = await page.locator('.sidebar-navigation-scroll').evaluate((scrollRegion) => {
+    const activeItem = scrollRegion.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!activeItem) {
+      return null;
+    }
+
+    const scrollRegionBounds = scrollRegion.getBoundingClientRect();
+    const activeItemBounds = activeItem.getBoundingClientRect();
+    return {
+      activeBottom: activeItemBounds.bottom,
+      activeTop: activeItemBounds.top,
+      scrollLeft: scrollRegion.scrollLeft,
+      scrollRegionBottom: scrollRegionBounds.bottom,
+      scrollRegionTop: scrollRegionBounds.top
+    };
+  });
+
+  expect(geometry).not.toBeNull();
+  if (!geometry) {
+    return;
+  }
+
+  const tolerance = 1;
+  expect(geometry.scrollLeft).toBe(0);
+  expect(geometry.activeTop).toBeGreaterThanOrEqual(geometry.scrollRegionTop - tolerance);
+  expect(geometry.activeBottom).toBeLessThanOrEqual(geometry.scrollRegionBottom + tolerance);
 }
 
 async function openPrimarySection(page: Page, sectionLabel: string) {
