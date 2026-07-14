@@ -5,7 +5,10 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.DynamaxAdventures;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -17,6 +20,7 @@ public sealed class SwShStaticEncountersEditSessionService
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShStaticEncountersWorkflowService staticEncountersWorkflowService;
+    private readonly Action<string, byte[]> temporaryFileWriter;
 
     public SwShStaticEncountersEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -24,6 +28,19 @@ public sealed class SwShStaticEncountersEditSessionService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.staticEncountersWorkflowService = staticEncountersWorkflowService ?? new SwShStaticEncountersWorkflowService();
+        temporaryFileWriter = File.WriteAllBytes;
+    }
+
+    internal SwShStaticEncountersEditSessionService(
+        Action<string, byte[]> temporaryFileWriter,
+        ProjectWorkspaceService? projectWorkspaceService = null,
+        SwShStaticEncountersWorkflowService? staticEncountersWorkflowService = null)
+    {
+        ArgumentNullException.ThrowIfNull(temporaryFileWriter);
+
+        this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+        this.staticEncountersWorkflowService = staticEncountersWorkflowService ?? new SwShStaticEncountersWorkflowService();
+        this.temporaryFileWriter = temporaryFileWriter;
     }
 
     public EditSession StartSession()
@@ -38,43 +55,97 @@ public sealed class SwShStaticEncountersEditSessionService
         string field,
         string value)
     {
-        ArgumentNullException.ThrowIfNull(paths);
-        ArgumentNullException.ThrowIfNull(field);
-        ArgumentNullException.ThrowIfNull(value);
+        return UpdateFields(
+            paths,
+            session,
+            [new SwShStaticEncounterFieldUpdate(encounterIndex, field, value)]);
+    }
 
-        var currentSession = session ?? StartSession();
+    public SwShStaticEncountersEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShStaticEncounterFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var workflow = staticEncountersWorkflowService.Load(project);
+        var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!CanEditStaticEncounters(project, workflow, diagnostics))
         {
-            return new SwShStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SwShStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
-        var encounter = effectiveWorkflow.Encounters.FirstOrDefault(candidate => candidate.EncounterIndex == encounterIndex);
-        if (encounter is null)
+        if (updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Static encounter index {encounterIndex} is not present in the loaded workflow.",
-                field: "encounterIndex",
-                expected: "Existing static encounter record"));
-            return new SwShStaticEncountersEditResult(effectiveWorkflow, currentSession, diagnostics);
+                "Update at least one Static Encounter field.",
+                field: "updates",
+                expected: "One or more Static Encounter field updates"));
+            return new SwShStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(encounter, field, value, diagnostics);
-        if (pendingEdit is null)
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        foreach (var update in updates)
         {
-            return new SwShStaticEncountersEditResult(effectiveWorkflow, currentSession, diagnostics);
+            if (update is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Static Encounter field update is missing.",
+                    field: "updates",
+                    expected: "Static Encounter field update"));
+                break;
+            }
+
+            var expectedEncounterId = ParseExpectedEncounterId(update.ExpectedEncounterId, diagnostics);
+            if (!string.IsNullOrWhiteSpace(update.ExpectedEncounterId) && expectedEncounterId is null)
+            {
+                break;
+            }
+
+            var encounter = ResolveEncounter(
+                effectiveWorkflow,
+                update.EncounterIndex,
+                expectedEncounterId,
+                diagnostics,
+                update.Field);
+            if (encounter is null)
+            {
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(effectiveWorkflow, encounter, update.Field, update.Value, diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            pendingEdit = AddIdentityValidationSource(project, pendingEdit);
+            workingSession = ReplacePendingStaticEncounterEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(workflow, workingSession.PendingEdits);
         }
 
-        var updatedSession = ReplacePendingStaticEncounterEdit(currentSession, pendingEdit);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
+        }
+
+        ValidateLoadedSession(project, workflow, workingSession, diagnostics, addSuccessDiagnostic: false);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShStaticEncountersEditResult(originalWorkflow, originalSession, diagnostics);
+        }
 
         return new SwShStaticEncountersEditResult(
-            OverlayPendingEdits(workflow, updatedSession.PendingEdits),
-            updatedSession,
+            OverlayPendingEdits(workflow, workingSession.PendingEdits),
+            workingSession,
             diagnostics);
     }
 
@@ -88,20 +159,7 @@ public sealed class SwShStaticEncountersEditSessionService
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditStaticEncounters(project, workflow, diagnostics);
-
-        var effectiveWorkflow = workflow;
-        foreach (var edit in session.PendingEdits)
-        {
-            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
-        }
-
-        if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                "Pending Static Encounter change is valid."));
-        }
+        ValidateLoadedSession(project, workflow, session, diagnostics, addSuccessDiagnostic: true);
 
         return new SwShEditSessionValidation(
             session,
@@ -154,17 +212,20 @@ public sealed class SwShStaticEncountersEditSessionService
 
         var write = new PlannedFileWrite(
             source.GraphEntry.RelativePath,
-            [new ProjectFileReference(GetSourceLayer(source.GraphEntry), source.GraphEntry.RelativePath)],
+            session.PendingEdits
+                .SelectMany(edit => edit.Sources)
+                .Distinct()
+                .ToArray(),
             File.Exists(targetPath),
-            session.PendingEdits.Count == 1
-                ? $"Apply pending Static Encounter edit: {session.PendingEdits[0].Summary}"
-                : $"Apply {session.PendingEdits.Count} pending Static Encounter edits.");
+            CreatePlanReason(session.PendingEdits));
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
-        return new ChangePlan(session.Id, [write], diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, [write], diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -179,13 +240,15 @@ public sealed class SwShStaticEncountersEditSessionService
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Reviewed change plan is stale. Review the change plan again before applying.",
                 expected: "Current reviewed Static Encounter change plan"));
         }
+
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -213,7 +276,7 @@ public sealed class SwShStaticEncountersEditSessionService
         {
             var archive = SwShStaticEncounterArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
             var edits = session.PendingEdits
-                .Select(edit => ToStaticEncounterEdit(edit, diagnostics))
+                .Select(edit => ToStaticEncounterEdit(archive, edit, diagnostics))
                 .Where(edit => edit is not null)
                 .Select(edit => edit!)
                 .ToArray();
@@ -224,8 +287,7 @@ public sealed class SwShStaticEncountersEditSessionService
             }
 
             var output = archive.WriteEdits(edits);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            WriteOutputAtomically(targetPath, output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, source.GraphEntry.RelativePath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -235,7 +297,7 @@ public sealed class SwShStaticEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Static Encounter source file could not be decoded: {exception.Message}",
+                $"Static Encounter source file could not be decoded or safely edited: {exception.Message}",
                 file: source.GraphEntry.RelativePath,
                 expected: "Sword/Shield static encounter table"));
         }
@@ -255,25 +317,37 @@ public sealed class SwShStaticEncountersEditSessionService
                 file: source.GraphEntry.RelativePath,
                 expected: "Writable output root"));
         }
+        catch (Exception exception) when (exception is ArgumentException or OverflowException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Static Encounter change could not be encoded safely: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Supported Sword/Shield static encounter field values"));
+        }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
+        SwShStaticEncountersWorkflow workflow,
         SwShStaticEncounterEntry encounter,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(value);
+
         var normalizedField = field.Trim();
-        var editableField = SwShStaticEncountersWorkflowService.GetEditableField(normalizedField);
+        var editableField = SwShStaticEncountersWorkflowService.GetEditableField(workflow, normalizedField);
         if (editableField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
             return null;
         }
 
-        var parsedValue = TryParseFieldValue(editableField, value, diagnostics, encounter.Evs);
+        var parsedValue = TryParseFieldValue(editableField, value, diagnostics);
         if (parsedValue is null)
         {
             return null;
@@ -285,12 +359,15 @@ public sealed class SwShStaticEncountersEditSessionService
             SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
             $"Set {encounter.Label} {editableField.Label} to {parsedValue.Value}.",
             [new ProjectFileReference(encounter.Provenance.SourceLayer, encounter.Provenance.SourceFile)],
-            RecordId: SwShStaticEncountersWorkflowService.CreateEncounterRecordId(encounter.EncounterIndex),
+            RecordId: SwShStaticEncountersWorkflowService.CreateEncounterRecordId(
+                encounter.EncounterIndex,
+                encounter.EncounterKey),
             Field: normalizedField,
             NewValue: parsedValue.Value.ToString(CultureInfo.InvariantCulture));
     }
 
     private static void ValidatePendingEdit(
+        OpenedProject project,
         SwShStaticEncountersWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -304,14 +381,17 @@ public sealed class SwShStaticEncountersEditSessionService
             return;
         }
 
-        var editableField = SwShStaticEncountersWorkflowService.GetEditableField(edit.Field);
+        var editableField = SwShStaticEncountersWorkflowService.GetEditableField(workflow, edit.Field);
         if (editableField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
             return;
         }
 
-        if (!SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var encounterIndex))
+        if (!SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(
+                edit.RecordId,
+                out var encounterIndex,
+                out var encounterId))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -321,26 +401,54 @@ public sealed class SwShStaticEncountersEditSessionService
             return;
         }
 
-        var encounter = workflow.Encounters.FirstOrDefault(encounter => encounter.EncounterIndex == encounterIndex);
+        var encounter = ResolveEncounter(workflow, encounterIndex, encounterId, diagnostics, edit.Field);
         if (encounter is null)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pending Static Encounter edit targets a record that is not loaded.",
-                field: "encounterIndex",
-                expected: "Existing static encounter record"));
             return;
         }
 
-        TryParseFieldValue(editableField, edit.NewValue, diagnostics, encounter.Evs);
+        var currentSources = new List<ProjectFileReference>
+        {
+            new(encounter.Provenance.SourceLayer, encounter.Provenance.SourceFile),
+        };
+        if (edit.Field is SwShStaticEncountersWorkflowService.SpeciesField
+            or SwShStaticEncountersWorkflowService.FormField
+            or SwShStaticEncountersWorkflowService.AbilityField
+            or SwShStaticEncountersWorkflowService.CanGigantamaxField)
+        {
+            var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+            if (personalSource is not null)
+            {
+                currentSources.Add(new ProjectFileReference(
+                    GetSourceLayer(personalSource.GraphEntry),
+                    personalSource.GraphEntry.RelativePath));
+            }
+        }
+
+        if (edit.Sources.Count != currentSources.Count
+            || currentSources.Any(source => !edit.Sources.Contains(source)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The Static Encounter source layer changed after this edit was staged. Stage the edit again against the current source.",
+                field: edit.Field,
+                expected: "Pending edit staged from the current Static Encounter source"));
+            return;
+        }
+
+        var parsedValue = TryParseFieldValue(editableField, edit.NewValue, diagnostics);
+        if (parsedValue is not null)
+        {
+            ValidateOptionBackedValue(workflow, encounter, editableField, parsedValue.Value, diagnostics);
+        }
+
         AddAdvancedFieldWarnings(edit.Field, diagnostics);
     }
 
     private static int? TryParseFieldValue(
         SwShStaticEncounterEditableField editableField,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics,
-        SwShStaticEncounterStatsRecord? currentEvs = null)
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
         {
@@ -349,6 +457,19 @@ public sealed class SwShStaticEncountersEditSessionService
                 $"{editableField.Label} must be an integer value.",
                 field: editableField.Field,
                 expected: "Integer value"));
+            return null;
+        }
+
+        if (!string.Equals(
+                value,
+                parsedValue.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must use canonical integer text without whitespace, a plus sign, or leading zeroes.",
+                field: editableField.Field,
+                expected: parsedValue.ToString(CultureInfo.InvariantCulture)));
             return null;
         }
 
@@ -365,12 +486,16 @@ public sealed class SwShStaticEncountersEditSessionService
 
         if (IsIndividualIvField(editableField.Field))
         {
-            parsedValue = ClampFixedIvValue(parsedValue);
-        }
-
-        if (IsEvField(editableField.Field))
-        {
-            parsedValue = NormalizeEvValue(editableField.Field, parsedValue, currentEvs);
+            var isSupportedIv = parsedValue == SwShStaticEncounterArchive.RandomIvValue
+                || parsedValue is >= SwShStaticEncounterArchive.MinimumFixedIvValue
+                    and <= SwShStaticEncounterArchive.MaximumFixedIvValue
+                || (editableField.Field == SwShStaticEncountersWorkflowService.IvHpField
+                    && parsedValue == SwShStaticEncounterArchive.ThreePerfectIvSentinel);
+            if (!isSupportedIv)
+            {
+                diagnostics.Add(CreateIvDiagnostic(editableField.Field));
+                return null;
+            }
         }
 
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
@@ -387,42 +512,581 @@ public sealed class SwShStaticEncountersEditSessionService
         return parsedValue;
     }
 
-    private static int ClampFixedIvValue(int value)
+    private static void ValidateLoadedSession(
+        OpenedProject project,
+        SwShStaticEncountersWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool addSuccessDiagnostic)
     {
-        return Math.Clamp(
-            value,
-            SwShStaticEncounterArchive.MinimumFixedIvValue,
-            SwShStaticEncounterArchive.MaximumFixedIvValue);
-    }
+        var effectiveWorkflow = workflow;
+        var evRecords = new HashSet<(int Index, ulong EncounterId)>();
+        var ivRecords = new HashSet<(int Index, ulong EncounterId)>();
+        var moveRecords = new HashSet<(int Index, ulong EncounterId)>();
+        var identityRecords = new HashSet<(int Index, ulong EncounterId)>();
+        var abilityRecords = new HashSet<(int Index, ulong EncounterId)>();
+        var gigantamaxRecords = new HashSet<(int Index, ulong EncounterId)>();
+        var seenFields = new HashSet<(int Index, ulong EncounterId, string Field)>();
 
-    private static int NormalizeEvValue(
-        string field,
-        int value,
-        SwShStaticEncounterStatsRecord? currentEvs)
-    {
-        var clamped = ClampEvValue(value);
-        if (currentEvs is null)
+        foreach (var edit in session.PendingEdits)
         {
-            return clamped;
+            var errorsBefore = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(project, effectiveWorkflow, edit, diagnostics);
+
+            if (SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(
+                    edit.RecordId,
+                    out var encounterIndex,
+                    out var encounterId))
+            {
+                var encounter = ResolveEncounter(
+                    effectiveWorkflow,
+                    encounterIndex,
+                    encounterId,
+                    diagnostics,
+                    edit.Field,
+                    reportMissing: false);
+                if (encounter is not null)
+                {
+                    var identity = (encounter.EncounterIndex, encounter.EncounterKey);
+                    var field = edit.Field ?? string.Empty;
+                    if (!seenFields.Add((identity.EncounterIndex, identity.EncounterKey, field)))
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            $"Static encounter {encounter.EncounterIndex} has more than one pending edit for '{field}'.",
+                            field: field,
+                            expected: "One pending value per Static Encounter field"));
+                    }
+
+                    if (IsEvField(field))
+                    {
+                        evRecords.Add(identity);
+                    }
+
+                    if (IsIndividualIvField(field)
+                        || field == SwShStaticEncountersWorkflowService.FlawlessIvCountField)
+                    {
+                        ivRecords.Add(identity);
+                    }
+
+                    if (IsMoveField(field))
+                    {
+                        moveRecords.Add(identity);
+                    }
+
+                    if (field is SwShStaticEncountersWorkflowService.SpeciesField
+                        or SwShStaticEncountersWorkflowService.FormField)
+                    {
+                        identityRecords.Add(identity);
+                        abilityRecords.Add(identity);
+                        gigantamaxRecords.Add(identity);
+                    }
+
+                    if (field == SwShStaticEncountersWorkflowService.AbilityField)
+                    {
+                        abilityRecords.Add(identity);
+                    }
+
+                    if (field == SwShStaticEncountersWorkflowService.CanGigantamaxField)
+                    {
+                        gigantamaxRecords.Add(identity);
+                    }
+                }
+            }
+
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorsBefore)
+            {
+                effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
+            }
         }
 
-        var remainingBudget = Math.Max(0, MaximumPokemonEvTotal - GetOtherEvTotal(currentEvs, field));
-        return Math.Min(clamped, remainingBudget);
+        ValidateFinalEncounterInvariants(effectiveWorkflow, evRecords, ivRecords, moveRecords, diagnostics);
+        ValidateSpeciesFormsAndAbilities(
+            project,
+            effectiveWorkflow,
+            identityRecords,
+            abilityRecords,
+            diagnostics);
+        ValidateGigantamaxCapability(effectiveWorkflow, gigantamaxRecords, diagnostics);
+
+        if (session.PendingEdits.Count > 0
+            && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            PreflightArchiveWrite(project, session, diagnostics);
+        }
+
+        if (session.PendingEdits.Count > 0
+            && addSuccessDiagnostic
+            && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Pending Static Encounter change is valid."));
+        }
     }
 
-    private static int GetOtherEvTotal(SwShStaticEncounterStatsRecord evs, string field)
+    private static void ValidateOptionBackedValue(
+        SwShStaticEncountersWorkflow workflow,
+        SwShStaticEncounterEntry encounter,
+        SwShStaticEncounterEditableField editableField,
+        int value,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return (field == SwShStaticEncountersWorkflowService.EvHpField ? 0 : ClampEvValue(evs.HP))
-            + (field == SwShStaticEncountersWorkflowService.EvAttackField ? 0 : ClampEvValue(evs.Attack))
-            + (field == SwShStaticEncountersWorkflowService.EvDefenseField ? 0 : ClampEvValue(evs.Defense))
-            + (field == SwShStaticEncountersWorkflowService.EvSpecialAttackField ? 0 : ClampEvValue(evs.SpecialAttack))
-            + (field == SwShStaticEncountersWorkflowService.EvSpecialDefenseField ? 0 : ClampEvValue(evs.SpecialDefense))
-            + (field == SwShStaticEncountersWorkflowService.EvSpeedField ? 0 : ClampEvValue(evs.Speed));
+        IReadOnlyList<SwShStaticEncounterEditableFieldOption> options = editableField.Field switch
+        {
+            SwShStaticEncountersWorkflowService.AbilityField =>
+                SwShStaticEncountersWorkflowService.CreateAbilityOptions(
+                    workflow.AbilityResolver,
+                    encounter.SpeciesId,
+                    encounter.Form),
+            _ => editableField.Options,
+        };
+
+        var requiresKnownOption = editableField.Field is
+            SwShStaticEncountersWorkflowService.SpeciesField
+            or SwShStaticEncountersWorkflowService.HeldItemIdField
+            or SwShStaticEncountersWorkflowService.AbilityField
+            or SwShStaticEncountersWorkflowService.Move0Field
+            or SwShStaticEncountersWorkflowService.Move1Field
+            or SwShStaticEncountersWorkflowService.Move2Field
+            or SwShStaticEncountersWorkflowService.Move3Field;
+        if (requiresKnownOption
+            && options.Count > 0
+            && !options.Any(option => option.Value == value))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} value {value.ToString(CultureInfo.InvariantCulture)} is not available in the loaded Sword/Shield lookup data.",
+                field: editableField.Field,
+                expected: $"A listed {editableField.Label.ToLowerInvariant()} value"));
+        }
     }
 
-    private static int ClampEvValue(int value)
+    private static void ValidateFinalEncounterInvariants(
+        SwShStaticEncountersWorkflow workflow,
+        IReadOnlySet<(int Index, ulong EncounterId)> evRecords,
+        IReadOnlySet<(int Index, ulong EncounterId)> ivRecords,
+        IReadOnlySet<(int Index, ulong EncounterId)> moveRecords,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return Math.Clamp(value, 0, SwShStaticEncountersWorkflowService.MaximumPokemonEvValue);
+        foreach (var identity in evRecords.Concat(ivRecords).Concat(moveRecords).Distinct())
+        {
+            var encounter = ResolveEncounter(workflow, identity.Index, identity.EncounterId, diagnostics, field: null);
+            if (encounter is null)
+            {
+                continue;
+            }
+
+            if (evRecords.Contains(identity))
+            {
+                var evTotal = encounter.Evs.HP
+                    + encounter.Evs.Attack
+                    + encounter.Evs.Defense
+                    + encounter.Evs.SpecialAttack
+                    + encounter.Evs.SpecialDefense
+                    + encounter.Evs.Speed;
+                if (evTotal > MaximumPokemonEvTotal)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{encounter.Label} has {evTotal} total EVs; a Pokemon may use at most {MaximumPokemonEvTotal}.",
+                        field: "evs",
+                        expected: $"Combined EV total of {MaximumPokemonEvTotal} or less"));
+                }
+            }
+
+            if (ivRecords.Contains(identity))
+            {
+                ValidateFinalIvValues(encounter, diagnostics);
+            }
+
+            if (moveRecords.Contains(identity)
+                && encounter.Moves.Count > 1
+                && encounter.Moves[0].MoveId == 0
+                && encounter.Moves.Skip(1).Any(move => move.MoveId != 0))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Label} cannot use later move slots while Move 1 is empty.",
+                    field: SwShStaticEncountersWorkflowService.Move0Field,
+                    expected: "Move 1 populated before later move slots, or all move slots empty"));
+            }
+        }
+    }
+
+    private static void ValidateFinalIvValues(
+        SwShStaticEncounterEntry encounter,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var ivs = new[]
+        {
+            (SwShStaticEncountersWorkflowService.IvHpField, encounter.Ivs.HP, true),
+            (SwShStaticEncountersWorkflowService.IvAttackField, encounter.Ivs.Attack, false),
+            (SwShStaticEncountersWorkflowService.IvDefenseField, encounter.Ivs.Defense, false),
+            (SwShStaticEncountersWorkflowService.IvSpecialAttackField, encounter.Ivs.SpecialAttack, false),
+            (SwShStaticEncountersWorkflowService.IvSpecialDefenseField, encounter.Ivs.SpecialDefense, false),
+            (SwShStaticEncountersWorkflowService.IvSpeedField, encounter.Ivs.Speed, false),
+        };
+        foreach (var (field, value, isHp) in ivs)
+        {
+            var valid = value == SwShStaticEncounterArchive.RandomIvValue
+                || value is >= SwShStaticEncounterArchive.MinimumFixedIvValue
+                    and <= SwShStaticEncounterArchive.MaximumFixedIvValue
+                || (isHp && value == SwShStaticEncounterArchive.ThreePerfectIvSentinel);
+            if (!valid)
+            {
+                diagnostics.Add(CreateIvDiagnostic(field));
+            }
+        }
+
+        if (encounter.Ivs.HP == SwShStaticEncounterArchive.ThreePerfectIvSentinel
+            && new[]
+            {
+                encounter.Ivs.Attack,
+                encounter.Ivs.Defense,
+                encounter.Ivs.SpecialAttack,
+                encounter.Ivs.SpecialDefense,
+                encounter.Ivs.Speed,
+            }.Any(value => value != SwShStaticEncounterArchive.RandomIvValue))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} mixes the 3-perfect IV sentinel with individual IV values.",
+                field: SwShStaticEncountersWorkflowService.FlawlessIvCountField,
+                expected: "HP -4 with all other IVs -1, or individual IV values without the -4 sentinel"));
+        }
+    }
+
+    private static void ValidateSpeciesFormsAndAbilities(
+        OpenedProject project,
+        SwShStaticEncountersWorkflow workflow,
+        IReadOnlySet<(int Index, ulong EncounterId)> identityRecords,
+        IReadOnlySet<(int Index, ulong EncounterId)> abilityRecords,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (identityRecords.Count == 0 && abilityRecords.Count == 0)
+        {
+            return;
+        }
+
+        var personalRecords = LoadPersonalRecords(project, diagnostics);
+        if (personalRecords.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var identity in identityRecords.Concat(abilityRecords).Distinct())
+        {
+            var encounter = ResolveEncounter(workflow, identity.Index, identity.EncounterId, diagnostics, field: null);
+            if (encounter is null
+                || encounter.SpeciesId <= 0
+                || (uint)encounter.SpeciesId >= (uint)personalRecords.Count)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Static encounter {identity.Index} does not target a species available in the loaded Sword/Shield personal data.",
+                    field: SwShStaticEncountersWorkflowService.SpeciesField,
+                    expected: "Species present in Sword/Shield personal data"));
+                continue;
+            }
+
+            var basePersonal = personalRecords[encounter.SpeciesId];
+            var formCount = Math.Max(1, basePersonal.FormCount);
+            if (encounter.Form < 0 || encounter.Form >= formCount)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Label} uses form {encounter.Form}, but species {encounter.SpeciesId} exposes {formCount} supported form slot(s) in personal data.",
+                    field: SwShStaticEncountersWorkflowService.FormField,
+                    expected: $"Form 0 through {formCount - 1}"));
+                continue;
+            }
+
+            var personal = basePersonal;
+            if (encounter.Form > 0 && basePersonal.FormStatsIndex > 0)
+            {
+                var formPersonalId = basePersonal.FormStatsIndex + encounter.Form - 1;
+                if ((uint)formPersonalId >= (uint)personalRecords.Count)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{encounter.Label} maps to a form record outside the loaded personal table.",
+                        field: SwShStaticEncountersWorkflowService.FormField,
+                        expected: "Mapped Sword/Shield personal form record"));
+                    continue;
+                }
+
+                personal = personalRecords[formPersonalId];
+            }
+
+            if (identityRecords.Contains(identity) && !personal.IsPresentInGame)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Label} uses a species/form that is not marked present in Sword/Shield personal data.",
+                    field: SwShStaticEncountersWorkflowService.SpeciesField,
+                    expected: "Species/form present in Sword/Shield personal data"));
+            }
+
+            if (abilityRecords.Contains(identity)
+                && !IsAvailableAbilitySlot(personal, encounter.Ability))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Label} uses an ability slot unavailable for its species and form.",
+                    field: SwShStaticEncountersWorkflowService.AbilityField,
+                    expected: "Ability slot listed for the selected species and form"));
+            }
+        }
+    }
+
+    private static bool IsAvailableAbilitySlot(SwShPersonalRecord personal, int ability)
+    {
+        return ability switch
+        {
+            0 or 1 => personal.Ability1 != 0,
+            2 => personal.Ability2 != 0,
+            3 => personal.HiddenAbility != 0,
+            _ => false,
+        };
+    }
+
+    private static void ValidateGigantamaxCapability(
+        SwShStaticEncountersWorkflow workflow,
+        IReadOnlySet<(int Index, ulong EncounterId)> records,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var identity in records)
+        {
+            var encounter = ResolveEncounter(workflow, identity.Index, identity.EncounterId, diagnostics, field: null);
+            if (encounter is null || !encounter.CanGigantamax)
+            {
+                continue;
+            }
+
+            var personal = workflow.AbilityResolver.ResolvePersonalRecord(encounter.SpeciesId, encounter.Form);
+            if (personal?.CanNotDynamax == true)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Species} is marked unable to Dynamax in Sword/Shield personal data.",
+                    field: SwShStaticEncountersWorkflowService.CanGigantamaxField,
+                    expected: "Species/form permitted to Dynamax or Can Gigantamax disabled"));
+            }
+            else if (!IsGigantamaxCapableSpeciesForm(encounter.SpeciesId, encounter.Form))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Species} form {encounter.Form} is not a Gigantamax-capable Sword/Shield species/form.",
+                    field: SwShStaticEncountersWorkflowService.CanGigantamaxField,
+                    expected: "Gigantamax-capable species/form or Can Gigantamax disabled"));
+            }
+        }
+    }
+
+    private static bool IsGigantamaxCapableSpeciesForm(int speciesId, int form)
+    {
+        if (speciesId is 25 or 52 && form != 0)
+        {
+            return false;
+        }
+
+        return SwShDynamaxAdventuresWorkflowService.IsGigantamaxCapableSpecies(speciesId);
+    }
+
+    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Static Encounter species and form validation requires the Sword/Shield personal data table.",
+                field: SwShStaticEncountersWorkflowService.SpeciesField,
+                expected: SwShPokemonWorkflowService.PersonalDataPath));
+            return [];
+        }
+
+        try
+        {
+            return SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Static Encounter species and form validation could not read personal data: {exception.Message}",
+                field: SwShStaticEncountersWorkflowService.SpeciesField,
+                expected: "Readable Sword/Shield personal data table",
+                file: source.GraphEntry.RelativePath));
+            return [];
+        }
+    }
+
+    private static PendingEdit AddIdentityValidationSource(OpenedProject project, PendingEdit pendingEdit)
+    {
+        if (pendingEdit.Field is not SwShStaticEncountersWorkflowService.SpeciesField
+            and not SwShStaticEncountersWorkflowService.FormField
+            and not SwShStaticEncountersWorkflowService.AbilityField
+            and not SwShStaticEncountersWorkflowService.CanGigantamaxField)
+        {
+            return pendingEdit;
+        }
+
+        var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        return personalSource is null
+            ? pendingEdit
+            : pendingEdit with
+            {
+                Sources = pendingEdit.Sources
+                    .Append(new ProjectFileReference(
+                        GetSourceLayer(personalSource.GraphEntry),
+                        personalSource.GraphEntry.RelativePath))
+                    .Distinct()
+                    .ToArray(),
+            };
+    }
+
+    private static void PreflightArchiveWrite(
+        OpenedProject project,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var source = SwShStaticEncountersWorkflowService.ResolveStaticEncounterDataSource(project);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Static Encounter edit preflight could not resolve the source table.",
+                expected: SwShStaticEncountersWorkflowService.StaticEncounterDataPath));
+            return;
+        }
+
+        try
+        {
+            var archive = SwShStaticEncounterArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
+            var edits = session.PendingEdits
+                .Select(edit => ToStaticEncounterEdit(archive, edit, diagnostics))
+                .Where(edit => edit is not null)
+                .Select(edit => edit!)
+                .ToArray();
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return;
+            }
+
+            _ = archive.WriteEdits(edits);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or OverflowException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Static Encounter edit cannot be encoded safely in the source FlatBuffer: {exception.Message}",
+                expected: "Materialized compatible Static Encounter fields",
+                file: source.GraphEntry.RelativePath));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Static Encounter edit preflight could not read the source table: {exception.Message}",
+                expected: "Readable Sword/Shield static encounter table",
+                file: source.GraphEntry.RelativePath));
+        }
+    }
+
+    private static ulong? ParseExpectedEncounterId(
+        string? expectedEncounterId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(expectedEncounterId))
+        {
+            return null;
+        }
+
+        var text = expectedEncounterId.Trim();
+        var isHex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+        if (isHex)
+        {
+            text = text[2..];
+        }
+
+        if (ulong.TryParse(
+                text,
+                isHex ? NumberStyles.AllowHexSpecifier : NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var encounterId))
+        {
+            return encounterId;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Expected encounter ID '{expectedEncounterId}' is not valid.",
+            field: "expectedEncounterId",
+            expected: "Unsigned decimal ID or 0x-prefixed hexadecimal ID"));
+        return null;
+    }
+
+    private static SwShStaticEncounterEntry? ResolveEncounter(
+        SwShStaticEncountersWorkflow workflow,
+        int encounterIndex,
+        ulong? expectedEncounterId,
+        ICollection<ValidationDiagnostic> diagnostics,
+        string? field,
+        bool reportMissing = true)
+    {
+        if (expectedEncounterId is null)
+        {
+            var indexMatches = workflow.Encounters
+                .Where(candidate => candidate.EncounterIndex == encounterIndex)
+                .ToArray();
+            if (indexMatches.Length == 1)
+            {
+                return indexMatches[0];
+            }
+
+            if (reportMissing)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    indexMatches.Length == 0
+                        ? $"Static encounter index {encounterIndex} is not present in the loaded workflow."
+                        : $"Static encounter index {encounterIndex} is duplicated in the loaded workflow.",
+                    field: field ?? "encounterIndex",
+                    expected: "One existing static encounter record"));
+            }
+
+            return null;
+        }
+
+        var indexed = workflow.Encounters
+            .Where(candidate => candidate.EncounterIndex == encounterIndex)
+            .ToArray();
+        var identityMatches = workflow.Encounters
+            .Where(candidate => candidate.EncounterKey == expectedEncounterId.Value)
+            .ToArray();
+        if (indexed.Length == 1
+            && indexed[0].EncounterKey == expectedEncounterId.Value
+            && identityMatches.Length == 1)
+        {
+            return indexed[0];
+        }
+
+        if (reportMissing)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                identityMatches.Length > 1
+                    ? $"Static encounter ID 0x{expectedEncounterId.Value:X16} is duplicated and cannot be targeted safely."
+                    : $"Static encounter index {encounterIndex} and ID 0x{expectedEncounterId.Value:X16} no longer identify the same row. Reload and stage the edit again.",
+                field: field ?? "encounterIndex",
+                expected: "The exact staged Static Encounter index and encounter ID pair"));
+        }
+
+        return null;
     }
 
     private static bool IsIndividualIvField(string field)
@@ -445,6 +1109,15 @@ public sealed class SwShStaticEncountersEditSessionService
             or SwShStaticEncountersWorkflowService.EvSpecialAttackField
             or SwShStaticEncountersWorkflowService.EvSpecialDefenseField
             or SwShStaticEncountersWorkflowService.EvSpeedField;
+    }
+
+    private static bool IsMoveField(string field)
+    {
+        return field is
+            SwShStaticEncountersWorkflowService.Move0Field
+            or SwShStaticEncountersWorkflowService.Move1Field
+            or SwShStaticEncountersWorkflowService.Move2Field
+            or SwShStaticEncountersWorkflowService.Move3Field;
     }
 
     private static void AddAdvancedFieldWarnings(
@@ -495,18 +1168,40 @@ public sealed class SwShStaticEncountersEditSessionService
     private static EditSession ReplacePendingStaticEncounterEdit(EditSession session, PendingEdit pendingEdit)
     {
         var pendingEdits = session.PendingEdits
-            .Where(edit => !IsSameStaticEncounterEdit(edit, pendingEdit))
+            .Where(edit => !IsConflictingStaticEncounterEdit(edit, pendingEdit))
             .Append(pendingEdit)
             .ToArray();
 
         return session with { PendingEdits = pendingEdits };
     }
 
-    private static bool IsSameStaticEncounterEdit(PendingEdit candidate, PendingEdit pendingEdit)
+    private static bool IsConflictingStaticEncounterEdit(PendingEdit candidate, PendingEdit pendingEdit)
     {
-        return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
-            && string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
-            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
+        if (!string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+            || !TargetsSameEncounter(candidate.RecordId, pendingEdit.RecordId))
+        {
+            return false;
+        }
+
+        return string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal)
+            || (candidate.Field == SwShStaticEncountersWorkflowService.FlawlessIvCountField
+                && IsIndividualIvField(pendingEdit.Field ?? string.Empty))
+            || (pendingEdit.Field == SwShStaticEncountersWorkflowService.FlawlessIvCountField
+                && IsIndividualIvField(candidate.Field ?? string.Empty));
+    }
+
+    private static bool TargetsSameEncounter(string? firstRecordId, string? secondRecordId)
+    {
+        if (string.Equals(firstRecordId, secondRecordId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(firstRecordId, out var firstIndex, out var firstId)
+            && SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(secondRecordId, out var secondIndex, out var secondId)
+            && (firstId is not null && secondId is not null
+                ? firstId == secondId
+                : firstIndex == secondIndex);
     }
 
     private static SwShStaticEncountersWorkflow OverlayPendingEdits(
@@ -528,20 +1223,39 @@ public sealed class SwShStaticEncountersEditSessionService
     {
         if (!string.Equals(edit.Domain, SwShStaticEncountersWorkflowService.StaticEncountersEditDomain, StringComparison.Ordinal)
             || !SwShStaticEncountersWorkflowService.IsEditableField(edit.Field)
-            || !SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var encounterIndex)
-            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+            || !SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(
+                edit.RecordId,
+                out var encounterIndex,
+                out var encounterId)
+            || !int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
         {
             return workflow;
         }
 
-        return workflow with
+
+        var target = ResolveEncounter(
+            workflow,
+            encounterIndex,
+            encounterId,
+            new List<ValidationDiagnostic>(),
+            edit.Field,
+            reportMissing: false);
+        if (target is null)
+        {
+            return workflow;
+        }
+
+        var updated = workflow with
         {
             Encounters = workflow.Encounters
-                .Select(encounter => encounter.EncounterIndex == encounterIndex
+                .Select(encounter => encounter.EncounterIndex == target.EncounterIndex
+                    && encounter.EncounterKey == target.EncounterKey
                     ? OverlayEncounterField(workflow, encounter, edit.Field!, value)
                     : encounter)
                 .ToArray(),
         };
+
+        return SwShStaticEncountersWorkflowService.RecalculateStats(updated);
     }
 
     private static SwShStaticEncounterEntry OverlayEncounterField(
@@ -555,14 +1269,14 @@ public sealed class SwShStaticEncountersEditSessionService
             SwShStaticEncountersWorkflowService.SpeciesField => encounter with
             {
                 SpeciesId = value,
-                Species = GetOptionLabel(workflow, field, value, "Species"),
+                Species = GetOptionDisplayName(workflow, field, value, "Species"),
             },
             SwShStaticEncountersWorkflowService.FormField => encounter with { Form = value },
             SwShStaticEncountersWorkflowService.LevelField => encounter with { Level = value },
             SwShStaticEncountersWorkflowService.HeldItemIdField => encounter with
             {
                 HeldItemId = value,
-                HeldItem = value == 0 ? null : GetOptionLabel(workflow, field, value, "Item"),
+                HeldItem = value == 0 ? null : GetOptionDisplayName(workflow, field, value, "Item"),
             },
             SwShStaticEncountersWorkflowService.AbilityField => encounter with
             {
@@ -612,8 +1326,26 @@ public sealed class SwShStaticEncountersEditSessionService
         };
 
         var flawlessIvCount = GetFlawlessIvCount(updatedEncounter.Ivs);
+        var abilityOptions = SwShStaticEncountersWorkflowService.CreateAbilityOptions(
+            workflow.AbilityResolver,
+            updatedEncounter.SpeciesId,
+            updatedEncounter.Form);
+        var genderOptions = SwShStaticEncountersWorkflowService.CreateGenderOptions(
+            workflow.AbilityResolver,
+            updatedEncounter.SpeciesId,
+            updatedEncounter.Form);
         updatedEncounter = updatedEncounter with
         {
+            AbilityOptions = abilityOptions,
+            AbilityLabel = SwShStaticEncountersWorkflowService.GetOptionLabel(
+                abilityOptions,
+                updatedEncounter.Ability,
+                "Ability slot"),
+            GenderOptions = genderOptions,
+            GenderLabel = SwShStaticEncountersWorkflowService.GetOptionLabel(
+                genderOptions,
+                updatedEncounter.Gender,
+                "Gender"),
             FlawlessIvCount = flawlessIvCount,
             IvSummary = SwShStaticEncountersWorkflowService.FormatIvSummary(updatedEncounter.Ivs, flawlessIvCount),
             Label = SwShStaticEncountersWorkflowService.FormatEncounterLabel(
@@ -640,7 +1372,7 @@ public sealed class SwShStaticEncountersEditSessionService
                 ? move with
                 {
                     MoveId = moveId,
-                    Move = moveId == 0 ? null : GetOptionLabel(workflow, GetMoveField(slot), moveId, "Move"),
+                    Move = moveId == 0 ? null : GetOptionDisplayName(workflow, GetMoveField(slot), moveId, "Move"),
                 }
                 : move)
             .ToArray();
@@ -693,12 +1425,30 @@ public sealed class SwShStaticEncountersEditSessionService
         return SwShStaticEncountersWorkflowService.GetOptionLabel(options, value, fallbackPrefix);
     }
 
+    private static string GetOptionDisplayName(
+        SwShStaticEncountersWorkflow workflow,
+        string field,
+        int value,
+        string fallbackPrefix)
+    {
+        var label = GetOptionLabel(workflow, field, value, fallbackPrefix);
+        var prefix = $"{value.ToString("000", CultureInfo.InvariantCulture)} ";
+
+        return label.StartsWith(prefix, StringComparison.Ordinal)
+            ? label[prefix.Length..]
+            : label;
+    }
+
     private static SwShStaticEncounterEdit? ToStaticEncounterEdit(
+        SwShStaticEncounterArchive archive,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var encounterIndex)
-            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
+        if (!SwShStaticEncountersWorkflowService.TryParseEncounterRecordId(
+                edit.RecordId,
+                out var encounterIndex,
+                out var encounterId)
+            || !int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
             || MapField(edit.Field) is not { } field)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -709,7 +1459,44 @@ public sealed class SwShStaticEncountersEditSessionService
             return null;
         }
 
-        return new SwShStaticEncounterEdit(encounterIndex, field, value);
+        SwShStaticEncounterRecord? encounter;
+        if (encounterId is null)
+        {
+            encounter = archive.Encounters.Count(candidate => candidate.Index == encounterIndex) == 1
+                ? archive.Encounters.First(candidate => candidate.Index == encounterIndex)
+                : null;
+        }
+        else
+        {
+            var indexed = archive.Encounters
+                .Where(candidate => candidate.Index == encounterIndex)
+                .ToArray();
+            var identityMatches = archive.Encounters
+                .Where(candidate => candidate.EncounterId == encounterId.Value)
+                .ToArray();
+            if (indexed.Length == 1
+                && indexed[0].EncounterId == encounterId.Value
+                && identityMatches.Length == 1)
+            {
+                encounter = indexed[0];
+            }
+            else
+            {
+                encounter = null;
+            }
+        }
+
+        if (encounter is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Static Encounter edit no longer resolves to exactly one source record.",
+                field: edit.Field,
+                expected: "One source encounter matching the staged index and encounter ID"));
+            return null;
+        }
+
+        return new SwShStaticEncounterEdit(encounter.Index, field, value);
     }
 
     private static SwShStaticEncounterField? MapField(string? field)
@@ -775,25 +1562,52 @@ public sealed class SwShStaticEncountersEditSessionService
         return targetPath;
     }
 
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
+    private void WriteOutputAtomically(string targetPath, byte[] contents)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
+        if (Directory.Exists(targetPath))
         {
-            return false;
+            throw new IOException("Static Encounter output target is a directory.");
         }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        var directory = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Static Encounter output target directory could not be resolved.");
+        Directory.CreateDirectory(directory);
 
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        var tempPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            temporaryFileWriter(tempPath, contents);
+            if (!File.Exists(tempPath)
+                || !File.ReadAllBytes(tempPath).AsSpan().SequenceEqual(contents))
+            {
+                throw new IOException("Static Encounter temporary output verification failed.");
+            }
+
+            File.Move(tempPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // The original output remains untouched when temporary-file cleanup fails.
+            }
+        }
+    }
+
+    private static string CreatePlanReason(IReadOnlyList<PendingEdit> pendingEdits)
+    {
+        return pendingEdits.Count == 1
+            ? $"Apply pending Static Encounter edit: {pendingEdits[0].Summary}"
+            : $"Apply {pendingEdits.Count} pending Static Encounter edits: {string.Join(" ", pendingEdits.Select(edit => edit.Summary))}";
     }
 
     private static ApplyResult CreateApplyResult(

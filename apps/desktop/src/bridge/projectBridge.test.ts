@@ -103,6 +103,55 @@ const fileGraph = {
 } as const;
 
 describe('projectBridge', () => {
+  it('sends identity-aware static encounter field batches through one command', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.updateStaticEncounterFields({
+        paths: editableProjectPaths,
+        session: null,
+        updates: [
+          {
+            encounterId: '0x0102030405060708',
+            encounterIndex: 0,
+            field: 'level',
+            value: '55'
+          },
+          {
+            encounterId: '0x0102030405060708',
+            encounterIndex: 0,
+            field: 'shinyLock',
+            value: '0'
+          }
+        ]
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'staticEncounters.fields.update',
+      payload: {
+        updates: [
+          {
+            encounterId: '0x0102030405060708',
+            encounterIndex: 0,
+            field: 'level',
+            value: '55'
+          },
+          {
+            encounterId: '0x0102030405060708',
+            encounterIndex: 0,
+            field: 'shinyLock',
+            value: '0'
+          }
+        ]
+      }
+    });
+  });
+
   it('sends the reviewed Mod Merger token with apply requests', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {

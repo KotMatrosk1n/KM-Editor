@@ -45,7 +45,6 @@ public sealed class SwShStaticEncountersWorkflowService
     public const string IvSpecialDefenseField = "ivSpecialDefense";
     public const string FlawlessIvCountField = "flawlessIvCount";
     public const string StaticEncounterDataPath = "romfs/bin/script_event_data/event_encount_data.bin";
-    public const string LegacyStaticEncounterDataPath = "romfs/bin/script_event_data/event_encount.bin";
 
     internal const string StaticEncountersEditDomain = "workflow.staticEncounters";
 
@@ -70,7 +69,7 @@ public sealed class SwShStaticEncountersWorkflowService
     [
         new(0, "Random"),
         new(1, "Male"),
-        new(2, "Female"),
+        new(2, "Female / Genderless"),
     ];
 
     private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> ShinyLockOptions =
@@ -131,15 +130,15 @@ public sealed class SwShStaticEncountersWorkflowService
 
     private static readonly IReadOnlyList<SwShStaticEncounterEditableField> BaseEditableFields =
     [
-        CreateField(SpeciesField, "Species", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
+        CreateField(SpeciesField, "Species", "integer", 1, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(FormField, "Form", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue, FormOptions),
-        CreateField(LevelField, "Level", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
+        CreateField(LevelField, "Level", "integer", SwShStaticEncounterArchive.MinimumLevel, SwShStaticEncounterArchive.MaximumLevel),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability slot", "integer", 0, 3, AbilityOptions),
         CreateField(NatureField, "Nature", "integer", 0, 25, NatureOptions),
         CreateField(GenderField, "Gender", "integer", 0, 2, GenderOptions),
         CreateField(ShinyLockField, "Shiny lock", "integer", 0, 2, ShinyLockOptions),
-        CreateField(EncounterScenarioField, "Scenario", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue, EncounterScenarioOptions),
+        CreateField(EncounterScenarioField, "Scenario", "integer", 0, SwShStaticEncounterArchive.MaximumScenario, EncounterScenarioOptions),
         CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
         CreateField(Move0Field, "Move 1", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
@@ -249,6 +248,16 @@ public sealed class SwShStaticEncountersWorkflowService
             string.Equals(candidate.Field, field, StringComparison.Ordinal));
     }
 
+    internal static SwShStaticEncounterEditableField? GetEditableField(
+        SwShStaticEncountersWorkflow workflow,
+        string? field)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return workflow.EditableFields.FirstOrDefault(candidate =>
+            string.Equals(candidate.Field, field, StringComparison.Ordinal));
+    }
+
     internal static bool IsEditableField(string? field)
     {
         return GetEditableField(field) is not null;
@@ -259,23 +268,58 @@ public sealed class SwShStaticEncountersWorkflowService
         return $"static:{encounterIndex.ToString(CultureInfo.InvariantCulture)}";
     }
 
+    internal static string CreateEncounterRecordId(int encounterIndex, ulong encounterId)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"static:{encounterIndex}:{encounterId:X16}");
+    }
+
     internal static bool TryParseEncounterRecordId(string? recordId, out int encounterIndex)
     {
+        return TryParseEncounterRecordId(recordId, out encounterIndex, out _);
+    }
+
+    internal static bool TryParseEncounterRecordId(
+        string? recordId,
+        out int encounterIndex,
+        out ulong? encounterId)
+    {
         encounterIndex = 0;
+        encounterId = null;
 
         const string prefix = "static:";
-        return recordId is not null
-            && recordId.StartsWith(prefix, StringComparison.Ordinal)
-            && int.TryParse(recordId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out encounterIndex)
-            && encounterIndex >= 0;
+        if (recordId is null || !recordId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var parts = recordId[prefix.Length..].Split(':');
+        if (parts.Length is < 1 or > 2
+            || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out encounterIndex)
+            || encounterIndex < 0)
+        {
+            return false;
+        }
+
+        if (parts.Length == 2)
+        {
+            if (!ulong.TryParse(parts[1], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var parsedEncounterId))
+            {
+                return false;
+            }
+
+            encounterId = parsedEncounterId;
+        }
+
+        return true;
     }
 
     internal static WorkflowFileSource? ResolveStaticEncounterDataSource(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        return ResolveWorkflowFile(project, StaticEncounterDataPath)
-            ?? ResolveWorkflowFile(project, LegacyStaticEncounterDataPath);
+        return ResolveWorkflowFile(project, StaticEncounterDataPath);
     }
 
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
@@ -310,12 +354,32 @@ public sealed class SwShStaticEncountersWorkflowService
             summary,
             encounters,
             CreateEditableFields(lookupTables),
-            new SwShStaticEncountersWorkflowStats(
-                encounters.Count,
-                encounters.Count(encounter => encounter.CanGigantamax),
-                encounters.Count(encounter => encounter.FlawlessIvCount is null),
-                sourceFileCount),
-            diagnostics);
+            CreateStats(encounters, sourceFileCount),
+            diagnostics)
+        {
+            AbilityResolver = lookupTables.AbilityResolver,
+        };
+    }
+
+    internal static SwShStaticEncountersWorkflow RecalculateStats(SwShStaticEncountersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return workflow with
+        {
+            Stats = CreateStats(workflow.Encounters, workflow.Stats.SourceFileCount),
+        };
+    }
+
+    private static SwShStaticEncountersWorkflowStats CreateStats(
+        IReadOnlyList<SwShStaticEncounterEntry> encounters,
+        int sourceFileCount)
+    {
+        return new SwShStaticEncountersWorkflowStats(
+            encounters.Count,
+            encounters.Count(encounter => encounter.CanGigantamax),
+            encounters.Count(encounter => encounter.FlawlessIvCount is null),
+            sourceFileCount);
     }
 
     private static StaticEncounterLookupTables CreateEmptyLookupTables()
@@ -395,7 +459,7 @@ public sealed class SwShStaticEncountersWorkflowService
             encounter.Nature,
             GetOptionLabel(NatureOptions, encounter.Nature, "Nature"),
             encounter.Gender,
-            GetOptionLabel(GenderOptions, encounter.Gender, "Gender"),
+            GetGenderOptionLabel(lookupTables.AbilityResolver, encounter.Species, encounter.Form, encounter.Gender),
             encounter.ShinyLock,
             GetOptionLabel(ShinyLockOptions, encounter.ShinyLock, "Shiny lock"),
             encounter.EncounterScenario,
@@ -409,7 +473,9 @@ public sealed class SwShStaticEncountersWorkflowService
             moves,
             provenance)
         {
+            EncounterKey = encounter.EncounterId,
             AbilityOptions = CreateAbilityOptions(lookupTables, encounter.Species, encounter.Form),
+            GenderOptions = CreateGenderOptions(lookupTables.AbilityResolver, encounter.Species, encounter.Form),
         };
     }
 
@@ -508,10 +574,44 @@ public sealed class SwShStaticEncountersWorkflowService
         int speciesId,
         int form)
     {
-        return lookupTables.AbilityResolver
+        return CreateAbilityOptions(lookupTables.AbilityResolver, speciesId, form);
+    }
+
+    internal static IReadOnlyList<SwShStaticEncounterEditableFieldOption> CreateAbilityOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        return abilityResolver
             .CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
             .Select(option => new SwShStaticEncounterEditableFieldOption(option.Value, option.Label))
             .ToArray();
+    }
+
+    internal static IReadOnlyList<SwShStaticEncounterEditableFieldOption> CreateGenderOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var valueTwoLabel = abilityResolver.ResolvePersonalRecord(speciesId, form)?.GenderRatio == byte.MaxValue
+            ? "Genderless"
+            : "Female";
+
+        return
+        [
+            new(0, "Random"),
+            new(1, "Male"),
+            new(2, valueTwoLabel),
+        ];
+    }
+
+    internal static string GetGenderOptionLabel(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return GetOptionLabel(CreateGenderOptions(abilityResolver, speciesId, form), value, "Gender");
     }
 
     private static string GetAbilityOptionLabel(

@@ -79,8 +79,16 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
     public const int MinimumFixedIvValue = 0;
     public const int MaximumFixedIvValue = 31;
     public const int MaximumDynamaxLevel = 10;
+    public const int MinimumLevel = 1;
+    public const int MaximumLevel = 100;
+    public const int MaximumScenario = 19;
+    public const int MaximumEvValue = 252;
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumIdValue = int.MaxValue;
+
+    private byte[]? SourceData { get; init; }
+
+    private IReadOnlyList<int>? SourceEncounterTableOffsets { get; init; }
 
     public static SwShStaticEncounterArchive Parse(ReadOnlySpan<byte> data)
     {
@@ -91,9 +99,22 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
 
         var rootTableOffset = ReadUOffset(data, offset: 0);
         var tableVectorOffset = ReadTableUOffset(data, rootTableOffset, fieldIndex: 0, required: true);
-        var encounters = ReadTableVector(data, tableVectorOffset, ReadEncounter);
+        var count = ReadVectorLength(data, tableVectorOffset);
+        var encounters = new SwShStaticEncounterRecord[count];
+        var tableOffsets = new int[count];
+        for (var index = 0; index < count; index++)
+        {
+            var elementOffset = tableVectorOffset + sizeof(uint) + (index * sizeof(uint));
+            var tableOffset = ReadUOffset(data, elementOffset);
+            tableOffsets[index] = tableOffset;
+            encounters[index] = ReadEncounter(data, tableOffset, index);
+        }
 
-        return new SwShStaticEncounterArchive(encounters);
+        return new SwShStaticEncounterArchive(encounters)
+        {
+            SourceData = data.ToArray(),
+            SourceEncounterTableOffsets = tableOffsets,
+        };
     }
 
     public byte[] Write()
@@ -120,6 +141,11 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
         foreach (var edit in edits)
         {
             ApplyEdit(encounters, edit);
+        }
+
+        if (SourceData is not null && SourceEncounterTableOffsets is not null)
+        {
+            return WriteEditsInPlace(encounters);
         }
 
         return new SwShStaticEncounterArchive(encounters).Write();
@@ -174,25 +200,25 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
             SwShStaticEncounterField.DynamaxLevel => encounter with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumDynamaxLevel) },
             SwShStaticEncounterField.CanGigantamax => encounter with { CanGigantamax = ValidateBool(edit.Value) },
             SwShStaticEncounterField.HeldItem => encounter with { HeldItem = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShStaticEncounterField.Level => encounter with { Level = ValidateRange(edit.Value, 0, MaximumByteValue) },
-            SwShStaticEncounterField.EncounterScenario => encounter with { EncounterScenario = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShStaticEncounterField.Species => encounter with { Species = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShStaticEncounterField.ShinyLock => encounter with { ShinyLock = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShStaticEncounterField.Nature => encounter with { Nature = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShStaticEncounterField.Gender => encounter with { Gender = ValidateRange(edit.Value, 0, MaximumByteValue) },
-            SwShStaticEncounterField.EvHp => encounter with { Evs = encounter.Evs with { HP = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShStaticEncounterField.EvAttack => encounter with { Evs = encounter.Evs with { Attack = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShStaticEncounterField.EvDefense => encounter with { Evs = encounter.Evs with { Defense = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShStaticEncounterField.EvSpeed => encounter with { Evs = encounter.Evs with { Speed = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShStaticEncounterField.EvSpecialAttack => encounter with { Evs = encounter.Evs with { SpecialAttack = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShStaticEncounterField.EvSpecialDefense => encounter with { Evs = encounter.Evs with { SpecialDefense = ValidateRange(edit.Value, 0, MaximumByteValue) } },
+            SwShStaticEncounterField.Level => encounter with { Level = ValidateRange(edit.Value, MinimumLevel, MaximumLevel) },
+            SwShStaticEncounterField.EncounterScenario => encounter with { EncounterScenario = ValidateRange(edit.Value, 0, MaximumScenario) },
+            SwShStaticEncounterField.Species => encounter with { Species = ValidateRange(edit.Value, 1, MaximumIdValue) },
+            SwShStaticEncounterField.ShinyLock => encounter with { ShinyLock = ValidateRange(edit.Value, 0, 2) },
+            SwShStaticEncounterField.Nature => encounter with { Nature = ValidateRange(edit.Value, 0, 25) },
+            SwShStaticEncounterField.Gender => encounter with { Gender = ValidateRange(edit.Value, 0, 2) },
+            SwShStaticEncounterField.EvHp => encounter with { Evs = encounter.Evs with { HP = ValidateRange(edit.Value, 0, MaximumEvValue) } },
+            SwShStaticEncounterField.EvAttack => encounter with { Evs = encounter.Evs with { Attack = ValidateRange(edit.Value, 0, MaximumEvValue) } },
+            SwShStaticEncounterField.EvDefense => encounter with { Evs = encounter.Evs with { Defense = ValidateRange(edit.Value, 0, MaximumEvValue) } },
+            SwShStaticEncounterField.EvSpeed => encounter with { Evs = encounter.Evs with { Speed = ValidateRange(edit.Value, 0, MaximumEvValue) } },
+            SwShStaticEncounterField.EvSpecialAttack => encounter with { Evs = encounter.Evs with { SpecialAttack = ValidateRange(edit.Value, 0, MaximumEvValue) } },
+            SwShStaticEncounterField.EvSpecialDefense => encounter with { Evs = encounter.Evs with { SpecialDefense = ValidateRange(edit.Value, 0, MaximumEvValue) } },
             SwShStaticEncounterField.IvHp => encounter with { Ivs = encounter.Ivs with { HP = ValidateHpIvValue(edit.Value) } },
             SwShStaticEncounterField.IvAttack => encounter with { Ivs = encounter.Ivs with { Attack = ValidateIvValue(edit.Value) } },
             SwShStaticEncounterField.IvDefense => encounter with { Ivs = encounter.Ivs with { Defense = ValidateIvValue(edit.Value) } },
             SwShStaticEncounterField.IvSpeed => encounter with { Ivs = encounter.Ivs with { Speed = ValidateIvValue(edit.Value) } },
             SwShStaticEncounterField.IvSpecialAttack => encounter with { Ivs = encounter.Ivs with { SpecialAttack = ValidateIvValue(edit.Value) } },
             SwShStaticEncounterField.IvSpecialDefense => encounter with { Ivs = encounter.Ivs with { SpecialDefense = ValidateIvValue(edit.Value) } },
-            SwShStaticEncounterField.Ability => encounter with { Ability = ValidateRange(edit.Value, 0, MaximumIdValue) },
+            SwShStaticEncounterField.Ability => encounter with { Ability = ValidateRange(edit.Value, 0, 3) },
             SwShStaticEncounterField.Move0 => encounter with { Moves = SetMove(encounter.Moves, 0, edit.Value) },
             SwShStaticEncounterField.Move1 => encounter with { Moves = SetMove(encounter.Moves, 1, edit.Value) },
             SwShStaticEncounterField.Move2 => encounter with { Moves = SetMove(encounter.Moves, 2, edit.Value) },
@@ -282,6 +308,137 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
         }
 
         return value;
+    }
+
+    private byte[] WriteEditsInPlace(IReadOnlyList<SwShStaticEncounterRecord> encounters)
+    {
+        if (SourceData is null
+            || SourceEncounterTableOffsets is null
+            || encounters.Count != Encounters.Count
+            || SourceEncounterTableOffsets.Count != Encounters.Count)
+        {
+            throw new InvalidDataException("Static encounter archive source layout is unavailable or inconsistent.");
+        }
+
+        var output = SourceData.ToArray();
+        for (var index = 0; index < encounters.Count; index++)
+        {
+            var original = Encounters[index];
+            var updated = encounters[index];
+            var tableOffset = SourceEncounterTableOffsets[index];
+
+            PatchByte(output, tableOffset, 5, original.Evs.HP, updated.Evs.HP);
+            PatchByte(output, tableOffset, 3, original.Evs.Attack, updated.Evs.Attack);
+            PatchByte(output, tableOffset, 4, original.Evs.Defense, updated.Evs.Defense);
+            PatchByte(output, tableOffset, 6, original.Evs.SpecialAttack, updated.Evs.SpecialAttack);
+            PatchByte(output, tableOffset, 7, original.Evs.SpecialDefense, updated.Evs.SpecialDefense);
+            PatchByte(output, tableOffset, 2, original.Evs.Speed, updated.Evs.Speed);
+            PatchByte(output, tableOffset, 8, original.Form, updated.Form);
+            PatchByte(output, tableOffset, 9, original.DynamaxLevel, updated.DynamaxLevel);
+            PatchBool(output, tableOffset, 13, original.CanGigantamax, updated.CanGigantamax);
+            PatchInt32(output, tableOffset, 14, original.HeldItem, updated.HeldItem);
+            PatchByte(output, tableOffset, 15, original.Level, updated.Level);
+            PatchInt32(output, tableOffset, 16, original.EncounterScenario, updated.EncounterScenario);
+            PatchInt32(output, tableOffset, 17, original.Species, updated.Species);
+            PatchUInt32(output, tableOffset, 18, original.ShinyLock, updated.ShinyLock);
+            PatchUInt32(output, tableOffset, 19, original.Nature, updated.Nature);
+            PatchSByte(output, tableOffset, 20, original.Gender, updated.Gender);
+            PatchSByte(output, tableOffset, 24, original.Ivs.HP, updated.Ivs.HP);
+            PatchSByte(output, tableOffset, 22, original.Ivs.Attack, updated.Ivs.Attack);
+            PatchSByte(output, tableOffset, 23, original.Ivs.Defense, updated.Ivs.Defense);
+            PatchSByte(output, tableOffset, 25, original.Ivs.SpecialAttack, updated.Ivs.SpecialAttack);
+            PatchSByte(output, tableOffset, 26, original.Ivs.SpecialDefense, updated.Ivs.SpecialDefense);
+            PatchSByte(output, tableOffset, 21, original.Ivs.Speed, updated.Ivs.Speed);
+            PatchInt32(output, tableOffset, 27, original.Ability, updated.Ability);
+            for (var slot = 0; slot < 4; slot++)
+            {
+                PatchInt32(output, tableOffset, 28 + slot, GetMove(original, slot), GetMove(updated, slot));
+            }
+        }
+
+        return output;
+    }
+
+    private static int GetMove(SwShStaticEncounterRecord encounter, int slot)
+    {
+        if ((uint)slot >= (uint)encounter.Moves.Count)
+        {
+            throw new InvalidDataException($"Static encounter {encounter.Index} does not contain move slot {slot}.");
+        }
+
+        return encounter.Moves[slot];
+    }
+
+    private static int GetMaterializedFieldOffset(byte[] output, int tableOffset, int fieldIndex)
+    {
+        var fieldOffset = ReadTableFieldOffset(output, tableOffset, fieldIndex);
+        if (fieldOffset == 0)
+        {
+            throw new InvalidDataException(
+                $"Static encounter field {fieldIndex} is omitted from the source FlatBuffer and cannot be changed without rewriting its layout.");
+        }
+
+        return tableOffset + fieldOffset;
+    }
+
+    private static void PatchBool(byte[] output, int tableOffset, int fieldIndex, bool original, bool updated)
+    {
+        if (original == updated)
+        {
+            return;
+        }
+
+        var offset = GetMaterializedFieldOffset(output, tableOffset, fieldIndex);
+        EnsureRange(output, offset, sizeof(byte));
+        output[offset] = updated ? (byte)1 : (byte)0;
+    }
+
+    private static void PatchByte(byte[] output, int tableOffset, int fieldIndex, int original, int updated)
+    {
+        if (original == updated)
+        {
+            return;
+        }
+
+        var offset = GetMaterializedFieldOffset(output, tableOffset, fieldIndex);
+        EnsureRange(output, offset, sizeof(byte));
+        output[offset] = checked((byte)updated);
+    }
+
+    private static void PatchSByte(byte[] output, int tableOffset, int fieldIndex, int original, int updated)
+    {
+        if (original == updated)
+        {
+            return;
+        }
+
+        var offset = GetMaterializedFieldOffset(output, tableOffset, fieldIndex);
+        EnsureRange(output, offset, sizeof(sbyte));
+        output[offset] = unchecked((byte)checked((sbyte)updated));
+    }
+
+    private static void PatchInt32(byte[] output, int tableOffset, int fieldIndex, int original, int updated)
+    {
+        if (original == updated)
+        {
+            return;
+        }
+
+        var offset = GetMaterializedFieldOffset(output, tableOffset, fieldIndex);
+        EnsureRange(output, offset, sizeof(int));
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset, sizeof(int)), updated);
+    }
+
+    private static void PatchUInt32(byte[] output, int tableOffset, int fieldIndex, int original, int updated)
+    {
+        if (original == updated)
+        {
+            return;
+        }
+
+        var offset = GetMaterializedFieldOffset(output, tableOffset, fieldIndex);
+        EnsureRange(output, offset, sizeof(uint));
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(offset, sizeof(uint)), checked((uint)updated));
     }
 
     private static SwShStaticEncounterRecord ReadEncounter(ReadOnlySpan<byte> data, int tableOffset, int index)
@@ -476,23 +633,6 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
         EnsureRange(data, vtableStart + fieldEntryOffset, sizeof(ushort));
 
         return BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableStart + fieldEntryOffset, sizeof(ushort)));
-    }
-
-    private static T[] ReadTableVector<T>(
-        ReadOnlySpan<byte> data,
-        int vectorOffset,
-        Func<ReadOnlySpan<byte>, int, int, T> readTable)
-    {
-        var count = ReadVectorLength(data, vectorOffset);
-        var values = new T[count];
-
-        for (var index = 0; index < count; index++)
-        {
-            var elementOffset = vectorOffset + sizeof(uint) + (index * sizeof(uint));
-            values[index] = readTable(data, ReadUOffset(data, elementOffset), index);
-        }
-
-        return values;
     }
 
     private static int ReadVectorLength(ReadOnlySpan<byte> data, int vectorOffset)

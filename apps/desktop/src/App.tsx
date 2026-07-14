@@ -7119,11 +7119,15 @@ export function App({
     }
   };
 
-  const handleUpdateStaticEncounterFields = async (
-    encounterIndex: number,
-    changes: Array<{ field: string; value: string }>
+  const handleUpdateStaticEncounterUpdates = async (
+    updates: Array<{
+      encounterId: string;
+      encounterIndex: number;
+      field: string;
+      value: string;
+    }>
   ) => {
-    if (changes.length === 0) {
+    if (updates.length === 0) {
       return false;
     }
 
@@ -7134,24 +7138,51 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
+          const paths = createProjectPaths(draftPaths);
+
+          if (staticEncountersWorkflow?.editorFamily === 'swsh') {
+            return bridge.updateStaticEncounterFields({ paths, session, updates });
+          }
+
           let nextSession = session;
           let nextWorkflow = staticEncountersWorkflow;
           let nextDiagnostics: ApiDiagnostic[] = [];
+          let hasErrors = false;
 
-          for (const change of changes) {
-            const updateResponse = await bridge.updateStaticEncounterField({
-              encounterIndex,
-              field: change.field,
-              paths: createProjectPaths(draftPaths),
-              session: nextSession,
-              value: change.value
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
+          for (const update of updates) {
+            try {
+              const updateResponse = await bridge.updateStaticEncounterField({
+                encounterId: update.encounterId,
+                encounterIndex: update.encounterIndex,
+                field: update.field,
+                paths,
+                session: nextSession,
+                value: update.value
+              });
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+              nextDiagnostics = [...nextDiagnostics, ...updateResponse.diagnostics];
+
+              if (
+                updateResponse.diagnostics.some(
+                  (diagnostic) => diagnostic.severity === 'error'
+                )
+              ) {
+                hasErrors = true;
+                break;
+              }
+            } catch (error) {
+              nextDiagnostics = [...nextDiagnostics, ...toBridgeDiagnostics(error)];
+              hasErrors = true;
+              break;
+            }
           }
 
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+          return {
+            diagnostics: nextDiagnostics,
+            session: hasErrors ? session! : nextSession!,
+            workflow: hasErrors ? staticEncountersWorkflow : nextWorkflow
+          };
         },
         (updateResponse) => {
           if (updateResponse.workflow) {
@@ -7160,7 +7191,10 @@ export function App({
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return (
+        response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7169,51 +7203,27 @@ export function App({
     }
   };
 
-  const handleRemoveStaticEncounterShinyLocks = async (encounterIndexes: number[]) => {
-    if (encounterIndexes.length === 0) {
-      return false;
-    }
+  const handleUpdateStaticEncounterFields = async (
+    encounterIndex: number,
+    encounterId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    return handleUpdateStaticEncounterUpdates(
+      changes.map((change) => ({ encounterId, encounterIndex, ...change }))
+    );
+  };
 
-    setIsStaticEncounterUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      const response = await runEditSessionMutation(
-        async (session) => {
-          let nextSession = session;
-          let nextWorkflow = staticEncountersWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          for (const encounterIndex of encounterIndexes) {
-            const updateResponse = await bridge.updateStaticEncounterField({
-              encounterIndex,
-              field: giftShinyLockFieldName,
-              paths: createProjectPaths(draftPaths),
-              session: nextSession,
-              value: '0'
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
-        },
-        (updateResponse) => {
-          if (updateResponse.workflow) {
-            setStaticEncountersWorkflow(updateResponse.workflow);
-          }
-          setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
-      );
-      return response !== null;
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-      return false;
-    } finally {
-      setIsStaticEncounterUpdating(false);
-    }
+  const handleRemoveStaticEncounterShinyLocks = async (
+    encounters: Array<{ encounterId: string; encounterIndex: number }>,
+    value: string
+  ) => {
+    return handleUpdateStaticEncounterUpdates(
+      encounters.map((encounter) => ({
+        ...encounter,
+        field: giftShinyLockFieldName,
+        value
+      }))
+    );
   };
 
   const handleUpdateRentalPokemonFields = async (
@@ -16336,6 +16346,203 @@ function getTrainerFieldDraftState(
   };
 }
 
+function getStaticEncounterDraftSummary(
+  encounter: StaticEncounterRecord | null,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>,
+  allFields: StaticEncounterEditableField[]
+) {
+  const changedFields: TrainerDraftChange[] = [];
+  const invalidFields: TrainerDraftChange[] = [];
+  let dirtyFieldCount = 0;
+
+  if (!encounter) {
+    return { changedFields, dirtyFieldCount, invalidFields };
+  }
+
+  for (const field of fields) {
+    if (allFields.find((candidate) => candidate.field === field.field)?.isReadOnly) {
+      continue;
+    }
+
+    const currentValue = getEditableStaticEncounterFieldValue(encounter, field.field);
+    const draftValue = drafts[field.field] ?? '';
+    const draftState = getStaticEncounterFieldDraftState(
+      encounter,
+      draftValue,
+      currentValue,
+      field,
+      allFields,
+      drafts
+    );
+
+    if (draftState.isChanged || !draftState.isValid) {
+      dirtyFieldCount += 1;
+    }
+
+    if (!draftState.isValid) {
+      invalidFields.push({ field: field.field, label: field.label, value: draftValue });
+    } else if (draftState.isChanged && draftState.normalizedValue !== null) {
+      changedFields.push({
+        field: field.field,
+        label: field.label,
+        value: draftState.normalizedValue
+      });
+    }
+  }
+
+  return { changedFields, dirtyFieldCount, invalidFields };
+}
+
+function getStaticEncounterFieldDraftState(
+  encounter: StaticEncounterRecord,
+  draftValue: string,
+  currentValue: number | null,
+  field: NumericEditableField,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>
+): TrainerDraftState {
+  const isCustomIvSelected = isPokemonInstanceIvCustomSelected(fields, drafts);
+  const draftState = getTrainerFieldDraftState(draftValue, currentValue, field, {
+    clampIvStats: encounter.editorFamily !== 'swsh' && isCustomIvSelected,
+    drafts,
+    fields,
+    getValue: (fieldName) => getEditableStaticEncounterFieldValue(encounter, fieldName)
+  });
+
+  if (!draftState.isValid) {
+    return draftState;
+  }
+
+  if (
+    encounter.editorFamily === 'swsh' &&
+    isCustomIvSelected &&
+    isPokemonIvStatField(field.field) &&
+    draftState.normalizedValue !== null
+  ) {
+    const value = Number.parseInt(draftState.normalizedValue, 10);
+    const isSupportedSentinel =
+      value === -1 || (field.field === ivFieldNames[0] && value === -4);
+    if (value < 0 && !isSupportedSentinel) {
+      return {
+        error:
+          field.field === ivFieldNames[0]
+            ? 'Use -1 for a random IV, -4 for the 3 perfect IV preset, or 0 through 31.'
+            : 'Use -1 for a random IV or 0 through 31.',
+        isChanged: draftState.isChanged,
+        isValid: false,
+        normalizedValue: null
+      };
+    }
+  }
+
+  const ivSentinelIssue = getStaticEncounterIvSentinelIssue(encounter, drafts);
+  if (
+    ivSentinelIssue !== null &&
+    ivSentinelIssue.changedFields.includes(field.field) &&
+    draftState.isChanged
+  ) {
+    return {
+      error: 'HP IV -4 requires every other IV to be -1.',
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  const evIssue = getStaticEncounterEvTotalIssue(encounter, fields, drafts);
+  if (
+    evIssue !== null &&
+    evIssue.changedFields.includes(field.field) &&
+    draftState.isChanged
+  ) {
+    return {
+      error: `EV total is ${evIssue.total}. Maximum total is ${maximumPokemonEvTotal}.`,
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  return draftState;
+}
+
+function getStaticEncounterIvSentinelIssue(
+  encounter: StaticEncounterRecord,
+  drafts: Record<string, string>
+) {
+  if (encounter.editorFamily !== 'swsh') {
+    return null;
+  }
+
+  const values = Object.fromEntries(
+    ivFieldNames.map((fieldName) => {
+      const currentValue = getEditableStaticEncounterFieldValue(encounter, fieldName);
+      const draftValue = drafts[fieldName];
+      const parsedValue =
+        draftValue === undefined || draftValue.trim().length === 0
+          ? currentValue
+          : Number(draftValue.trim());
+      return [fieldName, Number.isInteger(parsedValue) ? parsedValue : null];
+    })
+  ) as Record<(typeof ivFieldNames)[number], number | null>;
+
+  if (values[ivFieldNames[0]] !== -4) {
+    return null;
+  }
+
+  const hasInvalidNonHpIv = ivFieldNames
+    .slice(1)
+    .some((fieldName) => values[fieldName] !== -1);
+  if (!hasInvalidNonHpIv) {
+    return null;
+  }
+
+  const changedFields: string[] = ivFieldNames.filter((fieldName) => {
+    const currentValue = getEditableStaticEncounterFieldValue(encounter, fieldName);
+    return values[fieldName] !== currentValue;
+  });
+
+  return changedFields.length > 0 ? { changedFields } : null;
+}
+
+function getStaticEncounterEvTotalIssue(
+  encounter: StaticEncounterRecord,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>
+) {
+  let total = 0;
+  const changedFields: string[] = [];
+
+  for (const fieldName of evFieldNames) {
+    const field = fields.find((candidate) => candidate.field === fieldName);
+    if (!field) {
+      continue;
+    }
+
+    const currentValue = getEditableStaticEncounterFieldValue(encounter, fieldName);
+    const draftValue = drafts[fieldName] ?? currentValue?.toString() ?? '';
+    const parsedValue = parseEditableIntegerDraft(draftValue, field.options);
+    if (parsedValue === null) {
+      return null;
+    }
+
+    const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
+    if (!draftState.isValid) {
+      return null;
+    }
+
+    total += parsedValue;
+    if (draftState.isChanged) {
+      changedFields.push(fieldName);
+    }
+  }
+
+  return total > maximumPokemonEvTotal && changedFields.length > 0
+    ? { changedFields, total }
+    : null;
+}
+
 function formatDraftSummary(summary: {
   changedFields: unknown[];
   dirtyFieldCount: number;
@@ -17611,12 +17818,19 @@ function isStaticEncounterFieldVisible(
   field: StaticEncounterEditableField,
   encounter: StaticEncounterRecord | null
 ) {
+  if (!encounter) {
+    return false;
+  }
+
   if (encounter?.supportedFields.length) {
     return encounter.supportedFields.includes(field.field);
   }
 
-  return staticEncounterFieldNames.includes(
-    field.field as (typeof staticEncounterFieldNames)[number]
+  return (
+    encounter.editorFamily === 'swsh' &&
+    staticEncounterFieldNames.includes(
+      field.field as (typeof staticEncounterFieldNames)[number]
+    )
   );
 }
 
@@ -17630,6 +17844,10 @@ function withStaticEncounterFieldState(
 
   return {
     ...field,
+    options:
+      field.field === genderFieldName && encounter.genderOptions?.length
+        ? encounter.genderOptions
+        : field.options,
     isReadOnly: field.isReadOnly || encounter.fieldReadOnly[field.field] === true
   };
 }
@@ -17796,7 +18014,8 @@ function ShinyLockRemovalConfirmationModal({
   onCancel,
   onConfirm,
   recordLabel,
-  recordLabelPlural
+  recordLabelPlural,
+  targetLabel = 'Random'
 }: {
   affectedCount: number;
   isApplying: boolean;
@@ -17805,6 +18024,7 @@ function ShinyLockRemovalConfirmationModal({
   onConfirm: () => Promise<void>;
   recordLabel: string;
   recordLabelPlural: string;
+  targetLabel?: string;
 }) {
   const dialogRef = useModalDialog<HTMLDivElement>({
     canClose: !isApplying,
@@ -17828,10 +18048,10 @@ function ShinyLockRemovalConfirmationModal({
         </div>
         <p className="modal-copy">
           This will stage shiny lock edits for {affectedCount} {affectedLabel}. Their shiny lock
-          value will be set to Random, which lets the game roll shininess normally.
+          value will be set to {targetLabel}, which lets the game use its normal shiny behavior.
         </p>
         <p className="modal-copy modal-copy-muted">
-          Records that are already Random are skipped. This still uses the normal review and apply
+          Records that are already {targetLabel} are skipped. This still uses the normal review and apply
           flow, so files are not written until you approve the change plan.
         </p>
         <div className="modal-actions">
@@ -19952,9 +20172,13 @@ function StaticEncountersSection({
   onSearchChange: (searchText: string) => void;
   onSelectEncounter: (encounterIndex: number | null) => void;
   onStartEditSession: () => void;
-  onRemoveStaticEncounterShinyLocks: (encounterIndexes: number[]) => Promise<boolean>;
+  onRemoveStaticEncounterShinyLocks: (
+    encounters: Array<{ encounterId: string; encounterIndex: number }>,
+    value: string
+  ) => Promise<boolean>;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
+    encounterId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
   searchText: string;
@@ -19973,34 +20197,53 @@ function StaticEncountersSection({
   );
   const selectedEncounter = useMemo(
     () =>
-      encounters.find((encounter) => encounter.encounterIndex === selectedEncounterIndex) ??
+      filteredEncounters.find(
+        (encounter) => encounter.encounterIndex === selectedEncounterIndex
+      ) ??
       filteredEncounters[0] ??
       null,
-    [encounters, filteredEncounters, selectedEncounterIndex]
+    [filteredEncounters, selectedEncounterIndex]
   );
   const canEditStaticEncounters = workflow?.summary.availability === 'available';
   const pendingEncounterIndexes = useMemo(
     () => getPendingStaticEncounterIndexes(editSession),
     [editSession]
   );
-  const lockedEncounterIndexes = useMemo(
+  const shinyReset = useMemo(
+    () => getStaticEncounterShinyReset(workflow),
+    [workflow]
+  );
+  const shinyField = workflow?.editableFields.find(
+    (field) => field.field === giftShinyLockFieldName
+  );
+  const lockedEncounters = useMemo(
     () =>
       encounters
-        .filter((encounter) => encounter.shinyLock !== 0)
-        .map((encounter) => encounter.encounterIndex),
-    [encounters]
+        .filter(
+          (encounter) =>
+            shinyField !== undefined &&
+            isStaticEncounterFieldVisible(shinyField, encounter) &&
+            !shinyField.isReadOnly &&
+            encounter.fieldReadOnly[giftShinyLockFieldName] !== true &&
+            encounter.shinyLock !== shinyReset.value
+        )
+        .map((encounter) => ({
+          encounterId: encounter.encounterId,
+          encounterIndex: encounter.encounterIndex
+        })),
+    [encounters, shinyField, shinyReset.value]
   );
   const canRemoveStaticShinyLocks =
     canEditStaticEncounters &&
     editSession !== null &&
     !isStaticEncounterUpdating &&
-    lockedEncounterIndexes.length > 0;
+    lockedEncounters.length > 0;
   const removeStaticShinyLockTitle =
     editSession === null
       ? 'Start editing before removing static shiny locks.'
-      : lockedEncounterIndexes.length === 0
+      : lockedEncounters.length === 0
       ? 'No static shiny locks are currently set.'
-      : 'Set every locked static encounter shiny lock to Random.';
+      : `Set every locked static encounter shiny setting to ${shinyReset.label}.`;
 
   return (
     <>
@@ -20051,7 +20294,7 @@ function StaticEncountersSection({
                 value={workflow ? (workflow.stats.gigantamaxEncounterCount ?? 0).toString() : '0'}
               />
               <Metric
-                label={translateLiteral('Fixed IV rows')}
+                label={translateLiteral('Custom IV rows')}
                 value={workflow ? workflow.stats.fixedIvEncounterCount.toString() : '0'}
               />
             </>
@@ -20165,14 +20408,18 @@ function StaticEncountersSection({
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
       {isShinyLockConfirmationOpen ? (
         <ShinyLockRemovalConfirmationModal
-          affectedCount={lockedEncounterIndexes.length}
+          affectedCount={lockedEncounters.length}
           isApplying={isStaticEncounterUpdating}
           label="Static"
           recordLabel="static encounter"
           recordLabelPlural="static encounters"
+          targetLabel={shinyReset.label}
           onCancel={() => setIsShinyLockConfirmationOpen(false)}
           onConfirm={async () => {
-            const didSave = await onRemoveStaticEncounterShinyLocks(lockedEncounterIndexes);
+            const didSave = await onRemoveStaticEncounterShinyLocks(
+              lockedEncounters,
+              shinyReset.value.toString()
+            );
             if (didSave) {
               setIsShinyLockConfirmationOpen(false);
             }
@@ -20202,6 +20449,7 @@ function SelectedStaticEncounterPanel({
   onStartEditSession: () => void;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
+    encounterId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
@@ -20231,21 +20479,58 @@ function SelectedStaticEncounterPanel({
         : {},
     [encounter, encounterFields]
   );
-  const encounterDrafts = encounter
-    ? encounterDraftsByIndex[encounter.encounterIndex.toString()] ?? encounterDraftDefaults
+  const encounterDraftKey = encounter ? getStaticEncounterDraftKey(encounter) : null;
+  const encounterDraftOverrides = encounter
+    ? encounterDraftsByIndex[encounterDraftKey!] ?? {}
     : {};
+  const encounterDrafts = useMemo(
+    () => ({ ...encounterDraftDefaults, ...encounterDraftOverrides }),
+    [encounterDraftDefaults, encounterDraftOverrides]
+  );
   const encounterDraftSummary = useMemo(
     () =>
-      getTrainerDraftSummary(
+      getStaticEncounterDraftSummary(
+        encounter,
         getActivePokemonInstanceFields(encounterFields, encounterDrafts),
         encounterDrafts,
-        encounter ? (field) => getEditableStaticEncounterFieldValue(encounter, field) : null,
-        {
-          clampIvStats: isPokemonInstanceIvCustomSelected(encounterFields, encounterDrafts),
-          enforcePokemonEvLimits: encounter?.editorFamily !== 'sv'
-        }
+        encounterFields
       ),
     [encounter, encounterDrafts, encounterFields]
+  );
+  const staticEncounterFormOptionContext = useMemo(() => {
+    if (!encounter) {
+      return undefined;
+    }
+
+    const speciesField = encounterFields.find(
+      (field) => field.field === giftSpeciesFieldName
+    );
+    const abilityField = encounterFields.find((field) => field.field === abilityFieldName);
+    const context = createDraftSpeciesFormOptionContext(
+      speciesField,
+      encounterDrafts[giftSpeciesFieldName],
+      encounter.species,
+      encounter.speciesId,
+      undefined,
+      encounter.editorFamily
+    );
+
+    return {
+      ...context,
+      abilityOptions:
+        context.speciesId === encounter.speciesId
+          ? encounter.abilityOptions
+          : abilityField?.options
+    };
+  }, [encounter, encounterDrafts, encounterFields]);
+  const writableEncounterFieldNames = useMemo(
+    () =>
+      new Set(
+        encounterFields
+          .filter((field) => !field.isReadOnly)
+          .map((field) => field.field)
+      ),
+    [encounterFields]
   );
   useRegisterEditorDraftDirty(
     'staticEncounters',
@@ -20265,9 +20550,54 @@ function SelectedStaticEncounterPanel({
     }
 
     setEncounterDraftsByIndex((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, encounter.encounterIndex, encounterDraftDefaults)
+      pruneSparseFieldDraftRecord(
+        currentDrafts,
+        encounterDraftKey!,
+        encounterDraftDefaults,
+        writableEncounterFieldNames
+      )
     );
-  }, [encounter, encounterDraftDefaults]);
+  }, [encounter, encounterDraftDefaults, encounterDraftKey, writableEncounterFieldNames]);
+
+  const handleEncounterDraftChange = (
+    field: StaticEncounterEditableField,
+    value: string
+  ) => {
+    if (!encounter) {
+      return;
+    }
+
+    const nextDrafts = { ...encounterDrafts, [field.field]: value };
+    if (field.field === giftSpeciesFieldName) {
+      const formField = encounterFields.find(
+        (candidate) => candidate.field === formFieldName
+      );
+      const abilityField = encounterFields.find(
+        (candidate) => candidate.field === abilityFieldName
+      );
+
+      if (formField && !formField.isReadOnly) {
+        nextDrafts[formFieldName] = '0';
+      }
+
+      if (
+        abilityField &&
+        !abilityField.isReadOnly &&
+        abilityField.options.some((option) => option.value === 0)
+      ) {
+        nextDrafts[abilityFieldName] = '0';
+      }
+    }
+
+    setEncounterDraftsByIndex((currentDrafts) =>
+      setSparseFieldDraftRecord(
+        currentDrafts,
+        getStaticEncounterDraftKey(encounter),
+        nextDrafts,
+        encounterDraftDefaults
+      )
+    );
+  };
 
   return (
     <aside
@@ -20374,62 +20704,43 @@ function SelectedStaticEncounterPanel({
                         field.field
                       );
                       const draftValue = encounterDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
+                      const draftState = getStaticEncounterFieldDraftState(
+                        encounter,
                         draftValue,
                         currentValue,
                         field,
-                        {
-                          clampIvStats: isPokemonInstanceIvCustomSelected(
-                            encounterFields,
-                            encounterDrafts
-                          ),
-                          drafts: encounterDrafts,
-                          enforcePokemonEvLimits: encounter.editorFamily !== 'sv',
-                          fields: encounterFields,
-                          getValue: (fieldName) =>
-                            getEditableStaticEncounterFieldValue(encounter, fieldName)
-                        }
+                        encounterFields,
+                        encounterDrafts
                       );
+                      const readOnlyReason = field.isReadOnly
+                        ? field.description.trim() ||
+                          'This field is read only for the selected encounter.'
+                        : null;
 
                       return (
                         <GiftPokemonDraftField
                           currentValue={currentValue}
                           disabled={
+                            field.isReadOnly ||
                             !canEditStaticEncounters ||
                             editSession === null ||
                             isStaticEncounterUpdating
                           }
                           disabledReason={
+                            readOnlyReason ??
                             getPokemonInstanceIvStatDisabledReason(
                               field.field,
                               encounterFields,
                               encounterDrafts
-                            ) ?? undefined
+                            ) ??
+                            undefined
                           }
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
-                          formOptionContext={{
-                            abilityOptions: encounter.abilityOptions,
-                            gameFamily: encounter.editorFamily,
-                            species: encounter.species,
-                            speciesId: encounter.speciesId
-                          }}
+                          formOptionContext={staticEncounterFormOptionContext}
                           key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...encounterDrafts,
-                              [field.field]: value
-                            };
-                            setEncounterDraftsByIndex((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                encounter.encounterIndex,
-                                nextDrafts,
-                                encounterDraftDefaults
-                              )
-                            );
-                          }}
+                          onChange={(value) => handleEncounterDraftChange(field, value)}
                         />
                       );
                     })}
@@ -20446,6 +20757,7 @@ function SelectedStaticEncounterPanel({
                   onClick={async () => {
                     const didSave = await onUpdateStaticEncounterFields(
                       encounter.encounterIndex,
+                      encounter.encounterId,
                       encounterDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
@@ -20453,7 +20765,10 @@ function SelectedStaticEncounterPanel({
                     );
                     if (didSave) {
                       setEncounterDraftsByIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, encounter.encounterIndex)
+                        deleteFieldDraftRecord(
+                          currentDrafts,
+                          getStaticEncounterDraftKey(encounter)
+                        )
                       );
                     }
                   }}
@@ -33793,6 +34108,42 @@ function getStaticEncounterDisplayIndex(encounter: StaticEncounterRecord) {
     : encounter.encounterIndex + 1;
 }
 
+function getStaticEncounterDraftKey(encounter: StaticEncounterRecord) {
+  return `${encounter.encounterIndex}:${encounter.encounterId}`;
+}
+
+function getStaticEncounterShinyReset(workflow: StaticEncountersWorkflow | null) {
+  const editorFamily = workflow?.editorFamily ?? 'swsh';
+  const shinyField = workflow?.editableFields.find(
+    (field) => field.field === giftShinyLockFieldName
+  );
+  const normalizedOptions = (shinyField?.options ?? []).map((option) => ({
+    ...option,
+    normalizedLabel: option.label.trim().toLocaleLowerCase()
+  }));
+  const semanticOption =
+    editorFamily === 'za'
+      ? normalizedOptions.find(
+          (option) =>
+            option.normalizedLabel.includes('default') &&
+            option.normalizedLabel.includes('shiny') &&
+            option.normalizedLabel.includes('roll')
+        )
+      : normalizedOptions.find((option) =>
+          editorFamily === 'swsh'
+            ? option.normalizedLabel.includes('random')
+            : option.normalizedLabel.includes('default')
+        );
+  const fallbackValue = editorFamily === 'za' ? 0x3fffffff : 0;
+
+  return {
+    label:
+      semanticOption?.label ??
+      (editorFamily === 'za' ? 'Default shiny roll' : editorFamily === 'swsh' ? 'Random' : 'Default'),
+    value: semanticOption?.value ?? fallbackValue
+  };
+}
+
 function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -36857,6 +37208,47 @@ function setFieldDraftRecord(
   }
 
   return nextRecords;
+}
+
+function setSparseFieldDraftRecord(
+  records: Record<string, Record<string, string>>,
+  recordKey: string | number,
+  nextDrafts: Record<string, string>,
+  defaultDrafts: Record<string, string>
+) {
+  const normalizedKey = recordKey.toString();
+  const sparseDrafts = Object.fromEntries(
+    Object.entries(nextDrafts).filter(
+      ([field, value]) => value !== (defaultDrafts[field] ?? '')
+    )
+  );
+  const nextRecords = { ...records };
+
+  if (Object.keys(sparseDrafts).length === 0) {
+    delete nextRecords[normalizedKey];
+  } else {
+    nextRecords[normalizedKey] = sparseDrafts;
+  }
+
+  return nextRecords;
+}
+
+function pruneSparseFieldDraftRecord(
+  records: Record<string, Record<string, string>>,
+  recordKey: string | number,
+  defaultDrafts: Record<string, string>,
+  allowedFields: ReadonlySet<string>
+) {
+  const normalizedKey = recordKey.toString();
+  const currentDrafts = records[normalizedKey];
+  if (!currentDrafts) {
+    return records;
+  }
+
+  const writableDrafts = Object.fromEntries(
+    Object.entries(currentDrafts).filter(([field]) => allowedFields.has(field))
+  );
+  return setSparseFieldDraftRecord(records, recordKey, writableDrafts, defaultDrafts);
 }
 
 function pruneFieldDraftRecord(

@@ -15,7 +15,19 @@ public sealed record UpdateStaticEncounterFieldRequest(
     EditSessionDto? Session,
     int EncounterIndex,
     string Field,
-    string Value);
+    string Value,
+    string? EncounterId = null);
+
+public sealed record StaticEncounterFieldUpdateDto(
+    int EncounterIndex,
+    string Field,
+    string Value,
+    string? EncounterId = null);
+
+public sealed record UpdateStaticEncounterFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<StaticEncounterFieldUpdateDto> Updates);
 
 public sealed record StaticEncounterProvenanceDto(
     string SourceFile,
@@ -79,6 +91,8 @@ public sealed record StaticEncounterRecordDto(
     public IReadOnlyDictionary<string, bool> FieldReadOnly { get; init; } =
         new Dictionary<string, bool>(StringComparer.Ordinal);
     public IReadOnlyList<StaticEncounterEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<StaticEncounterEditableFieldOptionDto>();
+    public IReadOnlyList<StaticEncounterEditableFieldOptionDto> GenderOptions { get; init; } =
         Array.Empty<StaticEncounterEditableFieldOptionDto>();
 }
 

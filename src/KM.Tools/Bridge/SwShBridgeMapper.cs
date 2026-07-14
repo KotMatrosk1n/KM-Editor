@@ -1075,6 +1075,7 @@ public static class SwShBridgeMapper
                 ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
         {
             AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+            GenderOptions = encounter.GenderOptions.Select(ToDto).ToArray(),
         };
     }
 
