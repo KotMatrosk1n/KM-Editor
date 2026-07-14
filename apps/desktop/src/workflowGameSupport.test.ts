@@ -2,7 +2,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  canAccessWorkflowSectionForHealth,
   isWorkflowNavigationVisibleForGame,
+  readOnlyViewerSectionIds,
   workflowNavigationGroups
 } from './workflowGameSupport';
 import type { WorkbenchSection } from './workbenchStore';
@@ -29,6 +31,28 @@ describe('workflow game support', () => {
     ).toBe(false);
     expect(
       isWorkflowNavigationVisibleForGame('rentalPokemon', 'za', availableSections)
+    ).toBe(false);
+  });
+
+  it('routes ExeFS Patches for Sword and Shield and identifies read-only viewers', () => {
+    const availableSections = new Set<WorkbenchSection>(['exefsPatches', 'flagworkSave']);
+    const advancedGroup = workflowNavigationGroups.find(
+      (group) => group.id === 'advancedEditors'
+    );
+
+    expect(advancedGroup?.sectionIds).toContain('exefsPatches');
+    expect(readOnlyViewerSectionIds).toEqual(new Set(['flagworkSave']));
+    expect(canAccessWorkflowSectionForHealth('flagworkSave', true, false)).toBe(true);
+    expect(canAccessWorkflowSectionForHealth('items', true, false)).toBe(false);
+    expect(canAccessWorkflowSectionForHealth('items', true, true)).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('exefsPatches', 'sword', availableSections)
+    ).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('exefsPatches', 'shield', availableSections)
+    ).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('exefsPatches', 'scarlet', availableSections)
     ).toBe(false);
   });
 });

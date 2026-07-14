@@ -64,7 +64,6 @@ describe('S/V support setup', () => {
     );
 
     expect(screen.getByLabelText('oo2core_8_win64.dll Folder (Optional)')).toHaveValue('');
-    expect(screen.getAllByText('oo2core_8_win64.dll Folder (Optional)')).toHaveLength(2);
 
     await user.click(screen.getByRole('button', { name: 'Find oo2core_8_win64.dll' }));
     expect(

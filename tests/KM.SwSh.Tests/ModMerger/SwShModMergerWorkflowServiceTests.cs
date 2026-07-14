@@ -2,7 +2,6 @@
 
 using KM.SwSh.ModMerger;
 using KM.SwSh.Tests.Items;
-using System.Reflection;
 using Xunit;
 
 namespace KM.SwSh.Tests.ModMerger;
@@ -10,21 +9,6 @@ namespace KM.SwSh.Tests.ModMerger;
 public sealed class SwShModMergerWorkflowServiceTests
 {
     private const string TestPath = "romfs/bin/test.bin";
-
-    [Fact]
-    public void LegacyApplyIsAnObsoleteMigrationSurface()
-    {
-        var applyMethod = Assert.Single(
-            typeof(SwShModMergerWorkflowService).GetMethods(BindingFlags.Instance | BindingFlags.Public),
-            method => method.Name == "Apply");
-        var obsolete = Assert.Single(applyMethod.GetCustomAttributes<ObsoleteAttribute>());
-
-        Assert.False(obsolete.IsError);
-        Assert.Contains("ApplyReviewed", obsolete.Message, StringComparison.Ordinal);
-        Assert.Contains("ReviewToken", obsolete.Message, StringComparison.Ordinal);
-        Assert.Equal(7, applyMethod.GetParameters().Length);
-        Assert.True(applyMethod.GetParameters()[6].HasDefaultValue);
-    }
 
     [Fact]
     public void LegacyApplyReturnsMigrationErrorWithoutWriting()

@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { ListChecks } from 'lucide-react';
+import { ClipboardCheck, ListChecks, Search, X } from 'lucide-react';
+import { useState } from 'react';
 import { type ProjectHealth, type WorkflowSummary } from '../../bridge/contracts';
 import { useLocalization } from '../../localization';
+import { readOnlyViewerSectionIds } from '../../workflowGameSupport';
 import { workflowDefinitions } from './workflowDefinitions';
 
 type WorkflowActionConfig = {
@@ -33,6 +35,7 @@ export function WorkflowsSection({
   isStaticEncountersLoading,
   isRentalPokemonLoading,
   isDynamaxAdventuresLoading,
+  isTeraRaidsLoading,
   isBagHookLoading,
   isCatchCapLoading,
   isHyperTrainingLoading,
@@ -42,6 +45,7 @@ export function WorkflowsSection({
   isGymUniformRemovalLoading,
   isHyperspaceBypassLoading,
   isIvScreenLoading,
+  isTypeChartLoading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
   isNpcItemGiftLoading,
@@ -55,6 +59,7 @@ export function WorkflowsSection({
   onOpenStaticEncountersWorkflow,
   onOpenRentalPokemonWorkflow,
   onOpenDynamaxAdventuresWorkflow,
+  onOpenTeraRaidsWorkflow,
   onOpenBagHookWorkflow,
   onOpenCatchCapWorkflow,
   onOpenHyperTrainingWorkflow,
@@ -64,6 +69,7 @@ export function WorkflowsSection({
   onOpenGymUniformRemovalWorkflow,
   onOpenHyperspaceBypassWorkflow,
   onOpenIvScreenWorkflow,
+  onOpenTypeChartWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -80,6 +86,7 @@ export function WorkflowsSection({
   onOpenModMergerWorkflow,
   onOpenTextWorkflow,
   onOpenTrainersWorkflow,
+  onOpenChanges,
   pendingEditCount,
   workflows
 }: {
@@ -103,6 +110,7 @@ export function WorkflowsSection({
   isStaticEncountersLoading: boolean;
   isRentalPokemonLoading: boolean;
   isDynamaxAdventuresLoading: boolean;
+  isTeraRaidsLoading: boolean;
   isBagHookLoading: boolean;
   isCatchCapLoading: boolean;
   isHyperTrainingLoading: boolean;
@@ -112,6 +120,7 @@ export function WorkflowsSection({
   isGymUniformRemovalLoading: boolean;
   isHyperspaceBypassLoading: boolean;
   isIvScreenLoading: boolean;
+  isTypeChartLoading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
   isNpcItemGiftLoading: boolean;
@@ -125,6 +134,7 @@ export function WorkflowsSection({
   onOpenStaticEncountersWorkflow: () => void;
   onOpenRentalPokemonWorkflow: () => void;
   onOpenDynamaxAdventuresWorkflow: () => void;
+  onOpenTeraRaidsWorkflow: () => void;
   onOpenBagHookWorkflow: () => void;
   onOpenCatchCapWorkflow: () => void;
   onOpenHyperTrainingWorkflow: () => void;
@@ -134,6 +144,7 @@ export function WorkflowsSection({
   onOpenGymUniformRemovalWorkflow: () => void;
   onOpenHyperspaceBypassWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
+  onOpenTypeChartWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -150,15 +161,30 @@ export function WorkflowsSection({
   onOpenModMergerWorkflow: () => void;
   onOpenTextWorkflow: () => void;
   onOpenTrainersWorkflow: () => void;
+  onOpenChanges: () => void;
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
+  const [searchText, setSearchText] = useState('');
   const visibleWorkflowDefinitions = workflowDefinitions.filter((definition) =>
     workflows.some((workflow) => workflow.id === definition.id)
   );
+  const normalizedSearchText = searchText.trim().toLocaleLowerCase();
+  const filteredWorkflowDefinitions = visibleWorkflowDefinitions.filter((definition) => {
+    if (!normalizedSearchText) {
+      return true;
+    }
 
-  if (!health?.canOpenEditableWorkflows) {
+    const workflow = workflows.find((candidate) => candidate.id === definition.id);
+    return [
+      definition.id,
+      translateLiteral(workflow?.label ?? definition.label),
+      translateLiteral(workflow?.description ?? definition.description)
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearchText));
+  });
+
+  if (!health?.canOpenReadOnlyWorkflows) {
     return (
       <section aria-labelledby="workflows-heading" className="panel wide-panel">
         <div className="panel-heading">
@@ -203,9 +229,11 @@ export function WorkflowsSection({
     spreadsheetImport: action('Open Import', isSpreadsheetImportLoading, onOpenSpreadsheetImportWorkflow),
     startingItems: action('Open Starting Items', isStartingItemsLoading, onOpenStartingItemsWorkflow),
     staticEncounters: action('Open Static Encounters', isStaticEncountersLoading, onOpenStaticEncountersWorkflow),
+    teraRaids: action('Open Tera Raids', isTeraRaidsLoading, onOpenTeraRaidsWorkflow),
     text: action('Open Text', isTextLoading, onOpenTextWorkflow),
     trainers: action('Open Trainers', isTrainersLoading, onOpenTrainersWorkflow),
-    tradePokemon: action('Open Trades', isTradePokemonLoading, onOpenTradePokemonWorkflow)
+    tradePokemon: action('Open Trades', isTradePokemonLoading, onOpenTradePokemonWorkflow),
+    typeChart: action('Open Type Chart', isTypeChartLoading, onOpenTypeChartWorkflow)
   };
 
   return (
@@ -215,20 +243,57 @@ export function WorkflowsSection({
         <h2 id="workflows-heading">Workflow List</h2>
       </div>
 
+      <div className="workflow-hub-toolbar">
+        <label className="search-box workflow-hub-search">
+          <Search aria-hidden="true" size={16} />
+          <input
+            aria-label={translateLiteral('Search')}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder={translateLiteral('Search')}
+            value={searchText}
+          />
+        </label>
+        {searchText ? (
+          <button
+            className="secondary-button compact-button"
+            onClick={() => setSearchText('')}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>{translateLiteral('Clear')}</span>
+          </button>
+        ) : null}
+        <button
+          className="secondary-button compact-button workflow-hub-pending"
+          disabled={pendingEditCount === 0}
+          onClick={onOpenChanges}
+          type="button"
+        >
+          <ClipboardCheck aria-hidden="true" size={16} />
+          <span>{t('Pending changes ({count})', { count: pendingEditCount })}</span>
+        </button>
+      </div>
+
+      {filteredWorkflowDefinitions.length > 0 ? (
       <div className="workflow-list">
-        {visibleWorkflowDefinitions.map((definition) => {
+        {filteredWorkflowDefinitions.map((definition) => {
           const workflow = workflows.find((candidate) => candidate.id === definition.id);
-          const workflowState = getWorkflowState(health, workflow);
+          const isReadOnlyViewer = readOnlyViewerSectionIds.has(definition.id);
+          const workflowState = getWorkflowState(health, workflow, isReadOnlyViewer);
           const Icon = definition.icon;
           const workflowAction = actions[definition.id];
-          const isItemsWorkflow = definition.id === 'items';
           const blockedReason =
             workflowState.availability === 'disabled'
               ? workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'error')
                   ?.message ??
                 workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'warning')
                   ?.message ??
-                workflow?.diagnostics[0]?.message
+                workflow?.diagnostics[0]?.message ??
+                (!isReadOnlyViewer && !health.canOpenEditableWorkflows
+                  ? translateLiteral(
+                      'Validate Base RomFS, Base ExeFS, and Output Root before opening editors.'
+                    )
+                  : null)
               : null;
 
           return (
@@ -238,11 +303,6 @@ export function WorkflowsSection({
                 <p>{translateLiteral(workflow?.description ?? definition.description)}</p>
                 {blockedReason ? (
                   <p className="workflow-disabled-reason">{blockedReason}</p>
-                ) : null}
-                {isItemsWorkflow ? (
-                  <span className="inline-metric">
-                    {translateLiteral(`Pending changes: ${pendingEditCount}`)}
-                  </span>
                 ) : null}
               </div>
               <div className="workflow-actions">
@@ -270,6 +330,9 @@ export function WorkflowsSection({
           );
         })}
       </div>
+      ) : (
+        <p className="empty-copy">{translateLiteral('No matching workflows.')}</p>
+      )}
     </section>
   );
 }
@@ -282,12 +345,28 @@ function action(iconLabel: string, isLoading: boolean, onOpen: () => void): Work
   };
 }
 
-function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
-  if (!health?.canOpenEditableWorkflows) {
+function getWorkflowState(
+  health: ProjectHealth | null,
+  workflow: WorkflowSummary | undefined,
+  isReadOnlyViewer: boolean
+) {
+  if (
+    !health?.canOpenReadOnlyWorkflows ||
+    (!isReadOnlyViewer && !health.canOpenEditableWorkflows)
+  ) {
     return {
       availability: 'disabled',
       label: 'Disabled',
       statusClass: 'status-blocked'
+    } as const;
+  }
+
+  if (isReadOnlyViewer && workflow) {
+    const availability = workflow.availability === 'disabled' ? 'disabled' : 'readOnly';
+    return {
+      availability,
+      label: workflowAvailabilityLabels[availability],
+      statusClass: workflowAvailabilityClassNames[availability]
     } as const;
   }
 
@@ -300,9 +379,9 @@ function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummar
   }
 
   return {
-    availability: 'readOnly',
-    label: 'Read-only',
-    statusClass: 'status-warning'
+    availability: 'disabled',
+    label: 'Disabled',
+    statusClass: 'status-blocked'
   } as const;
 }
 

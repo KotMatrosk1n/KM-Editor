@@ -474,13 +474,13 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     await user.type(alphaChance, '20');
     await user.clear(screen.getByLabelText('Alpha Level Bonus'));
     await user.type(screen.getByLabelText('Alpha Level Bonus'), '4');
-    await user.click(screen.getByRole('button', { name: 'Save Encounter' }));
+    await user.click(screen.getByRole('button', { name: 'Stage' }));
 
     await waitFor(() => expect(updateEncounterSlotFields).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText('Alpha Chance (%)')).toHaveValue(20);
     expect(screen.getByLabelText('Alpha Level Bonus')).toHaveValue(4);
 
-    await user.click(screen.getByRole('button', { name: 'Save Encounter' }));
+    await user.click(screen.getByRole('button', { name: 'Stage' }));
 
     await waitFor(() => expect(updateEncounterSlotFields).toHaveBeenCalledTimes(2));
     expect(updateEncounterSlotFields).toHaveBeenLastCalledWith(

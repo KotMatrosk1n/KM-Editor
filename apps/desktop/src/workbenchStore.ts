@@ -1285,6 +1285,13 @@ function loadValidatedProjectPathDraft(selectedGame: ProjectGame): ProjectPathDr
   return cache[selectedGame] ?? null;
 }
 
+export function getRememberedProjectGames(): ProjectGame[] {
+  const cache = loadValidatedProjectPathCache();
+  return (['sword', 'shield', 'scarlet', 'violet', 'za'] as const).filter(
+    (game) => cache[game] !== undefined
+  );
+}
+
 function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
   if (typeof window === 'undefined') {
     return {};

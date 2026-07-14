@@ -81,6 +81,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     id: 'advancedEditors',
     label: 'Advanced Editors',
     sectionIds: [
+      'exefsPatches',
       'royalCandy',
       'startingItems',
       'npcItemGift',
@@ -178,6 +179,19 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
 ]);
 
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'profanityFilter', 'randomizer', 'gameDump']);
+
+export const readOnlyViewerSectionIds = new Set<WorkbenchSection>(['flagworkSave']);
+
+export function canAccessWorkflowSectionForHealth(
+  section: WorkbenchSection,
+  canOpenReadOnlyWorkflows: boolean,
+  canOpenEditableWorkflows: boolean
+) {
+  return (
+    canOpenEditableWorkflows ||
+    (canOpenReadOnlyWorkflows && readOnlyViewerSectionIds.has(section))
+  );
+}
 
 export const scarletVioletAdvancedEditorSectionIds = new Set<WorkbenchSection>([
   'typeChart',
