@@ -1101,9 +1101,9 @@ const randomizerRestoreProgressSteps = [
   'Completing'
 ] as const;
 
-const encounterAreaCopyProgressSteps = [
-  'Preparing encounter copy',
-  'Updating matching slots',
+const encounterBatchUpdateProgressSteps = [
+  'Preparing encounter updates',
+  'Updating encounter fields',
   'Refreshing encounter tables'
 ] as const;
 
@@ -1502,8 +1502,8 @@ const encounterConditionLabels = [
   'Snowstorm',
   'Sandstorm',
   'Heavy Fog',
-  'Fishing',
-  'Shaking Trees'
+  'Shaking Trees',
+  'Fishing'
 ] as const;
 const encounterAreaLabels = ['Symbol', 'Hidden'] as const;
 const raidBattleSpeciesFieldName = 'species';
@@ -7667,19 +7667,20 @@ export function App({
         (total, update) => total + update.changes.length,
         0
       );
+      const targetTableCount = new Set(nonEmptyUpdates.map((update) => update.tableId)).size;
 
       setWorkProgress(createDeterminateWorkProgress(
-        'Applying Encounter Copy',
-        `Preparing ${nonEmptyUpdates.length} matching encounter slots`,
-        encounterAreaCopyProgressSteps,
+        'Applying Encounter Updates',
+        `Preparing ${targetTableCount} encounter ${targetTableCount === 1 ? 'table' : 'tables'}`,
+        encounterBatchUpdateProgressSteps,
         0,
         0
       ));
 
       setWorkProgress(createDeterminateWorkProgress(
-        'Applying Encounter Copy',
+        'Applying Encounter Updates',
         `Applying ${totalChanges} slot field updates`,
-        encounterAreaCopyProgressSteps,
+        encounterBatchUpdateProgressSteps,
         1,
         50
       ));
@@ -7700,9 +7701,9 @@ export function App({
           }),
         (updateResponse) => {
           setWorkProgress(createDeterminateWorkProgress(
-            'Applying Encounter Copy',
+            'Applying Encounter Updates',
             'Refreshing encounter tables',
-            encounterAreaCopyProgressSteps,
+            encounterBatchUpdateProgressSteps,
             2,
             100
           ));
@@ -7710,7 +7711,10 @@ export function App({
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return (
+        response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -22122,7 +22126,7 @@ function EncountersSection({
     [allTables, searchText]
   );
   const selectedTableFromId =
-    workflow?.tables.find((table) => table.tableId === selectedTableId) ?? null;
+    filteredTables.find((table) => table.tableId === selectedTableId) ?? null;
   const selectedTable = selectedTableFromId ?? getDefaultEncounterTable(filteredTables);
   const tableRows = useMemo(
     () => buildEncounterTableRows(filteredTables, selectedTable),
@@ -22275,6 +22279,7 @@ function EncountersSection({
               onStartEditSession={onStartEditSession}
               onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}
               onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
+              pendingTableIds={pendingEncounterTableIds}
               selectedSlot={selectedSlot}
               table={selectedTable}
               tables={workflow.tables}
@@ -22305,6 +22310,7 @@ function SelectedEncounterPanel({
   onStartEditSession,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
+  pendingTableIds,
   selectedSlot,
   table,
   tables
@@ -22327,11 +22333,15 @@ function SelectedEncounterPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
   onUpdateEncounterSlotUpdates: (updates: EncounterSlotFieldUpdate[]) => Promise<boolean>;
+  pendingTableIds: ReadonlySet<string>;
   selectedSlot: number | null;
   table: EncounterTableRecord | null;
   tables: EncounterTableRecord[];
 }) {
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [levelDraftsByTableId, setLevelDraftsByTableId] = useState<
     Record<string, Record<string, string>>
   >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
@@ -22387,9 +22397,44 @@ function SelectedEncounterPanel({
         ? getZaEncounterGroupKey(table.tableId, encounterSlot)
         : `${table.tableId}:${encounterSlot.slot}`
       : null;
-  const drafts = encounterDraftKey
-    ? draftsBySlotKey[encounterDraftKey] ?? encounterDraftDefaults
+  const encounterLevelDraftKey =
+    editorFamily === 'swsh' && table ? table.tableId : null;
+  const encounterSlotDraftDefaults = useMemo<Record<string, string>>(
+    () =>
+      editorFamily === 'swsh'
+        ? Object.fromEntries(
+            Object.entries(encounterDraftDefaults).filter(
+              ([field]) =>
+                field !== encounterLevelMinFieldName && field !== encounterLevelMaxFieldName
+            )
+          )
+        : encounterDraftDefaults,
+    [editorFamily, encounterDraftDefaults]
+  );
+  const encounterLevelDraftDefaults = useMemo<Record<string, string>>(
+    () => {
+      if (!encounterLevelDraftKey) {
+        return {};
+      }
+
+      const defaults: Record<string, string> = {};
+      defaults[encounterLevelMinFieldName] =
+        encounterDraftDefaults[encounterLevelMinFieldName] ?? '';
+      defaults[encounterLevelMaxFieldName] =
+        encounterDraftDefaults[encounterLevelMaxFieldName] ?? '';
+      return defaults;
+    },
+    [encounterDraftDefaults, encounterLevelDraftKey]
+  );
+  const slotDrafts = encounterDraftKey
+    ? draftsBySlotKey[encounterDraftKey] ?? encounterSlotDraftDefaults
     : {};
+  const drafts = encounterLevelDraftKey
+    ? {
+        ...slotDrafts,
+        ...(levelDraftsByTableId[encounterLevelDraftKey] ?? encounterLevelDraftDefaults)
+      }
+    : slotDrafts;
   const isSelectedZaGuaranteedAlpha =
     editorFamily === 'za' && encounterSlot !== null && isZaGuaranteedAlphaSlot(encounterSlot);
   const linkedZaAlphaReferenceKinds = useMemo(() => {
@@ -22511,7 +22556,39 @@ function SelectedEncounterPanel({
       ),
     [selectedPlacementDrafts, encounterFields, encounterSlot]
   );
-  useRegisterEditorDraftDirty('encounters', countFieldDraftRecords(draftsBySlotKey) > 0);
+  useRegisterEditorDraftDirty(
+    'encounters',
+    countFieldDraftRecords(draftsBySlotKey) +
+      countFieldDraftRecords(levelDraftsByTableId) >
+      0
+  );
+  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
+  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
+  const encounterLevelFieldNames = [encounterLevelMinFieldName, encounterLevelMaxFieldName];
+  const encounterLevelChanges = encounterSlot
+    ? getOrderedEncounterLevelChanges(encounterSlot, encounterDraftSummary.changedFields)
+    : [];
+  const hasChangedEncounterLevelDraft = encounterDraftSummary.changedFields.some((field) =>
+    encounterLevelFieldNames.includes(field.field)
+  );
+  const hasInvalidEncounterLevelDraft = encounterDraftSummary.invalidFields.some((field) =>
+    encounterLevelFieldNames.includes(field.field)
+  );
+  const hasInvalidEncounterLevelPair =
+    hasChangedEncounterLevelDraft &&
+    !hasInvalidEncounterLevelDraft &&
+    encounterLevelChanges.length === 0;
+  const encounterStageChanges = [
+    ...encounterDraftSummary.changedFields.filter(
+      (change) => !encounterLevelFieldNames.includes(change.field)
+    ),
+    ...encounterLevelChanges
+  ];
+  const encounterLevelConditionUpdates =
+    table && isSwShEncounterTable
+      ? createEncounterLevelConditionUpdates(table, tables, encounterLevelChanges)
+      : [];
   const canSaveEncounterDrafts =
     table !== null &&
     encounterSlot !== null &&
@@ -22519,16 +22596,8 @@ function SelectedEncounterPanel({
     canEditEncounters &&
     !isEncounterUpdating &&
     encounterDraftSummary.changedFields.length > 0 &&
-    encounterDraftSummary.invalidFields.length === 0;
-  const encounterLevelFieldNames = [encounterLevelMinFieldName, encounterLevelMaxFieldName];
-  const encounterLevelZoneChanges = encounterSlot
-    ? getEncounterLevelZoneChanges(encounterSlot, encounterDraftSummary.changedFields)
-    : [];
-  const hasInvalidEncounterLevelDraft = encounterDraftSummary.invalidFields.some((field) =>
-    encounterLevelFieldNames.includes(field.field)
-  );
-  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
-  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+    encounterDraftSummary.invalidFields.length === 0 &&
+    !hasInvalidEncounterLevelPair;
   const workflowHasZaAlphaChanceField = editableFields.some(
     (field) => field.field === zaEncounterAlphaChanceFieldName
   );
@@ -22558,13 +22627,15 @@ function SelectedEncounterPanel({
     !isSvEncounterTable &&
     !isZaEncounterTable &&
     (encounterSlot.speciesId !== 0 || encounterSlot.form !== 0 || encounterSlot.weight !== 0);
-  const canApplyEncounterLevelsToZone =
+  const canApplyEncounterLevelsToScope =
     table !== null &&
     encounterSlot !== null &&
     editSession !== null &&
     canEditEncounters &&
     !isEncounterUpdating &&
-    encounterLevelZoneChanges.length > 0 &&
+    (isSwShEncounterTable
+      ? encounterLevelConditionUpdates.length > 0
+      : encounterLevelChanges.length > 0) &&
     !hasInvalidEncounterLevelDraft;
   const areaCopyTargetArea =
     table?.area === 'Symbol' ? 'Hidden' : table?.area === 'Hidden' ? 'Symbol' : null;
@@ -22591,13 +22662,7 @@ function SelectedEncounterPanel({
       ? 'No matching destination conditions or slots are available to copy.'
       : undefined;
   const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
-  const displayedEncounterSlots = table
-    ? isSvEncounterTable
-      ? table.slots
-      : isZaEncounterTable
-        ? table.slots
-        : table.slots.slice(0, 10)
-    : [];
+  const displayedEncounterSlots = table?.slots ?? [];
   const encounterWeightTotal = displayedEncounterSlots.reduce(
     (total, slot) => total + slot.weight,
     0
@@ -22609,9 +22674,23 @@ function SelectedEncounterPanel({
     }
 
     setDraftsBySlotKey((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, encounterDraftKey, encounterDraftDefaults)
+      pruneFieldDraftRecord(currentDrafts, encounterDraftKey, encounterSlotDraftDefaults)
     );
-  }, [encounterDraftDefaults, encounterDraftKey]);
+  }, [encounterDraftKey, encounterSlotDraftDefaults]);
+
+  useEffect(() => {
+    if (!encounterLevelDraftKey) {
+      return;
+    }
+
+    setLevelDraftsByTableId((currentDrafts) =>
+      pruneFieldDraftRecord(
+        currentDrafts,
+        encounterLevelDraftKey,
+        encounterLevelDraftDefaults
+      )
+    );
+  }, [encounterLevelDraftDefaults, encounterLevelDraftKey]);
 
   return (
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
@@ -22690,30 +22769,36 @@ function SelectedEncounterPanel({
                 role="tablist"
                 aria-label="Encounter area"
               >
-                {areaTabs.map((areaTab) => (
-                  <button
-                    aria-selected={areaTab.label === table.area}
-                    className={`condition-tab-button ${
-                      areaTab.isAvailable ? '' : 'condition-tab-button-unavailable'
-                    }`}
-                    disabled={!areaTab.isAvailable}
-                    key={areaTab.label}
-                    onClick={() => {
-                      if (areaTab.tableId) {
-                        onSelectTable(areaTab.tableId);
+                {areaTabs.map((areaTab) => {
+                  const hasPendingChanges = areaTab.tableIds.some((tableId) =>
+                    pendingTableIds.has(tableId)
+                  );
+                  return (
+                    <button
+                      aria-label={`${areaTab.label}${hasPendingChanges ? ' (pending changes)' : ''}`}
+                      aria-selected={areaTab.label === table.area}
+                      className={`condition-tab-button ${
+                        areaTab.isAvailable ? '' : 'condition-tab-button-unavailable'
+                      } ${hasPendingChanges ? 'condition-tab-button-pending' : ''}`}
+                      disabled={!areaTab.isAvailable}
+                      key={areaTab.label}
+                      onClick={() => {
+                        if (areaTab.tableId) {
+                          onSelectTable(areaTab.tableId);
+                        }
+                      }}
+                      role="tab"
+                      title={
+                        areaTab.isAvailable
+                          ? areaTab.title
+                          : `${areaTab.label} encounters are not available for this location.`
                       }
-                    }}
-                    role="tab"
-                    title={
-                      areaTab.isAvailable
-                        ? areaTab.title
-                        : `${areaTab.label} encounters are not available for this location.`
-                    }
-                    type="button"
-                  >
-                    {areaTab.label}
-                  </button>
-                ))}
+                      type="button"
+                    >
+                      {areaTab.label}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
 
@@ -22723,30 +22808,35 @@ function SelectedEncounterPanel({
                 role="tablist"
                 aria-label="Encounter conditions"
               >
-                {conditionTabs.map((conditionTab) => (
-                  <button
-                    aria-selected={conditionTab.tableId === table.tableId}
-                    className={`condition-tab-button ${
-                      conditionTab.isAvailable ? '' : 'condition-tab-button-unavailable'
-                    }`}
-                    disabled={!conditionTab.isAvailable}
-                    key={conditionTab.label}
-                    onClick={() => {
-                      if (conditionTab.tableId) {
-                        onSelectTable(conditionTab.tableId);
+                {conditionTabs.map((conditionTab) => {
+                  const hasPendingChanges =
+                    conditionTab.tableId !== null && pendingTableIds.has(conditionTab.tableId);
+                  return (
+                    <button
+                      aria-label={`${conditionTab.label}${hasPendingChanges ? ' (pending changes)' : ''}`}
+                      aria-selected={conditionTab.tableId === table.tableId}
+                      className={`condition-tab-button ${
+                        conditionTab.isAvailable ? '' : 'condition-tab-button-unavailable'
+                      } ${hasPendingChanges ? 'condition-tab-button-pending' : ''}`}
+                      disabled={!conditionTab.isAvailable}
+                      key={conditionTab.label}
+                      onClick={() => {
+                        if (conditionTab.tableId) {
+                          onSelectTable(conditionTab.tableId);
+                        }
+                      }}
+                      role="tab"
+                      title={
+                        conditionTab.isAvailable
+                          ? conditionTab.label
+                          : `${conditionTab.label} is not available for this location.`
                       }
-                    }}
-                    role="tab"
-                    title={
-                      conditionTab.isAvailable
-                        ? conditionTab.label
-                        : `${conditionTab.label} is not available for this location.`
-                    }
-                    type="button"
-                  >
-                    {conditionTab.label}
-                  </button>
-                ))}
+                      type="button"
+                    >
+                      {conditionTab.label}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
 
@@ -22983,16 +23073,46 @@ function SelectedEncounterPanel({
                                   return;
                                 }
 
-                                const nextDrafts = {
-                                  ...drafts,
+                                if (
+                                  encounterLevelDraftKey &&
+                                  encounterLevelFieldNames.includes(field.field)
+                                ) {
+                                  const currentLevelDrafts =
+                                    levelDraftsByTableId[encounterLevelDraftKey] ??
+                                    encounterLevelDraftDefaults;
+                                  setLevelDraftsByTableId((currentDrafts) =>
+                                    setFieldDraftRecord(
+                                      currentDrafts,
+                                      encounterLevelDraftKey,
+                                      { ...currentLevelDrafts, [field.field]: value },
+                                      encounterLevelDraftDefaults
+                                    )
+                                  );
+                                  return;
+                                }
+
+                                const nextSlotDrafts = {
+                                  ...slotDrafts,
                                   [field.field]: value
                                 };
+                                const nextSpeciesId = Number.parseInt(value, 10);
+                                if (
+                                  editorFamily === 'swsh' &&
+                                  field.field === encounterSpeciesFieldName &&
+                                  Number.isInteger(nextSpeciesId)
+                                ) {
+                                  nextSlotDrafts[encounterFormFieldName] =
+                                    nextSpeciesId === encounterSlot.speciesId
+                                      ? encounterSlot.form.toString()
+                                      : '0';
+                                }
+
                                 setDraftsBySlotKey((currentDrafts) =>
                                   setFieldDraftRecord(
                                     currentDrafts,
                                     encounterDraftKey,
-                                    nextDrafts,
-                                    encounterDraftDefaults
+                                    nextSlotDrafts,
+                                    encounterSlotDraftDefaults
                                   )
                                 );
                               }}
@@ -23002,39 +23122,77 @@ function SelectedEncounterPanel({
                       </div>
                       {group.group === 'Levels' ? (
                         <div className="field-group-action-row">
+                          {isSwShEncounterTable ? (
+                            <small className="editable-field-status">
+                              Levels are stored per encounter condition. Stage edits for this
+                              condition, or apply them to every available condition below.
+                            </small>
+                          ) : null}
+                          {hasInvalidEncounterLevelPair ? (
+                            <small className="editable-field-error">
+                              Minimum level cannot be higher than maximum level.
+                            </small>
+                          ) : null}
                           <button
                             aria-busy={isEncounterUpdating || undefined}
                             className="secondary-button"
-                            disabled={!canApplyEncounterLevelsToZone}
+                            disabled={!canApplyEncounterLevelsToScope}
                             onClick={async () => {
                               if (!table || !encounterSlot || !encounterDraftKey) {
                                 return;
                               }
 
-                              const didSave = await onUpdateEncounterSlotFields(
-                                table.tableId,
-                                encounterSlot.slot,
-                                encounterLevelZoneChanges
-                              );
-                              if (didSave) {
-                                setDraftsBySlotKey((currentDrafts) =>
-                                  removeDraftFieldsFromRecord(
-                                    currentDrafts,
-                                    encounterDraftKey,
-                                    encounterDraftDefaults,
-                                    encounterLevelFieldNames
+                              const didSave = isSwShEncounterTable
+                                ? await onUpdateEncounterSlotUpdates(
+                                    encounterLevelConditionUpdates
                                   )
-                                );
+                                : await onUpdateEncounterSlotFields(
+                                    table.tableId,
+                                    encounterSlot.slot,
+                                    encounterLevelChanges
+                                  );
+                              if (didSave) {
+                                if (encounterLevelDraftKey) {
+                                  const updatedTableIds = new Set(
+                                    encounterLevelConditionUpdates.map(
+                                      (update) => update.tableId
+                                    )
+                                  );
+                                  setLevelDraftsByTableId((currentDrafts) =>
+                                    Object.fromEntries(
+                                      Object.entries(currentDrafts).filter(
+                                        ([tableId]) => !updatedTableIds.has(tableId)
+                                      )
+                                    )
+                                  );
+                                } else {
+                                  setDraftsBySlotKey((currentDrafts) =>
+                                    removeDraftFieldsFromRecord(
+                                      currentDrafts,
+                                      encounterDraftKey,
+                                      encounterSlotDraftDefaults,
+                                      encounterLevelFieldNames
+                                    )
+                                  );
+                                }
                               }
                             }}
-                            title="Apply this slot's level changes to every editable table in the current zone."
+                            title={
+                              isSwShEncounterTable
+                                ? 'Apply these level changes to every available condition in the current encounter table.'
+                                : "Apply this slot's level changes to every editable table in the current zone."
+                            }
                             type="button"
                           >
                             <BusyActionContent
                               busyLabel="Applying"
                               icon={null}
                               isBusy={isEncounterUpdating}
-                              label="Apply to Entire Zone"
+                              label={
+                                isSwShEncounterTable
+                                  ? 'Apply to All Conditions'
+                                  : 'Apply to Entire Zone'
+                              }
                             />
                           </button>
                         </div>
@@ -23056,7 +23214,7 @@ function SelectedEncounterPanel({
                         const didSave = await onUpdateEncounterSlotFields(
                           table.tableId,
                           encounterSlot.slot,
-                          encounterDraftSummary.changedFields.map((change) => ({
+                          encounterStageChanges.map((change) => ({
                             field: change.field,
                             value: change.value
                           }))
@@ -23065,6 +23223,11 @@ function SelectedEncounterPanel({
                           setDraftsBySlotKey((currentDrafts) =>
                             deleteFieldDraftRecord(currentDrafts, encounterDraftKey)
                           );
+                          if (encounterLevelDraftKey) {
+                            setLevelDraftsByTableId((currentDrafts) =>
+                              deleteFieldDraftRecord(currentDrafts, encounterLevelDraftKey)
+                            );
+                          }
                         }
                       }}
                       type="button"
@@ -23100,7 +23263,7 @@ function SelectedEncounterPanel({
                               removeDraftFieldsFromRecord(
                                 currentDrafts,
                                 encounterDraftKey,
-                                encounterDraftDefaults,
+                                encounterSlotDraftDefaults,
                                 encounterClearFieldNames
                               )
                             );
@@ -23120,7 +23283,12 @@ function SelectedEncounterPanel({
                     <button
                       className="danger-button"
                       disabled={isEncounterUpdating}
-                      onClick={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
+                      onClick={() =>
+                        cancelActiveEditSession(() => {
+                          setDraftsBySlotKey({});
+                          setLevelDraftsByTableId({});
+                        })
+                      }
                       type="button"
                     >
                       <X aria-hidden="true" size={16} />
@@ -23161,7 +23329,34 @@ function SelectedEncounterPanel({
                 setAreaCopyRequest(null);
                 const didSave = await onUpdateEncounterSlotUpdates(areaCopyRequest.updates);
                 if (didSave) {
-                  setDraftsBySlotKey({});
+                  const copiedSlotKeys = new Set(
+                    areaCopyRequest.updates.map(
+                      (update) => `${update.tableId}:${update.slot}`
+                    )
+                  );
+                  const copiedLevelTableIds = new Set(
+                    areaCopyRequest.updates
+                      .filter((update) =>
+                        update.changes.some((change) =>
+                          encounterLevelFieldNames.includes(change.field)
+                        )
+                      )
+                      .map((update) => update.tableId)
+                  );
+                  setDraftsBySlotKey((currentDrafts) =>
+                    Object.fromEntries(
+                      Object.entries(currentDrafts).filter(
+                        ([recordKey]) => !copiedSlotKeys.has(recordKey)
+                      )
+                    )
+                  );
+                  setLevelDraftsByTableId((currentDrafts) =>
+                    Object.fromEntries(
+                      Object.entries(currentDrafts).filter(
+                        ([tableId]) => !copiedLevelTableIds.has(tableId)
+                      )
+                    )
+                  );
                   onSelectTable(areaCopyRequest.targetTableId);
                 }
               }}
@@ -33734,8 +33929,9 @@ function buildEncounterAreaTabs(
   );
   const knownLabels = new Set<string>(encounterAreaLabels);
   const knownTabs = encounterAreaLabels.map((label) => {
+    const areaTables = zoneTables.filter((zoneTable) => zoneTable.area === label);
     const table = getPreferredEncounterTable(
-      zoneTables.filter((zoneTable) => zoneTable.area === label),
+      areaTables,
       null,
       selectedTable.encounterType
     );
@@ -33744,6 +33940,7 @@ function buildEncounterAreaTabs(
       isAvailable: table !== null,
       label,
       table,
+      tableIds: areaTables.map((areaTable) => areaTable.tableId),
       tableId: table?.tableId ?? null,
       title: table
         ? `${label} ${table.encounterType} encounters`
@@ -33755,8 +33952,9 @@ function buildEncounterAreaTabs(
       (label) => !knownLabels.has(label)
     )
   ).map((label) => {
+    const areaTables = zoneTables.filter((zoneTable) => zoneTable.area === label);
     const table = getPreferredEncounterTable(
-      zoneTables.filter((zoneTable) => zoneTable.area === label),
+      areaTables,
       null,
       selectedTable.encounterType
     );
@@ -33765,6 +33963,7 @@ function buildEncounterAreaTabs(
       isAvailable: table !== null,
       label,
       table,
+      tableIds: areaTables.map((areaTable) => areaTable.tableId),
       tableId: table?.tableId ?? null,
       title: table
         ? `${label} ${table.encounterType} encounters`
@@ -34693,20 +34892,97 @@ function createEncounterTableCopyUpdates(
   targetTable: EncounterTableRecord
 ): EncounterSlotFieldUpdate[] {
   const targetSlotNumbers = new Set(targetTable.slots.map((slot) => slot.slot));
+  const matchingSourceSlots = sourceTable.slots.filter((slot) =>
+    targetSlotNumbers.has(slot.slot)
+  );
+  const sourceLevelSlot = matchingSourceSlots[0];
+  const targetLevelSlot = targetTable.slots[0];
+  const copiedLevelChanges =
+    sourceLevelSlot && targetLevelSlot
+      ? getOrderedEncounterLevelChanges(targetLevelSlot, [
+          {
+            field: encounterLevelMinFieldName,
+            value: sourceLevelSlot.levelMin.toString()
+          },
+          {
+            field: encounterLevelMaxFieldName,
+            value: sourceLevelSlot.levelMax.toString()
+          }
+        ])
+      : [];
 
-  return sourceTable.slots
-    .filter((slot) => targetSlotNumbers.has(slot.slot))
-    .map((slot) => ({
-      changes: [
-        { field: encounterSpeciesFieldName, value: slot.speciesId.toString() },
-        { field: encounterFormFieldName, value: slot.form.toString() },
-        { field: encounterProbabilityFieldName, value: slot.weight.toString() },
-        { field: encounterLevelMinFieldName, value: slot.levelMin.toString() },
-        { field: encounterLevelMaxFieldName, value: slot.levelMax.toString() }
-      ],
-      slot: slot.slot,
-      tableId: targetTable.tableId
-    }));
+  return matchingSourceSlots.map((slot, index) => ({
+    changes: [
+      { field: encounterSpeciesFieldName, value: slot.speciesId.toString() },
+      { field: encounterFormFieldName, value: slot.form.toString() },
+      { field: encounterProbabilityFieldName, value: slot.weight.toString() },
+      ...(index === 0 ? copiedLevelChanges : [])
+    ],
+    slot: slot.slot,
+    tableId: targetTable.tableId
+  }));
+}
+
+function createEncounterLevelConditionUpdates(
+  selectedTable: EncounterTableRecord,
+  tables: EncounterTableRecord[],
+  changes: Array<{ field: string; value: string }>
+): EncounterSlotFieldUpdate[] {
+  if (changes.length === 0) {
+    return [];
+  }
+
+  const selectedGroupKey = getEncounterTableGroupKey(selectedTable);
+  if (!selectedGroupKey) {
+    return [];
+  }
+
+  const selectedSlot = selectedTable.slots[0];
+  if (!selectedSlot) {
+    return [];
+  }
+
+  const finalMinimumLevel = Number.parseInt(
+    changes.find((change) => change.field === encounterLevelMinFieldName)?.value ??
+      selectedSlot.levelMin.toString(),
+    10
+  );
+  const finalMaximumLevel = Number.parseInt(
+    changes.find((change) => change.field === encounterLevelMaxFieldName)?.value ??
+      selectedSlot.levelMax.toString(),
+    10
+  );
+  if (
+    !Number.isInteger(finalMinimumLevel) ||
+    !Number.isInteger(finalMaximumLevel) ||
+    finalMinimumLevel > finalMaximumLevel
+  ) {
+    return [];
+  }
+
+  return tables
+    .filter((table) => getEncounterTableGroupKey(table) === selectedGroupKey)
+    .flatMap((table) => {
+      const firstSlot = table.slots[0];
+      return firstSlot
+        ? [
+            {
+              changes: getOrderedEncounterLevelChanges(firstSlot, [
+                {
+                  field: encounterLevelMinFieldName,
+                  value: finalMinimumLevel.toString()
+                },
+                {
+                  field: encounterLevelMaxFieldName,
+                  value: finalMaximumLevel.toString()
+                }
+              ]),
+              slot: firstSlot.slot,
+              tableId: table.tableId
+            }
+          ]
+        : [];
+    });
 }
 
 function compareEncounterTablesForCopy(
@@ -34793,7 +35069,7 @@ function getEncounterTableZoneKey(table: EncounterTableRecord) {
 }
 
 function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
-  return table.gameVersion === 'Pokemon Legends ZA' || table.locationKey != null;
+  return table.gameVersion === 'Pokemon Legends ZA';
 }
 
 function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
@@ -35273,9 +35549,9 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
   }
 }
 
-function getEncounterLevelZoneChanges(
+function getOrderedEncounterLevelChanges(
   encounterSlot: EncounterSlotRecord,
-  changedFields: TrainerDraftChange[]
+  changedFields: Array<{ field: string; value: string }>
 ) {
   const changes = changedFields
     .filter(
@@ -35315,7 +35591,12 @@ function getEncounterLevelZoneChanges(
       ? [encounterLevelMinFieldName, encounterLevelMaxFieldName]
       : [encounterLevelMinFieldName, encounterLevelMaxFieldName];
 
-  return [...changes].sort(
+  const completeChanges = [
+    { field: encounterLevelMinFieldName, value: nextMinimumLevel.toString() },
+    { field: encounterLevelMaxFieldName, value: nextMaximumLevel.toString() }
+  ];
+
+  return completeChanges.sort(
     (left, right) => preferredOrder.indexOf(left.field) - preferredOrder.indexOf(right.field)
   );
 }
@@ -36090,6 +36371,7 @@ type EncounterAreaTab = {
   isAvailable: boolean;
   label: string;
   table: EncounterTableRecord | null;
+  tableIds: string[];
   tableId: string | null;
   title: string;
 };

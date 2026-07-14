@@ -60,6 +60,8 @@ test('keeps navigation controls reachable at constrained desktop sizes', async (
 
   await collapseSidebarButton.click();
   for (const viewport of [
+    { width: 1024, height: 640 },
+    { width: 1280, height: 720 },
     { width: 1280, height: 800 },
     { width: 1366, height: 768 },
     { width: 1440, height: 900 },
@@ -78,17 +80,22 @@ test('keeps navigation controls reachable at constrained desktop sizes', async (
 
     const geometry = await page.evaluate(() => {
       const shell = document.querySelector('.app-shell')?.getBoundingClientRect();
+      const brand = document.querySelector('.brand');
       const utilityNavigation = document
         .querySelector('.sidebar-utility-nav')
         ?.getBoundingClientRect();
+      const navigation = document.querySelector('.section-nav')?.getBoundingClientRect();
       const toggle = document.querySelector('.sidebar-toggle')?.getBoundingClientRect();
       const sidebarBounds = document.querySelector('.sidebar')?.getBoundingClientRect();
 
       return {
+        brandMinHeight: brand ? Number.parseFloat(getComputedStyle(brand).minHeight) : 0,
         horizontalOverflow:
           document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        navigationTop: navigation?.top ?? 0,
         shellHeight: shell?.height ?? 0,
         sidebarRight: sidebarBounds?.right ?? 0,
+        toggleBottom: toggle?.bottom ?? 0,
         toggleHeight: toggle?.height ?? 0,
         toggleRight: toggle?.right ?? 0,
         toggleWidth: toggle?.width ?? 0,
@@ -103,5 +110,38 @@ test('keeps navigation controls reachable at constrained desktop sizes', async (
     expect(geometry.toggleWidth).toBeGreaterThanOrEqual(40);
     expect(geometry.toggleHeight).toBeGreaterThanOrEqual(40);
     expect(geometry.toggleRight).toBeLessThanOrEqual(geometry.sidebarRight + 1);
+    if (expectedSidebarWidth === 76) {
+      expect(geometry.brandMinHeight).toBe(92);
+      expect(geometry.navigationTop).toBeGreaterThanOrEqual(geometry.toggleBottom);
+    }
   }
+});
+
+test('reserves compact header space at 150 percent display scaling', async ({ browser }) => {
+  const context = await browser.newContext({
+    baseURL: 'http://127.0.0.1:5173',
+    deviceScaleFactor: 1.5,
+    viewport: { width: 1024, height: 640 }
+  });
+  const page = await context.newPage();
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Pokemon Sword' }).click();
+  await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const brand = document.querySelector('.brand');
+    const navigation = document.querySelector('.section-nav')?.getBoundingClientRect();
+    const toggle = document.querySelector('.sidebar-toggle')?.getBoundingClientRect();
+
+    return {
+      brandMinHeight: brand ? Number.parseFloat(getComputedStyle(brand).minHeight) : 0,
+      navigationTop: navigation?.top ?? 0,
+      toggleBottom: toggle?.bottom ?? 0
+    };
+  });
+
+  expect(geometry.brandMinHeight).toBe(92);
+  expect(geometry.navigationTop).toBeGreaterThanOrEqual(geometry.toggleBottom);
+  await context.close();
 });

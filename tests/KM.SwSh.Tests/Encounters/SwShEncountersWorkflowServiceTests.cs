@@ -6,6 +6,7 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Encounters;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.Pokemon;
 using KM.SwSh.Workflows;
 using Xunit;
 
@@ -129,6 +130,75 @@ public sealed class SwShEncountersWorkflowServiceTests
         var table = Assert.Single(workflow.Tables);
         Assert.Equal("Route 1", table.Location);
         Assert.Contains(":078BC1FF1A657844:", table.TableId, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoadKeepsDistinctSameAreaZoneLabelsAndCanonicalCounterpartKeys()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchiveForZones(
+                        0x3D2E746F9D3F5CB5,
+                        0x6E121A9CE4F58F1E,
+                        0x56580C94EDFCE664,
+                        0xA93101EA38598995,
+                        0x95E125D2EE3ED656).Write()),
+                new SwShGfPackNamedFile(
+                    "encount_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(zoneId: 0x90875F718CA13690).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateSpeciesNameTable(6, (1, "Bulbasaur"), (4, "Charmander")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var firstFlying = Assert.Single(workflow.Tables, table =>
+            table.Location == "East Lake Axewell (Flying)");
+        var secondFlying = Assert.Single(workflow.Tables, table =>
+            table.Location == "East Lake Axewell (Flying 2)");
+        Assert.NotEqual(firstFlying.LocationKey, secondFlying.LocationKey);
+        Assert.Contains(workflow.Tables, table => table.Location == "Route 3 (Ground)");
+        Assert.Contains(workflow.Tables, table => table.Location == "Route 9 (Surfing)");
+
+        var warmUpTables = workflow.Tables
+            .Where(table => table.Location == "Warm-Up Tunnel")
+            .ToArray();
+        Assert.Equal(2, warmUpTables.Length);
+        Assert.Equal(warmUpTables[0].LocationKey, warmUpTables[1].LocationKey);
+    }
+
+    [Fact]
+    public void LoadFiltersSpeciesOptionsToPokemonPresentInSwordShield()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseRomFsFile(
+            SwShPersonalTable.PersonalDataRelativePath["romfs/".Length..],
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 4)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var species = workflow.EditableFields.Single(field =>
+            field.Field == SwShEncountersWorkflowService.SpeciesIdField);
+        Assert.Contains(species.Options, option => option.Value == 0 && option.Label == "000 Empty");
+        Assert.Contains(species.Options, option => option.Value == 1 && option.Label.EndsWith("Bulbasaur", StringComparison.Ordinal));
+        Assert.Contains(species.Options, option => option.Value == 4 && option.Label.EndsWith("Charmander", StringComparison.Ordinal));
+        Assert.DoesNotContain(species.Options, option => option.Value is 2 or 3 or 5 or 6);
     }
 
     [Fact]

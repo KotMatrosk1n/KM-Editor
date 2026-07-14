@@ -7,6 +7,7 @@ using KM.Core.Files;
 using KM.Formats.SwSh;
 using KM.SwSh.Encounters;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.Pokemon;
 using Xunit;
 
 namespace KM.SwSh.Tests.Encounters;
@@ -279,6 +280,143 @@ public sealed class SwShEncountersEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateSlotFieldsRollsBackTheEntireBatchWhenOneUpdateIsInvalid()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var workflow = new SwShEncountersWorkflowService().Load(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var service = new SwShEncountersEditSessionService();
+
+        var result = service.UpdateSlotFields(
+            temp.Paths,
+            session: null,
+            [
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 1,
+                    SwShEncountersWorkflowService.SpeciesIdField,
+                    "6"),
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 1,
+                    SwShEncountersWorkflowService.FormField,
+                    "999"),
+            ]);
+
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(result.Session.PendingEdits);
+        var unchangedSlot = result.Workflow.Tables
+            .Single(candidate => candidate.TableId == table.TableId)
+            .Slots[0];
+        Assert.Equal(1, unchangedSlot.SpeciesId);
+        Assert.Equal(0, unchangedSlot.Form);
+    }
+
+    [Fact]
+    public void ValidateRejectsNonzeroFormsOnEmptySlots()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(
+                        firstSlotProbability: 100,
+                        secondSlotProbability: 0).Write()),
+            ]).Write());
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var workflow = new SwShEncountersWorkflowService().Load(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = Assert.Single(workflow.Tables);
+        var service = new SwShEncountersEditSessionService();
+
+        var update = service.UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 2,
+            field: SwShEncountersWorkflowService.SpeciesIdField,
+            value: "0");
+        var validation = service.Validate(temp.Paths, update.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == SwShEncountersWorkflowService.FormField
+            && diagnostic.Message.Contains("empty but still uses form 1", StringComparison.Ordinal));
+        Assert.DoesNotContain(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == SwShEncountersWorkflowService.ProbabilityField);
+    }
+
+    [Fact]
+    public void UpdateAndValidateRejectSpeciesMissingFromSwordShieldPersonalData()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseRomFsFile(
+            SwShPersonalTable.PersonalDataRelativePath["romfs/".Length..],
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 4)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var workflow = new SwShEncountersWorkflowService().Load(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var service = new SwShEncountersEditSessionService();
+
+        var unavailable = service.UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 1,
+            field: SwShEncountersWorkflowService.SpeciesIdField,
+            value: "2");
+
+        Assert.Empty(unavailable.Session.PendingEdits);
+        Assert.Contains(unavailable.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("not marked present", StringComparison.Ordinal));
+
+        var available = service.UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 1,
+            field: SwShEncountersWorkflowService.SpeciesIdField,
+            value: "4");
+
+        Assert.DoesNotContain(available.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(
+            4,
+            available.Workflow.Tables.Single(candidate => candidate.TableId == table.TableId).Slots[0].SpeciesId);
+
+        var source = new ProjectFileReference(ProjectFileLayer.Base, table.Provenance.SourceFile);
+        var forgedSession = EditSession.Start().WithPendingEdit(new PendingEdit(
+            "workflow.encounters",
+            "Set unavailable species.",
+            [source],
+            SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, 1),
+            SwShEncountersWorkflowService.SpeciesIdField,
+            "2"));
+        var forgedValidation = service.Validate(temp.Paths, forgedSession);
+        Assert.False(forgedValidation.IsValid);
+        Assert.Contains(forgedValidation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("not marked present", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesEditedEncounterArchiveToOutputPack()
     {
         using var temp = TemporarySwShProject.Create();
@@ -325,7 +463,79 @@ public sealed class SwShEncountersEditSessionServiceTests
     }
 
     [Fact]
-    public void LevelEditsApplyToAllSubTablesInSelectedZone()
+    public void ApplyChangePlanTargetsSelectedShieldMemberAndPreservesOtherPackFiles()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        var unrelatedData = new byte[] { 0x10, 0x20, 0x30, 0x40 };
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive().Write()),
+                new SwShGfPackNamedFile(
+                    "encount_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(speciesOffset: 2).Write()),
+                new SwShGfPackNamedFile(
+                    "encount_symbol_t.bin",
+                    SwShEncounterTestFixtures.CreateArchive(speciesOffset: 4).Write()),
+                new SwShGfPackNamedFile(
+                    "encount_t.bin",
+                    SwShEncounterTestFixtures.CreateArchive(speciesOffset: 6).Write()),
+                new SwShGfPackNamedFile("unrelated.bin", unrelatedData),
+            ]).Write());
+        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Shield);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Shield };
+        var workflow = new SwShEncountersWorkflowService().Load(
+            new ProjectWorkspaceService().Open(paths));
+        Assert.All(workflow.Tables, table => Assert.Equal("Shield", table.GameVersion));
+        var table = workflow.Tables.Single(table => table.ArchiveMember == "encount_symbol_t.bin");
+        var service = new SwShEncountersEditSessionService();
+
+        var update = service.UpdateSlotFields(
+            paths,
+            session: null,
+            [
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 1,
+                    SwShEncountersWorkflowService.ProbabilityField,
+                    "40"),
+                new SwShEncounterSlotFieldUpdate(
+                    table.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.ProbabilityField,
+                    "60"),
+            ]);
+        var plan = service.CreateChangePlan(paths, update.Session);
+        var apply = service.ApplyChangePlan(paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var shieldArchive = SwShWildEncounterArchive.Parse(
+            outputPack.GetFileByName("encount_symbol_t.bin"));
+        Assert.Equal(40, shieldArchive.Tables[0].SubTables[0].Slots[0].Probability);
+        Assert.Equal(60, shieldArchive.Tables[0].SubTables[0].Slots[1].Probability);
+        var swordArchive = SwShWildEncounterArchive.Parse(
+            outputPack.GetFileByName("encount_symbol_k.bin"));
+        Assert.Equal(35, swordArchive.Tables[0].SubTables[0].Slots[0].Probability);
+        Assert.Equal(65, swordArchive.Tables[0].SubTables[0].Slots[1].Probability);
+        Assert.Equal(unrelatedData, outputPack.GetFileByName("unrelated.bin"));
+    }
+
+    [Fact]
+    public void LevelEditsApplyOnlyToTheSelectedCondition()
     {
         using var temp = TemporarySwShProject.Create();
         SwShEncounterTestFixtures.WriteBaseEncounters(temp);
@@ -364,8 +574,12 @@ public sealed class SwShEncountersEditSessionServiceTests
             .Where(candidate => candidate.ArchiveMember == "encount_symbol_k.bin")
             .ToArray();
         Assert.Equal(4, symbolTables.Length);
-        Assert.All(symbolTables, candidate =>
-            Assert.All(candidate.Slots, slot => Assert.Equal(5, slot.LevelMin)));
+        Assert.All(
+            symbolTables.Single(candidate => candidate.EncounterType == "Normal").Slots,
+            slot => Assert.Equal(5, slot.LevelMin));
+        Assert.All(
+            symbolTables.Single(candidate => candidate.EncounterType == "Overcast").Slots,
+            slot => Assert.Equal(4, slot.LevelMin));
 
         var plan = service.CreateChangePlan(temp.Paths, update.Session);
         var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
@@ -381,13 +595,112 @@ public sealed class SwShEncountersEditSessionServiceTests
             "data_table.gfpak");
         var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
         var outputSymbolArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
-        Assert.All(outputSymbolArchive.Tables[0].SubTables, subTable => Assert.Equal(5, subTable.LevelMin));
+        Assert.Equal(5, outputSymbolArchive.Tables[0].SubTables[0].LevelMin);
+        Assert.Equal(4, outputSymbolArchive.Tables[0].SubTables[1].LevelMin);
+        Assert.Equal(5, outputSymbolArchive.Tables[0].SubTables[2].LevelMin);
+        Assert.Equal(6, outputSymbolArchive.Tables[0].SubTables[3].LevelMin);
         var outputHiddenArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_k.bin"));
         Assert.Equal(3, outputHiddenArchive.Tables[0].SubTables[0].LevelMin);
     }
 
     [Fact]
-    public void LevelEditsSkipVanillaEmptySubTablesInSelectedZone()
+    public void BatchLevelEditsPreserveDistinctConditionRangesRegardlessOfOrder()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(
+                        subTables:
+                        [
+                            CreateSubTable(3, 8),
+                            CreateSubTable(4, 9),
+                        ]).Write()),
+            ]).Write());
+        var workflow = new SwShEncountersWorkflowService().Load(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var normal = workflow.Tables.Single(table => table.EncounterType == "Normal");
+        var overcast = workflow.Tables.Single(table => table.EncounterType == "Overcast");
+        var service = new SwShEncountersEditSessionService();
+
+        var update = service.UpdateSlotFields(
+            temp.Paths,
+            session: null,
+            [
+                new SwShEncounterSlotFieldUpdate(
+                    normal.TableId,
+                    Slot: 1,
+                    SwShEncountersWorkflowService.LevelMinField,
+                    "10"),
+                new SwShEncounterSlotFieldUpdate(
+                    normal.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.LevelMinField,
+                    "10"),
+                new SwShEncounterSlotFieldUpdate(
+                    normal.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.LevelMaxField,
+                    "15"),
+                new SwShEncounterSlotFieldUpdate(
+                    overcast.TableId,
+                    Slot: 1,
+                    SwShEncountersWorkflowService.LevelMaxField,
+                    "2"),
+                new SwShEncounterSlotFieldUpdate(
+                    overcast.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.LevelMaxField,
+                    "2"),
+                new SwShEncounterSlotFieldUpdate(
+                    overcast.TableId,
+                    Slot: 2,
+                    SwShEncountersWorkflowService.LevelMinField,
+                    "1"),
+            ]);
+
+        Assert.DoesNotContain(update.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(4, update.Session.PendingEdits.Count);
+        var updatedNormal = update.Workflow.Tables.Single(table => table.TableId == normal.TableId);
+        var updatedOvercast = update.Workflow.Tables.Single(table => table.TableId == overcast.TableId);
+        Assert.All(updatedNormal.Slots, slot =>
+        {
+            Assert.Equal(10, slot.LevelMin);
+            Assert.Equal(15, slot.LevelMax);
+        });
+        Assert.All(updatedOvercast.Slots, slot =>
+        {
+            Assert.Equal(1, slot.LevelMin);
+            Assert.Equal(2, slot.LevelMax);
+        });
+
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
+        Assert.Equal(10, outputArchive.Tables[0].SubTables[0].LevelMin);
+        Assert.Equal(15, outputArchive.Tables[0].SubTables[0].LevelMax);
+        Assert.Equal(1, outputArchive.Tables[0].SubTables[1].LevelMin);
+        Assert.Equal(2, outputArchive.Tables[0].SubTables[1].LevelMax);
+    }
+
+    [Fact]
+    public void LevelEditsDoNotChangeOtherAvailableOrVanillaEmptyConditions()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseExeFsFile("main", "base-main");
@@ -450,7 +763,7 @@ public sealed class SwShEncountersEditSessionServiceTests
         var outputSymbolArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
         Assert.Equal(7, outputSymbolArchive.Tables[0].SubTables[0].LevelMin);
         Assert.Equal(4, outputSymbolArchive.Tables[0].SubTables[1].LevelMin);
-        Assert.Equal(7, outputSymbolArchive.Tables[0].SubTables[2].LevelMin);
+        Assert.Equal(5, outputSymbolArchive.Tables[0].SubTables[2].LevelMin);
     }
 
     private static SwShWildEncounterSubTable CreateSubTable(byte levelMin, byte levelMax)
