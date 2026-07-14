@@ -378,7 +378,8 @@ public sealed class ZaTextWorkflowService
         foreach (var packName in fileSource.ListBasePackNames(project))
         {
             var virtualPath = ZaMessagePathResolver.TryCreateMessageDatPathFromPackName(packName, language);
-            if (!string.IsNullOrWhiteSpace(virtualPath))
+            if (!string.IsNullOrWhiteSpace(virtualPath)
+                && virtualPath.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
             {
                 candidates.Add(virtualPath);
             }

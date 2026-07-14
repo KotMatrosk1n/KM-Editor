@@ -31,7 +31,7 @@ public sealed class SwShGameTextFile
     {
         if (data.Length < HeaderSize + sizeof(uint))
         {
-            throw new InvalidDataException("Text file is too small to contain a Sword/Shield text header.");
+            throw new InvalidDataException("Text file is too small to contain an encrypted game text header.");
         }
 
         var sectionCount = BinaryPrimitives.ReadUInt16LittleEndian(data);
@@ -47,7 +47,7 @@ public sealed class SwShGameTextFile
             || sectionOffset > data.Length - sizeof(uint)
             || totalLength > int.MaxValue)
         {
-            throw new InvalidDataException("Text file header is not a supported Sword/Shield text table.");
+            throw new InvalidDataException("Text file header is not a supported encrypted game text table.");
         }
 
         var sectionStart = (int)sectionOffset;

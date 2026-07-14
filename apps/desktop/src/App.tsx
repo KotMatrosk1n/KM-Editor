@@ -711,7 +711,8 @@ const utilityNavigationSections = sections.filter((section) =>
 const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Editor/releases';
 const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
 const sidebarCompactStorageKey = 'km-editor.sidebar.compact.v1';
-const expandedWorkflowGroupsStorageKey = 'km-editor.workflow-groups.expanded.v1';
+const expandedWorkflowGroupsStorageKey = 'km-editor.workflow-groups.user-expanded.v2';
+const constrainedSidebarMediaQuery = '(max-width: 1280px), (max-height: 720px)';
 
 function readSidebarCompactPreference() {
   if (typeof window === 'undefined') {
@@ -735,6 +736,29 @@ function writeSidebarCompactPreference(isCompact: boolean) {
   } catch {
     // The in-memory preference still applies when localStorage is unavailable.
   }
+}
+
+function useMediaQuery(query: string) {
+  const getMatches = () =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false;
+  const [matches, setMatches] = useState(getMatches);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia(query);
+    const handleChange = () => setMatches(mediaQuery.matches);
+    handleChange();
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [query]);
+
+  return matches;
 }
 
 function readExpandedWorkflowGroups(game: ProjectGame | null) {
@@ -2164,7 +2188,17 @@ export function App({
     isRandomizerApplying ||
     isGameDumpWriting ||
     isSvCacheClearing;
-  const [isSidebarCompact, setIsSidebarCompact] = useState(readSidebarCompactPreference);
+  const [isSidebarCompactPreference, setIsSidebarCompactPreference] = useState(
+    readSidebarCompactPreference
+  );
+  const [isSidebarOverlayOpen, setIsSidebarOverlayOpen] = useState(false);
+  const [suppressedActiveWorkflowGroup, setSuppressedActiveWorkflowGroup] = useState<
+    WorkflowNavigationGroup['id'] | null
+  >(null);
+  const isSidebarConstrained = useMediaQuery(constrainedSidebarMediaQuery);
+  const isSidebarCompact = isSidebarConstrained
+    ? !isSidebarOverlayOpen
+    : isSidebarCompactPreference;
   const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
   const [expandedWorkflowGroups, setExpandedWorkflowGroups] = useState<
     Set<WorkflowNavigationGroup['id']>
@@ -2183,6 +2217,9 @@ export function App({
   const supportSearchRunRef = useRef(0);
   const updateCheckRunRef = useRef(0);
   const modMergerReviewRevisionRef = useRef(0);
+  const sidebarNavigationScrollRef = useRef<HTMLDivElement | null>(null);
+  const sidebarToggleRef = useRef<HTMLButtonElement | null>(null);
+  const shouldRestoreSidebarToggleFocusRef = useRef(false);
   const cancelDiscardActionRef = useRef<(() => void) | null>(null);
   const activeModMergerRetentionValue = useMemo(() => {
     if (isScarletVioletProject) {
@@ -3024,6 +3061,30 @@ export function App({
 
   const handleToggleWorkflowGroup = useCallback(
     (groupId: WorkflowNavigationGroup['id']) => {
+      const isActiveGroup = workflowNavigationGroups
+        .find((group) => group.id === groupId)
+        ?.sectionIds.includes(activeSection);
+
+      if (isActiveGroup && suppressedActiveWorkflowGroup !== groupId) {
+        if (expandedWorkflowGroups.has(groupId)) {
+          const nextGroups = new Set(expandedWorkflowGroups);
+          nextGroups.delete(groupId);
+          setExpandedWorkflowGroups(nextGroups);
+          writeExpandedWorkflowGroups(selectedGame, nextGroups);
+        }
+        setSuppressedActiveWorkflowGroup(groupId);
+        return;
+      }
+
+      if (isActiveGroup && suppressedActiveWorkflowGroup === groupId) {
+        const nextGroups = new Set(expandedWorkflowGroups);
+        nextGroups.add(groupId);
+        setExpandedWorkflowGroups(nextGroups);
+        writeExpandedWorkflowGroups(selectedGame, nextGroups);
+        setSuppressedActiveWorkflowGroup(null);
+        return;
+      }
+
       setExpandedWorkflowGroups((currentGroups) => {
         const nextGroups = new Set(currentGroups);
         if (nextGroups.has(groupId)) {
@@ -3036,36 +3097,85 @@ export function App({
         return nextGroups;
       });
     },
-    [selectedGame]
+    [
+      activeSection,
+      expandedWorkflowGroups,
+      selectedGame,
+      suppressedActiveWorkflowGroup
+    ]
   );
 
   const handleToggleSidebar = useCallback(() => {
-    setIsSidebarCompact((currentValue) => {
+    if (isSidebarConstrained) {
+      setIsSidebarOverlayOpen((currentValue) => !currentValue);
+      return;
+    }
+
+    setIsSidebarCompactPreference((currentValue) => {
       const nextValue = !currentValue;
       writeSidebarCompactPreference(nextValue);
       return nextValue;
     });
+  }, [isSidebarConstrained]);
+
+  const handleDismissSidebarOverlay = useCallback(() => {
+    shouldRestoreSidebarToggleFocusRef.current = true;
+    setIsSidebarOverlayOpen(false);
   }, []);
 
   useEffect(() => {
-    const activeGroup = workflowNavigationGroups.find((group) =>
-      group.sectionIds.includes(activeSection)
-    );
-    if (!activeGroup || !isWorkflowSupportedForGame(activeSection, selectedGame)) {
+    setSuppressedActiveWorkflowGroup(null);
+  }, [activeSection, selectedGame]);
+
+  useEffect(() => {
+    if (isSidebarConstrained) {
       return;
     }
 
-    setExpandedWorkflowGroups((currentGroups) => {
-      if (currentGroups.has(activeGroup.id)) {
-        return currentGroups;
-      }
+    setIsSidebarOverlayOpen(false);
+  }, [isSidebarConstrained]);
 
-      const nextGroups = new Set(currentGroups);
-      nextGroups.add(activeGroup.id);
-      writeExpandedWorkflowGroups(selectedGame, nextGroups);
-      return nextGroups;
-    });
-  }, [activeSection, selectedGame]);
+  useEffect(() => {
+    if (!isSidebarOverlayOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleDismissSidebarOverlay();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleDismissSidebarOverlay, isSidebarOverlayOpen]);
+
+  useEffect(() => {
+    if (isSidebarOverlayOpen || !shouldRestoreSidebarToggleFocusRef.current) {
+      return;
+    }
+
+    shouldRestoreSidebarToggleFocusRef.current = false;
+    sidebarToggleRef.current?.focus();
+  }, [isSidebarOverlayOpen]);
+
+  useEffect(() => {
+    const scrollRegion = sidebarNavigationScrollRef.current;
+    const activeNavigationItem = scrollRegion?.querySelector<HTMLElement>(
+      '[aria-current="page"]'
+    );
+    activeNavigationItem?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [activeSection, isSidebarCompact]);
+
+  const handleSidebarNavigateSection = useCallback(
+    (destination: WorkbenchSection) => {
+      handleNavigateSection(destination);
+      if (isSidebarConstrained) {
+        setIsSidebarOverlayOpen(false);
+      }
+    },
+    [handleNavigateSection, isSidebarConstrained]
+  );
 
   useEffect(() => {
     if (
@@ -4052,7 +4162,7 @@ export function App({
   };
 
   useEffect(() => {
-    if (!isScarletVioletProject || activeSection !== 'text' || !textWorkflowRef.current) {
+    if (!supportsTrinityOutput || activeSection !== 'text' || !textWorkflowRef.current) {
       return;
     }
 
@@ -4072,11 +4182,11 @@ export function App({
   }, [
     activeSection,
     bridge,
-    isScarletVioletProject,
     runRetainedWorkflowLoad,
     selectedGame,
     setBridgeDiagnostics,
     setTextWorkflow,
+    supportsTrinityOutput,
     textSearchText
   ]);
 
@@ -8915,8 +9025,14 @@ export function App({
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
-    <main className={`app-shell${isSidebarCompact ? ' sidebar-is-compact' : ''}`}>
-      <aside className={`sidebar${isSidebarCompact ? ' sidebar-compact' : ''}`}>
+    <main
+      className={`app-shell${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
+    >
+      <aside
+        aria-label="Application navigation"
+        className={`sidebar${isSidebarCompact ? ' sidebar-compact' : ''}`}
+        id="application-sidebar"
+      >
         <div className="brand">
           <img alt="" aria-hidden="true" className="brand-logo" src={kmLogoUrl} />
           <span className="brand-copy">
@@ -8927,10 +9043,13 @@ export function App({
             <span className="brand-credit">Made by Matroskin</span>
           </span>
           <button
+            aria-controls="application-sidebar"
+            aria-expanded={!isSidebarCompact}
             aria-label={sidebarToggleLabel}
             aria-pressed={isSidebarCompact}
             className="sidebar-toggle"
             onClick={handleToggleSidebar}
+            ref={sidebarToggleRef}
             title={sidebarToggleLabel}
             type="button"
           >
@@ -8943,6 +9062,7 @@ export function App({
         </div>
 
         <nav aria-label="Workspace" className="section-nav">
+          <div className="sidebar-navigation-scroll" ref={sidebarNavigationScrollRef}>
           {primaryNavigationSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
@@ -8954,7 +9074,7 @@ export function App({
                 className="nav-button"
                 disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                 key={section.id}
-                onClick={() => handleNavigateSection(section.id)}
+                onClick={() => handleSidebarNavigateSection(section.id)}
                 title={isSidebarCompact ? translateLiteral(section.label) : undefined}
                 type="button"
               >
@@ -8982,8 +9102,10 @@ export function App({
               return null;
             }
 
-            const isExpanded = expandedWorkflowGroups.has(group.id);
             const hasActiveSection = visibleSectionIds.includes(activeSection);
+            const isExpanded =
+              expandedWorkflowGroups.has(group.id) ||
+              (hasActiveSection && suppressedActiveWorkflowGroup !== group.id);
 
             return (
               <div
@@ -9019,7 +9141,7 @@ export function App({
                           className="nav-button nav-child-button"
                           disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                           key={section.id}
-                          onClick={() => handleNavigateSection(section.id)}
+                          onClick={() => handleSidebarNavigateSection(section.id)}
                           title={isSidebarCompact ? translateLiteral(section.label) : undefined}
                           type="button"
                         >
@@ -9034,6 +9156,9 @@ export function App({
             );
           }) : null}
 
+          </div>
+
+          <div className="sidebar-utility-nav">
           {utilityNavigationSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
@@ -9045,7 +9170,7 @@ export function App({
                 className="nav-button"
                 disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                 key={section.id}
-                onClick={() => handleNavigateSection(section.id)}
+                onClick={() => handleSidebarNavigateSection(section.id)}
                 title={isSidebarCompact ? translateLiteral(section.label) : undefined}
                 type="button"
               >
@@ -9059,10 +9184,23 @@ export function App({
               </button>
             );
           })}
+          </div>
         </nav>
       </aside>
 
-      <section className="workspace">
+      {isSidebarConstrained && isSidebarOverlayOpen ? (
+        <button
+          aria-label="Close sidebar"
+          className="sidebar-scrim"
+          onClick={handleDismissSidebarOverlay}
+          type="button"
+        />
+      ) : null}
+
+      <section
+        className="workspace"
+        inert={isSidebarConstrained && isSidebarOverlayOpen ? true : undefined}
+      >
         <header className="toolbar">
           <div className="title-block">
             <p className="project-state">{activeProjectStateLabel}</p>
@@ -9322,6 +9460,7 @@ export function App({
               <TextSection
                 editSession={getEditSessionForSection('text')}
                 isEditStarting={isEditStarting}
+                isPagedResultWindow={supportsTrinityOutput}
                 isTextUpdating={isTextUpdating}
                 onSearchChange={setTextSearchText}
                 onSelectTextEntry={setSelectedTextKey}
@@ -13688,6 +13827,7 @@ function SelectedMovePanel({
 function TextSection({
   editSession,
   isEditStarting,
+  isPagedResultWindow,
   isTextUpdating,
   onSearchChange,
   onSelectTextEntry,
@@ -13699,6 +13839,7 @@ function TextSection({
 }: {
   editSession: EditSession | null;
   isEditStarting: boolean;
+  isPagedResultWindow: boolean;
   isTextUpdating: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectTextEntry: (textKey: string | null) => void;
@@ -13742,7 +13883,7 @@ function TextSection({
             />
           </label>
           <Metric
-            label="Loaded entries"
+            label={isPagedResultWindow ? 'Loaded results' : 'Loaded entries'}
             value={workflow ? workflow.stats.totalTextEntryCount.toString() : '0'}
           />
           <Metric
@@ -13928,7 +14069,7 @@ function SelectedTextPanel({
               <dt>Label</dt>
               <dd data-localization-ignore="true">{entry.label}</dd>
             </div>
-            <div>
+            <div className="text-source-file-detail">
               <dt>Source file</dt>
               <dd data-localization-ignore="true">{entry.sourceFile}</dd>
             </div>
@@ -17731,15 +17872,14 @@ function GiftPokemonSection({
         {workflow ? (
           <div className="trainers-layout">
             <div
-              aria-colcount={6}
+              aria-colcount={5}
               aria-label="Gift Pokemon"
               aria-rowcount={filteredGifts.length + 1}
               className="trainers-table"
               role="table"
             >
-              <div className="trainers-row trainers-row-heading" role="row">
-                <span role="columnheader">Index</span>
-                <span role="columnheader">Gift</span>
+              <div className="trainers-row gift-pokemon-row trainers-row-heading" role="row">
+                <span role="columnheader">Gift #</span>
                 <span role="columnheader">Species</span>
                 <span role="columnheader">Level</span>
                 <span role="columnheader">IVs</span>
@@ -17750,15 +17890,14 @@ function GiftPokemonSection({
                 items={filteredGifts}
                 renderRow={(gift) => (
                   <button
-                    className={`trainers-row ${
+                    className={`trainers-row gift-pokemon-row ${
                       selectedGift?.giftIndex === gift.giftIndex ? 'trainers-row-selected' : ''
                     } ${pendingGiftIndexes.has(gift.giftIndex) ? 'trainers-row-pending' : ''}`}
                     onClick={() => onSelectGift(gift.giftIndex)}
                     role="row"
                     type="button"
                   >
-                    <span role="cell">{gift.giftIndex + 1}</span>
-                    <span role="cell">{gift.label}</span>
+                    <span role="cell">#{gift.giftIndex + 1}</span>
                     <span role="cell">
                       {formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
                     </span>
@@ -17899,7 +18038,7 @@ function SelectedGiftPokemonPanel({
         <>
           <PokemonSummaryCard
             name={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
-            subtitle={`Gift #${gift.giftIndex} | ${formatGiftPokemonLevelSummary(gift, editorFamily)}`}
+            subtitle={`Gift #${gift.giftIndex + 1} | ${formatGiftPokemonLevelSummary(gift, editorFamily)}`}
             title={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
           />
 
@@ -17908,7 +18047,7 @@ function SelectedGiftPokemonPanel({
               <dt>Gift</dt>
               <dd>{gift.label}</dd>
             </div>
-            {editorFamily === 'sv' && gift.eventLabel ? (
+            {editorFamily !== 'swsh' && gift.eventLabel ? (
               <div>
                 <dt>Event label</dt>
                 <dd>{gift.eventLabel}</dd>

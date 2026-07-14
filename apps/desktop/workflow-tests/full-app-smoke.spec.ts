@@ -102,7 +102,7 @@ async function installMockRuntime(page: Page) {
   });
 
   await page.exposeBinding('kmEditorMockInvoke', async (_source, command: string, args?: unknown) => {
-    if (command === 'project_bridge_once') {
+    if (command === 'project_bridge' || command === 'project_bridge_once') {
       const requestJson = getProjectBridgeRequestJson(args);
       const request = JSON.parse(requestJson) as {
         command: string;
@@ -230,7 +230,7 @@ function getProjectBridgeRequestJson(args: unknown) {
     return args.requestJson;
   }
 
-  throw new Error('project_bridge_once did not receive requestJson.');
+  throw new Error('project_bridge did not receive requestJson.');
 }
 
 async function fillProjectPathInputs(page: Page) {

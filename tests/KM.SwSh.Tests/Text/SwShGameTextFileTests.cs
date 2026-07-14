@@ -12,6 +12,22 @@ public sealed class SwShGameTextFileTests
     private const ushort KeyAdvance = 0x2983;
 
     [Fact]
+    public void ParseReportsFormatGenericErrorForTruncatedHeader()
+    {
+        var exception = Assert.Throws<InvalidDataException>(() => SwShGameTextFile.Parse(new byte[0x10]));
+
+        Assert.Equal("Text file is too small to contain an encrypted game text header.", exception.Message);
+    }
+
+    [Fact]
+    public void ParseReportsFormatGenericErrorForUnsupportedHeader()
+    {
+        var exception = Assert.Throws<InvalidDataException>(() => SwShGameTextFile.Parse(new byte[0x14]));
+
+        Assert.Equal("Text file header is not a supported encrypted game text table.", exception.Message);
+    }
+
+    [Fact]
     public void WriteEncodesTextControlEscapesAsSwordShieldControlVariables()
     {
         var data = SwShGameTextFile.Write(new[]

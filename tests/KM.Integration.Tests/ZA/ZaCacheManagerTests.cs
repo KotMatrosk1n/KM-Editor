@@ -2,10 +2,13 @@
 
 using System.Buffers.Binary;
 using Google.FlatBuffers;
+using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.Formats.ZA;
 using KM.Formats.ZA.Trinity;
 using KM.ZA.Data;
+using KM.ZA.Text;
 using KM.ZA.Workflows;
 using TrinityFileSystem = KM.Formats.ZA.Trinity.FileSystem;
 using Xunit;
@@ -108,6 +111,41 @@ public sealed class ZaCacheManagerTests
 
         Assert.Equal(ZaCacheMode.Performance, warmup.Settings.Mode);
         Assert.Equal([0x5A, 0x54, 0x58, 0x54], bytes);
+    }
+
+    [Fact]
+    public void TextWorkflowLoadsArchiveDatMessagesAndIgnoresAhtbTables()
+    {
+        using var temp = TemporaryFolder.Create();
+        const string messagePath = "ik_message/dat/English/script/common_0001.dat";
+        const string metadataPath = "ik_message/dat/English/common/another_name.tbl";
+        var messageBytes = SwShGameTextFile.Write(
+            [new SwShGameTextLine("Loaded archive message", Flags: 0)]);
+        WriteSyntheticArchiveEntries(
+            temp.BaseRomFsPath,
+            [
+                ("arc/ik_messagedatEnglishscriptcommon_0001.trpak", messagePath, messageBytes),
+                ("arc/ik_messagedatEnglishcommonanother_name.tbl.trpak", metadataPath, new byte[] { 0x41, 0x48, 0x54, 0x42 }),
+            ]);
+        var supportPath = Directory.CreateDirectory(Path.Combine(temp.RootPath, "za-support")).FullName;
+        File.WriteAllBytes(Path.Combine(supportPath, ZaCompressionRuntime.RequiredFileName), []);
+        var paths = temp.CreatePaths() with
+        {
+            GameTextLanguage = "en",
+            PokemonLegendsZASupportFolderPath = supportPath,
+        };
+        var project = CreateEditableProject(paths);
+        var fileSource = new ZaWorkflowFileSource(new ZaCacheManager(temp.CacheRootPath));
+
+        var workflow = new ZaTextWorkflowService(fileSource).Load(project);
+
+        var entry = Assert.Single(workflow.Entries);
+        Assert.Equal($"romfs/{messagePath}", entry.SourceFile);
+        Assert.Equal("Loaded archive message", entry.Value);
+        Assert.Equal(1, workflow.Stats.SourceFileCount);
+        Assert.DoesNotContain(workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains(metadataPath, StringComparison.OrdinalIgnoreCase)
+            || (diagnostic.File?.Contains(metadataPath, StringComparison.OrdinalIgnoreCase) ?? false));
     }
 
     [Fact]
@@ -499,6 +537,22 @@ public sealed class ZaCacheManagerTests
         return Directory.Exists(projectsPath)
             ? Directory.GetDirectories(projectsPath).Length
             : 0;
+    }
+
+    private static OpenedProject CreateEditableProject(ProjectPaths paths)
+    {
+        var graph = new ProjectFileGraph([]);
+        var health = new ProjectHealth(
+            ProjectHealthState.EditableReady,
+            [],
+            graph.ToSummary(),
+            []);
+        return new OpenedProject(
+            ProjectId.New(),
+            paths,
+            health,
+            graph,
+            DateTimeOffset.UtcNow);
     }
 
     private static void WriteSyntheticArchive(

@@ -372,9 +372,22 @@ describe('App', () => {
     await user.type(screen.getByRole('textbox', { name: 'Search' }), 'Type Chart');
     await user.click(screen.getByRole('button', { name: 'Open Type Chart' }));
     await waitFor(() => expect(loadTypeChartWorkflow).toHaveBeenCalledTimes(1));
+    const advancedEditorsGroup = within(navigation).getByRole('button', {
+      name: 'Advanced Editors'
+    });
+    expect(advancedEditorsGroup).toHaveAttribute('aria-expanded', 'true');
     expect(
-      within(navigation).getByRole('button', { name: 'Advanced Editors' })
-    ).toHaveAttribute('aria-expanded', 'true');
+      window.localStorage.getItem('km-editor.workflow-groups.user-expanded.v2.sword')
+    ).toBeNull();
+    await user.click(advancedEditorsGroup);
+    expect(advancedEditorsGroup).toHaveAttribute('aria-expanded', 'false');
+    await user.click(advancedEditorsGroup);
+    expect(advancedEditorsGroup).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      JSON.parse(
+        window.localStorage.getItem('km-editor.workflow-groups.user-expanded.v2.sword') ?? '[]'
+      )
+    ).toEqual(['advancedEditors']);
     expect(within(navigation).getByRole('button', { name: 'ExeFS Patches' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close Editor' }));
     expect(useWorkbenchStore.getState().activeSection).toBe('workflows');
