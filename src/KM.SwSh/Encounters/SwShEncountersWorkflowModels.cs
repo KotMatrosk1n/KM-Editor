@@ -25,6 +25,7 @@ public sealed record SwShEncounterSlotRecord(
 public sealed record SwShEncounterTableRecord(
     string TableId,
     string Location,
+    string LocationKey,
     string Area,
     string EncounterType,
     string GameVersion,
@@ -65,4 +66,7 @@ public sealed record SwShEncountersWorkflow(
     IReadOnlyList<SwShEncounterTableRecord> Tables,
     IReadOnlyList<SwShEncounterEditableField> EditableFields,
     SwShEncountersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public IReadOnlySet<int> PresentSpeciesIds { get; init; } = new HashSet<int>();
+}

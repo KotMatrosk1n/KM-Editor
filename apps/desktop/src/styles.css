@@ -468,8 +468,10 @@ button > span {
 
 .sidebar-compact .brand {
   display: grid;
-  justify-items: center;
   gap: 8px;
+  grid-template-rows: 44px 40px;
+  justify-items: center;
+  min-height: 92px;
 }
 
 .sidebar-compact .brand-copy {
@@ -6583,6 +6585,11 @@ button.sv-encounter-condition-row:hover {
   color: var(--color-text);
   background: linear-gradient(135deg, #2f2a90, var(--color-accent));
   border-color: rgb(109 115 255 / 72%);
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+
+.condition-tab-button-pending {
+  border-color: rgb(214 168 66 / 72%);
   box-shadow: inset 3px 0 0 var(--color-gold);
 }
 

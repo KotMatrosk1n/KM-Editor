@@ -77,7 +77,14 @@ public sealed class SwShEncountersEditSessionService
             return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(table, slotRecord, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(
+            workflow,
+            table,
+            slotRecord,
+            field,
+            value,
+            validateCurrentLevelPair: true,
+            diagnostics: diagnostics);
         if (pendingEdit is null)
         {
             return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
@@ -149,11 +156,13 @@ public sealed class SwShEncountersEditSessionService
             }
 
             var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
                 table,
                 slotRecord,
                 update.Field,
                 update.Value,
-                diagnostics);
+                validateCurrentLevelPair: false,
+                diagnostics: diagnostics);
             if (pendingEdit is null)
             {
                 continue;
@@ -161,6 +170,12 @@ public sealed class SwShEncountersEditSessionService
 
             updatedSession = ReplacePendingEncounterEdit(updatedSession, pendingEdit);
             effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        ValidatePendingLevelPairs(loadedWorkflow, updatedSession.PendingEdits, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
         return new SwShEncountersEditResult(
@@ -183,6 +198,7 @@ public sealed class SwShEncountersEditSessionService
         ValidatePendingLevelPairs(workflow, session.PendingEdits, diagnostics);
         ValidateEncounterProbabilityTotals(workflowWithPendingEdits, session.PendingEdits, diagnostics);
         ValidateNoEmptyWeightedSlots(workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidateEmptySlotForms(workflowWithPendingEdits, session.PendingEdits, diagnostics);
 
         foreach (var edit in session.PendingEdits)
         {
@@ -305,7 +321,6 @@ public sealed class SwShEncountersEditSessionService
         try
         {
             var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
-            var workflow = encountersWorkflowService.Load(project);
 
             foreach (var editGroup in session.PendingEdits.GroupBy(GetArchiveMemberFileName, StringComparer.Ordinal))
             {
@@ -320,9 +335,8 @@ public sealed class SwShEncountersEditSessionService
                 }
 
                 var archive = SwShWildEncounterArchive.Parse(pack.GetFileByName(editGroup.Key));
-                var availableSubTableIndexes = CreateAvailableSubTableIndexLookup(workflow, editGroup.Key);
                 var archiveEdits = editGroup
-                    .SelectMany(edit => ToArchiveEdits(archive, edit, availableSubTableIndexes, diagnostics))
+                    .SelectMany(edit => ToArchiveEdits(archive, edit, diagnostics))
                     .ToArray();
 
                 if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -442,7 +456,15 @@ public sealed class SwShEncountersEditSessionService
             return;
         }
 
-        _ = TryParseValue(edit.Field, edit.NewValue, diagnostics, FormatEncounterSlotContext(table, slotRecord));
+        var value = TryParseValue(
+            edit.Field,
+            edit.NewValue,
+            diagnostics,
+            FormatEncounterSlotContext(table, slotRecord));
+        if (value is not null)
+        {
+            ValidateSpeciesAvailability(workflow, edit.Field, value.Value, diagnostics);
+        }
     }
 
     private static void ValidatePendingLevelPairs(
@@ -468,25 +490,12 @@ public sealed class SwShEncountersEditSessionService
                 continue;
             }
 
-            if (edit.Field is SwShEncountersWorkflowService.LevelMinField or SwShEncountersWorkflowService.LevelMaxField)
+            levels[tableId] = edit.Field switch
             {
-                foreach (var targetTableId in levels.Keys
-                    .Where(candidateTableId => IsSameEncounterZoneTable(candidateTableId, tableId))
-                    .ToArray())
-                {
-                    var targetCurrent = levels[targetTableId];
-                    levels[targetTableId] = edit.Field switch
-                    {
-                        SwShEncountersWorkflowService.LevelMinField => targetCurrent with { LevelMin = value },
-                        SwShEncountersWorkflowService.LevelMaxField => targetCurrent with { LevelMax = value },
-                        _ => targetCurrent,
-                    };
-                }
-
-                continue;
-            }
-
-            levels[tableId] = current;
+                SwShEncountersWorkflowService.LevelMinField => current with { LevelMin = value },
+                SwShEncountersWorkflowService.LevelMaxField => current with { LevelMax = value },
+                _ => current,
+            };
         }
 
         foreach (var pair in levels.Where(pair => pair.Value.LevelMin > pair.Value.LevelMax))
@@ -570,11 +579,47 @@ public sealed class SwShEncountersEditSessionService
         }
     }
 
+    private static void ValidateEmptySlotForms(
+        SwShEncountersWorkflow workflow,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var touchedTableIds = edits
+            .Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal))
+            .Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
+                ? tableId
+                : null)
+            .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var tableId in touchedTableIds)
+        {
+            var table = workflow.Tables.FirstOrDefault(candidate =>
+                string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
+            if (table is null)
+            {
+                continue;
+            }
+
+            foreach (var slot in table.Slots.Where(slot => slot.SpeciesId == 0 && slot.Form != 0))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Encounter table {FormatEncounterTableContext(table)} slot {slot.Slot} is empty but still uses form {slot.Form}.",
+                    field: SwShEncountersWorkflowService.FormField,
+                    expected: "Empty encounter slots must use form 0"));
+            }
+        }
+    }
+
     private static PendingEdit? CreatePendingEdit(
+        SwShEncountersWorkflow workflow,
         SwShEncounterTableRecord table,
         SwShEncounterSlotRecord slot,
         string field,
         string value,
+        bool validateCurrentLevelPair,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
@@ -590,7 +635,14 @@ public sealed class SwShEncountersEditSessionService
             return null;
         }
 
-        if (normalizedField == SwShEncountersWorkflowService.LevelMinField && parsedValue.Value > slot.LevelMax)
+        if (!ValidateSpeciesAvailability(workflow, normalizedField, parsedValue.Value, diagnostics))
+        {
+            return null;
+        }
+
+        if (validateCurrentLevelPair
+            && normalizedField == SwShEncountersWorkflowService.LevelMinField
+            && parsedValue.Value > slot.LevelMax)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -600,7 +652,9 @@ public sealed class SwShEncountersEditSessionService
             return null;
         }
 
-        if (normalizedField == SwShEncountersWorkflowService.LevelMaxField && parsedValue.Value < slot.LevelMin)
+        if (validateCurrentLevelPair
+            && normalizedField == SwShEncountersWorkflowService.LevelMaxField
+            && parsedValue.Value < slot.LevelMin)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -675,6 +729,28 @@ public sealed class SwShEncountersEditSessionService
         return parsedValue;
     }
 
+    private static bool ValidateSpeciesAvailability(
+        SwShEncountersWorkflow workflow,
+        string? field,
+        int value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (field != SwShEncountersWorkflowService.SpeciesIdField
+            || value == 0
+            || workflow.PresentSpeciesIds.Count == 0
+            || workflow.PresentSpeciesIds.Contains(value))
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Encounter species {value} is not marked present in the loaded Sword/Shield personal data.",
+            field: SwShEncountersWorkflowService.SpeciesIdField,
+            expected: "Empty or a Pokemon present in Sword/Shield"));
+        return false;
+    }
+
     private static (int Minimum, int Maximum) GetFieldRange(string? field)
     {
         return field switch
@@ -715,29 +791,10 @@ public sealed class SwShEncountersEditSessionService
             && SwShEncountersWorkflowService.TryParseSlotRecordId(candidate.RecordId, out var candidateTableId, out _)
             && SwShEncountersWorkflowService.TryParseSlotRecordId(pendingEdit.RecordId, out var pendingTableId, out _))
         {
-            return IsSameEncounterZoneTable(candidateTableId, pendingTableId);
+            return string.Equals(candidateTableId, pendingTableId, StringComparison.Ordinal);
         }
 
         return string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal);
-    }
-
-    private static bool IsSameEncounterZoneTable(string leftTableId, string rightTableId)
-    {
-        return SwShEncountersWorkflowService.TryParseTableId(
-                leftTableId,
-                out var leftMember,
-                out var leftTableIndex,
-                out var leftZoneId,
-                out _)
-            && SwShEncountersWorkflowService.TryParseTableId(
-                rightTableId,
-                out var rightMember,
-                out var rightTableIndex,
-                out var rightZoneId,
-                out _)
-            && string.Equals(leftMember.FileName, rightMember.FileName, StringComparison.Ordinal)
-            && leftTableIndex == rightTableIndex
-            && leftZoneId == rightZoneId;
     }
 
     private static SwShEncountersWorkflow OverlayPendingEdits(
@@ -764,14 +821,14 @@ public sealed class SwShEncountersEditSessionService
             return workflow;
         }
 
-        var isZoneLevelEdit = edit.Field is SwShEncountersWorkflowService.LevelMinField
+        var isTableLevelEdit = edit.Field is SwShEncountersWorkflowService.LevelMinField
             or SwShEncountersWorkflowService.LevelMaxField;
 
         return workflow with
         {
             Tables = workflow.Tables
-                .Select(table => (isZoneLevelEdit
-                        ? IsSameEncounterZoneTable(table.TableId, tableId)
+                .Select(table => (isTableLevelEdit
+                        ? string.Equals(table.TableId, tableId, StringComparison.Ordinal)
                         : table.TableId == tableId)
                     ? table with
                     {
@@ -907,7 +964,6 @@ public sealed class SwShEncountersEditSessionService
     private static IReadOnlyList<SwShWildEncounterEdit> ToArchiveEdits(
         SwShWildEncounterArchive archive,
         PendingEdit edit,
-        IReadOnlyDictionary<int, IReadOnlySet<int>> availableSubTableIndexes,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot)
@@ -950,62 +1006,21 @@ public sealed class SwShEncountersEditSessionService
 
         if (field is SwShWildEncounterField.LevelMin or SwShWildEncounterField.LevelMax)
         {
-            if (!availableSubTableIndexes.TryGetValue(tableIndex, out var targetSubTableIndexes)
-                || targetSubTableIndexes.Count == 0)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pending encounter level edit target {FormatPendingEditTarget(edit)} no longer matches an editable vanilla encounter section.",
-                    expected: "Vanilla-available encounter subtables"));
-                return [];
-            }
-
-            return targetSubTableIndexes
-                .Order()
-                .Select(targetSubTableIndex => new SwShWildEncounterEdit(
+            return
+            [
+                new SwShWildEncounterEdit(
                     tableIndex,
-                    targetSubTableIndex,
+                    subTableIndex,
                     SlotIndex: null,
                     field.Value,
-                    value))
-                .ToArray();
+                    value),
+            ];
         }
 
         return
         [
             new SwShWildEncounterEdit(tableIndex, subTableIndex, slot - 1, field.Value, value)
         ];
-    }
-
-    private static IReadOnlyDictionary<int, IReadOnlySet<int>> CreateAvailableSubTableIndexLookup(
-        SwShEncountersWorkflow workflow,
-        string archiveMember)
-    {
-        var lookup = new Dictionary<int, HashSet<int>>();
-        foreach (var table in workflow.Tables.Where(table => string.Equals(table.ArchiveMember, archiveMember, StringComparison.Ordinal)))
-        {
-            if (!SwShEncountersWorkflowService.TryParseTableId(
-                    table.TableId,
-                    out _,
-                    out var tableIndex,
-                    out _,
-                    out var subTableIndex))
-            {
-                continue;
-            }
-
-            if (!lookup.TryGetValue(tableIndex, out var subTableIndexes))
-            {
-                subTableIndexes = [];
-                lookup.Add(tableIndex, subTableIndexes);
-            }
-
-            subTableIndexes.Add(subTableIndex);
-        }
-
-        return lookup.ToDictionary(
-            pair => pair.Key,
-            pair => (IReadOnlySet<int>)pair.Value);
     }
 
     private static SwShWildEncounterField? ToArchiveField(string? field)

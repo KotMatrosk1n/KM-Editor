@@ -375,7 +375,7 @@ function compareEncounterTablesForDefaultSelection(
 }
 
 function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
-  return table.gameVersion === 'Pokemon Legends ZA' || table.locationKey != null;
+  return table.gameVersion === 'Pokemon Legends ZA';
 }
 
 function parseTrailingInteger(value: string | null | undefined) {

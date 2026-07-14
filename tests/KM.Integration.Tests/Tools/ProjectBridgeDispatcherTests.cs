@@ -1556,6 +1556,7 @@ public sealed class ProjectBridgeDispatcherTests
         var table = response.Payload.Workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
         Assert.StartsWith("sword:symbol:0:", table.TableId, StringComparison.Ordinal);
         Assert.Equal($"Zone 0x{SwShEncounterBridgeFixtures.ZoneId:X16}", table.Location);
+        Assert.Equal($"swsh-zone:{SwShEncounterBridgeFixtures.ZoneId:X16}", table.LocationKey);
         Assert.Equal("Symbol", table.Area);
         Assert.Equal("Normal", table.EncounterType);
         Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);

@@ -77,7 +77,7 @@ internal static class SwShEncounterZoneNames
         [0x9116B224702CDCF1] = "Route 9",
         [0xCDD3B5660D2E5E67] = "Route 9 (in Circhester Bay)",
         [0x5A3B8F8147272058] = "Route 9 (in Outer Spikemuth)",
-        [0xA93101EA38598995] = "Route 9  (Surfing)",
+        [0xA93101EA38598995] = "Route 9 (Surfing)",
         [0x0181225223DE5420] = "Route 10 (Near Station)",
         [0x1F0F1AE1818C4326] = "Stony Wilderness",
         [0xAD11B3F3B2AC662D] = "Dusty Bowl",
@@ -87,13 +87,13 @@ internal static class SwShEncounterZoneNames
         [0x593196758BA16B61] = "Lake of Outrage",
         [0xF79DE930E6F50533] = "Route 10",
         [0xA26A4595F72EDAEA] = "Route 2 (High Level)",
-        [0x56580C94EDFCE664] = "Route 3 (Garbage)",
+        [0x56580C94EDFCE664] = "Route 3 (Ground)",
         [0xCB38FEA3F71C3958] = "Rolling Fields (Flying)",
         [0x1F174D36062B8C38] = "Rolling Fields (Ground)",
         [0x23017513039A78E7] = "Rolling Fields (2)",
         [0xF1BA4AAD9AAB2C1A] = "Watchtower Ruins (Flying)",
         [0x3D2E746F9D3F5CB5] = "East Lake Axewell (Flying)",
-        [0x6E121A9CE4F58F1E] = "East Lake Axewell (Flying)",
+        [0x6E121A9CE4F58F1E] = "East Lake Axewell (Flying 2)",
         [0x3171A0C61793816E] = "South Lake Miloch (Flying)",
         [0x198E4023A1B2DDEF] = "South Lake Miloch (2)",
         [0xFAB1C08E70C0F1CA] = "Motostoke Riverbank (Surfing)",
@@ -153,7 +153,7 @@ internal static class SwShEncounterZoneNames
         [0x7D2E205E8E300EE1] = "Loop Lagoon (Surfing)",
         [0x67E3FF10EB64FB79] = "Training Lowlands (Beach)",
         [0x85E286D82C666BBC] = "Training Lowlands",
-        [0x95E125D2EE3ED656] = "Warm-up Tunnel",
+        [0x95E125D2EE3ED656] = "Warm-Up Tunnel",
         [0xA7F495799F209587] = "Potbottom Desert",
         [0x30AAD92559FCE81E] = "Workout Sea",
         [0x6F748A46C8E3802C] = "Workout Sea (Surfing)",
@@ -204,8 +204,23 @@ internal static class SwShEncounterZoneNames
         [0x9BDD6D11FFBEDA3F] = "Ballimere Lake (Surfing)",
     };
 
+    private static readonly IReadOnlyDictionary<ulong, ulong> CanonicalZoneIds = Names
+        .GroupBy(entry => entry.Value, StringComparer.OrdinalIgnoreCase)
+        .SelectMany(group =>
+        {
+            var canonicalZoneId = group.Min(entry => entry.Key);
+            return group.Select(entry => KeyValuePair.Create(entry.Key, canonicalZoneId));
+        })
+        .ToDictionary(entry => entry.Key, entry => entry.Value);
+
     public static string Format(ulong zoneId)
     {
         return Names.TryGetValue(zoneId, out var name) ? name : $"Zone 0x{zoneId:X16}";
+    }
+
+    public static string FormatGroupKey(ulong zoneId)
+    {
+        var canonicalZoneId = CanonicalZoneIds.GetValueOrDefault(zoneId, zoneId);
+        return $"swsh-zone:{canonicalZoneId:X16}";
     }
 }
