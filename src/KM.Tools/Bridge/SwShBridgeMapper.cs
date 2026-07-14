@@ -140,6 +140,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateMoveFieldsResponse ToMoveFieldsDto(SwShMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateMoveFieldsResponse(
+            ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadTextWorkflowResponse ToDto(SwShTextWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);

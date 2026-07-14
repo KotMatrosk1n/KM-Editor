@@ -55,9 +55,11 @@ describe('App', () => {
       editSession: null,
       editValidationDiagnostics: [],
       itemsWorkflow: null,
+      movesWorkflow: null,
       openProject: null,
       projectStatus: 'idle',
       selectedItemId: null,
+      selectedMoveId: null,
       staticEncountersWorkflow: null,
       workflows: []
     });

@@ -86,6 +86,10 @@ public sealed class SwShMovesWorkflowServiceTests
             workflow.EditableFields,
             field => field.Field == SwShMovesWorkflowService.InflictField);
         Assert.Contains(inflictField.Options, option => option.Value == 1 && option.Label == "001 Paralyze");
+        Assert.Contains(
+            inflictField.Options,
+            option => option.Value == ushort.MaxValue
+                && option.Label == "65535 Move-defined / scripted effect");
         var inflictDurationField = Assert.Single(
             workflow.EditableFields,
             field => field.Field == SwShMovesWorkflowService.RawInflictCountField);
@@ -96,14 +100,40 @@ public sealed class SwShMovesWorkflowServiceTests
         var healingField = Assert.Single(
             workflow.EditableFields,
             field => field.Field == SwShMovesWorkflowService.RawHealingField);
-        Assert.Equal("Healing behavior", healingField.Label);
+        Assert.Equal("HP recovery (+) / HP cost (-) (%) (raw)", healingField.Label);
         Assert.Equal(-128, healingField.MinimumValue);
         Assert.Equal(127, healingField.MaximumValue);
         Assert.Empty(healingField.Options);
+        var qualityField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.QualityField);
+        Assert.Equal(0, qualityField.MinimumValue);
+        Assert.Equal(13, qualityField.MaximumValue);
+        Assert.Contains(qualityField.Options, option => option.Value == 8 && option.Label == "008 Damage Drain");
         Assert.Equal(
             "Stat Change 1: Stat",
             workflow.EditableFields.Single(field => field.Field == SwShMovesWorkflowService.Stat1Field).Label);
         Assert.Empty(workflow.Diagnostics);
+    }
+
+    [Fact]
+    public void LoadMapsRawStatEightToAllStats()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteBaseMoves(temp, CreateMoveRecord(stat1: 8), moveName: "Ancient Power");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        var move = Assert.Single(workflow.Moves);
+        Assert.Equal("Ancient Power", move.Name);
+        Assert.Equal(8, move.StatChanges[0].Stat);
+        Assert.Equal("All Stats", move.StatChanges[0].StatName);
+        var statField = workflow.EditableFields.Single(field =>
+            field.Field == SwShMovesWorkflowService.Stat1Field);
+        Assert.Contains(statField.Options, option => option.Value == 8 && option.Label == "008 All Stats");
+        Assert.DoesNotContain(statField.Options, option => option.Value == 9);
     }
 
     [Fact]
@@ -153,6 +183,70 @@ public sealed class SwShMovesWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadFillsMissingAndBlankLocalizedTypeNamesFromSwShDefaults()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteBaseMoves(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/typename.dat",
+            CreateTextTable("Normal Localized", string.Empty));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        Assert.Equal("Normal Localized", Assert.Single(workflow.Moves).TypeName);
+        var options = workflow.EditableFields
+            .Single(field => field.Field == SwShMovesWorkflowService.TypeField)
+            .Options;
+        Assert.Equal(18, options.Count);
+        Assert.Equal("000 Normal Localized", options[0].Label);
+        Assert.Equal("001 Fighting", options[1].Label);
+        Assert.Equal("017 Fairy", options[17].Label);
+    }
+
+    [Fact]
+    public void LoadIgnoresLocalizedTypeNamesBeyondSwShDomain()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteBaseMoves(temp, CreateMoveRecord(type: 17));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/typename.dat",
+            CreateTextTable(
+                "Normal Localized",
+                "Fighting Localized",
+                "Flying Localized",
+                "Poison Localized",
+                "Ground Localized",
+                "Rock Localized",
+                "Bug Localized",
+                "Ghost Localized",
+                "Steel Localized",
+                "Fire Localized",
+                "Water Localized",
+                "Grass Localized",
+                "Electric Localized",
+                "Psychic Localized",
+                "Ice Localized",
+                "Dragon Localized",
+                "Dark Localized",
+                "Fairy Localized",
+                "Invalid Extra Type"));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        Assert.Equal("Fairy Localized", Assert.Single(workflow.Moves).TypeName);
+        var options = workflow.EditableFields
+            .Single(field => field.Field == SwShMovesWorkflowService.TypeField)
+            .Options;
+        Assert.Equal(18, options.Count);
+        Assert.DoesNotContain(options, option => option.Value >= 18);
+        Assert.DoesNotContain(options, option => option.Label.Contains("Invalid Extra", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadDeduplicatesMoveIdsAndPrefersWazabinSources()
     {
         using var temp = TemporarySwShProject.Create();
@@ -178,6 +272,65 @@ public sealed class SwShMovesWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadPrefersCanonicalWazabinForEmbeddedMoveId()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza0000.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(power: 40, moveId: 1)));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza0001.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(power: 80, moveId: 1)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedTextTable((1, "Pound")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var move = Assert.Single(new SwShMovesWorkflowService().Load(project).Moves);
+
+        Assert.Equal(80, move.Power);
+        Assert.Equal("romfs/bin/pml/waza/waza0001.wazabin", move.Provenance.SourceFile);
+    }
+
+    [Fact]
+    public void LoadReportsAndSkipsMoveIdsOutsideEditorRange()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza9999.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(moveId: uint.MaxValue)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        Assert.Empty(workflow.Moves);
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("unsupported move ID", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadHandlesMaximumSupportedSparseMoveIdWithoutIndexedAllocation()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza2147483647.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(moveId: int.MaxValue)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        var move = Assert.Single(workflow.Moves);
+        Assert.Equal(int.MaxValue, move.MoveId);
+        Assert.Equal("Move 2147483647", move.Name);
+        Assert.Equal(
+            "romfs/bin/pml/waza/waza2147483647.wazabin",
+            move.Provenance.SourceFile);
+    }
+
+    [Fact]
     public void LoadReturnsDiagnosticWhenMoveDataIsMissing()
     {
         using var temp = TemporarySwShProject.Create();
@@ -190,17 +343,22 @@ public sealed class SwShMovesWorkflowServiceTests
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.moves");
     }
 
-    internal static void WriteBaseMoves(TemporarySwShProject temp)
+    internal static void WriteBaseMoves(
+        TemporarySwShProject temp,
+        SwShMoveDataRecord? record = null,
+        string moveName = "Tackle")
     {
+        record ??= CreateMoveRecord();
+        var moveId = checked((int)record.MoveId);
         temp.WriteBaseRomFsFile(
-            "bin/pml/waza/waza_033.bin",
-            SwShMoveDataFile.Write(CreateMoveRecord()));
+            $"bin/pml/waza/waza_{moveId:000}.bin",
+            SwShMoveDataFile.Write(record));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazaname.dat",
-            CreateIndexedTextTable((33, "Tackle")));
+            CreateIndexedTextTable((moveId, moveName)));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazainfo.dat",
-            CreateIndexedTextTable((33, "A physical attack in which the user charges and slams into the target.")));
+            CreateIndexedTextTable((moveId, "A physical attack in which the user charges and slams into the target.")));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/typename.dat",
             CreateTextTable(
@@ -224,14 +382,23 @@ public sealed class SwShMovesWorkflowServiceTests
                 "Fairy"));
     }
 
-    private static SwShMoveDataRecord CreateMoveRecord(byte power = 40)
+    internal static SwShMoveDataRecord CreateMoveRecord(
+        byte power = 40,
+        uint moveId = 33,
+        bool canUseMove = true,
+        byte type = 0,
+        byte stat1 = 1,
+        byte hitMin = 1,
+        byte hitMax = 1,
+        byte turnMin = 0,
+        byte turnMax = 0)
     {
         return new SwShMoveDataRecord(
             Version: 1,
-            MoveId: 33,
-            CanUseMove: true,
+            MoveId: moveId,
+            CanUseMove: canUseMove,
             new SwShMoveCoreStats(
-                Type: 0,
+                Type: type,
                 Quality: 2,
                 Category: 1,
                 Power: power,
@@ -242,10 +409,10 @@ public sealed class SwShMovesWorkflowServiceTests
                 GigantamaxPower: 90),
             new SwShMoveTargeting(
                 RawTarget: 3,
-                HitMin: 1,
-                HitMax: 1,
-                TurnMin: 0,
-                TurnMax: 0),
+                HitMin: hitMin,
+                HitMax: hitMax,
+                TurnMin: turnMin,
+                TurnMax: turnMax),
             new SwShMoveSecondaryEffects(
                 Inflict: 1,
                 InflictPercent: 10,
@@ -255,7 +422,7 @@ public sealed class SwShMovesWorkflowServiceTests
                 Recoil: -25,
                 RawHealing: 0),
             [
-                new SwShMoveStatChange(1, Stat: 1, Stage: -1, Percent: 30),
+                new SwShMoveStatChange(1, Stat: stat1, Stage: -1, Percent: 30),
                 new SwShMoveStatChange(2, Stat: 2, Stage: 1, Percent: 40),
                 new SwShMoveStatChange(3, Stat: 0, Stage: 0, Percent: 0),
             ],
@@ -295,7 +462,7 @@ public sealed class SwShMovesWorkflowServiceTests
         return CreateTextTable(lines);
     }
 
-    private static byte[] CreateTextTable(params string[] lines)
+    internal static byte[] CreateTextTable(params string[] lines)
     {
         return SwShGameTextFile.Write(
             lines.Select(line => new SwShGameTextLine(line, Flags: 0)).ToArray());

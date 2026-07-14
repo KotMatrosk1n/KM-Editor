@@ -5,6 +5,11 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Moves;
 
+public sealed record SwShMoveFieldUpdate(
+    int MoveId,
+    string Field,
+    string Value);
+
 public sealed record SwShMovesEditResult(
     SwShMovesWorkflow Workflow,
     EditSession Session,

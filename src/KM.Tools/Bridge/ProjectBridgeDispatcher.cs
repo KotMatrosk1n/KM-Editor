@@ -735,19 +735,22 @@ public sealed class ProjectBridgeDispatcher
             return SerializeSuccess(zaResponse, request.RequestId);
         }
 
-        if (!IsScarletViolet(paths))
+        if (IsScarletViolet(paths))
         {
-            return SerializeFailure(
-                "bridge.gameMismatch",
-                "Bridge command 'moves.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
-                request.RequestId);
+            var svUpdates = request.Payload.Updates
+                .Select(update => new SvMoveFieldUpdate(update.MoveId, update.Field, update.Value))
+                .ToArray();
+            var svResponse = SvBridgeMapper.ToMoveFieldsDto(
+                svWorkflowService.UpdateMoveFields(paths, session, svUpdates));
+
+            return SerializeSuccess(svResponse, request.RequestId);
         }
 
-        var svUpdates = request.Payload.Updates
-            .Select(update => new SvMoveFieldUpdate(update.MoveId, update.Field, update.Value))
+        var swShUpdates = request.Payload.Updates
+            .Select(update => new SwShMoveFieldUpdate(update.MoveId, update.Field, update.Value))
             .ToArray();
-        var response = SvBridgeMapper.ToMoveFieldsDto(
-            svWorkflowService.UpdateMoveFields(paths, session, svUpdates));
+        var response = SwShBridgeMapper.ToMoveFieldsDto(
+            movesEditSessionService.UpdateFields(paths, session, swShUpdates));
 
         return SerializeSuccess(response, request.RequestId);
     }

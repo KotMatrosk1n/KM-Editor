@@ -64,17 +64,101 @@ public sealed class SwShMovesEditSessionService
             return new SwShMovesEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(selectedMove, field, value, diagnostics);
+        var baselineMove = loadedWorkflow.Moves.First(move => move.MoveId == moveId);
+        var pendingEdit = CreatePendingEdit(
+            selectedMove,
+            baselineMove,
+            field,
+            value,
+            validateImmediatePairs: true,
+            diagnostics: diagnostics);
         if (pendingEdit is null)
         {
             return new SwShMovesEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ReplacePendingMoveEdit(currentSession, pendingEdit);
+        var updatedSession = SetPendingMoveEdit(currentSession, pendingEdit, baselineMove);
 
         return new SwShMovesEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
+            diagnostics);
+    }
+
+    public SwShMovesEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShMoveFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = movesWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanEditMoves(project, workflow, diagnostics))
+        {
+            return new SwShMovesEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var candidateSession = currentSession;
+        foreach (var update in updates)
+        {
+            if (update is null
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Move batch update is missing a field or value.",
+                    field: "updates",
+                    expected: "Complete move field update"));
+                continue;
+            }
+
+            var effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, candidateSession.PendingEdits);
+            var selectedMove = effectiveWorkflow.Moves.FirstOrDefault(move => move.MoveId == update.MoveId);
+            var baselineMove = loadedWorkflow.Moves.FirstOrDefault(move => move.MoveId == update.MoveId);
+            if (selectedMove is null || baselineMove is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Move {update.MoveId} is not present in the loaded Moves Data workflow.",
+                    field: "moveId",
+                    expected: "Existing move record"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                selectedMove,
+                baselineMove,
+                update.Field,
+                update.Value,
+                validateImmediatePairs: false,
+                diagnostics: diagnostics);
+            if (pendingEdit is not null)
+            {
+                candidateSession = SetPendingMoveEdit(candidateSession, pendingEdit, baselineMove);
+            }
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShMovesEditResult(workflow, currentSession, diagnostics);
+        }
+
+        ValidatePendingPairs(loadedWorkflow, candidateSession.PendingEdits, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShMovesEditResult(workflow, currentSession, diagnostics);
+        }
+
+        return new SwShMovesEditResult(
+            OverlayPendingEdits(loadedWorkflow, candidateSession.PendingEdits),
+            candidateSession,
             diagnostics);
     }
 
@@ -94,6 +178,7 @@ public sealed class SwShMovesEditSessionService
             ValidatePendingEdit(workflow, edit, diagnostics);
         }
 
+        ValidateUniquePendingMoveEdits(session.PendingEdits, diagnostics);
         ValidatePendingPairs(workflow, session.PendingEdits, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -213,16 +298,16 @@ public sealed class SwShMovesEditSessionService
                     pendingOutputs.Add(new MoveOutput(
                         source.GraphEntry.RelativePath,
                         targetPath,
-                        SwShMoveDataFile.Write(editedRecord)));
+                        moveFile.WriteEdited(editedRecord)));
                 }
             }
             catch (InvalidDataException exception)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Moves Data source file could not be decoded: {exception.Message}",
+                    $"Moves Data source file could not be decoded or edited safely: {exception.Message}",
                     file: source.GraphEntry.RelativePath,
-                    expected: "Sword/Shield move data file"));
+                    expected: "Sword/Shield move data file with a losslessly editable source layout"));
             }
             catch (IOException exception)
             {
@@ -247,30 +332,11 @@ public sealed class SwShMovesEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        foreach (var output in pendingOutputs)
+        if (pendingOutputs.Count > 0
+            && TryWriteOutputsTransactionally(pendingOutputs, applyId, diagnostics))
         {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(output.AbsolutePath)!);
-                File.WriteAllBytes(output.AbsolutePath, output.Contents);
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, output.RelativePath));
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Moves Data output file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable output root"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Moves Data output file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable output root"));
-            }
+            writtenFiles.AddRange(pendingOutputs.Select(output =>
+                new ProjectFileReference(ProjectFileLayer.Generated, output.RelativePath)));
         }
 
         if (writtenFiles.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -281,6 +347,229 @@ public sealed class SwShMovesEditSessionService
         }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private static bool TryWriteOutputsTransactionally(
+        IReadOnlyList<MoveOutput> outputs,
+        string transactionId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var staged = new List<StagedMoveOutput>();
+        MoveOutput? currentOutput = null;
+
+        try
+        {
+            foreach (var output in outputs)
+            {
+                currentOutput = output;
+                Directory.CreateDirectory(Path.GetDirectoryName(output.AbsolutePath)!);
+                var temporaryPath = $"{output.AbsolutePath}.{transactionId}.tmp";
+                var backupPath = $"{output.AbsolutePath}.{transactionId}.bak";
+                staged.Add(new StagedMoveOutput(
+                    output,
+                    temporaryPath,
+                    backupPath,
+                    File.Exists(output.AbsolutePath)));
+                File.WriteAllBytes(temporaryPath, output.Contents);
+            }
+        }
+        catch (IOException exception)
+        {
+            CleanupTransactionArtifacts(
+                staged,
+                diagnostics,
+                reportFailures: true,
+                preserveUnrestoredBackups: false);
+            AddTransactionalWriteDiagnostic(
+                currentOutput,
+                exception,
+                "during staging; output target files were not changed",
+                diagnostics);
+            return false;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            CleanupTransactionArtifacts(
+                staged,
+                diagnostics,
+                reportFailures: true,
+                preserveUnrestoredBackups: false);
+            AddTransactionalWriteDiagnostic(
+                currentOutput,
+                exception,
+                "during staging; output target files were not changed",
+                diagnostics);
+            return false;
+        }
+
+        try
+        {
+            foreach (var output in staged)
+            {
+                currentOutput = output.Output;
+                if (output.OriginalExisted)
+                {
+                    File.Move(output.Output.AbsolutePath, output.BackupPath);
+                    output.OriginalMoved = true;
+                }
+
+                File.Move(output.TemporaryPath, output.Output.AbsolutePath);
+                output.NewInstalled = true;
+            }
+        }
+        catch (IOException exception)
+        {
+            var rollbackSucceeded = RollBackTransaction(staged, diagnostics);
+            CleanupTransactionArtifacts(
+                staged,
+                diagnostics,
+                reportFailures: true,
+                preserveUnrestoredBackups: true);
+            AddTransactionalWriteDiagnostic(
+                currentOutput,
+                exception,
+                rollbackSucceeded
+                    ? "during promotion; all promoted output target changes were rolled back"
+                    : "during promotion, and rollback was incomplete; recovery artifacts were preserved where possible",
+                diagnostics);
+            return false;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            var rollbackSucceeded = RollBackTransaction(staged, diagnostics);
+            CleanupTransactionArtifacts(
+                staged,
+                diagnostics,
+                reportFailures: true,
+                preserveUnrestoredBackups: true);
+            AddTransactionalWriteDiagnostic(
+                currentOutput,
+                exception,
+                rollbackSucceeded
+                    ? "during promotion; all promoted output target changes were rolled back"
+                    : "during promotion, and rollback was incomplete; recovery artifacts were preserved where possible",
+                diagnostics);
+            return false;
+        }
+
+        CleanupTransactionArtifacts(
+            staged,
+            diagnostics,
+            reportFailures: true,
+            preserveUnrestoredBackups: false);
+        return true;
+    }
+
+    private static bool RollBackTransaction(
+        IReadOnlyList<StagedMoveOutput> staged,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var succeeded = true;
+        foreach (var output in staged.Reverse())
+        {
+            try
+            {
+                if (output.NewInstalled && File.Exists(output.Output.AbsolutePath))
+                {
+                    File.Delete(output.Output.AbsolutePath);
+                }
+
+                output.NewInstalled = false;
+                if (output.OriginalMoved && !File.Exists(output.BackupPath))
+                {
+                    throw new IOException("The original output backup is missing.");
+                }
+
+                if (output.OriginalMoved)
+                {
+                    File.Move(output.BackupPath, output.Output.AbsolutePath);
+                    output.OriginalMoved = false;
+                }
+            }
+            catch (IOException exception)
+            {
+                succeeded = false;
+                AddRollbackDiagnostic(output.Output, exception, diagnostics);
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                succeeded = false;
+                AddRollbackDiagnostic(output.Output, exception, diagnostics);
+            }
+        }
+
+        return succeeded;
+    }
+
+    private static bool CleanupTransactionArtifacts(
+        IEnumerable<StagedMoveOutput> staged,
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool reportFailures,
+        bool preserveUnrestoredBackups)
+    {
+        var succeeded = true;
+        foreach (var output in staged)
+        {
+            var paths = new[]
+            {
+                (Path: output.TemporaryPath, IsBackup: false),
+                (Path: output.BackupPath, IsBackup: true),
+            };
+            foreach (var artifact in paths)
+            {
+                if (preserveUnrestoredBackups && artifact.IsBackup && output.OriginalMoved)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (File.Exists(artifact.Path))
+                    {
+                        File.Delete(artifact.Path);
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    succeeded = false;
+                    if (reportFailures)
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Warning,
+                            $"Moves Data transaction cleanup could not remove a temporary or backup file: {exception.Message}",
+                            file: output.Output.RelativePath,
+                            expected: "Removable transaction artifact"));
+                    }
+                }
+            }
+        }
+
+        return succeeded;
+    }
+
+    private static void AddTransactionalWriteDiagnostic(
+        MoveOutput? output,
+        Exception exception,
+        string outcome,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Moves Data output transaction failed {outcome}: {exception.Message}",
+            file: output?.RelativePath,
+            expected: "Writable output root"));
+    }
+
+    private static void AddRollbackDiagnostic(
+        MoveOutput output,
+        Exception exception,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Moves Data output rollback could not restore a target: {exception.Message}",
+            file: output.RelativePath,
+            expected: "Restored pre-apply output"));
     }
 
     private static bool CanEditMoves(
@@ -333,6 +622,34 @@ public sealed class SwShMovesEditSessionService
         TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
     }
 
+    private static void ValidateUniquePendingMoveEdits(
+        IReadOnlyList<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var seenFields = new HashSet<(int MoveId, string Field)>();
+        foreach (var edit in edits.Where(edit =>
+            string.Equals(edit.Domain, MovesEditDomain, StringComparison.Ordinal)))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+                || string.IsNullOrWhiteSpace(edit.Field))
+            {
+                continue;
+            }
+
+            var key = (moveId, edit.Field);
+            if (seenFields.Add(key))
+            {
+                continue;
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Move {moveId} has more than one pending edit for field '{edit.Field}'.",
+                field: edit.Field,
+                expected: "One pending value per move field"));
+        }
+    }
+
     private static void ValidatePendingPairs(
         SwShMovesWorkflow workflow,
         IReadOnlyList<PendingEdit> edits,
@@ -356,42 +673,74 @@ public sealed class SwShMovesEditSessionService
         var overlaidWorkflow = OverlayPendingEdits(workflow, edits);
         foreach (var move in overlaidWorkflow.Moves.Where(move => editedMoveIds.Contains(move.MoveId)))
         {
-            if (move.HitMin > move.HitMax)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Move {move.MoveId} has a minimum hit count greater than its maximum hit count.",
-                    field: "hit",
-                    expected: "Minimum hits less than or equal to maximum hits"));
-            }
-
-            if (move.TurnMin > move.TurnMax)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Move {move.MoveId} has a minimum turn count greater than its maximum turn count.",
-                    field: "turn",
-                    expected: "Minimum turns less than or equal to maximum turns"));
-            }
+            var baselineMove = workflow.Moves.First(candidate => candidate.MoveId == move.MoveId);
+            ValidatePairIfChanged(
+                move.HitMin,
+                move.HitMax,
+                baselineMove.HitMin,
+                baselineMove.HitMax,
+                "hits",
+                SwShMovesWorkflowService.HitMinField,
+                diagnostics,
+                move.MoveId);
+            ValidatePairIfChanged(
+                move.TurnMin,
+                move.TurnMax,
+                baselineMove.TurnMin,
+                baselineMove.TurnMax,
+                "inflict turns",
+                SwShMovesWorkflowService.TurnMinField,
+                diagnostics,
+                move.MoveId);
         }
     }
 
     private static PendingEdit? CreatePendingEdit(
         SwShMoveRecord selectedMove,
+        SwShMoveRecord baselineMove,
         string field,
         string value,
+        bool validateImmediatePairs,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
-        var parsedValue = TryParseEditableValue(normalizedField, value, diagnostics);
+        var preservedValues = new HashSet<int>();
+        if (GetMoveFieldValue(selectedMove, normalizedField) is { } selectedValue)
+        {
+            preservedValues.Add(selectedValue);
+        }
+
+        if (GetMoveFieldValue(baselineMove, normalizedField) is { } baselineValue)
+        {
+            preservedValues.Add(baselineValue);
+        }
+
+        var parsedValue = TryParseEditableValue(normalizedField, value, diagnostics, preservedValues);
         if (parsedValue is null)
         {
             return null;
         }
 
-        if (!ValidateImmediatePairs(selectedMove, normalizedField, parsedValue.Value, diagnostics))
+        if (validateImmediatePairs
+            && !ValidateImmediatePairs(
+                selectedMove,
+                baselineMove,
+                normalizedField,
+                parsedValue.Value,
+                diagnostics))
         {
             return null;
+        }
+
+        if (normalizedField == SwShMovesWorkflowService.CanUseMoveField
+            && !baselineMove.CanUseMove
+            && parsedValue.Value != 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Enabling a base-disabled move does not restore missing animations, effects, or other game resources. Asset-verify the move in game before relying on it.",
+                field: SwShMovesWorkflowService.CanUseMoveField,
+                expected: "Asset-verified move resources and in-game behavior"));
         }
 
         return new PendingEdit(
@@ -405,6 +754,7 @@ public sealed class SwShMovesEditSessionService
 
     private static bool ValidateImmediatePairs(
         SwShMoveRecord selectedMove,
+        SwShMoveRecord baselineMove,
         string field,
         int value,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -414,23 +764,73 @@ public sealed class SwShMovesEditSessionService
         var turnMin = field == SwShMovesWorkflowService.TurnMinField ? value : selectedMove.TurnMin;
         var turnMax = field == SwShMovesWorkflowService.TurnMaxField ? value : selectedMove.TurnMax;
 
-        if (hitMin > hitMax)
+        if (!ValidatePairIfChanged(
+                hitMin,
+                hitMax,
+                baselineMove.HitMin,
+                baselineMove.HitMax,
+                "hits",
+                SwShMovesWorkflowService.HitMinField,
+                diagnostics))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Move minimum hits cannot be greater than the current maximum hits.",
-                field: SwShMovesWorkflowService.HitMinField,
-                expected: "Minimum hits less than or equal to maximum hits"));
             return false;
         }
 
-        if (turnMin > turnMax)
+        if (!ValidatePairIfChanged(
+                turnMin,
+                turnMax,
+                baselineMove.TurnMin,
+                baselineMove.TurnMax,
+                "inflict turns",
+                SwShMovesWorkflowService.TurnMinField,
+                diagnostics))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool ValidatePairIfChanged(
+        int minimum,
+        int maximum,
+        int baselineMinimum,
+        int baselineMaximum,
+        string label,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        int? moveId = null)
+    {
+        return minimum == baselineMinimum && maximum == baselineMaximum
+            || ValidatePair(minimum, maximum, label, field, diagnostics, moveId);
+    }
+
+    private static bool ValidatePair(
+        int minimum,
+        int maximum,
+        string label,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics,
+        int? moveId = null)
+    {
+        var movePrefix = moveId is null ? "Move" : $"Move {moveId.Value}";
+        if ((minimum == 0) != (maximum == 0))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Move minimum turns cannot be greater than the current maximum turns.",
-                field: SwShMovesWorkflowService.TurnMinField,
-                expected: "Minimum turns less than or equal to maximum turns"));
+                $"{movePrefix} {label} must use either the 0/0 sentinel or two nonzero values.",
+                field: field,
+                expected: $"0/0 or nonzero minimum {label} less than or equal to maximum"));
+            return false;
+        }
+
+        if (minimum > maximum)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{movePrefix} minimum {label} cannot be greater than maximum {label}.",
+                field: field,
+                expected: $"Minimum {label} less than or equal to maximum"));
             return false;
         }
 
@@ -440,7 +840,8 @@ public sealed class SwShMovesEditSessionService
     private static int? TryParseEditableValue(
         string? field,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlySet<int>? preservedValues = null)
     {
         var editableField = SwShMovesWorkflowService.GetEditableField(field);
         if (editableField is null)
@@ -465,14 +866,28 @@ public sealed class SwShMovesEditSessionService
             return null;
         }
 
-        if (parsedValue.Value < (editableField.MinimumValue ?? int.MinValue)
-            || parsedValue.Value > (editableField.MaximumValue ?? int.MaxValue))
+        var isPreservedValue = preservedValues?.Contains(parsedValue.Value) == true;
+        if (!isPreservedValue
+            && (parsedValue.Value < (editableField.MinimumValue ?? int.MinValue)
+                || parsedValue.Value > (editableField.MaximumValue ?? int.MaxValue)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 $"{editableField.Label} must be between {editableField.MinimumValue} and {editableField.MaximumValue}.",
                 field: editableField.Field,
                 expected: $"Safe move {editableField.Label.ToLowerInvariant()}"));
+            return null;
+        }
+
+        if (!isPreservedValue
+            && editableField.Options.Count > 0
+            && editableField.Options.All(option => option.Value != parsedValue.Value))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must use a supported Sword/Shield value.",
+                field: editableField.Field,
+                expected: string.Join(", ", editableField.Options.Select(option => option.Value))));
             return null;
         }
 
@@ -502,14 +917,22 @@ public sealed class SwShMovesEditSessionService
         return false;
     }
 
-    private static EditSession ReplacePendingMoveEdit(EditSession session, PendingEdit pendingEdit)
+    private static EditSession SetPendingMoveEdit(
+        EditSession session,
+        PendingEdit pendingEdit,
+        SwShMoveRecord baselineMove)
     {
         var pendingEdits = session.PendingEdits
             .Where(edit => !IsSameMoveEdit(edit, pendingEdit))
-            .Append(pendingEdit)
-            .ToArray();
+            .ToList();
 
-        return session with { PendingEdits = pendingEdits };
+        if (!int.TryParse(pendingEdit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            || GetMoveFieldValue(baselineMove, pendingEdit.Field!) != value)
+        {
+            pendingEdits.Add(pendingEdit);
+        }
+
+        return session with { PendingEdits = pendingEdits.ToArray() };
     }
 
     private static bool IsSameMoveEdit(PendingEdit candidate, PendingEdit pendingEdit)
@@ -542,20 +965,35 @@ public sealed class SwShMovesEditSessionService
             return workflow;
         }
 
+        var typeName = string.Equals(edit.Field, SwShMovesWorkflowService.TypeField, StringComparison.Ordinal)
+            ? ResolveTypeName(workflow, value)
+            : null;
+        var moves = workflow.Moves
+            .Select(move => move.MoveId == moveId ? OverlayMoveField(move, edit.Field!, value, typeName) : move)
+            .ToArray();
+
         return workflow with
         {
-            Moves = workflow.Moves
-                .Select(move => move.MoveId == moveId ? OverlayMoveField(move, edit.Field!, value) : move)
-                .ToArray(),
+            Moves = moves,
+            Stats = workflow.Stats with
+            {
+                TotalMoveCount = moves.Length,
+                EnabledMoveCount = moves.Count(move => move.CanUseMove),
+                ActiveFlagCount = moves.Sum(move => move.Flags.Count(flag => flag.Enabled)),
+            },
         };
     }
 
-    private static SwShMoveRecord OverlayMoveField(SwShMoveRecord move, string field, int value)
+    private static SwShMoveRecord OverlayMoveField(
+        SwShMoveRecord move,
+        string field,
+        int value,
+        string? typeName)
     {
         return field switch
         {
             SwShMovesWorkflowService.CanUseMoveField => move with { CanUseMove = value != 0 },
-            SwShMovesWorkflowService.TypeField => move with { Type = value, TypeName = FormatType(value) },
+            SwShMovesWorkflowService.TypeField => move with { Type = value, TypeName = typeName ?? FormatType(value) },
             SwShMovesWorkflowService.QualityField => move with { Quality = value },
             SwShMovesWorkflowService.CategoryField => move with { Category = value, CategoryName = FormatCategory(value) },
             SwShMovesWorkflowService.PowerField => move with { Power = value },
@@ -588,6 +1026,78 @@ public sealed class SwShMovesEditSessionService
             _ when IsFlagField(field) => move with { Flags = OverlayFlag(move.Flags, field, value != 0) },
             _ => move,
         };
+    }
+
+    private static string ResolveTypeName(SwShMovesWorkflow workflow, int type)
+    {
+        var loadedName = workflow.Moves
+            .Where(move => move.Type == type && !string.IsNullOrWhiteSpace(move.TypeName))
+            .Select(move => move.TypeName)
+            .FirstOrDefault();
+        if (loadedName is not null)
+        {
+            return loadedName;
+        }
+
+        var optionLabel = workflow.EditableFields
+            .FirstOrDefault(field => field.Field == SwShMovesWorkflowService.TypeField)?
+            .Options
+            .FirstOrDefault(option => option.Value == type)?
+            .Label;
+        var numericPrefix = $"{type:000} ";
+        return optionLabel?.StartsWith(numericPrefix, StringComparison.Ordinal) == true
+            ? optionLabel[numericPrefix.Length..]
+            : FormatType(type);
+    }
+
+    private static int? GetMoveFieldValue(SwShMoveRecord move, string field)
+    {
+        return field switch
+        {
+            SwShMovesWorkflowService.CanUseMoveField => move.CanUseMove ? 1 : 0,
+            SwShMovesWorkflowService.TypeField => move.Type,
+            SwShMovesWorkflowService.QualityField => move.Quality,
+            SwShMovesWorkflowService.CategoryField => move.Category,
+            SwShMovesWorkflowService.PowerField => move.Power,
+            SwShMovesWorkflowService.AccuracyField => move.Accuracy,
+            SwShMovesWorkflowService.PpField => move.PP,
+            SwShMovesWorkflowService.PriorityField => move.Priority,
+            SwShMovesWorkflowService.CritStageField => move.CritStage,
+            SwShMovesWorkflowService.MaxMovePowerField => move.MaxMovePower,
+            SwShMovesWorkflowService.TargetField => move.Target,
+            SwShMovesWorkflowService.HitMinField => move.HitMin,
+            SwShMovesWorkflowService.HitMaxField => move.HitMax,
+            SwShMovesWorkflowService.TurnMinField => move.TurnMin,
+            SwShMovesWorkflowService.TurnMaxField => move.TurnMax,
+            SwShMovesWorkflowService.InflictField => move.Inflict,
+            SwShMovesWorkflowService.InflictPercentField => move.InflictPercent,
+            SwShMovesWorkflowService.RawInflictCountField => move.RawInflictCount,
+            SwShMovesWorkflowService.FlinchField => move.Flinch,
+            SwShMovesWorkflowService.EffectSequenceField => move.EffectSequence,
+            SwShMovesWorkflowService.RecoilField => move.Recoil,
+            SwShMovesWorkflowService.RawHealingField => move.RawHealing,
+            SwShMovesWorkflowService.Stat1Field => GetStatChangeValue(move, 1, stat => stat.Stat),
+            SwShMovesWorkflowService.Stat1StageField => GetStatChangeValue(move, 1, stat => stat.Stage),
+            SwShMovesWorkflowService.Stat1PercentField => GetStatChangeValue(move, 1, stat => stat.Percent),
+            SwShMovesWorkflowService.Stat2Field => GetStatChangeValue(move, 2, stat => stat.Stat),
+            SwShMovesWorkflowService.Stat2StageField => GetStatChangeValue(move, 2, stat => stat.Stage),
+            SwShMovesWorkflowService.Stat2PercentField => GetStatChangeValue(move, 2, stat => stat.Percent),
+            SwShMovesWorkflowService.Stat3Field => GetStatChangeValue(move, 3, stat => stat.Stat),
+            SwShMovesWorkflowService.Stat3StageField => GetStatChangeValue(move, 3, stat => stat.Stage),
+            SwShMovesWorkflowService.Stat3PercentField => GetStatChangeValue(move, 3, stat => stat.Percent),
+            _ when IsFlagField(field) => move.Flags.FirstOrDefault(flag =>
+                string.Equals(flag.Field, field, StringComparison.Ordinal))?.Enabled == true ? 1 : 0,
+            _ => null,
+        };
+    }
+
+    private static int GetStatChangeValue(
+        SwShMoveRecord move,
+        int slot,
+        Func<SwShMoveStatChangeRecord, int> selectValue)
+    {
+        var stat = move.StatChanges.FirstOrDefault(candidate => candidate.Slot == slot);
+        return stat is null ? 0 : selectValue(stat);
     }
 
     private static IReadOnlyList<SwShMoveStatChangeRecord> OverlayStatChange(
@@ -659,9 +1169,14 @@ public sealed class SwShMovesEditSessionService
                     .Select(source => source!)
                     .Distinct()
                     .ToArray();
+                var orderedSummaries = groupEdits
+                    .OrderBy(edit => edit.RecordId, StringComparer.Ordinal)
+                    .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+                    .Select(edit => CreateAuthoritativePlanSummary(workflow, edit))
+                    .ToArray();
                 var reason = groupEdits.Length == 1
-                    ? $"Apply pending Moves Data edit: {groupEdits[0].Summary}"
-                    : $"Apply {groupEdits.Length} pending Moves Data edits.";
+                    ? $"Apply pending Moves Data edit: {orderedSummaries[0]}"
+                    : $"Apply pending Moves Data edits: {string.Join(" ", orderedSummaries)}";
 
                 return new PlannedFileWrite(
                     targetRelativePath,
@@ -673,6 +1188,21 @@ public sealed class SwShMovesEditSessionService
             .Select(write => write!)
             .OrderBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string CreateAuthoritativePlanSummary(
+        SwShMovesWorkflow workflow,
+        PendingEdit edit)
+    {
+        if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+            && int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            && edit.Field is not null
+            && workflow.Moves.FirstOrDefault(move => move.MoveId == moveId) is { } move)
+        {
+            return CreatePendingEditSummary(move, edit.Field, value);
+        }
+
+        return $"Set move {edit.RecordId ?? "(missing)"} field {edit.Field ?? "(missing)"} to {edit.NewValue ?? "(missing)"}.";
     }
 
     private static string? GetTargetRelativePath(SwShMovesWorkflow workflow, PendingEdit edit)
@@ -877,16 +1407,37 @@ public sealed class SwShMovesEditSessionService
             return false;
         }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
+        var reviewedWrites = reviewedPlan.Writes
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
+        var currentWrites = currentPlan.Writes
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
 
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        return reviewedWrites
+            .Zip(currentWrites)
+            .All(pair => PlannedWritesMatch(pair.First, pair.Second));
+    }
+
+    private static bool PlannedWritesMatch(PlannedFileWrite reviewed, PlannedFileWrite current)
+    {
+        if (!string.Equals(reviewed.TargetRelativePath, current.TargetRelativePath, StringComparison.Ordinal)
+            || reviewed.ReplacesExistingOutput != current.ReplacesExistingOutput
+            || !string.Equals(reviewed.Reason, current.Reason, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var reviewedSources = reviewed.Sources
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        var currentSources = current.Sources
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+
+        return reviewedSources.SequenceEqual(currentSources);
     }
 
     private static ApplyResult CreateApplyResult(
@@ -998,7 +1549,7 @@ public sealed class SwShMovesEditSessionService
             21 => "Ingrain",
             24 => "Throat Chop",
             42 => "Tar Shot",
-            65535 => "Tri Attack Status",
+            65535 => "Move-defined / scripted effect",
             _ => $"Inflict {value}",
         };
     }
@@ -1015,7 +1566,7 @@ public sealed class SwShMovesEditSessionService
             5 => "Speed",
             6 => "Accuracy",
             7 => "Evasion",
-            8 => "All",
+            8 => "All Stats",
             _ => $"Stat {value}",
         };
     }
@@ -1049,4 +1600,23 @@ public sealed class SwShMovesEditSessionService
         string RelativePath,
         string AbsolutePath,
         byte[] Contents);
+
+    private sealed class StagedMoveOutput(
+        MoveOutput output,
+        string temporaryPath,
+        string backupPath,
+        bool originalExisted)
+    {
+        public MoveOutput Output { get; } = output;
+
+        public string TemporaryPath { get; } = temporaryPath;
+
+        public string BackupPath { get; } = backupPath;
+
+        public bool OriginalExisted { get; } = originalExisted;
+
+        public bool OriginalMoved { get; set; }
+
+        public bool NewInstalled { get; set; }
+    }
 }
