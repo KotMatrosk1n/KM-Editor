@@ -1,0 +1,25 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+
+.randomizer-help-copy,
+.randomizer-recovery-copy,
+.randomizer-result-copy {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.randomizer-recovery-panel {
+  border-color: rgb(214 168 66 / 42%);
+  box-shadow: inset 4px 0 0 rgb(214 168 66 / 72%);
+}
+
+.randomizer-recovery-panel .randomizer-action-row {
+  justify-content: flex-start;
+}
+
+.randomizer-restore-result {
+  display: grid;
+  gap: 16px;
+}

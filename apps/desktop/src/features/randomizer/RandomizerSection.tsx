@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  AlertTriangle,
   ArrowUp,
   CheckCircle,
   ChevronDown,
@@ -18,7 +17,6 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Shuffle,
-  X,
   Zap,
   type LucideIcon
 } from 'lucide-react';
@@ -33,8 +31,13 @@ import {
   type RestoreRandomizerResponse
 } from '../../bridge/contracts';
 import { ApplyResultSection, DiagnosticsSection, Metric } from '../../components/workflowPanels';
+import { useLocalization } from '../../localization/LocalizationProvider';
+import { RandomizerConfirmationModal } from './RandomizerConfirmationModal';
+import { RandomizerRestoreResultSection } from './RandomizerRestoreResultSection';
+import './RandomizerSection.css';
 
 type RandomizerOptionKey = keyof RandomizerOptions;
+type RandomizerOperation = 'applySeed' | 'randomize' | 'restore';
 
 const defaultRandomizerOptions: RandomizerOptions = {
   ability1: true,
@@ -350,6 +353,7 @@ export function RandomizerSection({
   onImportSeed: (seed: string) => Promise<ImportRandomizerSeedResponse>;
   onRestoreRandomizer: () => Promise<RestoreRandomizerResponse>;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const [userSeed, setUserSeed] = useState('');
   const [options, setOptions] = useState<RandomizerOptions>(defaultRandomizerOptions);
   const [rollSeed, setRollSeed] = useState<string | null>(null);
@@ -366,6 +370,7 @@ export function RandomizerSection({
   const [importSeedText, setImportSeedText] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [lastOperation, setLastOperation] = useState<RandomizerOperation | null>(null);
   const [copySeedStatus, setCopySeedStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const copySeedStatusTimerRef = useRef<number | null>(null);
   const selectedOptionCount = useMemo(
@@ -381,12 +386,48 @@ export function RandomizerSection({
     [options]
   );
   const battleMechanicOptionCount = options.randomizeTypeChart ? 1 : 0;
-  const canRandomize = canApply && selectedOptionCount > 0 && !isApplying && !isImporting && !isRestoring;
+  const isConfigurationLocked = isApplying || isImporting || isRestoring;
+  const canRandomize = canApply && selectedOptionCount > 0 && !isConfigurationLocked;
   const canApplySharedSeed =
-    canApply && !isApplying && !isImporting && !isRestoring && Boolean(importSeedText.trim());
-  const canRestoreVanillaValues = canApply && !isApplying && !isImporting && !isRestoring;
-  const canCopySeed = Boolean(seedOutput.trim());
+    canApply && !isConfigurationLocked && Boolean(importSeedText.trim());
+  const canRestoreVanillaValues = canApply && !isConfigurationLocked;
+  const canCopySeed = Boolean(seedOutput.trim()) && !isConfigurationLocked;
   const hasImportedReplay = Boolean(rollSeed && outputHash);
+  const hasOperationErrors =
+    diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+    Boolean(
+      applyResult?.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    );
+  const restoreNeedsAttention =
+    diagnostics.some((diagnostic) => diagnostic.severity !== 'info') ||
+    Boolean(
+      applyResult?.diagnostics.some((diagnostic) => diagnostic.severity !== 'info')
+    );
+  const restoreHasNoChanges =
+    lastOperation === 'restore' &&
+    applyResult !== null &&
+    applyResult.writtenFiles.length === 0 &&
+    !restoreNeedsAttention;
+  const replaySeedStatus =
+    hasImportedReplay || (lastOperation === 'applySeed' && applyResult !== null)
+      ? 'Imported'
+      : 'New roll';
+  let operationStatus = 'Ready';
+  if (isRestoring) {
+    operationStatus = 'Restoring';
+  } else if (isImporting || (isApplying && lastOperation === 'applySeed')) {
+    operationStatus = 'Applying Seed';
+  } else if (isApplying) {
+    operationStatus = 'Randomizing';
+  } else if (lastOperation === 'restore') {
+    operationStatus = restoreNeedsAttention
+      ? 'Restore needs attention'
+      : restoreHasNoChanges
+        ? 'No changes'
+        : 'Restore Complete';
+  } else if (lastOperation !== null) {
+    operationStatus = hasOperationErrors ? 'Randomizer needs attention' : 'Randomizer Complete';
+  }
 
   useEffect(() => {
     setCopySeedStatus('idle');
@@ -407,6 +448,21 @@ export function RandomizerSection({
     setSeedOutput('');
     setDiagnostics([]);
     setApplyResult(null);
+    setLastOperation(null);
+  };
+
+  const beginOperation = () => {
+    setSeedOutput('');
+    setDiagnostics([]);
+    setApplyResult(null);
+    setLastOperation(null);
+  };
+
+  const handleOperationFailure = (operation: RandomizerOperation, error: unknown) => {
+    setSeedOutput('');
+    setApplyResult(null);
+    setDiagnostics([createOperationFailureDiagnostic(operation, error)]);
+    setLastOperation(operation);
   };
 
   const handleUserSeedChange = (value: string) => {
@@ -483,11 +539,15 @@ export function RandomizerSection({
     }
 
     setIsSeedConfirmOpen(false);
+    beginOperation();
     setIsImporting(true);
     try {
       const importResponse = await onImportSeed(seed);
-      setDiagnostics(importResponse.diagnostics);
-      setApplyResult(null);
+      const importDiagnostics = importResponse.config
+        ? importResponse.diagnostics
+        : ensureErrorDiagnostic(importResponse.diagnostics, 'Randomizer needs attention');
+      setDiagnostics(importDiagnostics);
+      setLastOperation('applySeed');
 
       if (importResponse.config) {
         const replayConfig = {
@@ -498,9 +558,8 @@ export function RandomizerSection({
         setOptions(replayConfig.options);
         setRollSeed(replayConfig.rollSeed ?? null);
         setOutputHash(replayConfig.outputHash ?? null);
-        setSeedOutput(importResponse.seed ?? seed);
 
-        if (importResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+        if (importDiagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
           return;
         }
 
@@ -509,14 +568,17 @@ export function RandomizerSection({
           (diagnostic) => diagnostic.severity === 'error'
         );
 
-        setSeedOutput(applyResponse.seed);
         setApplyResult(applyResponse.applyResult);
         setDiagnostics(applyResponse.applyResult.diagnostics);
+        setLastOperation('applySeed');
         if (!hasErrors) {
+          setSeedOutput(applyResponse.seed);
           setRollSeed(null);
           setOutputHash(null);
         }
       }
+    } catch (error) {
+      handleOperationFailure('applySeed', error);
     } finally {
       setIsImporting(false);
     }
@@ -524,14 +586,17 @@ export function RandomizerSection({
 
   const handleConfirmRestoreVanillaValues = async () => {
     setIsRestoreConfirmOpen(false);
+    beginOperation();
     setIsRestoring(true);
     try {
       const response = await onRestoreRandomizer();
       setApplyResult(response.applyResult);
       setDiagnostics(response.applyResult.diagnostics);
-      setSeedOutput('');
+      setLastOperation('restore');
       setRollSeed(null);
       setOutputHash(null);
+    } catch (error) {
+      handleOperationFailure('restore', error);
     } finally {
       setIsRestoring(false);
     }
@@ -539,28 +604,38 @@ export function RandomizerSection({
 
   const handleConfirmRandomize = async () => {
     setIsConfirmOpen(false);
-    const response = await onApplyRandomizer({
-      options: createEffectiveRandomizerOptions(options),
-      outputHash,
-      rollSeed,
-      userSeed
-    });
-    const hasErrors = response.applyResult.diagnostics.some(
-      (diagnostic) => diagnostic.severity === 'error'
-    );
+    beginOperation();
+    try {
+      const response = await onApplyRandomizer({
+        options: createEffectiveRandomizerOptions(options),
+        outputHash,
+        rollSeed,
+        userSeed
+      });
+      const hasErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
 
-    setSeedOutput(response.seed);
-    setApplyResult(response.applyResult);
-    setDiagnostics(response.applyResult.diagnostics);
-    if (!hasErrors) {
-      setRollSeed(null);
-      setOutputHash(null);
+      setApplyResult(response.applyResult);
+      setDiagnostics(response.applyResult.diagnostics);
+      setLastOperation('randomize');
+      if (!hasErrors) {
+        setSeedOutput(response.seed);
+        setRollSeed(null);
+        setOutputHash(null);
+      }
+    } catch (error) {
+      handleOperationFailure('randomize', error);
     }
   };
 
   return (
     <>
-      <section aria-labelledby="randomizer-heading" className="panel wide-panel randomizer-panel">
+      <section
+        aria-busy={isConfigurationLocked || undefined}
+        aria-labelledby="randomizer-heading"
+        className="panel wide-panel randomizer-panel"
+      >
         <div className="panel-heading">
           <Shuffle aria-hidden="true" size={18} />
           <h2 id="randomizer-heading">Randomizer</h2>
@@ -569,24 +644,32 @@ export function RandomizerSection({
         <div className="randomizer-seed-row">
           <label
             className="path-field"
-            title="Optional personal text mixed into new Randomize rolls. This is limited to 20 characters and is included in generated shared seeds."
+            title={t('randomizer.seed.baseHelp')}
           >
             <span>Base Seed</span>
             <input
+              aria-describedby="randomizer-base-seed-help"
+              aria-label="Base Seed"
+              disabled={isConfigurationLocked}
               maxLength={20}
               onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
               placeholder="Optional, 20 characters max"
-              title="Optional personal text mixed into new Randomize rolls. This is limited to 20 characters and is included in generated shared seeds."
+              title={t('randomizer.seed.baseHelp')}
               value={userSeed}
             />
+            <small className="randomizer-help-copy" id="randomizer-base-seed-help">
+              {t('randomizer.seed.baseHelp')}
+            </small>
           </label>
         </div>
 
-        <div className="randomizer-metrics">
+        <div aria-atomic="true" aria-live="polite" className="randomizer-metrics">
+          <Metric label="Selected categories" value={selectedOptionCount.toString()} />
           <Metric label="Pokemon categories" value={pokemonCategoryCount.toString()} />
           <Metric label="Encounters and rewards" value={encounterOptionCount.toString()} />
           <Metric label="Battle mechanics" value={battleMechanicOptionCount.toString()} />
-          <Metric label="Replay seed" value={hasImportedReplay ? 'Imported' : 'New roll'} />
+          <Metric label="Replay seed" value={replaySeedStatus} />
+          <Metric label="Status" value={operationStatus} />
         </div>
 
         <div className="randomizer-category-bar" aria-label="Pokemon randomizer categories">
@@ -635,6 +718,7 @@ export function RandomizerSection({
                 <label className="randomizer-checkbox" title={category.help}>
                   <input
                     checked={categoryEnabled}
+                    disabled={isConfigurationLocked}
                     onChange={() => handleToggleOption(category.enabledKey)}
                     title={category.help}
                     type="checkbox"
@@ -648,7 +732,7 @@ export function RandomizerSection({
                     <label className="randomizer-checkbox" key={field.key} title={field.help}>
                       <input
                         checked={isFieldChecked}
-                        disabled={!categoryEnabled}
+                        disabled={isConfigurationLocked || !categoryEnabled}
                         onChange={() => handleToggleOption(field.key)}
                         title={field.help}
                         type="checkbox"
@@ -672,6 +756,7 @@ export function RandomizerSection({
             <label className="randomizer-checkbox" key={option.key} title={option.help}>
               <input
                 checked={options[option.key]}
+                disabled={isConfigurationLocked}
                 onChange={() => handleToggleOption(option.key)}
                 title={option.help}
                 type="checkbox"
@@ -694,6 +779,7 @@ export function RandomizerSection({
           >
             <input
               checked={options.randomizeTypeChart}
+              disabled={isConfigurationLocked}
               onChange={() => handleToggleOption('randomizeTypeChart')}
               title="Randomize the Sword/Shield type-effectiveness table in exefs/main."
               type="checkbox"
@@ -707,7 +793,7 @@ export function RandomizerSection({
               <label className="randomizer-checkbox" key={option.key} title={option.help}>
                 <input
                   checked={isChecked}
-                  disabled={!options.randomizeTypeChart}
+                  disabled={isConfigurationLocked || !options.randomizeTypeChart}
                   onChange={() => handleToggleOption(option.key)}
                   title={option.help}
                   type="checkbox"
@@ -719,31 +805,21 @@ export function RandomizerSection({
         </div>
       </section>
 
-      <section aria-labelledby="randomizer-apply-heading" className="panel wide-panel randomizer-apply-panel">
+      <section
+        aria-busy={isConfigurationLocked || undefined}
+        aria-labelledby="randomizer-apply-heading"
+        className="panel wide-panel randomizer-apply-panel"
+      >
         <div className="panel-heading">
           <Save aria-hidden="true" size={18} />
           <h2 id="randomizer-apply-heading">Apply Randomizer</h2>
         </div>
         <div className="randomizer-action-row">
           <button
-            className="danger-button"
-            disabled={!canRestoreVanillaValues}
-            onClick={() => setIsRestoreConfirmOpen(true)}
-            title={
-              canRestoreVanillaValues
-                ? 'Delete tracked Randomizer output files from Output Root to restore vanilla/base game values for those data files.'
-                : 'Validate editable project paths before restoring tracked Randomizer output files.'
-            }
-            type="button"
-          >
-            <RefreshCw aria-hidden="true" size={16} />
-            <span>{isRestoring ? 'Restoring' : 'Restore Vanilla Values'}</span>
-          </button>
-          <button
             className="secondary-button"
-            disabled={isApplying || isImporting || isRestoring}
+            disabled={isConfigurationLocked}
             onClick={handleResetOptions}
-            title="Reset only clears Randomizer selections, seed text, generated seed output, and replay state. It does not restore or delete files already written to Output Root."
+            title={t('randomizer.reset.help')}
             type="button"
           >
             <RotateCcw aria-hidden="true" size={16} />
@@ -766,7 +842,10 @@ export function RandomizerSection({
         </div>
         <div className="randomizer-output-seed">
           <div className="randomizer-output-seed-heading">
-            <span>Randomizer Seed</span>
+            <span>
+              <span>{translateLiteral('Generated')}</span>{' '}
+              <span>{translateLiteral('Randomizer Seed')}</span>
+            </span>
             <button
               className="secondary-button"
               disabled={!canCopySeed}
@@ -788,26 +867,36 @@ export function RandomizerSection({
               </span>
             </button>
           </div>
+          <p className="randomizer-help-copy" id="randomizer-generated-seed-help">
+            {t('randomizer.seed.generatedHelp')}
+          </p>
           <textarea
+            aria-describedby="randomizer-generated-seed-help"
             aria-label="Randomizer Seed"
             readOnly
             rows={4}
-            title="Copy this seed after Randomize or Apply Randomization Seed succeeds. It represents the generated output for the selected project data."
+            title={t('randomizer.seed.generatedHelp')}
             value={seedOutput}
           />
         </div>
         <div className="randomizer-shared-seed-row">
           <label
             className="path-field"
-            title="Paste a shared KM1 seed here to apply that exact randomizer output to the current project. Legacy KMR1 seeds are still accepted."
+            title={t('randomizer.seed.sharedHelp')}
           >
             <span>Shared Randomization Seed</span>
             <textarea
+              aria-describedby="randomizer-shared-seed-help"
+              aria-label="Shared Randomization Seed"
+              disabled={isConfigurationLocked}
               onChange={(event) => setImportSeedText(event.currentTarget.value)}
               rows={3}
-              title="Paste a shared KM1 seed here to apply that exact randomizer output to the current project. Legacy KMR1 seeds are still accepted."
+              title={t('randomizer.seed.sharedHelp')}
               value={importSeedText}
             />
+            <small className="randomizer-help-copy" id="randomizer-shared-seed-help">
+              {t('randomizer.seed.sharedHelp')}
+            </small>
           </label>
           <button
             className="purple-button"
@@ -826,134 +915,98 @@ export function RandomizerSection({
         </div>
       </section>
 
-      {applyResult ? <ApplyResultSection applyResult={applyResult} /> : null}
+      {applyResult && lastOperation !== 'restore' ? (
+        <ApplyResultSection applyResult={applyResult} />
+      ) : null}
+
+      <section
+        aria-busy={isRestoring || undefined}
+        aria-labelledby="randomizer-recovery-heading"
+        className="panel wide-panel randomizer-apply-panel randomizer-recovery-panel"
+      >
+        <div className="panel-heading">
+          <RefreshCw aria-hidden="true" size={18} />
+          <h2 id="randomizer-recovery-heading">
+            {translateLiteral('Restore Vanilla Values')}
+          </h2>
+        </div>
+        <p className="randomizer-recovery-copy">{t('randomizer.recovery.description')}</p>
+        <div className="randomizer-action-row">
+          <button
+            className="danger-button"
+            disabled={!canRestoreVanillaValues}
+            onClick={() => setIsRestoreConfirmOpen(true)}
+            title={
+              canRestoreVanillaValues
+                ? t('randomizer.recovery.description')
+                : translateLiteral(
+                    'Validate editable project paths before restoring tracked Randomizer output files.'
+                  )
+            }
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            <span>{isRestoring ? 'Restoring' : 'Restore Vanilla Values'}</span>
+          </button>
+        </div>
+      </section>
+
+      {applyResult && lastOperation === 'restore' ? (
+        <RandomizerRestoreResultSection applyResult={applyResult} />
+      ) : null}
       {diagnostics.length > 0 ? (
         <DiagnosticsSection diagnostics={diagnostics} scrollAfterEntries={5} />
       ) : null}
 
       {isConfirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="randomizer-confirm-heading"
-            aria-modal="true"
-            className="modal-panel"
-            role="dialog"
-          >
-            <div className="panel-heading">
-              <AlertTriangle aria-hidden="true" size={18} />
-              <h2 id="randomizer-confirm-heading">Randomize Selected Data?</h2>
-            </div>
-            <p className="modal-copy">
-              KM Editor will write randomized output files for the selected categories to
-              Output Root. Existing output files for those data domains may be replaced.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="primary-button"
-                disabled={isApplying}
-                onClick={handleConfirmRandomize}
-                type="button"
-              >
-                <Shuffle aria-hidden="true" size={16} />
-                <span>{isApplying ? 'Randomizing' : 'Confirm Randomize'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isApplying}
-                onClick={() => setIsConfirmOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-            </div>
-          </section>
-        </div>
+        <RandomizerConfirmationModal
+          isBusy={isConfigurationLocked}
+          kind="randomize"
+          onCancel={() => setIsConfirmOpen(false)}
+          onConfirm={() => void handleConfirmRandomize()}
+        />
       ) : null}
 
       {isSeedConfirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="randomizer-seed-confirm-heading"
-            aria-modal="true"
-            className="modal-panel"
-            role="dialog"
-          >
-            <div className="panel-heading">
-              <AlertTriangle aria-hidden="true" size={18} />
-              <h2 id="randomizer-seed-confirm-heading">Apply Shared Randomization Seed?</h2>
-            </div>
-            <p className="modal-copy">
-              KM Editor will read the pasted seed, select the options stored inside it,
-              and immediately write that exact randomized output to Output Root. Existing
-              output files for those data domains may be replaced.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="purple-button"
-                disabled={isApplying || isImporting}
-                onClick={handleConfirmImportSeed}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isImporting ? 'Applying Seed' : 'Confirm Apply Seed'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isApplying || isImporting}
-                onClick={() => setIsSeedConfirmOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-            </div>
-          </section>
-        </div>
+        <RandomizerConfirmationModal
+          isBusy={isConfigurationLocked}
+          kind="applySeed"
+          onCancel={() => setIsSeedConfirmOpen(false)}
+          onConfirm={() => void handleConfirmImportSeed()}
+        />
       ) : null}
 
       {isRestoreConfirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="randomizer-restore-confirm-heading"
-            aria-modal="true"
-            className="modal-panel"
-            role="dialog"
-          >
-            <div className="panel-heading">
-              <AlertTriangle aria-hidden="true" size={18} />
-              <h2 id="randomizer-restore-confirm-heading">Restore Vanilla Values?</h2>
-            </div>
-            <p className="modal-copy">
-              KM Editor will delete tracked Randomizer-generated files from Output Root
-              so those romfs/exefs files fall back to the base game. This can remove
-              randomizer changes previously written to those files.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="danger-button"
-                disabled={isApplying || isRestoring}
-                onClick={handleConfirmRestoreVanillaValues}
-                type="button"
-              >
-                <RefreshCw aria-hidden="true" size={16} />
-                <span>{isRestoring ? 'Restoring' : 'Confirm Restore'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isApplying || isRestoring}
-                onClick={() => setIsRestoreConfirmOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-            </div>
-          </section>
-        </div>
+        <RandomizerConfirmationModal
+          isBusy={isConfigurationLocked}
+          kind="restore"
+          onCancel={() => setIsRestoreConfirmOpen(false)}
+          onConfirm={() => void handleConfirmRestoreVanillaValues()}
+        />
       ) : null}
     </>
   );
+}
+
+function createOperationFailureDiagnostic(
+  operation: RandomizerOperation,
+  error: unknown
+): ApiDiagnostic {
+  const fallbackMessage =
+    operation === 'restore' ? 'Restore needs attention' : 'Randomizer needs attention';
+  return {
+    message: error instanceof Error && error.message.trim() ? error.message : fallbackMessage,
+    severity: 'error'
+  };
+}
+
+function ensureErrorDiagnostic(
+  diagnostics: ApiDiagnostic[],
+  fallbackMessage: string
+): ApiDiagnostic[] {
+  return diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    ? diagnostics
+    : [...diagnostics, { message: fallbackMessage, severity: 'error' }];
 }
 
 async function writeTextToClipboard(text: string): Promise<void> {

@@ -31,12 +31,14 @@ import {
   Upload,
   UsersRound,
   Waypoints,
+  Wrench,
   Zap,
   type LucideIcon
 } from 'lucide-react';
+import { type WorkbenchSection } from '../../workbenchStore';
 
 export const workflowDefinitions: Array<{
-  id: string;
+  id: WorkbenchSection;
   label: string;
   description: string;
   icon: LucideIcon;
@@ -148,6 +150,12 @@ export const workflowDefinitions: Array<{
     label: 'Flagwork and Save Inspectors',
     description: 'Game flags, save blocks, inspector metadata, and source provenance.',
     icon: Save
+  },
+  {
+    id: 'exefsPatches',
+    label: 'ExeFS Patches',
+    description: 'ExeFS main validation, patch anchors, segment hashes, and source provenance.',
+    icon: Wrench
   },
   {
     id: 'bagHook',

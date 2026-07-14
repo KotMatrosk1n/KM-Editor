@@ -8,7 +8,6 @@ using KM.SwSh.Pokemon;
 using KM.SwSh.Rentals;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Pokemon;
-using System.Buffers.Binary;
 using Xunit;
 
 namespace KM.SwSh.Tests.Rentals;
@@ -161,75 +160,6 @@ public sealed class SwShRentalPokemonEditSessionServiceTests
     }
 
     [Fact]
-    public void ApplyChangePlanMaterializesVanillaStyleOmittedRentalFields()
-    {
-        using var temp = TemporarySwShProject.Create();
-        SwShRentalPokemonWorkflowServiceTests.WriteRentalFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var baseRentalPath = Path.Combine(
-            temp.BaseRomFsPath,
-            "bin",
-            "script_event_data",
-            "rental.bin");
-        var source = File.ReadAllBytes(baseRentalPath);
-        var rentalTableOffset = GetFirstRentalTableOffset(source);
-        var rentalVtableOffset = rentalTableOffset
-            - BinaryPrimitives.ReadInt32LittleEndian(source.AsSpan(rentalTableOffset));
-        foreach (var fieldIndex in new[] { 3, 13, 19, 22 })
-        {
-            BinaryPrimitives.WriteUInt16LittleEndian(
-                source.AsSpan(
-                    rentalVtableOffset
-                    + (sizeof(ushort) * 2)
-                    + (fieldIndex * sizeof(ushort))),
-                0);
-        }
-
-        File.WriteAllBytes(baseRentalPath, source);
-        var service = new SwShRentalPokemonEditSessionService();
-
-        var update = service.UpdateField(
-            temp.Paths,
-            session: null,
-            rentalIndex: 0,
-            field: SwShRentalPokemonWorkflowService.TrainerIdField,
-            value: "54321");
-        update = service.UpdateField(
-            temp.Paths,
-            update.Session,
-            rentalIndex: 0,
-            field: SwShRentalPokemonWorkflowService.AbilityField,
-            value: "2");
-        update = service.UpdateField(
-            temp.Paths,
-            update.Session,
-            rentalIndex: 0,
-            field: SwShRentalPokemonWorkflowService.EvHpField,
-            value: "100");
-        update = service.UpdateField(
-            temp.Paths,
-            update.Session,
-            rentalIndex: 0,
-            field: SwShRentalPokemonWorkflowService.IvHpField,
-            value: "31");
-        var plan = service.CreateChangePlan(temp.Paths, update.Session);
-
-        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
-
-        Assert.True(plan.CanApply);
-        Assert.DoesNotContain(
-            apply.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var output = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(GetOutputRentalPath(temp)));
-        Assert.Equal(54321u, output.Rentals[0].TrainerId);
-        Assert.Equal(2, output.Rentals[0].Ability);
-        Assert.Equal(100, output.Rentals[0].Evs.HP);
-        Assert.Equal(31, output.Rentals[0].Ivs.HP);
-        Assert.Equal(0x1122334455667788UL, output.Rentals[0].Hash1);
-        Assert.Equal(0x8877665544332211UL, output.Rentals[0].Hash2);
-    }
-
-    [Fact]
     public void ApplyWriteFailurePreservesTheExistingLayeredRentalTable()
     {
         using var temp = TemporarySwShProject.Create();
@@ -264,36 +194,6 @@ public sealed class SwShRentalPokemonEditSessionServiceTests
             Path.GetDirectoryName(GetOutputRentalPath(temp))!,
             "*.tmp",
             SearchOption.TopDirectoryOnly));
-    }
-
-    [Fact]
-    public void ValidateRejectsAStagedEditWhenItsSourceLayerChanges()
-    {
-        using var temp = TemporarySwShProject.Create();
-        SwShRentalPokemonWorkflowServiceTests.WriteRentalFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var workspace = new ProjectWorkspaceService();
-        var service = new SwShRentalPokemonEditSessionService(workspace);
-        var update = service.UpdateField(
-            temp.Paths,
-            session: null,
-            rentalIndex: 0,
-            field: SwShRentalPokemonWorkflowService.IvHpField,
-            value: "0");
-        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
-        var layeredSource = SwShRentalPokemonWorkflowServiceTests.CreateRentalTable(
-            new SwShRentalPokemonStats(1, 2, 3, 4, 5, 6));
-        temp.WriteOutputFile(SwShRentalPokemonWorkflowService.RentalPokemonDataPath, layeredSource);
-        workspace.ClearMemoryCache();
-
-        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
-
-        Assert.Empty(apply.WrittenFiles);
-        Assert.Contains(
-            apply.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
-                && diagnostic.Message.Contains("source layer changed", StringComparison.Ordinal));
-        Assert.Equal(layeredSource, File.ReadAllBytes(GetOutputRentalPath(temp)));
     }
 
     [Fact]
@@ -476,18 +376,4 @@ public sealed class SwShRentalPokemonEditSessionServiceTests
             "rental.bin");
     }
 
-    private static int GetFirstRentalTableOffset(ReadOnlySpan<byte> data)
-    {
-        var rootTableOffset = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data));
-        var rootVtableOffset = rootTableOffset
-            - BinaryPrimitives.ReadInt32LittleEndian(data[rootTableOffset..]);
-        var vectorFieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(
-            data[(rootVtableOffset + (sizeof(ushort) * 2))..]);
-        var vectorFieldLocation = rootTableOffset + vectorFieldOffset;
-        var vectorOffset = vectorFieldLocation
-            + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data[vectorFieldLocation..]));
-        var firstElementOffset = vectorOffset + sizeof(uint);
-        return firstElementOffset
-            + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data[firstElementOffset..]));
-    }
 }

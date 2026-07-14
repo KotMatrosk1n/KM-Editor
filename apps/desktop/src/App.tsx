@@ -31,6 +31,8 @@ import {
   MessageSquareOff,
   Package,
   PackagePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -252,13 +254,14 @@ import {
   type ReportableError
 } from './errorReporting';
 import {
+  getRememberedProjectGames,
   type ProjectPathFieldName,
   type ProjectPathDraft,
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
 import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
-import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, readOnlyViewerSectionIds, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
   WorkflowLoadGeneration,
   createWorkflowRetentionSizeHint,
@@ -284,6 +287,7 @@ import {
   type WorkflowPanelOutput
 } from './components/workflowPanels';
 import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
+import { useModalDialog } from './components/useModalDialog';
 import {
   type FairyGymBoostSelection,
   type FairyGymBoostsWorkflow
@@ -697,9 +701,8 @@ const sections: Array<{
   }
 ];
 
-const viewerSectionIds = new Set<WorkbenchSection>(['flagworkSave']);
 const primaryNavigationSections = sections.filter(
-  (section) => section.id === 'health'
+  (section) => section.id === 'health' || section.id === 'workflows'
 );
 const utilityNavigationSections = sections.filter((section) =>
   section.id === 'changes' || section.id === 'settings'
@@ -707,6 +710,81 @@ const utilityNavigationSections = sections.filter((section) =>
 
 const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Editor/releases';
 const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
+const sidebarCompactStorageKey = 'km-editor.sidebar.compact.v1';
+const expandedWorkflowGroupsStorageKey = 'km-editor.workflow-groups.expanded.v1';
+
+function readSidebarCompactPreference() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(sidebarCompactStorageKey) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeSidebarCompactPreference(isCompact: boolean) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(sidebarCompactStorageKey, String(isCompact));
+  } catch {
+    // The in-memory preference still applies when localStorage is unavailable.
+  }
+}
+
+function readExpandedWorkflowGroups(game: ProjectGame | null) {
+  if (!game || typeof window === 'undefined') {
+    return new Set<WorkflowNavigationGroup['id']>();
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(
+      `${expandedWorkflowGroupsStorageKey}.${game}`
+    );
+    if (!storedValue) {
+      return new Set<WorkflowNavigationGroup['id']>();
+    }
+
+    const parsedValue = JSON.parse(storedValue) as unknown;
+    if (!Array.isArray(parsedValue)) {
+      return new Set<WorkflowNavigationGroup['id']>();
+    }
+
+    const knownGroupIds = new Set(workflowNavigationGroups.map((group) => group.id));
+    return new Set(
+      parsedValue.filter(
+        (groupId): groupId is WorkflowNavigationGroup['id'] =>
+          typeof groupId === 'string' &&
+          knownGroupIds.has(groupId as WorkflowNavigationGroup['id'])
+      )
+    );
+  } catch {
+    return new Set<WorkflowNavigationGroup['id']>();
+  }
+}
+
+function writeExpandedWorkflowGroups(
+  game: ProjectGame | null,
+  groups: ReadonlySet<WorkflowNavigationGroup['id']>
+) {
+  if (!game || typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      `${expandedWorkflowGroupsStorageKey}.${game}`,
+      JSON.stringify([...groups])
+    );
+  } catch {
+    // The in-memory expansion state still applies when localStorage is unavailable.
+  }
+}
 
 const modMergerModeOptions: Array<{
   description: string;
@@ -942,10 +1020,9 @@ const applyProgressSteps = [
   'Refreshing loaded editors'
 ] as const;
 
-const saveChangesProgressSteps = [
+const applyChangesProgressSteps = [
   'Preparing output plan',
-  'Writing files',
-  'Applying output changes',
+  'Writing reviewed output',
   'Refreshing loaded editors'
 ] as const;
 
@@ -962,15 +1039,13 @@ const profanityFilterProgressSteps = [
 ] as const;
 
 const randomizerProgressSteps = [
-  'Checking project folders',
   'Generating randomizer output',
   'Refreshing loaded editors',
   'Completing'
 ] as const;
 
 const randomizerRestoreProgressSteps = [
-  'Reading tracked output',
-  'Removing generated files',
+  'Restore Vanilla Values',
   'Refreshing loaded editors',
   'Completing'
 ] as const;
@@ -1435,6 +1510,7 @@ const textLikeInputTypes = new Set([
 function useSelectEditableFieldContents() {
   useEffect(() => {
     let animationFrameId: number | null = null;
+    let pointerFocusTarget: HTMLInputElement | HTMLTextAreaElement | null = null;
     const selectTarget = (target: EventTarget | null) => {
       const field = getSelectableTextField(target);
       if (field === null || field.value.length === 0) {
@@ -1450,14 +1526,27 @@ function useSelectEditableFieldContents() {
       });
     };
 
-    const handleFocusIn = (event: FocusEvent) => selectTarget(event.target);
-    const handlePointerUp = (event: PointerEvent) => selectTarget(event.target);
+    const handleFocusIn = (event: FocusEvent) => {
+      const field = getSelectableTextField(event.target);
+      if (field !== null && field === pointerFocusTarget) {
+        return;
+      }
+      selectTarget(event.target);
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      pointerFocusTarget = getSelectableTextField(event.target);
+    };
+    const handlePointerUp = () => {
+      pointerFocusTarget = null;
+    };
 
     document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('pointerup', handlePointerUp);
 
     return () => {
       document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('pointerup', handlePointerUp);
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
@@ -1879,7 +1968,6 @@ export function App({
   const setTrainerSearchText = useWorkbenchStore((state) => state.setTrainerSearchText);
   const setTrainersWorkflow = useWorkbenchStore((state) => state.setTrainersWorkflow);
   const setWorkflows = useWorkbenchStore((state) => state.setWorkflows);
-  const clearSelectedGame = useWorkbenchStore((state) => state.clearSelectedGame);
   const health = openProject?.health ?? null;
   const selectedGame = draftPaths.selectedGame;
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
@@ -2022,6 +2110,7 @@ export function App({
   const [isProfanityFilterLoading, setIsProfanityFilterLoading] = useState(false);
   const [isProfanityFilterApplying, setIsProfanityFilterApplying] = useState(false);
   const [isRandomizerApplying, setIsRandomizerApplying] = useState(false);
+  const [isGameDumpWriting, setIsGameDumpWriting] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
   const [isSupportSearchPermissionOpen, setIsSupportSearchPermissionOpen] = useState(false);
   const [isSupportSearchRunning, setIsSupportSearchRunning] = useState(false);
@@ -2067,10 +2156,21 @@ export function App({
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
   );
+  const hasCriticalWriteOperation =
+    isChangePlanApplying ||
+    isModMergerApplying ||
+    isFpsPatchApplying ||
+    isProfanityFilterApplying ||
+    isRandomizerApplying ||
+    isGameDumpWriting ||
+    isSvCacheClearing;
+  const [isSidebarCompact, setIsSidebarCompact] = useState(readSidebarCompactPreference);
+  const [isGamePickerOpen, setIsGamePickerOpen] = useState(false);
   const [expandedWorkflowGroups, setExpandedWorkflowGroups] = useState<
     Set<WorkflowNavigationGroup['id']>
-  >(() => new Set());
+  >(() => readExpandedWorkflowGroups(selectedGame));
   const editSessionRef = useRef<EditSession | null>(editSession);
+  const criticalWriteOperationRef = useRef(hasCriticalWriteOperation);
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
   const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
@@ -2704,7 +2804,7 @@ export function App({
         return;
       }
 
-      if (isEditSessionOperationBusy) {
+      if (isEditSessionOperationBusy || hasCriticalWriteOperation) {
         return;
       }
 
@@ -2768,6 +2868,7 @@ export function App({
       editSession,
       editSessionCanBeSharedAcrossNormalEditors,
       editSessionSection,
+      hasCriticalWriteOperation,
       isEditSessionOperationBusy,
       selectedGame,
       setActiveSection
@@ -2775,8 +2876,12 @@ export function App({
   );
 
   const handleCloseActiveEditor = useCallback(() => {
-    requestEditorExit('health', 'editor');
-  }, [requestEditorExit]);
+    if (hasCriticalWriteOperation || isEditSessionOperationBusy) {
+      return;
+    }
+
+    requestEditorExit('workflows', 'editor');
+  }, [hasCriticalWriteOperation, isEditSessionOperationBusy, requestEditorExit]);
 
   const handleConfirmExitDiscard = useCallback(async () => {
     const prompt = exitPrompt;
@@ -2890,6 +2995,10 @@ export function App({
   }, [editSession]);
 
   useEffect(() => {
+    criticalWriteOperationRef.current = hasCriticalWriteOperation;
+  }, [hasCriticalWriteOperation]);
+
+  useEffect(() => {
     exitPromptRef.current = exitPrompt;
   }, [exitPrompt]);
 
@@ -2898,41 +3007,77 @@ export function App({
       return;
     }
 
-    void desktopServices.setCloseGuardEnabled(editSession !== null).catch((error) => {
+    void desktopServices
+      .setCloseGuardEnabled(editSession !== null || hasCriticalWriteOperation)
+      .catch((error) => {
       setBridgeDiagnostics(
         toDesktopDiagnostics(error, 'Could not update the desktop close guard.')
       );
-    });
+      });
   }, [
     desktopServices.isAvailable,
     desktopServices.setCloseGuardEnabled,
     editSession,
+    hasCriticalWriteOperation,
     setBridgeDiagnostics
   ]);
 
-  const handleToggleWorkflowGroup = useCallback((groupId: WorkflowNavigationGroup['id']) => {
-    setExpandedWorkflowGroups((currentGroups) => {
-      const nextGroups = new Set(currentGroups);
-      if (nextGroups.has(groupId)) {
-        nextGroups.delete(groupId);
-      } else {
-        nextGroups.add(groupId);
-      }
+  const handleToggleWorkflowGroup = useCallback(
+    (groupId: WorkflowNavigationGroup['id']) => {
+      setExpandedWorkflowGroups((currentGroups) => {
+        const nextGroups = new Set(currentGroups);
+        if (nextGroups.has(groupId)) {
+          nextGroups.delete(groupId);
+        } else {
+          nextGroups.add(groupId);
+        }
 
-      return nextGroups;
+        writeExpandedWorkflowGroups(selectedGame, nextGroups);
+        return nextGroups;
+      });
+    },
+    [selectedGame]
+  );
+
+  const handleToggleSidebar = useCallback(() => {
+    setIsSidebarCompact((currentValue) => {
+      const nextValue = !currentValue;
+      writeSidebarCompactPreference(nextValue);
+      return nextValue;
     });
   }, []);
 
   useEffect(() => {
+    const activeGroup = workflowNavigationGroups.find((group) =>
+      group.sectionIds.includes(activeSection)
+    );
+    if (!activeGroup || !isWorkflowSupportedForGame(activeSection, selectedGame)) {
+      return;
+    }
+
+    setExpandedWorkflowGroups((currentGroups) => {
+      if (currentGroups.has(activeGroup.id)) {
+        return currentGroups;
+      }
+
+      const nextGroups = new Set(currentGroups);
+      nextGroups.add(activeGroup.id);
+      writeExpandedWorkflowGroups(selectedGame, nextGroups);
+      return nextGroups;
+    });
+  }, [activeSection, selectedGame]);
+
+  useEffect(() => {
     if (
       !isWorkflowSection(activeSection) ||
-      activeSectionCanStayMounted
+      activeSectionCanStayMounted ||
+      hasCriticalWriteOperation
     ) {
       return;
     }
 
-    setActiveSection('health');
-  }, [activeSection, activeSectionCanStayMounted, setActiveSection]);
+    setActiveSection('workflows');
+  }, [activeSection, activeSectionCanStayMounted, hasCriticalWriteOperation, setActiveSection]);
 
   const startSvCacheWarmup = useCallback(
     async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
@@ -3215,7 +3360,7 @@ export function App({
       setProjectHealth(response.health);
       await refreshWorkflows(
         paths,
-        response.health.canOpenEditableWorkflows,
+        response.health.canOpenReadOnlyWorkflows,
         () => projectValidationRunRef.current === runId
       );
       if (projectValidationRunRef.current !== runId) {
@@ -3244,6 +3389,10 @@ export function App({
     let unlisten: (() => void) | null = null;
 
     void listen(windowCloseRequestedEvent, () => {
+      if (criticalWriteOperationRef.current) {
+        return;
+      }
+
       if (editSessionRef.current === null) {
         void desktopServices
           .setCloseGuardEnabled(false)
@@ -3408,7 +3557,7 @@ export function App({
       setProjectHealth(nextResponse.health);
       await refreshWorkflows(
         nextPaths,
-        nextResponse.health.canOpenEditableWorkflows,
+        nextResponse.health.canOpenReadOnlyWorkflows,
         () => projectValidationRunRef.current === runId
       );
       if (projectValidationRunRef.current !== runId) {
@@ -3529,7 +3678,7 @@ export function App({
       setProjectHealth(response.health);
       await refreshWorkflows(
         paths,
-        response.health.canOpenEditableWorkflows,
+        response.health.canOpenReadOnlyWorkflows,
         () =>
           supportSearchRunRef.current === runId &&
           projectValidationRunRef.current === projectRunId
@@ -4699,7 +4848,11 @@ export function App({
 
   useEffect(() => {
     if (
-      !health?.canOpenEditableWorkflows ||
+      !canAccessWorkflowSectionForHealth(
+        activeSection,
+        health?.canOpenReadOnlyWorkflows ?? false,
+        health?.canOpenEditableWorkflows ?? false
+      ) ||
       !isWorkflowSupportedForGame(activeSection, selectedGame) ||
       lazyLoadedWorkflowSections.has(activeSection)
     ) {
@@ -4951,6 +5104,7 @@ export function App({
     hyperTrainingWorkflow,
     hyperspaceBypassWorkflow,
     health?.canOpenEditableWorkflows,
+    health?.canOpenReadOnlyWorkflows,
     isEncountersLoading,
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
@@ -5822,6 +5976,7 @@ export function App({
   const handleImportRandomizerSeed = async (
     seed: string
   ): Promise<ImportRandomizerSeedResponse> => {
+    setIsRandomizerApplying(true);
     setBridgeDiagnostics([]);
 
     try {
@@ -5829,6 +5984,8 @@ export function App({
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       throw error;
+    } finally {
+      setIsRandomizerApplying(false);
     }
   };
 
@@ -5843,23 +6000,13 @@ export function App({
     try {
       const paths = createProjectPaths(draftPaths);
       const label = operation === 'applySeed' ? 'Applying Randomization Seed' : 'Randomizing';
-      setWorkProgress(createDeterminateWorkProgress(
+      setWorkProgress(createIndeterminateWorkProgress(
         label,
-        'Checking project folders before writing randomizer output',
+        operation === 'applySeed'
+          ? 'Replaying the shared randomizer output'
+          : 'Generating deterministic randomizer output',
         randomizerProgressSteps,
-        0,
-        8
-      ));
-      await delay(200);
-
-      setWorkProgress(createDeterminateWorkProgress(
-        label,
-          operation === 'applySeed'
-            ? 'Replaying the shared randomizer output'
-            : 'Generating deterministic randomizer output',
-        randomizerProgressSteps,
-        1,
-        35
+        0
       ));
       const response = await bridge.applyRandomizer({
         config,
@@ -5870,25 +6017,25 @@ export function App({
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
-      setWorkProgress(createDeterminateWorkProgress(
-        hasApplyErrors ? 'Randomizer needs attention' : label,
-        hasApplyErrors ? 'Randomizer diagnostics need attention' : 'Refreshing loaded editor data',
-        randomizerProgressSteps,
-        2,
-        hasApplyErrors ? 90 : 82
-      ));
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          label,
+          'Refreshing loaded editor data',
+          randomizerProgressSteps,
+          1
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
       setWorkProgress(createDeterminateWorkProgress(
         hasApplyErrors ? 'Randomizer needs attention' : 'Randomizer Complete',
-        hasApplyErrors ? 'No output changes were finalized' : 'Randomizer output complete',
+        hasApplyErrors
+          ? 'Randomizer needs attention'
+          : 'Randomizer output complete',
         randomizerProgressSteps,
         randomizerProgressSteps.length,
         100
       ));
-      await delay(450);
 
       return response;
     } catch (error) {
@@ -5907,21 +6054,11 @@ export function App({
 
     try {
       const paths = createProjectPaths(draftPaths);
-      setWorkProgress(createDeterminateWorkProgress(
+      setWorkProgress(createIndeterminateWorkProgress(
         'Restoring Vanilla Values',
-        'Reading tracked Randomizer output',
+        'Restore Vanilla Values',
         randomizerRestoreProgressSteps,
-        0,
-        12
-      ));
-      await delay(200);
-
-      setWorkProgress(createDeterminateWorkProgress(
-        'Restoring Vanilla Values',
-        'Removing generated romfs/exefs Randomizer files',
-        randomizerRestoreProgressSteps,
-        1,
-        45
+        0
       ));
       const response = await bridge.restoreRandomizer({ paths });
       setApplyResult(response.applyResult);
@@ -5929,25 +6066,35 @@ export function App({
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
-      setWorkProgress(createDeterminateWorkProgress(
-        hasApplyErrors ? 'Restore needs attention' : 'Restoring Vanilla Values',
-        hasApplyErrors ? 'Restore diagnostics need attention' : 'Refreshing loaded editor data',
-        randomizerRestoreProgressSteps,
-        2,
-        hasApplyErrors ? 90 : 82
-      ));
-      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+      const restoreNeedsAttention = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity !== 'info'
+      );
+      const restoredFileCount = response.applyResult.writtenFiles.length;
+      if (!hasApplyErrors && restoredFileCount > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Restoring Vanilla Values',
+          'Refreshing loaded editor data',
+          randomizerRestoreProgressSteps,
+          1
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
       setWorkProgress(createDeterminateWorkProgress(
-        hasApplyErrors ? 'Restore needs attention' : 'Restore Complete',
-        hasApplyErrors ? 'Some files could not be restored' : 'Vanilla values restored',
+        restoreNeedsAttention
+          ? 'Restore needs attention'
+          : restoredFileCount > 0
+            ? 'Restore Complete'
+            : 'No changes',
+        restoreNeedsAttention
+          ? 'Restore diagnostics need attention'
+          : restoredFileCount > 0
+            ? 'Vanilla values restored'
+            : 'No changes',
         randomizerRestoreProgressSteps,
         randomizerRestoreProgressSteps.length,
         100
       ));
-      await delay(450);
 
       return response;
     } catch (error) {
@@ -7926,18 +8073,15 @@ export function App({
       const paths = createProjectPaths(draftPaths);
       let planToApply = visibleChangePlan;
 
-      setWorkProgress(createDeterminateWorkProgress(
-        outputMode ? 'Preparing Trinity Output' : 'Preparing Save',
-        outputMode
-          ? 'Creating the selected output package plan'
-          : 'Checking pending edits and target files',
-        saveChangesProgressSteps,
-        0,
-        8
-      ));
-      await delay(250);
-
       if (outputMode) {
+        setWorkProgress(
+          createIndeterminateWorkProgress(
+            'Preparing Trinity Output',
+            'Creating the selected output package plan',
+            applyChangesProgressSteps,
+            0
+          )
+        );
         const planResponse = await bridge.createChangePlan({
           outputMode,
           paths,
@@ -7948,39 +8092,20 @@ export function App({
         setChangePlanSessionSignature(getEditSessionSignature(editSession));
 
         if (!planToApply.canApply || planToApply.writes.length === 0) {
-          setWorkProgress(createDeterminateWorkProgress(
-            'Output plan needs attention',
-            'Review output plan diagnostics before saving',
-            saveChangesProgressSteps,
-            0,
-            100
-          ));
-          await delay(500);
           return;
         }
       }
 
-      const filesToWrite = planToApply.writes.map((write) => write.targetRelativePath);
-      const totalSteps = Math.max(filesToWrite.length, 1);
-
-      for (const [index, file] of filesToWrite.entries()) {
-        setWorkProgress(createDeterminateWorkProgress(
-          'Writing Output Files',
-          `${file} (${index + 1} of ${totalSteps})`,
-          saveChangesProgressSteps,
-          1,
-          Math.round(15 + ((index + 1) / totalSteps) * 70)
-        ));
-        await delay(325);
-      }
-
-      setWorkProgress(createDeterminateWorkProgress(
-        'Applying Output Changes',
-        'Finalizing the reviewed change plan',
-        saveChangesProgressSteps,
-        2,
-        92
-      ));
+      setWorkProgress(
+        createIndeterminateWorkProgress(
+          outputMode ? 'Writing Trinity Output' : 'Applying Changes',
+          `Applying ${planToApply.writes.length.toLocaleString()} reviewed output ${
+            planToApply.writes.length === 1 ? 'file' : 'files'
+          }`,
+          applyChangesProgressSteps,
+          1
+        )
+      );
 
       const response = await bridge.applyChangePlan({
         changePlan: planToApply,
@@ -8005,25 +8130,18 @@ export function App({
       }
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
-        setWorkProgress(createDeterminateWorkProgress(
-          'Refreshing Editors',
-          'Reloading changed editor data',
-          saveChangesProgressSteps,
-          3,
-          96
-        ));
+        setWorkProgress(
+          createIndeterminateWorkProgress(
+            'Refreshing Editors',
+            'Reloading changed editor data',
+            applyChangesProgressSteps,
+            2
+          )
+        );
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
       setApplyResult(response.applyResult);
-      setWorkProgress(createDeterminateWorkProgress(
-        hasApplyErrors ? 'Save needs attention' : 'Save complete',
-        hasApplyErrors ? 'Some files need attention' : 'Saved pending changes',
-        saveChangesProgressSteps,
-        saveChangesProgressSteps.length,
-        100
-      ));
-      await delay(500);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -8203,7 +8321,7 @@ export function App({
 
     await refreshWorkflows(
       paths,
-      health?.canOpenEditableWorkflows ?? true,
+      health?.canOpenReadOnlyWorkflows ?? true,
       canCommitRefresh
     ).catch((error: unknown) => {
       evictFailedWorkflowRefreshes();
@@ -8731,10 +8849,10 @@ export function App({
 
   const refreshWorkflows = async (
     paths: ReturnType<typeof toProjectPaths>,
-    canOpenEditableWorkflows: boolean,
+    canOpenReadOnlyWorkflows: boolean,
     canCommitRefresh: () => boolean = () => true
   ) => {
-    if (!canOpenEditableWorkflows) {
+    if (!canOpenReadOnlyWorkflows) {
       if (canCommitRefresh()) {
         setWorkflows([]);
       }
@@ -8749,44 +8867,56 @@ export function App({
 
   const handleSelectGame = useCallback(
     (nextGame: ProjectGame) => {
+      if (nextGame === selectedGame) {
+        setIsGamePickerOpen(false);
+        return;
+      }
+
       projectValidationRunRef.current += 1;
       cancelSupportFileSearch();
       resetLoadedProjectState();
       setBridgeDiagnostics([]);
-      setExpandedWorkflowGroups(new Set());
+      setExpandedWorkflowGroups(readExpandedWorkflowGroups(nextGame));
       setSelectedGame(nextGame);
+      setIsGamePickerOpen(false);
     },
     [
       cancelSupportFileSearch,
       resetLoadedProjectState,
+      selectedGame,
       setSelectedGame
     ]
   );
 
   const handleChangeGame = useCallback(() => {
-    projectValidationRunRef.current += 1;
-    cancelSupportFileSearch();
-    resetLoadedProjectState();
-    setBridgeDiagnostics([]);
-    setExpandedWorkflowGroups(new Set());
-    clearSelectedGame();
-  }, [
-    cancelSupportFileSearch,
-    clearSelectedGame,
-    resetLoadedProjectState
-  ]);
+    if (hasCriticalWriteOperation) {
+      return;
+    }
 
-  if (!selectedGame) {
-    return <GameSelectionPage onSelectGame={handleSelectGame} />;
+    setIsGamePickerOpen(true);
+  }, [hasCriticalWriteOperation]);
+
+  if (!selectedGame || isGamePickerOpen) {
+    return (
+      <GameSelectionPage
+        currentGame={selectedGame}
+        onCancel={selectedGame ? () => setIsGamePickerOpen(false) : undefined}
+        onSelectGame={handleSelectGame}
+      />
+    );
   }
 
-  const canShowWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
+  const canShowWorkflowNavigation = Boolean(health?.canOpenReadOnlyWorkflows);
+  const canShowEditableWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
+  const sidebarToggleLabel = translateLiteral(
+    isSidebarCompact ? 'Expand sidebar' : 'Collapse sidebar'
+  );
 
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
-    <main className="app-shell">
-      <aside className="sidebar">
+    <main className={`app-shell${isSidebarCompact ? ' sidebar-is-compact' : ''}`}>
+      <aside className={`sidebar${isSidebarCompact ? ' sidebar-compact' : ''}`}>
         <div className="brand">
           <img alt="" aria-hidden="true" className="brand-logo" src={kmLogoUrl} />
           <span className="brand-copy">
@@ -8796,6 +8926,20 @@ export function App({
             </span>
             <span className="brand-credit">Made by Matroskin</span>
           </span>
+          <button
+            aria-label={sidebarToggleLabel}
+            aria-pressed={isSidebarCompact}
+            className="sidebar-toggle"
+            onClick={handleToggleSidebar}
+            title={sidebarToggleLabel}
+            type="button"
+          >
+            {isSidebarCompact ? (
+              <PanelLeftOpen aria-hidden="true" size={18} />
+            ) : (
+              <PanelLeftClose aria-hidden="true" size={18} />
+            )}
+          </button>
         </div>
 
         <nav aria-label="Workspace" className="section-nav">
@@ -8808,9 +8952,10 @@ export function App({
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={section.label}
                 className="nav-button"
-                disabled={isEditSessionOperationBusy}
+                disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                 key={section.id}
                 onClick={() => handleNavigateSection(section.id)}
+                title={isSidebarCompact ? translateLiteral(section.label) : undefined}
                 type="button"
               >
                 <Icon aria-hidden="true" size={18} />
@@ -8820,25 +8965,37 @@ export function App({
           })}
 
           {canShowWorkflowNavigation ? workflowNavigationGroups.map((group) => {
-            const visibleSectionIds = group.sectionIds.filter((sectionId) =>
-              isWorkflowNavigationVisibleForGame(
-                sectionId,
-                selectedGame,
-                availableWorkflowSectionIds
-              )
+            const visibleSectionIds = group.sectionIds.filter(
+              (sectionId) =>
+                canAccessWorkflowSectionForHealth(
+                  sectionId,
+                  canShowWorkflowNavigation,
+                  canShowEditableWorkflowNavigation
+                ) &&
+                isWorkflowNavigationVisibleForGame(
+                  sectionId,
+                  selectedGame,
+                  availableWorkflowSectionIds
+                )
             );
             if (visibleSectionIds.length === 0) {
               return null;
             }
 
             const isExpanded = expandedWorkflowGroups.has(group.id);
+            const hasActiveSection = visibleSectionIds.includes(activeSection);
 
             return (
-              <div className="nav-workflow-group" key={group.id}>
+              <div
+                className={`nav-workflow-group${hasActiveSection ? ' nav-workflow-group-active' : ''}`}
+                key={group.id}
+              >
                 <button
                   aria-expanded={isExpanded}
+                  aria-label={translateLiteral(group.label)}
                   className="nav-group-button"
                   onClick={() => handleToggleWorkflowGroup(group.id)}
+                  title={isSidebarCompact ? translateLiteral(group.label) : undefined}
                   type="button"
                 >
                   <Layers aria-hidden="true" size={16} />
@@ -8860,9 +9017,10 @@ export function App({
                           aria-current={isActive ? 'page' : undefined}
                           aria-label={section.label}
                           className="nav-button nav-child-button"
-                          disabled={isEditSessionOperationBusy}
+                          disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                           key={section.id}
                           onClick={() => handleNavigateSection(section.id)}
+                          title={isSidebarCompact ? translateLiteral(section.label) : undefined}
                           type="button"
                         >
                           <Icon aria-hidden="true" size={16} />
@@ -8885,9 +9043,10 @@ export function App({
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={section.label}
                 className="nav-button"
-                disabled={isEditSessionOperationBusy}
+                disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                 key={section.id}
                 onClick={() => handleNavigateSection(section.id)}
+                title={isSidebarCompact ? translateLiteral(section.label) : undefined}
                 type="button"
               >
                 <Icon aria-hidden="true" size={18} />
@@ -8928,6 +9087,7 @@ export function App({
               <button
                 aria-label="Close Editor"
                 className="secondary-button icon-button"
+                disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                 onClick={handleCloseActiveEditor}
                 title="Close editor"
                 type="button"
@@ -8983,6 +9143,7 @@ export function App({
               isStaticEncountersLoading={isStaticEncountersLoading}
               isRentalPokemonLoading={isRentalPokemonLoading}
               isDynamaxAdventuresLoading={isDynamaxAdventuresLoading}
+              isTeraRaidsLoading={isTeraRaidsLoading}
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
               isHyperTrainingLoading={isHyperTrainingLoading}
@@ -8992,6 +9153,7 @@ export function App({
               isGymUniformRemovalLoading={isGymUniformRemovalLoading}
               isHyperspaceBypassLoading={isHyperspaceBypassLoading}
               isIvScreenLoading={isIvScreenLoading}
+              isTypeChartLoading={isTypeChartLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
@@ -9006,6 +9168,7 @@ export function App({
               onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
               onOpenRentalPokemonWorkflow={handleOpenRentalPokemonWorkflow}
               onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
+              onOpenTeraRaidsWorkflow={handleOpenTeraRaidsWorkflow}
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
               onOpenHyperTrainingWorkflow={handleOpenHyperTrainingWorkflow}
@@ -9015,6 +9178,7 @@ export function App({
               onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
               onOpenHyperspaceBypassWorkflow={handleOpenHyperspaceBypassWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
+              onOpenTypeChartWorkflow={handleOpenTypeChartWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -9031,6 +9195,7 @@ export function App({
               onOpenModMergerWorkflow={handleOpenModMergerWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
+              onOpenChanges={() => handleNavigateSection('changes')}
               pendingEditCount={pendingEditCount}
               workflows={gameScopedWorkflows}
             />
@@ -9893,6 +10058,7 @@ export function App({
               bridge={bridge}
               desktopServices={desktopServices}
               health={health}
+              onWriteStateChange={setIsGameDumpWriting}
               paths={createProjectPaths(draftPaths)}
             />
           ) : null}
@@ -10023,6 +10189,7 @@ export function App({
               isSessionValidating={isSessionValidating}
               supportsTrinityOutput={supportsTrinityOutput}
               onCancelEditSession={handleCancelEditSession}
+              onOpenEditor={setActiveSection}
               onRemovePendingEdit={handleRemovePendingEdit}
               onRequestTrinityOutput={(mode) => setTrinityOutputConfirmation({ mode })}
               onSaveValidatedChanges={() => handleSaveValidatedChanges()}
@@ -10122,33 +10289,67 @@ export function App({
 }
 
 function GameSelectionPage({
+  currentGame,
+  onCancel,
   onSelectGame
 }: {
+  currentGame: ProjectGame | null;
+  onCancel?: () => void;
   onSelectGame: (selectedGame: ProjectGame) => void;
 }) {
+  const { translateLiteral } = useLocalization();
+  const rememberedGames = new Set(getRememberedProjectGames());
+
   return (
     <main className="game-selection-shell">
       <section aria-labelledby="game-selection-heading" className="game-selection-panel">
         <img alt="" aria-hidden="true" className="game-selection-logo" src={kmLogoUrl} />
-        <h1 id="game-selection-heading">Which game are you using?</h1>
+        <h1 id="game-selection-heading">
+          {translateLiteral('Which game are you using?')}
+        </h1>
         <div className="game-choice-actions">
           {visibleGameSelectionGames.map((game) => {
             const definition = gameDefinitions[game];
             const Icon = definition.icon;
+            const status = game === currentGame
+              ? 'Current'
+              : rememberedGames.has(game)
+                ? 'Configured'
+                : null;
 
             return (
               <button
+                aria-label={
+                  status
+                    ? `${definition.label}, ${translateLiteral(status)}`
+                    : definition.label
+                }
                 className="game-choice-button"
                 key={game}
                 onClick={() => onSelectGame(game)}
                 type="button"
               >
                 <Icon aria-hidden="true" size={24} />
-                <span>{definition.label}</span>
+                <span className="game-choice-copy">
+                  <strong>{definition.label}</strong>
+                  {status ? (
+                    <small aria-hidden="true" className="status-pill status-ready">
+                      {translateLiteral(status)}
+                    </small>
+                  ) : null}
+                </span>
               </button>
             );
           })}
         </div>
+        {onCancel ? (
+          <div className="game-selection-actions">
+            <button className="secondary-button" onClick={onCancel} type="button">
+              <X aria-hidden="true" size={16} />
+              <span>{translateLiteral('Cancel')}</span>
+            </button>
+          </div>
+        ) : null}
       </section>
     </main>
   );
@@ -10167,6 +10368,8 @@ function BusyActionContent({
   label: string;
   size?: number;
 }) {
+  const { translateLiteral } = useLocalization();
+
   return (
     <>
       {isBusy ? (
@@ -10174,7 +10377,7 @@ function BusyActionContent({
       ) : (
         icon
       )}
-      <span>{isBusy ? busyLabel : label}</span>
+      <span>{translateLiteral(isBusy ? busyLabel : label)}</span>
     </>
   );
 }
@@ -10529,7 +10732,6 @@ function HealthSection({
         </div>
       </section>
 
-      <PathStatusSection health={health} selectedGame={selectedGame} />
       <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
     </>
   );
@@ -10889,10 +11091,10 @@ function SelectedItemPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isItemUpdating}
-                    label="Save Item"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -12169,10 +12371,10 @@ function SelectedPokemonPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isPokemonUpdating}
-                    label="Save Changes"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -13332,10 +13534,10 @@ function SelectedMovePanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isMoveUpdating}
-                    label="Save Move"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -13792,10 +13994,10 @@ function SelectedTextPanel({
                 type="button"
               >
                 <BusyActionContent
-                  busyLabel="Saving"
+                  busyLabel="Staging"
                   icon={<Save aria-hidden="true" size={16} />}
                   isBusy={isTextUpdating}
-                  label="Save Text"
+                  label="Stage"
                 />
               </button>
             ) : (
@@ -14565,10 +14767,10 @@ function SelectedTrainerPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isTrainerUpdating}
-                    label="Save Trainer"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -14757,10 +14959,10 @@ function SelectedTrainerPanel({
                       type="button"
                     >
                       <BusyActionContent
-                        busyLabel="Saving"
+                        busyLabel="Staging"
                         icon={<Save aria-hidden="true" size={16} />}
                         isBusy={isTrainerUpdating}
-                        label="Save Pokemon"
+                        label="Stage"
                       />
                     </button>
                     <button
@@ -15886,6 +16088,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.encounters': 'Wild Encounters',
     'workflow.exefs': 'ExeFS Patches',
     'workflow.exefsPatches': 'ExeFS Patches',
+    'workflow.fairyGymBoosts': 'Fairy Gym Boosts',
     'workflow.fashionUnlock': 'Fashion Unlock',
     'workflow.giftPokemon': 'Gift Pokemon',
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
@@ -15915,6 +16118,46 @@ function formatPendingEditDomain(domain: string) {
   };
 
   return labels[domain] ?? domain;
+}
+
+function getPendingEditSection(domain: string): WorkbenchSection | null {
+  const sectionsByDomain: Record<string, WorkbenchSection> = {
+    'workflow.bagHook': 'bagHook',
+    'workflow.behavior': 'behavior',
+    'workflow.catchCap': 'catchCap',
+    'workflow.dynamaxAdventures': 'dynamaxAdventures',
+    'workflow.encounters': 'encounters',
+    'workflow.exefs': 'exefsPatches',
+    'workflow.exefsPatches': 'exefsPatches',
+    'workflow.fairyGymBoosts': 'fairyGymBoosts',
+    'workflow.fashionUnlock': 'fashionUnlock',
+    'workflow.giftPokemon': 'giftPokemon',
+    'workflow.gymUniformRemoval': 'gymUniformRemoval',
+    'workflow.hyperTraining': 'hyperTraining',
+    'workflow.hyperspaceBypass': 'hyperspaceBypass',
+    'workflow.items': 'items',
+    'workflow.ivScreen': 'ivScreen',
+    'workflow.moves': 'moves',
+    'workflow.npcItemGift': 'npcItemGift',
+    'workflow.placement': 'placement',
+    'workflow.pokemon': 'pokemon',
+    'workflow.raidBattles': 'raidBattles',
+    'workflow.raidBonusRewards': 'raidBonusRewards',
+    'workflow.raidRewards': 'raidRewards',
+    'workflow.rentalPokemon': 'rentalPokemon',
+    'workflow.royalCandy': 'royalCandy',
+    'workflow.shinyRate': 'shinyRate',
+    'workflow.shops': 'shops',
+    'workflow.startingItems': 'startingItems',
+    'workflow.staticEncounters': 'staticEncounters',
+    'workflow.teraRaids': 'teraRaids',
+    'workflow.text': 'text',
+    'workflow.tradePokemon': 'tradePokemon',
+    'workflow.trainers': 'trainers',
+    'workflow.typeChart': 'typeChart'
+  };
+
+  return sectionsByDomain[domain] ?? null;
 }
 
 type PendingEditableOption = {
@@ -17327,6 +17570,10 @@ function ShinyLockRemovalConfirmationModal({
   recordLabel: string;
   recordLabelPlural: string;
 }) {
+  const dialogRef = useModalDialog<HTMLDivElement>({
+    canClose: !isApplying,
+    onClose: onCancel
+  });
   const affectedLabel = affectedCount === 1 ? recordLabel : recordLabelPlural;
 
   return (
@@ -17334,7 +17581,9 @@ function ShinyLockRemovalConfirmationModal({
       aria-labelledby="shiny-lock-removal-heading"
       aria-modal="true"
       className="modal-backdrop"
+      ref={dialogRef}
       role="dialog"
+      tabIndex={-1}
     >
       <section className="modal-panel">
         <div className="panel-heading">
@@ -17804,10 +18053,10 @@ function SelectedGiftPokemonPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isGiftPokemonUpdating}
-                    label="Save Gift"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -18332,10 +18581,10 @@ function SelectedTradePokemonPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isTradePokemonUpdating}
-                    label="Save Trade"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -18776,10 +19025,10 @@ function SelectedRentalPokemonPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isRentalPokemonUpdating}
-                    label="Save Rental"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -19975,10 +20224,10 @@ function SelectedStaticEncounterPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isStaticEncounterUpdating}
-                    label="Save Encounter"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -20580,10 +20829,10 @@ function SelectedShopPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel={translateLiteral('Saving')}
+                    busyLabel={translateLiteral('Staging')}
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isShopUpdating || isItemUpdating}
-                    label={translateLiteral('Save Changes')}
+                    label={translateLiteral('Stage')}
                   />
                 </button>
                 <button
@@ -22583,10 +22832,10 @@ function SelectedEncounterPanel({
                       type="button"
                     >
                       <BusyActionContent
-                        busyLabel="Saving"
+                        busyLabel="Staging"
                         icon={<Save aria-hidden="true" size={16} />}
                         isBusy={isEncounterUpdating}
-                        label="Save Encounter"
+                        label="Stage"
                       />
                     </button>
                     {!isSvEncounterTable && !isZaEncounterTable ? (
@@ -23188,12 +23437,23 @@ function EncounterAreaCopyConfirmationModal({
   onConfirm: () => void;
   request: EncounterAreaCopyRequest;
 }) {
+  const dialogRef = useModalDialog<HTMLDivElement>({
+    canClose: !isApplying,
+    onClose: onCancel
+  });
   const conditionLabel = request.conditionLabels.join(', ');
   const slotLabel = request.updates.length === 1 ? 'slot' : 'slots';
   const skippedLabel = request.skippedConditionLabels.join(', ');
 
   return (
-    <div aria-labelledby="encounter-area-copy-heading" aria-modal="true" className="modal-backdrop" role="dialog">
+    <div
+      aria-labelledby="encounter-area-copy-heading"
+      aria-modal="true"
+      className="modal-backdrop"
+      ref={dialogRef}
+      role="dialog"
+      tabIndex={-1}
+    >
       <section className="modal-panel">
         <div className="panel-heading">
           <ArrowLeftRight aria-hidden="true" size={18} />
@@ -23578,7 +23838,7 @@ function TeraRaidsSection({
                         onChangeDrafts={setDraftsByRecordId}
                         onUpdateField={onUpdateTeraRaidField}
                         onUpdateFields={onUpdateTeraRaidFields}
-                        saveLabel="Save Raid"
+                        saveLabel="Stage"
                       />
                     ) : (
                       <button
@@ -23700,7 +23960,7 @@ function TeraRaidsSection({
                                 onChangeDrafts={setDraftsByRecordId}
                                 onUpdateField={onUpdateTeraRaidField}
                                 onUpdateFields={onUpdateTeraRaidFields}
-                                saveLabel="Save Reward"
+                                saveLabel="Stage"
                               />
                             ) : null}
                           </>
@@ -23877,7 +24137,7 @@ function TeraRaidDraftPanel({
           type="button"
         >
           <BusyActionContent
-            busyLabel={translateLiteral('Saving')}
+            busyLabel={translateLiteral('Staging')}
             icon={<Save aria-hidden="true" size={16} />}
             isBusy={isBusy}
             label={translateLiteral(saveLabel)}
@@ -24422,10 +24682,10 @@ function SelectedRaidBattlePanel({
                       type="button"
                     >
                       <BusyActionContent
-                        busyLabel="Saving"
+                        busyLabel="Staging"
                         icon={<Save aria-hidden="true" size={16} />}
                         isBusy={isRaidBattleUpdating}
-                        label="Save Battle"
+                        label="Stage"
                       />
                     </button>
                     <button
@@ -24903,10 +25163,10 @@ function SelectedRaidRewardPanel({
                       type="button"
                     >
                       <BusyActionContent
-                        busyLabel="Saving"
+                        busyLabel="Staging"
                         icon={<Save aria-hidden="true" size={16} />}
                         isBusy={isRaidRewardUpdating}
-                        label="Save Reward"
+                        label="Stage"
                       />
                     </button>
                     <button
@@ -25408,10 +25668,10 @@ function SelectedBehaviorPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel="Staging"
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isBehaviorUpdating}
-                    label="Save Behavior"
+                    label="Stage"
                   />
                 </button>
                 <button
@@ -29712,6 +29972,7 @@ function SvModMergerSection({
   preview: SvModMergerPreview | ZaModMergerPreview | null;
   workflow: SvModMergerWorkflow | ZaModMergerWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const canStage = modSources.some((source) => source.isEnabled) && !isStaging && !isLoading;
   const canApply = Boolean(preview?.canApply) && !isApplying && !isStaging;
 
@@ -29788,7 +30049,12 @@ function SvModMergerSection({
           <Metric label="Overrides" value={String(workflow?.stats.overrideCount ?? 0)} />
         </div>
 
-        <div className="workflow-list" title="Sources apply top to bottom; lower enabled sources win when smart merge falls back.">
+        <p className="mod-merger-priority-copy">
+          {translateLiteral(
+            'Sources apply top to bottom; lower enabled sources win when smart merge falls back.'
+          )}
+        </p>
+        <div className="workflow-list">
           {modSources.length === 0 ? (
             <p className="empty-copy">{emptySourceCopy}</p>
           ) : (
@@ -29798,7 +30064,13 @@ function SvModMergerSection({
               const isLast = index === modSources.length - 1;
 
               return (
-                <article className="workflow-row" key={`${source.path}-${index}`}>
+                <article
+                  className="workflow-row mod-merger-source-row"
+                  key={`${source.path}-${index}`}
+                >
+                  <span aria-hidden="true" className="mod-merger-source-priority">
+                    {index + 1}
+                  </span>
                   <div>
                     <h3>{sourceRecord?.name ?? getFileName(source.path)}</h3>
                     <p>{source.path}</p>
@@ -30486,6 +30758,7 @@ function SpreadsheetImportSection({
   workflow: SpreadsheetImportWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
+  const [rowFilter, setRowFilter] = useState<'accepted' | 'all' | 'rejected'>('all');
   const importProfiles = workflow?.profiles ?? [];
   const previewProfile = preview
     ? (importProfiles.find((profile) => profile.profileId === preview.profileId) ?? null)
@@ -30499,6 +30772,19 @@ function SpreadsheetImportSection({
     previewRequestProfile?.status === 'available' &&
     sourcePath.trim().length > 0;
   const previewDiagnostics = preview?.rows.flatMap((row) => row.diagnostics) ?? [];
+  const filteredPreviewRows =
+    preview?.rows.filter(
+      (row) => rowFilter === 'all' || row.status.toLocaleLowerCase() === rowFilter
+    ) ?? [];
+  const importProgressSteps = [
+    { complete: sourcePath.trim().length > 0, label: 'Source' },
+    { complete: preview !== null, label: 'Preview' },
+    {
+      complete: preview !== null && (editSession?.pendingEdits.length ?? 0) > 0,
+      label: 'Changes'
+    }
+  ];
+  const activeImportStep = importProgressSteps.findIndex((step) => !step.complete);
 
   return (
     <>
@@ -30507,6 +30793,19 @@ function SpreadsheetImportSection({
           <Upload aria-hidden="true" size={18} />
           <h2 id="spreadsheet-import-heading">Dump Importer</h2>
         </div>
+
+        <ol aria-label="Dump Importer" className="changes-progress spreadsheet-import-progress">
+          {importProgressSteps.map((step, index) => (
+            <li
+              aria-current={index === activeImportStep ? 'step' : undefined}
+              className={step.complete ? 'is-complete' : index === activeImportStep ? 'is-active' : ''}
+              key={step.label}
+            >
+              <span aria-hidden="true">{index + 1}</span>
+              <strong>{translateLiteral(step.label)}</strong>
+            </li>
+          ))}
+        </ol>
 
         <div className="items-toolbar spreadsheet-import-toolbar">
           <Metric
@@ -30570,26 +30869,55 @@ function SpreadsheetImportSection({
               </div>
 
               {preview ? (
-                <div className="exefs-table" role="table" aria-label="Dump import preview">
-                  <div className="exefs-row spreadsheet-preview-row exefs-row-heading" role="row">
-                    <span role="columnheader">Row</span>
-                    <span role="columnheader">Status</span>
-                    <span role="columnheader">Record</span>
-                    <span role="columnheader">Summary</span>
+                <>
+                  <div
+                    aria-label={translateLiteral('Rows')}
+                    className="spreadsheet-preview-filters"
+                    role="group"
+                  >
+                    {(['all', 'accepted', 'rejected'] as const).map((filter) => (
+                      <button
+                        aria-pressed={rowFilter === filter}
+                        className="secondary-button compact-button"
+                        key={filter}
+                        onClick={() => setRowFilter(filter)}
+                        type="button"
+                      >
+                        {translateLiteral(
+                          filter === 'all'
+                            ? 'All'
+                            : filter === 'accepted'
+                              ? 'Accepted'
+                              : 'Rejected'
+                        )}
+                      </button>
+                    ))}
                   </div>
-                  {preview.rows.map((row) => (
-                    <div className="exefs-row spreadsheet-preview-row" key={row.rowNumber} role="row">
-                      <span role="cell">{row.rowNumber}</span>
-                      <span role="cell">
-                        <span className={`status-pill ${getImportStatusClassName(row.status)}`}>
-                          {row.status}
-                        </span>
-                      </span>
-                      <span role="cell">{row.recordId || 'n/a'}</span>
-                      <span role="cell">{row.summary}</span>
+                  <div className="exefs-table" role="table" aria-label="Dump import preview">
+                    <div className="exefs-row spreadsheet-preview-row exefs-row-heading" role="row">
+                      <span role="columnheader">Row</span>
+                      <span role="columnheader">Status</span>
+                      <span role="columnheader">Record</span>
+                      <span role="columnheader">Summary</span>
                     </div>
-                  ))}
-                </div>
+                    {filteredPreviewRows.map((row) => (
+                      <div
+                        className="exefs-row spreadsheet-preview-row"
+                        key={row.rowNumber}
+                        role="row"
+                      >
+                        <span role="cell">{row.rowNumber}</span>
+                        <span role="cell">
+                          <span className={`status-pill ${getImportStatusClassName(row.status)}`}>
+                            {row.status}
+                          </span>
+                        </span>
+                        <span role="cell">{row.recordId || 'n/a'}</span>
+                        <span role="cell">{row.summary}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
               ) : null}
             </div>
 
@@ -31000,6 +31328,7 @@ function ChangesSection({
   supportsTrinityOutput,
   isSessionValidating,
   onCancelEditSession,
+  onOpenEditor,
   onRemovePendingEdit,
   onRequestTrinityOutput,
   onSaveValidatedChanges,
@@ -31018,13 +31347,51 @@ function ChangesSection({
   supportsTrinityOutput: boolean;
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
+  onOpenEditor: (section: WorkbenchSection) => void;
   onRemovePendingEdit: (editIndex: number) => void;
   onRequestTrinityOutput: (mode: ChangePlanOutputMode) => void;
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
 }) {
+  const { translateLiteral } = useLocalization();
   const pendingEdits = editSession?.pendingEdits ?? [];
   const isPendingValidationBusy = isSessionValidating || isChangePlanCreating;
+  const pendingEditGroups: Array<{
+    domain: string;
+    editorLabel: string;
+    edits: Array<{ details: PendingEditDisplayDetails; edit: PendingEdit; index: number }>;
+    section: WorkbenchSection | null;
+  }> = [];
+  pendingEdits.forEach((edit, index) => {
+    let group = pendingEditGroups.find((candidate) => candidate.domain === edit.domain);
+    if (!group) {
+      group = {
+        domain: edit.domain,
+        editorLabel: formatPendingEditDomain(edit.domain),
+        edits: [],
+        section: getPendingEditSection(edit.domain)
+      };
+      pendingEditGroups.push(group);
+    }
+    group.edits.push({ details: getPendingEditDisplayDetails(edit, pendingEditContext), edit, index });
+  });
+  const hasWriteErrors =
+    applyResult?.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ?? false;
+  const progressSteps = [
+    {
+      complete: pendingEdits.length > 0 || changePlan !== null || applyResult !== null,
+      label: 'Staged'
+    },
+    {
+      complete: Boolean(changePlan?.canApply) || applyResult !== null,
+      label: 'Review'
+    },
+    {
+      complete: applyResult !== null && !hasWriteErrors,
+      label: 'Written'
+    }
+  ];
+  const activeProgressIndex = progressSteps.findIndex((step) => !step.complete);
   const combinedDiagnostics = [
     ...diagnostics,
     ...(changePlan?.diagnostics ?? []),
@@ -31036,8 +31403,21 @@ function ChangesSection({
       <section aria-labelledby="changes-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ClipboardCheck aria-hidden="true" size={18} />
-          <h2 id="changes-heading">Edit Session</h2>
+          <h2 id="changes-heading">{translateLiteral('Changes')}</h2>
         </div>
+
+        <ol aria-label={translateLiteral('Changes')} className="changes-progress">
+          {progressSteps.map((step, index) => (
+            <li
+              aria-current={index === activeProgressIndex ? 'step' : undefined}
+              className={step.complete ? 'is-complete' : index === activeProgressIndex ? 'is-active' : ''}
+              key={step.label}
+            >
+              <span aria-hidden="true">{index + 1}</span>
+              <strong>{translateLiteral(step.label)}</strong>
+            </li>
+          ))}
+        </ol>
 
         <div className="changes-summary">
           <Metric label="Pending changes" value={pendingEdits.length.toString()} />
@@ -31054,6 +31434,9 @@ function ChangesSection({
             }
           />
           <button
+            aria-label={
+              translateLiteral(isPendingValidationBusy ? 'Validating' : 'Review')
+            }
             aria-busy={isPendingValidationBusy || undefined}
             className="secondary-button"
             disabled={
@@ -31069,7 +31452,7 @@ function ChangesSection({
               busyLabel="Validating"
               icon={<CheckCircle aria-hidden="true" size={18} />}
               isBusy={isPendingValidationBusy}
-              label="Validate Pending Changes"
+              label="Review"
               size={18}
             />
           </button>
@@ -31130,10 +31513,10 @@ function ChangesSection({
               type="button"
             >
               <BusyActionContent
-                busyLabel="Saving"
-                icon={<Save aria-hidden="true" size={18} />}
+                busyLabel="Applying"
+                icon={<CheckCircle aria-hidden="true" size={18} />}
                 isBusy={isChangePlanApplying}
-                label="Save"
+                label="Apply"
                 size={18}
               />
             </button>
@@ -31156,73 +31539,105 @@ function ChangesSection({
         </div>
 
         {pendingEdits.length > 0 ? (
-          <ul
+          <div
             aria-label={`Pending changes (${pendingEdits.length})`}
-            className="pending-edit-list"
-            tabIndex={0}
+            className="pending-edit-groups"
+            role="region"
           >
-            {pendingEdits.map((edit, index) => {
-              const details = getPendingEditDisplayDetails(edit, pendingEditContext);
-
+            {pendingEditGroups.map((group, groupIndex) => {
+              const headingId = `pending-edit-group-${groupIndex}`;
               return (
-                <li key={`${edit.domain}-${edit.recordId ?? index}-${edit.field ?? 'field'}`}>
-                  <button
-                    aria-label={`Remove pending change ${index + 1}: ${edit.summary}`}
-                    className="danger-button icon-button pending-edit-remove-button"
-                    disabled={
-                      isEditSessionMutating ||
-                      isSessionValidating ||
-                      isChangePlanCreating ||
-                      isChangePlanApplying
-                    }
-                    onClick={() => onRemovePendingEdit(index)}
-                    title="Remove this pending change"
-                    type="button"
-                  >
-                    <Trash2 aria-hidden="true" size={16} />
-                  </button>
-                  <div className="pending-edit-content">
-                    <div className="pending-edit-title-row">
-                      <strong>{edit.summary}</strong>
-                      <span>{details.editorLabel}</span>
+                <section
+                  aria-labelledby={headingId}
+                  className="pending-edit-group"
+                  key={group.domain}
+                >
+                  <div className="pending-edit-group-heading">
+                    <div>
+                      <h3 id={headingId}>{translateLiteral(group.editorLabel)}</h3>
+                      <span>{group.edits.length}</span>
                     </div>
-                    <dl className="pending-edit-meta">
-                      <div>
-                        <dt>Editor</dt>
-                        <dd>{details.editorLabel}</dd>
-                      </div>
-                      <div>
-                        <dt>Record</dt>
-                        <dd>{details.recordLabel}</dd>
-                      </div>
-                      <div>
-                        <dt>Field</dt>
-                        <dd>{details.fieldLabel}</dd>
-                      </div>
-                      <div>
-                        <dt>New value</dt>
-                        <dd>{details.newValueLabel}</dd>
-                      </div>
-                      <div>
-                        <dt>Record key</dt>
-                        <dd>{details.recordKey}</dd>
-                      </div>
-                      <div>
-                        <dt>Field key</dt>
-                        <dd>{details.fieldKey}</dd>
-                      </div>
-                      <div>
-                        <dt>Source</dt>
-                        <dd>{details.sourceLabel}</dd>
-                      </div>
-                    </dl>
+                    {group.section ? (
+                      <button
+                        aria-label={`${translateLiteral('Open')} ${translateLiteral(group.editorLabel)}`}
+                        className="secondary-button compact-button"
+                        disabled={
+                          isEditSessionMutating ||
+                          isSessionValidating ||
+                          isChangePlanCreating ||
+                          isChangePlanApplying
+                        }
+                        onClick={() => onOpenEditor(group.section!)}
+                        type="button"
+                      >
+                        <ExternalLink aria-hidden="true" size={15} />
+                        <span>{translateLiteral('Open')}</span>
+                      </button>
+                    ) : null}
                   </div>
-                </li>
+                  <ul className="pending-edit-list">
+                    {group.edits.map(({ details, edit, index }) => (
+                      <li key={`${edit.domain}-${edit.recordId ?? index}-${edit.field ?? 'field'}`}>
+                        <button
+                          aria-label={`Remove pending change ${index + 1}: ${edit.summary}`}
+                          className="danger-button icon-button pending-edit-remove-button"
+                          disabled={
+                            isEditSessionMutating ||
+                            isSessionValidating ||
+                            isChangePlanCreating ||
+                            isChangePlanApplying
+                          }
+                          onClick={() => onRemovePendingEdit(index)}
+                          title="Remove this pending change"
+                          type="button"
+                        >
+                          <Trash2 aria-hidden="true" size={16} />
+                        </button>
+                        <div className="pending-edit-content">
+                          <div className="pending-edit-title-row">
+                            <strong>{edit.summary}</strong>
+                          </div>
+                          <dl className="pending-edit-meta pending-edit-summary-meta">
+                            <div>
+                              <dt>Record</dt>
+                              <dd>{details.recordLabel}</dd>
+                            </div>
+                            <div>
+                              <dt>Field</dt>
+                              <dd>{details.fieldLabel}</dd>
+                            </div>
+                            <div>
+                              <dt>New value</dt>
+                              <dd>{details.newValueLabel}</dd>
+                            </div>
+                          </dl>
+                          <details className="pending-edit-technical-details">
+                            <summary>{translateLiteral('Technical details')}</summary>
+                            <dl className="pending-edit-meta">
+                              <div>
+                                <dt>Record key</dt>
+                                <dd>{details.recordKey}</dd>
+                              </div>
+                              <div>
+                                <dt>Field key</dt>
+                                <dd>{details.fieldKey}</dd>
+                              </div>
+                              <div>
+                                <dt>Source</dt>
+                                <dd>{details.sourceLabel}</dd>
+                              </div>
+                            </dl>
+                          </details>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               );
             })}
-          </ul>
+          </div>
         ) : (
-          <p className="empty-copy">No pending changes.</p>
+          <p className="empty-copy">{translateLiteral('No pending changes.')}</p>
         )}
       </section>
 
@@ -31238,6 +31653,10 @@ function ChangesSection({
 }
 
 function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
+  const dialogRef = useModalDialog({
+    canClose: false,
+    onClose: () => undefined
+  });
   const isDeterminate = progress.mode === 'determinate';
   const percent = isDeterminate ? Math.max(0, Math.min(100, progress.percent ?? 0)) : null;
 
@@ -31247,7 +31666,9 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
         aria-labelledby="work-progress-heading"
         aria-modal="true"
         className="modal-panel work-progress-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <Activity aria-hidden="true" size={18} />
@@ -31312,6 +31733,7 @@ function SupportSearchConfirmationModal({
   onConfirm: () => void;
   selectedGame: ProjectGame;
 }) {
+  const dialogRef = useModalDialog({ onClose: onCancel });
   const gameLabel = isPokemonLegendsZAGame(selectedGame) ? 'Z-A' : 'S/V';
 
   return (
@@ -31320,7 +31742,9 @@ function SupportSearchConfirmationModal({
         aria-labelledby="support-search-confirmation-heading"
         aria-modal="true"
         className="modal-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <Search aria-hidden="true" size={18} />
@@ -31363,13 +31787,20 @@ function SvCacheClearConfirmationModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const dialogRef = useModalDialog({
+    canClose: !isClearing,
+    onClose: onCancel
+  });
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
         aria-labelledby="sv-cache-clear-confirmation-heading"
         aria-modal="true"
         className="modal-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <Trash2 aria-hidden="true" size={18} />
@@ -31414,17 +31845,18 @@ function PokemonYieldConfirmationModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const dialogRef = useModalDialog({ onClose: onCancel });
   const isRestore = action === 'restore';
   const label = kind === 'exp' ? 'EXP Yield' : 'EV Yield';
   const fieldDescription = kind === 'exp' ? 'Base EXP yield' : 'EV yield';
   const removeDescription =
     kind === 'exp'
-      ? 'Remove EXP Yield will set every Pokemon Base EXP yield to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.'
-      : 'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.';
+      ? 'Remove EXP Yield will set every Pokemon Base EXP yield to 0. This stages one pending Pokemon change and does not write files until you review and apply it from Changes.'
+      : 'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and apply it from Changes.';
   const restoreDescription =
     kind === 'exp'
-      ? `Restore ${label} will copy every Pokemon ${fieldDescription} back from vanilla personal data. Any custom EXP yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.`
-      : 'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.';
+      ? `Restore ${label} will copy every Pokemon ${fieldDescription} back from vanilla personal data. Any custom EXP yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after these changes are applied.`
+      : 'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after these changes are applied.';
   const title = isRestore ? `Restore ${label}?` : `Remove ${label}?`;
   const description = isRestore ? restoreDescription : removeDescription;
   const Icon = isRestore ? RefreshCw : Trash2;
@@ -31436,7 +31868,9 @@ function PokemonYieldConfirmationModal({
         aria-labelledby={headingId}
         aria-modal="true"
         className="modal-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <Icon aria-hidden="true" size={18} />
@@ -31470,6 +31904,7 @@ function ShopItemNavigationModal({
   onConfirm: () => void;
 }) {
   const { translateLiteral } = useLocalization();
+  const dialogRef = useModalDialog({ onClose: onCancel });
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -31477,7 +31912,9 @@ function ShopItemNavigationModal({
         aria-labelledby="shop-item-navigation-heading"
         aria-modal="true"
         className="modal-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <ExternalLink aria-hidden="true" size={18} />
@@ -31485,7 +31922,7 @@ function ShopItemNavigationModal({
         </div>
         <p className="modal-copy">
           {translateLiteral(
-            'Navigating out of Shops before pressing Save Changes will permanently discard unsaved inventory edits in this editor.'
+            'Navigating out of Shops before pressing Stage will permanently discard unstaged inventory edits in this editor.'
           )}
         </p>
         <div className="modal-actions">
@@ -31521,6 +31958,10 @@ function UpdatePromptModal({
     status.kind === 'opening' ||
     status.kind === 'preparing' ||
     status.kind === 'restarting';
+  const dialogRef = useModalDialog({
+    canClose: !isApplying,
+    onClose: onDismiss
+  });
   const isProgressVisible =
     status.kind === 'downloading' || status.kind === 'installing' || status.kind === 'preparing';
   const progressTitle =
@@ -31545,7 +31986,9 @@ function UpdatePromptModal({
         aria-labelledby="update-prompt-heading"
         aria-modal="true"
         className="modal-panel update-prompt-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <Download aria-hidden="true" size={18} />
@@ -31644,13 +32087,17 @@ function DependencyWarningModal({
   onOpenBagHook: () => void;
   warning: DependencyWarningState;
 }) {
+  const dialogRef = useModalDialog({ onClose });
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
         aria-labelledby="dependency-warning-heading"
         aria-modal="true"
         className="modal-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <AlertTriangle aria-hidden="true" size={18} />
@@ -31695,6 +32142,7 @@ function ExitPromptModal({
   const isConfirmMode = mode === 'confirm';
   const isCancelPrompt = kind === 'cancel';
   const isEditorSwitchPrompt = kind === 'editorSwitch';
+  const dialogRef = useModalDialog({ onClose: onStay });
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -31702,7 +32150,9 @@ function ExitPromptModal({
         aria-labelledby="exit-prompt-heading"
         aria-modal="true"
         className="modal-panel"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="panel-heading">
           <X aria-hidden="true" size={18} />
@@ -31765,42 +32215,6 @@ function ExitPromptModal({
         </div>
       </section>
     </div>
-  );
-}
-
-function PathStatusSection({
-  health,
-  selectedGame
-}: {
-  health: ProjectHealth | null;
-  selectedGame: ProjectGame;
-}) {
-  const visiblePathFields = pathFields.filter((pathField) =>
-    isProjectPathFieldVisible(pathField, selectedGame)
-  );
-
-  return (
-    <section aria-labelledby="paths-heading" className="panel">
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h2 id="paths-heading">Paths</h2>
-      </div>
-
-      <dl className="path-list">
-        {visiblePathFields.map((pathField) => {
-          const pathValidation = health?.paths.find((path) => path.role === pathField.role);
-
-          return (
-            <div className="path-row" key={pathField.role}>
-              <dt>{pathField.label}</dt>
-              <dd className={getPathStatusClassName(pathValidation)}>
-                {pathValidation ? pathStatusLabels[pathValidation.status] : 'Not checked'}
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-    </section>
   );
 }
 
@@ -39053,7 +39467,7 @@ function getProjectStateLabel(
     return 'Validating paths';
   }
 
-  if (health && viewerSectionIds.has(activeSection)) {
+  if (health && readOnlyViewerSectionIds.has(activeSection)) {
     return 'View Only';
   }
 

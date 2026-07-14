@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { AlertTriangle, Download, FolderOpen, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Download, FolderOpen, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   type ApiDiagnostic,
@@ -16,6 +16,7 @@ import {
 import { ProjectBridgeError, type ProjectBridge } from '../../bridge/projectBridge';
 import type { DesktopServices } from '../../desktopServices';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
+import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
 import { useLocalization } from '../../localization';
 
@@ -38,15 +39,21 @@ type GameDumpProgress = {
   writtenFileCount?: number;
 };
 
+type GameDumpCategoryFilter = 'all' | 'available' | 'selected';
+
+const destinationStorageKey = 'km-editor.game-dump-destinations.v1';
+
 export function GameDumpSection({
   bridge,
   desktopServices,
   health,
+  onWriteStateChange,
   paths
 }: {
   bridge: ProjectBridge;
   desktopServices: DesktopServices;
   health: ProjectHealth | null;
+  onWriteStateChange?: (isWriting: boolean) => void;
   paths: ProjectPaths;
 }) {
   const [workflowCategories, setWorkflowCategories] = useState<GameDumpCategory[]>([]);
@@ -59,6 +66,8 @@ export function GameDumpSection({
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [actionDiagnostics, setActionDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [progress, setProgress] = useState<GameDumpProgress | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<GameDumpCategoryFilter>('all');
+  const [categorySearch, setCategorySearch] = useState('');
   const { translateLiteral } = useLocalization();
 
   const selectedCategories = useMemo(
@@ -69,6 +78,47 @@ export function GameDumpSection({
     [selectionState, workflowCategories]
   );
   const selectedCount = selectedCategories.length;
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = categorySearch.trim().toLocaleLowerCase();
+    return workflowCategories.filter((category) => {
+      const state = selectionState[category.id];
+      if (categoryFilter === 'available' && !category.isAvailable) {
+        return false;
+      }
+      if (categoryFilter === 'selected' && !state?.selected) {
+        return false;
+      }
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [category.id, translateLiteral(category.label), translateLiteral(category.description)]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+    });
+  }, [categoryFilter, categorySearch, selectionState, translateLiteral, workflowCategories]);
+
+  useEffect(() => {
+    if (!paths.selectedGame) {
+      setDestinationFolder('');
+      return;
+    }
+    setDestinationFolder(loadRememberedDestination(paths.selectedGame));
+  }, [paths.selectedGame]);
+
+  const updateDestinationFolder = useCallback(
+    (destination: string) => {
+      setDestinationFolder(destination);
+      if (paths.selectedGame) {
+        rememberDestination(paths.selectedGame, destination);
+      }
+      setResult(null);
+      setActionDiagnostics([]);
+      setProgress(null);
+    },
+    [paths.selectedGame]
+  );
 
   const loadWorkflow = useCallback(async () => {
     if (!health?.canOpenReadOnlyWorkflows || paths.selectedGame === null) {
@@ -125,10 +175,7 @@ export function GameDumpSection({
       title: translateLiteral('Select Game Dump destination')
     });
     if (selectedFolder) {
-      setDestinationFolder(selectedFolder);
-      setResult(null);
-      setActionDiagnostics([]);
-      setProgress(null);
+      updateDestinationFolder(selectedFolder);
     }
   };
 
@@ -146,6 +193,7 @@ export function GameDumpSection({
 
   const handleGenerate = async () => {
     setIsConfirmOpen(false);
+    onWriteStateChange?.(true);
     setIsGenerating(true);
     setResult(null);
     setActionDiagnostics([]);
@@ -196,6 +244,7 @@ export function GameDumpSection({
       });
     } finally {
       setIsGenerating(false);
+      onWriteStateChange?.(false);
     }
   };
 
@@ -215,6 +264,10 @@ export function GameDumpSection({
         </p>
       ) : (
         <>
+          <div className="game-dump-step-heading">
+            <span aria-hidden="true">1</span>
+            <h3>{translateLiteral('Destination')}</h3>
+          </div>
           <div className="game-dump-destination-panel">
             <label className="path-field game-dump-destination-field">
               <span>{translateLiteral('Destination folder')}</span>
@@ -222,11 +275,7 @@ export function GameDumpSection({
                 <input
                   aria-label={translateLiteral('Destination folder')}
                   data-localization-ignore="true"
-                  onChange={(event) => {
-                    setDestinationFolder(event.target.value);
-                    setResult(null);
-                    setProgress(null);
-                  }}
+                  onChange={(event) => updateDestinationFolder(event.target.value)}
                   placeholder={translateLiteral('Select a destination folder')}
                   type="text"
                   value={destinationFolder}
@@ -265,6 +314,10 @@ export function GameDumpSection({
             </label>
           </div>
 
+          <div className="game-dump-step-heading">
+            <span aria-hidden="true">2</span>
+            <h3>{translateLiteral('Categories')}</h3>
+          </div>
           <div className="metrics-grid game-dump-metrics">
             <Metric label={translateLiteral('Categories')} value={String(workflowCategories.length)} />
             <Metric label={translateLiteral('Available')} value={String(availableCount)} />
@@ -275,7 +328,37 @@ export function GameDumpSection({
             />
           </div>
 
-          <div className="game-dump-actions">
+          <div className="game-dump-category-toolbar">
+            <label className="search-box game-dump-search">
+              <Search aria-hidden="true" size={16} />
+              <input
+                aria-label={translateLiteral('Search')}
+                onChange={(event) => setCategorySearch(event.target.value)}
+                placeholder={translateLiteral('Search')}
+                type="search"
+                value={categorySearch}
+              />
+            </label>
+            <div
+              aria-label={translateLiteral('Categories')}
+              className="game-dump-category-filters"
+              role="group"
+            >
+              {(['all', 'available', 'selected'] as const).map((filter) => (
+                <button
+                  aria-pressed={categoryFilter === filter}
+                  className="secondary-button compact-button"
+                  key={filter}
+                  onClick={() => setCategoryFilter(filter)}
+                  type="button"
+                >
+                  {translateLiteral(
+                    filter === 'all' ? 'All' : filter === 'available' ? 'Available' : 'Selected'
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="game-dump-actions">
             <button
               className="secondary-button compact-button"
               disabled={availableCount === 0 || isGenerating}
@@ -316,15 +399,7 @@ export function GameDumpSection({
             >
               {translateLiteral('Clear')}
             </button>
-            <button
-              className="primary-button"
-              disabled={!canGenerate}
-              onClick={() => setIsConfirmOpen(true)}
-              type="button"
-            >
-              <Download aria-hidden="true" size={16} />
-              {translateLiteral(isGenerating ? 'Generating...' : 'Generate Dump Files')}
-            </button>
+            </div>
           </div>
 
           {progress ? (
@@ -332,7 +407,7 @@ export function GameDumpSection({
           ) : null}
 
           <div className="game-dump-category-list">
-            {workflowCategories.map((category) => {
+            {filteredCategories.map((category) => {
               const state = selectionState[category.id] ?? {
                 format: category.defaultFormat,
                 selected: false
@@ -411,6 +486,26 @@ export function GameDumpSection({
             <p className="empty-copy">{translateLiteral('Loading dump categories...')}</p>
           ) : null}
 
+          <div className="game-dump-step-heading">
+            <span aria-hidden="true">3</span>
+            <h3>{translateLiteral('Review')}</h3>
+          </div>
+          <div className="game-dump-review-bar">
+            <div>
+              <strong>{translateLiteral('Selected categories')}</strong>
+              <span>{selectedCount}</span>
+            </div>
+            <button
+              className="primary-button"
+              disabled={!canGenerate}
+              onClick={() => setIsConfirmOpen(true)}
+              type="button"
+            >
+              <Download aria-hidden="true" size={16} />
+              {translateLiteral(isGenerating ? 'Generating...' : 'Generate Dump Files')}
+            </button>
+          </div>
+
           {result ? (
             <div className="game-dump-result">
               <h3>
@@ -462,9 +557,21 @@ function GameDumpConfirmationModal({
   onConfirm: () => void;
   translateLiteral: (literal: string) => string;
 }) {
+  const dialogRef = useModalDialog<HTMLElement>({
+    canClose: !isGenerating,
+    onClose: onCancel
+  });
+
   return (
-    <div aria-labelledby="game-dump-confirm-heading" aria-modal="true" className="modal-backdrop" role="dialog">
-      <section className="modal-panel">
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="game-dump-confirm-heading"
+        aria-modal="true"
+        className="modal-panel"
+        ref={dialogRef}
+        role="dialog"
+        tabIndex={-1}
+      >
         <div className="panel-heading">
           <AlertTriangle aria-hidden="true" size={18} />
           <h2 id="game-dump-confirm-heading">{translateLiteral('Generate Dump Files')}</h2>
@@ -602,4 +709,36 @@ function toDiagnostics(error: unknown): ApiDiagnostic[] {
       severity: 'error'
     }
   ];
+}
+
+function loadRememberedDestination(game: NonNullable<ProjectPaths['selectedGame']>) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(destinationStorageKey) ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    return typeof parsed[game] === 'string' ? parsed[game] : '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberDestination(
+  game: NonNullable<ProjectPaths['selectedGame']>,
+  destination: string
+) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(destinationStorageKey) ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    if (destination.trim()) {
+      parsed[game] = destination;
+    } else {
+      delete parsed[game];
+    }
+    localStorage.setItem(destinationStorageKey, JSON.stringify(parsed));
+  } catch {
+    // Destination memory is an optional convenience; generation still works without it.
+  }
 }

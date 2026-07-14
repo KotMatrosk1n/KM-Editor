@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Activity, CheckCircle, ClipboardCheck } from 'lucide-react';
+import { Activity, AlertCircle, AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticMessage } from '../diagnostics';
 import { useLocalization } from '../localization';
@@ -24,16 +24,31 @@ export function Metric({ label, value }: { label: string; value: string }) {
 
 export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
   const { translateLiteral } = useLocalization();
+  const hasErrors = applyResult.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+  const hasWarnings = applyResult.diagnostics.some(
+    (diagnostic) => diagnostic.severity === 'warning'
+  );
+  const status = hasErrors
+    ? 'Error'
+    : hasWarnings
+      ? 'Warning'
+      : applyResult.writtenFiles.length > 0
+        ? 'Written'
+        : 'No changes';
+  const ResultIcon = hasErrors ? AlertCircle : hasWarnings ? AlertTriangle : CheckCircle;
 
   return (
-    <section aria-labelledby="apply-result-heading" className="panel wide-panel">
+    <section
+      aria-labelledby="apply-result-heading"
+      className={`panel wide-panel apply-result-panel apply-result-${hasErrors ? 'error' : hasWarnings ? 'warning' : 'success'}`}
+    >
       <div className="panel-heading">
-        <CheckCircle aria-hidden="true" size={18} />
-        <h2 id="apply-result-heading">{translateLiteral('Save Result')}</h2>
+        <ResultIcon aria-hidden="true" size={18} />
+        <h2 id="apply-result-heading">{translateLiteral('Apply Result')}</h2>
       </div>
 
       <div className="change-plan-status">
-        <Metric label="Save ID" value={applyResult.applyId} />
+        <Metric label="Status" value={status} />
         <Metric label="Written files" value={applyResult.writtenFiles.length.toString()} />
       </div>
 
@@ -92,7 +107,7 @@ export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
 
       <div className="change-plan-status">
         <Metric label="Plan status" value={changePlan.canApply ? 'Ready' : 'Needs fixes'} />
-        <Metric label="Session" value={changePlan.sessionId} />
+        <Metric label="Target files" value={changePlan.writes.length.toString()} />
       </div>
 
       {changePlan.writes.length > 0 ? (
@@ -143,6 +158,27 @@ export function DiagnosticsSection({
 }) {
   const isScrollable = scrollAfterEntries !== undefined && diagnostics.length > scrollAfterEntries;
   const { translateLiteral } = useLocalization();
+  const groups = [
+    {
+      diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
+      label: 'Error',
+      severity: 'error' as const
+    },
+    {
+      diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'warning'),
+      label: 'Warnings',
+      severity: 'warning' as const
+    },
+    {
+      diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity === 'info'),
+      label: 'Information',
+      severity: 'info' as const
+    }
+  ].filter((group) => group.diagnostics.length > 0);
+
+  if (groups.length === 0) {
+    return null;
+  }
 
   return (
     <section aria-labelledby="diagnostics-heading" className="panel">
@@ -151,23 +187,33 @@ export function DiagnosticsSection({
         <h2 id="diagnostics-heading">{translateLiteral('Diagnostics')}</h2>
       </div>
 
-      {diagnostics.length > 0 ? (
-        <ul className={`diagnostic-list ${isScrollable ? 'diagnostic-list-scrollable' : ''}`}>
-          {diagnostics.map((diagnostic, index) => (
-            <li
-              className={`diagnostic diagnostic-${diagnostic.severity}`}
-              key={`${diagnostic.severity}-${diagnostic.message}-${index}`}
-            >
-              <strong>
-                {translateLiteral(formatDiagnosticSeverity(diagnostic.severity))}
-              </strong>
-              <span>{formatDiagnosticMessage(diagnostic, translateLiteral)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-copy">{translateLiteral('No diagnostics.')}</p>
-      )}
+      <div className={`diagnostic-groups ${isScrollable ? 'diagnostic-list-scrollable' : ''}`}>
+        {groups.map((group) => (
+          <details
+            className={`diagnostic-group diagnostic-group-${group.severity}`}
+            key={group.severity}
+            open={group.severity !== 'info' || groups.length === 1}
+          >
+            <summary>
+              <span>{translateLiteral(group.label)}</span>
+              <span className="diagnostic-count">{group.diagnostics.length}</span>
+            </summary>
+            <ul className="diagnostic-list">
+              {group.diagnostics.map((diagnostic, index) => (
+                <li
+                  className={`diagnostic diagnostic-${diagnostic.severity}`}
+                  key={`${diagnostic.severity}-${diagnostic.message}-${index}`}
+                >
+                  <strong>
+                    {translateLiteral(formatDiagnosticSeverity(diagnostic.severity))}
+                  </strong>
+                  <span>{formatDiagnosticMessage(diagnostic, translateLiteral)}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ))}
+      </div>
     </section>
   );
 }

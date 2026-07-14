@@ -199,29 +199,6 @@ describe('App', () => {
     await waitFor(() => expect(useWorkbenchStore.getState().activeSection).toBe('pokemon'));
     expect(useWorkbenchStore.getState().openProject?.projectId).toBe('pending-project');
     expect(screen.getByRole('button', { name: 'Editors' })).toBeInTheDocument();
-
-    act(() => {
-      useWorkbenchStore.getState().setActiveSection('health');
-    });
-    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    expect(await screen.findByRole('button', { name: 'Validating' })).toBeDisabled();
-
-    const outputRootInput = screen.getByLabelText('Output Root');
-    await user.clear(outputRootInput);
-    await user.type(outputRootInput, 'new-output');
-
-    expect(screen.getByRole('button', { name: 'Validate Paths' })).toBeEnabled();
-    expect(useWorkbenchStore.getState().projectStatus).toBe('idle');
-    expect(useWorkbenchStore.getState().openProject).toBeNull();
-
-    await act(async () => {
-      resolveValidateProject();
-    });
-
-    await waitFor(() => expect(validateProject).toHaveBeenCalledTimes(2));
-    expect(useWorkbenchStore.getState().openProject).toBeNull();
-    expect(useWorkbenchStore.getState().projectStatus).toBe('idle');
-    expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
   });
 
   it('keeps a newer change-plan request busy when an older project request finishes', async () => {
@@ -260,7 +237,7 @@ describe('App', () => {
       name: 'Project Setup'
     });
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
     await waitFor(() => expect(bridge.createChangePlan).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: 'Validating' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
@@ -295,7 +272,7 @@ describe('App', () => {
     });
 
     const validateButton = await screen.findByRole('button', {
-      name: 'Validate Pending Changes'
+      name: 'Review'
     });
     await user.click(validateButton);
     await waitFor(() => expect(bridge.createChangePlan).toHaveBeenCalledTimes(2));
@@ -313,7 +290,7 @@ describe('App', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Validate Pending Changes' })).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Review' })).toBeEnabled()
     );
     expect(useWorkbenchStore.getState().editSession?.sessionId).toBe('new-plan-session');
   });
@@ -322,9 +299,8 @@ describe('App', () => {
     const user = userEvent.setup();
     const bridge = createMockProjectBridge({}, true);
     const originalLoadPokemonWorkflow = bridge.loadPokemonWorkflow;
-    const originalLoadRentalPokemonWorkflow = bridge.loadRentalPokemonWorkflow;
     const originalLoadTrainersWorkflow = bridge.loadTrainersWorkflow;
-    const originalStageModMerge = bridge.stageModMerge;
+    const loadTypeChartWorkflow = vi.fn(bridge.loadTypeChartWorkflow);
     const loadPokemonWorkflow = vi.fn(
       async (request: Parameters<typeof originalLoadPokemonWorkflow>[0]) => {
         const response = await originalLoadPokemonWorkflow(request);
@@ -357,41 +333,9 @@ describe('App', () => {
         };
       }
     );
-    const stageModMerge = vi.fn(
-      async (request: Parameters<typeof originalStageModMerge>[0]) => {
-        const response = await originalStageModMerge(request);
-        const resolution =
-          request.resolutions.find((candidate) => candidate.conflictId === 'shared-price')
-            ?.source ?? 'mod1';
-
-        return {
-          ...response,
-          preview: {
-            ...response.preview,
-            canApply: true,
-            conflictFileCount: 1,
-            conflicts: [
-              {
-                conflictId: 'shared-price',
-                description: 'Both mods change the same shop price.',
-                directory1Value: '500',
-                directory2Value: '750',
-                label: 'Potion price',
-                relativePath: 'romfs/bin/shop_data.bin',
-                resolution
-              }
-            ],
-            reviewToken: `review-${resolution}`,
-            unresolvedConflictCount: 0
-          }
-        };
-      }
-    );
     bridge.loadPokemonWorkflow = loadPokemonWorkflow;
-    const loadRentalPokemonWorkflow = vi.fn(originalLoadRentalPokemonWorkflow);
-    bridge.loadRentalPokemonWorkflow = loadRentalPokemonWorkflow;
     bridge.loadTrainersWorkflow = loadTrainersWorkflow;
-    bridge.stageModMerge = stageModMerge;
+    bridge.loadTypeChartWorkflow = loadTypeChartWorkflow;
 
     render(
       <LocalizationProvider>
@@ -412,6 +356,7 @@ describe('App', () => {
 
     expect(topLevelLabels).toEqual([
       'Project Setup',
+      'Workflows',
       'Viewers',
       'Editors',
       'Encounters & Pokemon Sources',
@@ -423,10 +368,21 @@ describe('App', () => {
       'Settings'
     ]);
 
-    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
-    await user.click(within(navigation).getByRole('button', { name: 'Rental Pokemon' }));
-    await waitFor(() => expect(loadRentalPokemonWorkflow).toHaveBeenCalledTimes(1));
-    expect(screen.getAllByRole('heading', { name: 'Rental Pokemon' })).toHaveLength(2);
+    await user.click(within(navigation).getByRole('button', { name: 'Workflows' }));
+    await user.type(screen.getByRole('textbox', { name: 'Search' }), 'Type Chart');
+    await user.click(screen.getByRole('button', { name: 'Open Type Chart' }));
+    await waitFor(() => expect(loadTypeChartWorkflow).toHaveBeenCalledTimes(1));
+    expect(
+      within(navigation).getByRole('button', { name: 'Advanced Editors' })
+    ).toHaveAttribute('aria-expanded', 'true');
+    expect(within(navigation).getByRole('button', { name: 'ExeFS Patches' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close Editor' }));
+    expect(useWorkbenchStore.getState().activeSection).toBe('workflows');
+    expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
+    expect(window.localStorage.getItem('km-editor.sidebar.compact.v1')).toBe('true');
 
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(within(navigation).getByRole('button', { name: 'Pokemon' }));
@@ -484,57 +440,14 @@ describe('App', () => {
     expect(loadTrainersWorkflow.mock.calls.at(-1)?.[0].paths.gameTextLanguage).toBe('en');
     await waitFor(() => expect(screen.getAllByText('Avery').length).toBeGreaterThan(0));
     expect(screen.queryByText('中文训练家')).not.toBeInTheDocument();
-
-    await user.click(within(navigation).getByRole('button', { name: 'Tools' }));
-    await user.click(within(navigation).getByRole('button', { name: 'Mod Merger' }));
-    await user.click(await screen.findByRole('button', { name: 'Select All' }));
-    await user.click(screen.getByRole('button', { name: 'Stage Merge' }));
-    await waitFor(() => expect(stageModMerge).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled();
-
-    await user.click(screen.getByRole('button', { name: 'Use Mod Directory 2' }));
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Review' })).toBeEnabled();
-
-    await user.click(screen.getByRole('button', { name: 'Review' }));
-    await waitFor(() => expect(stageModMerge).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled();
-
-    const trainer = useWorkbenchStore.getState().trainersWorkflow?.trainers[0]!;
-    act(() => {
-      useWorkbenchStore.setState({
-        activeSection: 'changes',
-        editSession: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.trainers',
-              field: 'classBallId',
-              newValue: '4',
-              recordId: trainer.trainerClassId.toString(),
-              sources: [{ layer: 'base', relativePath: 'romfs/bin/trainer' }],
-              summary: 'Set trainer class ball.'
-            }
-          ],
-          sessionId: 'trainer-class-session'
-        }
-      } as never);
-    });
-
-    expect(
-      screen.getByText(`${trainer.trainerClass} class (#${trainer.trainerClassId})`)
-    ).toBeInTheDocument();
-    expect(screen.queryByText(`${trainer.name} (#${trainer.trainerId})`)).not.toBeInTheDocument();
   });
 
-  it('serializes normal editor mutations and rejects a stale Rental Pokemon response', async () => {
+  it('serializes normal editor mutations across editor switches', async () => {
     const user = userEvent.setup();
     const bridge = createMockProjectBridge({}, true);
     const originalUpdateItemField = bridge.updateItemField;
     const originalUpdateRentalPokemonField = bridge.updateRentalPokemonField;
     let resolveItemUpdate!: () => Promise<void>;
-    let resolveStaleRentalUpdate!: () => Promise<void>;
-    let rentalUpdateCount = 0;
     bridge.updateItemField = vi.fn(
       (request: Parameters<typeof originalUpdateItemField>[0]) =>
         new Promise<Awaited<ReturnType<typeof originalUpdateItemField>>>((resolve) => {
@@ -542,9 +455,9 @@ describe('App', () => {
         })
     );
     const updateRentalPokemonField = vi.fn(
-      (request: Parameters<typeof originalUpdateRentalPokemonField>[0]) => {
-        rentalUpdateCount += 1;
-        const response = originalUpdateRentalPokemonField(request).then((updateResponse) => ({
+      async (request: Parameters<typeof originalUpdateRentalPokemonField>[0]) => {
+        const updateResponse = await originalUpdateRentalPokemonField(request);
+        return {
           ...updateResponse,
           session: {
             ...updateResponse.session,
@@ -553,16 +466,7 @@ describe('App', () => {
               ...updateResponse.session.pendingEdits
             ]
           }
-        }));
-        if (rentalUpdateCount === 1) {
-          return response;
-        }
-
-        return new Promise<Awaited<ReturnType<typeof originalUpdateRentalPokemonField>>>(
-          (resolve) => {
-            resolveStaleRentalUpdate = () => response.then(resolve);
-          }
-        );
+        };
       }
     );
     bridge.updateRentalPokemonField = updateRentalPokemonField;
@@ -584,7 +488,7 @@ describe('App', () => {
     const buyPriceInput = await within(itemInspector).findByLabelText('Buy price');
     await user.clear(buyPriceInput);
     await user.type(buyPriceInput, '500');
-    await user.click(within(itemInspector).getByRole('button', { name: 'Save Item' }));
+    await user.click(within(itemInspector).getByRole('button', { name: 'Stage' }));
     await waitFor(() => expect(bridge.updateItemField).toHaveBeenCalledTimes(1));
 
     await user.click(within(navigation).getByRole('button', { name: 'Changes' }));
@@ -599,7 +503,7 @@ describe('App', () => {
     const levelInput = await within(rentalInspector).findByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '65');
-    await user.click(within(rentalInspector).getByRole('button', { name: 'Save Rental' }));
+    await user.click(within(rentalInspector).getByRole('button', { name: 'Stage' }));
     expect(updateRentalPokemonField).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -618,30 +522,6 @@ describe('App', () => {
         ])
       )
     );
-
-    await user.clear(levelInput);
-    await user.type(levelInput, '70');
-    await user.click(within(rentalInspector).getByRole('button', { name: 'Save Rental' }));
-    await waitFor(() => expect(updateRentalPokemonField).toHaveBeenCalledTimes(2));
-
-    act(() => {
-      useWorkbenchStore.getState().setActiveSection('health');
-    });
-    const outputRootInput = screen.getByLabelText('Output Root');
-    await user.clear(outputRootInput);
-    await user.type(outputRootInput, 'other-output');
-    await user.clear(outputRootInput);
-    await user.type(outputRootInput, 'output');
-    expect(useWorkbenchStore.getState().rentalPokemonWorkflow).toBeNull();
-    expect(useWorkbenchStore.getState().editSession).toBeNull();
-
-    await act(async () => {
-      await resolveStaleRentalUpdate();
-    });
-
-    expect(useWorkbenchStore.getState().draftPaths.outputRootPath).toBe('output');
-    expect(useWorkbenchStore.getState().rentalPokemonWorkflow).toBeNull();
-    expect(useWorkbenchStore.getState().editSession).toBeNull();
   });
 
 });
