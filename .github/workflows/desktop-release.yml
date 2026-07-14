@@ -136,21 +136,57 @@ jobs:
           }
 
           $expectedVersion = $env:RELEASE_TAG.Substring(1)
+          $rootPackage = Get-Content 'package.json' -Raw | ConvertFrom-Json
+          $desktopPackage = Get-Content 'apps/desktop/package.json' -Raw | ConvertFrom-Json
           $tauriConfig = Get-Content 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
           $cargoToml = Get-Content 'apps/desktop/src-tauri/Cargo.toml' -Raw
+          $cargoLock = Get-Content 'apps/desktop/src-tauri/Cargo.lock' -Raw
 
           if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
             throw 'Could not read the desktop Cargo.toml package version.'
           }
 
           $cargoVersion = $Matches[1]
+          $cargoLockMatches = [regex]::Matches(
+            $cargoLock,
+            '(?ms)^\[\[package\]\]\s*\r?\nname\s*=\s*"km-editor-desktop"\s*\r?\nversion\s*=\s*"([^"]+)"'
+          )
+
+          if ($cargoLockMatches.Count -ne 1) {
+            throw "Expected one km-editor-desktop package entry in Cargo.lock, found $($cargoLockMatches.Count)."
+          }
+
+          $cargoLockVersion = $cargoLockMatches[0].Groups[1].Value
+          $mainWindows = @($tauriConfig.app.windows | Where-Object { $_.label -eq 'main' })
+
+          if ($mainWindows.Count -ne 1) {
+            throw "Expected one main desktop window, found $($mainWindows.Count)."
+          }
+
+          $expectedWindowTitle = "KM Editor v$expectedVersion"
+
+          if ($rootPackage.version -ne $expectedVersion) {
+            throw "Release tag '$env:RELEASE_TAG' does not match package.json version '$($rootPackage.version)'."
+          }
+
+          if ($desktopPackage.version -ne $expectedVersion) {
+            throw "Release tag '$env:RELEASE_TAG' does not match apps/desktop/package.json version '$($desktopPackage.version)'."
+          }
 
           if ($tauriConfig.version -ne $expectedVersion) {
             throw "Release tag '$env:RELEASE_TAG' does not match tauri.conf.json version '$($tauriConfig.version)'."
           }
 
+          if ($mainWindows[0].title -ne $expectedWindowTitle) {
+            throw "Release tag '$env:RELEASE_TAG' expects main window title '$expectedWindowTitle', found '$($mainWindows[0].title)'."
+          }
+
           if ($cargoVersion -ne $expectedVersion) {
             throw "Release tag '$env:RELEASE_TAG' does not match Cargo.toml version '$cargoVersion'."
+          }
+
+          if ($cargoLockVersion -ne $expectedVersion) {
+            throw "Release tag '$env:RELEASE_TAG' does not match Cargo.lock version '$cargoLockVersion'."
           }
 
       - name: Install dependencies

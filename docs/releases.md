@@ -4,7 +4,7 @@ KM Editor publishes Windows desktop builds through GitHub Releases.
 
 ## Release Workflow
 
-The `Desktop Release` workflow builds the Tauri desktop app on Windows, runs backend and desktop tests, packages the app, and creates a draft GitHub Release.
+The `Desktop Release` workflow verifies that the exact pull request merge passed the required validation, builds the Tauri desktop app on Windows, packages it, and creates a draft GitHub Release.
 
 The release assets are:
 
@@ -33,18 +33,19 @@ The private signing key must never be committed. If the private key or password 
 
 ## Manual Release
 
-Use the GitHub Actions UI when a release should be created from the current branch:
+Use the GitHub Actions UI when a release should be created from the final validated pull request merge on `master`:
 
 1. Open `Actions`.
 2. Run `Desktop Release`.
-3. Enter a tag such as `v0.1.0`.
-4. Leave `prerelease` unchecked for normal releases.
-5. Review the generated draft release notes and assets.
-6. Publish the draft release from GitHub.
+3. Select `master` as the workflow branch.
+4. Enter a tag such as `v0.1.0`.
+5. Leave `prerelease` unchecked for normal releases.
+6. Review the generated draft release notes and assets.
+7. Publish the draft release from GitHub.
 
 The workflow creates the tag at the commit that ran the workflow if the tag does not already exist.
 
-The tag must match the desktop app version. For example, `v0.1.0` requires the app version to be `0.1.0`.
+The tag must match the desktop app version and point to a pull request merge whose tree matches its validated head. For example, `v0.1.0` requires the app version to be `0.1.0`.
 
 ## Tag Release
 
@@ -55,13 +56,18 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+Create the tag at the final validated pull request merge on `master`. Direct release commits, mismatched merge trees, and tags on unvalidated source are rejected before packaging.
+
 ## Version Checklist
 
 Before creating a release, update the desktop app version in:
 
 - `package.json`
 - `apps/desktop/package.json`
-- `apps/desktop/src-tauri/tauri.conf.json`
+- the version and main window title in `apps/desktop/src-tauri/tauri.conf.json`
 - `apps/desktop/src-tauri/Cargo.toml`
+- the `km-editor-desktop` package entry in `apps/desktop/src-tauri/Cargo.lock`
+
+Review the README release badge and release-facing feature summary at the same time.
 
 Use the same version number in the GitHub release tag, prefixed with `v`.
