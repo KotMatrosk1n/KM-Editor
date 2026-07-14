@@ -761,6 +761,20 @@ function useMediaQuery(query: string) {
   return matches;
 }
 
+function keepSidebarItemVerticallyVisible(
+  scrollRegion: HTMLDivElement,
+  activeNavigationItem: HTMLElement
+) {
+  const scrollRegionBounds = scrollRegion.getBoundingClientRect();
+  const activeItemBounds = activeNavigationItem.getBoundingClientRect();
+
+  if (activeItemBounds.top < scrollRegionBounds.top) {
+    scrollRegion.scrollTop += activeItemBounds.top - scrollRegionBounds.top;
+  } else if (activeItemBounds.bottom > scrollRegionBounds.bottom) {
+    scrollRegion.scrollTop += activeItemBounds.bottom - scrollRegionBounds.bottom;
+  }
+}
+
 function readExpandedWorkflowGroups(game: ProjectGame | null) {
   if (!game || typeof window === 'undefined') {
     return new Set<WorkflowNavigationGroup['id']>();
@@ -3161,10 +3175,19 @@ export function App({
 
   useEffect(() => {
     const scrollRegion = sidebarNavigationScrollRef.current;
-    const activeNavigationItem = scrollRegion?.querySelector<HTMLElement>(
+    if (!scrollRegion) {
+      return;
+    }
+
+    scrollRegion.scrollLeft = 0;
+    const activeNavigationItem = scrollRegion.querySelector<HTMLElement>(
       '[aria-current="page"]'
     );
-    activeNavigationItem?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    if (!activeNavigationItem) {
+      return;
+    }
+
+    keepSidebarItemVerticallyVisible(scrollRegion, activeNavigationItem);
   }, [activeSection, isSidebarCompact]);
 
   const handleSidebarNavigateSection = useCallback(
