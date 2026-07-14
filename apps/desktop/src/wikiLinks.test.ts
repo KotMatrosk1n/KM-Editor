@@ -2,6 +2,15 @@
 
 import { describe, expect, it } from 'vitest';
 import { getSectionWikiUrl } from './wikiLinks';
+import {
+  isWorkflowSupportedForGame,
+  workflowNavigationGroups
+} from './workflowGameSupport';
+
+const supportedGames = ['sword', 'shield', 'scarlet', 'violet', 'za'] as const;
+const workflowNavigationSectionIds = workflowNavigationGroups.flatMap(
+  (group) => group.sectionIds
+);
 
 describe('wiki links', () => {
   it('links shared SwSh sections to their wiki pages', () => {
@@ -55,7 +64,18 @@ describe('wiki links', () => {
     );
   });
 
-  it('hides the button for sections without a wiki page', () => {
-    expect(getSectionWikiUrl('settings', 'sword')).toBeNull();
+  it('links Settings to its canonical wiki page', () => {
+    expect(getSectionWikiUrl('settings', 'sword')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Settings'
+    );
+  });
+
+  it.each(supportedGames)('links every workflow supported for %s', (game) => {
+    const sectionsWithoutWikiPages = workflowNavigationSectionIds.filter(
+      (section) =>
+        isWorkflowSupportedForGame(section, game) && getSectionWikiUrl(section, game) === null
+    );
+
+    expect(sectionsWithoutWikiPages).toEqual([]);
   });
 });

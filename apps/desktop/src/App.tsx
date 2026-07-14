@@ -10324,7 +10324,9 @@ function GameSelectionPage({
                     ? `${definition.label}, ${translateLiteral(status)}`
                     : definition.label
                 }
-                className="game-choice-button"
+                className={`game-choice-button${
+                  game === 'za' ? ' game-choice-button-full-row' : ''
+                }`}
                 key={game}
                 onClick={() => onSelectGame(game)}
                 type="button"
