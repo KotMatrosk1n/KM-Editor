@@ -58,7 +58,10 @@ public sealed record ZaStaticEncounterEntry(
     IReadOnlyDictionary<string, string> FieldValues,
     IReadOnlyDictionary<string, string> FieldDisplayValues,
     IReadOnlyDictionary<string, bool> FieldReadOnly,
-    IReadOnlyList<ZaStaticEncounterEditableFieldOption> AbilityOptions);
+    IReadOnlyList<ZaStaticEncounterEditableFieldOption> AbilityOptions)
+{
+    public string? ScenarioDetails { get; init; }
+}
 
 public sealed record ZaStaticEncounterEditableField(
     string Field,

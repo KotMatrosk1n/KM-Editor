@@ -461,6 +461,17 @@ internal sealed class ZaPlacementWorkflowService
                 Text("spawner.maxCount", "Maximum Count", "Spawner Context", context.MaxCount.ToString(CultureInfo.InvariantCulture), context.MaxCount.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
             ]);
 
+            if (ZaLumioseLocationLabels.GetMissionDetails(locationKey) is { Length: > 0 } missionDetails)
+            {
+                fields.Add(Text(
+                    "spawner.mission",
+                    "Mission",
+                    "Spawner Context",
+                    missionDetails,
+                    missionDetails,
+                    isReadOnly: true));
+            }
+
             if (!string.IsNullOrWhiteSpace(context.PrimaryData))
             {
                 fields.Add(Text("spawner.primaryData", "Primary Data", "Spawner Context", context.PrimaryData, context.PrimaryData, isReadOnly: true));
@@ -588,9 +599,10 @@ internal sealed class ZaPlacementWorkflowService
             context.VariationId,
             context.DungeonName,
             context.BattleAreaId,
-            context.SpawnerId,
+            string.IsNullOrWhiteSpace(context.LocationKey) ? context.SpawnerId : context.LocationKey,
             labels.PlaceName,
-            labels.Pokemon);
+            labels.Pokemon,
+            labels.MissionTitle);
     }
 
     private static string FormatObjectLabel(
@@ -614,13 +626,20 @@ internal sealed class ZaPlacementWorkflowService
                 : context.LocationKey;
             if (ZaLumioseLocationLabels.IsNumberedWildZone(locationKey))
             {
-                var location = ZaLumioseLocationLabels.FormatLocation(locationKey, labels.PlaceName, labels.Pokemon);
+                var location = ZaLumioseLocationLabels.FormatLocation(
+                    locationKey,
+                    labels.PlaceName,
+                    labels.Pokemon,
+                    labels.MissionTitle);
                 return $"{location} Spawner {context.DisplayOrdinal.ToString(CultureInfo.InvariantCulture)}";
             }
 
             if (!string.IsNullOrWhiteSpace(context.SpawnerId))
             {
-                return ZaLumioseLocationLabels.FormatRawSpawnerId(context.SpawnerId, labels.Pokemon);
+                return ZaLumioseLocationLabels.FormatRawSpawnerId(
+                    context.SpawnerId,
+                    labels.Pokemon,
+                    labels.MissionTitle);
             }
         }
 
@@ -767,7 +786,8 @@ internal sealed class ZaPlacementWorkflowService
             && int.TryParse(tokens[2], NumberStyles.None, CultureInfo.InvariantCulture, out var floorNumber)
             && int.TryParse(tokens[3], NumberStyles.None, CultureInfo.InvariantCulture, out _))
         {
-            var map = $"Dungeon {dungeonNumber.ToString(CultureInfo.InvariantCulture)} Floor {floorNumber.ToString(CultureInfo.InvariantCulture)}";
+            var map = ZaLumioseLocationLabels.FormatLocation(
+                $"d{dungeonNumber.ToString("00", CultureInfo.InvariantCulture)}_{floorNumber.ToString("00", CultureInfo.InvariantCulture)}");
             dungeonItem = new DungeonItemLocation(
                 map,
                 $"{map} Item {tokens[3].ToUpperInvariant()}");
@@ -776,7 +796,8 @@ internal sealed class ZaPlacementWorkflowService
 
         if (int.TryParse(tokens[2], NumberStyles.None, CultureInfo.InvariantCulture, out _))
         {
-            var map = $"Dungeon {dungeonNumber.ToString(CultureInfo.InvariantCulture)}";
+            var map = ZaLumioseLocationLabels.FormatLocation(
+                $"d{dungeonNumber.ToString("00", CultureInfo.InvariantCulture)}");
             dungeonItem = new DungeonItemLocation(
                 map,
                 $"{map} Item {tokens[2].ToUpperInvariant()}");
@@ -788,6 +809,11 @@ internal sealed class ZaPlacementWorkflowService
 
     private static string FormatItemBallLocation(string locationKey)
     {
+        if (ZaLumioseLocationLabels.FormatKnownLocation(locationKey) is { Length: > 0 } knownLocation)
+        {
+            return knownLocation;
+        }
+
         if (ZaLumioseLocationLabels.FormatDistrictSector(locationKey) is { Length: > 0 } districtSector)
         {
             return districtSector;
@@ -809,7 +835,17 @@ internal sealed class ZaPlacementWorkflowService
         if (tokens.Length > 0 && tokens[0].StartsWith("t", StringComparison.OrdinalIgnoreCase))
         {
             var parts = new List<string>();
-            for (var index = 1; index < tokens.Length; index++)
+            var locationPrefixLength = 1;
+            var phase = ZaLumioseLocationLabels.FormatKnownLocation(tokens[0])
+                ?? FormatItemBallScenePhase(tokens[0]);
+            if (tokens.Length > 1
+                && ZaLumioseLocationLabels.FormatKnownLocation($"{tokens[0]}_{tokens[1]}") is { Length: > 0 } compositeLocation)
+            {
+                phase = compositeLocation;
+                locationPrefixLength = 2;
+            }
+
+            for (var index = locationPrefixLength; index < tokens.Length; index++)
             {
                 var token = tokens[index];
                 if (token.StartsWith("i", StringComparison.OrdinalIgnoreCase) && token.Length > 1)
@@ -823,7 +859,6 @@ internal sealed class ZaPlacementWorkflowService
                     : token.ToUpperInvariant());
             }
 
-            var phase = FormatItemBallScenePhase(tokens[0]);
             return parts.Count == 0
                 ? phase
                 : $"{phase}, {string.Join(", ", parts)}";

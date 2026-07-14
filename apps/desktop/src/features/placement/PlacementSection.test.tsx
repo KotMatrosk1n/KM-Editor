@@ -207,6 +207,87 @@ it('keeps placement grouping, staging, and object summaries coherent', () => {
   ).toBe(true);
 });
 
+it('groups title-only mission spawners without shortening their names', () => {
+  const groups = buildPlacementObjectGroups(
+    [
+      createMissionPlacementObject(
+        70,
+        'Full Course of Battles: High Rolling',
+        'Side Mission 73',
+        'Battle 1 Spawn Point 001'
+      ),
+      createMissionPlacementObject(
+        71,
+        'Full Course of Battles: High Rolling',
+        'Side Mission 73',
+        'Battle 1 Spawn Point 002'
+      ),
+      createMissionPlacementObject(
+        72,
+        'Full Course of Battles: High Rolling',
+        'Side Mission 73',
+        'Battle 2 Spawn Point 001'
+      ),
+      createMissionPlacementObject(
+        173,
+        'Be a Defenseless Dodger!',
+        'Side Mission 173',
+        'Spawn Point 002'
+      ),
+      createMissionPlacementObject(
+        174,
+        'Be a Defenseless Dodger!',
+        'Side Mission 173',
+        'Spawn Point 002B'
+      ),
+      createMissionPlacementObject(
+        64,
+        'Let It Rain, Let It Pour',
+        'Side Mission 64',
+        'Spawn Point 001'
+      ),
+      createPlacementObject(
+        704,
+        'Rest Event 4 Battle 1 Spawn Point 001',
+        'Rest Event 4'
+      )
+    ],
+    { groupPokemonSpawners: true }
+  );
+
+  const restaurantGroup = groups.find(
+    (group) => group.label === 'Full Course of Battles: High Rolling'
+  );
+  expect(restaurantGroup).toBeDefined();
+  expect(restaurantGroup?.objects).toHaveLength(3);
+  expect(restaurantGroup?.preview).toBe(
+    'Event Spawners: Battle 1 Spawn Point 001, Battle 1 Spawn Point 002, Battle 2 Spawn Point 001'
+  );
+  const restaurantSubgroups = getPlacementObjectSubgroups(restaurantGroup!);
+  expect(restaurantSubgroups.map((subgroup) => subgroup.label)).toEqual(['Event Spawners']);
+  expect(restaurantSubgroups[0]?.tabs.map((tab) => tab.label)).toEqual([
+    'Battle 1 Spawn Point 001',
+    'Battle 1 Spawn Point 002',
+    'Battle 2 Spawn Point 001'
+  ]);
+
+  const dodgerGroup = groups.find((group) => group.label === 'Be a Defenseless Dodger!');
+  expect(dodgerGroup).toBeDefined();
+  expect(getPlacementObjectSubgroups(dodgerGroup!)[0]?.tabs.map((tab) => tab.label)).toEqual([
+    'Spawn Point 002',
+    'Spawn Point 002B'
+  ]);
+
+  expect(groups.find((group) => group.label === 'Let It Rain, Let It Pour')).toBeDefined();
+  expect(groups.some((group) => group.label === 'Let It Rain')).toBe(false);
+
+  const legacyGroup = groups.find((group) => group.label === 'Rest Event 4');
+  expect(legacyGroup).toBeDefined();
+  expect(getPlacementObjectSubgroups(legacyGroup!)[0]?.tabs[0]?.label).toBe(
+    'Battle 1 Spawn Point 001'
+  );
+});
+
 function createPlacementField(
   field: string,
   label: string,
@@ -263,5 +344,26 @@ function createPlacementObject(
     y: 0,
     zoneIndex: 0,
     z: 0
+  };
+}
+
+function createMissionPlacementObject(
+  index: number,
+  title: string,
+  missionReference: string,
+  tailLabel: string
+): PlacementWorkflow['objects'][number] {
+  return {
+    ...createPlacementObject(index, `${title} ${tailLabel}`, title),
+    fields: [{
+      ...createPlacementField(
+        'spawner.mission',
+        'Mission',
+        'Spawner Context',
+        missionReference
+      ),
+      isReadOnly: true,
+      valueKind: 'text'
+    }]
   };
 }

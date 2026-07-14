@@ -69,6 +69,8 @@ public sealed record StaticEncounterRecordDto(
     public string EditorFamily { get; init; } = "swsh";
     public string? CategoryId { get; init; }
     public string? CategoryLabel { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ScenarioDetails { get; init; }
     public IReadOnlyList<string> SupportedFields { get; init; } = Array.Empty<string>();
     public IReadOnlyDictionary<string, string> FieldValues { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);

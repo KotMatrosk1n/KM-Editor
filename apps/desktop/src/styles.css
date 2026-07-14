@@ -3151,6 +3151,10 @@ h2 {
   grid-template-columns: 64px minmax(160px, 1.35fr) minmax(110px, 0.9fr) 64px minmax(112px, 0.85fr) minmax(132px, 1fr) minmax(92px, 0.7fr);
 }
 
+.static-encounters-section:not(.za-static-encounters-section) .static-encounters-row {
+  grid-template-columns: 64px minmax(160px, 1.35fr) 64px minmax(112px, 0.85fr) minmax(132px, 1fr) minmax(92px, 0.7fr);
+}
+
 .za-static-encounters-section .static-encounters-row {
   grid-template-columns: 64px minmax(220px, 1.45fr) 72px minmax(240px, 1.25fr);
 }

@@ -20067,7 +20067,7 @@ function StaticEncountersSection({
         {workflow ? (
           <div className="trainers-layout">
             <div
-              aria-colcount={isZaStaticEncounters ? 4 : 7}
+              aria-colcount={isZaStaticEncounters ? 4 : 6}
               aria-label={translateLiteral('Static Encounters')}
               aria-rowcount={filteredEncounters.length + 1}
               className="trainers-table"
@@ -20075,9 +20075,6 @@ function StaticEncountersSection({
             >
               <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
                 <span role="columnheader">{translateLiteral('Index')}</span>
-                {isZaStaticEncounters ? null : (
-                  <span role="columnheader">{translateLiteral('Encounter')}</span>
-                )}
                 <span role="columnheader">{translateLiteral('Species')}</span>
                 <span role="columnheader">{translateLiteral('Level')}</span>
                 <span role="columnheader">
@@ -20120,7 +20117,6 @@ function StaticEncountersSection({
                       type="button"
                     >
                       <span role="cell">{getStaticEncounterDisplayIndex(encounter)}</span>
-                      {isZaStaticEncounters ? null : <span role="cell">{encounter.label}</span>}
                       <span role="cell" title={speciesLabel}>
                         {speciesLabel}
                       </span>
@@ -20326,6 +20322,12 @@ function SelectedStaticEncounterPanel({
                   : encounter.encounterScenarioLabel}
               </dd>
             </div>
+            {encounter.scenarioDetails ? (
+              <div>
+                <dt>{translateLiteral('Mission')}</dt>
+                <dd>{encounter.scenarioDetails}</dd>
+              </div>
+            ) : null}
             {encounter.editorFamily === 'sv' ? (
               <>
                 <div>
@@ -22625,6 +22627,12 @@ function SelectedEncounterPanel({
               <dt>Location</dt>
               <dd>{table.location}</dd>
             </div>
+            {isZaEncounterTable && table.locationDetails ? (
+              <div>
+                <dt>Mission</dt>
+                <dd>{table.locationDetails}</dd>
+              </div>
+            ) : null}
             {!svEncounterFacets ? (
               <div>
                 <dt>{isZaEncounterTable ? 'Spawner' : 'Table'}</dt>
@@ -33619,6 +33627,7 @@ function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText:
       encounter.categoryId ?? '',
       encounter.categoryLabel ?? '',
       encounter.encounterScenarioLabel,
+      encounter.scenarioDetails ?? '',
       encounter.encounterScenario.toString(),
       encounter.dynamaxLevel?.toString() ?? '',
       encounter.canGigantamax === true ? 'gigantamax' : '',
@@ -33865,7 +33874,7 @@ function getZaEncounterZoneFamily(table: EncounterTableRecord): ZaEncounterZoneF
     return { label: 'Dimension Dungeons', rank: 3 };
   }
 
-  if (/^d\d+_/i.test(key)) {
+  if (/^d\d+(?:_|$)/i.test(key) || /^t(?:2|3(?:_2)?)$/i.test(key)) {
     return { label: 'Dungeons', rank: 4 };
   }
 
@@ -33873,7 +33882,11 @@ function getZaEncounterZoneFamily(table: EncounterTableRecord): ZaEncounterZoneF
     return { label: 'Boss Battles', rank: 5 };
   }
 
-  if (/^id_chapter/i.test(key) || /^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+  if (
+    /^id_chapter/i.test(key) ||
+    /^id_(?:sub|rest)/i.test(key) ||
+    /^id_spn_subq/i.test(key)
+  ) {
     return { label: 'Event Encounters', rank: 6 };
   }
 
@@ -33886,6 +33899,14 @@ function getZaEncounterZoneFamily(table: EncounterTableRecord): ZaEncounterZoneF
 
 function getZaEncounterDisplayZoneKey(table: EncounterTableRecord) {
   const key = table.locationKey ?? table.location;
+  if (/^t2$/i.test(key)) {
+    return 'd01';
+  }
+
+  if (/^t3(?:_2)?$/i.test(key)) {
+    return 'd02';
+  }
+
   const bossMatch = key.match(/^(boss_\d+)/i);
   if (bossMatch) {
     return bossMatch[1]!.toLowerCase();
@@ -33896,7 +33917,7 @@ function getZaEncounterDisplayZoneKey(table: EncounterTableRecord) {
     return dimensionDungeonMatch[1]!.toLowerCase();
   }
 
-  const dungeonMatch = key.match(/^(d\d+)_/i);
+  const dungeonMatch = key.match(/^(d\d+)(?:_|$)/i);
   if (dungeonMatch) {
     return dungeonMatch[1]!.toLowerCase();
   }
@@ -33905,7 +33926,7 @@ function getZaEncounterDisplayZoneKey(table: EncounterTableRecord) {
     return 'story-chapter-events';
   }
 
-  if (/^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+  if (/^id_(?:sub|rest)/i.test(key) || /^id_spn_subq/i.test(key)) {
     return 'side-mission-events';
   }
 
@@ -33932,11 +33953,23 @@ function formatZaEncounterDisplayLocation(table: EncounterTableRecord) {
     return `Dungeon ${dungeonMatch[1]}`;
   }
 
+  if (/^(?:d01(?:_|$)|t2$)/i.test(key)) {
+    return 'Lysandre Labs';
+  }
+
+  if (/^(?:d02(?:_|$)|t3(?:_2)?$)/i.test(key)) {
+    return 'Lumiose Sewers';
+  }
+
+  if (/^d03(?:_|$)/i.test(key)) {
+    return 'Old Building';
+  }
+
   if (/^id_chapter/i.test(key)) {
     return 'Story Chapter Events';
   }
 
-  if (/^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
+  if (/^id_(?:sub|rest)/i.test(key) || /^id_spn_subq/i.test(key)) {
     return 'Side Mission Events';
   }
 
@@ -33973,9 +34006,17 @@ function getZaEncounterDisplaySort(table: EncounterTableRecord) {
     return Number.parseInt(dimensionDungeonSort[1]!, 10);
   }
 
-  const dungeonSort = key.match(/^d(\d+)_/i);
+  const dungeonSort = key.match(/^d(\d+)(?:_|$)/i);
   if (dungeonSort) {
     return Number.parseInt(dungeonSort[1]!, 10);
+  }
+
+  if (/^t2$/i.test(key)) {
+    return 1;
+  }
+
+  if (/^t3(?:_2)?$/i.test(key)) {
+    return 2;
   }
 
   const bossSort = key.match(/^boss_(\d+)/i);
@@ -34164,12 +34205,14 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
     };
   }
 
-  if (/^d\d+_/i.test(key)) {
-    const categoryLabel = table.location.match(/^Dungeon\s+\d+\s+(.+)$/i)?.[1]?.trim() ?? 'Floor';
+  if (/^d\d+(?:_|$)/i.test(key) || /^t(?:2|3(?:_2)?)$/i.test(key)) {
+    const legacyCategoryLabel = table.location.match(/^Dungeon\s+\d+\s+(.+)$/i)?.[1]?.trim();
+    const categoryLabel = legacyCategoryLabel ?? table.location;
+    const floorRank = key.match(/^d\d+_(\d+)/i)?.[1] ?? key.match(/^t3_(\d+)/i)?.[1];
     return {
       key: `dungeon:${categoryLabel.toLocaleLowerCase()}`,
       label: categoryLabel,
-      rank: parseTrailingInteger(categoryLabel) ?? 0
+      rank: floorRank ? Number.parseInt(floorRank, 10) : parseTrailingInteger(categoryLabel) ?? 0
     };
   }
 
@@ -34182,12 +34225,11 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
     };
   }
 
-  if (/^id_sub/i.test(key) || /^id_spn_subq/i.test(key)) {
-    const mission = table.location.match(/^Side Mission Event\s+(\d+)/i)?.[1] ?? 'Event';
+  if (/^id_(?:sub|rest)/i.test(key) || /^id_spn_subq/i.test(key)) {
     return {
-      key: `side:${mission}`,
-      label: mission === 'Event' ? 'Side Mission Events' : `Mission ${mission}`,
-      rank: Number.parseInt(mission, 10) || 0
+      key: `side:${(table.locationDetails ?? key).toLocaleLowerCase()}`,
+      label: table.location,
+      rank: table.locationSort ?? Number.MAX_SAFE_INTEGER
     };
   }
 
@@ -34238,6 +34280,13 @@ function formatZaEncounterSpawnerRowLabel(
     table.location
   );
   const label = withoutTableLocation || withoutDisplayLocation || categoryLabel;
+  if (
+    /^id_(?:sub|rest)/i.test(table.locationKey ?? '') ||
+    /^id_spn_subq/i.test(table.locationKey ?? '')
+  ) {
+    return label;
+  }
+
   const isGroupedEvent =
     displayLocation !== table.location &&
     (/Event/i.test(table.location) || /^id_/i.test(table.locationKey ?? ''));
@@ -34758,10 +34807,13 @@ function filterEncounterTables(tables: EncounterTableRecord[], searchText: strin
     [
       table.tableId,
       table.location,
+      table.locationDetails ?? '',
       table.area,
       table.encounterType,
       table.gameVersion,
       table.archiveMember,
+      table.tableLabel ?? '',
+      table.tableDetails ?? '',
       table.provenance.sourceFile,
       ...table.slots.flatMap((slot) => [
         slot.slot.toString(),

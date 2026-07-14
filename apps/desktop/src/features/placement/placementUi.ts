@@ -585,6 +585,15 @@ function getZaPokemonSpawnerGroupInfo(object: PlacedObjectRecord) {
     };
   }
 
+  const missionInfo = getZaMissionPlacementInfo(object);
+  if (missionInfo) {
+    return {
+      key: `za:pokemon-spawner:mission:${normalizePlacementGroupKey(missionInfo.missionReference)}`,
+      label: missionInfo.eventLabel,
+      map: object.categoryLabel || object.objectType
+    };
+  }
+
   const semanticLocation = getZaSemanticPlacementMajorLocation(object);
   if (semanticLocation) {
     return {
@@ -621,6 +630,15 @@ function getZaPokemonSpawnerGroupInfo(object: PlacedObjectRecord) {
 }
 
 function getZaItemBallGroupInfo(object: PlacedObjectRecord) {
+  const missionInfo = getZaMissionPlacementInfo(object);
+  if (missionInfo) {
+    return {
+      key: `za:item-ball-spawner:mission:${normalizePlacementGroupKey(missionInfo.missionReference)}`,
+      label: missionInfo.eventLabel,
+      map: object.categoryLabel || object.objectType
+    };
+  }
+
   const semanticLocation = getZaSemanticPlacementMajorLocation(object);
   if (semanticLocation) {
     return {
@@ -663,6 +681,11 @@ function getZaItemBallBaseLabel(label: string) {
 }
 
 function getZaPlacementMajorLocation(object: PlacedObjectRecord) {
+  const missionInfo = getZaMissionPlacementInfo(object);
+  if (missionInfo) {
+    return missionInfo.eventLabel;
+  }
+
   for (const label of [object.map, object.label]) {
     const trimmed = label.trim();
     if (!trimmed || trimmed === object.categoryLabel || trimmed === object.objectType) {
@@ -700,6 +723,31 @@ function getZaPlacementMajorLocation(object: PlacedObjectRecord) {
   }
 
   return null;
+}
+
+function getZaMissionPlacementInfo(object: PlacedObjectRecord) {
+  const missionField = object.fields?.find(
+    (field) => field.field === 'spawner.mission' && hasUsefulPlacementDisplay(field)
+  );
+  if (!missionField) {
+    return null;
+  }
+
+  const map = object.map.trim();
+  const label = object.label.trim();
+  const eventLabel = map && map !== object.categoryLabel && map !== object.objectType
+    ? map
+    : label;
+  if (!eventLabel) {
+    return null;
+  }
+
+  const strippedLabel = stripPlacementGroupPrefix(label, eventLabel);
+  return {
+    eventLabel,
+    missionReference: getPlacementDisplayValue(missionField).trim(),
+    tailLabel: strippedLabel === label ? '' : strippedLabel
+  };
 }
 
 function getZaSemanticPlacementMajorLocation(object: PlacedObjectRecord) {
@@ -1066,6 +1114,10 @@ function formatPlacementSubgroupLabel(
     return variantMatch?.[1] ?? 'Spawners';
   }
 
+  if (getZaMissionPlacementInfo(object)) {
+    return 'Event Spawners';
+  }
+
   const eventInfo = parseZaEventPlacement(object.map) ?? parseZaEventPlacement(object.label);
   if (eventInfo?.eventLabel) {
     return eventInfo.eventLabel === group.label ? 'Event Spawners' : eventInfo.eventLabel;
@@ -1155,6 +1207,11 @@ function getPlacementObjectSortRank(label: string) {
 
 function formatPlacementGroupPreview(group: PlacementObjectGroup) {
   if (group.objects.length === 1) {
+    const missionInfo = getZaMissionPlacementInfo(group.objects[0]!);
+    if (missionInfo?.tailLabel) {
+      return missionInfo.tailLabel;
+    }
+
     const dungeonInfo = getZaDimensionDungeonPlacementInfo(group.objects[0]!);
     if (dungeonInfo) {
       return [dungeonInfo.variantLabel, dungeonInfo.tailLabel].filter(Boolean).join(': ');
@@ -1296,6 +1353,11 @@ function formatPlacementObjectTabLabel(
   index: number,
   subgroupLabel = ''
 ) {
+  const missionInfo = getZaMissionPlacementInfo(object);
+  if (missionInfo?.tailLabel) {
+    return missionInfo.tailLabel;
+  }
+
   const dungeonInfo = getZaDimensionDungeonPlacementInfo(object);
   if (dungeonInfo?.tailLabel) {
     return dungeonInfo.tailLabel;

@@ -38,6 +38,12 @@ public static class ZaDataPaths
 
     public static string AbilityNames(string language) => CommonMessage(language, "tokusei.dat");
 
+    public static string MainMissionTitles(string language) => CommonMessage(language, "questlist_main.dat");
+
+    public static string SideMissionTitles(string language) => CommonMessage(language, "questlist_sub.dat");
+
+    public static string HyperspaceMissionTitles(string language) => ScriptMessage(language, "questlist_dlc.dat");
+
     public static string PlaceNames(string language) => CommonMessage(language, "place_name.dat");
 
     public static string PlaceNameKeys(string language) => CommonMessage(language, "place_name.tbl");
@@ -53,6 +59,11 @@ public static class ZaDataPaths
     private static string CommonMessage(string language, string fileName)
     {
         return $"{MessageRoot}/{language}/common/{fileName}";
+    }
+
+    private static string ScriptMessage(string language, string fileName)
+    {
+        return $"{MessageRoot}/{language}/sk/{fileName}";
     }
 
     internal static string? TryCreateLegacyMessagePath(string path)
