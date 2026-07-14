@@ -224,12 +224,16 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
 
   const editableFieldHelpMatch = /^(.+)\. Allowed range: ([^.]+)(?:\. (.+))?$/.exec(literal);
   if (editableFieldHelpMatch) {
-    const translatedLabel = translateLiteralBodyForLanguage(language, editableFieldHelpMatch[1]);
+    const translatedLabel = translateEditableFieldHelpPrefix(
+      language,
+      editableFieldHelpMatch[1]
+    );
     const translatedTail = editableFieldHelpMatch[3]
       ? `. ${translateLiteralBodyForLanguage(language, editableFieldHelpMatch[3])}`
       : '';
+    const labelSeparator = /[.!?。！？]$/u.test(translatedLabel) ? ' ' : '. ';
 
-    return `${translatedLabel}. ${translateLiteralBodyForLanguage(language, 'Allowed range')}: ${
+    return `${translatedLabel}${labelSeparator}${translateLiteralBodyForLanguage(language, 'Allowed range')}: ${
       editableFieldHelpMatch[2]
     }${translatedTail}`;
   }
@@ -239,6 +243,54 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     const count = Number(availableOptionsMatch[1]);
     const optionLabel = count === 1 ? 'available option' : 'available options';
     return `${availableOptionsMatch[1]} ${translateLiteralBodyForLanguage(language, optionLabel)}`;
+  }
+
+  const moveHitCountMatch = /^(\d+) (hit|hits)$/.exec(literal);
+  if (moveHitCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      moveHitCountMatch[2] === 'hit' ? '{count} hit' : '{count} hits',
+      { count: moveHitCountMatch[1] }
+    );
+  }
+
+  const moveHitRangeMatch = /^(\d+)-(\d+) hits$/.exec(literal);
+  if (moveHitRangeMatch) {
+    return formatLiteralTemplate(language, '{min}-{max} hits', {
+      max: moveHitRangeMatch[2],
+      min: moveHitRangeMatch[1]
+    });
+  }
+
+  const moveTurnCountMatch = /^(\d+) (turn|turns)$/.exec(literal);
+  if (moveTurnCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      moveTurnCountMatch[2] === 'turn' ? '{count} turn' : '{count} turns',
+      { count: moveTurnCountMatch[1] }
+    );
+  }
+
+  const moveTurnRangeMatch = /^(\d+)-(\d+) turns$/.exec(literal);
+  if (moveTurnRangeMatch) {
+    return formatLiteralTemplate(language, '{min}-{max} turns', {
+      max: moveTurnRangeMatch[2],
+      min: moveTurnRangeMatch[1]
+    });
+  }
+
+  const moveDrainRecoilMatch = /^(Drain|Recoil) (\d+)%$/.exec(literal);
+  if (moveDrainRecoilMatch) {
+    return formatLiteralTemplate(language, `${moveDrainRecoilMatch[1]} {percent}%`, {
+      percent: moveDrainRecoilMatch[2]
+    });
+  }
+
+  const moveHealingMatch = /^(Restore|Cost) (\d+)% HP$/.exec(literal);
+  if (moveHealingMatch) {
+    return formatLiteralTemplate(language, `${moveHealingMatch[1]} {percent}% HP`, {
+      percent: moveHealingMatch[2]
+    });
   }
 
   const hyphenatedOptionMatch = /^(Default|Ability 1|Ability 2|Hidden Ability) - (.+)$/.exec(
@@ -1025,6 +1077,25 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
   }
 
   return literal;
+}
+
+function translateEditableFieldHelpPrefix(language: LanguageCode, prefix: string) {
+  let separatorIndex = prefix.indexOf('. ');
+  while (separatorIndex >= 0) {
+    const label = prefix.slice(0, separatorIndex);
+    const help = `${prefix.slice(separatorIndex + 2)}.`;
+    const translatedHelp =
+      resourcesByLanguage[language].literals[help] ??
+      resourcesByLanguage.en.literals[help];
+
+    if (translatedHelp) {
+      return `${translateLiteralBodyForLanguage(language, label)}. ${translatedHelp}`;
+    }
+
+    separatorIndex = prefix.indexOf('. ', separatorIndex + 2);
+  }
+
+  return translateLiteralBodyForLanguage(language, prefix);
 }
 
 function translateSlashSeparatedTypeList(language: LanguageCode, literal: string): string | null {

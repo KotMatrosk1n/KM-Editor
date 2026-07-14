@@ -261,6 +261,19 @@ import {
   useWorkbenchStore
 } from './workbenchStore';
 import { supportedLanguages, useLocalization, type LanguageCode } from './localization';
+import { parseEditableIntegerDraft } from './editableFieldHelpers';
+import {
+  evaluateMoveFieldsUpdate,
+  formatMoveAccuracy,
+  formatMoveEffectChance,
+  formatMoveHealingValue,
+  formatMoveHitRange,
+  formatMoveInflictedEffectTurns,
+  formatMoveRecoilValue,
+  getEditableMoveFieldValue,
+  getMoveEditableFieldGroup,
+  getMoveEditableFieldLabel
+} from './movesEditor';
 import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, readOnlyViewerSectionIds, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
   WorkflowLoadGeneration,
@@ -2218,6 +2231,10 @@ export function App({
     Set<WorkflowNavigationGroup['id']>
   >(() => readExpandedWorkflowGroups(selectedGame));
   const editSessionRef = useRef<EditSession | null>(editSession);
+  const moveEditBaselineValuesRef = useRef<{
+    sessionId: string;
+    valuesByMoveId: MoveBaselineValuesByMoveId;
+  } | null>(null);
   const criticalWriteOperationRef = useRef(hasCriticalWriteOperation);
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
@@ -6646,52 +6663,66 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = movesWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-            const updateResponse = await bridge.updateMoveFields({
-              paths: createProjectPaths(draftPaths),
-              session,
-              updates: changes.map((change) => ({
-                field: change.field,
-                moveId,
-                value: change.value
-              }))
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          } else {
-            for (const change of changes) {
-              const updateResponse = await bridge.updateMoveField({
-                field: change.field,
-                moveId,
-                paths: createProjectPaths(draftPaths),
-                session: nextSession,
-                value: change.value
-              });
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = updateResponse.diagnostics;
-            }
+          if (!session || !movesWorkflow) {
+            throw new Error('An active move edit session and workflow are required.');
           }
 
-          return {
-            diagnostics: nextDiagnostics,
-            session: nextSession!,
-            workflow: nextWorkflow
-          };
+          let baselineValues =
+            moveEditBaselineValuesRef.current?.sessionId === session.sessionId
+              ? moveEditBaselineValuesRef.current
+              : { sessionId: session.sessionId, valuesByMoveId: {} };
+          const moveKey = moveId.toString();
+          if (!Object.prototype.hasOwnProperty.call(baselineValues.valuesByMoveId, moveKey)) {
+            const baselineMove = movesWorkflow.moves.find(
+              (candidate) => candidate.moveId === moveId
+            );
+            if (baselineMove) {
+              baselineValues = {
+                ...baselineValues,
+                valuesByMoveId: {
+                  ...baselineValues.valuesByMoveId,
+                  [moveKey]: Object.fromEntries(
+                    movesWorkflow.editableFields.map((field) => [
+                      field.field,
+                      getEditableMoveFieldValue(baselineMove, field.field)
+                    ])
+                  )
+                }
+              };
+            }
+          }
+          moveEditBaselineValuesRef.current = baselineValues;
+
+          const updateResponse = await bridge.updateMoveFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
+              field: change.field,
+              moveId,
+              value: change.value
+            }))
+          });
+
+          return evaluateMoveFieldsUpdate({
+            baselineValues: baselineValues.valuesByMoveId[moveKey] ?? {},
+            baselineRestoresRemovePendingEdit:
+              !isScarletVioletGame(selectedGame) &&
+              !isPokemonLegendsZAGame(selectedGame),
+            changes,
+            currentSession: session,
+            currentWorkflow: movesWorkflow,
+            moveId,
+            response: updateResponse
+          });
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (!updateResponse.hasErrors && updateResponse.workflow) {
             setMovesWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.shouldClearDrafts ?? false;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -9463,6 +9494,12 @@ export function App({
               <WorkflowLoadingPanel label="Moves" />
             ) : (
               <MovesSection
+                baselineValuesByMoveId={
+                  moveEditBaselineValuesRef.current?.sessionId ===
+                  getEditSessionForSection('moves')?.sessionId
+                    ? (moveEditBaselineValuesRef.current?.valuesByMoveId ?? {})
+                    : {}
+                }
                 editSession={getEditSessionForSection('moves')}
                 isEditStarting={isEditStarting}
                 isMoveUpdating={isMoveUpdating}
@@ -13326,7 +13363,10 @@ function SelectedPokemonPanel({
   );
 }
 
+type MoveBaselineValuesByMoveId = Record<string, Record<string, number | null>>;
+
 function MovesSection({
+  baselineValuesByMoveId,
   editSession,
   isEditStarting,
   isMoveUpdating,
@@ -13338,6 +13378,7 @@ function MovesSection({
   selectedMoveId,
   workflow
 }: {
+  baselineValuesByMoveId: MoveBaselineValuesByMoveId;
   editSession: EditSession | null;
   isEditStarting: boolean;
   isMoveUpdating: boolean;
@@ -13352,6 +13393,7 @@ function MovesSection({
   selectedMoveId: number | null;
   workflow: MovesWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const moves = workflow?.moves ?? [];
   const filteredMoves = useMemo(() => filterMoves(moves, searchText), [moves, searchText]);
   const selectedMove = useMemo(
@@ -13436,7 +13478,7 @@ function MovesSection({
                     <span role="cell">{move.typeName}</span>
                     <span role="cell">{move.categoryName}</span>
                     <span role="cell">{formatMovePower(move.power)}</span>
-                    <span role="cell">{formatMoveAccuracy(move.accuracy)}</span>
+                    <span role="cell">{translateLiteral(formatMoveAccuracy(move.accuracy))}</span>
                     <span role="cell">{move.pp}</span>
                     <span role="cell">{formatMoveActiveFlags(move)}</span>
                   </button>
@@ -13445,6 +13487,11 @@ function MovesSection({
             </div>
 
             <SelectedMovePanel
+              baselineValues={
+                selectedMove
+                  ? (baselineValuesByMoveId[selectedMove.moveId.toString()] ?? null)
+                  : null
+              }
               canEditMoves={canEditMoves}
               editSession={editSession}
               editableFields={workflow.editableFields}
@@ -13466,6 +13513,7 @@ function MovesSection({
 }
 
 function SelectedMovePanel({
+  baselineValues,
   canEditMoves,
   editSession,
   editableFields,
@@ -13475,6 +13523,7 @@ function SelectedMovePanel({
   onStartEditSession,
   onUpdateMoveFields
 }: {
+  baselineValues: Record<string, number | null> | null;
   canEditMoves: boolean;
   editSession: EditSession | null;
   editableFields: MoveEditableField[];
@@ -13491,6 +13540,7 @@ function SelectedMovePanel({
     Record<string, Record<string, string>>
   >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
+  const { translateLiteral } = useLocalization();
   const moveFields = useMemo(
     () => editableFields.map((field) => toNumericEditableField(field)),
     [editableFields]
@@ -13510,17 +13560,34 @@ function SelectedMovePanel({
     [move, moveFields]
   );
   const moveDrafts = move ? moveDraftsByMoveId[move.moveId.toString()] ?? moveDraftDefaults : {};
+  const moveDraftContext = useMemo<DraftStateContext | undefined>(
+    () =>
+      move
+        ? {
+            drafts: moveDrafts,
+            fields: moveFields,
+            getValue: (field) => getEditableMoveFieldValue(move, field),
+            preservedValues: baselineValues ?? undefined
+          }
+        : undefined,
+    [baselineValues, move, moveDrafts, moveFields]
+  );
   const moveDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
         moveFields,
         moveDrafts,
-        move ? (field) => getEditableMoveFieldValue(move, field) : null
+        move ? (field) => getEditableMoveFieldValue(move, field) : null,
+        { preservedValues: baselineValues ?? undefined }
       ),
-    [move, moveDrafts, moveFields]
+    [baselineValues, move, moveDrafts, moveFields]
   );
   useRegisterEditorDraftDirty('moves', countFieldDraftRecords(moveDraftsByMoveId) > 0);
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
+  const qualityField = moveFields.find((field) => field.field === 'quality');
+  const mappedQualityLabel = move
+    ? (qualityField?.options.find((option) => option.value === move.quality)?.label ?? null)
+    : null;
   const visibleStatChanges =
     move?.statChanges.filter(
       (statChange) =>
@@ -13630,7 +13697,7 @@ function SelectedMovePanel({
                     className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}`}
                     key={group.group}
                   >
-                    <legend>{group.group}</legend>
+                    <legend>{translateLiteral(group.group)}</legend>
                     <div
                       className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}`}
                     >
@@ -13640,7 +13707,8 @@ function SelectedMovePanel({
                         const draftState = getTrainerFieldDraftState(
                           draftValue,
                           currentValue,
-                          field
+                          field,
+                          moveDraftContext
                         );
 
                         return (
@@ -13666,6 +13734,7 @@ function SelectedMovePanel({
                                 )
                               );
                             }}
+                            preservedValue={baselineValues?.[field.field] ?? null}
                           />
                         );
                       })}
@@ -13731,7 +13800,7 @@ function SelectedMovePanel({
               </div>
               <div>
                 <dt>Accuracy</dt>
-                <dd>{formatMoveAccuracy(move.accuracy)}</dd>
+                <dd>{translateLiteral(formatMoveAccuracy(move.accuracy))}</dd>
               </div>
               <div>
                 <dt>PP</dt>
@@ -13760,20 +13829,8 @@ function SelectedMovePanel({
                 <dd>{move.targetName}</dd>
               </div>
               <div>
-                <dt>Hits</dt>
-                <dd>
-                  {move.hitMin}-{move.hitMax}
-                </dd>
-              </div>
-              <div>
-                <dt>Turns</dt>
-                <dd>
-                  {move.turnMin}-{move.turnMax}
-                </dd>
-              </div>
-              <div>
-                <dt>Quality</dt>
-                <dd>{move.quality}</dd>
+                <dt>{translateLiteral('Hits')}</dt>
+                <dd>{translateLiteral(formatMoveHitRange(move.hitMin, move.hitMax))}</dd>
               </div>
             </dl>
           </div>
@@ -13786,28 +13843,36 @@ function SelectedMovePanel({
                 <dd>{move.inflictName}</dd>
               </div>
               <div>
-                <dt>Inflict chance</dt>
-                <dd>{move.inflictPercent}%</dd>
+                <dt>{translateLiteral('Inflict chance')}</dt>
+                <dd>
+                  {translateLiteral(
+                    formatMoveEffectChance(move.inflictPercent, move.inflict !== 0)
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Inflict duration</dt>
                 <dd>{formatMoveInflictDuration(move.rawInflictCount)}</dd>
               </div>
               <div>
+                <dt>{translateLiteral('Inflicted-effect turns')}</dt>
+                <dd>
+                  {translateLiteral(formatMoveInflictedEffectTurns(move.turnMin, move.turnMax))}
+                </dd>
+              </div>
+              {mappedQualityLabel ? (
+                <div>
+                  <dt>{translateLiteral('Effect quality')}</dt>
+                  <dd>{translateLiteral(mappedQualityLabel)}</dd>
+                </div>
+              ) : null}
+              <div>
                 <dt>Flinch chance</dt>
                 <dd>{move.flinch}%</dd>
               </div>
               <div>
-                <dt>Recoil/drain</dt>
-                <dd>{move.recoil}%</dd>
-              </div>
-              <div>
-                <dt>Healing behavior</dt>
-                <dd>{formatMoveHealingValue(move.rawHealing)}</dd>
-              </div>
-              <div>
-                <dt>Effect sequence ID</dt>
-                <dd>{move.effectSequence}</dd>
+                <dt>{translateLiteral('Drain (+) / recoil (-)')}</dt>
+                <dd>{translateLiteral(formatMoveRecoilValue(move.recoil))}</dd>
               </div>
             </dl>
           </div>
@@ -13818,13 +13883,34 @@ function SelectedMovePanel({
               <ul className="inspector-list">
                 {visibleStatChanges.map((statChange) => (
                   <li key={statChange.slot}>
-                    {statChange.statName}: {statChange.stage} stage, {statChange.percent}%
+                    {statChange.statName}: {statChange.stage} stage,{' '}
+                    {translateLiteral(formatMoveEffectChance(statChange.percent, true))}
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="empty-copy">No stat change effects.</p>
             )}
+          </div>
+
+          <div className="inspector-block">
+            <h4>{translateLiteral('Advanced / Raw')}</h4>
+            <dl className="item-provenance-list compact-dl">
+              {!mappedQualityLabel ? (
+                <div>
+                  <dt>{translateLiteral('Quality (raw)')}</dt>
+                  <dd>{move.quality}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Effect sequence ID</dt>
+                <dd>{move.effectSequence}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('HP recovery / cost (raw)')}</dt>
+                <dd>{translateLiteral(formatMoveHealingValue(move.rawHealing))}</dd>
+              </div>
+            </dl>
           </div>
 
           <div className="inspector-block">
@@ -15236,6 +15322,7 @@ type DraftStateContext = {
   enforcePokemonEvLimits?: boolean;
   fields: NumericEditableField[];
   getValue: (field: string) => number | null;
+  preservedValues?: Readonly<Record<string, number | null>>;
 };
 
 type NumericEditableField = {
@@ -16041,7 +16128,11 @@ function getTrainerDraftSummary(
   fields: NumericEditableField[],
   drafts: Record<string, string>,
   getValue: ((field: string) => number | null) | null,
-  options: { clampIvStats?: boolean; enforcePokemonEvLimits?: boolean } = {}
+  options: {
+    clampIvStats?: boolean;
+    enforcePokemonEvLimits?: boolean;
+    preservedValues?: Readonly<Record<string, number | null>>;
+  } = {}
 ): { changedFields: TrainerDraftChange[]; dirtyFieldCount: number; invalidFields: TrainerDraftChange[] } {
   const changedFields: TrainerDraftChange[] = [];
   const invalidFields: TrainerDraftChange[] = [];
@@ -16056,7 +16147,8 @@ function getTrainerDraftSummary(
     drafts,
     enforcePokemonEvLimits: options.enforcePokemonEvLimits,
     fields,
-    getValue
+    getValue,
+    preservedValues: options.preservedValues
   };
 
   for (const field of fields) {
@@ -16151,7 +16243,11 @@ function getTrainerFieldDraftState(
       };
     }
 
-    if (minimumValue !== null && parsedValue < minimumValue) {
+    const matchesCurrentValue = currentValue !== null && parsedValue === currentValue;
+    const matchesPreservedValue = parsedValue === context?.preservedValues?.[field.field];
+    const isAllowedExistingValue = matchesCurrentValue || matchesPreservedValue;
+
+    if (minimumValue !== null && parsedValue < minimumValue && !isAllowedExistingValue) {
       return {
         error: `Minimum value is ${minimumValue}.`,
         isChanged: currentValue === null || parsedValue !== currentValue,
@@ -16160,7 +16256,7 @@ function getTrainerFieldDraftState(
       };
     }
 
-    if (maximumValue !== null && parsedValue > maximumValue) {
+    if (maximumValue !== null && parsedValue > maximumValue && !isAllowedExistingValue) {
       return {
         error: `Maximum value is ${maximumValue}.`,
         isChanged: currentValue === null || parsedValue !== currentValue,
@@ -16192,7 +16288,11 @@ function getTrainerFieldDraftState(
   const minimumValue = field.minimumValue ?? null;
   const maximumValue = field.maximumValue ?? null;
 
-  if (minimumValue !== null && parsedValue < minimumValue) {
+  const matchesCurrentValue = currentValue !== null && parsedValue === currentValue;
+  const matchesPreservedValue = parsedValue === context?.preservedValues?.[field.field];
+  const isAllowedExistingValue = matchesCurrentValue || matchesPreservedValue;
+
+  if (minimumValue !== null && parsedValue < minimumValue && !isAllowedExistingValue) {
     return {
       error: `Minimum value is ${minimumValue}.`,
       isChanged: currentValue === null || parsedValue !== currentValue,
@@ -16201,7 +16301,7 @@ function getTrainerFieldDraftState(
     };
   }
 
-  if (maximumValue !== null && parsedValue > maximumValue) {
+  if (maximumValue !== null && parsedValue > maximumValue && !isAllowedExistingValue) {
     return {
       error: `Maximum value is ${maximumValue}.`,
       isChanged: currentValue === null || parsedValue !== currentValue,
@@ -16213,7 +16313,7 @@ function getTrainerFieldDraftState(
   if (
     field.options.length > 0 &&
     !isSpeciesFormField(field.field) &&
-    (currentValue === null || parsedValue !== currentValue) &&
+    !isAllowedExistingValue &&
     !field.options.some((option) => option.value === parsedValue)
   ) {
     return {
@@ -17308,60 +17408,12 @@ function getItemEditableFieldGroup(field: ItemEditableField) {
 function toNumericEditableField(field: MoveEditableField): NumericEditableField {
   return {
     field: field.field,
-    label: field.label,
+    label: getMoveEditableFieldLabel(field),
     maximumValue: field.maximumValue,
     minimumValue: field.minimumValue,
     options: field.options,
     valueKind: field.valueKind
   };
-}
-
-function getMoveEditableFieldGroup(field: NumericEditableField) {
-  if (
-    field.field === 'type' ||
-    field.field === 'category' ||
-    field.field === 'power' ||
-    field.field === 'accuracy' ||
-    field.field === 'pp' ||
-    field.field === 'priority' ||
-    field.field === 'critStage' ||
-    field.field === 'maxMovePower'
-  ) {
-    return 'Core Stats';
-  }
-
-  if (
-    field.field === 'target' ||
-    field.field === 'hitMin' ||
-    field.field === 'hitMax' ||
-    field.field === 'turnMin' ||
-    field.field === 'turnMax' ||
-    field.field === 'quality'
-  ) {
-    return 'Targeting';
-  }
-
-  if (
-    field.field === 'inflict' ||
-    field.field === 'inflictPercent' ||
-    field.field === 'rawInflictCount' ||
-    field.field === 'flinch' ||
-    field.field === 'effectSequence' ||
-    field.field === 'recoil' ||
-    field.field === 'rawHealing'
-  ) {
-    return 'Secondary Effects';
-  }
-
-  if (field.field.startsWith('stat')) {
-    return 'Stat Changes';
-  }
-
-  if (field.valueKind === 'boolean' || field.field === 'canUseMove') {
-    return 'Flags';
-  }
-
-  return 'Move Data';
 }
 
 function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
@@ -17632,7 +17684,8 @@ function GiftPokemonDraftField({
   field,
   formOptionContext,
   idPrefix = 'pokemon-instance',
-  onChange
+  onChange,
+  preservedValue
 }: {
   currentValue: number | null;
   disabled: boolean;
@@ -17643,6 +17696,7 @@ function GiftPokemonDraftField({
   formOptionContext?: SpeciesFormOptionContext;
   idPrefix?: string;
   onChange: (value: string) => void;
+  preservedValue?: number | null;
 }) {
   const inputId = `${idPrefix}-${field.field}`;
   const { contextualFormOptionContext, knownFormCount, options } =
@@ -17661,6 +17715,14 @@ function GiftPokemonDraftField({
   const localizedFieldHelpText = translateLiteral(
     effectiveDisabledReason ?? getEditableFieldHelp(field)
   );
+  const optionsWithPreservedValue =
+    preservedValue === null || preservedValue === undefined
+      ? options
+      : addCurrentPokemonFieldOption(
+          options,
+          preservedValue.toString(),
+          field.label
+        );
 
   return (
     <label
@@ -17687,11 +17749,15 @@ function GiftPokemonDraftField({
         </select>
       ) : options.length > 0 ? (
         <SearchableOptionInput
-          ariaLabel={field.label}
+          ariaLabel={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
           onChange={onChange}
-          options={addCurrentPokemonFieldOption(options, draftValue, field.label)}
+          options={addCurrentPokemonFieldOption(
+            optionsWithPreservedValue,
+            draftValue,
+            field.label
+          )}
           title={localizedFieldHelpText}
           value={draftValue}
         />
@@ -35037,77 +35103,6 @@ function getHighNibble(value: number) {
   return (value >> 4) & 0x0f;
 }
 
-function getEditableMoveFieldValue(move: MoveRecord, field: string) {
-  switch (field) {
-    case 'canUseMove':
-      return move.canUseMove ? 1 : 0;
-    case 'type':
-      return move.type;
-    case 'quality':
-      return move.quality;
-    case 'category':
-      return move.category;
-    case 'power':
-      return move.power;
-    case 'accuracy':
-      return move.accuracy;
-    case 'pp':
-      return move.pp;
-    case 'priority':
-      return move.priority;
-    case 'critStage':
-      return move.critStage;
-    case 'maxMovePower':
-      return move.maxMovePower;
-    case 'target':
-      return move.target;
-    case 'hitMin':
-      return move.hitMin;
-    case 'hitMax':
-      return move.hitMax;
-    case 'turnMin':
-      return move.turnMin;
-    case 'turnMax':
-      return move.turnMax;
-    case 'inflict':
-      return move.inflict;
-    case 'inflictPercent':
-      return move.inflictPercent;
-    case 'rawInflictCount':
-      return move.rawInflictCount;
-    case 'flinch':
-      return move.flinch;
-    case 'effectSequence':
-      return move.effectSequence;
-    case 'recoil':
-      return move.recoil;
-    case 'rawHealing':
-      return move.rawHealing;
-    case 'stat1':
-      return move.statChanges.find((stat) => stat.slot === 1)?.stat ?? null;
-    case 'stat1Stage':
-      return move.statChanges.find((stat) => stat.slot === 1)?.stage ?? null;
-    case 'stat1Percent':
-      return move.statChanges.find((stat) => stat.slot === 1)?.percent ?? null;
-    case 'stat2':
-      return move.statChanges.find((stat) => stat.slot === 2)?.stat ?? null;
-    case 'stat2Stage':
-      return move.statChanges.find((stat) => stat.slot === 2)?.stage ?? null;
-    case 'stat2Percent':
-      return move.statChanges.find((stat) => stat.slot === 2)?.percent ?? null;
-    case 'stat3':
-      return move.statChanges.find((stat) => stat.slot === 3)?.stat ?? null;
-    case 'stat3Stage':
-      return move.statChanges.find((stat) => stat.slot === 3)?.stage ?? null;
-    case 'stat3Percent':
-      return move.statChanges.find((stat) => stat.slot === 3)?.percent ?? null;
-    default: {
-      const flag = move.flags.find((candidate) => candidate.field === field);
-      return flag ? (flag.enabled ? 1 : 0) : null;
-    }
-  }
-}
-
 function getEditablePersonalFieldValue(pokemon: PokemonRecord, field: string) {
   switch (field) {
     case 'hp':
@@ -36495,25 +36490,6 @@ function formatOptionInputValue(
   );
 }
 
-function parseEditableIntegerDraft(value: string, options?: EditableFieldOption[] | null) {
-  const normalizedValue = value.trim();
-  if (normalizedValue.length === 0) {
-    return null;
-  }
-
-  const optionMatch = options?.find(
-    (option) =>
-      option.label.toLocaleLowerCase() === normalizedValue.toLocaleLowerCase() ||
-      option.value.toString() === normalizedValue
-  );
-  if (optionMatch) {
-    return optionMatch.value;
-  }
-
-  const prefixMatch = normalizedValue.match(/^-?\d+/);
-  return prefixMatch ? Number.parseInt(prefixMatch[0], 10) : null;
-}
-
 function areStringArraysEqual(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -37017,6 +36993,7 @@ function toPokemonSpriteIdPart(value: string) {
 function getEditableFieldHelp(field: EditableFieldWithOptions) {
   const specificHelp: Record<string, string> = {
     aiFlags: 'Battle AI behavior bitmask. Use the named AI flag checkboxes when they are shown.',
+    canUseMove: 'Controls whether the move is enabled. Enabling a base-disabled move does not restore missing battle animations, resources, or learnset references; verify its required game assets before using it.',
     canDynamax: 'Whether this Pokemon is allowed to Dynamax in trainer battles.',
     canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
     [trainerCanTerastallizeFieldName]: 'S/V trainer-level flag that allows the trainer to Terastallize. The target comes from party Pokemon with a fixed Tera type.',
@@ -37024,24 +37001,27 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     [zaMegaEvolutionFieldName]: 'Whether this Z-A trainer battle enables Mega Evolution behavior.',
     [zaRankFieldName]: 'Z-A trainer rank value.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
-    effectSequence: 'Raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet.',
+    effectSequence: 'Advanced raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet; preserve it unless the move has been verified in game.',
     [itemFieldFlagsFieldName]: 'Unknown raw item field flags. Visible for research, locked from editing until the bits are mapped.',
     flinch: 'Percent chance that the move causes flinching.',
     gift: 'Raw trainer gift/item ID. KM Editor treats this Gen 8 trainer field as unused/unknown, so confirm event scripts before treating it as a player reward.',
-    inflictPercent: 'Percent chance to inflict the selected condition or secondary effect.',
+    inflictPercent: 'Percent chance to inflict the selected condition or secondary effect. Zero on a move with an inflict effect means it is a primary effect with no separate chance roll.',
     money: 'Prize payout stored as a trainer rate. Sword/Shield payout is rate x highest team level x 4; KM shows the derived cash amount.',
-    rawHealing: 'Signed raw move healing behavior. Values vary by battle effect, so preserve the raw value unless the move has been verified in game.',
+    quality: 'Advanced effect-quality value. When named options are unavailable, preserve this raw value unless the move has been verified in game.',
+    rawHealing: 'Advanced signed raw HP behavior. Positive values restore that percentage of HP; negative values cost that percentage of HP. Preserve the value unless the move has been verified in game.',
     rawInflictCount: 'Duration mode for the inflicted condition/effect. Sword/Shield exposes five known modes.',
-    recoil: 'Recoil or drain-style percent. The sign and effect sequence determine the exact battle behavior.',
+    recoil: 'Signed drain/recoil percent. Positive values drain HP; negative values deal recoil. The effect sequence determines the exact battle behavior.',
     specialMoveId: 'Gift table special move field.',
     stat1: 'First stat-change slot. There are three Sword/Shield move stat-change slots total.',
-    stat1Percent: 'Percent chance for stat-change slot 1 to apply.',
+    stat1Percent: 'Percent chance for stat-change slot 1 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
     stat1Stage: 'Stage delta for stat-change slot 1. Positive raises the stat; negative lowers it.',
     stat2: 'Second stat-change slot. Use when a move changes more than one stat.',
-    stat2Percent: 'Percent chance for stat-change slot 2 to apply.',
+    stat2Percent: 'Percent chance for stat-change slot 2 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
     stat2Stage: 'Stage delta for stat-change slot 2. Positive raises the stat; negative lowers it.',
     stat3: 'Third and final Sword/Shield stat-change slot.',
-    stat3Percent: 'Percent chance for stat-change slot 3 to apply.',
+    stat3Percent: 'Percent chance for stat-change slot 3 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
+    turnMax: 'Maximum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
+    turnMin: 'Minimum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
     stat3Stage: 'Stage delta for stat-change slot 3. Positive raises the stat; negative lowers it.',
     [itemUseFlags1FieldName]: 'Raw item use bitmask. Locked from direct editing; use the decoded PP restore, HP restore, and EV flag fields instead.',
     [itemUseFlags2FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details; bits 5-7 remain unknown.',
@@ -37072,7 +37052,8 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     range ? `Allowed range: ${range}` : null,
     optionHint
   ]
-    .filter(Boolean)
+    .filter((part): part is string => Boolean(part))
+    .map((part) => part.replace(/\.+$/, ''))
     .join('. ');
 }
 
@@ -39453,10 +39434,6 @@ function formatMovePower(power: number) {
   return power === 0 ? '-' : power.toString();
 }
 
-function formatMoveAccuracy(accuracy: number) {
-  return accuracy === 0 ? '-' : accuracy.toString();
-}
-
 function formatMoveInflictDuration(rawInflictCount: number) {
   const labels: Record<number, string> = {
     0: 'None',
@@ -39467,10 +39444,6 @@ function formatMoveInflictDuration(rawInflictCount: number) {
   };
 
   return labels[rawInflictCount] ?? `Raw ${rawInflictCount}`;
-}
-
-function formatMoveHealingValue(rawHealing: number) {
-  return rawHealing === 0 ? 'None' : `Raw ${rawHealing}`;
 }
 
 function formatMoveActiveFlags(move: MoveRecord) {

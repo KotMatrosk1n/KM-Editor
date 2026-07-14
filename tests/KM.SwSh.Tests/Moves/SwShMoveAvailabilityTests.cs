@@ -39,6 +39,60 @@ public sealed class SwShMoveAvailabilityTests
         Assert.Contains(optionalOptions, option => option.Value == 0 && option.Label == "000 None");
     }
 
+    [Fact]
+    public void LoadUsableMoveIdsPrefersCanonicalWazabinForEmbeddedMoveId()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza0000.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(moveId: 1, canUseMove: false)));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza0001.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(moveId: 1, canUseMove: true)));
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+
+        Assert.Contains(1, usableMoveIds);
+    }
+
+    [Fact]
+    public void CreateMoveOptionsHandlesSparseMaximumIntegerMoveId()
+    {
+        IReadOnlySet<int> usableMoveIds = new HashSet<int> { int.MaxValue };
+
+        var options = SwShMoveAvailability.CreateMoveOptions(
+            ["", "Named But Filtered Move"],
+            usableMoveIds,
+            (value, label) => new TestOption(value, label),
+            includeNone: true);
+
+        Assert.Collection(
+            options,
+            option =>
+            {
+                Assert.Equal(0, option.Value);
+                Assert.Equal("000 None", option.Label);
+            },
+            option =>
+            {
+                Assert.Equal(int.MaxValue, option.Value);
+                Assert.Equal("2147483647 Move 2147483647", option.Label);
+            });
+    }
+
+    [Fact]
+    public void CreateMoveOptionsUsesAllNamedIndicesWhenNoAvailabilityFilterExists()
+    {
+        var options = SwShMoveAvailability.CreateMoveOptions(
+            ["", "Scratch", "Growl"],
+            new HashSet<int>(),
+            (value, label) => new TestOption(value, label));
+
+        Assert.Equal([1, 2], options.Select(option => option.Value));
+        Assert.Equal(["001 Scratch", "002 Growl"], options.Select(option => option.Label));
+    }
+
     private static SwShMoveDataRecord CreateMoveRecord(int moveId, bool canUseMove)
     {
         return new SwShMoveDataRecord(

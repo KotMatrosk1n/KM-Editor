@@ -139,7 +139,7 @@ public sealed class SwShMovesWorkflowService
         [21] = "Ingrain",
         [24] = "Throat Chop",
         [42] = "Tar Shot",
-        [65535] = "Tri Attack Status",
+        [65535] = "Move-defined / scripted effect",
     };
 
     private static readonly IReadOnlyList<string> StatNames =
@@ -152,8 +152,25 @@ public sealed class SwShMovesWorkflowService
         "Speed",
         "Accuracy",
         "Evasion",
-        "Critical Hit Rate",
         "All Stats",
+    ];
+
+    private static readonly IReadOnlyList<string> QualityNames =
+    [
+        "Damage Only",
+        "Status Only",
+        "Stat Change Only",
+        "Heal User",
+        "Damage + Status",
+        "Status + Target Stat",
+        "Damage + Target Stat Drop",
+        "Damage + User Stat Raise",
+        "Damage Drain",
+        "One-Hit KO",
+        "Whole Field",
+        "One Side Of Field",
+        "Force Target Switch",
+        "Unique Effect",
     ];
 
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> TypeOptions =
@@ -161,6 +178,9 @@ public sealed class SwShMovesWorkflowService
 
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> CategoryOptions =
         CreateIndexedOptions(CategoryNames);
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> QualityOptions =
+        CreateIndexedOptions(QualityNames);
 
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> TargetOptions =
         CreateIndexedOptions(TargetNames);
@@ -183,39 +203,52 @@ public sealed class SwShMovesWorkflowService
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> StatOptions =
         CreateIndexedOptions(StatNames);
 
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> CritStageOptions =
+    [
+        new SwShMoveEditableFieldOption(0, "000 Normal critical-hit ratio"),
+        new SwShMoveEditableFieldOption(1, "001 High critical-hit ratio"),
+        new SwShMoveEditableFieldOption(2, "002 Very high critical-hit ratio"),
+        new SwShMoveEditableFieldOption(6, "006 Always critical hit"),
+    ];
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> MaxMovePowerOptions =
+        new[] { 0, 1, 70, 75, 80, 85, 90, 95, 100, 110, 120, 130, 140, 150 }
+            .Select(value => new SwShMoveEditableFieldOption(value, $"{value:000} Max Move power"))
+            .ToArray();
+
     private static readonly IReadOnlyList<SwShMoveEditableField> EditableFields =
     [
         CreateField(CanUseMoveField, "Can use move", "boolean", 0, 1),
         CreateField(TypeField, "Type", "integer", 0, 17, TypeOptions),
-        CreateField(QualityField, "Quality", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(QualityField, "Quality", "integer", 0, 13, QualityOptions),
         CreateField(CategoryField, "Category", "integer", 0, 2, CategoryOptions),
         CreateField(PowerField, "Power", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(AccuracyField, "Accuracy", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(PpField, "PP", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(PriorityField, "Priority", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(CritStageField, "Critical stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(MaxMovePowerField, "Max Move power", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(TargetField, "Target", "integer", MinimumByteValue, MaximumByteValue, TargetOptions),
-        CreateField(HitMinField, "Minimum hits", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(HitMaxField, "Maximum hits", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(TurnMinField, "Minimum turns", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(TurnMaxField, "Maximum turns", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(AccuracyField, "Accuracy", "integer", 0, 101),
+        CreateField(PpField, "PP", "integer", 1, 40),
+        CreateField(PriorityField, "Priority", "integer", -7, 5),
+        CreateField(CritStageField, "Critical-hit stage", "integer", 0, 6, CritStageOptions),
+        CreateField(MaxMovePowerField, "Max Move power", "integer", 0, 150, MaxMovePowerOptions),
+        CreateField(TargetField, "Target", "integer", 0, 13, TargetOptions),
+        CreateField(HitMinField, "Minimum hits", "integer", 0, 6),
+        CreateField(HitMaxField, "Maximum hits", "integer", 0, 6),
+        CreateField(TurnMinField, "Minimum inflict turns", "integer", 0, 15),
+        CreateField(TurnMaxField, "Maximum inflict turns", "integer", 0, 15),
         CreateField(InflictField, "Inflicted condition", "integer", MinimumByteValue, MaximumUnsignedShortValue, InflictOptions),
-        CreateField(InflictPercentField, "Inflict chance (%)", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(RawInflictCountField, "Inflict duration", "integer", MinimumByteValue, MaximumByteValue, InflictDurationOptions),
-        CreateField(FlinchField, "Flinch chance (%)", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(EffectSequenceField, "Effect sequence ID", "integer", MinimumByteValue, MaximumUnsignedShortValue),
-        CreateField(RecoilField, "Recoil/drain (%)", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(RawHealingField, "Healing behavior", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat1Field, "Stat Change 1: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
-        CreateField(Stat1StageField, "Stat Change 1: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat1PercentField, "Stat Change 1: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(Stat2Field, "Stat Change 2: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
-        CreateField(Stat2StageField, "Stat Change 2: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat2PercentField, "Stat Change 2: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(Stat3Field, "Stat Change 3: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
-        CreateField(Stat3StageField, "Stat Change 3: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat3PercentField, "Stat Change 3: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(InflictPercentField, "Inflict chance (%)", "integer", 0, 100),
+        CreateField(RawInflictCountField, "Inflict duration", "integer", 0, 4, InflictDurationOptions),
+        CreateField(FlinchField, "Flinch chance (%)", "integer", 0, 100),
+        CreateField(EffectSequenceField, "Effect sequence ID (raw)", "integer", MinimumByteValue, MaximumUnsignedShortValue),
+        CreateField(RecoilField, "Drain (+) / recoil (-) (%)", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(RawHealingField, "HP recovery (+) / HP cost (-) (%) (raw)", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat1Field, "Stat Change 1: Stat", "integer", 0, 8, StatOptions),
+        CreateField(Stat1StageField, "Stat Change 1: Stage Delta", "integer", -6, 6),
+        CreateField(Stat1PercentField, "Stat Change 1: Chance (%)", "integer", 0, 100),
+        CreateField(Stat2Field, "Stat Change 2: Stat", "integer", 0, 8, StatOptions),
+        CreateField(Stat2StageField, "Stat Change 2: Stage Delta", "integer", -6, 6),
+        CreateField(Stat2PercentField, "Stat Change 2: Chance (%)", "integer", 0, 100),
+        CreateField(Stat3Field, "Stat Change 3: Stat", "integer", 0, 8, StatOptions),
+        CreateField(Stat3StageField, "Stat Change 3: Stage Delta", "integer", -6, 6),
+        CreateField(Stat3PercentField, "Stat Change 3: Chance (%)", "integer", 0, 100),
         CreateField(MakesContactField, "Makes contact", "boolean", 0, 1),
         CreateField(ChargeField, "Charge turn", "boolean", 0, 1),
         CreateField(RechargeField, "Recharge turn", "boolean", 0, 1),
@@ -281,7 +314,8 @@ public sealed class SwShMovesWorkflowService
 
         var moveNames = LoadOptionalTextTable(project, "wazaname.dat", "Move names", diagnostics);
         var moveDescriptions = LoadOptionalTextTable(project, "wazainfo.dat", "Move descriptions", diagnostics);
-        var typeNames = LoadOptionalTextTable(project, "typename.dat", "Type names", diagnostics);
+        var loadedTypeNames = LoadOptionalTextTable(project, "typename.dat", "Type names", diagnostics);
+        var typeNames = NormalizeTypeNames(loadedTypeNames);
         var moves = new List<SwShMoveRecord>();
         var parsedSourceFileCount = 0;
 
@@ -291,11 +325,21 @@ public sealed class SwShMovesWorkflowService
             {
                 var moveFile = SwShMoveDataFile.Parse(File.ReadAllBytes(source.AbsolutePath));
                 parsedSourceFileCount++;
+                if (moveFile.Record.MoveId > int.MaxValue)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Warning,
+                        $"Move data source has unsupported move ID {moveFile.Record.MoveId}.",
+                        file: source.GraphEntry.RelativePath,
+                        expected: $"Move ID between 0 and {int.MaxValue}"));
+                    continue;
+                }
+
                 moves.Add(ToMoveRecord(
                     moveFile.Record,
                     moveNames,
                     moveDescriptions,
-                    typeNames.Count > 0 ? typeNames : FallbackTypeNames,
+                    typeNames,
                     CreateProvenance(source.GraphEntry)));
             }
             catch (InvalidDataException exception)
@@ -328,7 +372,7 @@ public sealed class SwShMovesWorkflowService
             parsedSourceFileCount
             + (moveNames.Count > 0 ? 1 : 0)
             + (moveDescriptions.Count > 0 ? 1 : 0)
-            + (typeNames.Count > 0 ? 1 : 0);
+            + (loadedTypeNames.Count > 0 ? 1 : 0);
 
         var deduplicatedMoves = DeduplicateMoveRecords(moves);
 
@@ -336,7 +380,8 @@ public sealed class SwShMovesWorkflowService
             summary,
             deduplicatedMoves,
             sourceFileCount,
-            diagnostics);
+            diagnostics,
+            typeNames);
     }
 
     private static IReadOnlyList<SwShMoveRecord> DeduplicateMoveRecords(IEnumerable<SwShMoveRecord> moves)
@@ -344,7 +389,8 @@ public sealed class SwShMovesWorkflowService
         return moves
             .GroupBy(move => move.MoveId)
             .Select(group => group
-                .OrderByDescending(move => move.Provenance.SourceLayer == ProjectFileLayer.Layered)
+                .OrderByDescending(move => IsCanonicalMoveDataFile(move.Provenance.SourceFile, move.MoveId))
+                .ThenByDescending(move => move.Provenance.SourceLayer == ProjectFileLayer.Layered)
                 .ThenByDescending(move => IsPreferredMoveDataFile(move.Provenance.SourceFile))
                 .ThenBy(move => move.Provenance.SourceFile, StringComparer.OrdinalIgnoreCase)
                 .First())
@@ -356,6 +402,12 @@ public sealed class SwShMovesWorkflowService
     private static bool IsPreferredMoveDataFile(string relativePath)
     {
         return relativePath.EndsWith(".wazabin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCanonicalMoveDataFile(string relativePath, int moveId)
+    {
+        var fileName = Path.GetFileName(relativePath.Replace('/', Path.DirectorySeparatorChar));
+        return string.Equals(fileName, $"waza{moveId:D4}.wazabin", StringComparison.OrdinalIgnoreCase);
     }
 
     private static SwShMoveRecord ToMoveRecord(
@@ -457,6 +509,17 @@ public sealed class SwShMovesWorkflowService
         }
 
         return $"{fallbackPrefix} {id}";
+    }
+
+    private static IReadOnlyList<string> NormalizeTypeNames(IReadOnlyList<string> loadedTypeNames)
+    {
+        return FallbackTypeNames
+            .Select((fallbackName, index) =>
+                (uint)index < (uint)loadedTypeNames.Count
+                && !string.IsNullOrWhiteSpace(loadedTypeNames[index])
+                    ? loadedTypeNames[index]
+                    : fallbackName)
+            .ToArray();
     }
 
     private static string? GetOptionalIndexedText(int id, IReadOnlyList<string> values)
@@ -594,12 +657,21 @@ public sealed class SwShMovesWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShMoveRecord> moves,
         int sourceFileCount,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        IReadOnlyList<string>? typeNames = null)
     {
+        var editableFields = typeNames is null
+            ? EditableFields
+            : EditableFields
+                .Select(field => field.Field == TypeField
+                    ? field with { Options = CreateIndexedOptions(typeNames) }
+                    : field)
+                .ToArray();
+
         return new SwShMovesWorkflow(
             summary,
             moves,
-            EditableFields,
+            editableFields,
             new SwShMovesWorkflowStats(
                 moves.Count,
                 moves.Count(move => move.CanUseMove),

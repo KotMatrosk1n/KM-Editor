@@ -1190,6 +1190,38 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateMoveFieldsStagesSwordShieldRangesAtomically()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShMoveBridgeFixtures.WriteBaseMoves(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateMoveFields,
+            new UpdateMoveFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new MoveFieldUpdateDto(MoveId: 33, Field: "hitMin", Value: "2"),
+                    new MoveFieldUpdateDto(MoveId: 33, Field: "hitMax", Value: "3"),
+                ]),
+            requestId: "request-move-range-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateMoveFieldsResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.DoesNotContain(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(2, response.Payload.Session.PendingEdits.Count);
+        var move = Assert.Single(response.Payload.Workflow.Moves);
+        Assert.Equal(2, move.HitMin);
+        Assert.Equal(3, move.HitMax);
+    }
+
+    [Fact]
     public void DispatchApplyMoveChangePlanWritesMoveData()
     {
         using var temp = TemporaryBridgeProject.Create();

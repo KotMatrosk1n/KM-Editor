@@ -47,7 +47,8 @@ internal static class SwShMoveAvailability
         return records
             .GroupBy(record => record.MoveId)
             .Select(group => group
-                .OrderByDescending(record => record.SourceLayer == ProjectFileLayer.Layered)
+                .OrderByDescending(record => IsCanonicalMoveDataFile(record.RelativePath, record.MoveId))
+                .ThenByDescending(record => record.SourceLayer == ProjectFileLayer.Layered)
                 .ThenByDescending(record => IsPreferredMoveDataFile(record.RelativePath))
                 .ThenBy(record => record.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .First())
@@ -66,19 +67,26 @@ internal static class SwShMoveAvailability
         ArgumentNullException.ThrowIfNull(usableMoveIds);
         ArgumentNullException.ThrowIfNull(createOption);
 
-        var maximumMoveId = Math.Max(
-            moveNames.Count - 1,
-            usableMoveIds.Count == 0 ? -1 : usableMoveIds.Max());
-        if (maximumMoveId < 0)
+        var hasNonnegativeCandidate = moveNames.Count > 0 || usableMoveIds.Any(moveId => moveId >= 0);
+        if (!hasNonnegativeCandidate)
         {
             return [];
         }
 
         var shouldFilter = usableMoveIds.Count > 0;
-        return Enumerable.Range(0, maximumMoveId + 1)
+        var candidateMoveIds = Enumerable.Range(0, moveNames.Count)
+            .Concat(usableMoveIds);
+        if (includeNone)
+        {
+            candidateMoveIds = candidateMoveIds.Append(0);
+        }
+
+        return candidateMoveIds
             .Where(moveId =>
                 (includeNone && moveId == 0)
                 || (moveId > 0 && (!shouldFilter || usableMoveIds.Contains(moveId))))
+            .Distinct()
+            .Order()
             .Select(moveId => createOption(moveId, FormatMoveOptionLabel(moveId, moveNames)))
             .ToArray();
     }
@@ -101,6 +109,12 @@ internal static class SwShMoveAvailability
     private static bool IsPreferredMoveDataFile(string relativePath)
     {
         return relativePath.EndsWith(".wazabin", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCanonicalMoveDataFile(string relativePath, int moveId)
+    {
+        var fileName = Path.GetFileName(relativePath.Replace('/', Path.DirectorySeparatorChar));
+        return string.Equals(fileName, $"waza{moveId:D4}.wazabin", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<WorkflowFileSource> ResolveWorkflowFiles(

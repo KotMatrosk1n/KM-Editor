@@ -439,6 +439,28 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('localizes Sword and Shield move semantics, dynamic values, and compound help', () => {
+    expect(translateLiteralForLanguage('es', 'Always hits')).toBe('Siempre acierta');
+    expect(translateLiteralForLanguage('es', '2-5 hits')).toBe('2-5 golpes');
+    expect(translateLiteralForLanguage('es', '2-5 turns')).toBe('2-5 turnos');
+    expect(translateLiteralForLanguage('es', 'Drain 50%')).toBe('Drenaje del 50%');
+    expect(translateLiteralForLanguage('es', 'Recoil 25%')).toBe('Retroceso del 25%');
+    expect(translateLiteralForLanguage('es', 'Move-defined / scripted effect')).toBe(
+      'Efecto definido por el movimiento / mediante script'
+    );
+    expect(translateLiteralForLanguage('es', 'Restore 50% HP')).toBe(
+      'Restaura un 50% de PS'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Can use move. Controls whether the move is enabled. Enabling a base-disabled move does not restore missing battle animations, resources, or learnset references; verify its required game assets before using it. Allowed range: 0-1'
+      )
+    ).toBe(
+      'Puede usar movimiento. Controla si el movimiento está habilitado. Habilitar un movimiento deshabilitado en los datos base no restaura animaciones de combate, recursos ni referencias de listas de movimientos que falten; verifica los recursos de juego necesarios antes de usarlo. Rango permitido: 0-1'
+    );
+  });
+
   it('includes Scarlet and Violet visible item placement literals in every language', () => {
     const localizedResources: Record<string, Record<string, string>> = {
       en: enResource.literals,
