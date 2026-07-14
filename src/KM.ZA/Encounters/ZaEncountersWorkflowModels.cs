@@ -45,7 +45,8 @@ public sealed record ZaEncounterTableRecord(
     string? LocationKey = null,
     int? LocationSort = null,
     string? TableLabel = null,
-    string? TableDetails = null);
+    string? TableDetails = null,
+    string? LocationDetails = null);
 
 public sealed record ZaEncounterEditableField(
     string Field,

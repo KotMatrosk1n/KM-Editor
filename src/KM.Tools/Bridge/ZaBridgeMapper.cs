@@ -622,7 +622,10 @@ public static class ZaBridgeMapper
             table.LocationKey,
             table.LocationSort,
             table.TableLabel,
-            table.TableDetails);
+            table.TableDetails)
+        {
+            LocationDetails = table.LocationDetails,
+        };
     }
 
     private static EncounterSlotRecordDto ToDto(ZaEncounterSlotRecord slot)
@@ -729,6 +732,7 @@ public static class ZaBridgeMapper
             EditorFamily = "za",
             CategoryId = encounter.CategoryId,
             CategoryLabel = encounter.CategoryLabel,
+            ScenarioDetails = encounter.ScenarioDetails,
             SupportedFields = encounter.SupportedFields,
             FieldValues = encounter.FieldValues,
             FieldDisplayValues = encounter.FieldDisplayValues,

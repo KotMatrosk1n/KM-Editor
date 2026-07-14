@@ -10,6 +10,19 @@ internal static class ZaLumioseLocationLabels
     private const string ZdmRandomLocationKey = "zdm_random_dimension_wilds";
     private const string ZdmRandomLocationLabel = "Dimension Wild Pools";
     private const string DimensionMegaEventsLocationKey = "dimension_mega_events";
+    private static readonly IReadOnlyDictionary<string, string> KnownLocationNames =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["d01"] = "Lysandre Labs",
+            ["d01_01"] = "Lysandre Labs",
+            ["d02_01"] = "Lumiose Sewers Main Area",
+            ["d02_02"] = "Lumiose Sewers Side Area",
+            ["d03"] = "Old Building",
+            ["d03_01"] = "Old Building",
+            ["t2"] = "Lysandre Labs",
+            ["t3"] = "Lumiose Sewers Main Area",
+            ["t3_2"] = "Lumiose Sewers Side Area",
+        };
 
     private static readonly IReadOnlyDictionary<string, int> WildZoneNumbers =
         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -102,7 +115,8 @@ internal static class ZaLumioseLocationLabels
     public static string FormatLocation(
         string locationKey,
         Func<string, string?>? placeNameResolver = null,
-        Func<int, string>? pokemonNameResolver = null)
+        Func<int, string>? pokemonNameResolver = null,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver = null)
     {
         var normalizedKey = NormalizeLocationKey(locationKey);
         if (TryGetWildZoneNumber(normalizedKey, out var zoneNumber))
@@ -112,13 +126,14 @@ internal static class ZaLumioseLocationLabels
         }
 
         return ResolvePlaceName(placeNameResolver, normalizedKey)
+            ?? FormatKnownLocation(normalizedKey)
             ?? TryFormatZdmRandomLocationKey(normalizedKey)
             ?? TryFormatOutzoneLocationKey(normalizedKey)
             ?? TryFormatBossLocationKey(normalizedKey, pokemonNameResolver)
             ?? TryFormatDungeonLocationKey(normalizedKey)
-            ?? TryFormatStoryLocationKey(normalizedKey)
+            ?? TryFormatStoryLocationKey(normalizedKey, missionTitleResolver)
             ?? FormatLumioseArea(normalizedKey)
-            ?? FormatRawSpawnerId(normalizedKey);
+            ?? FormatRawSpawnerId(normalizedKey, pokemonNameResolver, missionTitleResolver);
     }
 
     public static string FormatPlacementMap(
@@ -129,12 +144,13 @@ internal static class ZaLumioseLocationLabels
         string? battleAreaId,
         string? spawnerId,
         Func<string, string?>? placeNameResolver = null,
-        Func<int, string>? pokemonNameResolver = null)
+        Func<int, string>? pokemonNameResolver = null,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver = null)
     {
         var zoneKey = CreateZoneKey(zoneId, variationId);
         if (!string.IsNullOrWhiteSpace(zoneKey))
         {
-            var location = FormatLocation(zoneKey, placeNameResolver, pokemonNameResolver);
+            var location = FormatLocation(zoneKey, placeNameResolver, pokemonNameResolver, missionTitleResolver);
             var districtSector = FormatDistrictSector(zoneKey);
             return string.IsNullOrWhiteSpace(districtSector)
                 ? location
@@ -143,29 +159,94 @@ internal static class ZaLumioseLocationLabels
 
         if (!string.IsNullOrWhiteSpace(dungeonName))
         {
-            return dungeonName.Trim();
+            return FormatLocation(dungeonName, placeNameResolver, pokemonNameResolver, missionTitleResolver);
         }
 
         if (!string.IsNullOrWhiteSpace(battleAreaId))
         {
-            return battleAreaId.Trim();
+            return FormatLocation(battleAreaId, placeNameResolver, pokemonNameResolver, missionTitleResolver);
         }
 
         return string.IsNullOrWhiteSpace(spawnerId)
             ? fallback
-            : FormatRawSpawnerId(spawnerId, pokemonNameResolver);
+            : FormatLocation(
+                spawnerId,
+                placeNameResolver,
+                pokemonNameResolver,
+                missionTitleResolver);
     }
 
     public static int? GetLocationSort(string locationKey)
     {
-        return TryGetWildZoneNumber(locationKey, out var zoneNumber)
-            ? zoneNumber
+        if (TryGetWildZoneNumber(locationKey, out var zoneNumber))
+        {
+            return zoneNumber;
+        }
+
+        return TryGetSideMission(locationKey, out var mission)
+            ? mission.Kind == ZaMissionKind.ExtraSide ? 1000 + mission.Number : mission.Number
             : null;
+    }
+
+    public static string? GetMissionDetails(string? value)
+    {
+        return TryGetSideMission(value, out var mission)
+            ? mission.DisplayReference
+            : null;
+    }
+
+    public static bool TryGetSideMission(string? value, out ZaMissionDescriptor mission)
+    {
+        mission = null!;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var tokens = value.Trim().Split('_', StringSplitOptions.RemoveEmptyEntries);
+        var index = 0;
+        while (index < tokens.Length
+            && (tokens[index].Equals("id", StringComparison.OrdinalIgnoreCase)
+                || tokens[index].Equals("spn", StringComparison.OrdinalIgnoreCase)
+                || tokens[index].Equals("ect", StringComparison.OrdinalIgnoreCase)
+                || tokens[index].Equals("btl", StringComparison.OrdinalIgnoreCase)
+                || tokens[index].Equals("sys", StringComparison.OrdinalIgnoreCase)
+                || tokens[index].Equals("ev", StringComparison.OrdinalIgnoreCase)))
+        {
+            index++;
+        }
+
+        if (index >= tokens.Length)
+        {
+            return false;
+        }
+
+        if (TryParseMissionToken(tokens, index, "rest", out var restaurantNumber))
+        {
+            return restaurantNumber is >= 1 and <= 4
+                && ZaMissionCatalog.TryGetSideMissionByInternalId(80 + restaurantNumber, out mission);
+        }
+
+        return (TryParseMissionToken(tokens, index, "subq", out var internalId)
+                || TryParseMissionToken(tokens, index, "sub", out internalId))
+            && ZaMissionCatalog.TryGetSideMissionByInternalId(internalId, out mission);
     }
 
     public static bool IsNumberedWildZone(string locationKey)
     {
         return TryGetWildZoneNumber(locationKey, out _);
+    }
+
+    public static string? FormatKnownLocation(string? locationKey)
+    {
+        if (string.IsNullOrWhiteSpace(locationKey))
+        {
+            return null;
+        }
+
+        return KnownLocationNames.TryGetValue(NormalizeLocationKey(locationKey), out var label)
+            ? label
+            : null;
     }
 
     public static string? FormatDistrict(string? locationKey)
@@ -205,7 +286,10 @@ internal static class ZaLumioseLocationLabels
         return FormatRawSpawnerId(trimmed);
     }
 
-    public static string FormatRawSpawnerId(string value, Func<int, string>? pokemonNameResolver = null)
+    public static string FormatRawSpawnerId(
+        string value,
+        Func<int, string>? pokemonNameResolver = null,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver = null)
     {
         var trimmed = value.Trim();
         if (trimmed.StartsWith("id_spn_", StringComparison.Ordinal))
@@ -238,13 +322,19 @@ internal static class ZaLumioseLocationLabels
             return wildZone;
         }
 
+        var knownLocation = TryFormatKnownLocationSpawnerId(spawnerTrimmed);
+        if (knownLocation is not null)
+        {
+            return knownLocation;
+        }
+
         var dungeon = TryFormatDungeonSpawnerId(spawnerTrimmed);
         if (dungeon is not null)
         {
             return dungeon;
         }
 
-        var story = TryFormatStorySpawnerId(spawnerTrimmed);
+        var story = TryFormatStorySpawnerId(spawnerTrimmed, missionTitleResolver);
         if (story is not null)
         {
             return story;
@@ -271,6 +361,12 @@ internal static class ZaLumioseLocationLabels
         if (bossGroupKey is not null)
         {
             return bossGroupKey;
+        }
+
+        var knownLocationGroupKey = TryFormatKnownLocationGroupKey(trimmed);
+        if (knownLocationGroupKey is not null)
+        {
+            return knownLocationGroupKey;
         }
 
         var groupKey = TryFormatRawSpawnerGroupKey(trimmed);
@@ -329,6 +425,54 @@ internal static class ZaLumioseLocationLabels
     private static string FormatDistrictSector(LumioseArea area)
     {
         return $"{FormatDistrictName(area.District)}, Sector {area.Sector.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string? TryFormatKnownLocationSpawnerId(string value)
+    {
+        var tokens = value.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (!TryGetKnownLocationPrefix(tokens, out _, out var label, out var prefixLength))
+        {
+            return null;
+        }
+
+        var tail = FormatSpawnerIdTail(tokens.Skip(prefixLength));
+        return string.IsNullOrWhiteSpace(tail)
+            ? label
+            : $"{label} {tail}";
+    }
+
+    private static string? TryFormatKnownLocationGroupKey(string value)
+    {
+        var tokens = StripSpawnerPrefix(value).Split('_', StringSplitOptions.RemoveEmptyEntries);
+        return TryGetKnownLocationPrefix(tokens, out var locationKey, out _, out _)
+            ? locationKey
+            : null;
+    }
+
+    private static bool TryGetKnownLocationPrefix(
+        IReadOnlyList<string> tokens,
+        out string locationKey,
+        out string label,
+        out int prefixLength)
+    {
+        locationKey = string.Empty;
+        label = string.Empty;
+        prefixLength = 0;
+        for (var count = tokens.Count; count > 0; count--)
+        {
+            var candidate = string.Join('_', tokens.Take(count));
+            if (!KnownLocationNames.TryGetValue(candidate, out var knownLabel))
+            {
+                continue;
+            }
+
+            locationKey = candidate.ToLowerInvariant();
+            label = knownLabel;
+            prefixLength = count;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryParseLumioseArea(string? locationKey, out LumioseArea area)
@@ -743,7 +887,9 @@ internal static class ZaLumioseLocationLabels
             : null;
     }
 
-    private static string? TryFormatStorySpawnerId(string value)
+    private static string? TryFormatStorySpawnerId(
+        string value,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver)
     {
         var tokens = SplitSpawnerIdTokens(value);
         if (tokens.Length == 0)
@@ -766,17 +912,23 @@ internal static class ZaLumioseLocationLabels
 
         if (TryParseNumberedToken(tokens[0], "rest", out var rest))
         {
-            return AppendFormattedTail($"Rest Event {FormatNumberForLabel(rest)}", tokens.Skip(1));
+            return TryResolveRestaurantMission(rest, missionTitleResolver, out var restaurantTitle)
+                ? FormatRestaurantMissionLabel(restaurantTitle, tokens.Skip(1))
+                : AppendFormattedTail($"Rest Event {FormatNumberForLabel(rest)}", tokens.Skip(1));
         }
 
         if (TryParseNumberedToken(tokens[0], "sub", out var sideMission))
         {
-            return AppendFormattedTail($"Side Mission Event {FormatNumberForLabel(sideMission)}", tokens.Skip(1));
+            return TryResolveInternalSideMission(sideMission, missionTitleResolver, out var missionTitle)
+                ? AppendFormattedTail(missionTitle, tokens.Skip(1))
+                : AppendFormattedTail($"Side Mission Event {FormatNumberForLabel(sideMission)}", tokens.Skip(1));
         }
 
         if (TryParseNumberedToken(tokens[0], "subq", out var sideQuest))
         {
-            return AppendFormattedTail($"Side Mission Event {FormatNumberForLabel(sideQuest)}", tokens.Skip(1));
+            return TryResolveInternalSideMission(sideQuest, missionTitleResolver, out var missionTitle)
+                ? AppendFormattedTail(missionTitle, tokens.Skip(1))
+                : AppendFormattedTail($"Side Mission Event {FormatNumberForLabel(sideQuest)}", tokens.Skip(1));
         }
 
         if (tokens.Length >= 3 && string.Equals(tokens[0], "dlc", StringComparison.OrdinalIgnoreCase))
@@ -789,7 +941,9 @@ internal static class ZaLumioseLocationLabels
             : null;
     }
 
-    private static string? TryFormatStoryLocationKey(string locationKey)
+    private static string? TryFormatStoryLocationKey(
+        string locationKey,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver)
     {
         if (string.Equals(locationKey, DimensionMegaEventsLocationKey, StringComparison.Ordinal))
         {
@@ -809,17 +963,23 @@ internal static class ZaLumioseLocationLabels
 
         if (TryParseNumberedToken(tokens[0], "rest", out var rest))
         {
-            return $"Rest Event {FormatNumberForLabel(rest)}";
+            return TryResolveRestaurantMission(rest, missionTitleResolver, out var restaurantTitle)
+                ? FormatRestaurantMissionLabel(restaurantTitle, tokens.Skip(1))
+                : $"Rest Event {FormatNumberForLabel(rest)}";
         }
 
         if (TryParseNumberedToken(tokens[0], "sub", out var sideMission))
         {
-            return $"Side Mission Event {FormatNumberForLabel(sideMission)}";
+            return TryResolveInternalSideMission(sideMission, missionTitleResolver, out var missionTitle)
+                ? missionTitle
+                : $"Side Mission Event {FormatNumberForLabel(sideMission)}";
         }
 
         if (TryParseNumberedToken(tokens[0], "subq", out var sideQuest))
         {
-            return $"Side Mission Event {FormatNumberForLabel(sideQuest)}";
+            return TryResolveInternalSideMission(sideQuest, missionTitleResolver, out var missionTitle)
+                ? missionTitle
+                : $"Side Mission Event {FormatNumberForLabel(sideQuest)}";
         }
 
         if (tokens.Length >= 3 && string.Equals(tokens[0], "dlc", StringComparison.OrdinalIgnoreCase))
@@ -830,6 +990,63 @@ internal static class ZaLumioseLocationLabels
         return IsRoseDedeEvent(tokens)
             ? "Story Event Rose Dede"
             : null;
+    }
+
+    private static string FormatRestaurantMissionLabel(
+        string title,
+        IEnumerable<string> tailTokens)
+    {
+        var tokens = tailTokens.ToArray();
+        if (tokens.Length == 0)
+        {
+            return title;
+        }
+
+        if (int.TryParse(tokens[0], NumberStyles.None, CultureInfo.InvariantCulture, out var battle)
+            && battle is >= 1 and <= 5)
+        {
+            return AppendFormattedTail(
+                $"{title} Battle {battle.ToString(CultureInfo.InvariantCulture)}",
+                tokens.Skip(1));
+        }
+
+        return AppendFormattedTail(title, tokens);
+    }
+
+    private static bool TryResolveRestaurantMission(
+        string number,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver,
+        out string title)
+    {
+        title = string.Empty;
+        return int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            && parsed is >= 1 and <= 4
+            && TryResolveSideMission(80 + parsed, missionTitleResolver, out title);
+    }
+
+    private static bool TryResolveInternalSideMission(
+        string internalId,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver,
+        out string title)
+    {
+        title = string.Empty;
+        return int.TryParse(internalId, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            && TryResolveSideMission(parsed, missionTitleResolver, out title);
+    }
+
+    private static bool TryResolveSideMission(
+        int internalId,
+        Func<ZaMissionDescriptor, string>? missionTitleResolver,
+        out string title)
+    {
+        title = string.Empty;
+        if (!ZaMissionCatalog.TryGetSideMissionByInternalId(internalId, out var mission))
+        {
+            return false;
+        }
+
+        title = missionTitleResolver?.Invoke(mission) ?? mission.ResolveTitle(localizedTitle: null);
+        return true;
     }
 
     private static string FormatOutzoneArea(string areaCode)
@@ -1198,6 +1415,28 @@ internal static class ZaLumioseLocationLabels
 
         number = suffix;
         return true;
+    }
+
+    private static bool TryParseMissionToken(
+        IReadOnlyList<string> tokens,
+        int index,
+        string prefix,
+        out int number)
+    {
+        number = 0;
+        if (index >= tokens.Count)
+        {
+            return false;
+        }
+
+        if (TryParseNumberedToken(tokens[index], prefix, out var inlineNumber))
+        {
+            return int.TryParse(inlineNumber, NumberStyles.None, CultureInfo.InvariantCulture, out number);
+        }
+
+        return tokens[index].Equals(prefix, StringComparison.OrdinalIgnoreCase)
+            && index + 1 < tokens.Count
+            && int.TryParse(tokens[index + 1], NumberStyles.None, CultureInfo.InvariantCulture, out number);
     }
 
     private static string FormatNumberForLabel(string number)

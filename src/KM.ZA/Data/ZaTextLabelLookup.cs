@@ -69,6 +69,9 @@ internal sealed class ZaTextLabelLookup
         [],
         [],
         [],
+        [],
+        [],
+        [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
         [],
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
@@ -81,6 +84,9 @@ internal sealed class ZaTextLabelLookup
     private readonly IReadOnlyList<string> moveDescriptions;
     private readonly IReadOnlyList<string> pokemonNames;
     private readonly IReadOnlyList<string> abilityNames;
+    private readonly IReadOnlyList<string> mainMissionTitles;
+    private readonly IReadOnlyList<string> hyperspaceMissionTitles;
+    private readonly IReadOnlyList<string> sideMissionTitles;
     private readonly IReadOnlyList<string> placeNames;
     private readonly IReadOnlyDictionary<string, int> placeNameIndices;
     private readonly IReadOnlyList<string> trainerNames;
@@ -95,6 +101,9 @@ internal sealed class ZaTextLabelLookup
         IReadOnlyList<string> moveDescriptions,
         IReadOnlyList<string> pokemonNames,
         IReadOnlyList<string> abilityNames,
+        IReadOnlyList<string> mainMissionTitles,
+        IReadOnlyList<string> hyperspaceMissionTitles,
+        IReadOnlyList<string> sideMissionTitles,
         IReadOnlyList<string> placeNames,
         IReadOnlyDictionary<string, int> placeNameIndices,
         IReadOnlyList<string> trainerNames,
@@ -108,6 +117,9 @@ internal sealed class ZaTextLabelLookup
         this.moveDescriptions = moveDescriptions;
         this.pokemonNames = pokemonNames;
         this.abilityNames = abilityNames;
+        this.mainMissionTitles = mainMissionTitles;
+        this.hyperspaceMissionTitles = hyperspaceMissionTitles;
+        this.sideMissionTitles = sideMissionTitles;
         this.placeNames = placeNames;
         this.placeNameIndices = placeNameIndices;
         this.trainerNames = trainerNames;
@@ -144,6 +156,9 @@ internal sealed class ZaTextLabelLookup
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.MoveDescriptions, "move descriptions", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.PokemonNames, "Pokemon names", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.AbilityNames, "ability names", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.MainMissionTitles, "main mission titles", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.HyperspaceMissionTitles, "hyperspace mission titles", diagnostics),
+            LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.SideMissionTitles, "side mission titles", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.PlaceNames, "place names", diagnostics),
             LoadKeyIndicesWithFallback(project, fileSource, language, ZaDataPaths.PlaceNameKeys, "place name keys", diagnostics),
             LoadIndexedTableWithFallback(project, fileSource, language, ZaDataPaths.TrainerNames, "trainer names", diagnostics),
@@ -169,6 +184,27 @@ internal sealed class ZaTextLabelLookup
     public string Pokemon(int speciesId) => GetIndexed(pokemonNames, speciesId) ?? ZaLabels.Pokemon(speciesId);
 
     public string Ability(int abilityId) => GetIndexed(abilityNames, abilityId) ?? ZaLabels.Ability(abilityId);
+
+    public string MissionTitle(ZaMissionDescriptor mission)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+
+        var titles = mission.TitleTable switch
+        {
+            ZaMissionTitleTable.QuestListMain => mainMissionTitles,
+            ZaMissionTitleTable.QuestListDlc => hyperspaceMissionTitles,
+            ZaMissionTitleTable.QuestListSub => sideMissionTitles,
+            _ => [],
+        };
+        return mission.ResolveTitle(GetIndexed(titles, mission.TitleMessageIndex));
+    }
+
+    public string? SideMissionTitleByInternalId(int internalId)
+    {
+        return ZaMissionCatalog.TryGetSideMissionByInternalId(internalId, out var mission)
+            ? MissionTitle(mission)
+            : null;
+    }
 
     public string? PlaceName(string? key)
     {

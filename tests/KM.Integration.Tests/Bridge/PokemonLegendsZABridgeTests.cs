@@ -3831,11 +3831,11 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var tables = load.Payload!.Workflow.Tables;
-        Assert.Equal(18, tables.Count);
+        Assert.Equal(23, tables.Count);
         var ordinaryLinkedTables = tables
             .Where(table => table.Slots.Count == 1 && table.Slots[0].EncounterDataId == "wild_ignore")
             .ToArray();
-        Assert.Equal(14, ordinaryLinkedTables.Length);
+        Assert.Equal(19, ordinaryLinkedTables.Length);
         var firstTable = ordinaryLinkedTables[0];
         var firstSlot = Assert.Single(firstTable.Slots);
         var secondTable = ordinaryLinkedTables[1];
@@ -3846,7 +3846,7 @@ public sealed class PokemonLegendsZABridgeTests
             .SelectMany(table => table.Slots)
             .Where(slot => slot.EncounterRecordId == encounterRecordId)
             .ToArray();
-        Assert.Equal(14, linkedSlots.Length);
+        Assert.Equal(19, linkedSlots.Length);
         var distinctSlot = Assert.Single(
             tables.SelectMany(table => table.Slots),
             slot => slot.EncounterDataId == "static_event_ivysaur");
@@ -3988,7 +3988,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var workflow = load.Payload!.Workflow;
-        Assert.Equal(17, workflow.Tables.Count);
+        Assert.Equal(22, workflow.Tables.Count);
 
         var alphaTables = workflow.Tables.Where(table => table.Slots.Any(slot => slot.IsAlpha)).ToArray();
         Assert.Equal(2, alphaTables.Length);
@@ -4144,8 +4144,20 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Boss Battle Pokemon 15 Rematch", bossTable.TableLabel);
 
         var dungeonTable = Assert.Single(workflow.Tables, table => table.LocationKey == "d02_01");
-        Assert.Equal("Dungeon 2 Floor 1", dungeonTable.Location);
-        Assert.Equal("Dungeon 2 Floor 1 Spawn Point 001", dungeonTable.TableLabel);
+        Assert.Equal("Lumiose Sewers Main Area", dungeonTable.Location);
+        Assert.Equal("Lumiose Sewers Main Area Spawn Point 001", dungeonTable.TableLabel);
+
+        var phaseTwoTable = Assert.Single(workflow.Tables, table => table.LocationKey == "t2");
+        Assert.Equal("Lysandre Labs", phaseTwoTable.Location);
+        Assert.Equal("Lysandre Labs Spawn Point 001", phaseTwoTable.TableLabel);
+
+        var sewerMainTable = Assert.Single(workflow.Tables, table => table.LocationKey == "t3");
+        Assert.Equal("Lumiose Sewers Main Area", sewerMainTable.Location);
+        Assert.Equal("Lumiose Sewers Main Area Spawn Point 001", sewerMainTable.TableLabel);
+
+        var sewerSideTable = Assert.Single(workflow.Tables, table => table.LocationKey == "t3_2");
+        Assert.Equal("Lumiose Sewers Side Area", sewerSideTable.Location);
+        Assert.Equal("Lumiose Sewers Side Area Spawn Point 001", sewerSideTable.TableLabel);
 
         var chapterTable = Assert.Single(workflow.Tables, table => table.LocationKey == "id_chapter9");
         Assert.Equal("Story Chapter Event 9", chapterTable.Location);
@@ -4156,8 +4168,28 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal("Story Chapter Event 5 Dungeon 2 Spawn Point 001", chapterDungeonTable.TableLabel);
 
         var sideMissionTable = Assert.Single(workflow.Tables, table => table.LocationKey == "id_sub090");
-        Assert.Equal("Side Mission Event 90", sideMissionTable.Location);
-        Assert.Equal("Side Mission Event 90 Spawn Point 01", sideMissionTable.TableLabel);
+        Assert.Equal("Floette Frolicking with Flowers", sideMissionTable.Location);
+        Assert.Equal("Floette Frolicking with Flowers Spawn Point 01", sideMissionTable.TableLabel);
+        Assert.Equal("Side Mission 51", sideMissionTable.LocationDetails);
+        Assert.Equal(51, sideMissionTable.LocationSort);
+
+        var rest4Table = Assert.Single(workflow.Tables, table => table.LocationKey == "id_rest4");
+        Assert.Equal("Full Course of Battles: High Rolling", rest4Table.Location);
+        Assert.Equal(
+            "Full Course of Battles: High Rolling Battle 1 Spawn Point 001",
+            rest4Table.TableLabel);
+        Assert.Equal("Side Mission 73", rest4Table.LocationDetails);
+        Assert.Equal(73, rest4Table.LocationSort);
+
+        var defenselessDodgerTable = Assert.Single(
+            workflow.Tables,
+            table => table.LocationKey == "id_spn_subq147");
+        Assert.Equal("Be a Defenseless Dodger!", defenselessDodgerTable.Location);
+        Assert.Equal(
+            "Be a Defenseless Dodger! Spawn Point 002B",
+            defenselessDodgerTable.TableLabel);
+        Assert.Equal("Side Mission 173", defenselessDodgerTable.LocationDetails);
+        Assert.Equal(173, defenselessDodgerTable.LocationSort);
 
         var dimensionWildTables = workflow.Tables.Where(table => table.LocationKey == "zdm_random_dimension_wilds").ToArray();
         Assert.Equal(2, dimensionWildTables.Length);
@@ -4511,9 +4543,9 @@ public sealed class PokemonLegendsZABridgeTests
         var workflow = load.Payload!.Workflow;
         Assert.Equal("Placement", workflow.Summary.Label);
         Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
-        Assert.Equal(3, workflow.Objects.Count);
-        Assert.Contains(workflow.Categories!, category => category.Id == "pokemonSpawners" && category.ObjectCount == 1);
-        Assert.Contains(workflow.Categories!, category => category.Id == "itemBallSpawners" && category.ObjectCount == 2);
+        Assert.Equal(12, workflow.Objects.Count);
+        Assert.Contains(workflow.Categories!, category => category.Id == "pokemonSpawners" && category.ObjectCount == 3);
+        Assert.Contains(workflow.Categories!, category => category.Id == "itemBallSpawners" && category.ObjectCount == 9);
         Assert.Contains(workflow.EditableFields, field => field.Field == "point.positionX" && field.Label == "Position X");
         Assert.Contains(workflow.EditableFields, field => field.Field == "point.attachTransformEnable" && field.Label == "Attach Transform");
 
@@ -4530,6 +4562,24 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.sector" && field.DisplayValue == "Sector 2");
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "za_wild_spawner_001");
         Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.encounterRows" && field.DisplayValue == "1");
+
+        var restaurantSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "mission_rest4_object");
+        Assert.Equal(
+            "Full Course of Battles: High Rolling Battle 1 Spawn Point 001",
+            restaurantSpawner.Label);
+        Assert.Equal("Full Course of Battles: High Rolling", restaurantSpawner.Map);
+        Assert.Contains(
+            restaurantSpawner.Fields!,
+            field => field.Field == "spawner.mission" && field.DisplayValue == "Side Mission 73");
+
+        var defenselessDodgerSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "mission_subq147_object");
+        Assert.Equal("Be a Defenseless Dodger! Spawn Point 002B", defenselessDodgerSpawner.Label);
+        Assert.Equal("Be a Defenseless Dodger!", defenselessDodgerSpawner.Map);
+        Assert.Contains(
+            defenselessDodgerSpawner.Fields!,
+            field => field.Field == "spawner.mission" && field.DisplayValue == "Side Mission 173");
 
         var itemBallSpawner = workflow.Objects.Single(placedObject => placedObject.ItemHash == "itb_a0201_01");
         Assert.Equal("itemBallSpawners", itemBallSpawner.CategoryId);
@@ -4553,6 +4603,49 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.sector" && field.DisplayValue == "None");
         Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "id_itb_t1_i004a_01");
         Assert.Contains(interiorItemBallSpawner.Fields!, field => field.Field == "spawner.primaryData" && field.DisplayValue == "Rare Candy");
+
+        var lysandreAliasSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itb_t2_01");
+        Assert.Equal("Lysandre Labs Item Ball 01: Potion", lysandreAliasSpawner.Label);
+        Assert.Equal("Lysandre Labs", lysandreAliasSpawner.Map);
+
+        var sewerMainAliasSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itb_t3_01");
+        Assert.Equal(
+            "Lumiose Sewers Main Area Item Ball 01: Potion",
+            sewerMainAliasSpawner.Label);
+        Assert.Equal("Lumiose Sewers Main Area", sewerMainAliasSpawner.Map);
+
+        var sewerSideAliasSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itb_t3_2_01");
+        Assert.Equal(
+            "Lumiose Sewers Side Area Item Ball 01: Potion",
+            sewerSideAliasSpawner.Label);
+        Assert.Equal("Lumiose Sewers Side Area", sewerSideAliasSpawner.Map);
+
+        var lysandreDungeonSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itd_d01_01_01");
+        Assert.Equal("Lysandre Labs Item 01: Potion", lysandreDungeonSpawner.Label);
+        Assert.Equal("Lysandre Labs", lysandreDungeonSpawner.Map);
+
+        var sewerMainDungeonSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itd_d02_01_01");
+        Assert.Equal(
+            "Lumiose Sewers Main Area Item 01: Potion",
+            sewerMainDungeonSpawner.Label);
+        Assert.Equal("Lumiose Sewers Main Area", sewerMainDungeonSpawner.Map);
+
+        var sewerSideDungeonSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itd_d02_02_01");
+        Assert.Equal(
+            "Lumiose Sewers Side Area Item 01: Potion",
+            sewerSideDungeonSpawner.Label);
+        Assert.Equal("Lumiose Sewers Side Area", sewerSideDungeonSpawner.Map);
+
+        var oldBuildingDungeonSpawner = workflow.Objects.Single(
+            placedObject => placedObject.ItemHash == "itd_d03_01_01");
+        Assert.Equal("Old Building Item 01: Potion", oldBuildingDungeonSpawner.Label);
+        Assert.Equal("Old Building", oldBuildingDungeonSpawner.Map);
 
         var update = Dispatch<UpdatePlacementObjectFieldsResponse>(
             dispatcher,
@@ -5401,7 +5494,9 @@ public sealed class PokemonLegendsZABridgeTests
 
     private static void WritePlacementFixture(TemporaryBridgeProject temp)
     {
-        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonSpawnerDataArray,
+            CreatePokemonSpawnerDataArray(includePlacementMissionSpawners: true));
         temp.WriteBaseRomFsFile(ZaDataPaths.ItemBallSpawnerDataArray, CreateItemBallSpawnerDataArray());
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemNames("English"),
@@ -5416,7 +5511,8 @@ public sealed class PokemonLegendsZABridgeTests
                 rotationX: 0,
                 rotationY: 45,
                 rotationZ: 0,
-                attach: true));
+                attach: true,
+                additionalNames: ["mission_rest4_object", "mission_subq147_object"]));
         temp.WriteBaseRomFsFile(
             ZaDataPaths.ItemBallSpawnerTransformArray,
             CreateItemBallSpawnerTransformArray());
@@ -5437,7 +5533,61 @@ public sealed class PokemonLegendsZABridgeTests
             "itb_t1_i004a_01",
             "field_item_ball_0050",
             "./");
-        var rootVector = ItemBallSpawnerDataDB.CreateRootVector(builder, [districtSpawner, interiorSpawner]);
+        var lysandreAliasSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itb_t2_01",
+            "itb_t2_01",
+            "field_item_ball_0017",
+            "./");
+        var sewerMainAliasSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itb_t3_01",
+            "itb_t3_01",
+            "field_item_ball_0017",
+            "./");
+        var sewerSideAliasSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itb_t3_2_01",
+            "itb_t3_2_01",
+            "field_item_ball_0017",
+            "./");
+        var lysandreDungeonSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itd_d01_01_01",
+            "itd_d01_01_01",
+            "field_item_ball_0017",
+            "./");
+        var sewerMainDungeonSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itd_d02_01_01",
+            "itd_d02_01_01",
+            "field_item_ball_0017",
+            "./");
+        var sewerSideDungeonSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itd_d02_02_01",
+            "itd_d02_02_01",
+            "field_item_ball_0017",
+            "./");
+        var oldBuildingDungeonSpawner = CreateItemBallSpawnerData(
+            builder,
+            "id_itd_d03_01_01",
+            "itd_d03_01_01",
+            "field_item_ball_0017",
+            "./");
+        var rootVector = ItemBallSpawnerDataDB.CreateRootVector(
+            builder,
+            [
+                districtSpawner,
+                interiorSpawner,
+                lysandreAliasSpawner,
+                sewerMainAliasSpawner,
+                sewerSideAliasSpawner,
+                lysandreDungeonSpawner,
+                sewerMainDungeonSpawner,
+                sewerSideDungeonSpawner,
+                oldBuildingDungeonSpawner,
+            ]);
         var db = ItemBallSpawnerDataDB.CreateItemBallSpawnerDataDB(builder, rootVector);
         var valuesVector = ItemBallSpawnerDataDBArray.CreateValuesVector(builder, [db]);
         var root = ItemBallSpawnerDataDBArray.CreateItemBallSpawnerDataDBArray(builder, valuesVector);
@@ -5492,6 +5642,55 @@ public sealed class PokemonLegendsZABridgeTests
                         "itb_t1_i004a_01",
                         new ZaSpawnerTransformVector(12, 0, -38),
                         new ZaSpawnerTransformVector(0, 180, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        2,
+                        "itb_t2_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        3,
+                        "itb_t3_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        4,
+                        "itb_t3_2_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        5,
+                        "itd_d01_01_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        6,
+                        "itd_d02_01_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        7,
+                        "itd_d02_02_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
+                        false),
+                    new ZaSpawnerTransformRow(
+                        0,
+                        8,
+                        "itd_d03_01_01",
+                        new ZaSpawnerTransformVector(1, 2, 3),
+                        new ZaSpawnerTransformVector(0, 0, 0),
                         false),
                 ]),
         ]);
@@ -5688,7 +5887,8 @@ public sealed class PokemonLegendsZABridgeTests
     private static byte[] CreatePokemonSpawnerDataArray(
         bool includeAlphaAndRawSpawners = false,
         bool includeDistinctEncounterSpawner = false,
-        bool includeMixedAlphaReference = false)
+        bool includeMixedAlphaReference = false,
+        bool includePlacementMissionSpawners = false)
     {
         var builder = new FlatBufferBuilder(4096);
         var spawners = includeAlphaAndRawSpawners
@@ -5718,6 +5918,11 @@ public sealed class PokemonLegendsZABridgeTests
                 CreateSpawner(builder, "id_chapter5_spn_d02_001", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_chapter9_00", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_sub090_01", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_t2_001", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_t3_001", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_t3_2_001", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_rest4_01_001", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_subq147_002b", "wild_ignore", zoneId: null, weight: 100),
             }
             :
             [
@@ -5755,6 +5960,28 @@ public sealed class PokemonLegendsZABridgeTests
                     "wild_ignore_Alpha",
                     "a0102_w01",
                     weight: 20),
+            ];
+        }
+
+        if (includePlacementMissionSpawners)
+        {
+            spawners =
+            [
+                .. spawners,
+                CreateSpawner(
+                    builder,
+                    "id_rest4_01_001",
+                    "wild_ignore",
+                    zoneId: null,
+                    weight: 100,
+                    appearanceObjectName: "mission_rest4_object"),
+                CreateSpawner(
+                    builder,
+                    "id_spn_subq147_002b",
+                    "wild_ignore",
+                    zoneId: null,
+                    weight: 100,
+                    appearanceObjectName: "mission_subq147_object"),
             ];
         }
 
@@ -5945,21 +6172,32 @@ public sealed class PokemonLegendsZABridgeTests
         float rotationX,
         float rotationY,
         float rotationZ,
-        bool attach)
+        bool attach,
+        params string[] additionalNames)
     {
+        var rows = new List<ZaSpawnerTransformRow>
+        {
+            new(
+                0,
+                0,
+                name,
+                new ZaSpawnerTransformVector(positionX, positionY, positionZ),
+                new ZaSpawnerTransformVector(rotationX, rotationY, rotationZ),
+                attach),
+        };
+        rows.AddRange(additionalNames.Select((additionalName, index) => new ZaSpawnerTransformRow(
+            0,
+            index + 1,
+            additionalName,
+            new ZaSpawnerTransformVector(positionX + index + 1, positionY, positionZ),
+            new ZaSpawnerTransformVector(rotationX, rotationY, rotationZ),
+            attach)));
+
         var document = ZaSpawnerTransformDocument.Create(
         [
             new ZaSpawnerTransformGroup(
                 0,
-                [
-                    new ZaSpawnerTransformRow(
-                        0,
-                        0,
-                        name,
-                        new ZaSpawnerTransformVector(positionX, positionY, positionZ),
-                        new ZaSpawnerTransformVector(rotationX, rotationY, rotationZ),
-                        attach),
-                ]),
+                rows),
         ]);
         return document.Write();
     }

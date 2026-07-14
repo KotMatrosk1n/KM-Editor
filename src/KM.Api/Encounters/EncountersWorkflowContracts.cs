@@ -4,6 +4,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Encounters;
 
@@ -63,7 +64,11 @@ public sealed record EncounterTableRecordDto(
     string? LocationKey = null,
     int? LocationSort = null,
     string? TableLabel = null,
-    string? TableDetails = null);
+    string? TableDetails = null)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LocationDetails { get; init; }
+}
 
 public sealed record EncounterEditableFieldDto(
     string Field,

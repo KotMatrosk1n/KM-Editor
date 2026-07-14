@@ -195,7 +195,7 @@ internal sealed class ZaEncountersWorkflowService
                 yield return new ZaEncounterTableRecord(
                     CreateTableId(groupIndex, spawnerIndex),
                     location,
-                    FormatArea(spawner.Value),
+                    FormatArea(spawner.Value, labels),
                     FormatEncounterType(spawner.Value),
                     GameVersionLabel,
                     spawnerSource.RelativePath,
@@ -207,7 +207,8 @@ internal sealed class ZaEncountersWorkflowService
                     locationKey,
                     GetLocationSort(locationKey),
                     FormatTableLabel(locationKey, displayPosition.Ordinal, spawner.Value.Id, labels),
-                    FormatTableDetails(slots));
+                    FormatTableDetails(slots),
+                    ZaLumioseLocationLabels.GetMissionDetails(locationKey));
             }
         }
     }
@@ -423,7 +424,11 @@ internal sealed class ZaEncountersWorkflowService
 
     private static string FormatLocation(string locationKey, ZaTextLabelLookup labels)
     {
-        return ZaLumioseLocationLabels.FormatLocation(locationKey, labels.PlaceName, labels.Pokemon);
+        return ZaLumioseLocationLabels.FormatLocation(
+            locationKey,
+            labels.PlaceName,
+            labels.Pokemon,
+            labels.MissionTitle);
     }
 
     private static int? GetLocationSort(string locationKey)
@@ -445,7 +450,10 @@ internal sealed class ZaEncountersWorkflowService
 
         return string.IsNullOrWhiteSpace(spawnerId)
             ? $"Spawner {tableNumber.ToString(CultureInfo.InvariantCulture)}"
-            : ZaLumioseLocationLabels.FormatRawSpawnerId(spawnerId, labels.Pokemon);
+            : ZaLumioseLocationLabels.FormatRawSpawnerId(
+                spawnerId,
+                labels.Pokemon,
+                labels.MissionTitle);
     }
 
     private static string FormatTableDetails(IReadOnlyList<ZaEncounterSlotRecord> slots)
@@ -487,17 +495,25 @@ internal sealed class ZaEncountersWorkflowService
         return slot.IsAlpha ? $"{slot.Species} Alpha" : slot.Species;
     }
 
-    private static string FormatArea(PokemonSpawnerData spawner)
+    private static string FormatArea(PokemonSpawnerData spawner, ZaTextLabelLookup labels)
     {
         var objectInfo = FirstAppearanceObject(spawner);
         if (!string.IsNullOrWhiteSpace(objectInfo?.DungeonName))
         {
-            return objectInfo.Value.DungeonName;
+            return ZaLumioseLocationLabels.FormatLocation(
+                objectInfo.Value.DungeonName,
+                labels.PlaceName,
+                labels.Pokemon,
+                labels.MissionTitle);
         }
 
         if (!string.IsNullOrWhiteSpace(objectInfo?.BattleAreaId))
         {
-            return objectInfo.Value.BattleAreaId;
+            return ZaLumioseLocationLabels.FormatLocation(
+                objectInfo.Value.BattleAreaId,
+                labels.PlaceName,
+                labels.Pokemon,
+                labels.MissionTitle);
         }
 
         return "Pokemon Spawner";

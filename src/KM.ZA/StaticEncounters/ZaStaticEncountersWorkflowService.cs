@@ -42,6 +42,8 @@ internal sealed class ZaStaticEncountersWorkflowService
     private const string CategoryLabel = "Encounter Data";
     private const string ScenarioLabel = "Scripted Pokemon";
 
+    private sealed record ScenarioDisplay(string Label, string? Details);
+
     private static readonly IReadOnlyList<ZaStaticEncounterEditableFieldOption> GenderOptions =
     [
         new(-1, "Game default / random"),
@@ -331,6 +333,12 @@ internal sealed class ZaStaticEncountersWorkflowService
         var heldItemId = entry.HoldItem ?? 0;
         var fieldValues = CreateFieldValues(entry);
         var displayValues = CreateFieldDisplayValues(entry, labels);
+        var scenario = ResolveScenarioDisplay(
+            entry.Id,
+            labels,
+            speciesId,
+            entry.FormNo,
+            speciesName);
 
         return new ZaStaticEncounterEntry(
             encounterIndex,
@@ -354,7 +362,7 @@ internal sealed class ZaStaticEncountersWorkflowService
             entry.Rare,
             FormatShinyMode(entry.Rare),
             EncounterScenario: 0,
-            FormatScenarioLabel(entry.Id, labels, speciesId, entry.FormNo, speciesName),
+            scenario.Label,
             new ZaStaticEncounterStatsRecord(0, 0, 0, 0, 0, 0),
             ivs,
             flawlessIvCount,
@@ -368,7 +376,10 @@ internal sealed class ZaStaticEncountersWorkflowService
             fieldValues,
             displayValues,
             SupportedFields.ToDictionary(field => field, _ => false, StringComparer.Ordinal),
-            AbilityModeOptions);
+            AbilityModeOptions)
+        {
+            ScenarioDetails = scenario.Details,
+        };
     }
 
     private static IReadOnlyList<ZaStaticEncounterMoveRecord> ReadMoves(
@@ -407,24 +418,49 @@ internal sealed class ZaStaticEncountersWorkflowService
         int form,
         string? speciesName = null)
     {
+        return ResolveScenarioDisplay(encounterId, labels, speciesId, form, speciesName).Label;
+    }
+
+    internal static string? FormatScenarioDetails(
+        string? encounterId,
+        ZaTextLabelLookup labels)
+    {
+        return ResolveScenarioDisplay(encounterId, labels, speciesId: 0, form: 0, speciesName: null).Details;
+    }
+
+    private static ScenarioDisplay ResolveScenarioDisplay(
+        string? encounterId,
+        ZaTextLabelLookup labels,
+        int speciesId,
+        int form,
+        string? speciesName)
+    {
         if (string.IsNullOrWhiteSpace(encounterId))
         {
-            return ScenarioLabel;
+            return new ScenarioDisplay(ScenarioLabel, null);
         }
 
         var id = encounterId.Trim();
         if (TryFormatBossScenario(id, labels, speciesId, form, speciesName, out var scenario)
             || TryFormatOutzoneScenario(id, out scenario)
             || TryFormatWildZoneScenario(id, labels, out scenario)
-            || TryFormatDungeonScenario(id, out scenario)
-            || TryFormatSideMissionScenario(id, out scenario)
-            || TryFormatStoryScenario(id, out scenario)
-            || TryFormatDimensionRandomScenario(id, out scenario))
+            || TryFormatDungeonScenario(id, out scenario))
         {
-            return scenario;
+            return new ScenarioDisplay(scenario, null);
         }
 
-        return ScenarioLabel;
+        if (TryFormatSideMissionScenario(id, labels, out scenario, out var scenarioDetails))
+        {
+            return new ScenarioDisplay(scenario, scenarioDetails);
+        }
+
+        if (TryFormatStoryScenario(id, out scenario)
+            || TryFormatDimensionRandomScenario(id, out scenario))
+        {
+            return new ScenarioDisplay(scenario, null);
+        }
+
+        return new ScenarioDisplay(ScenarioLabel, null);
     }
 
     private static bool TryFormatBossScenario(
@@ -586,19 +622,109 @@ internal sealed class ZaStaticEncountersWorkflowService
         return false;
     }
 
-    private static bool TryFormatSideMissionScenario(string encounterId, out string scenario)
+    private static bool TryFormatSideMissionScenario(
+        string encounterId,
+        ZaTextLabelLookup labels,
+        out string scenario,
+        out string scenarioDetails)
     {
         scenario = string.Empty;
-        var parts = encounterId.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2
-            || !string.Equals(parts[0], "sub", StringComparison.OrdinalIgnoreCase)
-            || !parts[1].All(char.IsDigit))
+        scenarioDetails = string.Empty;
+        if (!TryResolveSideMission(
+                encounterId,
+                out var mission,
+                out var battleNumber))
         {
             return false;
         }
 
-        scenario = $"Side Mission {FormatNumber(parts[1])}";
+        var title = ResolveMissionTitle(labels, mission);
+        scenario = battleNumber is > 0
+            ? $"{title} Battle {battleNumber.Value.ToString(CultureInfo.InvariantCulture)}"
+            : title;
+        scenarioDetails = mission.DisplayReference;
         return true;
+    }
+
+    private static bool TryResolveSideMission(
+        string encounterId,
+        out ZaMissionDescriptor mission,
+        out int? battleNumber)
+    {
+        mission = null!;
+        battleNumber = null;
+
+        var id = encounterId.StartsWith("Ev_", StringComparison.OrdinalIgnoreCase)
+            ? encounterId["Ev_".Length..]
+            : encounterId;
+
+        if (id.StartsWith("sub_", StringComparison.OrdinalIgnoreCase)
+            && TryReadLeadingNumber(id["sub_".Length..], out var internalId, out _))
+        {
+            return ZaMissionCatalog.TryGetSideMissionByInternalId(internalId, out mission);
+        }
+
+        if (id.StartsWith("ect_subq", StringComparison.OrdinalIgnoreCase)
+            && TryReadLeadingNumber(id["ect_subq".Length..], out internalId, out _))
+        {
+            return ZaMissionCatalog.TryGetSideMissionByInternalId(internalId, out mission);
+        }
+
+        id = id.StartsWith("sys_", StringComparison.OrdinalIgnoreCase)
+            ? id["sys_".Length..]
+            : id.StartsWith("id_", StringComparison.OrdinalIgnoreCase)
+                ? id["id_".Length..]
+                : id;
+        if (!id.StartsWith("rest", StringComparison.OrdinalIgnoreCase)
+            || !TryReadLeadingNumber(id["rest".Length..], out var restaurantNumber, out var suffix)
+            || restaurantNumber is < 1 or > 4
+            || !ZaMissionCatalog.TryGetSideMissionByInternalId(80 + restaurantNumber, out mission))
+        {
+            return false;
+        }
+
+        var battleToken = suffix
+            .Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+        if (int.TryParse(
+                battleToken,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var parsedBattleNumber)
+            && parsedBattleNumber > 0)
+        {
+            battleNumber = parsedBattleNumber;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadLeadingNumber(
+        string value,
+        out int number,
+        out string suffix)
+    {
+        number = 0;
+        var digitCount = 0;
+        while (digitCount < value.Length && char.IsDigit(value[digitCount]))
+        {
+            digitCount++;
+        }
+
+        suffix = digitCount < value.Length ? value[digitCount..] : string.Empty;
+        return digitCount > 0
+            && int.TryParse(
+                value[..digitCount],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out number);
+    }
+
+    private static string ResolveMissionTitle(
+        ZaTextLabelLookup labels,
+        ZaMissionDescriptor mission)
+    {
+        return labels.MissionTitle(mission);
     }
 
     private static bool TryFormatStoryScenario(string encounterId, out string scenario)

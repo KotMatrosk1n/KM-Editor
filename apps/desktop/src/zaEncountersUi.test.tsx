@@ -185,6 +185,70 @@ function createZaCategoryWorkflow(): EncountersWorkflow {
   };
 }
 
+function createZaMissionWorkflow(): EncountersWorkflow {
+  const tables = [
+    {
+      ...makeTable(
+        'restaurant-4-battle-1',
+        'Full Course of Battles: High Rolling Battle 1 Spawn Point 001',
+        'id_rest4',
+        [makeSlot(0, 25, 'Pikachu', 'encount-data:80', 100, false, null)]
+      ),
+      location: 'Full Course of Battles: High Rolling',
+      locationDetails: 'Side Mission 73',
+      locationSort: 73
+    },
+    {
+      ...makeTable(
+        'defenseless-dodger-1',
+        'Be a Defenseless Dodger! Spawn Point 002B',
+        'id_spn_subq147',
+        [makeSlot(0, 26, 'Raichu', 'encount-data:81', 100, false, null)]
+      ),
+      location: 'Be a Defenseless Dodger!',
+      locationDetails: 'Side Mission 173',
+      locationSort: 173
+    }
+  ];
+
+  return {
+    ...createZaEncountersWorkflow(),
+    stats: {
+      sourceFileCount: 2,
+      totalSlotCount: 2,
+      totalTableCount: tables.length
+    },
+    tables
+  };
+}
+
+function createZaNamedDungeonWorkflow(): EncountersWorkflow {
+  const tables = [
+    {
+      ...makeTable('lysandre-labs', 'Lysandre Labs Spawn Point 001', 'd01', [
+        makeSlot(0, 25, 'Pikachu', 'encount-data:90', 100, false, null)
+      ]),
+      location: 'Lysandre Labs'
+    },
+    {
+      ...makeTable('old-building', 'Old Building Spawn Point 001', 'd03', [
+        makeSlot(0, 26, 'Raichu', 'encount-data:91', 100, false, null)
+      ]),
+      location: 'Old Building'
+    }
+  ];
+
+  return {
+    ...createZaEncountersWorkflow(),
+    stats: {
+      sourceFileCount: 2,
+      totalSlotCount: 2,
+      totalTableCount: tables.length
+    },
+    tables
+  };
+}
+
 async function openZaWildEncounters(
   workflow: EncountersWorkflow,
   bridgeOverrides: Partial<ProjectBridge> = {}
@@ -529,5 +593,51 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     expect(
       within(screen.getByRole('table', { name: 'Fletchling linked spawners' })).getAllByRole('row')
     ).toHaveLength(3);
+  }, 30_000);
+
+  it('uses title-only side mission tabs and keeps mission numbers in selected details', async () => {
+    const user = await openZaWildEncounters(createZaMissionWorkflow());
+
+    expect(
+      screen.getByRole('tab', { name: 'Full Course of Battles: High Rolling' })
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: /Mission 73/ })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByText('Mission', { selector: 'dt' }).parentElement!).getByText(
+        'Side Mission 73'
+      )
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Be a Defenseless Dodger!' }));
+
+    expect(screen.getByRole('tab', { name: 'Be a Defenseless Dodger!' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(
+      within(screen.getByText('Mission', { selector: 'dt' }).parentElement!).getByText(
+        'Side Mission 173'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Be a Defenseless Dodger!, Be a Defenseless Dodger!/)
+    ).not.toBeInTheDocument();
+  }, 30_000);
+
+  it('keeps exact named dungeon roots in the dungeon browser', async () => {
+    const user = await openZaWildEncounters(createZaNamedDungeonWorkflow());
+    const table = screen.getByRole('table', { name: 'Encounter tables' });
+
+    expect(within(table).getByRole('row', { name: 'Dungeons' })).toBeInTheDocument();
+    expect(within(table).getByRole('row', { name: /Lysandre Labs/ })).toHaveClass(
+      'encounters-row-selected'
+    );
+    expect(within(table).getByRole('row', { name: /Old Building/ })).toBeInTheDocument();
+
+    await user.click(within(table).getByRole('row', { name: /Old Building/ }));
+
+    expect(within(table).getByRole('row', { name: /Old Building/ })).toHaveClass(
+      'encounters-row-selected'
+    );
   }, 30_000);
 });
