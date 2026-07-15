@@ -374,6 +374,13 @@ public sealed class SwShTrainerTeamFile
                 $"Trainer party file length must be a multiple of {RowSize} bytes for Sword/Shield.");
         }
 
+        var pokemonCount = data.Length / RowSize;
+        if (pokemonCount > MaximumPartySize)
+        {
+            throw new InvalidDataException(
+                $"Trainer party file must contain at most {MaximumPartySize} Pokemon rows for Sword/Shield.");
+        }
+
         return new SwShTrainerTeamFile(data.ToArray());
     }
 

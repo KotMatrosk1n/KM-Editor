@@ -170,7 +170,7 @@ public sealed class SwShTrainersEditSessionServiceTests
             trainerId: 10,
             slot: 1,
             field: SwShTrainersWorkflowService.IvAttackField,
-            value: "80");
+            value: "31");
 
         Assert.Empty(result.Diagnostics);
         var edit = Assert.Single(result.Session.PendingEdits);
@@ -182,45 +182,29 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateFieldClampsTrainerPartyIvAndEvSpreads()
+    public void UpdateFieldRejectsOutOfRangeTrainerPartyIvAndEvValues()
     {
         using var temp = CreateEditableProject();
         var service = new SwShTrainersEditSessionService();
 
-        var update = service.UpdateField(
+        var ivUpdate = service.UpdateField(
             temp.Paths,
             session: null,
             trainerId: 10,
             slot: 1,
             field: SwShTrainersWorkflowService.IvAttackField,
             value: "-50");
-        update = service.UpdateField(
+        var evUpdate = service.UpdateField(
             temp.Paths,
-            update.Session,
+            session: null,
             trainerId: 10,
             slot: 1,
             field: SwShTrainersWorkflowService.EvHpField,
             value: "999");
-        update = service.UpdateField(
-            temp.Paths,
-            update.Session,
-            trainerId: 10,
-            slot: 1,
-            field: SwShTrainersWorkflowService.EvAttackField,
-            value: "999");
-
-        Assert.Empty(update.Diagnostics);
-        var trainer = Assert.Single(update.Workflow.Trainers);
-        Assert.Equal(0, trainer.Team[0].Ivs.Attack);
-        Assert.Equal(252, trainer.Team[0].Evs.HP);
-        Assert.Equal(78, trainer.Team[0].Evs.Attack);
-        Assert.Contains(update.Session.PendingEdits, edit =>
-            edit.Field == SwShTrainersWorkflowService.IvAttackField && edit.NewValue == "0");
-        Assert.Contains(update.Session.PendingEdits, edit =>
-            edit.Field == SwShTrainersWorkflowService.EvHpField && edit.NewValue == "252");
-        Assert.Contains(update.Session.PendingEdits, edit =>
-            edit.Field == SwShTrainersWorkflowService.EvAttackField && edit.NewValue == "78");
-        Assert.True(service.Validate(temp.Paths, update.Session).IsValid);
+        Assert.False(ivUpdate.Session.HasPendingChanges);
+        Assert.Contains(ivUpdate.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(evUpdate.Session.HasPendingChanges);
+        Assert.Contains(evUpdate.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -328,13 +312,6 @@ public sealed class SwShTrainersEditSessionServiceTests
             update.Session,
             trainerId: 10,
             slot: null,
-            field: SwShTrainersWorkflowService.HealField,
-            value: "0");
-        update = service.UpdateField(
-            temp.Paths,
-            update.Session,
-            trainerId: 10,
-            slot: null,
             field: SwShTrainersWorkflowService.MoneyField,
             value: "99");
         var plan = service.CreateChangePlan(temp.Paths, update.Session);
@@ -353,7 +330,7 @@ public sealed class SwShTrainersEditSessionServiceTests
         var output = SwShTrainerDataFile.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal([2, 2, 0, 0], output.Record.Items);
         Assert.Equal(63u, output.Record.AiFlags);
-        Assert.False(output.Record.Heal);
+        Assert.True(output.Record.Heal);
         Assert.Equal(99, output.Record.Money);
         Assert.Equal(7, output.Record.Gift);
     }
@@ -608,7 +585,7 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateFieldClampsOutOfRangePartyIvValue()
+    public void UpdateFieldRejectsOutOfRangePartyIvValue()
     {
         using var temp = CreateEditableProject();
         var service = new SwShTrainersEditSessionService();
@@ -621,11 +598,404 @@ public sealed class SwShTrainersEditSessionServiceTests
             field: SwShTrainersWorkflowService.IvHpField,
             value: "32");
 
-        Assert.Empty(result.Diagnostics);
-        Assert.True(result.Session.HasPendingChanges);
-        var edit = Assert.Single(result.Session.PendingEdits);
-        Assert.Equal("31", edit.NewValue);
-        Assert.Equal(31, Assert.Single(result.Workflow.Trainers).Team[0].Ivs.HP);
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(1, Assert.Single(result.Workflow.Trainers).Team[0].Ivs.HP);
+    }
+
+    [Fact]
+    public void UpdateFieldRemovesPendingEditWhenValueReturnsToSource()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.LevelField,
+            value: "25");
+
+        var reverted = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.LevelField,
+            value: "12");
+
+        Assert.Empty(reverted.Diagnostics);
+        Assert.False(reverted.Session.HasPendingChanges);
+        Assert.Equal(12, Assert.Single(reverted.Workflow.Trainers).Team[0].Level);
+    }
+
+    [Theory]
+    [InlineData(SwShTrainersWorkflowService.HealField, "0")]
+    [InlineData(SwShTrainersWorkflowService.GiftField, "1")]
+    public void UpdateFieldRejectsUnverifiedRawHeaderEdits(string field, string value)
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: field,
+            value: value);
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("raw read-only", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateRejectsProjectedEvTotalAbove510()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.EvHpField,
+            value: "252");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.EvAttackField,
+            value: "252");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.EvDefenseField,
+            value: "252");
+
+        var validation = service.Validate(temp.Paths, update.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(
+            validation.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("total EVs", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateRejectsUnavailableSpeciesAndInvalidForm()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var speciesUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.SpeciesIdField,
+            value: "777");
+        var formUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.FormField,
+            value: "1");
+
+        Assert.False(service.Validate(temp.Paths, speciesUpdate.Session).IsValid);
+        Assert.False(service.Validate(temp.Paths, formUpdate.Session).IsValid);
+    }
+
+    [Fact]
+    public void ValidateRejectsUnavailableAbilityAndGigantamaxSpecies()
+    {
+        using var temp = CreateEditableProject();
+        var personalPath = Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "personal",
+            "personal_total.bin");
+        var personal = File.ReadAllBytes(personalPath);
+        personal[(810 * SwShPersonalTable.RecordSize) + 0x1C] = 0;
+        personal[(810 * SwShPersonalTable.RecordSize) + 0x1D] = 0;
+        File.WriteAllBytes(personalPath, personal);
+        var service = new SwShTrainersEditSessionService();
+        var abilityUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.AbilityField,
+            value: "3");
+        var gigantamaxUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.CanGigantamaxField,
+            value: "1");
+
+        Assert.False(service.Validate(temp.Paths, abilityUpdate.Session).IsValid);
+        Assert.False(service.Validate(temp.Paths, gigantamaxUpdate.Session).IsValid);
+    }
+
+    [Fact]
+    public void ValidateRejectsCanDynamaxForPersonalRecordThatCannotDynamax()
+    {
+        using var temp = CreateEditableProject();
+        var personalPath = Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "personal",
+            "personal_total.bin");
+        var personal = File.ReadAllBytes(personalPath);
+        personal[(810 * SwShPersonalTable.RecordSize) + 0x5A] |= 0x04;
+        File.WriteAllBytes(personalPath, personal);
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.CanDynamaxField,
+            value: "1");
+
+        var validation = service.Validate(temp.Paths, update.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(
+            validation.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Field == SwShTrainersWorkflowService.CanDynamaxField
+                && diagnostic.Message.Contains("cannot Dynamax", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateRequiresLookupForNonzeroOptionBackedIdsButAllowsNone()
+    {
+        using var temp = CreateEditableProject();
+        File.Delete(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "message",
+            "English",
+            "common",
+            "itemname.dat"));
+        var service = new SwShTrainersEditSessionService();
+        var nonzeroUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.TrainerItem1IdField,
+            value: "2");
+        var noneUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.TrainerItem1IdField,
+            value: "0");
+
+        var nonzeroValidation = service.Validate(temp.Paths, nonzeroUpdate.Session);
+        var noneValidation = service.Validate(temp.Paths, noneUpdate.Session);
+
+        Assert.False(nonzeroValidation.IsValid);
+        Assert.Contains(
+            nonzeroValidation.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Field == SwShTrainersWorkflowService.TrainerItem1IdField
+                && diagnostic.Message.Contains("lookup data is unavailable", StringComparison.Ordinal));
+        Assert.True(noneValidation.IsValid);
+    }
+
+    [Fact]
+    public void ValidateRejectsTrainerClassAndClassBallEditsInOneSession()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var classUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.TrainerClassIdField,
+            value: "4");
+        var ballUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.ClassBallIdField,
+            value: "3");
+        var combined = classUpdate.Session with
+        {
+            PendingEdits = classUpdate.Session.PendingEdits
+                .Concat(ballUpdate.Session.PendingEdits)
+                .ToArray(),
+        };
+
+        var validation = service.Validate(temp.Paths, combined);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(
+            validation.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Field == SwShTrainersWorkflowService.ClassBallIdField);
+    }
+
+    [Fact]
+    public void ApplyRejectsReviewedPlanWhenSameTargetEditValueChanges()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.TrainerItem1IdField,
+            value: "2");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.MoneyField,
+            value: "99");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+        var changedSession = update.Session with
+        {
+            PendingEdits = update.Session.PendingEdits
+                .Select(edit => edit.Field == SwShTrainersWorkflowService.MoneyField
+                    ? edit with { NewValue = "98" }
+                    : edit)
+                .ToArray(),
+        };
+
+        var apply = service.ApplyChangePlan(temp.Paths, changedSession, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ApplyRejectsReviewedPlanAfterSourceChanges()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.LevelField,
+            value: "25");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+        var sourcePath = Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "trainer",
+            "trainer_poke",
+            "trainer_010.bin");
+        var source = File.ReadAllBytes(sourcePath);
+        source[0x0A] = 24;
+        File.WriteAllBytes(sourcePath, source);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyRejectsReviewedPlanAfterPersonalDataChanges()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.CanDynamaxField,
+            value: "1");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+        var personalPath = Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "personal",
+            "personal_total.bin");
+        var personal = File.ReadAllBytes(personalPath);
+        personal[810 * SwShPersonalTable.RecordSize]++;
+        File.WriteAllBytes(personalPath, personal);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyRollsBackAllTrainerOutputsWhenLaterWriteFails()
+    {
+        using var temp = CreateEditableProject();
+        const string dataRelativePath = "romfs/bin/trainer/trainer_data/trainer_010.bin";
+        const string teamRelativePath = "romfs/bin/trainer/trainer_poke/trainer_010.bin";
+        var dataOutput = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "trainer",
+            "trainer_data",
+            "trainer_010.bin"));
+        var teamOutput = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "trainer",
+            "trainer_poke",
+            "trainer_010.bin"));
+        temp.WriteOutputFile(dataRelativePath, dataOutput);
+        temp.WriteOutputFile(teamRelativePath, teamOutput);
+        var writeCount = 0;
+        var service = new SwShTrainersEditSessionService((path, contents) =>
+        {
+            writeCount++;
+            if (writeCount == 2)
+            {
+                throw new IOException("Injected later trainer write failure.");
+            }
+
+            File.WriteAllBytes(path, contents);
+        });
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 2,
+            field: SwShTrainersWorkflowService.SpeciesIdField,
+            value: "0");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Equal(dataOutput, File.ReadAllBytes(Path.Combine(temp.OutputRootPath, dataRelativePath)));
+        Assert.Equal(teamOutput, File.ReadAllBytes(Path.Combine(temp.OutputRootPath, teamRelativePath)));
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("rolled back", StringComparison.OrdinalIgnoreCase));
     }
 
     private static TemporarySwShProject CreateEditableProject()
