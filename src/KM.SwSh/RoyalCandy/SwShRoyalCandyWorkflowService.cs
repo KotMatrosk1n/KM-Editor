@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.Executable;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
@@ -56,11 +57,8 @@ public sealed class SwShRoyalCandyWorkflowService
         new("item-data", "RomFS", "Item data", [ItemPath], "RomFS data", "Appends the Rare Candy template as a unique Royal Candy key-item row and points item 1128 at it."),
         new("item-hash", "RomFS", "Item hash table", [ItemHashPath], "RomFS data", "Preserves the existing item hash lookup while verifying item 1128 is present."),
         new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Removes the vanilla Exp. Candy XL shop listing that would become purchasable Royal Candy."),
-        new("nest-data", "RomFS", "Raid reward data", [NestDataPath], "RomFS archive", "Adds controlled acquisition entries to raid reward data."),
-        new("placement-data", "RomFS", "Placement data", [PlacementPath], "RomFS archive", "Adds controlled pickup placement entries."),
         new("bag-event-script", "RomFS", "Bag event script", [BagEventScriptPath], "RomFS script", "Validates the bag event script source used by the grant workflow."),
         new("exefs-main", "ExeFS", "ExeFS main", [ExeFsMainPath], "ExeFS NSO", "Validates the NSO source used by Royal Candy UI and usage patches."),
-        new("exefs-npdm", "ExeFS", "ExeFS NPDM", [ExeFsNpdmPath], "ExeFS metadata", "Detects whether the project is Pokemon Sword or Pokemon Shield."),
     ];
 
     private static readonly LevelCapMilestoneDefinition[] DefaultLevelCapMilestones =
@@ -185,11 +183,20 @@ public sealed class SwShRoyalCandyWorkflowService
             sourceEntries.AddRange(textSet.ItemNames);
         }
 
-        AddMessageTextSetCheck(checks, textSets);
+        var selectedTextSets = SelectSupportedTextOutputSets(project.Paths, textSets);
+        AddMessageTextSetCheck(checks, project.Paths, textSets, selectedTextSets);
+        AddConcreteInputShapeChecks(project, checks, sourceMap, selectedTextSets);
 
-        var gameFlavor = AddNpdmFlavorCheck(project, checks, sourceMap, sourceEntries);
-        var installationState = DetectRoyalCandyInstallation(project);
-        var installedStoryLevelCaps = ReadInstalledStoryLevelCapOverrides(project, sourceMap, installationState);
+        var npdmEntry = FindFirstEntry(project, [ExeFsNpdmPath]);
+        if (npdmEntry is not null)
+        {
+            sourceMap[ExeFsNpdmPath] = npdmEntry;
+        }
+
+        var npdmFlavor = AddNpdmFlavorCheck(project, checks, sourceMap, sourceEntries);
+        var gameFlavor = AddGameRoutingCheck(project, checks, sourceMap, npdmFlavor);
+        var installationState = DetectRoyalCandyInstallation(project, selectedTextSets);
+        var installedStoryLevelCaps = ReadInstalledStoryLevelCapOverrides(project, sourceMap, installationState, checks);
         var exeFsWorkflow = exeFsPatchWorkflowService.Load(project);
         AddExeFsCompatibilityChecks(checks, exeFsWorkflow, installationState);
         AddRoyalCandyReservedAnchorChecks(project, checks, sourceMap);
@@ -210,8 +217,16 @@ public sealed class SwShRoyalCandyWorkflowService
             installedStoryLevelCaps).ToList();
         var outputs = new List<SwShRoyalCandyOutputRecord>();
 
-        outputs.AddRange(CreateInstallOutputs(UnlimitedWorkflowId, installStatus, sourceMap, textSets));
-        outputs.AddRange(CreateInstallOutputs(StoryLimitsWorkflowId, installStatus, sourceMap, textSets));
+        outputs.AddRange(CreateInstallOutputs(
+            UnlimitedWorkflowId,
+            workflows.Single(workflow => workflow.WorkflowId == UnlimitedWorkflowId).Status,
+            sourceMap,
+            selectedTextSets));
+        outputs.AddRange(CreateInstallOutputs(
+            StoryLimitsWorkflowId,
+            workflows.Single(workflow => workflow.WorkflowId == StoryLimitsWorkflowId).Status,
+            sourceMap,
+            selectedTextSets));
         AddUninstallWorkflow(project, installationState, workflows, checks, outputs);
 
         AddAggregateDiagnostics(diagnostics, preflightChecks, installationState);
@@ -392,7 +407,9 @@ public sealed class SwShRoyalCandyWorkflowService
 
     private static void AddMessageTextSetCheck(
         ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
-        IReadOnlyList<MessageTextSet> textSets)
+        ProjectPaths paths,
+        IReadOnlyList<MessageTextSet> textSets,
+        IReadOnlyList<MessageTextSet> selectedTextSets)
     {
         if (textSets.Count == 0)
         {
@@ -418,6 +435,193 @@ public sealed class SwShRoyalCandyWorkflowService
             "romfs/bin/message",
             string.Create(CultureInfo.InvariantCulture, $"Found {textSets.Count:N0} Royal Candy item text language set(s): {languages}."),
             CreateProvenance(textSets[0].ItemInfo));
+
+        var preferredLanguage = SwShGameTextLanguage.Resolve(paths);
+        var selectedLanguage = selectedTextSets.FirstOrDefault()?.Language;
+        var usesPreferredLanguage = string.Equals(
+            selectedLanguage,
+            preferredLanguage,
+            StringComparison.OrdinalIgnoreCase);
+        AddCheck(
+            checks,
+            $"{PreflightWorkflowId}:selected-message-language",
+            PreflightWorkflowId,
+            usesPreferredLanguage ? "Pass" : "Warning",
+            "RomFS",
+            selectedTextSets.FirstOrDefault()?.ItemInfo.RelativePath ?? "romfs/bin/message",
+            usesPreferredLanguage
+                ? $"Royal Candy item text will use the selected {preferredLanguage} game-text set."
+                : $"The selected {preferredLanguage} game-text set is unavailable; Royal Candy will use {selectedLanguage ?? "no language"} as a deterministic fallback.",
+            selectedTextSets.Count > 0
+                ? CreateProvenance(selectedTextSets[0].ItemInfo)
+                : CreateMissingProvenance("romfs/bin/message"));
+    }
+
+    private static void AddConcreteInputShapeChecks(
+        OpenedProject project,
+        ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
+        IReadOnlyDictionary<string, ProjectFileGraphEntry> sourceMap,
+        IReadOnlyList<MessageTextSet> selectedTextSets)
+    {
+        AddDecodedInputCheck(
+            project,
+            checks,
+            sourceMap.GetValueOrDefault(ItemHashPath),
+            "item-hash-shape",
+            "Item hash table",
+            bytes =>
+            {
+                var table = SwShItemHashTable.Parse(bytes);
+                if (table.Entries.All(entry => entry.ItemId != RoyalCandyItemId))
+                {
+                    throw new InvalidDataException($"Item hash table does not contain item {RoyalCandyItemId}.");
+                }
+            });
+
+        AddDecodedInputCheck(
+            project,
+            checks,
+            FindSource(sourceMap, ShopDataPath, LegacyShopDataPath),
+            "shop-data-shape",
+            "Shop data",
+            bytes => _ = SwShShopDataFile.Parse(bytes));
+        AddDecodedInputCheck(
+            project,
+            checks,
+            sourceMap.GetValueOrDefault(BagEventScriptPath),
+            "bag-event-script-shape",
+            "Bag event script",
+            bytes => _ = SwShBagHookAmxPatcher.Analyze(bytes));
+
+        foreach (var textSet in selectedTextSets)
+        {
+            foreach (var entry in textSet.ItemNames.Prepend(textSet.ItemInfo))
+            {
+                AddDecodedInputCheck(
+                    project,
+                    checks,
+                    entry,
+                    $"item-text-shape:{entry.RelativePath}",
+                    "Item text",
+                    bytes =>
+                    {
+                        var text = SwShGameTextFile.Parse(bytes);
+                        if (text.Lines.Count <= RoyalCandyItemId)
+                        {
+                            throw new InvalidDataException($"Text table does not contain item {RoyalCandyItemId}.");
+                        }
+                    });
+            }
+        }
+    }
+
+    private static void AddDecodedInputCheck(
+        OpenedProject project,
+        ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
+        ProjectFileGraphEntry? entry,
+        string checkId,
+        string name,
+        Action<byte[]> decode)
+    {
+        if (entry is null)
+        {
+            return;
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            return;
+        }
+
+        try
+        {
+            decode(File.ReadAllBytes(sourcePath));
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:{checkId}",
+                PreflightWorkflowId,
+                "Pass",
+                "RomFS",
+                entry.RelativePath,
+                $"{name} decoded successfully for Royal Candy output generation.",
+                CreateProvenance(entry));
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException)
+        {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:{checkId}",
+                PreflightWorkflowId,
+                "Fail",
+                "RomFS",
+                entry.RelativePath,
+                $"{name} could not be decoded safely: {exception.Message}",
+                CreateProvenance(entry));
+        }
+    }
+
+    private static string AddGameRoutingCheck(
+        OpenedProject project,
+        ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
+        IReadOnlyDictionary<string, ProjectFileGraphEntry> sourceMap,
+        string npdmFlavor)
+    {
+        ProjectGame? executableGame = null;
+        ProjectFileGraphEntry? mainEntry = null;
+        if (sourceMap.TryGetValue(ExeFsMainPath, out mainEntry))
+        {
+            var mainPath = ResolveSourcePath(project.Paths, mainEntry);
+            if (mainPath is not null && File.Exists(mainPath))
+            {
+                try
+                {
+                    executableGame = SwShExeFsRoyalCandyMainPatcher.DetectSupportedGame(
+                        NsoFile.Parse(File.ReadAllBytes(mainPath)).BuildId);
+                }
+                catch (Exception exception) when (exception is InvalidDataException or IOException)
+                {
+                    AddCheck(
+                        checks,
+                        $"{PreflightWorkflowId}:game-routing",
+                        PreflightWorkflowId,
+                        "Fail",
+                        "ExeFS",
+                        ExeFsMainPath,
+                        $"Royal Candy could not determine the game route from exefs/main: {exception.Message}",
+                        CreateProvenance(mainEntry));
+                    return "unknown";
+                }
+            }
+        }
+
+        var npdmGame = npdmFlavor switch
+        {
+            "Sword" => ProjectGame.Sword,
+            "Shield" => ProjectGame.Shield,
+            _ => (ProjectGame?)null,
+        };
+        var declaredGames = new[] { executableGame, project.Paths.SelectedGame, npdmGame }
+            .Where(game => game is not null)
+            .Select(game => game!.Value)
+            .Distinct()
+            .ToArray();
+        var authoritativeGame = executableGame ?? project.Paths.SelectedGame ?? npdmGame;
+        var agrees = executableGame is not null && declaredGames.Length == 1;
+        AddCheck(
+            checks,
+            $"{PreflightWorkflowId}:game-routing",
+            PreflightWorkflowId,
+            agrees ? "Pass" : "Fail",
+            "ExeFS",
+            ExeFsMainPath,
+            agrees
+                ? $"Royal Candy will use the supported Pokemon {authoritativeGame} executable route; selected game and main.npdm agree when present."
+                : executableGame is null
+                    ? "Royal Candy requires a supported Sword or Shield exefs/main build to select game-specific hooks and labels."
+                    : "The supported exefs/main build, selected game, and main.npdm do not agree on the Royal Candy game route.",
+            mainEntry is null ? CreateMissingProvenance(ExeFsMainPath) : CreateProvenance(mainEntry));
+        return agrees ? authoritativeGame!.Value.ToString() : "unknown";
     }
 
     private static string AddNpdmFlavorCheck(
@@ -518,7 +722,9 @@ public sealed class SwShRoyalCandyWorkflowService
                 : string.Create(CultureInfo.InvariantCulture, $"{check.Area} {check.Offset}");
             var status = check.Status;
             var notes = check.Notes;
-            if (installationState.InstalledWorkflowId is not null && check.Status == "Fail")
+            if (installationState.InstalledWorkflowId is not null
+                && check.Status == "Fail"
+                && IsExpectedInstalledExeFsCheckFailure(check.CheckId))
             {
                 status = "Info";
                 notes = "Signature differs because a recognized Royal Candy installation is already present.";
@@ -537,6 +743,32 @@ public sealed class SwShRoyalCandyWorkflowService
                     check.Provenance.SourceLayer,
                     check.Provenance.FileState));
         }
+    }
+
+    private static bool IsExpectedInstalledExeFsCheckFailure(string checkId)
+    {
+        var suffix = checkId[(checkId.LastIndexOf(':') + 1)..];
+        return suffix is "patch-code-cave"
+            or "exact-patch-preflight"
+            or "ui-check-a"
+            or "ui-check-b"
+            or "ui-check-c"
+            or "ui-check-d"
+            or "ui-check-e"
+            or "ui-check-f"
+            or "ui-check-g"
+            or "ui-check-h"
+            or "ui-check-i"
+            or "ui-check-j"
+            or "equal-branch-a"
+            or "equal-branch-b"
+            or "equal-branch-c"
+            or "equal-branch-d"
+            or "equal-branch-e"
+            or "exp-candy-upper-bound-a"
+            or "exp-candy-upper-bound-b"
+            or "consume-quantity-move"
+            or "allowed-consumable-upper-bound";
     }
 
     private static void AddRoyalCandyReservedAnchorChecks(
@@ -736,6 +968,11 @@ public sealed class SwShRoyalCandyWorkflowService
         string installStatus,
         RoyalCandyInstallationState installationState)
     {
+        if (string.Equals(installStatus, "blocked", StringComparison.Ordinal))
+        {
+            return "blocked";
+        }
+
         if (string.Equals(installationState.InstalledWorkflowId, workflowId, StringComparison.Ordinal))
         {
             return "installed";
@@ -790,10 +1027,10 @@ public sealed class SwShRoyalCandyWorkflowService
     {
         var steps = new List<SwShRoyalCandyWorkflowStepRecord>
         {
-            new(1, "Validate sources", "Resolve required RomFS files, ExeFS main, main.npdm, and item text language sets from the project graph."),
+            new(1, "Validate sources", "Resolve required RomFS files, a supported ExeFS main, optional main.npdm, and the selected item text language set from the project graph."),
             new(2, "Prepare item records", $"Append a unique Royal Candy item row from item {RareCandyItemId} into item {RoyalCandyItemId} and preserve item hash lookup data."),
-            new(3, "Patch item text", "Patch Royal Candy names and descriptions in every discovered item text language set."),
-            new(4, "Plan acquisition edits", "Plan controlled shop, raid reward, placement, and bag event script output targets."),
+            new(3, "Patch item text", "Patch Royal Candy names and descriptions in every applicable itemname table for the selected game-text language."),
+            new(4, "Plan acquisition edits", "Patch the verified shop and Bag Hook targets while keeping raid reward and placement integrations explicitly deferred."),
             new(5, "Validate ExeFS anchors", "Verify the Royal Candy reserved item-route/decrement anchors are vanilla, already KM-owned, or blocked as a foreign signature before writing."),
         };
 
@@ -816,6 +1053,7 @@ public sealed class SwShRoyalCandyWorkflowService
         {
             "available" => "ready",
             "warning" => "review",
+            "installed" => "review",
             "readOnly" => "readOnly",
             _ => "blocked",
         };
@@ -823,12 +1061,12 @@ public sealed class SwShRoyalCandyWorkflowService
         yield return CreateOutput(workflowId, ItemPath, FindSource(sourceMap, ItemPath), "RomFS data", outputStatus, "Royal Candy item row patch.");
         yield return CreateOutput(workflowId, ItemHashPath, FindSource(sourceMap, ItemHashPath), "RomFS data", outputStatus, "Royal Candy item hash lookup patch.");
         yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Royal Candy shop inventory cleanup.");
-        yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", outputStatus, "Royal Candy raid reward patch.");
-        yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", outputStatus, "Royal Candy pickup placement patch.");
+        yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", "deferred", "Reserved future Royal Candy raid reward integration; this workflow does not write the archive.");
+        yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", "deferred", "Reserved future Royal Candy placement integration; this workflow does not write the archive.");
         yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "Bag Hook slot", outputStatus, "Royal Candy Bag Hook slot 1 grant.");
         yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
 
-        foreach (var textSet in SelectSupportedTextOutputSets(textSets))
+        foreach (var textSet in textSets)
         {
             yield return CreateOutput(
                 workflowId,
@@ -851,10 +1089,21 @@ public sealed class SwShRoyalCandyWorkflowService
         }
     }
 
-    private static IReadOnlyList<MessageTextSet> SelectSupportedTextOutputSets(IReadOnlyList<MessageTextSet> textSets)
+    private static IReadOnlyList<MessageTextSet> SelectSupportedTextOutputSets(
+        ProjectPaths paths,
+        IReadOnlyList<MessageTextSet> textSets)
     {
+        var preferredLanguage = SwShGameTextLanguage.Resolve(paths);
+        var preferred = textSets
+            .Where(set => string.Equals(set.Language, preferredLanguage, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (preferred.Length > 0)
+        {
+            return preferred;
+        }
+
         var english = textSets
-            .Where(set => string.Equals(set.Language, "English", StringComparison.OrdinalIgnoreCase))
+            .Where(set => string.Equals(set.Language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         return english.Length > 0 ? english : textSets.Take(1).ToArray();
@@ -869,30 +1118,50 @@ public sealed class SwShRoyalCandyWorkflowService
     {
         var bagHookEntry = FindRoyalCandyBagHookOutput(project);
         var hasIdentifyingOutput = installationState.LayeredEntries.Count > 0 || bagHookEntry is not null;
-        var shopEntry = hasIdentifyingOutput ? FindRoyalCandyShopOutput(project) : null;
+        var cleanupBlockers = hasIdentifyingOutput
+            ? SwShRoyalCandyCleanup.FindBlockingCleanupTargets(project)
+            : Array.Empty<SwShRoyalCandyCleanupBlocker>();
+        var shopEntries = hasIdentifyingOutput
+            ? FindRoyalCandyShopOutputs(project)
+            : Array.Empty<ProjectFileGraphEntry>();
+        var itemHashEntry = hasIdentifyingOutput ? FindBaseIdenticalItemHashOutput(project) : null;
         var cleanupOutputCount = installationState.LayeredEntries.Count
-            + (shopEntry is null ? 0 : 1)
-            + (bagHookEntry is null ? 0 : 1);
+            + shopEntries.Count
+            + (itemHashEntry is null ? 0 : 1)
+            + (bagHookEntry is null ? 0 : 1)
+            + cleanupBlockers.Count;
         var hasOutputRoot = project.Health.CanOpenEditableWorkflows;
         var status = !hasOutputRoot
             ? "readOnly"
-            : cleanupOutputCount > 0
-                ? "warning"
-                : "blocked";
+            : cleanupBlockers.Count > 0
+                ? "blocked"
+                : cleanupOutputCount > 0
+                    ? "warning"
+                    : "blocked";
         var cleanupMessage = !hasOutputRoot
             ? "LayeredFS output root is not configured; uninstall can only be inspected read-only."
-            : cleanupOutputCount > 0
-                ? installationState.LayeredEntries.Count > 0
-                    ? installationState.Message
-                    : string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Detected {cleanupOutputCount:N0} Royal Candy cleanup target(s) in the configured output.")
-                : "No known Royal Candy output target was found in LayeredFS output.";
+            : cleanupBlockers.Count > 0
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Royal Candy cleanup is blocked because {cleanupBlockers.Count:N0} required layered target(s) cannot be verified for safe atomic cleanup.")
+                : cleanupOutputCount > 0
+                    ? installationState.LayeredEntries.Count > 0
+                        ? installationState.Message
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Detected {cleanupOutputCount:N0} Royal Candy cleanup target(s) in the configured output.")
+                    : "No known Royal Candy output target was found in LayeredFS output.";
         var provenance = installationState.LayeredEntries.Count > 0
             ? CreateProvenance(installationState.LayeredEntries[0])
-            : shopEntry is not null
-                ? CreateProvenance(shopEntry)
-            : GeneratedProvenance;
+            : shopEntries.Count > 0
+                ? CreateProvenance(shopEntries[0])
+                : itemHashEntry is not null
+                    ? CreateProvenance(itemHashEntry)
+                    : bagHookEntry is not null
+                        ? CreateProvenance(bagHookEntry)
+                        : cleanupBlockers.Count > 0
+                            ? CreateProvenance(cleanupBlockers[0].Entry)
+                            : GeneratedProvenance;
 
         workflows.Add(new SwShRoyalCandyWorkflowRecord(
             UninstallWorkflowId,
@@ -903,7 +1172,7 @@ public sealed class SwShRoyalCandyWorkflowService
             RoyalCandyItemId,
             RareCandyItemId,
             status,
-            "Safely removes reviewed Royal Candy output, clears Bag Hook slot 1, restores Royal Candy-owned shop entries, and restores only Royal Candy-owned ExeFS bytes.",
+            "Safely removes reviewed Royal Candy output, restores the verified item 1128 mapping, clears Bag Hook slot 1, restores Royal Candy-owned shop entries, and restores only Royal Candy-owned ExeFS bytes.",
             Array.Empty<SwShRoyalCandyLevelCapRecord>(),
             [
                 new(1, "Inspect output root", "Find known Royal Candy LayeredFS files without reading or changing base RomFS/ExeFS."),
@@ -916,7 +1185,7 @@ public sealed class SwShRoyalCandyWorkflowService
             checks,
             $"{UninstallWorkflowId}:known-output",
             UninstallWorkflowId,
-            "Warning",
+            cleanupBlockers.Count > 0 ? "Fail" : "Warning",
             "Output",
             "LayeredFS output root",
             cleanupMessage,
@@ -933,7 +1202,7 @@ public sealed class SwShRoyalCandyWorkflowService
                 "Detected known Royal Candy output target for cleanup review."));
         }
 
-        if (shopEntry is not null)
+        foreach (var shopEntry in shopEntries)
         {
             outputs.Add(CreateOutput(
                 UninstallWorkflowId,
@@ -942,6 +1211,17 @@ public sealed class SwShRoyalCandyWorkflowService
                 "Shop data",
                 "review",
                 "Detected Royal Candy shop inventory patch; cleanup will restore only base Exp. Candy XL item 1128 shop entries."));
+        }
+
+        if (itemHashEntry is not null)
+        {
+            outputs.Add(CreateOutput(
+                UninstallWorkflowId,
+                itemHashEntry.RelativePath,
+                itemHashEntry,
+                "Item hash data",
+                "review",
+                "Detected a base-identical Royal Candy item hash override; cleanup will remove only this redundant layered file."));
         }
 
         if (bagHookEntry is not null)
@@ -953,6 +1233,17 @@ public sealed class SwShRoyalCandyWorkflowService
                 "Bag Hook slot",
                 "review",
                 "Detected Royal Candy in Bag Hook slot 1; cleanup will clear only that slot."));
+        }
+
+        foreach (var blocker in cleanupBlockers)
+        {
+            outputs.Add(CreateOutput(
+                UninstallWorkflowId,
+                blocker.Entry.RelativePath,
+                blocker.Entry,
+                "Blocked cleanup target",
+                "blocked",
+                blocker.Message));
         }
     }
 
@@ -1046,7 +1337,9 @@ public sealed class SwShRoyalCandyWorkflowService
             : "available";
     }
 
-    private static RoyalCandyInstallationState DetectRoyalCandyInstallation(OpenedProject project)
+    private static RoyalCandyInstallationState DetectRoyalCandyInstallation(
+        OpenedProject project,
+        IReadOnlyList<MessageTextSet> selectedTextSets)
     {
         var layeredEntries = GetKnownRoyalCandyLayeredEntries(project)
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
@@ -1064,11 +1357,37 @@ public sealed class SwShRoyalCandyWorkflowService
                 "No Royal Candy LayeredFS output was detected.");
         }
 
-        var textInstallKind = DetectRoyalCandyTextInstallKind(project, identifyingEntries);
+        var textDetection = DetectRoyalCandyTextInstallKind(project, identifyingEntries, selectedTextSets);
+        if (textDetection.HasConflict)
+        {
+            return new RoyalCandyInstallationState(
+                RoyalCandyInstallKind.UnknownConflict,
+                null,
+                layeredEntries,
+                "LayeredFS output contains conflicting Royal Candy item-text variants across language sets. Remove the stale Royal Candy text output and reinstall one variant for the selected game-text language.");
+        }
+
+        var textInstallKind = textDetection.Kind;
         var exeFsInstallKind = DetectRoyalCandyExeFsInstallKind(project, identifyingEntries);
-        if (textInstallKind is not null
-            && exeFsInstallKind is not null
-            && textInstallKind.Value != exeFsInstallKind.Value)
+        if (textInstallKind is null || exeFsInstallKind is null)
+        {
+            var selectedLanguage = textDetection.SelectedLanguage ?? "selected";
+            var detectedPart = (textInstallKind, exeFsInstallKind, textDetection.HasRecognizedText) switch
+            {
+                (not null, null, _) => "selected-language Royal Candy item text without a matching complete exefs/main signature",
+                (null, not null, true) => $"a complete Royal Candy exefs/main signature with Royal Candy text only outside the selected {selectedLanguage} language set",
+                (null, not null, false) => $"a complete Royal Candy exefs/main signature without matching Royal Candy item text in the selected {selectedLanguage} language set",
+                (null, null, true) => $"Royal Candy item text outside the selected {selectedLanguage} language set without a matching complete exefs/main signature",
+                _ => "known Royal Candy output that does not contain a complete selected-language text and exefs/main signature pair",
+            };
+            return new RoyalCandyInstallationState(
+                RoyalCandyInstallKind.UnknownConflict,
+                null,
+                layeredEntries,
+                $"LayeredFS output contains a partial Royal Candy installation: {detectedPart}. Review and remove the partial output before reinstalling.");
+        }
+
+        if (textInstallKind.Value != exeFsInstallKind.Value)
         {
             return new RoyalCandyInstallationState(
                 RoyalCandyInstallKind.UnknownConflict,
@@ -1079,31 +1398,20 @@ public sealed class SwShRoyalCandyWorkflowService
                     $"LayeredFS output contains mixed Royal Candy targets: item text identifies {FormatRoyalCandyInstallKind(textInstallKind.Value)}, but exefs/main identifies {FormatRoyalCandyInstallKind(exeFsInstallKind.Value)}. Remove stale Royal Candy output and reinstall one variant."));
         }
 
-        var installKind = exeFsInstallKind ?? textInstallKind;
-        if (installKind is not null)
-        {
-            var workflowId = installKind.Value == RoyalCandyInstallKind.StoryLimits
-                ? StoryLimitsWorkflowId
-                : UnlimitedWorkflowId;
-            var name = installKind.Value == RoyalCandyInstallKind.StoryLimits
-                ? StoryLimitsRoyalCandyName
-                : UnlimitedRoyalCandyName;
-            return new RoyalCandyInstallationState(
-                installKind.Value,
-                workflowId,
-                layeredEntries,
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{name} is installed in the configured LayeredFS output ({layeredEntries.Length:N0} known Royal Candy target file(s))."));
-        }
-
+        var installKind = exeFsInstallKind.Value;
+        var workflowId = installKind == RoyalCandyInstallKind.StoryLimits
+            ? StoryLimitsWorkflowId
+            : UnlimitedWorkflowId;
+        var name = installKind == RoyalCandyInstallKind.StoryLimits
+            ? StoryLimitsRoyalCandyName
+            : UnlimitedRoyalCandyName;
         return new RoyalCandyInstallationState(
-            RoyalCandyInstallKind.UnknownConflict,
-            null,
+            installKind,
+            workflowId,
             layeredEntries,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"LayeredFS output contains {layeredEntries.Length:N0} Royal Candy target file(s), but KM could not identify them as Unlimited Royal Candy or Royal Candy with Story Limits."));
+                $"{name} is installed in the configured LayeredFS output ({layeredEntries.Length:N0} known Royal Candy target file(s))."));
     }
 
     private static string FormatRoyalCandyInstallKind(RoyalCandyInstallKind installKind)
@@ -1116,10 +1424,15 @@ public sealed class SwShRoyalCandyWorkflowService
         };
     }
 
-    private static RoyalCandyInstallKind? DetectRoyalCandyTextInstallKind(
+    private static RoyalCandyTextInstallationDetection DetectRoyalCandyTextInstallKind(
         OpenedProject project,
-        IReadOnlyList<ProjectFileGraphEntry> layeredEntries)
+        IReadOnlyList<ProjectFileGraphEntry> layeredEntries,
+        IReadOnlyList<MessageTextSet> selectedTextSets)
     {
+        var selectedItemInfoPaths = selectedTextSets
+            .Select(textSet => textSet.ItemInfo.RelativePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var recognized = new List<(string RelativePath, RoyalCandyInstallKind Kind)>();
         foreach (var entry in layeredEntries.Where(entry =>
             entry.RelativePath.EndsWith("/iteminfo.dat", StringComparison.OrdinalIgnoreCase)))
         {
@@ -1140,12 +1453,11 @@ public sealed class SwShRoyalCandyWorkflowService
                 var description = text.Lines[RoyalCandyItemId].Text;
                 if (string.Equals(description, StoryLimitsRoyalCandyDescription, StringComparison.Ordinal))
                 {
-                    return RoyalCandyInstallKind.StoryLimits;
+                    recognized.Add((entry.RelativePath, RoyalCandyInstallKind.StoryLimits));
                 }
-
-                if (string.Equals(description, UnlimitedRoyalCandyDescription, StringComparison.Ordinal))
+                else if (string.Equals(description, UnlimitedRoyalCandyDescription, StringComparison.Ordinal))
                 {
-                    return RoyalCandyInstallKind.Unlimited;
+                    recognized.Add((entry.RelativePath, RoyalCandyInstallKind.Unlimited));
                 }
             }
             catch (InvalidDataException)
@@ -1156,7 +1468,20 @@ public sealed class SwShRoyalCandyWorkflowService
             }
         }
 
-        return null;
+        var recognizedKinds = recognized
+            .Select(candidate => candidate.Kind)
+            .Distinct()
+            .ToArray();
+        var selectedKinds = recognized
+            .Where(candidate => selectedItemInfoPaths.Contains(candidate.RelativePath))
+            .Select(candidate => candidate.Kind)
+            .Distinct()
+            .ToArray();
+        return new RoyalCandyTextInstallationDetection(
+            selectedKinds.Length == 1 ? selectedKinds[0] : null,
+            HasRecognizedText: recognized.Count > 0,
+            HasConflict: recognizedKinds.Length > 1 || selectedKinds.Length > 1,
+            SelectedLanguage: selectedTextSets.FirstOrDefault()?.Language);
     }
 
     private static RoyalCandyInstallKind? DetectRoyalCandyExeFsInstallKind(
@@ -1201,7 +1526,8 @@ public sealed class SwShRoyalCandyWorkflowService
     private static IReadOnlyDictionary<LevelCapMilestoneKey, int> ReadInstalledStoryLevelCapOverrides(
         OpenedProject project,
         IReadOnlyDictionary<string, ProjectFileGraphEntry> sourceMap,
-        RoyalCandyInstallationState installationState)
+        RoyalCandyInstallationState installationState,
+        ICollection<SwShRoyalCandyWorkflowCheckRecord> checks)
     {
         if (installationState.Kind != RoyalCandyInstallKind.StoryLimits
             || !sourceMap.TryGetValue(ExeFsMainPath, out var entry))
@@ -1217,22 +1543,76 @@ public sealed class SwShRoyalCandyWorkflowService
 
         try
         {
-            return SwShExeFsRoyalCandyMainPatcher
-                .ReadInstalledStoryLevelCaps(File.ReadAllBytes(sourcePath), project.Paths.SelectedGame)
-                .ToDictionary(
-                    cap => new LevelCapMilestoneKey(
-                        cap.ProgressHash,
-                        FormatProgressKind(cap.ProgressKind),
-                        cap.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
-                            ? cap.WorkMinimum
-                            : 0),
-                    cap => cap.LevelCap);
+            var installedCaps = SwShExeFsRoyalCandyMainPatcher.ReadInstalledStoryLevelCaps(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame);
+            var capMap = new Dictionary<LevelCapMilestoneKey, int>();
+            foreach (var cap in installedCaps)
+            {
+                var key = new LevelCapMilestoneKey(
+                    cap.ProgressHash,
+                    FormatProgressKind(cap.ProgressKind),
+                    cap.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                        ? cap.WorkMinimum
+                        : 0);
+                if (!capMap.TryAdd(key, cap.LevelCap))
+                {
+                    throw new InvalidDataException("The installed Royal Candy story ladder contains a duplicate milestone.");
+                }
+            }
+
+            if (capMap.Count != DefaultLevelCapMilestones.Length)
+            {
+                throw new InvalidDataException(
+                    $"The installed Royal Candy story ladder contains {capMap.Count} unique milestones; expected {DefaultLevelCapMilestones.Length}.");
+            }
+
+            var expectedKeys = DefaultLevelCapMilestones
+                .Select(milestone => new LevelCapMilestoneKey(
+                    milestone.ProgressHash,
+                    milestone.ProgressKind,
+                    milestone.ProgressKind == "workAtLeast" ? milestone.WorkMinimum : 0))
+                .ToHashSet();
+            if (!expectedKeys.SetEquals(capMap.Keys))
+            {
+                throw new InvalidDataException(
+                    "The installed Royal Candy story ladder does not contain the exact supported story milestones.");
+            }
+
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:installed-story-ladder",
+                PreflightWorkflowId,
+                "Pass",
+                "ExeFS",
+                ExeFsMainPath,
+                $"Read back all {capMap.Count} unique Royal Candy story-limit milestones from the installed executable.",
+                CreateProvenance(entry));
+            return capMap;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:installed-story-ladder",
+                PreflightWorkflowId,
+                "Fail",
+                "ExeFS",
+                ExeFsMainPath,
+                $"Installed Royal Candy story limits could not be read safely: {exception.Message}",
+                CreateProvenance(entry));
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:installed-story-ladder",
+                PreflightWorkflowId,
+                "Fail",
+                "ExeFS",
+                ExeFsMainPath,
+                $"Installed Royal Candy story limits could not be read: {exception.Message}",
+                CreateProvenance(entry));
         }
 
         return new Dictionary<LevelCapMilestoneKey, int>();
@@ -1251,6 +1631,16 @@ public sealed class SwShRoyalCandyWorkflowService
     {
         foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
+            if (string.Equals(entry.RelativePath, ItemPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (SwShRoyalCandyCleanup.HasRoyalCandyItemData(project, entry))
+                {
+                    yield return entry;
+                }
+
+                continue;
+            }
+
             if (string.Equals(entry.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
             {
                 if (HasRoyalCandyExeFsSignature(project, entry))
@@ -1266,6 +1656,16 @@ public sealed class SwShRoyalCandyWorkflowService
                 yield return entry;
             }
         }
+    }
+
+    private static ProjectFileGraphEntry? FindBaseIdenticalItemHashOutput(OpenedProject project)
+    {
+        var entry = project.FileGraph.Entries.FirstOrDefault(candidate =>
+            candidate.LayeredFile is not null
+            && string.Equals(candidate.RelativePath, ItemHashPath, StringComparison.OrdinalIgnoreCase));
+        return entry is not null && SwShRoyalCandyCleanup.IsOwnedItemHashOutput(project, entry)
+            ? entry
+            : null;
     }
 
     private static bool HasRoyalCandyItemText(OpenedProject project, ProjectFileGraphEntry entry)
@@ -1325,7 +1725,8 @@ public sealed class SwShRoyalCandyWorkflowService
             var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
                 File.ReadAllBytes(sourcePath),
                 project.Paths.SelectedGame);
-            return signature.Kind != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
+            return signature.Kind is SwShRoyalCandyExeFsSignatureKind.Unlimited
+                or SwShRoyalCandyExeFsSignatureKind.StoryLimits;
         }
         catch (InvalidDataException)
         {
@@ -1464,20 +1865,15 @@ public sealed class SwShRoyalCandyWorkflowService
         return null;
     }
 
-    private static ProjectFileGraphEntry? FindRoyalCandyShopOutput(OpenedProject project)
+    private static IReadOnlyList<ProjectFileGraphEntry> FindRoyalCandyShopOutputs(OpenedProject project)
     {
-        foreach (var entry in project.FileGraph.Entries.Where(entry =>
-            entry.LayeredFile is not null
-            && (string.Equals(entry.RelativePath, ShopDataPath, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(entry.RelativePath, LegacyShopDataPath, StringComparison.OrdinalIgnoreCase))))
-        {
-            if (HasRoyalCandyShopPatch(project, entry))
-            {
-                return entry;
-            }
-        }
-
-        return null;
+        return project.FileGraph.Entries
+            .Where(entry => entry.LayeredFile is not null
+                && (string.Equals(entry.RelativePath, ShopDataPath, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(entry.RelativePath, LegacyShopDataPath, StringComparison.OrdinalIgnoreCase)))
+            .Where(entry => HasRoyalCandyShopPatch(project, entry))
+            .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static bool HasRoyalCandyShopPatch(OpenedProject project, ProjectFileGraphEntry entry)
@@ -1507,113 +1903,7 @@ public sealed class SwShRoyalCandyWorkflowService
 
     private static bool HasMissingBaseRoyalCandyShopEntry(SwShShopDataFile targetData, SwShShopDataFile baseData)
     {
-        foreach (var (baseShop, baseIndex) in baseData.SingleShops.Select((shop, index) => (shop, index)))
-        {
-            if (!baseShop.Inventory.Items.Contains(RoyalCandyItemId))
-            {
-                continue;
-            }
-
-            var targetIndex = ResolveTargetSingleShopIndex(
-                targetData,
-                baseIndex,
-                baseShop.Hash,
-                baseData.SingleShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
-            if (targetIndex >= 0
-                && HasMissingBaseRoyalCandySlot(
-                    targetData.SingleShops[targetIndex].Inventory.Items,
-                    baseShop.Inventory.Items))
-            {
-                return true;
-            }
-        }
-
-        foreach (var (baseShop, baseIndex) in baseData.MultiShops.Select((shop, index) => (shop, index)))
-        {
-            var targetIndex = ResolveTargetMultiShopIndex(
-                targetData,
-                baseIndex,
-                baseShop.Hash,
-                baseData.MultiShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
-            if (targetIndex < 0)
-            {
-                continue;
-            }
-
-            var targetShop = targetData.MultiShops[targetIndex];
-            var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
-            for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
-            {
-                if (HasMissingBaseRoyalCandySlot(
-                    targetShop.Inventories[inventoryIndex].Items,
-                    baseShop.Inventories[inventoryIndex].Items))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static int ResolveTargetSingleShopIndex(
-        SwShShopDataFile targetData,
-        int baseIndex,
-        ulong hash,
-        bool allowUniqueFallback)
-    {
-        if ((uint)baseIndex < (uint)targetData.SingleShops.Count
-            && targetData.SingleShops[baseIndex].Hash == hash)
-        {
-            return baseIndex;
-        }
-
-        if (!allowUniqueFallback)
-        {
-            return -1;
-        }
-
-        var matches = targetData.SingleShops
-            .Select((shop, index) => (shop, index))
-            .Where(entry => entry.shop.Hash == hash)
-            .Select(entry => entry.index)
-            .Take(2)
-            .ToArray();
-        return matches.Length == 1 ? matches[0] : -1;
-    }
-
-    private static int ResolveTargetMultiShopIndex(
-        SwShShopDataFile targetData,
-        int baseIndex,
-        ulong hash,
-        bool allowUniqueFallback)
-    {
-        if ((uint)baseIndex < (uint)targetData.MultiShops.Count
-            && targetData.MultiShops[baseIndex].Hash == hash)
-        {
-            return baseIndex;
-        }
-
-        if (!allowUniqueFallback)
-        {
-            return -1;
-        }
-
-        var matches = targetData.MultiShops
-            .Select((shop, index) => (shop, index))
-            .Where(entry => entry.shop.Hash == hash)
-            .Select(entry => entry.index)
-            .Take(2)
-            .ToArray();
-        return matches.Length == 1 ? matches[0] : -1;
-    }
-
-    private static bool HasMissingBaseRoyalCandySlot(IReadOnlyList<int> targetItems, IReadOnlyList<int> baseItems)
-    {
-        return baseItems
-            .Select((itemId, slot) => (itemId, slot))
-            .Any(entry => entry.itemId == RoyalCandyItemId
-                && ((uint)entry.slot >= (uint)targetItems.Count || targetItems[entry.slot] != RoyalCandyItemId));
+        return SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData).MissingOccurrences > 0;
     }
 
     private static bool IsItemMessageOutputPath(string relativePath)
@@ -1787,6 +2077,12 @@ public sealed class SwShRoyalCandyWorkflowService
             or RoyalCandyInstallKind.StoryLimits
             or RoyalCandyInstallKind.UnknownConflict;
     }
+
+    private sealed record RoyalCandyTextInstallationDetection(
+        RoyalCandyInstallKind? Kind,
+        bool HasRecognizedText,
+        bool HasConflict,
+        string? SelectedLanguage);
 
     private sealed record MessageTextSet(
         string Language,

@@ -65,8 +65,11 @@ public sealed class SwShHookReservationTests
 
     public static IEnumerable<object[]> RoyalCandyBuildVariants()
     {
-        yield return [ProjectGame.Sword, RoyalCandyUnlimitedWorkflowId];
-        yield return [ProjectGame.Shield, RoyalCandyUnlimitedWorkflowId];
+        foreach (var game in new[] { ProjectGame.Sword, ProjectGame.Shield })
+        {
+            yield return [game, RoyalCandyUnlimitedWorkflowId];
+            yield return [game, RoyalCandyStoryLimitsWorkflowId];
+        }
     }
 
     [Fact]
@@ -868,6 +871,85 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyBuildVariants))]
+    public void RoyalCandyRestorePreservesUnusedOtherGameVirtualInventoryOffsets(
+        ProjectGame game,
+        string workflowId)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = ApplyRoyalCandyMainPatch(baseMain, workflowId, game);
+        var patchedNso = NsoFile.Parse(patchedMain);
+        var currentText = patchedNso.Text.DecompressedData.ToArray();
+        var unusedOwnershipOffset = game == ProjectGame.Shield ? 0x01420EF0 : 0x01420F20;
+        var unusedCountOffset = game == ProjectGame.Shield ? 0x01421090 : 0x014210C0;
+        const uint unrelatedOwnershipEdit = 0xD503201F;
+        const uint unrelatedCountEdit = 0xD65F03C0;
+        WriteInstruction(currentText, unusedOwnershipOffset, unrelatedOwnershipEdit);
+        WriteInstruction(currentText, unusedCountOffset, unrelatedCountEdit);
+        var currentMain = patchedNso.Write(textDecompressedData: currentText);
+
+        Assert.Equal(
+            ExpectedRoyalCandySignature(workflowId),
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(currentMain, game).Kind);
+
+        var restoredMain = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(currentMain, baseMain, game);
+        var restoredText = NsoFile.Parse(restoredMain).Text.DecompressedData;
+
+        Assert.Equal(unrelatedOwnershipEdit, ReadInstruction(restoredText, unusedOwnershipOffset));
+        Assert.Equal(unrelatedCountEdit, ReadInstruction(restoredText, unusedCountOffset));
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.NotInstalled,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(restoredMain, game).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryRestoreUsesExactEightByteCaveLength(ProjectGame game)
+    {
+        const int caveSearchStart = 0x007BC338;
+        const int isolatedEightByteCave = caveSearchStart + 0x10;
+        const uint unrelatedAdjacentEdit = 0x52800020;
+
+        var originalBaseNso = NsoFile.Parse(CreateSharedHookNso(game));
+        var baseText = originalBaseNso.Text.DecompressedData.ToArray();
+        for (var offset = caveSearchStart; offset < caveSearchStart + 0x40; offset += sizeof(uint))
+        {
+            WriteInstruction(baseText, offset, EncodeNop());
+        }
+
+        WriteInstruction(baseText, isolatedEightByteCave, 0);
+        WriteInstruction(baseText, isolatedEightByteCave + sizeof(uint), 0);
+        var baseMain = originalBaseNso.Write(textDecompressedData: baseText);
+        var patchedMain = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            baseMain,
+            CreateRoyalCandyTestStoryCaps(),
+            game);
+        var patchedNso = NsoFile.Parse(patchedMain);
+        var currentText = patchedNso.Text.DecompressedData.ToArray();
+
+        Assert.NotEqual(
+            baseText.AsSpan(isolatedEightByteCave, 0x08).ToArray(),
+            currentText.AsSpan(isolatedEightByteCave, 0x08).ToArray());
+        WriteInstruction(currentText, isolatedEightByteCave + 0x08, unrelatedAdjacentEdit);
+        var currentMain = patchedNso.Write(textDecompressedData: currentText);
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.StoryLimits,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(currentMain, game).Kind);
+
+        var restoredMain = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(currentMain, baseMain, game);
+        var restoredText = NsoFile.Parse(restoredMain).Text.DecompressedData;
+
+        Assert.Equal(
+            baseText.AsSpan(isolatedEightByteCave, 0x08).ToArray(),
+            restoredText.AsSpan(isolatedEightByteCave, 0x08).ToArray());
+        Assert.Equal(unrelatedAdjacentEdit, ReadInstruction(restoredText, isolatedEightByteCave + 0x08));
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.NotInstalled,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(restoredMain, game).Kind);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyBuildVariants))]
     public void RoyalCandyPatchesSharedAllowedConsumableRoute(ProjectGame game, string workflowId)
     {
         var baseMain = CreateSharedHookNso(game);
@@ -917,6 +999,199 @@ public sealed class SwShHookReservationTests
 
         AssertRoyalCandyVirtualInventoryHelper(text, ownershipOffset, 0xF81D0FF5, 1);
         AssertRoyalCandyVirtualInventoryHelper(text, countOffset, 0xA9BE4FF4, 999);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryLimitsRejectsRequiredTextHashMismatch(ProjectGame game)
+    {
+        var main = CreateSharedHookNso(game);
+        BinaryPrimitives.WriteUInt32LittleEndian(main.AsSpan(0x0C, sizeof(uint)), (uint)NsoFlags.CheckHashText);
+        main[0xA0] ^= 0xFF;
+
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            main,
+            CreateRoyalCandyTestStoryCaps(),
+            game));
+    }
+
+    [Fact]
+    public void RoyalCandyFailsClosedOnUnsupportedBuildWithoutSelectedGame()
+    {
+        var main = CreateSharedHookNso();
+        main[0x40] ^= 0xFF;
+
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(main));
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            main,
+            CreateRoyalCandyTestStoryCaps()));
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.ReadInstalledStoryLevelCaps(main));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, RoyalCandyUnlimitedWorkflowId, false)]
+    [InlineData(ProjectGame.Shield, RoyalCandyUnlimitedWorkflowId, true)]
+    [InlineData(ProjectGame.Sword, RoyalCandyStoryLimitsWorkflowId, true)]
+    [InlineData(ProjectGame.Shield, RoyalCandyStoryLimitsWorkflowId, false)]
+    public void RoyalCandyAnalysisAndRestoreRejectMalformedOwnedPayloads(
+        ProjectGame game,
+        string workflowId,
+        bool corruptVirtualInventory)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = ApplyRoyalCandyMainPatch(baseMain, workflowId, game);
+        var patchedNso = NsoFile.Parse(patchedMain);
+        var text = patchedNso.Text.DecompressedData.ToArray();
+        if (corruptVirtualInventory)
+        {
+            var ownershipOffset = game == ProjectGame.Shield ? 0x01420F20 : 0x01420EF0;
+            var dispatchOffset = DecodeBranchTarget(ReadInstruction(text, ownershipOffset), ownershipOffset);
+            WriteInstruction(text, dispatchOffset, EncodeNop());
+        }
+        else
+        {
+            const int allowedConsumableBranchOffset = 0x007DDA90;
+            var caveOffset = DecodeConditionalBranchTarget(
+                ReadInstruction(text, allowedConsumableBranchOffset),
+                allowedConsumableBranchOffset);
+            WriteInstruction(text, caveOffset + 8, EncodeNop());
+        }
+
+        var malformedMain = patchedNso.Write(textDecompressedData: text);
+
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(malformedMain, game).Kind);
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
+            malformedMain,
+            baseMain,
+            game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyRestoreRejectsNotInstalledAndGameMismatchStates(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(baseMain, game);
+        var otherGame = game == ProjectGame.Sword ? ProjectGame.Shield : ProjectGame.Sword;
+
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
+            baseMain,
+            baseMain,
+            game));
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
+            patchedMain,
+            baseMain,
+            otherGame));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryVerifierRequiresExactRequestedLadder(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var levelCaps = CreateRoyalCandyTestStoryCaps();
+        var patchedMain = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(baseMain, levelCaps, game);
+
+        SwShExeFsRoyalCandyMainPatcher.VerifyStoryLimitsPatchOutput(
+            baseMain,
+            patchedMain,
+            levelCaps,
+            game);
+        var installed = SwShExeFsRoyalCandyMainPatcher.ReadInstalledStoryLevelCaps(patchedMain, game);
+        Assert.Equal([35, 20], installed.Select(levelCap => levelCap.LevelCap));
+        Assert.Equal(
+            [0x123456789ABCDEF0UL, 0x0FEDCBA987654321UL],
+            installed.Select(levelCap => levelCap.ProgressHash));
+
+        var differentLevelCaps = levelCaps
+            .Select((levelCap, index) => index == 0 ? levelCap with { LevelCap = levelCap.LevelCap + 1 } : levelCap)
+            .ToArray();
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.VerifyStoryLimitsPatchOutput(
+            baseMain,
+            patchedMain,
+            differentLevelCaps,
+            game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryLimitsRejectsDuplicateMilestones(ProjectGame game)
+    {
+        var duplicate = new SwShRoyalCandyStoryLevelCap(
+            40,
+            0x123456789ABCDEF0UL,
+            "Duplicate work milestone",
+            SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+            WorkMinimum: 530);
+
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            CreateSharedHookNso(game),
+            [.. CreateRoyalCandyTestStoryCaps(), duplicate],
+            game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryReadbackRejectsPartialPayloadGraph(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            baseMain,
+            CreateRoyalCandyTestStoryCaps(),
+            game);
+        var patchedNso = NsoFile.Parse(patchedMain);
+        var text = patchedNso.Text.DecompressedData.ToArray();
+        var helperOffset = ResolveRoyalCandyStoryHelperOffset(text);
+        WriteInstruction(text, helperOffset + 8, EncodeNop());
+        var malformedMain = patchedNso.Write(textDecompressedData: text);
+
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(malformedMain, game).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShExeFsRoyalCandyMainPatcher.ReadInstalledStoryLevelCaps(malformedMain, game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void RoyalCandyStoryVerifierRejectsOtherOwnerAndPreservedSegmentChanges(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var levelCaps = CreateRoyalCandyTestStoryCaps();
+        var patchedMain = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(baseMain, levelCaps, game);
+        var patchedNso = NsoFile.Parse(patchedMain);
+
+        var otherOwnerText = patchedNso.Text.DecompressedData.ToArray();
+        var catchCapHookOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsHookSiteOffset
+            : SwShCatchCapMainPatcher.ExeFsHookSiteOffset;
+        WriteInstruction(otherOwnerText, catchCapHookOffset, EncodeNop());
+        var changedOtherOwner = patchedNso.Write(textDecompressedData: otherOwnerText);
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.VerifyStoryLimitsPatchOutput(
+            baseMain,
+            changedOtherOwner,
+            levelCaps,
+            game));
+
+        var changedRo = patchedNso.Ro.DecompressedData.ToArray();
+        changedRo[0] ^= 0xFF;
+        var changedPreservedSegment = patchedNso.Write(roDecompressedData: changedRo);
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.VerifyStoryLimitsPatchOutput(
+            baseMain,
+            changedPreservedSegment,
+            levelCaps,
+            game));
     }
 
     [Theory]
@@ -1001,7 +1276,7 @@ public sealed class SwShHookReservationTests
         ApplyBagHookCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
-        Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname_plural.dat")));
@@ -1025,7 +1300,7 @@ public sealed class SwShHookReservationTests
         ApplyBagHookCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
-        Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname_plural.dat")));
@@ -1267,7 +1542,7 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
-    public void BagHookCleanupRemovesExeFsAndPreservesRomFsWhenRoyalCandyWasOnlyExeFsMod(ProjectGame game, string workflowId)
+    public void BagHookCleanupRemovesOwnedRoyalCandyOutputsWhenRoyalCandyWasOnlyExeFsMod(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
         var paths = temp.Paths with { SelectedGame = game };
@@ -1278,11 +1553,65 @@ public sealed class SwShHookReservationTests
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
-        Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname_plural.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void BagHookCleanupRejectsRoyalCandySourceDriftAfterReview(bool mutateBaseSource)
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+
+        var service = new SwShBagHookEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+        Assert.All(plan.Writes, write => Assert.False(string.IsNullOrWhiteSpace(write.SourceFingerprint)));
+        Assert.Contains(
+            plan.Writes.Single(write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ItemPath).Sources,
+            source => source.Layer == KM.Core.Files.ProjectFileLayer.Base
+                && source.RelativePath == SwShRoyalCandyWorkflowService.ItemPath);
+
+        if (mutateBaseSource)
+        {
+            var baseItemPath = BasePath(paths, SwShRoyalCandyWorkflowService.ItemPath);
+            var editedBase = SwShItemTable.Parse(File.ReadAllBytes(baseItemPath)).WriteEdits(
+                [new SwShItemTableEdit(1, SwShItemTableField.BuyPrice, 777)]);
+            File.WriteAllBytes(baseItemPath, editedBase);
+        }
+        else
+        {
+            WriteLayeredTextEdit(
+                paths,
+                "romfs/bin/message/English/common/itemname.dat",
+                lineIndex: 10,
+                text: "Changed after review");
+        }
+
+        var outputsBeforeApply = plan.Writes.ToDictionary(
+            write => write.TargetRelativePath,
+            write => File.ReadAllBytes(OutputPath(paths, write.TargetRelativePath)),
+            StringComparer.OrdinalIgnoreCase);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        foreach (var (relativePath, expectedBytes) in outputsBeforeApply)
+        {
+            Assert.Equal(expectedBytes, File.ReadAllBytes(OutputPath(paths, relativePath)));
+        }
     }
 
     [Theory]
@@ -1445,6 +1774,108 @@ public sealed class SwShHookReservationTests
         Assert.Equal(nonterminal, File.ReadAllBytes(bagPath));
         Assert.Equal(mainBefore, File.ReadAllBytes(mainPath));
         Assert.Equal(shopBefore, File.ReadAllBytes(shopPath));
+    }
+
+    [Fact]
+    public void BagHookUninstallBlocksAtomicallyWhenRoyalCandyShopMappingBecomesAmbiguous()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+
+        var shopPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var installedShopData = SwShShopDataFile.Parse(File.ReadAllBytes(shopPath));
+        var ambiguousShopBytes = new SwShShopDataFile(
+            [.. installedShopData.SingleShops, installedShopData.SingleShops[0]],
+            installedShopData.MultiShops).Write();
+        Assert.Equal(2, SwShShopDataFile.Parse(ambiguousShopBytes).SingleShops.Count);
+        File.WriteAllBytes(shopPath, ambiguousShopBytes);
+        var outputsBefore = SnapshotOutputTree(paths.OutputRootPath!);
+
+        var service = new SwShBagHookEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("dependent Royal Candy cleanup", StringComparison.Ordinal));
+        Assert.Empty(stage.Session.PendingEdits);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.False(plan.CanApply);
+        Assert.Empty(plan.Writes);
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertOutputTreeMatches(paths.OutputRootPath!, outputsBefore);
+    }
+
+    [Fact]
+    public void ForeignRoyalCandyMainBlocksRoyalAndBagHookUninstallAtomically()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        Assert.Empty(SwShRoyalCandyCleanup.FindBlockingCleanupTargets(
+            new ProjectWorkspaceService().Open(paths)));
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+
+        var itemInfoPath = OutputPath(
+            paths,
+            "romfs/bin/message/English/common/iteminfo.dat");
+        Assert.Contains(
+            "candy packed with strange energy",
+            SwShGameTextFile.Parse(File.ReadAllBytes(itemInfoPath)).Lines[1128].Text,
+            StringComparison.OrdinalIgnoreCase);
+
+        var mainPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        var installedNso = NsoFile.Parse(File.ReadAllBytes(mainPath));
+        var text = installedNso.Text.DecompressedData.ToArray();
+        const int allowedConsumableBranchOffset = 0x007DDA90;
+        var caveOffset = DecodeConditionalBranchTarget(
+            ReadInstruction(text, allowedConsumableBranchOffset),
+            allowedConsumableBranchOffset);
+        WriteInstruction(text, caveOffset + 8, EncodeNop());
+        var foreignMain = installedNso.Write(textDecompressedData: text);
+        Assert.Equal(
+            SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+            SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(foreignMain, ProjectGame.Sword).Kind);
+        File.WriteAllBytes(mainPath, foreignMain);
+        var outputsBefore = SnapshotOutputTree(paths.OutputRootPath!);
+
+        var royalService = new SwShRoyalCandyEditSessionService();
+        var royalStage = royalService.StageWorkflow(
+            paths,
+            RoyalCandyUninstallWorkflowId,
+            levelCaps: null,
+            session: null);
+        Assert.Equal(
+            "blocked",
+            royalStage.Workflow.Workflows.Single(workflow =>
+                workflow.WorkflowId == RoyalCandyUninstallWorkflowId).Status);
+        Assert.Contains(royalStage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(royalStage.Session.PendingEdits);
+        var royalPlan = royalService.CreateChangePlan(paths, royalStage.Session);
+        Assert.False(royalPlan.CanApply);
+        Assert.Empty(royalPlan.Writes);
+        var royalApply = royalService.ApplyChangePlan(paths, royalStage.Session, royalPlan);
+        Assert.Empty(royalApply.WrittenFiles);
+        AssertOutputTreeMatches(paths.OutputRootPath!, outputsBefore);
+
+        var bagService = new SwShBagHookEditSessionService();
+        var bagStage = bagService.StageUninstall(paths, session: null);
+        Assert.Contains(
+            bagStage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("dependent Royal Candy cleanup", StringComparison.Ordinal));
+        Assert.Empty(bagStage.Session.PendingEdits);
+        var bagPlan = bagService.CreateChangePlan(paths, bagStage.Session);
+        Assert.False(bagPlan.CanApply);
+        Assert.Empty(bagPlan.Writes);
+        var bagApply = bagService.ApplyChangePlan(paths, bagStage.Session, bagPlan);
+        Assert.Empty(bagApply.WrittenFiles);
+        AssertOutputTreeMatches(paths.OutputRootPath!, outputsBefore);
     }
 
     [Fact]
@@ -2205,6 +2636,33 @@ public sealed class SwShHookReservationTests
         return Path.Combine(paths.OutputRootPath!, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
+    private static IReadOnlyDictionary<string, byte[]> SnapshotOutputTree(string outputRootPath)
+    {
+        return Directory.EnumerateFiles(outputRootPath, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                path => Path.GetRelativePath(outputRootPath, path).Replace('\\', '/'),
+                File.ReadAllBytes,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void AssertOutputTreeMatches(
+        string outputRootPath,
+        IReadOnlyDictionary<string, byte[]> expected)
+    {
+        var actualPaths = Directory.EnumerateFiles(outputRootPath, "*", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(outputRootPath, path).Replace('\\', '/'))
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Assert.Equal(expected.Keys.Order(StringComparer.OrdinalIgnoreCase), actualPaths);
+        Assert.All(
+            expected,
+            output => Assert.Equal(
+                output.Value,
+                File.ReadAllBytes(Path.Combine(
+                    outputRootPath,
+                    output.Key.Replace('/', Path.DirectorySeparatorChar)))));
+    }
+
     private static string BasePath(ProjectPaths paths, string relativePath)
     {
         return Path.Combine(paths.BaseRomFsPath!, relativePath["romfs/".Length..].Replace('/', Path.DirectorySeparatorChar));
@@ -2567,6 +3025,36 @@ public sealed class SwShHookReservationTests
         var mappedOffset = FashionUnlockMappedGetterOffset(game);
         return offset >= directOffset && offset < directOffset + SwShFashionUnlockMainPatcher.PatchLength
             || offset >= mappedOffset && offset < mappedOffset + SwShFashionUnlockMainPatcher.PatchLength;
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyStoryLevelCap> CreateRoyalCandyTestStoryCaps()
+    {
+        return
+        [
+            new SwShRoyalCandyStoryLevelCap(
+                20,
+                0x0FEDCBA987654321UL,
+                "Flag milestone"),
+            new SwShRoyalCandyStoryLevelCap(
+                35,
+                0x123456789ABCDEF0UL,
+                "Work milestone",
+                SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+                WorkMinimum: 530),
+        ];
+    }
+
+    private static byte[] ApplyRoyalCandyMainPatch(byte[] baseMain, string workflowId, ProjectGame game)
+    {
+        return workflowId switch
+        {
+            RoyalCandyUnlimitedWorkflowId => SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(baseMain, game),
+            RoyalCandyStoryLimitsWorkflowId => SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                baseMain,
+                CreateRoyalCandyTestStoryCaps(),
+                game),
+            _ => throw new ArgumentOutOfRangeException(nameof(workflowId), workflowId, "Unknown Royal Candy workflow."),
+        };
     }
 
     private static void AssertRoyalCandyVirtualInventoryHelper(

@@ -1174,7 +1174,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'royalCandy'),
-        royalCandySearchText: '',
         royalCandyWorkflow,
         selectedRoyalCandyCheckId,
         selectedRoyalCandyWorkflowId

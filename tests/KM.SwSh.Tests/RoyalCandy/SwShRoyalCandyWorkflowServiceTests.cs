@@ -102,8 +102,9 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseExeFsFile("main", CreateCompatibleNso(ProjectGame.Shield));
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x01008DB008C2C000));
-        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { SelectedGame = ProjectGame.Shield });
 
         var workflow = new SwShRoyalCandyWorkflowService().Load(project);
 
@@ -131,6 +132,11 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         temp.WriteOutputFile(
             "exefs/main",
             SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(CreateCompatibleNso(), customCaps));
+        temp.WriteOutputFile(
+            "romfs/bin/message/English/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
         var workflow = new SwShRoyalCandyWorkflowService().Load(project);
@@ -173,6 +179,19 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             CreateTextTable(
                 1128,
                 (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
+        var caps = SwShRoyalCandyWorkflowService.CreateLevelCaps("Sword")
+            .Select(cap => new SwShRoyalCandyStoryLevelCap(
+                cap.LevelCap,
+                ulong.Parse(cap.ProgressHash[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture),
+                cap.Label,
+                cap.ProgressKind == "workAtLeast"
+                    ? SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                    : SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+                cap.WorkMinimum ?? 0))
+            .ToArray();
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(CreateCompatibleNso(), caps));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
         var workflow = new SwShRoyalCandyWorkflowService().Load(project);
@@ -181,6 +200,12 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         var storyLimits = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits");
         Assert.Equal("blocked", unlimited.Status);
         Assert.Equal("installed", storyLimits.Status);
+        Assert.All(
+            workflow.Outputs.Where(output => output.WorkflowId == unlimited.WorkflowId && output.Status != "deferred"),
+            output => Assert.Equal("blocked", output.Status));
+        Assert.All(
+            workflow.Outputs.Where(output => output.WorkflowId == storyLimits.WorkflowId && output.Status != "deferred"),
+            output => Assert.Equal("review", output.Status));
         Assert.Contains(
             workflow.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
@@ -215,6 +240,98 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadRequiresRoyalCandyTextInSelectedGameTextLanguage()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        WriteLanguageTextSet(temp, "French");
+        temp.WriteOutputFile(
+            "romfs/bin/message/French/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                CreateCompatibleNso(),
+                CreateStoryCaps("Sword")));
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(
+            new ProjectWorkspaceService().Open(temp.Paths with { GameTextLanguage = "en" }));
+
+        Assert.Equal(
+            "blocked",
+            workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits").Status);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("outside the selected English language set", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadBlocksConflictingRoyalCandyTextAcrossLanguages()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        WriteLanguageTextSet(temp, "French");
+        temp.WriteOutputFile(
+            "romfs/bin/message/English/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
+        temp.WriteOutputFile(
+            "romfs/bin/message/French/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.")));
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                CreateCompatibleNso(),
+                CreateStoryCaps("Sword")));
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(
+            new ProjectWorkspaceService().Open(temp.Paths with { GameTextLanguage = "en" }));
+
+        Assert.All(
+            workflow.Workflows.Where(record => record.WorkflowId != "royal-candy-uninstall"),
+            record => Assert.Equal("blocked", record.Status));
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("conflicting Royal Candy item-text variants across language sets", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadRejectsInstalledStoryLadderWithWrongMilestoneKeys()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteOutputFile(
+            "romfs/bin/message/English/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
+        var wrongCaps = CreateStoryCaps("Sword")
+            .Select((cap, index) => cap with { ProgressHash = cap.ProgressHash + (ulong)index + 1 })
+            .ToArray();
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(CreateCompatibleNso(), wrongCaps));
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(new ProjectWorkspaceService().Open(temp.Paths));
+
+        Assert.Equal(
+            "blocked",
+            workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits").Status);
+        Assert.Contains(
+            workflow.Checks,
+            check => check.CheckId.EndsWith(":installed-story-ladder", StringComparison.Ordinal)
+                && check.Status == "Fail"
+                && check.Message.Contains("exact supported story milestones", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadDetectsKnownLayeredOutputsForUninstallReview()
     {
         using var temp = TemporarySwShProject.Create();
@@ -230,7 +347,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             workflow.Checks,
             check => check.WorkflowId == uninstall.WorkflowId
                 && check.Status == "Warning"
-                && check.Message.Contains("installed", StringComparison.Ordinal));
+                && check.Message.Contains("partial Royal Candy installation", StringComparison.Ordinal));
         Assert.Contains(
             workflow.Outputs,
             output => output.WorkflowId == uninstall.WorkflowId
@@ -289,6 +406,720 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         }
     }
 
+    [Fact]
+    public void LoadUsesSelectedGameTextLanguageAndDoesNotRequireDeferredArchives()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        WriteLanguageTextSet(temp, "French");
+        var paths = temp.Paths with { GameTextLanguage = "fr" };
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+
+        Assert.Equal("available", workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-unlimited").Status);
+        var textOutputs = workflow.Outputs
+            .Where(output => output.WorkflowId == "royal-candy-unlimited"
+                && output.RelativePath.Contains("/message/", StringComparison.OrdinalIgnoreCase))
+            .Select(output => output.RelativePath)
+            .ToArray();
+        Assert.NotEmpty(textOutputs);
+        Assert.All(textOutputs, path => Assert.Contains("/French/", path, StringComparison.Ordinal));
+        Assert.DoesNotContain(textOutputs, path => path.Contains("/English/", StringComparison.Ordinal));
+        Assert.Contains(workflow.Outputs, output => output.RelativePath == SwShRoyalCandyWorkflowService.NestDataPath && output.Status == "deferred");
+        Assert.Contains(workflow.Outputs, output => output.RelativePath == SwShRoyalCandyWorkflowService.PlacementPath && output.Status == "deferred");
+    }
+
+    [Fact]
+    public void ValidateRejectsMalformedDirectSessionsAndReviewedCapsCannotDrift()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-story-limits", levelCaps: null, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var duplicated = stage.Session with
+        {
+            PendingEdits = [stage.Session.PendingEdits[0], stage.Session.PendingEdits[0]],
+        };
+        var duplicateValidation = service.Validate(temp.Paths, duplicated);
+        Assert.False(duplicateValidation.IsValid);
+        Assert.Empty(service.CreateChangePlan(temp.Paths, duplicated).Writes);
+
+        var malformed = stage.Session with
+        {
+            PendingEdits =
+            [
+                stage.Session.PendingEdits[0] with
+                {
+                    Field = "mode",
+                    NewValue = "storyLimits",
+                    Sources = [],
+                },
+            ],
+        };
+        Assert.False(service.Validate(temp.Paths, malformed).IsValid);
+
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, stage.Session);
+        Assert.True(reviewedPlan.CanApply);
+        var firstCaps = SwShRoyalCandyWorkflowService.CreateLevelCaps("Sword")
+            .Select(cap => new SwShRoyalCandyLevelCapSelection(cap.Slot, Math.Min(100, cap.LevelCap + 1)))
+            .ToArray();
+        var restaged = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-story-limits",
+            firstCaps,
+            stage.Session);
+        Assert.DoesNotContain(restaged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var apply = service.ApplyChangePlan(temp.Paths, restaged.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UninstallRestoresOwnedItemMappingAndPreservesUnrelatedItemEdits()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var itemPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ItemPath);
+        var itemHashPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ItemHashPath);
+        var userEditedItems = SwShItemTable.Parse(File.ReadAllBytes(itemPath)).WriteEdits(
+            [new SwShItemTableEdit(1, SwShItemTableField.BuyPrice, 777)]);
+        File.WriteAllBytes(itemPath, userEditedItems);
+
+        var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(itemPath));
+        var restoredItems = SwShItemTable.Parse(File.ReadAllBytes(itemPath));
+        Assert.Equal(777u, restoredItems.Records[1].BuyPrice);
+        Assert.Equal(
+            SwShItemTable.Parse(CreateCompactRoyalCandyItemTable()).Records[1128].RawRowIndex,
+            restoredItems.Records[1128].RawRowIndex);
+        Assert.False(File.Exists(itemHashPath));
+    }
+
+    [Fact]
+    public void InstallRepairsExactLegacyItemHashNormalizationAndUninstallRemovesIt()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var baseBytes = CreateLegacyNormalizedItemHashBase();
+        var exactLegacyOutput = SwShItemHashTable.Parse(baseBytes).Write();
+        Assert.NotEqual(baseBytes, exactLegacyOutput);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
+            baseBytes);
+
+        var itemHashPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ItemHashPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(itemHashPath)!);
+        File.WriteAllBytes(itemHashPath, exactLegacyOutput);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(install.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Warning
+            && diagnostic.Message.Contains("previously filtered item hash output", StringComparison.Ordinal));
+        Assert.Equal(baseBytes, File.ReadAllBytes(itemHashPath));
+
+        // Exercise cleanup's legacy ownership recognition independently of the repaired output.
+        File.WriteAllBytes(itemHashPath, exactLegacyOutput);
+        var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(itemHashPath));
+    }
+
+    [Fact]
+    public void UninstallPreservesUnrelatedStrictSubsetItemHashOutput()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var baseBytes = new SwShItemHashTable(
+        [
+            new SwShItemHashEntry(50, 0x1111111111111111),
+            new SwShItemHashEntry(777, 0x3333333333333333),
+            new SwShItemHashEntry(1128, 0x2222222222222222),
+        ]).Write();
+        var subsetBytes = new SwShItemHashTable(
+        [
+            new SwShItemHashEntry(50, 0x1111111111111111),
+            new SwShItemHashEntry(1128, 0x2222222222222222),
+        ]).Write();
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
+            baseBytes);
+
+        var itemHashPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ItemHashPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(itemHashPath)!);
+        File.WriteAllBytes(itemHashPath, subsetBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(subsetBytes, File.ReadAllBytes(itemHashPath));
+
+        var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(itemHashPath));
+        Assert.Equal(subsetBytes, File.ReadAllBytes(itemHashPath));
+    }
+
+    [Fact]
+    public void ApplyRejectsReviewedFreshInstallWhenBaseItemDataDrifts()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var baseItemPath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var layeredItemBytes = SwShItemTable.Parse(File.ReadAllBytes(baseItemPath)).WriteEdits(
+            [new SwShItemTableEdit(1, SwShItemTableField.BuyPrice, 555)]);
+        temp.WriteOutputFile(SwShRoyalCandyWorkflowService.ItemPath, layeredItemBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, stage.Session);
+        Assert.True(reviewedPlan.CanApply);
+        var itemWrite = Assert.Single(
+            reviewedPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ItemPath);
+        Assert.Contains(
+            itemWrite.Sources,
+            source => source.Layer == ProjectFileLayer.Base
+                && source.RelativePath == SwShRoyalCandyWorkflowService.ItemPath);
+        Assert.Contains(
+            itemWrite.Sources,
+            source => source.Layer == ProjectFileLayer.Layered
+                && source.RelativePath == SwShRoyalCandyWorkflowService.ItemPath);
+
+        var driftedBaseBytes = SwShItemTable.Parse(File.ReadAllBytes(baseItemPath)).WriteEdits(
+            [new SwShItemTableEdit(2, SwShItemTableField.BuyPrice, 777)]);
+        File.WriteAllBytes(baseItemPath, driftedBaseBytes);
+
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(driftedBaseBytes, File.ReadAllBytes(baseItemPath));
+        Assert.Equal(
+            layeredItemBytes,
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.ItemPath)));
+    }
+
+    [Fact]
+    public void FreshInstallRejectsChangedBaseItem1128OwnerSetWithoutAppending()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var baseBytes = CreateCompactRoyalCandyItemTable();
+        var originalTable = SwShItemTable.Parse(baseBytes);
+        var targetRowIndex = checked((ushort)originalTable.Records[1128].RawRowIndex);
+        var item1RowIndex = checked((ushort)originalTable.Records[1].RawRowIndex);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            baseBytes.AsSpan(0x44 + sizeof(ushort)),
+            targetRowIndex);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..],
+            baseBytes);
+
+        var layeredBytes = baseBytes.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            layeredBytes.AsSpan(0x44 + sizeof(ushort)),
+            item1RowIndex);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            layeredBytes.AsSpan(0x44 + (2 * sizeof(ushort))),
+            targetRowIndex);
+        var baseOwners = SwShItemTable.Parse(baseBytes).Records[1128].SharedItemIds;
+        var layeredOwners = SwShItemTable.Parse(layeredBytes).Records[1128].SharedItemIds;
+        Assert.Equal(baseOwners.Count, layeredOwners.Count);
+        Assert.False(baseOwners.ToHashSet().SetEquals(layeredOwners));
+        temp.WriteOutputFile(SwShRoyalCandyWorkflowService.ItemPath, layeredBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+
+        Assert.False(plan.CanApply);
+        Assert.Contains(
+            plan.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("different owner set", StringComparison.Ordinal));
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Equal(
+            layeredBytes,
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.ItemPath)));
+    }
+
+    [Fact]
+    public void ShiftedMultiShopInventoryCountFailsClosedAndPreservesSource()
+    {
+        const ulong multiShopHash = 0x5678;
+        var baseShopData = new SwShShopDataFile(
+            [],
+            [new SwShMultiShopRecord(
+                multiShopHash,
+                [new SwShShopInventory([1, 2]), new SwShShopInventory([3, 1128, 4])])]);
+        var shiftedShopData = new SwShShopDataFile(
+            [],
+            [new SwShMultiShopRecord(
+                multiShopHash,
+                [
+                    new SwShShopInventory([999]),
+                    new SwShShopInventory([1, 2]),
+                    new SwShShopInventory([3, 1128, 4]),
+                ])]);
+        var mappingException = Assert.Throws<SwShRoyalCandyShopMappingException>(() =>
+            SwShRoyalCandyShopPatchMapper.Analyze(shiftedShopData, baseShopData));
+        Assert.Contains("different inventory count", mappingException.Message, StringComparison.Ordinal);
+
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            baseShopData.Write());
+        var shiftedBytes = shiftedShopData.Write();
+        temp.WriteOutputFile(SwShRoyalCandyWorkflowService.ShopDataPath, shiftedBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+
+        Assert.False(plan.CanApply);
+        Assert.Contains(
+            plan.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("different inventory count", StringComparison.Ordinal));
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Equal(
+            shiftedBytes,
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath)));
+    }
+
+    [Fact]
+    public void AddedDuplicateRoyalCandyShopHashFailsClosedAndPreservesSource()
+    {
+        const ulong shopHash = 0x1234;
+        var baseShopData = new SwShShopDataFile(
+            [new SwShSingleShopRecord(shopHash, new SwShShopInventory([50, 1128]))],
+            []);
+        var duplicateShopData = new SwShShopDataFile(
+            [
+                new SwShSingleShopRecord(shopHash, new SwShShopInventory([50, 1128])),
+                new SwShSingleShopRecord(shopHash, new SwShShopInventory([777])),
+            ],
+            []);
+        var mappingException = Assert.Throws<SwShRoyalCandyShopMappingException>(() =>
+            SwShRoyalCandyShopPatchMapper.Analyze(duplicateShopData, baseShopData));
+        Assert.Contains("expected 1 physical occurrence", mappingException.Message, StringComparison.Ordinal);
+
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            baseShopData.Write());
+        var duplicateBytes = duplicateShopData.Write();
+        temp.WriteOutputFile(SwShRoyalCandyWorkflowService.ShopDataPath, duplicateBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+
+        Assert.False(plan.CanApply);
+        Assert.Contains(
+            plan.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("expected 1 physical occurrence", StringComparison.Ordinal));
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Equal(
+            duplicateBytes,
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath)));
+    }
+
+    [Fact]
+    public void InstallAndUninstallPreservePreexistingInPlaceItem1128Edit()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var baseItemPath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseTable = SwShItemTable.Parse(File.ReadAllBytes(baseItemPath));
+        var userEditedBytes = baseTable.WriteEdits(
+            [new SwShItemTableEdit(1128, SwShItemTableField.BuyPrice, 777)]);
+        temp.WriteOutputFile(SwShRoyalCandyWorkflowService.ItemPath, userEditedBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var itemPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ItemPath);
+        var installedTable = SwShItemTable.Parse(File.ReadAllBytes(itemPath));
+        Assert.Equal(1u, installedTable.Records[1128].BuyPrice);
+        Assert.NotEqual(
+            SwShItemTable.Parse(userEditedBytes).Records[1128].RawRowIndex,
+            installedTable.Records[1128].RawRowIndex);
+
+        var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(itemPath));
+        Assert.Equal(userEditedBytes, File.ReadAllBytes(itemPath));
+        Assert.Equal(777u, SwShItemTable.Parse(File.ReadAllBytes(itemPath)).Records[1128].BuyPrice);
+    }
+
+    [Fact]
+    public void UninstallBlocksAtomicallyWhenActiveRoyalCandyItemRowIsMutated()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var itemPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ItemPath);
+        var corruptedItemBytes = File.ReadAllBytes(itemPath);
+        var activeRowIndex = SwShItemTable.Parse(corruptedItemBytes).Records[1128].RawRowIndex;
+        var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(corruptedItemBytes.AsSpan(0x40));
+        corruptedItemBytes[rowsStart + (activeRowIndex * 0x30) + 0x20] ^= 0x80;
+        File.WriteAllBytes(itemPath, corruptedItemBytes);
+        var outputsBefore = SnapshotOutputTree(temp.OutputRootPath);
+
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        Assert.Equal(
+            "blocked",
+            stage.Workflow.Workflows.Single(workflow => workflow.WorkflowId == "royal-candy-uninstall").Status);
+        Assert.Contains(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(stage.Session.PendingEdits);
+
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+        Assert.False(plan.CanApply);
+        Assert.Empty(plan.Writes);
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertOutputTreeMatches(temp.OutputRootPath, outputsBefore);
+    }
+
+    [Fact]
+    public void UninstallBlocksAtomicallyWhenRoyalCandyShopMappingBecomesAmbiguous()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var shopPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var installedShopData = SwShShopDataFile.Parse(File.ReadAllBytes(shopPath));
+        var ambiguousShopBytes = new SwShShopDataFile(
+            [.. installedShopData.SingleShops, installedShopData.SingleShops[0]],
+            installedShopData.MultiShops).Write();
+        Assert.Equal(2, SwShShopDataFile.Parse(ambiguousShopBytes).SingleShops.Count);
+        File.WriteAllBytes(shopPath, ambiguousShopBytes);
+        var outputsBefore = SnapshotOutputTree(temp.OutputRootPath);
+
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        Assert.Equal(
+            "blocked",
+            stage.Workflow.Workflows.Single(workflow => workflow.WorkflowId == "royal-candy-uninstall").Status);
+        Assert.Contains(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(stage.Session.PendingEdits);
+
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+        Assert.False(plan.CanApply);
+        Assert.Empty(plan.Writes);
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertOutputTreeMatches(temp.OutputRootPath, outputsBefore);
+    }
+
+    [Fact]
+    public void UninstallReviewsAndRestoresCanonicalAndLegacyShopPathsTogether()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var canonicalBasePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseShopBytes = File.ReadAllBytes(canonicalBasePath);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.LegacyShopDataPath["romfs/".Length..],
+            baseShopBytes);
+
+        var canonicalPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var canonicalData = SwShShopDataFile.Parse(File.ReadAllBytes(canonicalPath));
+        File.WriteAllBytes(
+            canonicalPath,
+            canonicalData.WriteEdits(
+            [
+                new SwShShopInventoryEdit(
+                    SwShShopKind.Single,
+                    0x1234,
+                    InventoryIndex: 0,
+                    Slot: 0,
+                    ItemId: 0,
+                    Action: SwShShopInventoryEditAction.Set,
+                    Items: [777, 50],
+                    ShopIndex: 0),
+            ]));
+        temp.WriteOutputFile(
+            SwShRoyalCandyWorkflowService.LegacyShopDataPath,
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([888, 50]))],
+                []).Write());
+
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+
+        Assert.True(plan.CanApply);
+        Assert.Contains(
+            plan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+        Assert.Contains(
+            plan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.LegacyShopDataPath);
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(
+            [777, 50, 1128],
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(canonicalPath)).SingleShops).Inventory.Items);
+        var legacyPath = OutputPath(temp, SwShRoyalCandyWorkflowService.LegacyShopDataPath);
+        Assert.Equal(
+            [888, 50, 1128],
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(legacyPath)).SingleShops).Inventory.Items);
+    }
+
+    [Fact]
+    public void InstallAndUninstallPreserveShiftedShopInsertBeforeRoyalCandy()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 1128, 51]))],
+                []).Write());
+        temp.WriteOutputFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath,
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([777, 50, 1128, 51]))],
+                []).Write());
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var shopPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
+        Assert.Equal(
+            [777, 50, 51],
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items);
+
+        var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(shopPath));
+        Assert.Equal(
+            [777, 50, 1128, 51],
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items);
+    }
+
+    [Fact]
+    public void FreshInstallRejectsPreexistingMissingShopOccurrenceWithoutChangingSource()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 1128, 51]))],
+                []).Write());
+        var preexistingBytes = new SwShShopDataFile(
+            [new SwShSingleShopRecord(0x1234, new SwShShopInventory([777, 50, 51]))],
+            []).Write();
+        temp.WriteOutputFile(SwShRoyalCandyWorkflowService.ShopDataPath, preexistingBytes);
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+        Assert.False(plan.CanApply);
+        Assert.Contains(
+            plan.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("already missing before this workflow was installed", StringComparison.Ordinal));
+
+        var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(
+            preexistingBytes,
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath)));
+    }
+
+    [Fact]
+    public void UninstallPreservesParseableOpaqueShopBytesAddedAfterInstall()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(temp.Paths, "royal-candy-unlimited", levelCaps: null, session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var shopPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var installedBytes = File.ReadAllBytes(shopPath);
+        byte[] opaqueMarker = [0xDE, 0xAD, 0xBE, 0xEF];
+        var userEditedBytes = installedBytes.Concat(opaqueMarker).ToArray();
+        Assert.Single(SwShShopDataFile.Parse(userEditedBytes).SingleShops);
+        File.WriteAllBytes(shopPath, userEditedBytes);
+
+        var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(shopPath));
+        var restoredBytes = File.ReadAllBytes(shopPath);
+        Assert.Equal(opaqueMarker, restoredBytes.AsSpan(installedBytes.Length, opaqueMarker.Length).ToArray());
+        Assert.Equal(
+            [50, 1128],
+            Assert.Single(SwShShopDataFile.Parse(restoredBytes).SingleShops).Inventory.Items);
+    }
+
+    [Fact]
+    public void ShopMapperKeepsDuplicateMultiShopAndInventoryIdentity()
+    {
+        const ulong duplicateHash = 0xAABBCCDDEEFF0011;
+        var baseData = new SwShShopDataFile(
+            [],
+            [
+                new SwShMultiShopRecord(
+                    duplicateHash,
+                    [new SwShShopInventory([1, 1128, 2]), new SwShShopInventory([3, 4])]),
+                new SwShMultiShopRecord(
+                    duplicateHash,
+                    [new SwShShopInventory([5, 6]), new SwShShopInventory([7, 1128, 8])]),
+            ]);
+        var targetData = new SwShShopDataFile(
+            [],
+            [
+                new SwShMultiShopRecord(
+                    duplicateHash,
+                    [new SwShShopInventory([99, 1, 1128, 2]), new SwShShopInventory([3, 4])]),
+                new SwShMultiShopRecord(
+                    duplicateHash,
+                    [new SwShShopInventory([5, 6]), new SwShShopInventory([7, 1128, 8, 100])]),
+            ]);
+
+        var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
+
+        Assert.Equal(2, mapping.BaseOccurrences);
+        Assert.Equal(2, mapping.MatchedOccurrences);
+        Assert.Equal(0, mapping.MissingOccurrences);
+        Assert.Collection(
+            mapping.RemovalEdits.OrderBy(edit => edit.ShopIndex),
+            edit =>
+            {
+                Assert.Equal(SwShShopKind.Multi, edit.Kind);
+                Assert.Equal(0, edit.ShopIndex);
+                Assert.Equal(0, edit.InventoryIndex);
+                Assert.Equal([99, 1, 2], edit.Items);
+            },
+            edit =>
+            {
+                Assert.Equal(SwShShopKind.Multi, edit.Kind);
+                Assert.Equal(1, edit.ShopIndex);
+                Assert.Equal(1, edit.InventoryIndex);
+                Assert.Equal([7, 8, 100], edit.Items);
+            });
+
+        var removedData = SwShShopDataFile.Parse(targetData.Write().AsSpan()).WriteEdits(mapping.RemovalEdits);
+        var restoreMapping = SwShRoyalCandyShopPatchMapper.Analyze(SwShShopDataFile.Parse(removedData), baseData);
+        var restoredData = SwShShopDataFile.Parse(
+            SwShShopDataFile.Parse(removedData).WriteEdits(restoreMapping.RestoreEdits));
+        Assert.Equal([99, 1, 1128, 2], restoredData.MultiShops[0].Inventories[0].Items);
+        Assert.Equal([7, 1128, 8, 100], restoredData.MultiShops[1].Inventories[1].Items);
+    }
+
+    private static byte[] CreateLegacyNormalizedItemHashBase()
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write(3);
+        writer.Write(0x1111111111111111UL);
+        writer.Write(50);
+        writer.Write(unchecked((int)0xA1A2A3A4));
+        writer.Write(0x9999999999999999UL);
+        writer.Write(0);
+        writer.Write(unchecked((int)0xB1B2B3B4));
+        writer.Write(0x2222222222222222UL);
+        writer.Write(1128);
+        writer.Write(unchecked((int)0xC1C2C3C4));
+        writer.Write([0xDE, 0xAD, 0xBE, 0xEF]);
+        return stream.ToArray();
+    }
+
     private static void WriteRoyalCandyBaseInputs(TemporarySwShProject temp)
     {
         temp.WriteBaseRomFsFile(
@@ -296,29 +1127,49 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             CreateCompactRoyalCandyItemTable());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
-            [0x01, 0x02, 0x03, 0x04]);
+            new SwShItemHashTable(
+            [
+                new SwShItemHashEntry(50, 0x1111111111111111),
+                new SwShItemHashEntry(1128, 0x2222222222222222),
+            ]).Write());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
-            [0x05]);
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
-            [0x06]);
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..],
-            [0x07]);
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 1128]))],
+                []).Write());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
             CreateRoyalCandyBagEventScript());
-        temp.WriteBaseRomFsFile("bin/message/English/common/iteminfo.dat", [0x09]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_acc_classified.dat", [0x0A]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_acc.dat", [0x0B]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_classified.dat", [0x0C]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", [0x0A]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_plural_classified.dat", [0x0D]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_plural.dat", [0x0E]);
+        WriteLanguageTextSet(temp, "English");
         temp.WriteBaseExeFsFile("main", CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
         InstallEmptyBagHook(temp);
+    }
+
+    private static SwShRoyalCandyStoryLevelCap[] CreateStoryCaps(string gameFlavor)
+    {
+        return SwShRoyalCandyWorkflowService.CreateLevelCaps(gameFlavor)
+            .Select(cap => new SwShRoyalCandyStoryLevelCap(
+                cap.LevelCap,
+                ulong.Parse(cap.ProgressHash[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture),
+                cap.Label,
+                cap.ProgressKind == "workAtLeast"
+                    ? SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                    : SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+                cap.WorkMinimum ?? 0))
+            .ToArray();
+    }
+
+    private static void WriteLanguageTextSet(TemporarySwShProject temp, string language)
+    {
+        var text = CreateTextTable(1128, (50, "Rare Candy"), (1128, "Exp. Candy XL"));
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/iteminfo.dat", text);
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/itemname_acc_classified.dat", text);
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/itemname_acc.dat", text);
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/itemname_classified.dat", text);
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/itemname.dat", text);
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/itemname_plural_classified.dat", text);
+        temp.WriteBaseRomFsFile($"bin/message/{language}/common/itemname_plural.dat", text);
     }
 
     private static void InstallEmptyBagHook(TemporarySwShProject temp)
@@ -339,6 +1190,33 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         return Path.Combine(
             temp.OutputRootPath,
             relativePath.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static IReadOnlyDictionary<string, byte[]> SnapshotOutputTree(string outputRootPath)
+    {
+        return Directory.EnumerateFiles(outputRootPath, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                path => Path.GetRelativePath(outputRootPath, path).Replace('\\', '/'),
+                File.ReadAllBytes,
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void AssertOutputTreeMatches(
+        string outputRootPath,
+        IReadOnlyDictionary<string, byte[]> expected)
+    {
+        var actualPaths = Directory.EnumerateFiles(outputRootPath, "*", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(outputRootPath, path).Replace('\\', '/'))
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Assert.Equal(expected.Keys.Order(StringComparer.OrdinalIgnoreCase), actualPaths);
+        Assert.All(
+            expected,
+            output => Assert.Equal(
+                output.Value,
+                File.ReadAllBytes(Path.Combine(
+                    outputRootPath,
+                    output.Key.Replace('/', Path.DirectorySeparatorChar)))));
     }
 
     private static byte[] CreateCompactRoyalCandyItemTable()
@@ -374,12 +1252,12 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         return data;
     }
 
-    private static byte[] CreateCompatibleNso()
+    private static byte[] CreateCompatibleNso(ProjectGame game = ProjectGame.Sword)
     {
-        return CreateNso(CreateCompatibleText(), [0x10], [0x20]);
+        return CreateNso(CreateCompatibleText(game), [0x10], [0x20], game);
     }
 
-    private static byte[] CreateCompatibleText()
+    private static byte[] CreateCompatibleText(ProjectGame game)
     {
         var text = new byte[0x01421100];
         WriteInstruction(text, 0x00747988, EncodeCmpImmediate(28, 50));
@@ -419,8 +1297,8 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
         WriteInstruction(text, 0x007DDA90, EncodeConditionalBranch(0x007DDA90, 0x007DDAF8, Arm64Condition.HI));
-        WriteInstruction(text, 0x01420EF0, 0xF81D0FF5);
-        WriteInstruction(text, 0x01421090, 0xA9BE4FF4);
+        WriteInstruction(text, game == ProjectGame.Shield ? 0x01420F20 : 0x01420EF0, 0xF81D0FF5);
+        WriteInstruction(text, game == ProjectGame.Shield ? 0x014210C0 : 0x01421090, 0xA9BE4FF4);
         return text;
     }
 
@@ -559,7 +1437,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x34), nameTable);
     }
 
-    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
+    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, ProjectGame game)
     {
         var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
@@ -571,7 +1449,9 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
-        Convert.FromHexString("A3B75BCD3311385AEED67FBEEB79CBB7BF02F471")
+        Convert.FromHexString(game == ProjectGame.Shield
+                ? "A16802625E7826BF83B6F9708E475B912A9AB7DF"
+                : "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471")
             .CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);

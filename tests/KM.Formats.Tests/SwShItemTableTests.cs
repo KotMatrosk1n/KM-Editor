@@ -258,12 +258,12 @@ public sealed class SwShItemTableTests
     }
 
     [Fact]
-    public void WriteRoyalCandyRowAppendsUniqueKeyItemRow()
+    public void WriteRoyalCandyRowAppendsUniqueKeyItemRowAndPreservesBaseDestination()
     {
         var data = CreateRoyalCandyItemTable();
         var table = SwShItemTable.Parse(data);
 
-        var output = table.WriteRoyalCandyRow(templateItemId: 50, targetItemId: 1128);
+        var output = table.WriteRoyalCandyRow(table, templateItemId: 50, targetItemId: 1128);
         var outputTable = SwShItemTable.Parse(output);
         var royalCandy = outputTable.Records[1128];
 
@@ -286,25 +286,192 @@ public sealed class SwShItemTableTests
 
         var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(output.AsSpan(0x40));
         var originalTargetOffset = rowsStart + (51 * 0x30);
-        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(output.AsSpan(originalTargetOffset)));
-        Assert.Equal((byte)SwShItemPouch.KeyItems, (byte)(output[originalTargetOffset + 0x11] & 0x0F));
-        Assert.Equal(9, output[originalTargetOffset + 0x16]);
+        Assert.Equal(
+            data.AsSpan(originalTargetOffset, 0x30).ToArray(),
+            output.AsSpan(originalTargetOffset, 0x30).ToArray());
     }
 
     [Fact]
     public void WriteRoyalCandyRowRefreshesExistingRoyalCandyRow()
     {
         var data = CreateRoyalCandyItemTable();
-        var firstOutput = SwShItemTable.Parse(data).WriteRoyalCandyRow(templateItemId: 50, targetItemId: 1128);
+        var baseTable = SwShItemTable.Parse(data);
+        var firstOutput = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
         var firstTable = SwShItemTable.Parse(firstOutput);
 
-        var secondOutput = firstTable.WriteRoyalCandyRow(templateItemId: 50, targetItemId: 1128);
+        var secondOutput = firstTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
         var secondTable = SwShItemTable.Parse(secondOutput);
 
         Assert.Equal(firstOutput.Length, secondOutput.Length);
         Assert.Equal(firstTable.Records[1128].RawRowIndex, secondTable.Records[1128].RawRowIndex);
         Assert.Equal(SwShItemPouch.KeyItems, secondTable.Records[1128].Pouch);
         Assert.Equal(9, secondTable.Records[1128].ItemType);
+        Assert.Equal(
+            data,
+            secondTable.RestoreRoyalCandyRowFromBase(
+                baseTable,
+                templateItemId: 50,
+                targetItemId: 1128));
+    }
+
+    [Fact]
+    public void WriteRoyalCandyRowInsertsBeforeTrailingDataAndShiftsMachinePointer()
+    {
+        const int rowSize = 0x30;
+        const int machineTableLength = 200 * sizeof(uint);
+        var itemData = CreateRoyalCandyItemTable();
+        var machineOffset = itemData.Length;
+        var data = new byte[itemData.Length + machineTableLength + 5];
+        itemData.CopyTo(data, 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(0x02),
+            checked((ushort)((machineOffset - 0x44) / sizeof(ushort))));
+        var trailingMarker = new byte[] { 0x91, 0x82, 0x73, 0x64, 0x55 };
+        trailingMarker.CopyTo(data.AsSpan(machineOffset + machineTableLength));
+
+        var baseTable = SwShItemTable.Parse(data);
+        var output = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
+
+        Assert.Equal(data.Length + rowSize, output.Length);
+        Assert.Equal(machineOffset + rowSize, GetMachineTableOffset(output));
+        Assert.Equal(
+            data.AsSpan(machineOffset, machineTableLength).ToArray(),
+            output.AsSpan(machineOffset + rowSize, machineTableLength).ToArray());
+        Assert.Equal(trailingMarker, output[^trailingMarker.Length..]);
+        Assert.Equal(52, SwShItemTable.Parse(output).Records[1128].RawRowIndex);
+    }
+
+    [Fact]
+    public void RestoreRoyalCandyRowReturnsInstalledTableToBaseBytes()
+    {
+        var data = CreateRoyalCandyItemTable();
+        var baseTable = SwShItemTable.Parse(data);
+        var installed = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
+
+        var restored = SwShItemTable.Parse(installed).RestoreRoyalCandyRowFromBase(
+            baseTable,
+            templateItemId: 50,
+            targetItemId: 1128);
+
+        Assert.Equal(data, restored);
+    }
+
+    [Fact]
+    public void RestoreRoyalCandyRowCompactsOwnedRowAndPreservesLaterRows()
+    {
+        const int rowSize = 0x30;
+        var data = CreateRoyalCandyItemTable();
+        var baseTable = SwShItemTable.Parse(data);
+        var installed = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
+        var withLaterRow = new byte[installed.Length + rowSize];
+        installed.CopyTo(withLaterRow, 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(withLaterRow.AsSpan(0x04), 54);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            withLaterRow.AsSpan(0x44 + sizeof(ushort)),
+            53);
+        withLaterRow[^1] = 0x7A;
+
+        var restored = SwShItemTable.Parse(withLaterRow).RestoreRoyalCandyRowFromBase(
+            baseTable,
+            templateItemId: 50,
+            targetItemId: 1128);
+        var restoredTable = SwShItemTable.Parse(restored);
+
+        Assert.Equal(withLaterRow.Length - rowSize, restored.Length);
+        Assert.Equal(51, restoredTable.Records[1128].RawRowIndex);
+        Assert.Equal(52, restoredTable.Records[1].RawRowIndex);
+        Assert.Equal(0x7A, restored[^1]);
+
+        var changed = installed.ToArray();
+        var ownedRowOffset = GetRowOffset(changed, 1128);
+        changed[ownedRowOffset + 0x08] ^= 0x01;
+        Assert.Throws<InvalidDataException>(() =>
+            SwShItemTable.Parse(changed).RestoreRoyalCandyRowFromBase(
+                baseTable,
+                templateItemId: 50,
+                targetItemId: 1128));
+    }
+
+    [Fact]
+    public void RestoreRoyalCandyRowPreservesChangedBaseDestinationAndRejectsReownedDestination()
+    {
+        const int rowSize = 0x30;
+        var data = CreateRoyalCandyItemTable();
+        var baseTable = SwShItemTable.Parse(data);
+        var installed = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
+        var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(installed.AsSpan(0x40));
+        var baseTargetOffset = rowsStart + (51 * rowSize);
+
+        var changedDestination = installed.ToArray();
+        changedDestination[baseTargetOffset + 0x08] ^= 0x01;
+        var restoredChangedDestination = SwShItemTable.Parse(changedDestination).RestoreRoyalCandyRowFromBase(
+            baseTable,
+            templateItemId: 50,
+            targetItemId: 1128);
+        Assert.Equal(data.Length, restoredChangedDestination.Length);
+        Assert.Equal(changedDestination[baseTargetOffset + 0x08], restoredChangedDestination[baseTargetOffset + 0x08]);
+        Assert.Equal(51, SwShItemTable.Parse(restoredChangedDestination).Records[1128].RawRowIndex);
+
+        var reownedDestination = installed.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            reownedDestination.AsSpan(0x44 + sizeof(ushort)),
+            51);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShItemTable.Parse(reownedDestination).RestoreRoyalCandyRowFromBase(
+                baseTable,
+                templateItemId: 50,
+                targetItemId: 1128));
+    }
+
+    [Fact]
+    public void RestoreRoyalCandyRowCleansLegacySecondExactRowAfterCorruptedFirstInstall()
+    {
+        const int rowSize = 0x30;
+        var data = CreateRoyalCandyItemTable();
+        var baseTable = SwShItemTable.Parse(data);
+        var firstInstall = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
+        var exactRoyalRow = firstInstall.AsSpan(GetRowOffset(firstInstall, 1128), rowSize).ToArray();
+        var legacyCorruptedInstall = firstInstall.ToArray();
+        var firstAppendedRowOffset = GetRowOffset(legacyCorruptedInstall, 1128);
+        legacyCorruptedInstall[firstAppendedRowOffset + 0x20] ^= 0x80;
+
+        var legacySecondInstall = new byte[legacyCorruptedInstall.Length + rowSize];
+        legacyCorruptedInstall.CopyTo(legacySecondInstall, 0);
+        exactRoyalRow.CopyTo(legacySecondInstall.AsSpan(firstAppendedRowOffset, rowSize));
+        exactRoyalRow.CopyTo(legacySecondInstall.AsSpan(legacyCorruptedInstall.Length));
+        BinaryPrimitives.WriteUInt16LittleEndian(legacySecondInstall.AsSpan(0x04), 54);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            legacySecondInstall.AsSpan(0x44 + (1128 * sizeof(ushort))),
+            53);
+
+        var restored = SwShItemTable.Parse(legacySecondInstall).RestoreRoyalCandyRowFromBase(
+            baseTable,
+            templateItemId: 50,
+            targetItemId: 1128);
+        var restoredTable = SwShItemTable.Parse(restored);
+
+        Assert.Equal(51, restoredTable.Records[1128].RawRowIndex);
+        Assert.Equal(data, restored);
+    }
+
+    [Fact]
+    public void WriteRoyalCandyRowRejectsChangedInstalledRowWithoutAppending()
+    {
+        var data = CreateRoyalCandyItemTable();
+        var baseTable = SwShItemTable.Parse(data);
+        var installed = baseTable.WriteRoyalCandyRow(baseTable, templateItemId: 50, targetItemId: 1128);
+        var corrupted = installed.ToArray();
+        corrupted[GetRowOffset(corrupted, 1128) + 0x20] ^= 0x80;
+        var before = corrupted.ToArray();
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            SwShItemTable.Parse(corrupted).WriteRoyalCandyRow(
+                baseTable,
+                templateItemId: 50,
+                targetItemId: 1128));
+
+        Assert.Contains("will not append another row", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(before, corrupted);
     }
 
     private static byte[] CreateItemTable(bool includeMachineTable = false)
