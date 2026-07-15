@@ -7,6 +7,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Pokemon;
+using KM.SwSh.Tests.Items;
 using Xunit;
 
 namespace KM.SwSh.Tests.Pokemon;
@@ -212,8 +213,8 @@ public sealed class SwShPokemonEditSessionServiceTests
             action: "add",
             slot: null,
             method: 8,
-            argument: 2,
-            species: 2,
+            argument: 1,
+            species: 1,
             form: 1,
             level: 32);
 
@@ -222,19 +223,581 @@ public sealed class SwShPokemonEditSessionServiceTests
         var evolution = pokemon.Evolutions.Single(candidate => candidate.Slot == 1);
         Assert.Equal(1, evolution.Slot);
         Assert.Equal(8, evolution.Method);
-        Assert.Equal(2, evolution.Argument);
-        Assert.Equal("002 TM10 (Magical Leaf)", evolution.ArgumentValue);
-        Assert.Equal(2, evolution.Species);
+        Assert.Equal(1, evolution.Argument);
+        Assert.Equal("001 Leaf Stone", evolution.ArgumentValue);
+        Assert.Equal(1, evolution.Species);
         Assert.Equal(1, evolution.Form);
         Assert.Equal(32, evolution.Level);
         var edit = Assert.Single(result.Session.PendingEdits);
         Assert.Equal("workflow.pokemon", edit.Domain);
         Assert.Equal("1", edit.RecordId);
         Assert.Equal("evolution:upsert:1", edit.Field);
-        Assert.Equal("8:2:2:1:32", edit.NewValue);
-        Assert.Equal("Add Bulbasaur evolution to species 2 at level 32.", edit.Summary);
+        Assert.Equal("8:1:1:1:32", edit.NewValue);
+        Assert.Equal("Add Bulbasaur evolution to species 1 at level 32.", edit.Summary);
         Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.CreateEvolutionDataPath(1));
         Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void UpdateFieldsRejectsTheWholeBatchWhenAnyFieldIsInvalid()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateFields(
+            temp.Paths,
+            session: null,
+            [
+                new SwShPokemonFieldUpdate(1, SwShPokemonWorkflowService.HPField, "99"),
+                new SwShPokemonFieldUpdate(1, SwShPokemonWorkflowService.Type1Field, "18"),
+            ]);
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Equal(45, result.Workflow.Pokemon.Single(record => record.PersonalId == 1).BaseStats.HP);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void OrderedLearnsetEditsPreserveUpsertMoveAndUpsertHistory()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var first = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 1,
+            moveId: 345,
+            level: 7);
+        var moved = service.UpdateLearnset(
+            temp.Paths,
+            first.Session,
+            personalId: 1,
+            action: "moveUp",
+            slot: 1,
+            moveId: null,
+            level: null);
+
+        var final = service.UpdateLearnset(
+            temp.Paths,
+            moved.Session,
+            personalId: 1,
+            action: "upsert",
+            slot: 1,
+            moveId: 45,
+            level: 9);
+
+        Assert.Equal(3, final.Session.PendingEdits.Count);
+        Assert.Collection(
+            final.Workflow.Pokemon.Single(record => record.PersonalId == 1).Learnset,
+            move =>
+            {
+                Assert.Equal(345, move.MoveId);
+                Assert.Equal(1, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(45, move.MoveId);
+                Assert.Equal(9, move.Level);
+            });
+
+        var plan = service.CreateChangePlan(temp.Paths, final.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, final.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.LearnsetDataPath.Replace('/', Path.DirectorySeparatorChar)));
+        Assert.Collection(
+            SwShPokemonLearnsetTable.Parse(outputBytes).Records[1].Moves,
+            move =>
+            {
+                Assert.Equal(345, move.MoveId);
+                Assert.Equal(1, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(45, move.MoveId);
+                Assert.Equal(9, move.Level);
+            });
+    }
+
+    [Fact]
+    public void ApplyChangePlanRejectsReviewedPlanAfterPendingEditChanges()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var reviewed = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "90");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, reviewed.Session);
+        var changed = service.UpdateField(
+            temp.Paths,
+            reviewed.Session,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "91");
+
+        var apply = service.ApplyChangePlan(temp.Paths, changed.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public void ApplyChangePlanRejectsReviewedPlanAfterSourceContentChanges()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "90");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+        var sourcePath = Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "personal",
+            "personal_total.bin");
+        var sourceBytes = File.ReadAllBytes(sourcePath);
+        sourceBytes[SwShPersonalTable.RecordSize + 1] ^= 1;
+        File.WriteAllBytes(sourcePath, sourceBytes);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public void ConsecutiveDirectAppliesPreserveEarlierLayeredPersonalEdits()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var hpUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "99");
+        var hpPlan = service.CreateChangePlan(temp.Paths, hpUpdate.Session);
+
+        var hpApply = service.ApplyChangePlan(temp.Paths, hpUpdate.Session, hpPlan);
+        var attackUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.AttackField,
+            "88");
+        var attackPlan = service.CreateChangePlan(temp.Paths, attackUpdate.Session);
+        var attackApply = service.ApplyChangePlan(temp.Paths, attackUpdate.Session, attackPlan);
+
+        Assert.DoesNotContain(hpApply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(99, attackUpdate.Workflow.Pokemon.Single(record => record.PersonalId == 1).BaseStats.HP);
+        Assert.DoesNotContain(attackApply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var output = SwShPersonalTable.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(99, output.Records[1].HP);
+        Assert.Equal(88, output.Records[1].Attack);
+    }
+
+    [Fact]
+    public void PlanRefreshesLayeredPersonalSourceThatAppearsAfterStaging()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "99");
+        var layeredRecord = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hp: 45);
+        layeredRecord[1] = 88;
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                layeredRecord));
+        var layeredPath = Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar));
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var output = SwShPersonalTable.Parse(File.ReadAllBytes(layeredPath));
+        Assert.Equal(99, output.Records[1].HP);
+        Assert.Equal(88, output.Records[1].Attack);
+    }
+
+    [Fact]
+    public void ApplyRejectsMachineMetadataThatAppearsAfterPlanReview()
+    {
+        using var temp = CreateEditableProject();
+        File.Delete(Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item.dat"));
+        var service = new SwShPokemonEditSessionService();
+        var field = SwShPokemonWorkflowService.CreateCompatibilityFieldId(
+            SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId,
+            10);
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            field,
+            "false");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            SwShItemTestFixtures.CreateItemTableWithMachineMoves(
+                new Dictionary<int, int> { [10] = 45 },
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(
+                    1,
+                    1,
+                    3000,
+                    0,
+                    0,
+                    SwShItemPouch.Items,
+                    CanUseOnPokemon: true,
+                    Boost0: 0x08),
+                new ItemFixtureRecord(
+                    2,
+                    2,
+                    1000,
+                    0,
+                    0,
+                    SwShItemPouch.TMs,
+                    FieldUseType: 2,
+                    GroupType: 4,
+                    GroupIndex: 10)));
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
+
+        Assert.True(reviewedPlan.CanApply);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RestorePlanRetainsBaseDependencyWhenLayeredPersonalAppearsBeforeReview()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "restore");
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                CreateBulbasaurPersonalRecordWithEvYield(hp: 3)));
+
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        var write = Assert.Single(reviewedPlan.Writes);
+        Assert.Contains(
+            write.Sources,
+            source => source.RelativePath == SwShPokemonWorkflowService.PersonalDataPath
+                && source.Layer == ProjectFileLayer.Base);
+        Assert.Contains(
+            write.Sources,
+            source => source.RelativePath == SwShPokemonWorkflowService.PersonalDataPath
+                && source.Layer == ProjectFileLayer.Layered);
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "personal",
+            "personal_total.bin");
+        var baseBytes = File.ReadAllBytes(basePath);
+        baseBytes[SwShPersonalTable.RecordSize + 0x0A] ^= 1;
+        File.WriteAllBytes(basePath, baseBytes);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, reviewedPlan);
+
+        Assert.True(reviewedPlan.CanApply);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void LearnsetIdentityMismatchDisablesOnlyLearnsetEditing()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza_oboe/wazaoboe_total.bin",
+            SwShPokemonWorkflowServiceTests.CreateLearnsetTable([]));
+        var service = new SwShPokemonEditSessionService();
+
+        var learnset = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            moveId: 45,
+            level: 5);
+        var personal = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "99");
+
+        Assert.Empty(learnset.Session.PendingEdits);
+        Assert.Contains(learnset.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal("99", Assert.Single(personal.Session.PendingEdits).NewValue);
+        Assert.DoesNotContain(personal.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void RowUpdatesRejectInvalidSemanticSentinelsAndLevels()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var zeroMove = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            moveId: 0,
+            level: 5);
+        var highLevel = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            moveId: 33,
+            level: 101);
+        var zeroMethod = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            method: 0,
+            argument: 0,
+            species: 2,
+            form: 0,
+            level: 16);
+        var zeroSpecies = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            method: 4,
+            argument: 0,
+            species: 0,
+            form: 0,
+            level: 16);
+
+        foreach (var result in new[] { zeroMove, highLevel, zeroMethod, zeroSpecies })
+        {
+            Assert.Empty(result.Session.PendingEdits);
+            Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        }
+    }
+
+    [Fact]
+    public void EvolutionArgumentEditRejectsUnsupportedLegacyMethodWhileUntouchedRowRemainsAllowed()
+    {
+        using var temp = CreateEditableProject();
+        var targetRelativePath = SwShPokemonWorkflowService.CreateEvolutionDataPath(1);
+        temp.WriteBaseRomFsFile(
+            targetRelativePath["romfs/".Length..],
+            SwShEvolutionSet.Write(
+            [
+                new SwShEvolutionRecord(0, 50, 7, 2, 0, 16),
+            ]));
+        var service = new SwShPokemonEditSessionService();
+
+        var unchanged = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            method: 50,
+            argument: 7,
+            species: 2,
+            form: 0,
+            level: 16);
+        var changedArgument = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            method: 50,
+            argument: 8,
+            species: 2,
+            form: 0,
+            level: 16);
+
+        Assert.Single(unchanged.Session.PendingEdits);
+        Assert.DoesNotContain(unchanged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(changedArgument.Session.PendingEdits);
+        Assert.Contains(
+            changedArgument.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Field == "argument");
+    }
+
+    [Fact]
+    public void PendingOverlaysRefreshLabelsAndDerivedCounts()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var fields = service.UpdateFields(
+            temp.Paths,
+            session: null,
+            [
+                new SwShPokemonFieldUpdate(1, SwShPokemonWorkflowService.Ability1Field, "34"),
+                new SwShPokemonFieldUpdate(1, SwShPokemonWorkflowService.GenderRatioField, "255"),
+            ]);
+        var learnset = service.UpdateLearnset(
+            temp.Paths,
+            fields.Session,
+            personalId: 1,
+            action: "add",
+            slot: null,
+            moveId: 345,
+            level: 7);
+        var evolution = service.UpdateEvolution(
+            temp.Paths,
+            learnset.Session,
+            personalId: 1,
+            action: "add",
+            slot: null,
+            method: 4,
+            argument: 0,
+            species: 1,
+            form: 0,
+            level: 32);
+
+        var pokemon = evolution.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Equal("034 Chlorophyll", pokemon.Abilities.Ability1Label);
+        Assert.Equal("255 Genderless", pokemon.GenderRatioLabel);
+        Assert.Equal(3, evolution.Workflow.Stats.TotalLearnsetMoveCount);
+        Assert.Equal(2, evolution.Workflow.Stats.TotalEvolutionCount);
+        Assert.DoesNotContain(evolution.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void PendingFormOwnershipEditsRefreshDisplayAndSpriteIdentity()
+    {
+        using var temp = CreateEditableProject();
+        var records = Enumerable.Range(0, 54)
+            .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
+            .ToArray();
+        records[52] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+            hp: 40,
+            hatchedSpecies: 52);
+        records[53] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+            hp: 50,
+            hatchedSpecies: 52,
+            form: 1,
+            isRegionalForm: true);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShPokemonWorkflowServiceTests.CreateNamedPokemonNames(54, (52, "Meowth")));
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateFields(
+            temp.Paths,
+            session: null,
+            [
+                new SwShPokemonFieldUpdate(52, SwShPokemonWorkflowService.FormStatsIndexField, "53"),
+                new SwShPokemonFieldUpdate(52, SwShPokemonWorkflowService.FormCountField, "2"),
+            ]);
+
+        var form = result.Workflow.Pokemon.Single(record => record.PersonalId == 53);
+        Assert.Equal(52, form.SpeciesId);
+        Assert.Equal("Meowth (Alolan)", form.Name);
+        Assert.Equal("Alolan", form.FormLabel);
+        Assert.Equal("Meowth (Alolan)", form.SpriteName);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void PokemonPlansPreserveAndIgnoreUnrelatedPendingDomains()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var unrelated = EditSession.Start().WithPendingEdit(new PendingEdit(
+            "workflow.items",
+            "Unrelated item edit.",
+            [],
+            RecordId: "1",
+            Field: "buyPrice",
+            NewValue: "650"));
+
+        var result = service.UpdateField(
+            temp.Paths,
+            unrelated,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "99");
+        var plan = service.CreateChangePlan(temp.Paths, result.Session);
+
+        Assert.Equal(2, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit => edit.Domain == "workflow.items");
+        Assert.True(plan.CanApply);
+        Assert.Single(plan.Writes);
+        Assert.StartsWith("Apply pending Pokemon Data edit:", Assert.Single(plan.Writes).Reason);
+    }
+
+    [Fact]
+    public void RestoreRejectsMismatchedCurrentAndBasePersonalIdentityBeforeStaging()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord()));
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "restore");
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -321,7 +884,7 @@ public sealed class SwShPokemonEditSessionServiceTests
             slot: null,
             method: 4,
             argument: 0,
-            species: 3,
+            species: 1,
             form: 0,
             level: 36);
 
@@ -539,6 +1102,114 @@ public sealed class SwShPokemonEditSessionServiceTests
     }
 
     [Fact]
+    public void RestoreYieldPreviewUsesBasePersonalValues()
+    {
+        using var temp = CreateEditableProject();
+        var layeredRecord = CreateBulbasaurPersonalRecordWithEvYield(
+            hp: 1,
+            attack: 2,
+            defense: 3,
+            speed: 1,
+            specialAttack: 2,
+            specialDefense: 3);
+        BinaryPrimitives.WriteUInt16LittleEndian(layeredRecord.AsSpan(0x22), 123);
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                layeredRecord));
+        var service = new SwShPokemonEditSessionService();
+
+        var evRestore = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "restore");
+        var expRestore = service.UpdateField(
+            temp.Paths,
+            evRestore.Session,
+            personalId: 0,
+            field: "expYieldAll",
+            value: "restore");
+
+        var restoredPokemon = expRestore.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Equal(0, restoredPokemon.Personal.EVYieldHP);
+        Assert.Equal(0, restoredPokemon.Personal.EVYieldAttack);
+        Assert.Equal(0, restoredPokemon.Personal.EVYieldDefense);
+        Assert.Equal(0, restoredPokemon.Personal.EVYieldSpeed);
+        Assert.Equal(0, restoredPokemon.Personal.EVYieldSpecialAttack);
+        Assert.Equal(0, restoredPokemon.Personal.EVYieldSpecialDefense);
+        Assert.Equal(64, restoredPokemon.BaseExperience);
+        Assert.Equal(64, restoredPokemon.Personal.BaseExperience);
+        Assert.Equal(2, expRestore.Session.PendingEdits.Count);
+        Assert.DoesNotContain(expRestore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void RestoreThenIndividualYieldEditsUseBasePreviewAndApplyInPendingOrder()
+    {
+        using var temp = CreateEditableProject();
+        var layeredRecord = CreateBulbasaurPersonalRecordWithEvYield(hp: 3, attack: 3);
+        BinaryPrimitives.WriteUInt16LittleEndian(layeredRecord.AsSpan(0x22), 123);
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                layeredRecord));
+        var service = new SwShPokemonEditSessionService();
+
+        var evRestore = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "restore");
+        var evEdit = service.UpdateField(
+            temp.Paths,
+            evRestore.Session,
+            personalId: 1,
+            field: SwShPokemonWorkflowService.EVYieldHPField,
+            value: "2");
+        var expRestore = service.UpdateField(
+            temp.Paths,
+            evEdit.Session,
+            personalId: 0,
+            field: "expYieldAll",
+            value: "restore");
+        var expEdit = service.UpdateField(
+            temp.Paths,
+            expRestore.Session,
+            personalId: 1,
+            field: SwShPokemonWorkflowService.BaseExperienceField,
+            value: "77");
+
+        Assert.Collection(
+            expEdit.Session.PendingEdits,
+            edit => Assert.Equal("evYieldAll", edit.Field),
+            edit => Assert.Equal(SwShPokemonWorkflowService.EVYieldHPField, edit.Field),
+            edit => Assert.Equal("expYieldAll", edit.Field),
+            edit => Assert.Equal(SwShPokemonWorkflowService.BaseExperienceField, edit.Field));
+        var previewPokemon = expEdit.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Equal(2, previewPokemon.Personal.EVYieldHP);
+        Assert.Equal(0, previewPokemon.Personal.EVYieldAttack);
+        Assert.Equal(77, previewPokemon.BaseExperience);
+        Assert.Equal(77, previewPokemon.Personal.BaseExperience);
+
+        var plan = service.CreateChangePlan(temp.Paths, expEdit.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, expEdit.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var output = SwShPersonalTable.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(2, output.Records[1].EVYieldHP);
+        Assert.Equal(0, output.Records[1].EVYieldAttack);
+        Assert.Equal(77, output.Records[1].BaseExperience);
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesOutputLearnsetTableAndLeavesBaseUntouched()
     {
         using var temp = CreateEditableProject();
@@ -608,7 +1279,7 @@ public sealed class SwShPokemonEditSessionServiceTests
             action: "upsert",
             slot: 0,
             method: 8,
-            argument: 25,
+            argument: 1,
             species: 2,
             form: 1,
             level: 32);
@@ -620,7 +1291,7 @@ public sealed class SwShPokemonEditSessionServiceTests
             slot: null,
             method: 4,
             argument: 0,
-            species: 3,
+            species: 1,
             form: 0,
             level: 36);
         var plan = service.CreateChangePlan(temp.Paths, addUpdate.Session);
@@ -640,7 +1311,7 @@ public sealed class SwShPokemonEditSessionServiceTests
             {
                 Assert.Equal(0, evolution.Slot);
                 Assert.Equal(8, evolution.Method);
-                Assert.Equal(25, evolution.Argument);
+                Assert.Equal(1, evolution.Argument);
                 Assert.Equal(2, evolution.Species);
                 Assert.Equal(1, evolution.Form);
                 Assert.Equal(32, evolution.Level);
@@ -649,7 +1320,7 @@ public sealed class SwShPokemonEditSessionServiceTests
             {
                 Assert.Equal(1, evolution.Slot);
                 Assert.Equal(4, evolution.Method);
-                Assert.Equal(3, evolution.Species);
+                Assert.Equal(1, evolution.Species);
                 Assert.Equal(36, evolution.Level);
             });
         var baseBytes = File.ReadAllBytes(Path.Combine(
@@ -719,8 +1390,8 @@ public sealed class SwShPokemonEditSessionServiceTests
             action: "upsert",
             slot: 7,
             method: 8,
-            argument: 2,
-            species: 4,
+            argument: 1,
+            species: 3,
             form: 0,
             level: 40);
         var remove = service.UpdateEvolution(
@@ -739,7 +1410,7 @@ public sealed class SwShPokemonEditSessionServiceTests
         var pendingEvolution = Assert.Single(
             remove.Workflow.Pokemon.Single(record => record.PersonalId == 1).Evolutions);
         Assert.Equal(7, pendingEvolution.Slot);
-        Assert.Equal(4, pendingEvolution.Species);
+        Assert.Equal(3, pendingEvolution.Species);
 
         var plan = service.CreateChangePlan(temp.Paths, remove.Session);
         var apply = service.ApplyChangePlan(temp.Paths, remove.Session, plan);
@@ -752,8 +1423,8 @@ public sealed class SwShPokemonEditSessionServiceTests
         var outputEvolution = Assert.Single(SwShEvolutionSet.Parse(outputBytes).Evolutions);
         Assert.Equal(7, outputEvolution.Slot);
         Assert.Equal(8, outputEvolution.Method);
-        Assert.Equal(2, outputEvolution.Argument);
-        Assert.Equal(4, outputEvolution.Species);
+        Assert.Equal(1, outputEvolution.Argument);
+        Assert.Equal(3, outputEvolution.Species);
         Assert.Equal(40, outputEvolution.Level);
     }
 
@@ -808,6 +1479,74 @@ public sealed class SwShPokemonEditSessionServiceTests
             temp.OutputRootPath,
             targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
         Assert.Empty(SwShEvolutionSet.Parse(outputBytes).Evolutions);
+    }
+
+    [Theory]
+    [InlineData(SwShPokemonWorkflowService.FormField, 255)]
+    [InlineData(SwShPokemonWorkflowService.LocalFormIndexField, 255)]
+    public void UpdateFieldAcceptsMaximumSemanticFormValue(string field, int value)
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            field,
+            value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        Assert.Equal(value.ToString(System.Globalization.CultureInfo.InvariantCulture), Assert.Single(result.Session.PendingEdits).NewValue);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData(SwShPokemonWorkflowService.FormField)]
+    [InlineData(SwShPokemonWorkflowService.LocalFormIndexField)]
+    public void UpdateFieldRejectsChangedFormValueAboveByteRange(string field)
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            field,
+            "256");
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void UnrelatedPersonalEditPreservesLegacyHighRawFormValues()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteBaseRomFsFile(
+            SwShPokemonWorkflowService.PersonalDataPath["romfs/".Length..],
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+                    localFormIndex: 300,
+                    form: 400)));
+        var service = new SwShPokemonEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.HPField,
+            "99");
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var output = SwShPersonalTable.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(300, output.Records[1].LocalFormIndex);
+        Assert.Equal(400, output.Records[1].Form);
     }
 
     [Fact]

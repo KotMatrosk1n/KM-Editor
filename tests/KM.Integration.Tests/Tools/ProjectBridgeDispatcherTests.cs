@@ -459,6 +459,52 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdatePokemonFieldsStagesSwordShieldBatchAtomically()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var successfulJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonFields,
+            new UpdatePokemonFieldsRequest(
+                temp.Paths,
+                Session: null,
+                [
+                    new PokemonFieldUpdateDto(1, "hp", "99"),
+                    new PokemonFieldUpdateDto(1, "attack", "88"),
+                ]),
+            requestId: "request-pokemon-fields-update");
+
+        var successful = DeserializeResponse<UpdatePokemonFieldsResponse>(dispatcher.Dispatch(successfulJson));
+
+        Assert.Null(successful.Error);
+        Assert.NotNull(successful.Payload);
+        Assert.Equal(2, successful.Payload.Session.PendingEdits.Count);
+        Assert.Equal(99, successful.Payload.Workflow.Pokemon[1].BaseStats.HP);
+        Assert.Equal(88, successful.Payload.Workflow.Pokemon[1].BaseStats.Attack);
+
+        var failedJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonFields,
+            new UpdatePokemonFieldsRequest(
+                temp.Paths,
+                Session: null,
+                [
+                    new PokemonFieldUpdateDto(1, "hp", "99"),
+                    new PokemonFieldUpdateDto(1, "type1", "18"),
+                ]),
+            requestId: "request-pokemon-fields-atomic");
+
+        var failed = DeserializeResponse<UpdatePokemonFieldsResponse>(dispatcher.Dispatch(failedJson));
+
+        Assert.Null(failed.Error);
+        Assert.NotNull(failed.Payload);
+        Assert.Empty(failed.Payload.Session.PendingEdits);
+        Assert.Equal(45, failed.Payload.Workflow.Pokemon[1].BaseStats.HP);
+        Assert.Contains(failed.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void DispatchUpdatePokemonLearnsetReturnsPendingPokemonSession()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -508,7 +554,7 @@ public sealed class ProjectBridgeDispatcherTests
                 Action: "upsert",
                 Slot: 0,
                 Method: 8,
-                Argument: 25,
+                Argument: 1,
                 Species: 2,
                 Form: 1,
                 Level: 32),
@@ -523,7 +569,7 @@ public sealed class ProjectBridgeDispatcherTests
         var updatedEvolution = Assert.Single(response.Payload.Workflow.Pokemon[1].Evolutions);
         Assert.Equal(0, updatedEvolution.Slot);
         Assert.Equal(8, updatedEvolution.Method);
-        Assert.Equal(25, updatedEvolution.Argument);
+        Assert.Equal(1, updatedEvolution.Argument);
         Assert.Equal(2, updatedEvolution.Species);
         Assert.Equal(1, updatedEvolution.Form);
         Assert.Equal(32, updatedEvolution.Level);
@@ -531,7 +577,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("workflow.pokemon", edit.Domain);
         Assert.Equal("1", edit.RecordId);
         Assert.Equal("evolution:upsert:0", edit.Field);
-        Assert.Equal("8:25:2:1:32", edit.NewValue);
+        Assert.Equal("8:1:2:1:32", edit.NewValue);
     }
 
     [Fact]

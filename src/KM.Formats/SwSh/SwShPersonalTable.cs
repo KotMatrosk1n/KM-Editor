@@ -50,7 +50,14 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
         var data = originalData.ToArray();
         for (var index = 0; index < records.Count; index++)
         {
-            WriteRecord(records[index], data.AsSpan(index * RecordSize, RecordSize));
+            var record = records[index];
+            if (record.PersonalId != index)
+            {
+                throw new InvalidDataException(
+                    $"Personal table record at physical index {index} has PersonalId {record.PersonalId}.");
+            }
+
+            WriteRecord(record, data.AsSpan(index * RecordSize, RecordSize));
         }
 
         return data;
@@ -58,9 +65,22 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
 
     public static void WriteRecord(SwShPersonalRecord record, Span<byte> data)
     {
-        if (data.Length < RecordSize)
+        ArgumentNullException.ThrowIfNull(record);
+
+        if (data.Length != RecordSize)
         {
             throw new InvalidDataException($"Personal record must be {RecordSize} bytes.");
+        }
+
+        ValidateEVYield(record.EVYieldHP, nameof(record.EVYieldHP));
+        ValidateEVYield(record.EVYieldAttack, nameof(record.EVYieldAttack));
+        ValidateEVYield(record.EVYieldDefense, nameof(record.EVYieldDefense));
+        ValidateEVYield(record.EVYieldSpeed, nameof(record.EVYieldSpeed));
+        ValidateEVYield(record.EVYieldSpecialAttack, nameof(record.EVYieldSpecialAttack));
+        ValidateEVYield(record.EVYieldSpecialDefense, nameof(record.EVYieldSpecialDefense));
+        if ((uint)record.Color > 0x3F)
+        {
+            throw new InvalidDataException("Personal color storage values must be between 0 and 63.");
         }
 
         data[0x00] = checked((byte)record.HP);
@@ -193,6 +213,14 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
         }
 
         return flags;
+    }
+
+    private static void ValidateEVYield(int value, string fieldName)
+    {
+        if ((uint)value > 3)
+        {
+            throw new InvalidDataException($"Personal {fieldName} must be between 0 and 3.");
+        }
     }
 
     private static void WriteFlags(IReadOnlyList<bool> flags, Span<byte> data, int expectedCount)

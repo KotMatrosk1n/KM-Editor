@@ -7,7 +7,7 @@ namespace KM.Formats.SwSh;
 public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetRecord> Records)
 {
     public const int RecordSize = 0x104;
-    public const int MaxMovesPerRecord = (RecordSize / 4) - 1;
+    public const int MaxMovesPerRecord = RecordSize / 4;
     public const string LearnsetDataRelativePath = "romfs/bin/pml/waza_oboe/wazaoboe_total.bin";
 
     public static SwShPokemonLearnsetTable Parse(ReadOnlySpan<byte> data)
@@ -37,7 +37,22 @@ public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetR
 
             if (moveId == ushort.MaxValue && level == ushort.MaxValue)
             {
+                for (var tailOffset = offset; tailOffset < RecordSize; tailOffset += 4)
+                {
+                    if (BinaryPrimitives.ReadUInt32LittleEndian(data[tailOffset..]) != uint.MaxValue)
+                    {
+                        throw new InvalidDataException(
+                            $"Pokemon learnset record {personalId} contains data after its terminator.");
+                    }
+                }
+
                 break;
+            }
+
+            if (moveId == ushort.MaxValue || (level & 0xFF00) == 0xFF00)
+            {
+                throw new InvalidDataException(
+                    $"Pokemon learnset record {personalId} contains a partial terminator at slot {offset / 4}.");
             }
 
             entries.Add(new SwShPokemonLearnsetMoveRecord(offset / 4, moveId, level));
@@ -68,7 +83,24 @@ public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetR
         var output = originalData.ToArray();
         for (var index = 0; index < records.Count; index++)
         {
-            WriteRecord(records[index], output.AsSpan(index * RecordSize, RecordSize));
+            var record = records[index];
+            ArgumentNullException.ThrowIfNull(record);
+            if (record.PersonalId != index)
+            {
+                throw new InvalidDataException(
+                    $"Pokemon learnset record at physical index {index} has PersonalId {record.PersonalId}.");
+            }
+
+            ValidateRecord(record);
+            var sourceRecord = ParseRecord(
+                index,
+                originalData.Slice(index * RecordSize, RecordSize));
+            if (RecordsAreSemanticallyEqual(record, sourceRecord))
+            {
+                continue;
+            }
+
+            WriteRecord(record, output.AsSpan(index * RecordSize, RecordSize));
         }
 
         return output;
@@ -86,16 +118,38 @@ public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetR
                 $"Pokemon learnset record length must be {RecordSize} bytes.");
         }
 
+        ValidateRecord(record);
+
+        destination.Fill(byte.MaxValue);
+        for (var index = 0; index < record.Moves.Count; index++)
+        {
+            var move = record.Moves[index];
+            var offset = index * 4;
+            BinaryPrimitives.WriteUInt16LittleEndian(destination[offset..], checked((ushort)move.MoveId));
+            BinaryPrimitives.WriteUInt16LittleEndian(destination[(offset + 2)..], checked((ushort)move.Level));
+        }
+    }
+
+    private static void ValidateRecord(SwShPokemonLearnsetRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record.Moves);
+
         if (record.Moves.Count > MaxMovesPerRecord)
         {
             throw new InvalidDataException(
                 $"Pokemon learnset records support at most {MaxMovesPerRecord} moves.");
         }
 
-        destination.Fill(byte.MaxValue);
         for (var index = 0; index < record.Moves.Count; index++)
         {
             var move = record.Moves[index];
+            ArgumentNullException.ThrowIfNull(move);
+            if (move.Slot != index)
+            {
+                throw new InvalidDataException(
+                    $"Pokemon learnset move at list index {index} has slot {move.Slot}; slots must be contiguous from zero.");
+            }
+
             if ((uint)move.MoveId > ushort.MaxValue)
             {
                 throw new InvalidDataException("Pokemon learnset move IDs must fit in an unsigned 16-bit value.");
@@ -106,10 +160,32 @@ public sealed record SwShPokemonLearnsetTable(IReadOnlyList<SwShPokemonLearnsetR
                 throw new InvalidDataException("Pokemon learnset levels must fit in an unsigned 16-bit value.");
             }
 
-            var offset = index * 4;
-            BinaryPrimitives.WriteUInt16LittleEndian(destination[offset..], checked((ushort)move.MoveId));
-            BinaryPrimitives.WriteUInt16LittleEndian(destination[(offset + 2)..], checked((ushort)move.Level));
+            if (move.MoveId == ushort.MaxValue || (move.Level & 0xFF00) == 0xFF00)
+            {
+                throw new InvalidDataException(
+                    $"Pokemon learnset move at slot {index} conflicts with the format terminator.");
+            }
         }
+    }
+
+    private static bool RecordsAreSemanticallyEqual(
+        SwShPokemonLearnsetRecord left,
+        SwShPokemonLearnsetRecord right)
+    {
+        if (left.PersonalId != right.PersonalId || left.Moves.Count != right.Moves.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Moves.Count; index++)
+        {
+            if (left.Moves[index] != right.Moves[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 

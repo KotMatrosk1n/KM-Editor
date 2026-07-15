@@ -103,6 +103,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdatePokemonFieldsResponse ToPokemonFieldsDto(SwShPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonFieldsResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdatePokemonLearnsetResponse ToDtoLearnsetUpdate(SwShPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

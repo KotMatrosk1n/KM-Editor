@@ -19,9 +19,6 @@ internal static class SwShPokemonBridgeFixtures
             "bin/pml/evolution/evo_001.bin",
             CreateEvolutionFile((4, 0, 2, 0, 16)));
         temp.WriteBaseRomFsFile(
-            "bin/message/English/common/pokelist.dat",
-            CreateTextTable("None", "Bulbasaur"));
-        temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateIndexedPokemonNames());
         temp.WriteBaseRomFsFile(
@@ -86,7 +83,10 @@ internal static class SwShPokemonBridgeFixtures
 
     private static byte[] CreateLearnsetTable(params (ushort MoveId, ushort Level)[][] learnsets)
     {
-        var data = new byte[learnsets.Length * SwShPokemonLearnsetTable.RecordSize];
+        var data = Enumerable.Repeat(
+                byte.MaxValue,
+                learnsets.Length * SwShPokemonLearnsetTable.RecordSize)
+            .ToArray();
         for (var recordIndex = 0; recordIndex < learnsets.Length; recordIndex++)
         {
             var recordOffset = recordIndex * SwShPokemonLearnsetTable.RecordSize;

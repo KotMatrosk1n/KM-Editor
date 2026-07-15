@@ -215,6 +215,17 @@ function createItemMetadata(): ItemRecord['metadata'] {
     useFlags2: 0
   };
 }
+
+function findFirstAvailablePokemonEvolutionSlot(evolutions: Array<{ slot: number }>) {
+  const occupiedSlots = new Set(evolutions.map((evolution) => evolution.slot));
+  let slot = 0;
+  while (occupiedSlots.has(slot)) {
+    slot += 1;
+  }
+
+  return slot;
+}
+
 export function createMockProjectBridge(
   overrides: Partial<ProjectBridge> = {},
   canEdit = true
@@ -6601,8 +6612,11 @@ export function createMockProjectBridge(
               domain: 'workflow.pokemon',
               field: `evolution:${request.action === 'add' ? 'upsert' : request.action}:${
                 request.action === 'add'
-                  ? pokemonWorkflow.pokemon.find((pokemon) => pokemon.personalId === request.personalId)
-                      ?.evolutions.length ?? 0
+                  ? findFirstAvailablePokemonEvolutionSlot(
+                      pokemonWorkflow.pokemon.find(
+                        (pokemon) => pokemon.personalId === request.personalId
+                      )?.evolutions ?? []
+                    )
                   : request.slot ?? 0
               }`,
               newValue:
@@ -6643,8 +6657,14 @@ export function createMockProjectBridge(
               return pokemon;
             }
 
-            const evolutions = [...pokemon.evolutions];
-            const targetSlot = request.action === 'add' ? evolutions.length : request.slot ?? 0;
+            const evolutions = [...pokemon.evolutions].sort((left, right) => left.slot - right.slot);
+            const targetSlot =
+              request.action === 'add'
+                ? findFirstAvailablePokemonEvolutionSlot(evolutions)
+                : request.slot ?? 0;
+            const targetIndex = evolutions.findIndex(
+              (evolution) => evolution.slot === targetSlot
+            );
             if (
               (request.action === 'upsert' || request.action === 'add') &&
               request.method !== null &&
@@ -6680,28 +6700,32 @@ export function createMockProjectBridge(
                 slot: targetSlot,
                 species: request.species
               };
-              if (targetSlot < evolutions.length) {
-                evolutions[targetSlot] = row;
+              if (targetIndex >= 0) {
+                evolutions[targetIndex] = row;
               } else {
                 evolutions.push(row);
               }
-            } else if (request.action === 'remove' && targetSlot < evolutions.length) {
-              evolutions.splice(targetSlot, 1);
-            } else if (request.action === 'moveUp' && targetSlot > 0) {
-              [evolutions[targetSlot - 1], evolutions[targetSlot]] = [
-                evolutions[targetSlot]!,
-                evolutions[targetSlot - 1]!
-              ];
-            } else if (request.action === 'moveDown' && targetSlot < evolutions.length - 1) {
-              [evolutions[targetSlot + 1], evolutions[targetSlot]] = [
-                evolutions[targetSlot]!,
-                evolutions[targetSlot + 1]!
-              ];
+            } else if (request.action === 'remove' && targetIndex >= 0) {
+              evolutions.splice(targetIndex, 1);
+            } else if (request.action === 'moveUp' && targetIndex > 0) {
+              const source = evolutions[targetIndex]!;
+              const destination = evolutions[targetIndex - 1]!;
+              evolutions[targetIndex - 1] = { ...source, slot: destination.slot };
+              evolutions[targetIndex] = { ...destination, slot: source.slot };
+            } else if (
+              request.action === 'moveDown' &&
+              targetIndex >= 0 &&
+              targetIndex < evolutions.length - 1
+            ) {
+              const source = evolutions[targetIndex]!;
+              const destination = evolutions[targetIndex + 1]!;
+              evolutions[targetIndex + 1] = { ...source, slot: destination.slot };
+              evolutions[targetIndex] = { ...destination, slot: source.slot };
             }
 
             return {
               ...pokemon,
-              evolutions: evolutions.map((evolution, slot) => ({ ...evolution, slot }))
+              evolutions: evolutions.sort((left, right) => left.slot - right.slot)
             };
           })
         }
