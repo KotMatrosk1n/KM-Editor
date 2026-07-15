@@ -870,6 +870,23 @@ public sealed class SwShRoyalCandyWorkflowService
             "Bag Hook V2 is installed and available for Royal Candy slot assignment.",
             royalCandyProvenance);
 
+        var startingItemRoyalCandySlots = bagHookWorkflow.Slots
+            .Where(slot => slot.Slot is >= SwShBagHookAmxPatcher.FirstStartingItemSlot and <= SwShBagHookAmxPatcher.LastStartingItemSlot
+                && slot.ItemId == RoyalCandyItemId)
+            .Select(slot => slot.Slot)
+            .ToArray();
+        AddCheck(
+            checks,
+            $"{PreflightWorkflowId}:bag-hook-starting-items-item-1128",
+            PreflightWorkflowId,
+            startingItemRoyalCandySlots.Length == 0 ? "Pass" : "Fail",
+            "Bag Hook",
+            BagEventScriptPath,
+            startingItemRoyalCandySlots.Length == 0
+                ? "Starting Items slots 2-20 do not contain item 1128."
+                : $"Clear item 1128 from Starting Items slot(s) {string.Join(", ", startingItemRoyalCandySlots)} before installing or refreshing Royal Candy; KM will not delete those grants automatically.",
+            royalCandyProvenance);
+
         var slot = bagHookWorkflow.Slots.FirstOrDefault(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
         if (slot is null)
         {

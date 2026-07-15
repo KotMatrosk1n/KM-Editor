@@ -4332,6 +4332,7 @@ export function createMockProjectBridge(
     label: 'Starting Items'
   };
   const startingItemsWorkflow: StartingItemsWorkflow = {
+    blockerKind: canEdit ? 'none' : 'bagHookMissing',
     diagnostics: [],
     grants: Array.from({ length: 19 }, (_, index) => {
       const slot = index + 2;
@@ -4350,9 +4351,22 @@ export function createMockProjectBridge(
         status: slot === 2 ? 'occupied' : 'empty'
       };
     }),
-    installMessage: 'Starting Items can claim Bag Hook slots 2-20.',
+    installMessage:
+      'Starting Items can claim Bag Hook slots 2-20. Slot 1 is never used because it is reserved for Royal Candy.',
     installStatus: canEdit ? 'available' : 'blocked',
     itemOptions: [
+      {
+        category: 'Items',
+        isKeyItem: false,
+        itemId: 10,
+        name: 'Antidote'
+      },
+      {
+        category: 'Items',
+        isKeyItem: false,
+        itemId: 100,
+        name: 'Apple'
+      },
       {
         category: 'Items',
         isKeyItem: false,
@@ -4367,7 +4381,7 @@ export function createMockProjectBridge(
       }
     ],
     stats: {
-      itemOptionCount: 2,
+      itemOptionCount: 4,
       occupiedGrantSlotCount: 1,
       sourceFileCount: 2,
       totalGrantSlotCount: 19

@@ -55,4 +55,28 @@ describe('workflow game support', () => {
       isWorkflowNavigationVisibleForGame('exefsPatches', 'scarlet', availableSections)
     ).toBe(false);
   });
+
+  it('routes Starting Items only for Sword and Shield', () => {
+    const availableSections = new Set<WorkbenchSection>(['startingItems']);
+    const advancedGroup = workflowNavigationGroups.find(
+      (group) => group.id === 'advancedEditors'
+    );
+
+    expect(advancedGroup?.sectionIds).toContain('startingItems');
+    expect(
+      isWorkflowNavigationVisibleForGame('startingItems', 'sword', availableSections)
+    ).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('startingItems', 'shield', availableSections)
+    ).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('startingItems', 'scarlet', availableSections)
+    ).toBe(false);
+    expect(
+      isWorkflowNavigationVisibleForGame('startingItems', 'violet', availableSections)
+    ).toBe(false);
+    expect(
+      isWorkflowNavigationVisibleForGame('startingItems', 'za', availableSections)
+    ).toBe(false);
+  });
 });

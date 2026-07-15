@@ -54,6 +54,22 @@ test('other Sword and Shield editors retain their existing focused routing', () 
   assert.doesNotMatch(output, /dotnet build KM\.Editor\.slnx --no-restore --nologo/);
 });
 
+test('Starting Items sources run both workflow and bridge integration coverage', () => {
+  const output = runChangedPrint([
+    'src/KM.SwSh/StartingItems/SwShStartingItemsEditSessionService.cs',
+  ]);
+
+  assert.match(output, /Run Sword and Shield StartingItems tests/);
+  assert.match(output, /Run StartingItems bridge integration tests/);
+  assert.equal(
+    countOccurrences(
+      output,
+      '--filter "FullyQualifiedName~StartingItems|FullyQualifiedName~SwShHookReservationTests"',
+    ),
+    2,
+  );
+});
+
 test('routine full validation still excludes Royal Candy hook shards', () => {
   const output = runPrint(['full', '--print']);
 

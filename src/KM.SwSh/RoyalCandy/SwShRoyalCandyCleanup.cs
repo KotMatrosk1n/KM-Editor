@@ -106,7 +106,7 @@ internal static class SwShRoyalCandyCleanup
 
         if (string.Equals(entry.RelativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase))
         {
-            return IsRoyalCandyInstalled(project) && IsOwnedItemHashOutput(project, entry);
+            return HasInstalledOwnershipMarker(project) && IsOwnedItemHashOutput(project, entry);
         }
 
         if (IsItemTextOutput(entry.RelativePath))
@@ -115,14 +115,14 @@ internal static class SwShRoyalCandyCleanup
         }
 
         return IsShopDataOutput(entry.RelativePath)
-            && IsRoyalCandyInstalled(project)
+            && HasInstalledOwnershipMarker(project)
             && HasRoyalCandyShopPatch(project, entry);
     }
 
     public static IReadOnlyList<SwShRoyalCandyCleanupBlocker> FindBlockingCleanupTargets(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        if (!IsRoyalCandyInstalled(project))
+        if (!HasInstalledOwnershipMarker(project))
         {
             return Array.Empty<SwShRoyalCandyCleanupBlocker>();
         }
@@ -665,8 +665,10 @@ internal static class SwShRoyalCandyCleanup
             || string.Equals(value, StoryLimitsDescription, StringComparison.Ordinal);
     }
 
-    private static bool IsRoyalCandyInstalled(OpenedProject project)
+    internal static bool HasInstalledOwnershipMarker(OpenedProject project)
     {
+        ArgumentNullException.ThrowIfNull(project);
+
         foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
             if (string.Equals(entry.RelativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase)
@@ -694,6 +696,37 @@ internal static class SwShRoyalCandyCleanup
         }
 
         return false;
+    }
+
+    internal static IReadOnlyList<ProjectFileReference> GetOwnershipMarkerSources(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var relativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            SwShRoyalCandyWorkflowService.BagEventScriptPath,
+            SwShRoyalCandyWorkflowService.ExeFsMainPath,
+            SwShRoyalCandyWorkflowService.ItemPath,
+        };
+        foreach (var entry in project.FileGraph.Entries.Where(entry => IsItemTextOutput(entry.RelativePath)))
+        {
+            relativePaths.Add(entry.RelativePath);
+        }
+
+        var sources = relativePaths
+            .OrderBy(relativePath => relativePath, StringComparer.Ordinal)
+            .Select(relativePath => new ProjectFileReference(ProjectFileLayer.Generated, relativePath))
+            .ToList();
+        var itemEntry = project.FileGraph.Entries.FirstOrDefault(entry => string.Equals(
+            entry.RelativePath,
+            SwShRoyalCandyWorkflowService.ItemPath,
+            StringComparison.OrdinalIgnoreCase));
+        if (itemEntry?.BaseFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, itemEntry.RelativePath));
+        }
+
+        return sources;
     }
 
     internal static bool HasRoyalCandyItemData(OpenedProject project, ProjectFileGraphEntry entry)

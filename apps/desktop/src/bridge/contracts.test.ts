@@ -72,6 +72,11 @@ import {
   shopsWorkflowSchema,
   stageExeFsPatchRequestSchema,
   stageRoyalCandyWorkflowRequestSchema,
+  stageStartingItemsRequestSchema,
+  startingItemGrantRecordSchema,
+  startingItemGrantSelectionSchema,
+  startingItemOptionRecordSchema,
+  startingItemsWorkflowSchema,
   tradePokemonEditableFieldSchema,
   tradePokemonMoveSchema,
   tradePokemonRecordSchema,
@@ -238,6 +243,45 @@ describe('bridge contracts', () => {
         workflowId: '  royal-candy-unlimited  '
       }).workflowId
     ).toBe('royal-candy-unlimited');
+  });
+
+  it('hardens Starting Items response fields while retaining item ID 0 as a clear request', () => {
+    expect(startingItemOptionRecordSchema.shape.itemId.safeParse(1).success).toBe(true);
+    expect(startingItemOptionRecordSchema.shape.itemId.safeParse(0).success).toBe(false);
+    expect(startingItemGrantRecordSchema.shape.itemId.safeParse(null).success).toBe(true);
+    expect(startingItemGrantRecordSchema.shape.itemId.safeParse(0).success).toBe(false);
+    expect(startingItemGrantRecordSchema.shape.slot.safeParse(2).success).toBe(true);
+    expect(startingItemGrantRecordSchema.shape.slot.safeParse(20).success).toBe(true);
+    expect(startingItemGrantRecordSchema.shape.slot.safeParse(1).success).toBe(false);
+    expect(startingItemGrantRecordSchema.shape.slot.safeParse(21).success).toBe(false);
+    expect(startingItemGrantRecordSchema.shape.quantity.safeParse(999).success).toBe(true);
+    expect(startingItemGrantRecordSchema.shape.quantity.safeParse(1000).success).toBe(false);
+    expect(startingItemGrantRecordSchema.shape.status.safeParse('occupied').success).toBe(true);
+    expect(startingItemGrantRecordSchema.shape.status.safeParse('future').success).toBe(false);
+    expect(startingItemsWorkflowSchema.shape.installStatus.safeParse('readOnly').success).toBe(true);
+    expect(startingItemsWorkflowSchema.shape.installStatus.safeParse('installed').success).toBe(false);
+    expect(startingItemsWorkflowSchema.shape.blockerKind.safeParse('bagHookMissing').success).toBe(
+      true
+    );
+    expect(startingItemsWorkflowSchema.shape.blockerKind.safeParse('future').success).toBe(false);
+    expect(startingItemGrantSelectionSchema.shape.slot.safeParse(2).success).toBe(true);
+    expect(startingItemGrantSelectionSchema.shape.slot.safeParse(1).success).toBe(false);
+    expect(startingItemGrantSelectionSchema.shape.quantity.safeParse(999).success).toBe(true);
+    expect(startingItemGrantSelectionSchema.shape.quantity.safeParse(1000).success).toBe(false);
+
+    expect(
+      stageStartingItemsRequestSchema.safeParse({
+        grants: [{ itemId: 0, quantity: 1, slot: 2 }],
+        paths: {
+          baseExeFsPath: 'base-exefs',
+          baseRomFsPath: 'base-romfs',
+          outputRootPath: 'output',
+          saveFilePath: null,
+          selectedGame: 'sword'
+        },
+        session: null
+      }).success
+    ).toBe(true);
   });
 
   it('accepts the nullable Z-A Wild Zone completion role on encounter slots', () => {

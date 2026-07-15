@@ -625,7 +625,7 @@ function mapSwShChange(file) {
 
   if (filterText) {
     add(`swsh-feature:${feature}`, `Run Sword and Shield ${feature} tests`, dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj', expandFilter(filterText)));
-    if (['DynamaxAdventures', 'FairyGymBoosts', 'RoyalCandy', 'TypeChart'].includes(feature)) {
+    if (['DynamaxAdventures', 'FairyGymBoosts', 'RoyalCandy', 'StartingItems', 'TypeChart'].includes(feature)) {
       add(
         `integration-feature:${feature}`,
         `Run ${feature} bridge integration tests`,

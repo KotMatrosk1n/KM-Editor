@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Editing;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.Formats.Executable;
@@ -12,6 +14,7 @@ using KM.SwSh.FpsPatch;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
+using KM.SwSh.Items;
 using KM.SwSh.NameFilter;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
@@ -2052,6 +2055,379 @@ public sealed class SwShHookReservationTests
             result.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
                 && diagnostic.Message.Contains("Royal Candy and EXP Candy XL", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("2:8:0")]
+    [InlineData("2:50:3;2:51:4")]
+    [InlineData(" 2:50:3")]
+    public void StartingItemsRejectNoncanonicalPendingPayloadsWithoutWriting(string payload)
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var service = new SwShStartingItemsEditSessionService();
+        var stage = service.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 8, 25)],
+            session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal("2:8:1", Assert.Single(stage.Session.PendingEdits).NewValue);
+        var reviewedPlan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(reviewedPlan.CanApply);
+
+        var craftedSession = stage.Session with
+        {
+            PendingEdits = [stage.Session.PendingEdits[0] with { NewValue = payload }],
+        };
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var before = File.ReadAllBytes(bagPath);
+
+        var validation = service.Validate(paths, craftedSession);
+        var plan = service.CreateChangePlan(paths, craftedSession);
+        var apply = service.ApplyChangePlan(paths, craftedSession, reviewedPlan);
+
+        Assert.False(validation.IsValid);
+        Assert.Empty(plan.Writes);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(before, File.ReadAllBytes(bagPath));
+    }
+
+    [Fact]
+    public void StartingItemsRejectNoncanonicalPendingEditShapeWithoutThrowing()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var service = new SwShStartingItemsEditSessionService();
+        var stage = service.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 50, 3)],
+            session: null);
+        var edit = Assert.Single(stage.Session.PendingEdits);
+        var multiple = stage.Session with { PendingEdits = [edit, edit] };
+        var wrongTarget = stage.Session with
+        {
+            PendingEdits = [edit with { RecordId = "other", Field = "other" }],
+        };
+
+        Assert.False(service.Validate(paths, multiple).IsValid);
+        Assert.Empty(service.CreateChangePlan(paths, multiple).Writes);
+        Assert.False(service.Validate(paths, wrongTarget).IsValid);
+        Assert.Empty(service.CreateChangePlan(paths, wrongTarget).Writes);
+    }
+
+    [Fact]
+    public void StartingItemsReviewedPlanIsBoundToCanonicalGrants()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var service = new SwShStartingItemsEditSessionService();
+        var firstStage = service.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 50, 3)],
+            session: null);
+        var firstPlan = service.CreateChangePlan(paths, firstStage.Session);
+        var secondStage = service.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 51, 4)],
+            firstStage.Session);
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var before = File.ReadAllBytes(bagPath);
+
+        var apply = service.ApplyChangePlan(paths, secondStage.Session, firstPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(before, File.ReadAllBytes(bagPath));
+        Assert.Contains(
+            firstPlan.Writes.Single().Sources,
+            source => source.Layer == ProjectFileLayer.Pending
+                && source.RelativePath.StartsWith("pending/starting-items/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StartingItemsBlocksAndSanitizesMalformedActiveSlot()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var itemZero = SwShBagHookAmxPatcher.ApplySlotPatches(
+            File.ReadAllBytes(bagPath),
+            [new SwShBagHookSlotPatch(2, 0, 1)]);
+        Assert.Equal(
+            "empty",
+            SwShBagHookAmxPatcher.Analyze(itemZero).Slots.Single(candidate => candidate.Slot == 2).Status);
+        var active = SwShBagHookAmxPatcher.ApplySlotPatches(
+            itemZero,
+            [new SwShBagHookSlotPatch(2, 50, 1)]);
+        var malformed = PatchTestCodeCell(
+            active,
+            cellIndex: 5029,
+            value: (0xFFFFFFFFUL << 32) | 188UL);
+        File.WriteAllBytes(bagPath, malformed);
+
+        var analysis = SwShBagHookAmxPatcher.Analyze(malformed);
+        var workflow = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        var slot = workflow.Grants.Single(grant => grant.Slot == 2);
+        var stage = new SwShStartingItemsEditSessionService().StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 50, 3)],
+            session: null);
+
+        Assert.Equal("conflict", analysis.Slots.Single(candidate => candidate.Slot == 2).Status);
+        Assert.Equal(SwShStartingItemsWorkflowService.BagHookDamagedBlockerKind, workflow.BlockerKind);
+        Assert.Equal("conflict", slot.Status);
+        Assert.Null(slot.ItemId);
+        Assert.InRange(slot.Quantity, 1, 999);
+        Assert.Contains("Invalid grant", slot.ItemName, StringComparison.Ordinal);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Throws<InvalidDataException>(() => SwShBagHookAmxPatcher.ApplySlotPatches(
+            malformed,
+            [new SwShBagHookSlotPatch(2, null, null)]));
+    }
+
+    [Fact]
+    public void StartingItemsReservesRoyalCandyWhenAnyAuthoritativeMarkerRemains()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        File.WriteAllBytes(
+            bagPath,
+            SwShBagHookAmxPatcher.ApplySlotPatches(
+                File.ReadAllBytes(bagPath),
+                [new SwShBagHookSlotPatch(SwShBagHookAmxPatcher.RoyalCandySlot, null, null)]));
+        Assert.Equal(
+            "empty",
+            SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(bagPath)).Slots.Single(slot => slot.Slot == 1).Status);
+
+        var workflow = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        var stage = new SwShStartingItemsEditSessionService().StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, SwShBagHookAmxPatcher.RoyalCandyItemId, 1)],
+            session: null);
+
+        Assert.DoesNotContain(workflow.ItemOptions, option => option.ItemId == SwShBagHookAmxPatcher.RoyalCandyItemId);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void StartingItemsBlocksUnreadableAndEmptyItemMetadata()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var layeredItemPath = OutputPath(paths, SwShItemsWorkflowService.ItemDataPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(layeredItemPath)!);
+        File.WriteAllBytes(layeredItemPath, [1, 2, 3, 4]);
+
+        var unreadable = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        var unreadableStage = new SwShStartingItemsEditSessionService().StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 50, 3)],
+            session: null);
+
+        Assert.Equal(SwShStartingItemsWorkflowService.ItemMetadataUnavailableBlockerKind, unreadable.BlockerKind);
+        Assert.Contains(unreadable.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(unreadableStage.Session.PendingEdits);
+
+        File.Delete(layeredItemPath);
+        temp.WriteBaseRomFsFile(
+            SwShItemsWorkflowService.ItemDataPath["romfs/".Length..],
+            SwShItemTestFixtures.CreateItemTable(new ItemFixtureRecord(
+                ItemId: 0,
+                RawRowIndex: 0,
+                BuyPrice: 0,
+                WattsPrice: 0,
+                AlternatePrice: 0,
+                SwShItemPouch.Items)));
+        var emptyCatalog = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+
+        Assert.Empty(emptyCatalog.ItemOptions);
+        Assert.Equal(SwShStartingItemsWorkflowService.ItemMetadataUnavailableBlockerKind, emptyCatalog.BlockerKind);
+        Assert.Contains(
+            emptyCatalog.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("eligible item", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void StartingItemsSourceCountUsesDistinctResolvedPhysicalInputs()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var baseItemPath = Path.Combine(paths.BaseRomFsPath!, "bin", "pml", "item", "item.dat");
+        var layeredItemPath = OutputPath(paths, SwShItemsWorkflowService.ItemDataPath);
+
+        var baseOnly = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        Directory.CreateDirectory(Path.GetDirectoryName(layeredItemPath)!);
+        File.Copy(baseItemPath, layeredItemPath, overwrite: true);
+        var layered = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        File.Delete(Path.Combine(paths.BaseRomFsPath!, "bin", "message", "English", "common", "wazaname.dat"));
+        var missingMoveNames = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+
+        Assert.Equal(4, baseOnly.Stats.SourceFileCount);
+        Assert.Equal(5, layered.Stats.SourceFileCount);
+        Assert.Equal(4, missingMoveNames.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void StartingItemsPlanBindsLayeredAndBaseItemMetadataSources()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var baseItemPath = Path.Combine(paths.BaseRomFsPath!, "bin", "pml", "item", "item.dat");
+        var layeredItemPath = OutputPath(paths, SwShItemsWorkflowService.ItemDataPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(layeredItemPath)!);
+        File.Copy(baseItemPath, layeredItemPath, overwrite: true);
+        var service = new SwShStartingItemsEditSessionService();
+        var stage = service.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 50, 3)],
+            session: null);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        var sources = plan.Writes.Single().Sources;
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var before = File.ReadAllBytes(bagPath);
+
+        Assert.Contains(sources, source => source.Layer == ProjectFileLayer.Layered
+            && source.RelativePath == SwShItemsWorkflowService.ItemDataPath);
+        Assert.Contains(sources, source => source.Layer == ProjectFileLayer.Base
+            && source.RelativePath == SwShItemsWorkflowService.ItemDataPath);
+        var baseTable = SwShItemTable.Parse(File.ReadAllBytes(baseItemPath));
+        File.WriteAllBytes(
+            baseItemPath,
+            baseTable.WriteEdits([new SwShItemTableEdit(50, SwShItemTableField.BuyPrice, 12345)]));
+
+        var applyAfterBaseDrift = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.Empty(applyAfterBaseDrift.WrittenFiles);
+        Assert.Contains(applyAfterBaseDrift.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(before, File.ReadAllBytes(bagPath));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Scarlet)]
+    [InlineData(ProjectGame.Violet)]
+    public void StartingItemsDirectServiceFailsClosedForWrongGame(ProjectGame game)
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var swordPaths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(swordPaths);
+        var paths = swordPaths with { SelectedGame = game };
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        var before = File.ReadAllBytes(bagPath);
+        var project = new ProjectWorkspaceService().Open(paths);
+        var workflow = new SwShStartingItemsWorkflowService().Load(project);
+        var service = new SwShStartingItemsEditSessionService();
+        var stage = service.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, 50, 3)],
+            session: null);
+
+        Assert.Equal(SwShWorkflowAvailability.Disabled, workflow.Summary.Availability);
+        Assert.Empty(workflow.Grants);
+        Assert.Empty(workflow.ItemOptions);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(before, File.ReadAllBytes(bagPath));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoyalCandyBlocksExistingStartingItem1128WithoutDeletingIt(bool damageQuantity)
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        var startingItems = new SwShStartingItemsEditSessionService();
+        var startingStage = startingItems.StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, SwShBagHookAmxPatcher.RoyalCandyItemId, 7)],
+            session: null);
+        Assert.DoesNotContain(startingStage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var startingPlan = startingItems.CreateChangePlan(paths, startingStage.Session);
+        var startingApply = startingItems.ApplyChangePlan(paths, startingStage.Session, startingPlan);
+        Assert.DoesNotContain(startingApply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        if (damageQuantity)
+        {
+            File.WriteAllBytes(
+                bagPath,
+                PatchTestCodeCell(
+                    File.ReadAllBytes(bagPath),
+                    cellIndex: 5028,
+                    value: 188UL));
+        }
+        var before = File.ReadAllBytes(bagPath);
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        var royalStage = new SwShRoyalCandyEditSessionService().StageWorkflow(
+            paths,
+            RoyalCandyUnlimitedWorkflowId,
+            levelCaps: null,
+            session: null);
+
+        Assert.Contains(
+            workflow.Checks,
+            check => check.CheckId.EndsWith(":bag-hook-starting-items-item-1128", StringComparison.Ordinal)
+                && check.Status == "Fail");
+        Assert.Empty(royalStage.Session.PendingEdits);
+        Assert.Contains(
+            royalStage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Clear item 1128", StringComparison.Ordinal));
+        Assert.Equal(before, File.ReadAllBytes(bagPath));
+        var slot2 = SwShBagHookAmxPatcher.Analyze(before).Slots.Single(slot => slot.Slot == 2);
+        Assert.Equal(SwShBagHookAmxPatcher.RoyalCandyItemId, slot2.ItemId);
+        Assert.Equal(damageQuantity ? "conflict" : "occupied", slot2.Status);
+        Assert.Equal(damageQuantity ? null : 7, slot2.Quantity);
+    }
+
+    [Fact]
+    public void RoyalCandyCleanupRemainsAvailableAndPreservesStartingItem1128()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+        var bagPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        File.WriteAllBytes(
+            bagPath,
+            SwShBagHookAmxPatcher.ApplySlotPatches(
+                File.ReadAllBytes(bagPath),
+                [new SwShBagHookSlotPatch(2, SwShBagHookAmxPatcher.RoyalCandyItemId, 7)]));
+
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(
+            paths,
+            RoyalCandyUninstallWorkflowId,
+            levelCaps: null,
+            session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var analysis = SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(bagPath));
+        Assert.Equal("empty", analysis.Slots.Single(slot => slot.Slot == 1).Status);
+        var slot2 = analysis.Slots.Single(slot => slot.Slot == 2);
+        Assert.Equal("occupied", slot2.Status);
+        Assert.Equal(SwShBagHookAmxPatcher.RoyalCandyItemId, slot2.ItemId);
+        Assert.Equal(7, slot2.Quantity);
     }
 
     [Fact]

@@ -326,7 +326,7 @@ internal static class SwShBagHookAmxPatcher
         var bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize)
             ?? throw new InvalidDataException("Bag Hook call site is not a readable local AMX CALL.");
 
-        if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out _, out var markerPlacement))
+        if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out var currentSlots, out var markerPlacement))
         {
             throw new InvalidDataException("Bag Hook V2 must be installed before slot grants can be edited.");
         }
@@ -337,12 +337,13 @@ internal static class SwShBagHookAmxPatcher
             codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
             bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize)
                 ?? throw new InvalidDataException("Bag Hook call site is not a readable local AMX CALL after marker migration.");
-            if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out _, out _))
+            if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out currentSlots, out _))
             {
                 throw new InvalidDataException("Bag Hook V2 marker migration did not produce a readable slot bank.");
             }
         }
 
+        var seenSlots = new HashSet<int>();
         foreach (var patch in patches)
         {
             if (patch.Slot is < 1 or > SlotCount)
@@ -350,7 +351,18 @@ internal static class SwShBagHookAmxPatcher
                 throw new InvalidDataException($"Bag Hook slot {patch.Slot} is outside the supported 1-20 range.");
             }
 
-            if (patch.ItemId is null || patch.Quantity is null || patch.Quantity <= 0)
+            if (!seenSlots.Add(patch.Slot))
+            {
+                throw new InvalidDataException($"Bag Hook slot {patch.Slot} was supplied more than once.");
+            }
+
+            var currentSlot = currentSlots[patch.Slot - 1];
+            if (currentSlot.Status is not ("empty" or "occupied"))
+            {
+                throw new InvalidDataException($"Bag Hook slot {patch.Slot} is damaged and cannot be overwritten safely.");
+            }
+
+            if (patch.ItemId is null or 0 || patch.Quantity is null || patch.Quantity <= 0)
             {
                 WriteEmptySlot(codeCells, GetSlotStartCell(bagProcCell, patch.Slot));
                 continue;
@@ -525,11 +537,22 @@ internal static class SwShBagHookAmxPatcher
             return false;
         }
 
+        if (itemId is <= 0 or > 0xFFFF || quantity is < 1 or > 999)
+        {
+            slot = new SwShBagHookSlotState(
+                1,
+                "conflict",
+                itemId is > 0 and <= 0xFFFF ? (int)itemId : null,
+                quantity is >= 1 and <= 999 ? (int)quantity : null,
+                $"Legacy one-item grant uses invalid encoded values (item {itemId}, quantity {quantity}).");
+            return true;
+        }
+
         slot = new SwShBagHookSlotState(
             1,
             "occupied",
-            checked((int)itemId),
-            checked((int)quantity),
+            (int)itemId,
+            (int)quantity,
             "Legacy one-item Bag-event grant occupies the Royal Candy slot shape.");
         return true;
     }
@@ -547,11 +570,21 @@ internal static class SwShBagHookAmxPatcher
             && SignedCellValue(codeCells[slotStart + 3], 8) == FreedNativeIndex
             && SignedCellValue(codeCells[slotStart + 4], 8) == 16)
         {
+            if (itemId is <= 0 or > 0xFFFF || quantity is < 1 or > 999)
+            {
+                return new SwShBagHookSlotState(
+                    slot,
+                    "conflict",
+                    itemId is > 0 and <= 0xFFFF ? (int)itemId : null,
+                    quantity is >= 1 and <= 999 ? (int)quantity : null,
+                    $"Active slot uses invalid encoded values (item {itemId}, quantity {quantity}) and cannot be overwritten safely.");
+            }
+
             return new SwShBagHookSlotState(
                 slot,
                 "occupied",
-                checked((int)itemId),
-                checked((int)quantity),
+                (int)itemId,
+                (int)quantity,
                 "Active AddItem grant slot.");
         }
 

@@ -1790,6 +1790,7 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.InstallStatus,
             workflow.InstallMessage,
+            workflow.BlockerKind,
             workflow.Grants.Select(ToDto).ToArray(),
             workflow.ItemOptions.Select(ToDto).ToArray(),
             new StartingItemsWorkflowStatsDto(
