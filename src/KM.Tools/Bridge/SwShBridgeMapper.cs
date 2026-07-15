@@ -683,6 +683,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateGiftPokemonFieldsResponse ToGiftPokemonFieldsDto(SwShGiftPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateGiftPokemonFieldsResponse(
+            ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateTradePokemonFieldResponse ToDto(SwShTradePokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -926,6 +936,7 @@ public static class SwShBridgeMapper
                 ProjectBridgeMapper.ToDto(gift.Provenance.FileState)))
         {
             AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
+            GenderOptions = gift.GenderOptions.Select(ToDto).ToArray(),
         };
     }
 

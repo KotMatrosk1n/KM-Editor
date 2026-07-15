@@ -987,21 +987,21 @@ public sealed class ProjectBridgeDispatcher
             response = ZaBridgeMapper.ToGiftPokemonFieldsDto(
                 zaWorkflowService.UpdateGiftPokemonFields(paths, session, updates));
         }
-        else
+        else if (IsScarletViolet(paths))
         {
-            if (!IsScarletViolet(paths))
-            {
-                return SerializeFailure(
-                    "bridge.gameMismatch",
-                    "Bridge command 'giftPokemon.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
-                    request.RequestId);
-            }
-
             var updates = request.Payload.Updates
                 .Select(update => new SvGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
                 .ToArray();
             response = SvBridgeMapper.ToGiftPokemonFieldsDto(
                 svWorkflowService.UpdateGiftPokemonFields(paths, session, updates));
+        }
+        else
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new SwShGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
+                .ToArray();
+            response = SwShBridgeMapper.ToGiftPokemonFieldsDto(
+                giftPokemonEditSessionService.UpdateFields(paths, session, updates));
         }
 
         return SerializeSuccess(response, request.RequestId);
@@ -3462,7 +3462,6 @@ public sealed class ProjectBridgeDispatcher
     {
         return command is
             KmCommandNames.UpdateTrainerFields or
-            KmCommandNames.UpdateGiftPokemonFields or
             KmCommandNames.UpdateTradePokemonFields or
             KmCommandNames.UpdateEncounterSlotFields or
             KmCommandNames.LoadTeraRaidsWorkflow or

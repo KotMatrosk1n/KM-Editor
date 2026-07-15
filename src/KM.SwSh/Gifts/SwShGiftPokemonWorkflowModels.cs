@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.Gifts;
@@ -50,6 +51,11 @@ public sealed record SwShGiftPokemonEntry(
 {
     public IReadOnlyList<SwShGiftPokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShGiftPokemonEditableFieldOption>();
+
+    public IReadOnlyList<SwShGiftPokemonEditableFieldOption> GenderOptions { get; init; } =
+        Array.Empty<SwShGiftPokemonEditableFieldOption>();
+
+    internal string SourceIdentity { get; init; } = string.Empty;
 }
 
 public sealed record SwShGiftPokemonEditableField(
@@ -86,4 +92,8 @@ public sealed record SwShGiftPokemonWorkflow(
     IReadOnlyList<SwShGiftPokemonEntry> Gifts,
     IReadOnlyList<SwShGiftPokemonEditableField> EditableFields,
     SwShGiftPokemonWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal SwShPokemonAbilityOptionResolver AbilityResolver { get; init; } =
+        SwShPokemonAbilityOptionResolver.Empty;
+}

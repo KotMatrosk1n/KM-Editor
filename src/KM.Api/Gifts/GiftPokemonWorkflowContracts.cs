@@ -82,6 +82,9 @@ public sealed record GiftPokemonRecordDto(
     public IReadOnlyList<GiftPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<GiftPokemonEditableFieldOptionDto>();
 
+    public IReadOnlyList<GiftPokemonEditableFieldOptionDto> GenderOptions { get; init; } =
+        Array.Empty<GiftPokemonEditableFieldOptionDto>();
+
     public string? EventLabel { get; init; }
 
     public IReadOnlyList<GiftPokemonMoveDto> Moves { get; init; } =

@@ -1717,6 +1717,11 @@ export function createMockProjectBridge(
         form: 0,
         gender: 0,
         genderLabel: 'Random',
+        genderOptions: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 }
+        ],
         giftIndex: 0,
         heldItem: null,
         heldItemId: 0,

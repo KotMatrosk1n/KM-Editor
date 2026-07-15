@@ -10,6 +10,7 @@ using KM.Api.ExeFs;
 using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.GameDump;
+using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.Items;
 using KM.Api.IvScreen;
@@ -681,6 +682,41 @@ public sealed class ProjectBridgeDispatcherTests
         var itemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
         Assert.True(SwShPersonalTable.Parse(File.ReadAllBytes(personalPath)).Records[1].CanNotDynamax);
         Assert.Equal(650u, SwShItemTable.Parse(File.ReadAllBytes(itemPath)).Records[1].BuyPrice);
+    }
+
+    [Fact]
+    public void DispatchUpdateGiftPokemonFieldsStagesOneAtomicSwordShieldSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteGiftPokemonBridgeFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateGiftPokemonFields,
+            new UpdateGiftPokemonFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new GiftPokemonFieldUpdateDto(0, "level", "55"),
+                    new GiftPokemonFieldUpdateDto(0, "shinyLock", "0"),
+                ]),
+            requestId: "request-gift-pokemon-fields-update");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateGiftPokemonFieldsResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-gift-pokemon-fields-update", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.DoesNotContain(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal(2, response.Payload.Session.PendingEdits.Count);
+        Assert.Equal(55, response.Payload.Workflow.Gifts[0].Level);
+        Assert.Equal(0, response.Payload.Workflow.Gifts[0].ShinyLock);
+        Assert.Contains(
+            response.Payload.Workflow.Gifts[0].GenderOptions,
+            option => option.Value == 0 && option.Label == "Random");
     }
 
     [Fact]
@@ -4593,6 +4629,39 @@ public sealed class ProjectBridgeDispatcherTests
     private static uint EncodeMovzImmediate32(int register, int immediate)
     {
         return (uint)(0x52800000 | ((immediate & 0xFFFF) << 5) | (register & 0x1F));
+    }
+
+    private static void WriteGiftPokemonBridgeFixture(TemporaryBridgeProject temp)
+    {
+        var archive = new SwShGiftPokemonArchive(
+        [
+            new SwShGiftPokemonRecord(
+                Index: 0,
+                IsEgg: 0,
+                Form: 0,
+                DynamaxLevel: 0,
+                BallItemId: 4,
+                Field04: 0,
+                Hash1: 0x1122334455667788,
+                CanGigantamax: false,
+                HeldItem: 0,
+                Level: 50,
+                Species: 25,
+                Field0A: 0,
+                MemoryCode: 0,
+                MemoryData: 0,
+                MemoryFeel: 0,
+                MemoryLevel: 0,
+                OtNameId: 0,
+                OtGender: 0,
+                ShinyLock: 2,
+                Nature: 25,
+                Gender: 0,
+                Ivs: new SwShGiftPokemonIvs(-1, -1, -1, -1, -1, -1),
+                Ability: 0,
+                SpecialMove: 0),
+        ]);
+        temp.WriteBaseRomFsFile("bin/script_event_data/add_poke.bin", archive.Write());
     }
 
     private static void WriteStaticEncounterBridgeFixture(TemporaryBridgeProject temp)

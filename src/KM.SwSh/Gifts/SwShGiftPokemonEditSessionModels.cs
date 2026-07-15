@@ -5,6 +5,11 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Gifts;
 
+public sealed record SwShGiftPokemonFieldUpdate(
+    int GiftIndex,
+    string Field,
+    string Value);
+
 public sealed record SwShGiftPokemonEditResult(
     SwShGiftPokemonWorkflow Workflow,
     EditSession Session,
