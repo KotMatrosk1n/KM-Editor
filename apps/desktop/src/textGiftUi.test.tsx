@@ -42,10 +42,79 @@ describe('Text and Gift Pokemon UI regressions', () => {
     });
   });
 
-  it('reloads Pokemon Legends Z-A text results with the debounced search query', async () => {
+  it('preserves filtered Text state and rejected variable drafts while paging results', async () => {
     const bridge = createMockProjectBridge({}, true);
-    const loadTextWorkflow = vi.fn(bridge.loadTextWorkflow);
+    const originalLoadTextWorkflow = bridge.loadTextWorkflow.bind(bridge);
+    const variableTextKey = 'romfs/bin/message/English/common/story.dat#1';
+    const variableValue = '[VAR 0100] Pikachu';
+    let loadedTextWorkflow: Awaited<
+      ReturnType<ProjectBridge['loadTextWorkflow']>
+    >['workflow'] | null = null;
+    const loadTextWorkflow = vi.fn(async (request) => {
+      const response = await originalLoadTextWorkflow(request);
+      const sourceEntry = response.workflow.entries[0]!;
+      const sourceReference = response.workflow.dialogueReferences[0]!;
+      loadedTextWorkflow = {
+        ...response.workflow,
+        dialogueReferences: [
+          sourceReference,
+          {
+            ...sourceReference,
+            dialogueId: 'common/story:1',
+            label: 'story #1',
+            preview: variableValue,
+            textId: 1
+          }
+        ],
+        entries: [
+          sourceEntry,
+          {
+            ...sourceEntry,
+            label: 'story #1',
+            lineIndex: 1,
+            textId: 1,
+            textKey: variableTextKey,
+            value: variableValue
+          }
+        ],
+        stats: {
+          ...response.workflow.stats,
+          dialogueReferenceCount: 2,
+          totalTextEntryCount: 2
+        }
+      };
+
+      return { workflow: loadedTextWorkflow };
+    });
+    const updateTextEntry = vi.fn(async (request) => {
+      const workflow = loadedTextWorkflow;
+      if (!request.session || !workflow) {
+        throw new Error('Text workflow and edit session must be loaded before staging.');
+      }
+
+      return {
+        diagnostics: [
+          {
+            domain: 'workflow.text',
+            field: 'value',
+            message: 'Rejected text edit.',
+            severity: 'error' as const
+          }
+        ],
+        session: {
+          ...request.session,
+          sessionId: 'rejected-session'
+        },
+        workflow: {
+          ...workflow,
+          entries: workflow.entries.map((entry) =>
+            entry.textKey === request.textKey ? { ...entry, value: 'Server fallback.' } : entry
+          )
+        }
+      };
+    });
     bridge.loadTextWorkflow = loadTextWorkflow;
+    bridge.updateTextEntry = updateTextEntry;
     const user = await openValidatedZaProject(bridge);
 
     await user.click(screen.getByRole('button', { name: 'Editors' }));
@@ -64,7 +133,42 @@ describe('Text and Gift Pokemon UI regressions', () => {
           }
         })
       );
+      expect(searchInput).toHaveValue('Pikachu');
     });
+
+    const textarea = screen.getByLabelText('Text value');
+    expect(textarea).toHaveValue(variableValue);
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await waitFor(() => expect(textarea).toBeEnabled());
+
+    const draftValue = `${variableValue} updated`;
+    await user.clear(textarea);
+    await user.paste(draftValue);
+    const stageButton = screen.getByRole('button', { name: 'Stage' });
+    expect(stageButton).toBeEnabled();
+    await user.click(stageButton);
+
+    await waitFor(() => {
+      expect(updateTextEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          textKey: variableTextKey,
+          value: draftValue
+        })
+      );
+      expect(stageButton).toBeEnabled();
+    });
+
+    const state = useWorkbenchStore.getState();
+    expect(textarea).toHaveValue(draftValue);
+    expect(searchInput).toHaveValue('Pikachu');
+    expect(state.editSession?.sessionId).toBe('session-1');
+    expect(
+      state.textWorkflow?.entries.find((entry) => entry.textKey === variableTextKey)?.value
+    ).toBe(variableValue);
+    expect(state.editValidationDiagnostics).toEqual([
+      expect.objectContaining({ message: 'Rejected text edit.', severity: 'error' })
+    ]);
   });
 
   it('uses one-based Gift numbers without repeating the species in the table label', async () => {

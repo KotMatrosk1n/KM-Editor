@@ -926,7 +926,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'text'),
         selectedTextKey,
-        textSearchText: '',
         textWorkflow
       };
     }),

@@ -5,8 +5,12 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Text;
 
@@ -42,9 +46,11 @@ public sealed class SwShTextEditSessionService
         ArgumentNullException.ThrowIfNull(textKey);
         ArgumentNullException.ThrowIfNull(value);
 
+        projectWorkspaceService.ClearMemoryCache();
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = textWorkflowService.Load(project);
+        var sourceWorkflow = textWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(sourceWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!CanEditText(project, workflow, diagnostics))
@@ -54,7 +60,9 @@ public sealed class SwShTextEditSessionService
 
         var selectedEntry = workflow.Entries.FirstOrDefault(entry =>
             string.Equals(entry.TextKey, textKey, StringComparison.Ordinal));
-        if (selectedEntry is null)
+        var sourceEntry = sourceWorkflow.Entries.FirstOrDefault(entry =>
+            string.Equals(entry.TextKey, textKey, StringComparison.Ordinal));
+        if (selectedEntry is null || sourceEntry is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -64,7 +72,16 @@ public sealed class SwShTextEditSessionService
             return new SwShTextEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(selectedEntry, value, diagnostics);
+        if (string.Equals(value, sourceEntry.Value, StringComparison.Ordinal))
+        {
+            var revertedSession = RemovePendingTextEdit(currentSession, textKey);
+            return new SwShTextEditResult(
+                OverlayPendingEdits(sourceWorkflow, revertedSession.PendingEdits),
+                revertedSession,
+                diagnostics);
+        }
+
+        var pendingEdit = CreatePendingEdit(sourceEntry, value, diagnostics);
         if (pendingEdit is null)
         {
             return new SwShTextEditResult(workflow, currentSession, diagnostics);
@@ -73,7 +90,7 @@ public sealed class SwShTextEditSessionService
         var updatedSession = ReplacePendingTextEdit(currentSession, pendingEdit);
 
         return new SwShTextEditResult(
-            OverlayPendingEdits(workflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(sourceWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
@@ -83,18 +100,25 @@ public sealed class SwShTextEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
+        return Validate(project, session);
+    }
+
+    private SwShEditSessionValidation Validate(OpenedProject project, EditSession session)
+    {
         var workflow = textWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
+        var textEdits = session.PendingEdits.Where(IsTextEdit).ToArray();
 
         CanEditText(project, workflow, diagnostics);
 
-        foreach (var edit in session.PendingEdits)
+        foreach (var edit in textEdits)
         {
             ValidatePendingEdit(workflow, edit, diagnostics);
         }
 
-        if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        if (textEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -112,10 +136,13 @@ public sealed class SwShTextEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        var validation = Validate(paths, session);
+        projectWorkspaceService.ClearMemoryCache();
+        var project = projectWorkspaceService.Open(paths);
+        var validation = Validate(project, session);
         var diagnostics = validation.Diagnostics.ToList();
+        var textEdits = session.PendingEdits.Where(IsTextEdit).ToArray();
 
-        if (session.PendingEdits.Count == 0)
+        if (textEdits.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -128,7 +155,7 @@ public sealed class SwShTextEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var writes = CreatePlannedWrites(paths, session.PendingEdits, diagnostics);
+        var writes = CreatePlannedWrites(project, paths, textEdits, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
@@ -138,7 +165,9 @@ public sealed class SwShTextEditSessionService
             DiagnosticSeverity.Info,
             $"Change plan preview contains {writes.Count} target file{(writes.Count == 1 ? string.Empty : "s")}."));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -147,19 +176,33 @@ public sealed class SwShTextEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Reviewed change plan is stale. Review the change plan again before applying.",
                 expected: "Current reviewed Text change plan"));
         }
+
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -168,8 +211,11 @@ public sealed class SwShTextEditSessionService
 
         var project = projectWorkspaceService.Open(paths);
         var pendingOutputs = new List<TextOutput>();
+        var textEdits = session.PendingEdits.Where(IsTextEdit).ToArray();
 
-        foreach (var editGroup in session.PendingEdits.GroupBy(edit => GetSourceFile(edit.RecordId)))
+        foreach (var editGroup in textEdits.GroupBy(
+                     edit => GetSourceFile(edit.RecordId),
+                     StringComparer.OrdinalIgnoreCase))
         {
             if (string.IsNullOrWhiteSpace(editGroup.Key))
             {
@@ -217,7 +263,7 @@ public sealed class SwShTextEditSessionService
                     }
 
                     var value = edit.NewValue ?? string.Empty;
-                    if (!TryValidateTextValue(value, lines[lineIndex].Text, diagnostics))
+                    if (!TryValidateTextValue(value, diagnostics))
                     {
                         continue;
                     }
@@ -225,7 +271,10 @@ public sealed class SwShTextEditSessionService
                     lines[lineIndex] = lines[lineIndex] with { Text = value };
                 }
 
-                pendingOutputs.Add(new TextOutput(source.Entry.RelativePath, targetPath, SwShGameTextFile.Write(lines)));
+                pendingOutputs.Add(new TextOutput(
+                    source.Entry.RelativePath,
+                    targetPath,
+                    textFile.WritePreserving(lines)));
             }
             catch (InvalidDataException exception)
             {
@@ -258,29 +307,48 @@ public sealed class SwShTextEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        foreach (var output in pendingOutputs)
+        if (!SwShOutputRollbackScope.TryCapture(
+                paths,
+                currentPlan.Writes.Select(write => write.TargetRelativePath),
+                out var rollbackScope,
+                out var captureFailure))
         {
-            try
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Text could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable existing outputs and writable temporary storage"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        var outputRollback = rollbackScope!;
+        using (outputRollback)
+        {
+            foreach (var output in pendingOutputs)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(output.AbsolutePath)!);
-                File.WriteAllBytes(output.AbsolutePath, output.Contents);
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, output.RelativePath));
+                try
+                {
+                    WriteAllBytesAtomically(output.AbsolutePath, output.Contents);
+                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, output.RelativePath));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Text output file could not be written: {exception.Message}",
+                        file: output.RelativePath,
+                        expected: "Writable output root"));
+                    break;
+                }
             }
-            catch (IOException exception)
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Text output file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable output root"));
+                RollbackFailedApply(outputRollback, writtenFiles, diagnostics);
             }
-            catch (UnauthorizedAccessException exception)
+            else
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Text output file could not be written: {exception.Message}",
-                    file: output.RelativePath,
-                    expected: "Writable output root"));
+                outputRollback.Commit();
             }
         }
 
@@ -358,7 +426,7 @@ public sealed class SwShTextEditSessionService
             return;
         }
 
-        TryValidateTextValue(edit.NewValue ?? string.Empty, entry.Value, diagnostics);
+        TryValidateTextValue(edit.NewValue ?? string.Empty, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -376,7 +444,7 @@ public sealed class SwShTextEditSessionService
             return null;
         }
 
-        if (!TryValidateTextValue(value, selectedEntry.Value, diagnostics))
+        if (!TryValidateTextValue(value, diagnostics))
         {
             return null;
         }
@@ -392,7 +460,6 @@ public sealed class SwShTextEditSessionService
 
     private static bool TryValidateTextValue(
         string value,
-        string currentValue,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (value.Length > SwShTextWorkflowService.MaximumTextLength)
@@ -405,7 +472,20 @@ public sealed class SwShTextEditSessionService
             return false;
         }
 
-        return true;
+        try
+        {
+            SwShGameTextFile.ValidateText(value);
+            return true;
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                exception.Message,
+                field: TextValueField,
+                expected: "Valid escaped text, [VAR], [WAIT n], [~ n], or {base|ruby} syntax"));
+            return false;
+        }
     }
 
     private static EditSession ReplacePendingTextEdit(EditSession session, PendingEdit pendingEdit)
@@ -416,6 +496,22 @@ public sealed class SwShTextEditSessionService
             .ToArray();
 
         return session with { PendingEdits = pendingEdits };
+    }
+
+    private static EditSession RemovePendingTextEdit(EditSession session, string textKey)
+    {
+        var pendingEdits = session.PendingEdits
+            .Where(edit => !IsTextEdit(edit)
+                || !string.Equals(edit.RecordId, textKey, StringComparison.Ordinal)
+                || !string.Equals(edit.Field, TextValueField, StringComparison.Ordinal))
+            .ToArray();
+
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool IsTextEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, TextEditDomain, StringComparison.Ordinal);
     }
 
     private static bool IsSameTextEdit(PendingEdit candidate, PendingEdit pendingEdit)
@@ -472,6 +568,7 @@ public sealed class SwShTextEditSessionService
     }
 
     private static IReadOnlyList<PlannedFileWrite> CreatePlannedWrites(
+        OpenedProject project,
         ProjectPaths paths,
         IReadOnlyList<PendingEdit> edits,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -491,6 +588,17 @@ public sealed class SwShTextEditSessionService
                     return null;
                 }
 
+                var source = SwShTextWorkflowService.ResolveWorkflowFile(project, targetRelativePath);
+                if (source is null)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Text change plan could not resolve source message table '{targetRelativePath}'.",
+                        file: targetRelativePath,
+                        expected: "Loaded Sword/Shield message table"));
+                    return null;
+                }
+
                 var targetPath = SwShTextWorkflowService.ResolveOutputPath(paths, targetRelativePath);
                 if (targetPath is null)
                 {
@@ -503,17 +611,18 @@ public sealed class SwShTextEditSessionService
                 }
 
                 var groupEdits = group.ToArray();
-                var sources = groupEdits
-                    .SelectMany(edit => edit.Sources)
-                    .Distinct()
-                    .ToArray();
-                var reason = groupEdits.Length == 1
+                var sourceLayer = source.Entry.LayeredFile is null
+                    ? ProjectFileLayer.Base
+                    : ProjectFileLayer.Layered;
+                var editFingerprint = ComputePendingEditFingerprint(groupEdits);
+                var reason = (groupEdits.Length == 1
                     ? $"Apply pending Text edit: {groupEdits[0].Summary}"
-                    : $"Apply {groupEdits.Length} pending Text edits.";
+                    : $"Apply {groupEdits.Length} pending Text edits.")
+                    + $" Edit fingerprint: {editFingerprint}.";
 
                 return new PlannedFileWrite(
                     targetRelativePath,
-                    sources,
+                    [new ProjectFileReference(sourceLayer, source.Entry.RelativePath)],
                     File.Exists(targetPath),
                     reason);
             })
@@ -560,25 +669,98 @@ public sealed class SwShTextEditSessionService
         return targetPath;
     }
 
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
+    private static string ComputePendingEditFingerprint(IReadOnlyList<PendingEdit> edits)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
+        var canonical = new StringBuilder();
+        for (var index = 0; index < edits.Count; index++)
         {
-            return false;
+            var edit = edits[index];
+            AppendFingerprintComponent(canonical, index.ToString(CultureInfo.InvariantCulture));
+            AppendFingerprintComponent(canonical, edit.Domain);
+            AppendFingerprintComponent(canonical, edit.RecordId);
+            AppendFingerprintComponent(canonical, edit.Field);
+            AppendFingerprintComponent(canonical, edit.NewValue);
+            foreach (var source in edit.Sources
+                         .OrderBy(source => source.Layer)
+                         .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+            {
+                AppendFingerprintComponent(canonical, ((int)source.Layer).ToString(CultureInfo.InvariantCulture));
+                AppendFingerprintComponent(canonical, source.RelativePath);
+            }
         }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
 
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+    private static void AppendFingerprintComponent(StringBuilder destination, string? value)
+    {
+        destination.Append(value?.Length ?? -1);
+        destination.Append(':');
+        destination.Append(value);
+        destination.Append('|');
+    }
+
+    private static void RollbackFailedApply(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        writtenFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Text apply failed and all output changes were rolled back."));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Text rollback failed: {failure.Message}",
+                file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
+    }
+
+    private static void WriteAllBytesAtomically(string targetPath, byte[] contents)
+    {
+        var directory = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Text output has no parent directory.");
+        Directory.CreateDirectory(directory);
+
+        var temporaryPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, contents);
+            if (!File.ReadAllBytes(temporaryPath).AsSpan().SequenceEqual(contents))
+            {
+                throw new IOException("Text temporary output verification failed.");
+            }
+
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static ApplyResult CreateApplyResult(

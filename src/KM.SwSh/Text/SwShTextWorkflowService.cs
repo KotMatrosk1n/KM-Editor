@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Editing;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -175,7 +176,7 @@ public sealed class SwShTextWorkflowService
         var pathFromOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
 
         return PathContainment.IsWithinRoot(pathFromOutputRoot)
-            ? targetPath
+            ? SwShOutputRollbackScope.ResolvePhysicalContainedPath(outputRoot, targetRelativePath)
             : null;
     }
 
@@ -265,13 +266,12 @@ public sealed class SwShTextWorkflowService
             return Array.Empty<WorkflowFileSource>();
         }
 
-        if (!string.Equals(language, PreferredLanguage, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(preferredLanguage, PreferredLanguage, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(language, preferredLanguage, StringComparison.OrdinalIgnoreCase))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
-                $"English message tables were not found; loaded '{language}' message tables instead.",
-                expected: $"{MessageRootPath}/{PreferredLanguage}/**/*.dat"));
+                $"{preferredLanguage} message tables were not found; loaded '{language}' message tables instead.",
+                expected: $"{MessageRootPath}/{preferredLanguage}/**/*.dat"));
         }
 
         return messageEntries

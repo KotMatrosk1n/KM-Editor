@@ -6764,20 +6764,33 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        (session) =>
-          bridge.updateTextEntry({
+        async (session) => {
+          const updateResponse = await bridge.updateTextEntry({
             paths: createProjectPaths(draftPaths),
             query: createTextWorkflowQuery(selectedGame, textSearchText),
             session,
             textKey,
             value
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : textWorkflowRef.current
+          };
+        },
         (updateResponse) => {
-          setTextWorkflow(updateResponse.workflow);
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setTextWorkflow(updateResponse.workflow);
+          }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -14136,8 +14149,10 @@ function TextSection({
   );
   const selectedEntry = useMemo(
     () =>
-      entries.find((entry) => entry.textKey === selectedTextKey) ?? filteredEntries[0] ?? null,
-    [entries, filteredEntries, selectedTextKey]
+      filteredEntries.find((entry) => entry.textKey === selectedTextKey) ??
+      filteredEntries[0] ??
+      null,
+    [filteredEntries, selectedTextKey]
   );
   const canEditText = workflow?.summary.availability === 'available';
   const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
@@ -14167,8 +14182,8 @@ function TextSection({
             value={workflow ? workflow.stats.totalTextEntryCount.toString() : '0'}
           />
           <Metric
-            label="Dialogue refs"
-            value={workflow ? workflow.stats.dialogueReferenceCount.toString() : '0'}
+            label="Source files"
+            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
           />
           <Metric
             label="Pending changes"
@@ -14186,7 +14201,7 @@ function TextSection({
               role="table"
             >
               <div className="text-row text-row-heading" role="row">
-                <span role="columnheader">ID</span>
+                <span role="columnheader">Index</span>
                 <span role="columnheader">File</span>
                 <span role="columnheader">Line</span>
                 <span role="columnheader">Value</span>
@@ -38855,14 +38870,12 @@ function getTextDraftState(
   const inRange =
     (minimumLength === null || draftValue.length >= minimumLength) &&
     (maximumLength === null || draftValue.length <= maximumLength);
-  const hasVariablePlaceholder = draftValue.includes('[VAR');
 
   return {
     canSubmit:
       entry !== null &&
       entry.canEdit &&
       inRange &&
-      !hasVariablePlaceholder &&
       draftValue !== entry.value
   };
 }
