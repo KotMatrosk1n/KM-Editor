@@ -2340,8 +2340,13 @@ public static class SwShBridgeMapper
             shop.InventorySummary,
             shop.Location,
             shop.Currency,
-            shop.Inventory.Select(ToDto).ToArray(),
-            ToDto(shop.Provenance));
+            shop.Inventory
+                .Select(item => ToDto(item) with { CanEditPrice = shop.GlobalPriceField is not null })
+                .ToArray(),
+            ToDto(shop.Provenance))
+        {
+            GlobalPriceField = shop.GlobalPriceField,
+        };
     }
 
     private static ShopInventoryRecordDto ToDto(SwShShopInventoryRecord inventoryItem)
@@ -2376,7 +2381,10 @@ public static class SwShBridgeMapper
 
     private static ShopEditableFieldOptionDto ToDto(SwShShopEditableFieldOption option)
     {
-        return new ShopEditableFieldOptionDto(option.Value, option.Label, option.ItemName, option.Price);
+        return new ShopEditableFieldOptionDto(option.Value, option.Label, option.ItemName, option.Price)
+        {
+            Prices = option.Prices,
+        };
     }
 
     private static EncounterTableRecordDto ToDto(SwShEncounterTableRecord table)

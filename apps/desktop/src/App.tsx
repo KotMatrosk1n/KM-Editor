@@ -1473,6 +1473,7 @@ const shopGymBadgeOptions: ShopEditableFieldOption[] = Array.from({ length: 9 },
   itemName: '',
   label: value.toString(),
   price: 0,
+  prices: {},
   value
 }));
 const shopGymBadgeConditionValueOptions = shopGymBadgeOptions.map((option) => ({
@@ -7619,10 +7620,14 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
+          const originalSession = session;
+          const originalShopsWorkflow = shopsWorkflow;
+          const originalItemsWorkflow = itemsWorkflow;
           let nextSession = session;
           let nextShopsWorkflow = shopsWorkflow;
           let nextItemsWorkflow = itemsWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
+          const nextDiagnostics: ApiDiagnostic[] = [];
+          let didSucceed = true;
 
           for (const change of rowFieldChanges) {
             const updateResponse = await bridge.updateShopInventoryItem({
@@ -7634,51 +7639,72 @@ export function App({
               slot: change.slot,
               value: change.value
             });
+            nextDiagnostics.push(...updateResponse.diagnostics);
+            if (updateResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+              didSucceed = false;
+              break;
+            }
             nextSession = updateResponse.session;
             nextShopsWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
           }
 
-          for (const change of inventoryChanges) {
-            const updateResponse = await bridge.updateShopInventoryItem({
-              field: change.field,
-              paths: createProjectPaths(draftPaths),
-              rowId: change.rowId,
-              session: nextSession,
-              shopId,
-              slot: change.slot,
-              value: change.value
-            });
-            nextSession = updateResponse.session;
-            nextShopsWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
+          if (didSucceed) {
+            for (const change of inventoryChanges) {
+              const updateResponse = await bridge.updateShopInventoryItem({
+                field: change.field,
+                paths: createProjectPaths(draftPaths),
+                rowId: change.rowId,
+                session: nextSession,
+                shopId,
+                slot: change.slot,
+                value: change.value
+              });
+              nextDiagnostics.push(...updateResponse.diagnostics);
+              if (
+                updateResponse.diagnostics.some(
+                  (diagnostic) => diagnostic.severity === 'error'
+                )
+              ) {
+                didSucceed = false;
+                break;
+              }
+              nextSession = updateResponse.session;
+              nextShopsWorkflow = updateResponse.workflow;
+            }
           }
 
-          for (const change of priceChanges) {
-            const updateResponse = await bridge.updateItemField({
-              field: buyPriceFieldName,
-              itemId: change.itemId,
+          if (didSucceed && priceChanges.length > 0) {
+            const updateResponse = await bridge.updateItemFields({
               paths: createProjectPaths(draftPaths),
               session: nextSession,
-              value: change.value
+              updates: priceChanges.map((change) => ({
+                field: change.field,
+                itemId: change.itemId,
+                value: change.value
+              }))
             });
-            nextSession = updateResponse.session;
-            nextItemsWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
+            nextDiagnostics.push(...updateResponse.diagnostics);
+            if (updateResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+              didSucceed = false;
+            } else {
+              nextSession = updateResponse.session;
+              nextItemsWorkflow = updateResponse.workflow;
+            }
           }
 
           return {
             diagnostics: nextDiagnostics,
-            itemsWorkflow: nextItemsWorkflow,
-            session: nextSession!,
-            shopsWorkflow: nextShopsWorkflow
+            didSucceed,
+            itemsWorkflow: didSucceed ? nextItemsWorkflow : originalItemsWorkflow,
+            session: didSucceed ? nextSession! : (originalSession ?? nextSession!),
+            shopsWorkflow: didSucceed ? nextShopsWorkflow : originalShopsWorkflow
           };
         },
         (updateResponse) => {
-          if (updateResponse.itemsWorkflow) {
+          if (updateResponse.didSucceed && updateResponse.itemsWorkflow) {
             setItemsWorkflow(updateResponse.itemsWorkflow);
           }
-          if (updateResponse.shopsWorkflow) {
+          if (updateResponse.didSucceed && updateResponse.shopsWorkflow) {
             setShopsWorkflow(
               overlayShopWorkflowItemPrices(updateResponse.shopsWorkflow, priceChanges)
             );
@@ -7686,7 +7712,7 @@ export function App({
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7699,7 +7725,6 @@ export function App({
   };
 
   const handleOpenShopItem = (itemId: number) => {
-    clearPendingEditState();
     setSelectedItemId(itemId);
     setItemSearchText('');
     setActiveSection('items');
@@ -21784,8 +21809,8 @@ function ShopsSection({
   const { translateLiteral } = useLocalization();
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const filteredShops = useMemo(
-    () => filterShops(workflow?.shops ?? [], searchText),
-    [searchText, workflow?.shops]
+    () => filterShops(workflow?.shops ?? [], searchText, translateLiteral),
+    [searchText, translateLiteral, workflow?.shops]
   );
   const isFlatShopList = workflow?.editorFamily === 'sv' || workflow?.editorFamily === 'za';
   const badgeShops = useMemo(
@@ -21797,7 +21822,7 @@ function ShopsSection({
     [filteredShops, isFlatShopList]
   );
   const selectedShop =
-    workflow?.shops.find((shop) => shop.shopId === selectedShopId) ??
+    filteredShops.find((shop) => shop.shopId === selectedShopId) ??
     (isFlatShopList ? filteredShops[0] : badgeShops[0] ?? miscellaneousShops[0]) ??
     null;
   const canEditShops = workflow?.summary.availability === 'available';
@@ -21835,15 +21860,16 @@ function ShopsSection({
               className={`shops-row ${
                 selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
               } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
+              aria-selected={selectedShop?.shopId === shop.shopId}
               key={shop.shopId}
               onClick={() => onSelectShop(shop.shopId)}
               role="row"
               type="button"
             >
               <span role="cell">{translateLiteral(shop.kind)}</span>
-              <span role="cell">{shop.name}</span>
+              <span role="cell">{translateLiteral(shop.name)}</span>
               <span role="cell">{translateLiteral(shop.inventoryLabel)}</span>
-              <span role="cell">{shop.location}</span>
+              <span role="cell">{translateLiteral(shop.location)}</span>
               <span role="cell">{shop.inventory.length}</span>
               <span role="cell">{translateLiteral(shop.inventorySummary)}</span>
             </button>
@@ -22061,6 +22087,11 @@ function SelectedShopPanel({
   const shopPriceDraftChanges = useMemo<ShopItemPriceChange[]>(() => {
     const changes: ShopItemPriceChange[] = [];
     const changedItemIds = new Set<number>();
+    const priceField = shop?.globalPriceField ?? null;
+
+    if (priceField === null) {
+      return changes;
+    }
 
     for (const row of shopInventoryRows) {
       const parsedPrice = row.parsedPrice;
@@ -22080,44 +22111,58 @@ function SelectedShopPanel({
 
       changedItemIds.add(row.parsedItemId);
       changes.push({
+        field: priceField,
         itemId: row.parsedItemId,
         value: parsedPrice.toString()
       });
     }
 
     return changes;
-  }, [shopInventoryRows]);
+  }, [shop?.globalPriceField, shopInventoryRows]);
   const shopRowFieldDraftChanges = useMemo<ShopInventoryDraftChange[]>(() => {
-    if (!selectedInventoryItem) {
+    if (!shop) {
       return [];
     }
 
     const changes: ShopInventoryDraftChange[] = [];
-    const fieldDrafts = currentShopDraft.fieldDrafts[selectedInventoryItem.slot] ?? {};
-    for (const field of selectedRowFields) {
-      const originalValue = selectedInventoryItem.fieldValues[field.field] ?? '';
-      const draftValue = fieldDrafts[field.field] ?? originalValue;
-      if (draftValue === originalValue) {
+    const removedSlots = new Set(currentShopDraft.removedSlots);
+    for (const inventoryItem of shop.inventory) {
+      if (removedSlots.has(inventoryItem.slot)) {
         continue;
       }
 
-      if (field.valueKind !== 'text') {
-        const parsedValue = parseEditableIntegerDraft(draftValue, field.options);
-        if (!isIntegerDraftInFieldRange(parsedValue, field)) {
+      const fieldDrafts = currentShopDraft.fieldDrafts[inventoryItem.slot] ?? {};
+      for (const fieldName of inventoryItem.supportedFields) {
+        const field = editableFields.find((candidate) => candidate.field === fieldName);
+        if (!field) {
           continue;
         }
-      }
 
-      changes.push({
-        field: field.field,
-        rowId: selectedInventoryItem.rowId ?? undefined,
-        slot: selectedInventoryItem.slot,
-        value: draftValue
-      });
+        const contextualField = getContextualShopRowField(
+          field,
+          inventoryItem,
+          currentShopDraft
+        );
+        const originalValue = inventoryItem.fieldValues[field.field] ?? '';
+        const draftValue = fieldDrafts[field.field] ?? originalValue;
+        if (
+          draftValue === originalValue ||
+          isShopRowFieldDraftInvalid(contextualField, draftValue)
+        ) {
+          continue;
+        }
+
+        changes.push({
+          field: field.field,
+          rowId: inventoryItem.rowId ?? undefined,
+          slot: inventoryItem.slot,
+          value: draftValue
+        });
+      }
     }
 
     return changes;
-  }, [currentShopDraft.fieldDrafts, selectedInventoryItem, selectedRowFields]);
+  }, [currentShopDraft, editableFields, shop]);
   const invalidShopItemDraftCount = shopInventoryRows.filter(
     (row) => !isIntegerDraftInFieldRange(row.parsedItemId, itemIdField)
   ).length;
@@ -22126,17 +22171,36 @@ function SelectedShopPanel({
       row.isKnownItem &&
       row.canEditPrice &&
       row.priceField === null &&
+      shop?.globalPriceField != null &&
       !isIntegerDraftInFieldRange(row.parsedPrice, shopPriceEditableField)
   ).length;
-  const invalidShopRowFieldDraftCount = selectedInventoryItem
-    ? selectedRowFields.filter((field) =>
-        isShopRowFieldDraftInvalid(
-          field,
-          currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
-            selectedInventoryItem.fieldValues[field.field] ??
-            ''
-        )
-      ).length
+  const invalidShopRowFieldDraftCount = shop
+    ? shop.inventory.reduce((invalidCount, inventoryItem) => {
+        if (currentShopDraft.removedSlots.includes(inventoryItem.slot)) {
+          return invalidCount;
+        }
+
+        const fieldDrafts = currentShopDraft.fieldDrafts[inventoryItem.slot] ?? {};
+        return (
+          invalidCount +
+          inventoryItem.supportedFields.filter((fieldName) => {
+            const field = editableFields.find((candidate) => candidate.field === fieldName);
+            if (!field || fieldDrafts[field.field] === undefined) {
+              return false;
+            }
+
+            const originalValue = inventoryItem.fieldValues[field.field] ?? '';
+            const draftValue = fieldDrafts[field.field]!;
+            return (
+              draftValue !== originalValue &&
+              isShopRowFieldDraftInvalid(
+                getContextualShopRowField(field, inventoryItem, currentShopDraft),
+                draftValue
+              )
+            );
+          }).length
+        );
+      }, 0)
     : 0;
   const changedSlotCount =
     shopDraftChanges.length + shopPriceDraftChanges.length + shopRowFieldDraftChanges.length;
@@ -22243,7 +22307,7 @@ function SelectedShopPanel({
           <dl className="item-provenance-list">
             <div>
               <dt>{translateLiteral('Name')}</dt>
-              <dd>{shop.name}</dd>
+              <dd>{translateLiteral(shop.name)}</dd>
             </div>
             <div>
               <dt>{translateLiteral('Inventory')}</dt>
@@ -22324,7 +22388,7 @@ function SelectedShopPanel({
                 <span className="draft-action-summary">
                   {hasInvalidShopDrafts
                     ? invalidShopRowFieldDraftCount > 0
-                      ? translateLiteral('Fix invalid selected slot fields.')
+                      ? translateLiteral('Fix invalid slot fields.')
                       : invalidShopPriceDraftCount > 0
                       ? translateLiteral('Fix invalid prices.')
                       : translateLiteral('Fix invalid inventory rows.')
@@ -22366,7 +22430,7 @@ function SelectedShopPanel({
                   const draftError =
                     isIntegerDraftInFieldRange(draftState.parsedValue, itemIdField)
                       ? null
-                      : getIntegerDraftError(item.itemIdDraft);
+                      : getIntegerDraftFieldError(item.itemIdDraft, itemIdField);
                   const rowAriaLabel = item.isAdded
                     ? `${translateLiteral('New shop slot')} ${item.displaySlot} ${translateLiteral('item')}`
                     : `${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral('item')}`;
@@ -22374,8 +22438,9 @@ function SelectedShopPanel({
                     item.isKnownItem &&
                     item.canEditPrice &&
                     item.priceField === null &&
+                    shop.globalPriceField !== null &&
                     !isIntegerDraftInFieldRange(item.parsedPrice, shopPriceEditableField)
-                      ? getIntegerDraftError(item.priceDraft)
+                      ? getIntegerDraftFieldError(item.priceDraft, shopPriceEditableField)
                       : null;
                   const isPriceDisabled =
                     !canEditShops ||
@@ -22384,7 +22449,10 @@ function SelectedShopPanel({
                     isItemUpdating ||
                     !item.isKnownItem ||
                     !item.canEditPrice ||
-                    item.priceField !== null;
+                    item.priceField !== null ||
+                    shop.globalPriceField === null;
+                  const itemDraftErrorId = `shop-item-${shop.shopId}-${item.key}-error`;
+                  const priceDraftErrorId = `shop-price-${shop.shopId}-${item.key}-error`;
 
                   return (
                     <div
@@ -22405,6 +22473,8 @@ function SelectedShopPanel({
                         <span>{translateLiteral(itemIdField?.label ?? 'Item ID')}</span>
                         {hasItemIdOptions ? (
                           <SearchableOptionInput
+                            ariaDescribedBy={draftError ? itemDraftErrorId : undefined}
+                            ariaInvalid={draftError ? true : undefined}
                             ariaLabel={rowAriaLabel}
                             disabled={
                               !canEditShops ||
@@ -22447,6 +22517,8 @@ function SelectedShopPanel({
                           />
                         ) : (
                           <input
+                            aria-describedby={draftError ? itemDraftErrorId : undefined}
+                            aria-invalid={draftError ? true : undefined}
                             aria-label={rowAriaLabel}
                             disabled={
                               !canEditShops ||
@@ -22487,7 +22559,9 @@ function SelectedShopPanel({
                           />
                         )}
                         {draftError ? (
-                          <small className="editable-field-error">{translateLiteral(draftError)}</small>
+                          <small className="editable-field-error" id={itemDraftErrorId}>
+                            {translateLiteral(draftError)}
+                          </small>
                         ) : null}
                       </label>
                       <label
@@ -22495,8 +22569,10 @@ function SelectedShopPanel({
                           isPriceDisabled ? 'shop-read-only-field' : ''
                         }`}
                       >
-                        <span>{shop.currency}</span>
+                        <span>{translateLiteral(shop.currency)}</span>
                         <input
+                          aria-describedby={priceDraftError ? priceDraftErrorId : undefined}
+                          aria-invalid={priceDraftError ? true : undefined}
                           aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
                             'price'
                           )}`}
@@ -22514,13 +22590,13 @@ function SelectedShopPanel({
                             )
                           }
                           title={translateLiteral(
-                            'Changes the item buy price used wherever this item is sold.'
+                            'Changes the item price used wherever this currency is accepted.'
                           )}
                           type="number"
                           value={item.priceDraft}
                         />
                         {priceDraftError ? (
-                          <small className="editable-field-error">
+                          <small className="editable-field-error" id={priceDraftErrorId}>
                             {translateLiteral(priceDraftError)}
                           </small>
                         ) : null}
@@ -22656,6 +22732,7 @@ function SelectedShopPanel({
                       currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
                       originalValue;
                     const isInvalid = isShopRowFieldDraftInvalid(rowField, draftValue);
+                    const errorId = `shop-row-${shop.shopId}-${selectedInventoryItem.slot}-${field.field}-error`;
 
                     return (
                       <label
@@ -22668,6 +22745,8 @@ function SelectedShopPanel({
                           <span>{translateLiteral(rowField.label)}</span>
                         </span>
                         <ShopRowFieldInput
+                          ariaDescribedBy={isInvalid ? errorId : undefined}
+                          ariaInvalid={isInvalid ? true : undefined}
                           disabled={
                             !canEditShops ||
                             editSession === null ||
@@ -22689,8 +22768,8 @@ function SelectedShopPanel({
                           textOptions={getShopRowTextOptions(rowField, selectedInventoryItem, currentShopDraft)}
                         />
                         {isInvalid ? (
-                          <small className="editable-field-error">
-                            {translateLiteral(getIntegerDraftError(draftValue))}
+                          <small className="editable-field-error" id={errorId}>
+                            {translateLiteral(getIntegerDraftFieldError(draftValue, rowField))}
                           </small>
                         ) : null}
                       </label>
@@ -22784,12 +22863,16 @@ function SelectedShopPanel({
 }
 
 function ShopRowFieldInput({
+  ariaDescribedBy,
+  ariaInvalid,
   disabled,
   draftValue,
   field,
   onChange,
   textOptions
 }: {
+  ariaDescribedBy?: string;
+  ariaInvalid?: boolean;
   disabled: boolean;
   draftValue: string;
   field: ShopEditableField;
@@ -22804,6 +22887,8 @@ function ShopRowFieldInput({
   if (textOptions && textOptions.length > 0) {
     return (
       <select
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         aria-label={localizedFieldLabel}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
@@ -22822,6 +22907,8 @@ function ShopRowFieldInput({
   if (options.length > 0) {
     return (
       <SearchableOptionInput
+        ariaDescribedBy={ariaDescribedBy}
+        ariaInvalid={ariaInvalid}
         ariaLabel={localizedFieldLabel}
         disabled={disabled}
         onChange={onChange}
@@ -22834,6 +22921,8 @@ function ShopRowFieldInput({
 
   return (
     <input
+      aria-describedby={ariaDescribedBy}
+      aria-invalid={ariaInvalid}
       aria-label={localizedFieldLabel}
       disabled={disabled}
       max={field.maximumValue ?? undefined}
@@ -23073,7 +23162,8 @@ function createShopInventoryDraftRows(
         const itemOption =
           parsedItemId === null ? undefined : itemOptionsById.get(parsedItemId);
         const isOriginalItem = parsedItemId === inventoryItem.itemId;
-        const price = itemOption?.price ?? (isOriginalItem ? inventoryItem.price : 0);
+        const optionPrice = getShopOptionPrice(itemOption, shop.globalPriceField);
+        const price = optionPrice ?? (isOriginalItem ? inventoryItem.price : 0);
         const priceDraft = normalizedDraft.priceDrafts[sourceSlot] ?? price.toString();
 
         return {
@@ -23117,7 +23207,7 @@ function createShopInventoryDraftRows(
       const parsedItemId = parseEditableIntegerDraft(addedRow.itemIdDraft, itemOptions);
       const itemOption =
         parsedItemId === null ? undefined : itemOptionsById.get(parsedItemId);
-      const price = itemOption?.price ?? 0;
+      const price = getShopOptionPrice(itemOption, shop.globalPriceField) ?? 0;
       const priceDraft = addedRow.priceDraft ?? price.toString();
 
       return {
@@ -23145,6 +23235,17 @@ function createShopInventoryDraftRows(
       };
     })
     .filter((row): row is ShopInventoryDraftRow => row !== null);
+}
+
+function getShopOptionPrice(
+  option: ShopEditableFieldOption | undefined,
+  priceField: string | null
+) {
+  if (!option) {
+    return undefined;
+  }
+
+  return priceField === null ? option.price : (option.prices[priceField] ?? option.price);
 }
 
 function moveShopInventoryDraftRow(
@@ -23266,41 +23367,64 @@ function overlayShopWorkflowItemPrices(
   workflow: ShopsWorkflow,
   priceChanges: ShopItemPriceChange[]
 ): ShopsWorkflow {
-  const priceByItemId = new Map<number, number>();
+  const pricesByFieldAndItemId = new Map<string, Map<number, number>>();
   for (const change of priceChanges) {
     const price = Number.parseInt(change.value, 10);
     if (Number.isInteger(price)) {
-      priceByItemId.set(change.itemId, price);
+      const pricesByItemId =
+        pricesByFieldAndItemId.get(change.field) ?? new Map<number, number>();
+      pricesByItemId.set(change.itemId, price);
+      pricesByFieldAndItemId.set(change.field, pricesByItemId);
     }
   }
 
-  if (priceByItemId.size === 0) {
+  if (pricesByFieldAndItemId.size === 0) {
     return workflow;
   }
 
   return {
     ...workflow,
-    editableFields: workflow.editableFields.map((field) => ({
-      ...field,
-      options: field.options.map((option) =>
-        priceByItemId.has(option.value)
-          ? {
-              ...option,
-              price: priceByItemId.get(option.value)!
-            }
-          : option
-      )
-    })),
+    editableFields: workflow.editableFields.map((field) =>
+      field.field !== shopItemIdFieldName
+        ? field
+        : {
+            ...field,
+            options: field.options.map((option) => {
+              let nextOption = option;
+              for (const [priceField, pricesByItemId] of pricesByFieldAndItemId) {
+                const price = pricesByItemId.get(option.value);
+                if (price === undefined) {
+                  continue;
+                }
+
+                nextOption = {
+                  ...nextOption,
+                  price: priceField === buyPriceFieldName ? price : nextOption.price,
+                  prices: {
+                    ...nextOption.prices,
+                    [priceField]: price
+                  }
+                };
+              }
+
+              return nextOption;
+            })
+          }
+    ),
     shops: workflow.shops.map((shop) => ({
       ...shop,
-      inventory: shop.inventory.map((item) =>
-        priceByItemId.has(item.itemId)
+      inventory: shop.inventory.map((item) => {
+        const price =
+          shop.globalPriceField === null
+            ? undefined
+            : pricesByFieldAndItemId.get(shop.globalPriceField)?.get(item.itemId);
+        return price !== undefined
           ? {
               ...item,
-              price: priceByItemId.get(item.itemId)!
+              price
             }
-          : item
-      )
+          : item;
+      })
     }))
   };
 }
@@ -35455,15 +35579,19 @@ function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText:
   );
 }
 
-function filterShops(shops: ShopRecord[], searchText: string) {
+function filterShops(
+  shops: ShopRecord[],
+  searchText: string,
+  translateLiteral: (literal: string) => string
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
     return shops;
   }
 
-  return shops.filter((shop) =>
-    [
+  return shops.filter((shop) => {
+    const searchableValues = [
       shop.shopId,
       shop.name,
       shop.kind,
@@ -35482,8 +35610,21 @@ function filterShops(shops: ShopRecord[], searchText: string) {
         item.price.toString(),
         item.stockLimit?.toString() ?? ''
       ])
-    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
-  );
+    ];
+    const localizedValues = [
+      shop.name,
+      shop.kind,
+      shop.inventoryLabel,
+      shop.inventorySummary,
+      shop.location,
+      shop.currency,
+      ...shop.inventory.map((item) => item.itemName)
+    ].map(translateLiteral);
+
+    return [...searchableValues, ...localizedValues].some((value) =>
+      value.toLocaleLowerCase().includes(normalizedSearch)
+    );
+  });
 }
 
 function buildEncounterConditionTabs(
@@ -38133,6 +38274,7 @@ type ShopInventoryDraftChange = {
 };
 
 type ShopItemPriceChange = {
+  field: string;
   itemId: number;
   value: string;
 };
@@ -38584,6 +38726,30 @@ function countFieldDraftRecords(records: Record<string, Record<string, string>>)
 
 function getIntegerDraftError(value: string) {
   return value.trim().length === 0 ? 'Enter a value.' : 'Enter a whole number.';
+}
+
+function getIntegerDraftFieldError(
+  value: string,
+  field?: Pick<ShopEditableField, 'maximumValue' | 'minimumValue' | 'options'>
+) {
+  const parsedValue = parseEditableIntegerDraft(value, field?.options);
+  if (parsedValue === null) {
+    return getIntegerDraftError(value);
+  }
+
+  if (field?.minimumValue !== null && field?.minimumValue !== undefined) {
+    if (parsedValue < field.minimumValue) {
+      return `Value must be at least ${field.minimumValue}.`;
+    }
+  }
+
+  if (field?.maximumValue !== null && field?.maximumValue !== undefined) {
+    if (parsedValue > field.maximumValue) {
+      return `Value must be at most ${field.maximumValue}.`;
+    }
+  }
+
+  return getIntegerDraftError(value);
 }
 
 function getSmartOptionMatches(value: string, options: EditableFieldOption[]) {

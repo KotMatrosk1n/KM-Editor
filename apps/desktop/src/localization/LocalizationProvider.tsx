@@ -208,6 +208,45 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     return literal;
   }
 
+  const minimumValueMatch = /^Value must be at least (-?\d+)\.$/.exec(literal);
+  if (minimumValueMatch) {
+    return formatLiteralTemplate(language, 'Value must be at least {minimum}.', {
+      minimum: minimumValueMatch[1]
+    });
+  }
+
+  const maximumValueMatch = /^Value must be at most (-?\d+)\.$/.exec(literal);
+  if (maximumValueMatch) {
+    return formatLiteralTemplate(language, 'Value must be at most {maximum}.', {
+      maximum: maximumValueMatch[1]
+    });
+  }
+
+  const inventoryLabelMatch = /^Inventory (\d+) of (\d+)$/.exec(literal);
+  if (inventoryLabelMatch) {
+    return formatLiteralTemplate(language, 'Inventory {index} of {count}', {
+      count: inventoryLabelMatch[2],
+      index: inventoryLabelMatch[1]
+    });
+  }
+
+  const badgeCountMatch = /^(\d+) (Badge|Badges)$/.exec(literal);
+  if (badgeCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      badgeCountMatch[2] === 'Badge' ? '{count} Badge' : '{count} Badges',
+      { count: badgeCountMatch[1] }
+    );
+  }
+
+  const badgeShopNameMatch = /^(.+) \[((?:\d+) (?:Badge|Badges))\]$/.exec(literal);
+  if (badgeShopNameMatch) {
+    return `${translateLiteralBodyForLanguage(language, badgeShopNameMatch[1])} [${translateLiteralBodyForLanguage(
+      language,
+      badgeShopNameMatch[2]
+    )}]`;
+  }
+
   const resource = resourcesByLanguage[language];
   const direct = resource.literals[literal] ?? resourcesByLanguage.en.literals[literal];
   if (direct) {

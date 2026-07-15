@@ -1537,6 +1537,10 @@ public static class SvBridgeMapper
         {
             EditorFamily = "sv",
             CanEditInventoryOrder = shop.CanEditInventoryOrder,
+            GlobalPriceField = shop.Inventory.Any(item =>
+                item.PriceField is null && item.CanEditPrice)
+                    ? "buyPrice"
+                    : null,
         };
     }
 

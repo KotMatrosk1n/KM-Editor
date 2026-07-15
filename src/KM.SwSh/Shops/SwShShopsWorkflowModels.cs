@@ -31,7 +31,14 @@ public sealed record SwShShopRecord(
     string Location,
     string Currency,
     IReadOnlyList<SwShShopInventoryRecord> Inventory,
-    SwShShopProvenance Provenance);
+    SwShShopProvenance Provenance)
+{
+    public string? GlobalPriceField { get; init; }
+
+    public int SourceIndex { get; init; }
+
+    internal string SourceIdentity { get; init; } = string.Empty;
+}
 
 public sealed record SwShShopEditableField(
     string Field,
@@ -45,7 +52,11 @@ public sealed record SwShShopEditableFieldOption(
     int Value,
     string Label,
     string ItemName,
-    int Price);
+    int Price)
+{
+    public IReadOnlyDictionary<string, int> Prices { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+}
 
 public sealed record SwShShopsWorkflowStats(
     int TotalShopCount,
@@ -57,4 +68,11 @@ public sealed record SwShShopsWorkflow(
     IReadOnlyList<SwShShopRecord> Shops,
     IReadOnlyList<SwShShopEditableField> EditableFields,
     SwShShopsWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal bool HasItemSemanticData { get; init; }
+
+    internal IReadOnlySet<int> ValidItemIds { get; init; } = new HashSet<int>();
+
+    internal ProjectFileReference? ItemSemanticSource { get; init; }
+}

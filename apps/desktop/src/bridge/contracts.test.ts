@@ -61,6 +61,11 @@ import {
   rentalPokemonMoveSchema,
   startEditSessionRequestSchema,
   startEditSessionResponseSchema,
+  shopEditableFieldOptionSchema,
+  shopEditableFieldSchema,
+  shopInventoryRecordSchema,
+  shopRecordSchema,
+  shopsWorkflowSchema,
   tradePokemonEditableFieldSchema,
   tradePokemonMoveSchema,
   tradePokemonRecordSchema,
@@ -3983,5 +3988,36 @@ describe('bridge contracts', () => {
         slot: 4
       }).success
     ).toBe(false);
+  });
+
+  it('validates Shops discriminants, one-based slots, and price-map defaults', () => {
+    expect(shopsWorkflowSchema.shape.editorFamily.safeParse('swsh').success).toBe(true);
+    expect(shopsWorkflowSchema.shape.editorFamily.safeParse('future').success).toBe(false);
+    expect(shopRecordSchema.shape.editorFamily.safeParse('sv').success).toBe(true);
+    expect(shopRecordSchema.shape.editorFamily.safeParse('future').success).toBe(false);
+    expect(shopEditableFieldSchema.shape.valueKind.safeParse('text').success).toBe(true);
+    expect(shopEditableFieldSchema.shape.valueKind.safeParse('number').success).toBe(false);
+    expect(shopRecordSchema.shape.globalPriceField.parse(undefined)).toBeNull();
+    expect(shopInventoryRecordSchema.shape.slot.safeParse(1).success).toBe(true);
+    expect(shopInventoryRecordSchema.shape.slot.safeParse(0).success).toBe(false);
+    expect(updateShopInventoryItemRequestSchema.shape.slot.safeParse(1).success).toBe(true);
+    expect(updateShopInventoryItemRequestSchema.shape.slot.safeParse(0).success).toBe(false);
+
+    const option = shopEditableFieldOptionSchema.parse({
+      itemName: 'Potion',
+      label: 'Potion',
+      price: 300,
+      value: 1
+    });
+    expect(option.prices).toEqual({});
+    expect(
+      shopEditableFieldOptionSchema.parse({
+        itemName: 'Potion',
+        label: 'Potion',
+        price: 300,
+        prices: { alternatePrice: 5, buyPrice: 300, wattsPrice: 50 },
+        value: 1
+      }).prices
+    ).toEqual({ alternatePrice: 5, buyPrice: 300, wattsPrice: 50 });
   });
 });

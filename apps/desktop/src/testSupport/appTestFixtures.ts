@@ -2843,9 +2843,27 @@ export function createMockProjectBridge(
         maximumValue: 65535,
         minimumValue: 0,
         options: [
-          { itemName: 'Potion', label: '0001 Potion (Medicine)', price: 300, value: 1 },
-          { itemName: 'Antidote', label: '0002 Antidote (Medicine)', price: 200, value: 2 },
-          { itemName: 'None', label: '0000 None (Medicine)', price: 0, value: 0 }
+          {
+            itemName: 'Potion',
+            label: '0001 Potion (Medicine)',
+            price: 300,
+            prices: { alternatePrice: 5, buyPrice: 300, wattsPrice: 50 },
+            value: 1
+          },
+          {
+            itemName: 'Antidote',
+            label: '0002 Antidote (Medicine)',
+            price: 200,
+            prices: { alternatePrice: 4, buyPrice: 200, wattsPrice: 40 },
+            value: 2
+          },
+          {
+            itemName: 'None',
+            label: '0000 None (Medicine)',
+            price: 0,
+            prices: { alternatePrice: 0, buyPrice: 0, wattsPrice: 0 },
+            value: 0
+          }
         ],
         valueKind: 'integer'
       }
@@ -2856,6 +2874,7 @@ export function createMockProjectBridge(
         canEditInventoryOrder: true,
         currency: 'Money',
         editorFamily: 'swsh',
+        globalPriceField: 'buyPrice',
         inventory: [
           {
             canEditPrice: true,
@@ -7343,29 +7362,29 @@ export function createMockProjectBridge(
         };
       };
 
+      const pendingEdit = {
+        domain: 'workflow.shops',
+        field: request.field,
+        newValue: request.value,
+        recordId: `${request.shopId}#${request.slot}`,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
+          }
+        ],
+        summary:
+          request.field === 'setInventory'
+            ? `Set Poke Mart inventory order to ${orderedItemIds?.length ?? 0} items.`
+            : `Set Poke Mart slot ${request.slot} item ID to ${request.value}.`
+      };
+
       return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.shops',
-              field: request.field,
-              newValue: request.value,
-              recordId: `${request.shopId}#${request.slot}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
-                }
-              ],
-              summary:
-                request.field === 'setInventory'
-                  ? `Set Poke Mart inventory order to ${orderedItemIds?.length ?? 0} items.`
-                  : `Set Poke Mart slot ${request.slot} item ID to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
+          pendingEdits: [...(request.session?.pendingEdits ?? []), pendingEdit],
+          sessionId: request.session?.sessionId ?? 'session-1'
         },
         workflow: {
           ...shopsWorkflow,

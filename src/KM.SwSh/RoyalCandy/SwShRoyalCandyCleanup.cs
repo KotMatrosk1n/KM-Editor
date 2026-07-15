@@ -409,31 +409,42 @@ internal static class SwShRoyalCandyCleanup
     {
         var edits = new List<SwShShopInventoryEdit>();
 
-        foreach (var baseShop in baseData.SingleShops)
+        foreach (var (baseShop, baseIndex) in baseData.SingleShops.Select((shop, index) => (shop, index)))
         {
-            var targetShop = targetData.SingleShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
-            if (targetShop is null)
+            var targetIndex = ResolveTargetSingleShopIndex(
+                targetData,
+                baseIndex,
+                baseShop.Hash,
+                baseData.SingleShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
+            if (targetIndex < 0)
             {
                 continue;
             }
 
+            var targetShop = targetData.SingleShops[targetIndex];
             AddRoyalCandyRestoreEdit(
                 edits,
                 SwShShopKind.Single,
                 baseShop.Hash,
                 inventoryIndex: 0,
+                shopIndex: targetIndex,
                 targetShop.Inventory.Items,
                 baseShop.Inventory.Items);
         }
 
-        foreach (var baseShop in baseData.MultiShops)
+        foreach (var (baseShop, baseIndex) in baseData.MultiShops.Select((shop, index) => (shop, index)))
         {
-            var targetShop = targetData.MultiShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
-            if (targetShop is null)
+            var targetIndex = ResolveTargetMultiShopIndex(
+                targetData,
+                baseIndex,
+                baseShop.Hash,
+                baseData.MultiShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
+            if (targetIndex < 0)
             {
                 continue;
             }
 
+            var targetShop = targetData.MultiShops[targetIndex];
             var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
             for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
             {
@@ -442,6 +453,7 @@ internal static class SwShRoyalCandyCleanup
                     SwShShopKind.Multi,
                     baseShop.Hash,
                     inventoryIndex,
+                    targetIndex,
                     targetShop.Inventories[inventoryIndex].Items,
                     baseShop.Inventories[inventoryIndex].Items);
             }
@@ -455,6 +467,7 @@ internal static class SwShRoyalCandyCleanup
         SwShShopKind kind,
         ulong hash,
         int inventoryIndex,
+        int shopIndex,
         IReadOnlyList<int> targetItems,
         IReadOnlyList<int> baseItems)
     {
@@ -481,8 +494,61 @@ internal static class SwShRoyalCandyCleanup
             inventoryIndex,
             Slot: 0,
             ItemId: 0,
-            SwShShopInventoryEditAction.Set,
-            restoredItems));
+            Action: SwShShopInventoryEditAction.Set,
+            Items: restoredItems,
+            ShopIndex: shopIndex));
+    }
+
+    private static int ResolveTargetSingleShopIndex(
+        SwShShopDataFile targetData,
+        int baseIndex,
+        ulong hash,
+        bool allowUniqueFallback)
+    {
+        if ((uint)baseIndex < (uint)targetData.SingleShops.Count
+            && targetData.SingleShops[baseIndex].Hash == hash)
+        {
+            return baseIndex;
+        }
+
+        if (!allowUniqueFallback)
+        {
+            return -1;
+        }
+
+        var matches = targetData.SingleShops
+            .Select((shop, index) => (shop, index))
+            .Where(entry => entry.shop.Hash == hash)
+            .Select(entry => entry.index)
+            .Take(2)
+            .ToArray();
+        return matches.Length == 1 ? matches[0] : -1;
+    }
+
+    private static int ResolveTargetMultiShopIndex(
+        SwShShopDataFile targetData,
+        int baseIndex,
+        ulong hash,
+        bool allowUniqueFallback)
+    {
+        if ((uint)baseIndex < (uint)targetData.MultiShops.Count
+            && targetData.MultiShops[baseIndex].Hash == hash)
+        {
+            return baseIndex;
+        }
+
+        if (!allowUniqueFallback)
+        {
+            return -1;
+        }
+
+        var matches = targetData.MultiShops
+            .Select((shop, index) => (shop, index))
+            .Where(entry => entry.shop.Hash == hash)
+            .Select(entry => entry.index)
+            .Take(2)
+            .ToArray();
+        return matches.Length == 1 ? matches[0] : -1;
     }
 
     private static bool ShopDataSemanticallyEquals(SwShShopDataFile left, SwShShopDataFile right)

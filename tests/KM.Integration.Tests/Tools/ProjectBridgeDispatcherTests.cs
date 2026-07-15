@@ -685,6 +685,74 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchCombinedApplyRunsShopsBeforeAnEarlierItemsEdit()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShShopBridgeFixtures.WriteBaseShops(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var itemUpdateJson = SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(
+                temp.Paths,
+                Session: null,
+                ItemId: 1,
+                Field: "buyPrice",
+                Value: "650"),
+            requestId: "request-shops-items-order-item");
+        var itemUpdate = DeserializeResponse<UpdateItemFieldResponse>(
+            dispatcher.Dispatch(itemUpdateJson)).Payload!;
+        var shopUpdateJson = SerializeRequest(
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                temp.Paths,
+                itemUpdate.Session,
+                $"single:{SwShShopBridgeFixtures.SingleShopHash:X16}",
+                Slot: 3,
+                Field: "addItem",
+                Value: "2"),
+            requestId: "request-shops-items-order-shop");
+        var shopUpdate = DeserializeResponse<UpdateShopInventoryItemResponse>(
+            dispatcher.Dispatch(shopUpdateJson)).Payload!;
+
+        Assert.Collection(
+            shopUpdate.Session.PendingEdits,
+            edit => Assert.Equal("workflow.items", edit.Domain),
+            edit => Assert.Equal("workflow.shops", edit.Domain));
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, shopUpdate.Session),
+            requestId: "request-shops-items-order-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(
+            dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+        Assert.True(plan.CanApply);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, shopUpdate.Session, plan),
+            requestId: "request-shops-items-order-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(
+            dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var itemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var shopPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        Assert.Equal(650u, SwShItemTable.Parse(File.ReadAllBytes(itemPath)).Records[1].BuyPrice);
+        Assert.Equal(
+            [1, 2, 2],
+            SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops[0].Inventory.Items);
+    }
+
+    [Fact]
     public void DispatchUpdateGiftPokemonFieldsStagesOneAtomicSwordShieldSession()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -1824,7 +1892,9 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         Assert.Equal(2, response.Payload.Workflow.Shops.Count);
         var shop = response.Payload.Workflow.Shops[0];
-        Assert.Equal($"single:{SwShShopBridgeFixtures.SingleShopHash:X16}", shop.ShopId);
+        Assert.Matches(
+            $"^single:0:{SwShShopBridgeFixtures.SingleShopHash:X16}:[0-9A-F]{{64}}$",
+            shop.ShopId);
         Assert.Equal("Single", shop.Kind);
         Assert.Equal("Inventory", shop.InventoryLabel);
         Assert.Equal(1, shop.InventoryIndex);
@@ -3738,6 +3808,56 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchRoyalCandyTargetsDuplicateShopHashesByPhysicalIndex()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            new SwShShopDataFile(
+            [
+                new SwShSingleShopRecord(
+                    SwShShopBridgeFixtures.SingleShopHash,
+                    new SwShShopInventory([17, 18, 19])),
+                new SwShSingleShopRecord(
+                    RoyalCandyDyniteOreTraderShopHash,
+                    new SwShShopInventory([1127, RoyalCandyItemId, 1129])),
+                new SwShSingleShopRecord(
+                    RoyalCandyDyniteOreTraderShopHash,
+                    new SwShShopInventory([RoyalCandyItemId, 1606])),
+            ],
+            Array.Empty<SwShMultiShopRecord>()).Write());
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        ApplyRoyalCandyUnlimited(temp, dispatcher);
+
+        var removed = ReadRoyalCandyOutputShopData(temp);
+        Assert.Equal([1127, 1129], removed.SingleShops[1].Inventory.Items);
+        Assert.Equal([1606], removed.SingleShops[2].Inventory.Items);
+
+        ApplyRoyalCandyUninstall(temp, dispatcher);
+
+        var outputShopPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        Assert.False(File.Exists(outputShopPath));
+        var restored = SwShShopDataFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin")));
+        Assert.Equal([1127, RoyalCandyItemId, 1129], restored.SingleShops[1].Inventory.Items);
+        Assert.Equal([RoyalCandyItemId, 1606], restored.SingleShops[2].Inventory.Items);
+    }
+
+    [Fact]
     public void DispatchRoyalCandyCleanupIgnoresShopOnlyExpCandyRemoval()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -4996,6 +5116,41 @@ public sealed class ProjectBridgeDispatcherTests
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(temp.Paths, stage.Payload.Session, plan.Payload.ChangePlan),
             requestId: "request-royal-candy-helper-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+        Assert.Null(apply.Error);
+        Assert.NotNull(apply.Payload);
+        Assert.DoesNotContain(apply.Payload.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    private static void ApplyRoyalCandyUninstall(
+        TemporaryBridgeProject temp,
+        ProjectBridgeDispatcher dispatcher)
+    {
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-uninstall",
+                Session: null),
+            requestId: "request-royal-candy-uninstall-helper-stage");
+        var stage = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stage.Error);
+        Assert.NotNull(stage.Payload);
+        Assert.DoesNotContain(stage.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stage.Payload.Session),
+            requestId: "request-royal-candy-uninstall-helper-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(plan.Error);
+        Assert.NotNull(plan.Payload);
+        Assert.True(plan.Payload.ChangePlan.CanApply);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, stage.Payload.Session, plan.Payload.ChangePlan),
+            requestId: "request-royal-candy-uninstall-helper-apply");
         var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
         Assert.Null(apply.Error);
         Assert.NotNull(apply.Payload);

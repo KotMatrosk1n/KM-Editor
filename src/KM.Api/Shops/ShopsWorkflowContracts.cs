@@ -54,6 +54,8 @@ public sealed record ShopRecordDto(
     public string EditorFamily { get; init; } = "swsh";
 
     public bool CanEditInventoryOrder { get; init; } = true;
+
+    public string? GlobalPriceField { get; init; }
 }
 
 public sealed record ShopEditableFieldDto(
@@ -68,7 +70,11 @@ public sealed record ShopEditableFieldOptionDto(
     int Value,
     string Label,
     string ItemName,
-    int Price);
+    int Price)
+{
+    public IReadOnlyDictionary<string, int> Prices { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+}
 
 public sealed record ShopsWorkflowStatsDto(
     int TotalShopCount,
