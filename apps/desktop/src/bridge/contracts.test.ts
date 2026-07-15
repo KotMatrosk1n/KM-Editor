@@ -9,6 +9,10 @@ import {
   createBridgeRequestSchema,
   createBridgeResponseSchema,
   encounterSlotRecordSchema,
+  giftPokemonEditableFieldSchema,
+  giftPokemonMoveSchema,
+  giftPokemonRecordSchema,
+  giftPokemonWorkflowSchema,
   kmCommandNames,
   listWorkflowsRequestSchema,
   listWorkflowsResponseSchema,
@@ -3869,5 +3873,25 @@ describe('bridge contracts', () => {
     });
 
     expect(parsed.diagnostics[0]?.severity).toBe('warning');
+  });
+
+  it('rejects unsupported Gift Pokemon editor discriminants and move slots', () => {
+    expect(giftPokemonWorkflowSchema.shape.editorFamily.safeParse('swsh').success).toBe(true);
+    expect(giftPokemonWorkflowSchema.shape.editorFamily.safeParse('future').success).toBe(false);
+    expect(giftPokemonEditableFieldSchema.shape.valueKind.safeParse('integer').success).toBe(true);
+    expect(giftPokemonEditableFieldSchema.shape.valueKind.safeParse('number').success).toBe(false);
+    expect(
+      giftPokemonRecordSchema.shape.genderOptions.safeParse([
+        { label: 'Genderless', value: 2 }
+      ]).success
+    ).toBe(true);
+    expect(
+      giftPokemonMoveSchema.safeParse({
+        move: 'Tackle',
+        moveId: 33,
+        pointUps: 0,
+        slot: 4
+      }).success
+    ).toBe(false);
   });
 });

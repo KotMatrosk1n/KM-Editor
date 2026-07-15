@@ -693,7 +693,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'giftPokemon'),
-        giftPokemonSearchText: '',
         giftPokemonWorkflow,
         selectedGiftPokemonIndex
       };

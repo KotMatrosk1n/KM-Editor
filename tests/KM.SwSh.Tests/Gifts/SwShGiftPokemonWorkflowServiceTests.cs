@@ -100,6 +100,54 @@ public sealed class SwShGiftPokemonWorkflowServiceTests
         Assert.Equal(ProjectFileLayer.Layered, gift.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, gift.Provenance.FileState);
         Assert.Equal("6 guaranteed perfect IVs", gift.IvSummary);
+        Assert.Equal(1, workflow.Stats.FixedIvGiftCount);
+    }
+
+    [Fact]
+    public void BallOptionsUseTheExactSwordShieldBallWhitelist()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteGiftFixture(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateTextTable(100, (4, "Poke Ball"), (100, "Not a Ball")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShGiftPokemonWorkflowService().Load(project);
+
+        var heldOptions = workflow.EditableFields
+            .Single(field => field.Field == SwShGiftPokemonWorkflowService.HeldItemIdField)
+            .Options;
+        var ballOptions = workflow.EditableFields
+            .Single(field => field.Field == SwShGiftPokemonWorkflowService.BallItemIdField)
+            .Options;
+        Assert.Contains(heldOptions, option => option.Value == 100);
+        Assert.DoesNotContain(ballOptions, option => option.Value == 100);
+        Assert.Contains(ballOptions, option => option.Value == 4);
+    }
+
+    [Fact]
+    public void LoadPreservesLegacyGenderThreeAsFallbackTextWithoutOfferingIt()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteGiftFixture(temp);
+        var path = Path.Combine(temp.BaseRomFsPath, "bin", "script_event_data", "add_poke.bin");
+        var archive = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(path));
+        File.WriteAllBytes(
+            path,
+            new SwShGiftPokemonArchive(archive.Gifts.Select(gift =>
+                gift.Index == 1 ? gift with { Gender = 3 } : gift).ToArray()).Write());
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShGiftPokemonWorkflowService().Load(project);
+
+        Assert.Equal(3, workflow.Gifts[1].Gender);
+        Assert.Equal("Gender 3", workflow.Gifts[1].GenderLabel);
+        Assert.DoesNotContain(
+            workflow.EditableFields.Single(field => field.Field == SwShGiftPokemonWorkflowService.GenderField).Options,
+            option => option.Value == 3);
     }
 
     [Fact]

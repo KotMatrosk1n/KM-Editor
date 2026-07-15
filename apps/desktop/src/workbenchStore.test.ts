@@ -52,6 +52,20 @@ describe('workbench store', () => {
     expect(useWorkbenchStore.getState().selectedTrainerId).toBe(10);
   });
 
+  it('preserves Gift Pokemon search and selection when committing a refreshed workflow', () => {
+    useWorkbenchStore.setState({
+      giftPokemonSearchText: 'Grookey',
+      selectedGiftPokemonIndex: 1
+    });
+
+    useWorkbenchStore.getState().setGiftPokemonWorkflow({
+      gifts: [{ giftIndex: 0 }, { giftIndex: 1 }]
+    } as never);
+
+    expect(useWorkbenchStore.getState().giftPokemonSearchText).toBe('Grookey');
+    expect(useWorkbenchStore.getState().selectedGiftPokemonIndex).toBe(1);
+  });
+
   it('invalidates the committed project session when a project path changes', () => {
     useWorkbenchStore.setState({
       activeSection: 'pokemon',

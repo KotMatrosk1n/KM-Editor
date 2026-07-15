@@ -1239,7 +1239,12 @@ export const giftPokemonProvenanceSchema = z.strictObject({ fileState: projectFi
 
 export const giftPokemonIvsSchema = z.strictObject({ attack: z.number().int(), defense: z.number().int(), hp: z.number().int(), specialAttack: z.number().int(), specialDefense: z.number().int(), speed: z.number().int() });
 
-export const giftPokemonMoveSchema = z.strictObject({ move: z.string().nullable(), moveId: z.number().int(), pointUps: z.number().int().nonnegative(), slot: z.number().int().nonnegative() });
+export const giftPokemonMoveSchema = z.strictObject({
+  move: z.string().nullable(),
+  moveId: z.number().int(),
+  pointUps: z.number().int().nonnegative(),
+  slot: z.number().int().min(0).max(3)
+});
 
 export const giftPokemonEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
@@ -1252,7 +1257,7 @@ export const giftPokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(giftPokemonEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.enum(['boolean', 'integer'])
 });
 
 export const giftPokemonRecordSchema = z.strictObject({
@@ -1263,12 +1268,13 @@ export const giftPokemonRecordSchema = z.strictObject({
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
-  editorFamily: z.string().default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   eventLabel: z.string().nullable().default(null),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int().nonnegative(),
   gender: z.number().int(),
   genderLabel: z.string(),
+  genderOptions: z.array(giftPokemonEditableFieldOptionSchema).default([]),
   giftIndex: z.number().int().nonnegative(),
   heldItem: z.string().nullable(),
   heldItemId: z.number().int().nonnegative(),
@@ -1303,7 +1309,7 @@ export const giftPokemonWorkflowStatsSchema = z.strictObject({
 
 export const giftPokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
-  editorFamily: z.string().default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   editableFields: z.array(giftPokemonEditableFieldSchema),
   gifts: z.array(giftPokemonRecordSchema),
   stats: giftPokemonWorkflowStatsSchema,

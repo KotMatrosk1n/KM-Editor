@@ -9,6 +9,8 @@ using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Gifts;
 
@@ -59,7 +61,6 @@ public sealed class SwShGiftPokemonWorkflowService
         new(0, "Random"),
         new(1, "Male"),
         new(2, "Female"),
-        new(3, "Genderless"),
     ];
 
     private static readonly IReadOnlyList<SwShGiftPokemonEditableFieldOption> ShinyLockOptions =
@@ -96,14 +97,14 @@ public sealed class SwShGiftPokemonWorkflowService
 
     private static readonly IReadOnlyList<SwShGiftPokemonEditableField> BaseEditableFields =
     [
-        CreateField(SpeciesField, "Species", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
+        CreateField(SpeciesField, "Species", "integer", 1, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(FormField, "Form", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue, FormOptions),
-        CreateField(LevelField, "Level", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue),
+        CreateField(LevelField, "Level", "integer", SwShGiftPokemonArchive.MinimumLevel, SwShGiftPokemonArchive.MaximumLevel),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability slot", "integer", 0, 3, AbilityOptions),
         CreateField(NatureField, "Nature", "integer", 0, 25, NatureOptions),
-        CreateField(GenderField, "Gender", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue, GenderOptions),
+        CreateField(GenderField, "Gender", "integer", 0, 2, GenderOptions),
         CreateField(ShinyLockField, "Shiny lock", "integer", 0, 2, ShinyLockOptions),
         CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
@@ -215,15 +216,101 @@ public sealed class SwShGiftPokemonWorkflowService
         return $"gift:{giftIndex.ToString(CultureInfo.InvariantCulture)}";
     }
 
+    internal static string CreateGiftRecordId(int giftIndex, string sourceIdentity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceIdentity);
+
+        return $"{CreateGiftRecordId(giftIndex)}:{sourceIdentity}";
+    }
+
     internal static bool TryParseGiftRecordId(string? recordId, out int giftIndex)
     {
+        return TryParseGiftRecordId(recordId, out giftIndex, out _);
+    }
+
+    internal static bool TryParseGiftRecordId(
+        string? recordId,
+        out int giftIndex,
+        out string? sourceIdentity)
+    {
         giftIndex = 0;
+        sourceIdentity = null;
 
         const string prefix = "gift:";
-        return recordId is not null
-            && recordId.StartsWith(prefix, StringComparison.Ordinal)
-            && int.TryParse(recordId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out giftIndex)
-            && giftIndex >= 0;
+        if (recordId is null || !recordId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var remainder = recordId[prefix.Length..];
+        var separator = remainder.IndexOf(':');
+        var indexText = separator < 0 ? remainder : remainder[..separator];
+        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out giftIndex)
+            || giftIndex < 0
+            || !string.Equals(
+                indexText,
+                giftIndex.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (separator < 0)
+        {
+            return true;
+        }
+
+        sourceIdentity = remainder[(separator + 1)..];
+        return sourceIdentity.Length == 64
+            && sourceIdentity.All(Uri.IsHexDigit);
+    }
+
+    internal static string CreateSourceIdentity(SwShGiftPokemonRecord gift)
+    {
+        ArgumentNullException.ThrowIfNull(gift);
+
+        var canonical = new StringBuilder();
+        AppendIdentityValue(canonical, gift.Index);
+        AppendIdentityValue(canonical, gift.IsEgg);
+        AppendIdentityValue(canonical, gift.Form);
+        AppendIdentityValue(canonical, gift.DynamaxLevel);
+        AppendIdentityValue(canonical, gift.BallItemId);
+        AppendIdentityValue(canonical, gift.Field04);
+        AppendIdentityValue(canonical, gift.Hash1);
+        AppendIdentityValue(canonical, gift.CanGigantamax ? 1 : 0);
+        AppendIdentityValue(canonical, gift.HeldItem);
+        AppendIdentityValue(canonical, gift.Level);
+        AppendIdentityValue(canonical, gift.Species);
+        AppendIdentityValue(canonical, gift.Field0A);
+        AppendIdentityValue(canonical, gift.MemoryCode);
+        AppendIdentityValue(canonical, gift.MemoryData);
+        AppendIdentityValue(canonical, gift.MemoryFeel);
+        AppendIdentityValue(canonical, gift.MemoryLevel);
+        AppendIdentityValue(canonical, gift.OtNameId);
+        AppendIdentityValue(canonical, gift.OtGender);
+        AppendIdentityValue(canonical, gift.ShinyLock);
+        AppendIdentityValue(canonical, gift.Nature);
+        AppendIdentityValue(canonical, gift.Gender);
+        AppendIdentityValue(canonical, gift.Ivs.Hp);
+        AppendIdentityValue(canonical, gift.Ivs.Attack);
+        AppendIdentityValue(canonical, gift.Ivs.Defense);
+        AppendIdentityValue(canonical, gift.Ivs.Speed);
+        AppendIdentityValue(canonical, gift.Ivs.SpecialAttack);
+        AppendIdentityValue(canonical, gift.Ivs.SpecialDefense);
+        AppendIdentityValue(canonical, gift.Ability);
+        AppendIdentityValue(canonical, gift.SpecialMove);
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendIdentityValue<T>(StringBuilder destination, T value)
+        where T : IFormattable
+    {
+        var text = value.ToString(null, CultureInfo.InvariantCulture);
+        destination.Append(text.Length);
+        destination.Append(':');
+        destination.Append(text);
+        destination.Append('|');
     }
 
     internal static WorkflowFileSource? ResolveGiftPokemonDataSource(OpenedProject project)
@@ -268,9 +355,12 @@ public sealed class SwShGiftPokemonWorkflowService
             new SwShGiftPokemonWorkflowStats(
                 gifts.Count,
                 gifts.Count(gift => gift.IsEgg),
-                gifts.Count(gift => gift.FlawlessIvCount is null),
+                gifts.Count(gift => gift.FlawlessIvCount != 0),
                 sourceFileCount),
-            diagnostics);
+            diagnostics)
+        {
+            AbilityResolver = lookupTables.AbilityResolver,
+        };
     }
 
     private static GiftLookupTables CreateEmptyLookupTables()
@@ -285,6 +375,9 @@ public sealed class SwShGiftPokemonWorkflowService
             lookupTables.PresentSpeciesIds,
             (value, label) => new SwShGiftPokemonEditableFieldOption(value, label));
         var itemOptions = CreateIndexedOptions(lookupTables.ItemNames, "Item");
+        var ballOptions = itemOptions
+            .Where(option => SwShGiftPokemonArchive.IsValidBallItemId(option.Value))
+            .ToArray();
         var moveOptions = SwShMoveAvailability.CreateMoveOptions(
             lookupTables.MoveNames,
             lookupTables.UsableMoveIds,
@@ -295,7 +388,8 @@ public sealed class SwShGiftPokemonWorkflowService
             .Select(field => field.Field switch
             {
                 SpeciesField => field with { Options = speciesOptions },
-                HeldItemIdField or BallItemIdField => field with { Options = itemOptions },
+                HeldItemIdField => field with { Options = itemOptions },
+                BallItemIdField => field with { Options = ballOptions },
                 SpecialMoveIdField => field with { Options = moveOptions },
                 _ => field,
             })
@@ -353,7 +447,7 @@ public sealed class SwShGiftPokemonWorkflowService
             gift.Nature,
             GetOptionLabel(NatureOptions, gift.Nature, "Nature"),
             gift.Gender,
-            GetOptionLabel(GenderOptions, gift.Gender, "Gender"),
+            GetGenderOptionLabel(lookupTables.AbilityResolver, gift.Species, gift.Form, gift.Gender),
             gift.ShinyLock,
             GetOptionLabel(ShinyLockOptions, gift.ShinyLock, "Shiny lock"),
             gift.DynamaxLevel,
@@ -366,6 +460,8 @@ public sealed class SwShGiftPokemonWorkflowService
             provenance)
         {
             AbilityOptions = CreateAbilityOptions(lookupTables, gift.Species, gift.Form),
+            GenderOptions = CreateGenderOptions(lookupTables.AbilityResolver, gift.Species, gift.Form),
+            SourceIdentity = CreateSourceIdentity(gift),
         };
     }
 
@@ -437,10 +533,75 @@ public sealed class SwShGiftPokemonWorkflowService
         int speciesId,
         int form)
     {
-        return lookupTables.AbilityResolver
+        return CreateAbilityOptions(lookupTables.AbilityResolver, speciesId, form);
+    }
+
+    internal static IReadOnlyList<SwShGiftPokemonEditableFieldOption> CreateAbilityOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var personal = abilityResolver.ResolvePersonalRecord(speciesId, form);
+        if (personal is null)
+        {
+            return AbilityOptions;
+        }
+
+        return abilityResolver
             .CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Where(option => option.Value switch
+            {
+                0 or 1 => personal.Ability1 != 0,
+                2 => personal.Ability2 != 0,
+                3 => personal.HiddenAbility != 0,
+                _ => false,
+            })
             .Select(option => new SwShGiftPokemonEditableFieldOption(option.Value, option.Label))
             .ToArray();
+    }
+
+    internal static IReadOnlyList<SwShGiftPokemonEditableFieldOption> CreateGenderOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var personal = abilityResolver.ResolvePersonalRecord(speciesId, form);
+        if (personal is null)
+        {
+            return GenderOptions;
+        }
+
+        return personal.GenderRatio switch
+        {
+            255 =>
+            [
+                new(0, "Random"),
+                new(2, "Genderless"),
+            ],
+            0 =>
+            [
+                new(0, "Random"),
+                new(1, "Male"),
+            ],
+            254 =>
+            [
+                new(0, "Random"),
+                new(2, "Female"),
+            ],
+            _ => GenderOptions,
+        };
+    }
+
+    internal static string GetGenderOptionLabel(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return GetOptionLabel(
+            CreateGenderOptions(abilityResolver, speciesId, form),
+            value,
+            "Gender");
     }
 
     private static string GetAbilityOptionLabel(

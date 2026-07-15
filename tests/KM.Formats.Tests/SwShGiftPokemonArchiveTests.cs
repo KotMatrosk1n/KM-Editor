@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Formats.SwSh;
 using Xunit;
 
@@ -132,12 +133,326 @@ public sealed class SwShGiftPokemonArchiveTests
     }
 
     [Fact]
+    public void WriteEditsRejectsMixedThreePerfectIvSentinelLayout()
+    {
+        var archive = CreateArchive();
+
+        Assert.Throws<ArgumentException>(
+            () => archive.WriteEdits([new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvHp, -4)]));
+    }
+
+    [Fact]
+    public void WriteEditsAcceptsCanonicalThreePerfectIvSentinelLayoutAcrossBatch()
+    {
+        var archive = CreateArchive();
+
+        var output = archive.WriteEdits(
+        [
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvHp, -4),
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvAttack, -1),
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvDefense, -1),
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvSpeed, -1),
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvSpecialAttack, -1),
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.IvSpecialDefense, -1),
+        ]);
+
+        Assert.Equal(
+            new SwShGiftPokemonIvs(-4, -1, -1, -1, -1, -1),
+            SwShGiftPokemonArchive.Parse(output).Gifts[0].Ivs);
+    }
+
+    [Fact]
     public void WriteEditsRejectsInvalidDynamaxLevel()
     {
         var archive = CreateArchive();
 
         Assert.Throws<ArgumentOutOfRangeException>(
             () => archive.WriteEdits([new SwShGiftPokemonEdit(0, SwShGiftPokemonField.DynamaxLevel, 11)]));
+    }
+
+    [Fact]
+    public void ParsedWriteEditsWithNoChangesIsByteIdentical()
+    {
+        var source = CreateArchive().Write()
+            .Concat(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF })
+            .ToArray();
+        var archive = SwShGiftPokemonArchive.Parse(source);
+
+        var output = archive.WriteEdits([]);
+
+        Assert.Equal(source, output);
+    }
+
+    [Fact]
+    public void ParsedWriteEditsPatchesOnlyChangedFieldAndPreservesTrailingBytes()
+    {
+        var source = CreateArchive().Write()
+            .Concat(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF })
+            .ToArray();
+        var expected = source.ToArray();
+        expected[GetGiftFieldAbsoluteOffset(expected, giftIndex: 0, fieldIndex: 8)] = 15;
+        var archive = SwShGiftPokemonArchive.Parse(source);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.Level, 15),
+        ]);
+
+        Assert.Equal(expected, output);
+    }
+
+    [Fact]
+    public void ParsedWriteEditsPreservesUneditedLegacyValues()
+    {
+        var archive = CreateArchive();
+        var legacyGift = archive.Gifts[0] with
+        {
+            IsEgg = 7,
+            DynamaxLevel = 11,
+            BallItemId = 17,
+            Level = 0,
+            Species = 0,
+            ShinyLock = 99,
+            Nature = 99,
+            Gender = 3,
+            Ability = 99,
+        };
+        var source = new SwShGiftPokemonArchive([legacyGift, archive.Gifts[1]]).Write();
+
+        var output = SwShGiftPokemonArchive.Parse(source).WriteEdits(
+        [
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.HeldItem, 1),
+        ]);
+        var parsed = SwShGiftPokemonArchive.Parse(output).Gifts[0];
+
+        Assert.Equal(7, parsed.IsEgg);
+        Assert.Equal(11, parsed.DynamaxLevel);
+        Assert.Equal(17, parsed.BallItemId);
+        Assert.Equal(0, parsed.Level);
+        Assert.Equal(0, parsed.Species);
+        Assert.Equal(99, parsed.ShinyLock);
+        Assert.Equal(99, parsed.Nature);
+        Assert.Equal(3, parsed.Gender);
+        Assert.Equal(99, parsed.Ability);
+        Assert.Equal(1, parsed.HeldItem);
+    }
+
+    [Fact]
+    public void ParsedWriteEditsPreservesUntouchedLegacyMixedIvLayout()
+    {
+        var archive = CreateArchive();
+        var legacyGift = archive.Gifts[0] with
+        {
+            Ivs = new SwShGiftPokemonIvs(-4, 31, -1, -1, -1, -1),
+        };
+        var source = new SwShGiftPokemonArchive([legacyGift, archive.Gifts[1]]).Write()
+            .Concat(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF })
+            .ToArray();
+        var expected = source.ToArray();
+        expected[GetGiftFieldAbsoluteOffset(expected, giftIndex: 0, fieldIndex: 8)] = 15;
+
+        var output = SwShGiftPokemonArchive.Parse(source).WriteEdits(
+        [
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.Level, 15),
+        ]);
+
+        Assert.Equal(expected, output);
+        Assert.Equal(
+            new SwShGiftPokemonIvs(-4, 31, -1, -1, -1, -1),
+            SwShGiftPokemonArchive.Parse(output).Gifts[0].Ivs);
+    }
+
+    [Fact]
+    public void ParsedWriteEditsMaterializesChangedOmittedFieldWithoutRebuildingSourceBytes()
+    {
+        var trailingBytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        var source = CreateArchive().Write().Concat(trailingBytes).ToArray();
+        OmitGiftField(source, giftIndex: 0, fieldIndex: 7);
+        var vectorElementOffset = GetGiftVectorElementOffset(source, giftIndex: 0);
+        var archive = SwShGiftPokemonArchive.Parse(source);
+        Assert.Equal(0, archive.Gifts[0].HeldItem);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.HeldItem, 1),
+        ]);
+
+        Assert.True(output.Length > source.Length);
+        Assert.Equal(1, SwShGiftPokemonArchive.Parse(output).Gifts[0].HeldItem);
+        Assert.Equal(trailingBytes, output.AsSpan(source.Length - trailingBytes.Length, trailingBytes.Length).ToArray());
+        for (var index = 0; index < source.Length; index++)
+        {
+            if (index < vectorElementOffset || index >= vectorElementOffset + sizeof(uint))
+            {
+                Assert.Equal(source[index], output[index]);
+            }
+        }
+    }
+
+    [Fact]
+    public void ParsedWriteEditsIsolatesAliasedGiftTablesBeforePatching()
+    {
+        var source = CreateArchive().Write();
+        var firstTableOffset = GetGiftTableOffset(source, giftIndex: 0);
+        var secondVectorElementOffset = GetGiftVectorElementOffset(source, giftIndex: 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            source.AsSpan(secondVectorElementOffset, sizeof(uint)),
+            checked((uint)(firstTableOffset - secondVectorElementOffset)));
+        var archive = SwShGiftPokemonArchive.Parse(source);
+        var originalLevel = archive.Gifts[0].Level;
+        Assert.Equal(originalLevel, archive.Gifts[1].Level);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShGiftPokemonEdit(0, SwShGiftPokemonField.Level, originalLevel + 1),
+        ]);
+        var parsed = SwShGiftPokemonArchive.Parse(output);
+
+        Assert.Equal(originalLevel + 1, parsed.Gifts[0].Level);
+        Assert.Equal(originalLevel, parsed.Gifts[1].Level);
+    }
+
+    [Fact]
+    public void ParseRejectsVectorCountThatExceedsAvailableDataBeforeAllocation()
+    {
+        var source = CreateArchive().Write();
+        var vectorOffset = GetGiftVectorOffset(source);
+        BinaryPrimitives.WriteUInt32LittleEndian(source.AsSpan(vectorOffset, sizeof(uint)), uint.MaxValue);
+
+        Assert.Throws<InvalidDataException>(() => SwShGiftPokemonArchive.Parse(source));
+    }
+
+    [Fact]
+    public void ParseRejectsUnsignedOffsetOverflowAsInvalidData()
+    {
+        var source = CreateArchive().Write();
+        BinaryPrimitives.WriteUInt32LittleEndian(source.AsSpan(0, sizeof(uint)), uint.MaxValue);
+
+        Assert.Throws<InvalidDataException>(() => SwShGiftPokemonArchive.Parse(source));
+    }
+
+    [Fact]
+    public void ParseRejectsScalarFieldThatPointsOutsideItsTableObject()
+    {
+        var source = CreateArchive().Write();
+        var tableOffset = GetGiftTableOffset(source, giftIndex: 0);
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(
+            source.AsSpan(tableOffset, sizeof(int)));
+        var objectSize = BinaryPrimitives.ReadUInt16LittleEndian(
+            source.AsSpan(vtableOffset + sizeof(ushort), sizeof(ushort)));
+        var fieldEntryOffset = vtableOffset + (sizeof(ushort) * 2) + (7 * sizeof(ushort));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            source.AsSpan(fieldEntryOffset, sizeof(ushort)),
+            checked((ushort)(objectSize - 2)));
+
+        Assert.Throws<InvalidDataException>(() => SwShGiftPokemonArchive.Parse(source));
+    }
+
+    [Fact]
+    public void ParseRejectsOverlappingScalarFields()
+    {
+        var source = CreateArchive().Write();
+        var tableOffset = GetGiftTableOffset(source, giftIndex: 0);
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(
+            source.AsSpan(tableOffset, sizeof(int)));
+        var heldItemEntryOffset = vtableOffset + (sizeof(ushort) * 2) + (7 * sizeof(ushort));
+        var speciesEntryOffset = vtableOffset + (sizeof(ushort) * 2) + (9 * sizeof(ushort));
+        var speciesFieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(
+            source.AsSpan(speciesEntryOffset, sizeof(ushort)));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            source.AsSpan(heldItemEntryOffset, sizeof(ushort)),
+            speciesFieldOffset);
+
+        Assert.Throws<InvalidDataException>(() => SwShGiftPokemonArchive.Parse(source));
+    }
+
+    [Fact]
+    public void WriteEditsRejectsInvalidSemanticRanges()
+    {
+        var archive = CreateArchive();
+
+        AssertInvalid(SwShGiftPokemonField.IsEgg, 2);
+        AssertInvalid(SwShGiftPokemonField.Level, 0);
+        AssertInvalid(SwShGiftPokemonField.Level, 101);
+        AssertInvalid(SwShGiftPokemonField.Species, 0);
+        AssertInvalid(SwShGiftPokemonField.OtGender, 2);
+        AssertInvalid(SwShGiftPokemonField.ShinyLock, 3);
+        AssertInvalid(SwShGiftPokemonField.Nature, 26);
+        AssertInvalid(SwShGiftPokemonField.Gender, 3);
+        AssertInvalid(SwShGiftPokemonField.Ability, 4);
+        AssertInvalid(SwShGiftPokemonField.DynamaxLevel, 11);
+        AssertInvalid(SwShGiftPokemonField.CanGigantamax, 2);
+
+        void AssertInvalid(SwShGiftPokemonField field, int value)
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => archive.WriteEdits([new SwShGiftPokemonEdit(0, field, value)]));
+        }
+    }
+
+    [Fact]
+    public void BallItemIdsUseConfirmedSwordShieldWhitelist()
+    {
+        int[] expected =
+        [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            492,
+            493,
+            494,
+            495,
+            496,
+            497,
+            498,
+            499,
+            576,
+            851,
+        ];
+        var archive = CreateArchive();
+
+        Assert.Equal(expected, SwShGiftPokemonArchive.ValidBallItemIds);
+        foreach (var itemId in expected)
+        {
+            Assert.True(SwShGiftPokemonArchive.IsValidBallItemId(itemId));
+            _ = archive.WriteEdits([new SwShGiftPokemonEdit(0, SwShGiftPokemonField.BallItemId, itemId)]);
+        }
+
+        foreach (var itemId in new[] { -1, 17, 491, 500, 575, 577, 850, 852 })
+        {
+            Assert.False(SwShGiftPokemonArchive.IsValidBallItemId(itemId));
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => archive.WriteEdits([new SwShGiftPokemonEdit(0, SwShGiftPokemonField.BallItemId, itemId)]));
+        }
+    }
+
+    [Fact]
+    public void ThreePerfectIvDetectionRequiresCanonicalSentinelLayout()
+    {
+        Assert.Equal(
+            3,
+            SwShGiftPokemonArchive.GetFlawlessIvCount(
+                new SwShGiftPokemonIvs(-4, -1, -1, -1, -1, -1)));
+        Assert.Null(
+            SwShGiftPokemonArchive.GetFlawlessIvCount(
+                new SwShGiftPokemonIvs(-4, 31, -1, -1, -1, -1)));
+        Assert.Null(
+            SwShGiftPokemonArchive.GetFlawlessIvCount(
+                new SwShGiftPokemonIvs(-4, -1, -1, -1, -1, 0)));
     }
 
     private static SwShGiftPokemonArchive CreateArchive()
@@ -195,5 +510,45 @@ public sealed class SwShGiftPokemonArchiveTests
                 0,
                 0),
         ]);
+    }
+
+    private static void OmitGiftField(byte[] data, int giftIndex, int fieldIndex)
+    {
+        var tableOffset = GetGiftTableOffset(data, giftIndex);
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var fieldEntryOffset = vtableOffset + (sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(fieldEntryOffset, sizeof(ushort)), 0);
+    }
+
+    private static int GetGiftFieldAbsoluteOffset(byte[] data, int giftIndex, int fieldIndex)
+    {
+        var tableOffset = GetGiftTableOffset(data, giftIndex);
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var fieldEntryOffset = vtableOffset + (sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort));
+        var relativeFieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(fieldEntryOffset, sizeof(ushort)));
+        Assert.NotEqual(0, relativeFieldOffset);
+        return tableOffset + relativeFieldOffset;
+    }
+
+    private static int GetGiftTableOffset(byte[] data, int giftIndex)
+    {
+        var elementOffset = GetGiftVectorElementOffset(data, giftIndex);
+        return elementOffset + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(elementOffset, sizeof(uint))));
+    }
+
+    private static int GetGiftVectorElementOffset(byte[] data, int giftIndex)
+    {
+        return GetGiftVectorOffset(data) + sizeof(uint) + (giftIndex * sizeof(uint));
+    }
+
+    private static int GetGiftVectorOffset(byte[] data)
+    {
+        var rootOffset = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0, sizeof(uint))));
+        var vtableOffset = rootOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(rootOffset, sizeof(int)));
+        var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.AsSpan(vtableOffset + (sizeof(ushort) * 2), sizeof(ushort)));
+        var vectorReferenceOffset = rootOffset + fieldOffset;
+        return vectorReferenceOffset
+            + checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(vectorReferenceOffset, sizeof(uint))));
     }
 }
