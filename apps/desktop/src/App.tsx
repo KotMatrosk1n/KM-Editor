@@ -2037,6 +2037,8 @@ export function App({
   trainersWorkflowRef.current = trainersWorkflow;
   const giftPokemonWorkflowRef = useRef(giftPokemonWorkflow);
   giftPokemonWorkflowRef.current = giftPokemonWorkflow;
+  const tradePokemonWorkflowRef = useRef(tradePokemonWorkflow);
+  tradePokemonWorkflowRef.current = tradePokemonWorkflow;
   const lastInvalidatedGameTextLanguageRef = useRef(language);
   const workflowLoadGenerationRef = useRef(new WorkflowLoadGeneration());
   const workflowLoadTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -5106,9 +5108,23 @@ export function App({
         }
         break;
       case 'tradePokemon':
-        if (!tradePokemonWorkflow && !isTradePokemonLoading) {
+        if (
+          (!tradePokemonWorkflow && !isTradePokemonLoading) ||
+          ((selectedGame === 'sword' || selectedGame === 'shield') &&
+            !pokemonWorkflow &&
+            !isPokemonLoading)
+        ) {
           markLazyLoadStarted();
-          void handleOpenTradePokemonWorkflow();
+          if (!tradePokemonWorkflow && !isTradePokemonLoading) {
+            void handleOpenTradePokemonWorkflow();
+          }
+          if (
+            (selectedGame === 'sword' || selectedGame === 'shield') &&
+            !pokemonWorkflow &&
+            !isPokemonLoading
+          ) {
+            void handleOpenPokemonWorkflow();
+          }
         }
         break;
       case 'staticEncounters':
@@ -7089,48 +7105,36 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = tradePokemonWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
+          const incomingWorkflow = tradePokemonWorkflowRef.current;
+          const updateResponse = await bridge.updateTradePokemonFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
+              field: change.field,
+              tradeIndex,
+              value: change.value
+            }))
+          });
+          const diagnostics = [...updateResponse.diagnostics];
+          const didSucceed = !diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
-          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-            const updateResponse = await bridge.updateTradePokemonFields({
-              paths: createProjectPaths(draftPaths),
-              session,
-              updates: changes.map((change) => ({
-                field: change.field,
-                tradeIndex,
-                value: change.value
-              }))
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          } else {
-            for (const change of changes) {
-              const updateResponse = await bridge.updateTradePokemonField({
-                field: change.field,
-                paths: createProjectPaths(draftPaths),
-                session: nextSession,
-                tradeIndex,
-                value: change.value
-              });
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = updateResponse.diagnostics;
-            }
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+          return {
+            diagnostics,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : incomingWorkflow
+          };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setTradePokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7139,7 +7143,10 @@ export function App({
     }
   };
 
-  const handleRemoveTradePokemonShinyLocks = async (tradeIndexes: number[]) => {
+  const handleRemoveTradePokemonShinyLocks = async (
+    tradeIndexes: number[],
+    resetValue: string
+  ) => {
     if (tradeIndexes.length === 0) {
       return false;
     }
@@ -7151,48 +7158,36 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = tradePokemonWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
+          const incomingWorkflow = tradePokemonWorkflowRef.current;
+          const updateResponse = await bridge.updateTradePokemonFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: tradeIndexes.map((tradeIndex) => ({
+              field: giftShinyLockFieldName,
+              tradeIndex,
+              value: resetValue
+            }))
+          });
+          const diagnostics = [...updateResponse.diagnostics];
+          const didSucceed = !diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
-          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-            const updateResponse = await bridge.updateTradePokemonFields({
-              paths: createProjectPaths(draftPaths),
-              session,
-              updates: tradeIndexes.map((tradeIndex) => ({
-                field: giftShinyLockFieldName,
-                tradeIndex,
-                value: '0'
-              }))
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          } else {
-            for (const tradeIndex of tradeIndexes) {
-              const updateResponse = await bridge.updateTradePokemonField({
-                field: giftShinyLockFieldName,
-                paths: createProjectPaths(draftPaths),
-                session: nextSession,
-                tradeIndex,
-                value: '0'
-              });
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = updateResponse.diagnostics;
-            }
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+          return {
+            diagnostics,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : incomingWorkflow
+          };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setTradePokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -9711,6 +9706,7 @@ export function App({
                 onStartEditSession={handleStartEditSession}
                 onRemoveTradePokemonShinyLocks={handleRemoveTradePokemonShinyLocks}
                 onUpdateTradePokemonFields={handleUpdateTradePokemonFields}
+                pokemonWorkflow={pokemonWorkflow}
                 searchText={tradePokemonSearchText}
                 selectedTradeIndex={selectedTradePokemonIndex}
                 workflow={tradePokemonWorkflow}
@@ -16989,7 +16985,20 @@ function getPendingEditDisplayDetails(
       const trade = context.tradePokemonWorkflow?.trades.find(
         (candidate) => candidate.tradeIndex === tradeIndex
       );
-      const field = findPendingEditableField(context.tradePokemonWorkflow?.editableFields, edit.field);
+      const editableField = findPendingEditableField(
+        context.tradePokemonWorkflow?.editableFields,
+        edit.field
+      );
+      const recordOptions =
+        edit.field === abilityFieldName
+          ? trade?.abilityOptions
+          : edit.field === genderFieldName
+            ? trade?.genderOptions
+            : undefined;
+      const field =
+        editableField && recordOptions?.length
+          ? { ...editableField, options: recordOptions }
+          : editableField;
 
       return createPendingEditDisplayDetails(edit, {
         editorLabel,
@@ -19011,6 +19020,7 @@ function TradePokemonSection({
   onStartEditSession,
   onRemoveTradePokemonShinyLocks,
   onUpdateTradePokemonFields,
+  pokemonWorkflow,
   searchText,
   selectedTradeIndex,
   workflow
@@ -19021,11 +19031,15 @@ function TradePokemonSection({
   onSearchChange: (searchText: string) => void;
   onSelectTrade: (tradeIndex: number | null) => void;
   onStartEditSession: () => void;
-  onRemoveTradePokemonShinyLocks: (tradeIndexes: number[]) => Promise<boolean>;
+  onRemoveTradePokemonShinyLocks: (
+    tradeIndexes: number[],
+    resetValue: string
+  ) => Promise<boolean>;
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonWorkflow: PokemonWorkflow | null;
   searchText: string;
   selectedTradeIndex: number | null;
   workflow: TradePokemonWorkflow | null;
@@ -19041,19 +19055,23 @@ function TradePokemonSection({
   );
   const selectedTrade = useMemo(
     () =>
-      trades.find((trade) => trade.tradeIndex === selectedTradeIndex) ??
+      filteredTrades.find((trade) => trade.tradeIndex === selectedTradeIndex) ??
       filteredTrades[0] ??
       null,
-    [filteredTrades, selectedTradeIndex, trades]
+    [filteredTrades, selectedTradeIndex]
   );
   const canEditTrades = workflow?.summary.availability === 'available';
   const pendingTradeIndexes = useMemo(
     () => getPendingTradePokemonIndexes(editSession),
     [editSession]
   );
+  const shinyReset = useMemo(() => getTradePokemonShinyReset(workflow), [workflow]);
   const lockedTradeIndexes = useMemo(
-    () => trades.filter((trade) => trade.shinyLock !== 0).map((trade) => trade.tradeIndex),
-    [trades]
+    () =>
+      trades
+        .filter((trade) => trade.shinyLock !== shinyReset.value)
+        .map((trade) => trade.tradeIndex),
+    [shinyReset.value, trades]
   );
   const canRemoveTradeShinyLocks =
     canEditTrades &&
@@ -19065,7 +19083,7 @@ function TradePokemonSection({
       ? 'Start editing before removing trade shiny locks.'
       : lockedTradeIndexes.length === 0
       ? 'No trade shiny locks are currently set.'
-      : 'Set every locked trade Pokemon shiny lock to Random.';
+      : `Set every locked trade Pokemon shiny lock to ${shinyReset.label}.`;
 
   return (
     <>
@@ -19171,6 +19189,7 @@ function TradePokemonSection({
               isZaTradeWorkflow={isZaTradeWorkflow}
               onStartEditSession={onStartEditSession}
               onUpdateTradePokemonFields={onUpdateTradePokemonFields}
+              pokemonWorkflow={pokemonWorkflow}
               trade={selectedTrade}
             />
           </div>
@@ -19187,9 +19206,13 @@ function TradePokemonSection({
           label="Trade"
           recordLabel="trade Pokemon"
           recordLabelPlural="trade Pokemon"
+          targetLabel={shinyReset.label}
           onCancel={() => setIsShinyLockConfirmationOpen(false)}
           onConfirm={async () => {
-            const didSave = await onRemoveTradePokemonShinyLocks(lockedTradeIndexes);
+            const didSave = await onRemoveTradePokemonShinyLocks(
+              lockedTradeIndexes,
+              shinyReset.value.toString()
+            );
             if (didSave) {
               setIsShinyLockConfirmationOpen(false);
             }
@@ -19210,6 +19233,7 @@ function SelectedTradePokemonPanel({
   isZaTradeWorkflow,
   onStartEditSession,
   onUpdateTradePokemonFields,
+  pokemonWorkflow,
   trade
 }: {
   canEditTrades: boolean;
@@ -19224,6 +19248,7 @@ function SelectedTradePokemonPanel({
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonWorkflow: PokemonWorkflow | null;
   trade: TradePokemonRecord | null;
 }) {
   const [tradeDraftsByIndex, setTradeDraftsByIndex] = useState<
@@ -19239,31 +19264,147 @@ function SelectedTradePokemonPanel({
         .map(withPokemonInstanceIvPresetOptions),
     [editableFields]
   );
-  const tradeFieldGroups = useMemo(
-    () => groupNumericEditableFields(tradeFields, getPokemonInstanceFieldGroup),
-    [tradeFields]
+  const defaultReceivedTradeContext = useMemo(
+    () =>
+      trade
+        ? {
+            abilityOptions: trade.abilityOptions,
+            gameFamily: editorFamily,
+            genderOptions: trade.genderOptions,
+            species: trade.species,
+            speciesId: trade.speciesId
+          }
+        : undefined,
+    [editorFamily, trade]
+  );
+  const defaultRequestedTradeContext = useMemo(
+    () =>
+      trade
+        ? {
+            gameFamily: editorFamily,
+            species: trade.requiredSpecies,
+            speciesId: trade.requiredSpeciesId
+          }
+        : undefined,
+    [editorFamily, trade]
+  );
+  const defaultContextualTradeFields = useMemo(
+    () =>
+      tradeFields.map((field) => {
+        const options = getContextualFieldOptions(
+          field,
+          field.field === tradeRequiredFormFieldName
+            ? defaultRequestedTradeContext
+            : defaultReceivedTradeContext
+        );
+        return options === field.options ? field : { ...field, options };
+      }),
+    [defaultReceivedTradeContext, defaultRequestedTradeContext, tradeFields]
   );
   const tradeDraftDefaults = useMemo(
     () =>
       trade
-        ? createPokemonInstanceDrafts(tradeFields, (field) =>
+        ? createPokemonInstanceDrafts(defaultContextualTradeFields, (field) =>
             getEditableTradePokemonFieldValue(trade, field)
           )
         : {},
-    [trade, tradeFields]
+    [defaultContextualTradeFields, trade]
   );
   const tradeDrafts = trade
     ? tradeDraftsByIndex[trade.tradeIndex.toString()] ?? tradeDraftDefaults
     : {};
+  const receivedTradeFormOptionContext = useMemo(() => {
+    if (!trade) {
+      return undefined;
+    }
+
+    const context = createDraftSpeciesFormOptionContext(
+      defaultContextualTradeFields.find((field) => field.field === giftSpeciesFieldName),
+      tradeDrafts[giftSpeciesFieldName],
+      trade.species,
+      trade.speciesId,
+      trade.abilityOptions,
+      editorFamily,
+      trade.genderOptions
+    );
+    const draftedForm = Number.parseInt(tradeDrafts[formFieldName] ?? trade.form.toString(), 10);
+    const normalizedDraftedForm = Number.isInteger(draftedForm) ? draftedForm : trade.form;
+    const usesCurrentIdentity =
+      context.speciesId === trade.speciesId && normalizedDraftedForm === trade.form;
+    const referencePokemon =
+      editorFamily === 'swsh'
+        ? pokemonWorkflow?.pokemon.find(
+            (pokemon) =>
+              pokemon.speciesId === context.speciesId && pokemon.form === normalizedDraftedForm
+          )
+        : undefined;
+    const fallbackAbilityOptions =
+      tradeFields.find((field) => field.field === abilityFieldName)?.options ?? [];
+    const fallbackGenderOptions =
+      tradeFields.find((field) => field.field === genderFieldName)?.options ?? [];
+
+    return {
+      ...context,
+      abilityOptions: referencePokemon
+        ? createTrainerPokemonAbilityOptions(referencePokemon)
+        : usesCurrentIdentity
+          ? trade.abilityOptions
+          : fallbackAbilityOptions,
+      genderOptions: referencePokemon
+        ? createGiftPokemonGenderOptions(referencePokemon)
+        : usesCurrentIdentity
+          ? trade.genderOptions
+          : fallbackGenderOptions
+    };
+  }, [
+    defaultContextualTradeFields,
+    editorFamily,
+    pokemonWorkflow,
+    trade,
+    tradeDrafts,
+    tradeFields
+  ]);
+  const requestedTradeFormOptionContext = useMemo(() => {
+    if (!trade) {
+      return undefined;
+    }
+
+    return createDraftSpeciesFormOptionContext(
+      defaultContextualTradeFields.find(
+        (field) => field.field === tradeRequiredSpeciesFieldName
+      ),
+      tradeDrafts[tradeRequiredSpeciesFieldName],
+      trade.requiredSpecies,
+      trade.requiredSpeciesId,
+      undefined,
+      editorFamily
+    );
+  }, [defaultContextualTradeFields, editorFamily, trade, tradeDrafts]);
+  const contextualTradeFields = useMemo(
+    () =>
+      tradeFields.map((field) => {
+        const options = getContextualFieldOptions(
+          field,
+          field.field === tradeRequiredFormFieldName
+            ? requestedTradeFormOptionContext
+            : receivedTradeFormOptionContext
+        );
+        return options === field.options ? field : { ...field, options };
+      }),
+    [receivedTradeFormOptionContext, requestedTradeFormOptionContext, tradeFields]
+  );
+  const tradeFieldGroups = useMemo(
+    () => groupNumericEditableFields(contextualTradeFields, getPokemonInstanceFieldGroup),
+    [contextualTradeFields]
+  );
   const tradeDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
-        getActivePokemonInstanceFields(tradeFields, tradeDrafts),
+        getActivePokemonInstanceFields(contextualTradeFields, tradeDrafts),
         tradeDrafts,
-        trade ? (field) => getEditableTradePokemonFieldValue(trade, field) : null,
-        { clampIvStats: isPokemonInstanceIvCustomSelected(tradeFields, tradeDrafts) }
+        trade ? (field) => getEditableTradePokemonFieldValue(trade, field) : null
       ),
-    [trade, tradeDrafts, tradeFields]
+    [contextualTradeFields, trade, tradeDrafts]
   );
   useRegisterEditorDraftDirty('tradePokemon', countFieldDraftRecords(tradeDraftsByIndex) > 0);
   const canSaveTradeDrafts =
@@ -19396,23 +19537,19 @@ function SelectedTradePokemonPanel({
                         currentValue,
                         field,
                         {
-                          clampIvStats: isPokemonInstanceIvCustomSelected(
-                            tradeFields,
-                            tradeDrafts
-                          ),
                           drafts: tradeDrafts,
-                          fields: tradeFields,
+                          fields: contextualTradeFields,
                           getValue: (fieldName) =>
                             getEditableTradePokemonFieldValue(trade, fieldName)
                         }
                       );
                       const disabledReason =
                         getTradeFieldDisabledReason(field.field) ??
-                        getPokemonInstanceIvStatDisabledReason(
-                          field.field,
-                          tradeFields,
-                          tradeDrafts
-                        );
+                          getPokemonInstanceIvStatDisabledReason(
+                            field.field,
+                            contextualTradeFields,
+                            tradeDrafts
+                          );
 
                       return (
                         <GiftPokemonDraftField
@@ -19429,17 +19566,8 @@ function SelectedTradePokemonPanel({
                           field={field}
                           formOptionContext={
                             field.field === tradeRequiredFormFieldName
-                              ? {
-                                  gameFamily: editorFamily,
-                                  species: trade.requiredSpecies,
-                                  speciesId: trade.requiredSpeciesId
-                                }
-                              : {
-                                  abilityOptions: trade.abilityOptions,
-                                  gameFamily: editorFamily,
-                                  species: trade.species,
-                                  speciesId: trade.speciesId
-                                }
+                              ? requestedTradeFormOptionContext
+                              : receivedTradeFormOptionContext
                           }
                           key={field.field}
                           onChange={(value) => {
@@ -19447,6 +19575,106 @@ function SelectedTradePokemonPanel({
                               ...tradeDrafts,
                               [field.field]: value
                             };
+                            const speciesField = contextualTradeFields.find(
+                              (candidate) => candidate.field === giftSpeciesFieldName
+                            );
+                            const formField = contextualTradeFields.find(
+                              (candidate) => candidate.field === formFieldName
+                            );
+                            const requestedSpeciesField = contextualTradeFields.find(
+                              (candidate) => candidate.field === tradeRequiredSpeciesFieldName
+                            );
+                            const requestedFormField = contextualTradeFields.find(
+                              (candidate) => candidate.field === tradeRequiredFormFieldName
+                            );
+                            const previousSpeciesId =
+                              parseEditableIntegerDraft(
+                                tradeDrafts[giftSpeciesFieldName] ?? trade.speciesId.toString(),
+                                speciesField?.options
+                              ) ?? trade.speciesId;
+                            const previousForm =
+                              parseEditableIntegerDraft(
+                                tradeDrafts[formFieldName] ?? trade.form.toString(),
+                                formField?.options
+                              ) ?? trade.form;
+                            let nextSpeciesId = previousSpeciesId;
+                            let nextForm = previousForm;
+                            let identityChanged = false;
+
+                            if (field.field === giftSpeciesFieldName) {
+                              const parsedSpeciesId = parseEditableIntegerDraft(
+                                value,
+                                field.options
+                              );
+                              if (
+                                parsedSpeciesId !== null &&
+                                parsedSpeciesId !== previousSpeciesId
+                              ) {
+                                nextSpeciesId = parsedSpeciesId;
+                                nextForm = 0;
+                                identityChanged = true;
+                                if (formField) {
+                                  nextDrafts[formFieldName] = '0';
+                                }
+                              }
+                            } else if (field.field === formFieldName) {
+                              const parsedForm = parseEditableIntegerDraft(value, field.options);
+                              if (parsedForm !== null && parsedForm !== previousForm) {
+                                nextForm = parsedForm;
+                                identityChanged = true;
+                              }
+                            } else if (field.field === tradeRequiredSpeciesFieldName) {
+                              const previousRequestedSpeciesId =
+                                parseEditableIntegerDraft(
+                                  tradeDrafts[tradeRequiredSpeciesFieldName] ??
+                                    trade.requiredSpeciesId.toString(),
+                                  requestedSpeciesField?.options
+                                ) ?? trade.requiredSpeciesId;
+                              const parsedRequestedSpeciesId = parseEditableIntegerDraft(
+                                value,
+                                field.options
+                              );
+                              if (
+                                parsedRequestedSpeciesId !== null &&
+                                parsedRequestedSpeciesId !== previousRequestedSpeciesId &&
+                                requestedFormField
+                              ) {
+                                nextDrafts[tradeRequiredFormFieldName] = '0';
+                              }
+                            }
+
+                            if (identityChanged) {
+                              if (editorFamily === 'swsh') {
+                                const referencePokemon = pokemonWorkflow?.pokemon.find(
+                                  (pokemon) =>
+                                    pokemon.speciesId === nextSpeciesId &&
+                                    pokemon.form === nextForm
+                                );
+                                if (referencePokemon) {
+                                  preserveValidGiftDependencyOrReset(
+                                    nextDrafts,
+                                    contextualTradeFields,
+                                    abilityFieldName,
+                                    trade.ability,
+                                    createTrainerPokemonAbilityOptions(referencePokemon)
+                                  );
+                                  preserveValidGiftDependencyOrReset(
+                                    nextDrafts,
+                                    contextualTradeFields,
+                                    genderFieldName,
+                                    trade.gender,
+                                    createGiftPokemonGenderOptions(referencePokemon)
+                                  );
+                                }
+                              } else {
+                                const abilityField = contextualTradeFields.find(
+                                  (candidate) => candidate.field === abilityFieldName
+                                );
+                                if (abilityField?.options.some((option) => option.value === 0)) {
+                                  nextDrafts[abilityFieldName] = '0';
+                                }
+                              }
+                            }
                             setTradeDraftsByIndex((currentDrafts) =>
                               setFieldDraftRecord(
                                 currentDrafts,
@@ -34748,6 +34976,42 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
   );
 }
 
+function getTradePokemonShinyReset(workflow: TradePokemonWorkflow | null) {
+  const editorFamily = workflow?.editorFamily ?? 'swsh';
+  const shinyField = workflow?.editableFields.find(
+    (field) => field.field === giftShinyLockFieldName
+  );
+  const normalizedOptions = (shinyField?.options ?? []).map((option) => ({
+    ...option,
+    normalizedLabel: option.label.trim().toLocaleLowerCase()
+  }));
+  const semanticOption =
+    editorFamily === 'za'
+      ? normalizedOptions.find(
+          (option) =>
+            option.normalizedLabel.includes('default') &&
+            option.normalizedLabel.includes('shiny') &&
+            option.normalizedLabel.includes('roll')
+        )
+      : normalizedOptions.find((option) =>
+          editorFamily === 'swsh'
+            ? option.normalizedLabel.includes('random')
+            : option.normalizedLabel.includes('default')
+        );
+  const fallbackValue = editorFamily === 'za' ? 0x3fffffff : 0;
+
+  return {
+    label:
+      semanticOption?.label ??
+      (editorFamily === 'za'
+        ? 'Default shiny roll'
+        : editorFamily === 'swsh'
+          ? 'Random'
+          : 'Default'),
+    value: semanticOption?.value ?? fallbackValue
+  };
+}
+
 function formatTradePokemonRequestLabel(
   trade: TradePokemonRecord,
   editorFamily: EditorUiFamily
@@ -36893,21 +37157,21 @@ function getEditableTradePokemonFieldValue(trade: TradePokemonRecord, field: str
     case tradeMemoryIntensityFieldName:
       return trade.memoryIntensity;
     case tradeRelearnMoveFieldNames[0]:
-      return trade.relearnMoves[0]?.moveId ?? null;
+      return trade.relearnMoves.find((move) => move.slot === 0)?.moveId ?? null;
     case tradeRelearnMoveFieldNames[1]:
-      return trade.relearnMoves[1]?.moveId ?? null;
+      return trade.relearnMoves.find((move) => move.slot === 1)?.moveId ?? null;
     case tradeRelearnMoveFieldNames[2]:
-      return trade.relearnMoves[2]?.moveId ?? null;
+      return trade.relearnMoves.find((move) => move.slot === 2)?.moveId ?? null;
     case tradeRelearnMoveFieldNames[3]:
-      return trade.relearnMoves[3]?.moveId ?? null;
+      return trade.relearnMoves.find((move) => move.slot === 3)?.moveId ?? null;
     case giftMoveFieldNames[0]:
-      return trade.moves[0]?.moveId ?? null;
+      return trade.moves.find((move) => move.slot === 0)?.moveId ?? null;
     case giftMoveFieldNames[1]:
-      return trade.moves[1]?.moveId ?? null;
+      return trade.moves.find((move) => move.slot === 1)?.moveId ?? null;
     case giftMoveFieldNames[2]:
-      return trade.moves[2]?.moveId ?? null;
+      return trade.moves.find((move) => move.slot === 2)?.moveId ?? null;
     case giftMoveFieldNames[3]:
-      return trade.moves[3]?.moveId ?? null;
+      return trade.moves.find((move) => move.slot === 3)?.moveId ?? null;
     case giftTeraTypeFieldName:
       return trade.teraType;
     case ivFieldNames[0]:
@@ -39954,7 +40218,8 @@ function formatTradePokemonIvs(trade: TradePokemonRecord) {
 
 function formatTradePokemonRelearnMoves(trade: TradePokemonRecord) {
   const sourceMoves = trade.moves.length > 0 ? trade.moves : trade.relearnMoves;
-  const moves = sourceMoves
+  const moves = [...sourceMoves]
+    .sort((left, right) => left.slot - right.slot)
     .filter((move) => move.moveId > 0)
     .map((move) => move.move ?? `Move ${move.moveId}`);
 

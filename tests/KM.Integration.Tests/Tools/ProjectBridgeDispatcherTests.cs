@@ -902,6 +902,37 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateTradePokemonFieldsStagesOneAtomicSwordShieldSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTradePokemonBridgeFixtures.WriteBaseTradePokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateTradePokemonFields,
+            new UpdateTradePokemonFieldsRequest(
+                temp.Paths,
+                Session: null,
+                [
+                    new TradePokemonFieldUpdateDto(0, "level", "51"),
+                    new TradePokemonFieldUpdateDto(0, "dynamaxLevel", "5"),
+                ]),
+            requestId: "request-trade-pokemon-batch");
+
+        var response = DeserializeResponse<UpdateTradePokemonFieldsResponse>(
+            new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-trade-pokemon-batch", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(2, response.Payload.Session.PendingEdits.Count);
+        Assert.Equal(51, response.Payload.Workflow.Trades[0].Level);
+        Assert.Equal(5, response.Payload.Workflow.Trades[0].DynamaxLevel);
+        Assert.DoesNotContain(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void DispatchApplyTradePokemonChangePlanWritesTradeTable()
     {
         using var temp = TemporaryBridgeProject.Create();

@@ -1338,7 +1338,7 @@ export const tradePokemonIvsSchema = z.strictObject({
 export const tradePokemonMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().min(0).max(3)
 });
 
 export const tradePokemonEditableFieldOptionSchema = z.strictObject({
@@ -1352,7 +1352,7 @@ export const tradePokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(tradePokemonEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.enum(['boolean', 'integer'])
 });
 
 export const tradePokemonRecordSchema = z.strictObject({
@@ -1370,6 +1370,7 @@ export const tradePokemonRecordSchema = z.strictObject({
   form: z.number().int().nonnegative(),
   gender: z.number().int(),
   genderLabel: z.string(),
+  genderOptions: z.array(tradePokemonEditableFieldOptionSchema).default([]),
   hash0: z.string(),
   hash1: z.string(),
   hash2: z.string(),

@@ -1069,19 +1069,22 @@ public sealed class ProjectBridgeDispatcher
         }
         else
         {
-            if (!IsScarletViolet(paths))
+            if (IsScarletViolet(paths))
             {
-                return SerializeFailure(
-                    "bridge.gameMismatch",
-                    "Bridge command 'tradePokemon.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
-                    request.RequestId);
+                var updates = request.Payload.Updates
+                    .Select(update => new SvTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
+                    .ToArray();
+                response = SvBridgeMapper.ToTradePokemonFieldsDto(
+                    svWorkflowService.UpdateTradePokemonFields(paths, session, updates));
             }
-
-            var updates = request.Payload.Updates
-                .Select(update => new SvTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
-                .ToArray();
-            response = SvBridgeMapper.ToTradePokemonFieldsDto(
-                svWorkflowService.UpdateTradePokemonFields(paths, session, updates));
+            else
+            {
+                var updates = request.Payload.Updates
+                    .Select(update => new SwShTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
+                    .ToArray();
+                response = SwShBridgeMapper.ToTradePokemonFieldsDto(
+                    tradePokemonEditSessionService.UpdateFields(paths, session, updates));
+            }
         }
 
         return SerializeSuccess(response, request.RequestId);

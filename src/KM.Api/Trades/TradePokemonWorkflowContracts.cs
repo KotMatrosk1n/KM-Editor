@@ -99,6 +99,8 @@ public sealed record TradePokemonRecordDto(
     public int? ScaleValue { get; init; }
     public IReadOnlyList<TradePokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<TradePokemonEditableFieldOptionDto>();
+    public IReadOnlyList<TradePokemonEditableFieldOptionDto> GenderOptions { get; init; } =
+        Array.Empty<TradePokemonEditableFieldOptionDto>();
 }
 
 public sealed record TradePokemonMoveRecordDto(

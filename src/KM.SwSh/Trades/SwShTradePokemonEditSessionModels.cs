@@ -5,6 +5,11 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Trades;
 
+public sealed record SwShTradePokemonFieldUpdate(
+    int TradeIndex,
+    string Field,
+    string Value);
+
 public sealed record SwShTradePokemonEditResult(
     SwShTradePokemonWorkflow Workflow,
     EditSession Session,
