@@ -1154,7 +1154,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'exefsPatches'),
-        exeFsPatchSearchText: '',
         exeFsPatchWorkflow,
         selectedExeFsCheckId,
         selectedExeFsPatchId

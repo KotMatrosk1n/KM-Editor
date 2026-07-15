@@ -107,11 +107,33 @@ public sealed class SwShExeFsPatchWorkflowService
         var provenance = CreateProvenance(graphEntry);
         try
         {
-            var analysis = parsedDataCache.GetOrAdd(
+            var facts = parsedDataCache.GetOrAdd(
                 sourcePath,
-                path => CreateCompatibilityAnalysis(path, provenance)).Value;
+                CreateCompatibilityFacts).Value;
+            var baseSource = CreateBaseExecutableSourceValidation(
+                project.Paths,
+                graphEntry,
+                facts);
+            var checks = CreateCheckRecords(
+                facts,
+                project.Paths.SelectedGame,
+                baseSource,
+                provenance);
+            var segments = facts.Segments
+                .Select(segment => segment.ToRecord(provenance))
+                .ToArray();
+            var patches = new[] { CreateMainPatchRecord(facts, checks, provenance) };
 
-            if (analysis.Checks.Any(check => check.Status == "Fail"))
+            if (!baseSource.IsReady && graphEntry.LayeredFile is not null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    baseSource.Message,
+                    file: graphEntry.RelativePath,
+                    expected: "Matching safe vanilla base exefs/main"));
+            }
+
+            if (checks.Any(check => check.Status == "Fail"))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
@@ -122,10 +144,10 @@ public sealed class SwShExeFsPatchWorkflowService
 
             return CreateWorkflow(
                 summary,
-                analysis.Patches,
-                analysis.Segments,
-                analysis.Checks,
-                sourceFileCount: 1,
+                patches,
+                segments,
+                checks,
+                sourceFileCount: graphEntry.BaseFile is not null && graphEntry.LayeredFile is not null ? 2 : 1,
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -144,6 +166,14 @@ public sealed class SwShExeFsPatchWorkflowService
                 file: graphEntry.RelativePath,
                 expected: "Readable Sword/Shield exefs/main NSO"));
         }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"ExeFS main could not be read: {exception.Message}",
+                file: graphEntry.RelativePath,
+                expected: "Readable Sword/Shield exefs/main NSO"));
+        }
 
         return CreateWorkflow(
             summary,
@@ -154,16 +184,265 @@ public sealed class SwShExeFsPatchWorkflowService
             diagnostics);
     }
 
-    private static ExeFsCompatibilityAnalysis CreateCompatibilityAnalysis(
-        string sourcePath,
-        SwShExeFsPatchProvenance provenance)
+    private static ExeFsCompatibilityFacts CreateCompatibilityFacts(string sourcePath)
     {
         var bytes = File.ReadAllBytes(sourcePath);
         var nso = NsoFile.Parse(bytes);
-        var segments = CreateSegments(nso, provenance);
-        var checks = CreateChecks(nso, provenance);
-        var patches = new[] { CreateMainPatchRecord(bytes, nso, checks, provenance) };
-        return new ExeFsCompatibilityAnalysis(patches, segments, checks);
+        var detectedGame = SwShExeFsRoyalCandyMainPatcher.DetectSupportedGame(nso.BuildId);
+        return new ExeFsCompatibilityFacts(
+            bytes.Length,
+            nso.Version,
+            nso.Flags,
+            nso.BuildId.ToArray(),
+            nso.RawHeader.ToArray(),
+            nso.Segments
+                .Select(segment => new ExeFsSegmentLayoutFact(
+                    segment.Name,
+                    segment.Header.MemoryOffset,
+                    segment.Header.DecompressedSize))
+                .ToArray(),
+            detectedGame,
+            CreateSegmentFacts(nso),
+            CreateAnchorCheckFacts(nso),
+            CreatePatchPreflight(bytes, detectedGame));
+    }
+
+    private BaseExecutableSourceValidation CreateBaseExecutableSourceValidation(
+        ProjectPaths paths,
+        ProjectFileGraphEntry graphEntry,
+        ExeFsCompatibilityFacts sourceFacts)
+    {
+        if (graphEntry.LayeredFile is null)
+        {
+            return new BaseExecutableSourceValidation(
+                IsReady: graphEntry.BaseFile is not null,
+                Actual: FormatFileState(graphEntry.State),
+                graphEntry.BaseFile is not null
+                    ? "The effective executable source is the base exefs/main."
+                    : "A base exefs/main is not available.");
+        }
+
+        if (graphEntry.BaseFile is null)
+        {
+            return new BaseExecutableSourceValidation(
+                IsReady: false,
+                Actual: FormatFileState(graphEntry.State),
+                "Layered exefs/main can be inspected, but staging requires a matching safe vanilla base exefs/main.");
+        }
+
+        var basePath = ResolveBaseSourcePath(paths, graphEntry);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            return new BaseExecutableSourceValidation(
+                IsReady: false,
+                Actual: FormatFileState(graphEntry.State),
+                "Layered exefs/main does not have a readable matching base exefs/main.");
+        }
+
+        try
+        {
+            var baseFacts = parsedDataCache.GetOrAdd(
+                basePath,
+                CreateCompatibilityFacts).Value;
+            if (!ExecutableIdentityAndLayoutMatch(sourceFacts, baseFacts, out var mismatch))
+            {
+                return new BaseExecutableSourceValidation(
+                    IsReady: false,
+                    Actual: FormatFileState(graphEntry.State),
+                    $"Layered exefs/main does not match the base executable identity and layout: {mismatch}");
+            }
+
+            if (!baseFacts.Preflight.IsReady)
+            {
+                return new BaseExecutableSourceValidation(
+                    IsReady: false,
+                    Actual: FormatFileState(graphEntry.State),
+                    $"Base exefs/main is not a safe vanilla executable: {baseFacts.Preflight.Message}");
+            }
+
+            return new BaseExecutableSourceValidation(
+                IsReady: true,
+                Actual: FormatFileState(graphEntry.State),
+                "The layered executable matches a supported, safe vanilla base identity and layout.");
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            return new BaseExecutableSourceValidation(
+                IsReady: false,
+                Actual: FormatFileState(graphEntry.State),
+                $"Base exefs/main could not be validated as a matching safe vanilla executable: {exception.Message}");
+        }
+    }
+
+    private static bool ExecutableIdentityAndLayoutMatch(
+        ExeFsCompatibilityFacts source,
+        ExeFsCompatibilityFacts baseFacts,
+        out string mismatch)
+    {
+        if (source.Version != baseFacts.Version)
+        {
+            mismatch = "NSO versions differ.";
+            return false;
+        }
+
+        if (source.Flags != baseFacts.Flags)
+        {
+            mismatch = "NSO flags differ.";
+            return false;
+        }
+
+        if (!source.BuildId.SequenceEqual(baseFacts.BuildId))
+        {
+            mismatch = "build IDs differ.";
+            return false;
+        }
+
+        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(source.RawHeader, baseFacts.RawHeader))
+        {
+            mismatch = "stable NSO header metadata differs.";
+            return false;
+        }
+
+        if (source.SegmentLayouts.Count != baseFacts.SegmentLayouts.Count
+            || !source.SegmentLayouts
+                .Zip(baseFacts.SegmentLayouts)
+                .All(pair => pair.First.Name == pair.Second.Name
+                    && pair.First.MemoryOffset == pair.Second.MemoryOffset
+                    && pair.First.DecompressedSize == pair.Second.DecompressedSize))
+        {
+            mismatch = "segment memory offsets or decompressed sizes differ.";
+            return false;
+        }
+
+        mismatch = string.Empty;
+        return true;
+    }
+
+    private static ExeFsPatchPreflight CreatePatchPreflight(
+        byte[] sourceBytes,
+        ProjectGame? detectedGame)
+    {
+        if (detectedGame is null)
+        {
+            return new ExeFsPatchPreflight(
+                IsReady: false,
+                "The executable build ID is not one of the supported Sword/Shield 1.3.2 builds.");
+        }
+
+        try
+        {
+            var installation = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+                sourceBytes,
+                detectedGame.Value);
+            if (installation.Kind != SwShRoyalCandyExeFsSignatureKind.NotInstalled)
+            {
+                return new ExeFsPatchPreflight(
+                    IsReady: false,
+                    installation.Message);
+            }
+
+            var output = SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
+                sourceBytes,
+                detectedGame.Value);
+            SwShExeFsRoyalCandyMainPatcher.VerifyBasePatchOutput(
+                sourceBytes,
+                output,
+                detectedGame.Value);
+            return new ExeFsPatchPreflight(
+                IsReady: true,
+                "All required instructions, game-specific helpers, code caves, and output preservation checks passed.");
+        }
+        catch (InvalidDataException exception)
+        {
+            return new ExeFsPatchPreflight(IsReady: false, exception.Message);
+        }
+    }
+
+    private static IReadOnlyList<SwShExeFsPatchCheckRecord> CreateCheckRecords(
+        ExeFsCompatibilityFacts facts,
+        ProjectGame? selectedGame,
+        BaseExecutableSourceValidation baseSource,
+        SwShExeFsPatchProvenance provenance)
+    {
+        var checks = new List<SwShExeFsPatchCheckRecord>();
+        var buildId = ToHex(facts.BuildId);
+        checks.Add(CreateCheckRecord(
+            "supported-build",
+            facts.DetectedGame is null ? "Fail" : "Pass",
+            "main",
+            string.Empty,
+            "Supported game build",
+            "Sword or Shield 1.3.2 build ID",
+            facts.DetectedGame is null ? buildId : FormatGame(facts.DetectedGame),
+            facts.DetectedGame is null
+                ? "This build is not supported for executable patching."
+                : "Build ID maps to one verified game layout.",
+            provenance));
+
+        var selectedGameMatches = facts.DetectedGame is not null
+            && (selectedGame is null || selectedGame == facts.DetectedGame);
+        checks.Add(CreateCheckRecord(
+            "selected-game",
+            selectedGameMatches ? "Pass" : "Fail",
+            "main",
+            string.Empty,
+            "Selected game route",
+            selectedGame is null ? "Game inferred from a supported build ID" : FormatGame(selectedGame),
+            FormatGame(facts.DetectedGame),
+            selectedGameMatches
+                ? selectedGame is null
+                    ? "The game route was inferred from the recognized build ID."
+                    : "The selected game matches the executable build ID."
+                : "The selected game does not match the executable build ID.",
+            provenance));
+
+        checks.Add(CreateCheckRecord(
+            "base-source",
+            baseSource.IsReady ? "Pass" : "Fail",
+            "main",
+            string.Empty,
+            "Base executable source",
+            "Matching safe vanilla base exefs/main for any layered override",
+            baseSource.Actual,
+            baseSource.Message,
+            provenance));
+
+        checks.AddRange(facts.AnchorChecks.Select(check => check.ToRecord(provenance)));
+        checks.Add(CreateCheckRecord(
+            "exact-patch-preflight",
+            facts.Preflight.IsReady ? "Pass" : "Fail",
+            ".text",
+            string.Empty,
+            "Exact Royal Candy patch preflight",
+            "All owned anchors, helper routes, code caves, and preserved output semantics",
+            facts.Preflight.IsReady ? "Ready" : "Blocked",
+            facts.Preflight.Message,
+            provenance));
+        return checks;
+    }
+
+    private static SwShExeFsPatchCheckRecord CreateCheckRecord(
+        string checkId,
+        string status,
+        string area,
+        string offset,
+        string name,
+        string expected,
+        string actual,
+        string notes,
+        SwShExeFsPatchProvenance provenance)
+    {
+        return new SwShExeFsPatchCheckRecord(
+            string.Create(CultureInfo.InvariantCulture, $"{MainPatchId}:{checkId}"),
+            MainPatchId,
+            status,
+            area,
+            offset,
+            name,
+            expected,
+            actual,
+            notes,
+            provenance);
     }
 
     private static SwShExeFsPatchWorkflow CreateWorkflow(
@@ -190,8 +469,7 @@ public sealed class SwShExeFsPatchWorkflowService
     }
 
     private static SwShExeFsPatchRecord CreateMainPatchRecord(
-        byte[] bytes,
-        NsoFile nso,
+        ExeFsCompatibilityFacts facts,
         IReadOnlyList<SwShExeFsPatchCheckRecord> checks,
         SwShExeFsPatchProvenance provenance)
     {
@@ -203,30 +481,31 @@ public sealed class SwShExeFsPatchWorkflowService
 
         return new SwShExeFsPatchRecord(
             MainPatchId,
-            "ExeFS main compatibility",
+            "Royal Candy executable patch",
             ExeFsMainPath,
-            "NSO signature scan",
+            "Executable patch",
             status,
-            "Validates Sword/Shield ExeFS main structure, segment hashes, code-cave availability, and known patch anchors.",
+            "Installs only the Royal Candy executable portion after exact build and anchor verification. The Royal Candy editor owns the complete data, script, and shop install lifecycle.",
             [
-                $"Build ID: {ToHex(nso.BuildId)}",
-                string.Create(CultureInfo.InvariantCulture, $"File size: 0x{bytes.Length:X} bytes"),
-                $"Flags: {nso.Flags}",
+                $"Build ID: {ToHex(facts.BuildId)}",
+                $"Detected game: {FormatGame(facts.DetectedGame)}",
+                string.Create(CultureInfo.InvariantCulture, $"File size: 0x{facts.FileSize:X} bytes"),
+                $"Flags: {facts.Flags}",
                 string.Create(CultureInfo.InvariantCulture, $"Checks: {checks.Count} total, {checks.Count(check => check.Status == "Fail")} failing, {checks.Count(check => check.Status == "Warning")} warnings")
             ],
             provenance);
     }
 
-    private static IReadOnlyList<SwShExeFsSegmentRecord> CreateSegments(
-        NsoFile nso,
-        SwShExeFsPatchProvenance provenance)
+    private static IReadOnlyList<ExeFsSegmentFact> CreateSegmentFacts(NsoFile nso)
     {
         return nso.Segments
             .Select(segment =>
             {
                 var actualHash = NsoFile.ComputeHash(segment.DecompressedData);
-                var hashStatus = actualHash.SequenceEqual(segment.Hash) ? "Pass" : "Warning";
-                return new SwShExeFsSegmentRecord(
+                var hashMatches = actualHash.SequenceEqual(segment.Hash);
+                var hashRequired = IsSegmentHashRequired(nso.Flags, segment.Name);
+                var hashStatus = hashMatches ? "Pass" : hashRequired ? "Fail" : "Warning";
+                return new ExeFsSegmentFact(
                     segment.Name.TrimStart('.'),
                     segment.Name,
                     FormatFileOffset(segment.Header.FileOffset),
@@ -234,28 +513,45 @@ public sealed class SwShExeFsPatchWorkflowService
                     FormatHexSize(segment.Header.DecompressedSize),
                     FormatHexSize(segment.CompressedSize),
                     ToHex(actualHash),
-                    hashStatus,
-                    provenance);
+                    hashStatus);
             })
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShExeFsPatchCheckRecord> CreateChecks(
-        NsoFile nso,
-        SwShExeFsPatchProvenance provenance)
+    private static IReadOnlyList<ExeFsPatchCheckFact> CreateAnchorCheckFacts(NsoFile nso)
     {
-        var checks = new List<SwShExeFsPatchCheckRecord>();
+        var checks = new List<ExeFsPatchCheckFact>();
         var text = nso.Text.DecompressedData;
         var largestZeroRun = FindLargestZeroRun(text);
 
-        AddCheck(checks, provenance, "nso-magic", "Pass", "main", string.Empty, "NSO magic", "NSO0", "NSO0", "Valid NSO header.");
-        AddHashCheck(checks, provenance, "text-hash", ".text", "Segment hash", nso.Text.Hash, NsoFile.ComputeHash(nso.Text.DecompressedData));
-        AddHashCheck(checks, provenance, "ro-hash", ".ro", "Segment hash", nso.Ro.Hash, NsoFile.ComputeHash(nso.Ro.DecompressedData));
-        AddHashCheck(checks, provenance, "data-hash", ".data", "Segment hash", nso.Data.Hash, NsoFile.ComputeHash(nso.Data.DecompressedData));
-        AddZeroRunCheck(checks, provenance, text, "patch-code-cave", "Patch code cave", 0x0C, RareCandyUiHookCodeCaveSearchStart);
+        AddCheck(checks, "nso-magic", "Pass", "main", string.Empty, "NSO magic", "NSO0", "NSO0", "Valid NSO header.");
+        AddHashCheck(
+            checks,
+            "text-hash",
+            ".text",
+            "Segment hash",
+            nso.Text.Hash,
+            NsoFile.ComputeHash(nso.Text.DecompressedData),
+            nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        AddHashCheck(
+            checks,
+            "ro-hash",
+            ".ro",
+            "Segment hash",
+            nso.Ro.Hash,
+            NsoFile.ComputeHash(nso.Ro.DecompressedData),
+            nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        AddHashCheck(
+            checks,
+            "data-hash",
+            ".data",
+            "Segment hash",
+            nso.Data.Hash,
+            NsoFile.ComputeHash(nso.Data.DecompressedData),
+            nso.Flags.HasFlag(NsoFlags.CheckHashData));
+        AddZeroRunCheck(checks, text, "patch-code-cave", "Patch code cave", 0x0C, RareCandyUiHookCodeCaveSearchStart);
         AddCheck(
             checks,
-            provenance,
             "largest-zero-run",
             largestZeroRun.Length >= 0x0C ? "Info" : "Warning",
             ".text",
@@ -267,7 +563,7 @@ public sealed class SwShExeFsPatchWorkflowService
                 ? string.Create(CultureInfo.InvariantCulture, $"Largest continuous zero-filled region starts at text+0x{largestZeroRun.Offset:X}.")
                 : "No zero-filled region found.");
 
-        AddInstructionChecks(checks, provenance, text, "Rare Candy UI route",
+        AddInstructionChecks(checks, text, "Rare Candy UI route",
         [
             new("ui-check-a", "UI check A", 0x00747988, EncodeCmpImmediate(28, RareCandyItemId), "CMP w28, #50"),
             new("ui-check-b", "UI check B", 0x00747D44, EncodeCmpImmediate(9, RareCandyItemId), "CMP w9, #50"),
@@ -281,7 +577,7 @@ public sealed class SwShExeFsPatchWorkflowService
             new("ui-check-j", "UI check J", 0x007BC1F8, EncodeCmpImmediate(8, RareCandyItemId), "CMP w8, #50"),
         ]);
 
-        AddInstructionChecks(checks, provenance, text, "Rare Candy equal branch",
+        AddInstructionChecks(checks, text, "Rare Candy equal branch",
         [
             new("equal-branch-a", "Equal branch A", 0x00747DE0, EncodeCmpImmediate(9, RareCandyItemId), "CMP w9, #50"),
             new("equal-branch-b", "Equal branch B", 0x0074BE44, EncodeCmpImmediate(9, RareCandyItemId), "CMP w9, #50"),
@@ -290,7 +586,7 @@ public sealed class SwShExeFsPatchWorkflowService
             new("equal-branch-e", "Equal branch E", 0x007BBFD4, EncodeCmpImmediate(23, RareCandyItemId), "CMP w23, #50"),
         ]);
 
-        AddInstructionChecks(checks, provenance, text, "Royal Candy support",
+        AddInstructionChecks(checks, text, "Royal Candy support",
         [
             new("exp-candy-upper-bound-a", "Exp Candy upper bound A", 0x007BC1BC, EncodeCmpImmediate(9, 4), "CMP w9, #4"),
             new("exp-candy-upper-bound-b", "Exp Candy upper bound B", 0x007BC1C4, EncodeCmpImmediate(9, 4), "CMP w9, #4"),
@@ -307,7 +603,6 @@ public sealed class SwShExeFsPatchWorkflowService
             + CountAlignedInstruction(text, EncodeCmpImmediate(28, RoyalCandyItemId));
         AddCheck(
             checks,
-            provenance,
             "royal-candy-immediate-scan",
             candidateImmediateHits == 0 ? "Info" : "Warning",
             ".text",
@@ -323,21 +618,19 @@ public sealed class SwShExeFsPatchWorkflowService
     }
 
     private static void AddInstructionChecks(
-        ICollection<SwShExeFsPatchCheckRecord> checks,
-        SwShExeFsPatchProvenance provenance,
+        ICollection<ExeFsPatchCheckFact> checks,
         byte[] text,
         string area,
         IEnumerable<InstructionCheck> instructionChecks)
     {
         foreach (var check in instructionChecks)
         {
-            AddInstructionCheck(checks, provenance, text, area, check);
+            AddInstructionCheck(checks, text, area, check);
         }
     }
 
     private static void AddInstructionCheck(
-        ICollection<SwShExeFsPatchCheckRecord> checks,
-        SwShExeFsPatchProvenance provenance,
+        ICollection<ExeFsPatchCheckFact> checks,
         byte[] text,
         string area,
         InstructionCheck check)
@@ -346,7 +639,6 @@ public sealed class SwShExeFsPatchWorkflowService
         {
             AddCheck(
                 checks,
-                provenance,
                 check.CheckId,
                 "Fail",
                 area,
@@ -361,7 +653,6 @@ public sealed class SwShExeFsPatchWorkflowService
         var actual = BinaryPrimitives.ReadUInt32LittleEndian(text.AsSpan(check.Offset, 4));
         AddCheck(
             checks,
-            provenance,
             check.CheckId,
             actual == check.Expected ? "Pass" : "Fail",
             area,
@@ -375,31 +666,46 @@ public sealed class SwShExeFsPatchWorkflowService
     }
 
     private static void AddHashCheck(
-        ICollection<SwShExeFsPatchCheckRecord> checks,
-        SwShExeFsPatchProvenance provenance,
+        ICollection<ExeFsPatchCheckFact> checks,
         string checkId,
         string area,
         string name,
         byte[] expected,
-        byte[] actual)
+        byte[] actual,
+        bool required)
     {
         var matches = expected.SequenceEqual(actual);
         AddCheck(
             checks,
-            provenance,
             checkId,
-            matches ? "Pass" : "Warning",
+            matches ? "Pass" : required ? "Fail" : "Warning",
             area,
             string.Empty,
             name,
             ToHex(expected),
             ToHex(actual),
-            matches ? "Segment hash matches the NSO header." : "Segment hash differs from the NSO header.");
+            matches
+                ? required
+                    ? "Segment hash matches the NSO header and the corresponding NSO hash-check flag is enabled."
+                    : "Segment hash matches the NSO header."
+                : required
+                    ? "Segment hash differs from the NSO header while the corresponding NSO hash-check flag is enabled."
+                    : "Segment hash differs from the NSO header, but the corresponding NSO hash-check flag is disabled.");
+    }
+
+    private static bool IsSegmentHashRequired(NsoFlags flags, string segmentName)
+    {
+        return segmentName switch
+        {
+            ".text" => flags.HasFlag(NsoFlags.CheckHashText),
+            ".ro" => flags.HasFlag(NsoFlags.CheckHashRo),
+            ".data" => flags.HasFlag(NsoFlags.CheckHashData),
+            _ => false,
+        };
     }
 
     private static void AddZeroRunCheck(
-        ICollection<SwShExeFsPatchCheckRecord> checks,
-        SwShExeFsPatchProvenance provenance,
+        ICollection<ExeFsPatchCheckFact> checks,
         byte[] text,
         string checkId,
         string name,
@@ -409,7 +715,6 @@ public sealed class SwShExeFsPatchWorkflowService
         var offset = FindZeroRun(text, requiredBytes, startOffset);
         AddCheck(
             checks,
-            provenance,
             checkId,
             offset >= 0 ? "Pass" : "Fail",
             ".text",
@@ -421,8 +726,7 @@ public sealed class SwShExeFsPatchWorkflowService
     }
 
     private static void AddCheck(
-        ICollection<SwShExeFsPatchCheckRecord> checks,
-        SwShExeFsPatchProvenance provenance,
+        ICollection<ExeFsPatchCheckFact> checks,
         string checkId,
         string status,
         string area,
@@ -432,17 +736,15 @@ public sealed class SwShExeFsPatchWorkflowService
         string actual,
         string notes)
     {
-        checks.Add(new SwShExeFsPatchCheckRecord(
+        checks.Add(new ExeFsPatchCheckFact(
             string.Create(CultureInfo.InvariantCulture, $"{MainPatchId}:{checkId}"),
-            MainPatchId,
             status,
             area,
             offset,
             name,
             expected,
             actual,
-            notes,
-            provenance));
+            notes));
     }
 
     private static int CountAlignedInstruction(byte[] text, uint instruction)
@@ -534,6 +836,19 @@ public sealed class SwShExeFsPatchWorkflowService
         return null;
     }
 
+    private static string? ResolveBaseSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
+    {
+        if (entry.BaseFile is null
+            || !entry.BaseFile.RelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return CombineGraphPath(
+            paths.BaseExeFsPath,
+            entry.BaseFile.RelativePath["exefs/".Length..]);
+    }
+
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath) || Path.IsPathRooted(targetRelativePath))
@@ -605,6 +920,28 @@ public sealed class SwShExeFsPatchWorkflowService
         return Convert.ToHexString(data);
     }
 
+    private static string FormatGame(ProjectGame? game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword => "Sword",
+            ProjectGame.Shield => "Shield",
+            null => "Unsupported",
+            _ => game.Value.ToString(),
+        };
+    }
+
+    private static string FormatFileState(ProjectFileGraphEntryState state)
+    {
+        return state switch
+        {
+            ProjectFileGraphEntryState.BaseOnly => "Base only",
+            ProjectFileGraphEntryState.LayeredOverride => "Layered override",
+            ProjectFileGraphEntryState.LayeredOnly => "Layered only",
+            _ => state.ToString(),
+        };
+    }
+
     private static SwShWorkflowSummary CreateSummary(
         SwShWorkflowAvailability availability,
         params ValidationDiagnostic[] diagnostics)
@@ -612,7 +949,7 @@ public sealed class SwShExeFsPatchWorkflowService
         return new SwShWorkflowSummary(
             SwShWorkflowIds.ExeFsPatches,
             "ExeFS Patch Manager",
-            "ExeFS main validation, patch anchors, segment hashes, and source provenance.",
+            "Royal Candy executable patch readiness, exact build checks, segment hashes, and source provenance.",
             availability,
             diagnostics);
     }
@@ -640,8 +977,78 @@ public sealed class SwShExeFsPatchWorkflowService
 
     private sealed record ZeroRun(int Offset, int Length);
 
-    private sealed record ExeFsCompatibilityAnalysis(
-        IReadOnlyList<SwShExeFsPatchRecord> Patches,
-        IReadOnlyList<SwShExeFsSegmentRecord> Segments,
-        IReadOnlyList<SwShExeFsPatchCheckRecord> Checks);
+    private sealed record ExeFsCompatibilityFacts(
+        int FileSize,
+        uint Version,
+        NsoFlags Flags,
+        byte[] BuildId,
+        byte[] RawHeader,
+        IReadOnlyList<ExeFsSegmentLayoutFact> SegmentLayouts,
+        ProjectGame? DetectedGame,
+        IReadOnlyList<ExeFsSegmentFact> Segments,
+        IReadOnlyList<ExeFsPatchCheckFact> AnchorChecks,
+        ExeFsPatchPreflight Preflight);
+
+    private sealed record ExeFsSegmentLayoutFact(
+        string Name,
+        int MemoryOffset,
+        int DecompressedSize);
+
+    private sealed record ExeFsSegmentFact(
+        string SegmentId,
+        string Name,
+        string FileOffset,
+        string MemoryOffset,
+        string DecompressedSize,
+        string CompressedSize,
+        string Sha256,
+        string HashStatus)
+    {
+        public SwShExeFsSegmentRecord ToRecord(SwShExeFsPatchProvenance provenance)
+        {
+            return new SwShExeFsSegmentRecord(
+                SegmentId,
+                Name,
+                FileOffset,
+                MemoryOffset,
+                DecompressedSize,
+                CompressedSize,
+                Sha256,
+                HashStatus,
+                provenance);
+        }
+    }
+
+    private sealed record ExeFsPatchCheckFact(
+        string CheckId,
+        string Status,
+        string Area,
+        string Offset,
+        string Name,
+        string Expected,
+        string Actual,
+        string Notes)
+    {
+        public SwShExeFsPatchCheckRecord ToRecord(SwShExeFsPatchProvenance provenance)
+        {
+            return new SwShExeFsPatchCheckRecord(
+                CheckId,
+                MainPatchId,
+                Status,
+                Area,
+                Offset,
+                Name,
+                Expected,
+                Actual,
+                Notes,
+                provenance);
+        }
+    }
+
+    private sealed record ExeFsPatchPreflight(bool IsReady, string Message);
+
+    private sealed record BaseExecutableSourceValidation(
+        bool IsReady,
+        string Actual,
+        string Message);
 }

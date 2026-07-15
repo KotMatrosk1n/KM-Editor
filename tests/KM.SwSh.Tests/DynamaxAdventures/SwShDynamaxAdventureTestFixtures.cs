@@ -235,13 +235,15 @@ internal static class SwShDynamaxAdventureTestFixtures
         var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
+        var roMemoryOffset = Align(text.Length, 0x1000);
+        var dataMemoryOffset = Align(roMemoryOffset + ro.Length, 0x1000);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
-        WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
-        WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
+        WriteSegmentHeader(output, 0x20, roOffset, roMemoryOffset, ro.Length);
+        WriteSegmentHeader(output, 0x30, dataOffset, dataMemoryOffset, data.Length);
         if (buildId is null)
         {
             output.AsSpan(0x40, 0x20).Fill(0xAB);

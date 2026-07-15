@@ -571,7 +571,8 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
-        output.AsSpan(0x40, 0x20).Fill(0xAB);
+        Convert.FromHexString("A3B75BCD3311385AEED67FBEEB79CBB7BF02F471")
+            .CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);

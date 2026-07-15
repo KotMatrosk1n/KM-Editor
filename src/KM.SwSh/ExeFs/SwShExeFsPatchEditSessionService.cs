@@ -4,6 +4,8 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.Executable;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -85,12 +87,14 @@ public sealed class SwShExeFsPatchEditSessionService
         var workflow = exeFsPatchWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (session.PendingEdits.Count == 0)
+        if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Stage an ExeFS patch before validating.",
-                expected: "Pending ExeFS patch"));
+                session.PendingEdits.Count == 0
+                    ? "Stage an ExeFS patch before validating."
+                    : "ExeFS Patch Manager requires exactly one pending patch.",
+                expected: "Exactly one pending ExeFS patch"));
             return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
         }
 
@@ -143,9 +147,9 @@ public sealed class SwShExeFsPatchEditSessionService
         {
             new PlannedFileWrite(
                 selectedPatch.TargetFile,
-                [new ProjectFileReference(selectedPatch.Provenance.SourceLayer, selectedPatch.Provenance.SourceFile)],
+                CreateChangePlanSources(selectedPatch),
                 File.Exists(targetPath),
-                $"Apply ExeFS patch '{selectedPatch.Name}': Royal Candy UI route and usage patch."),
+                $"Apply ExeFS patch '{selectedPatch.Name}': Exp Candy fixed-amount bypass, allowed-consumable routing, Royal Candy virtual inventory, infinite use, and UI routing."),
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -154,7 +158,9 @@ public sealed class SwShExeFsPatchEditSessionService
                 CultureInfo.InvariantCulture,
                 $"ExeFS change plan preview contains {writes.Length:N0} target file(s).")));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -169,7 +175,7 @@ public sealed class SwShExeFsPatchEditSessionService
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -202,9 +208,17 @@ public sealed class SwShExeFsPatchEditSessionService
 
         try
         {
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var selectedGame = paths.SelectedGame
+                ?? SwShExeFsRoyalCandyMainPatcher.DetectSupportedGame(NsoFile.Parse(sourceBytes).BuildId)
+                ?? throw new InvalidDataException("ExeFS patch apply requires a supported Sword or Shield executable build.");
             var output = SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
-                File.ReadAllBytes(source.AbsolutePath),
-                paths.SelectedGame);
+                sourceBytes,
+                selectedGame);
+            SwShExeFsRoyalCandyMainPatcher.VerifyBasePatchOutput(
+                sourceBytes,
+                output,
+                selectedGame);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.WriteAllBytes(targetPath, output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShExeFsPatchWorkflowService.ExeFsMainPath));
@@ -297,9 +311,55 @@ public sealed class SwShExeFsPatchEditSessionService
             return;
         }
 
+        if (!string.Equals(edit.Field, PatchField, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending ExeFS patch field is not canonical.",
+                field: edit.Field,
+                expected: PatchField));
+            return;
+        }
+
         var selectedPatch = GetPatch(workflow, edit.RecordId ?? string.Empty, diagnostics);
         if (selectedPatch is null)
         {
+            return;
+        }
+
+        var canonicalSummary = CreatePendingEdit(selectedPatch).Summary;
+        if (!string.Equals(edit.Summary, canonicalSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending ExeFS patch summary is not canonical.",
+                expected: canonicalSummary));
+            return;
+        }
+
+        if (!string.Equals(edit.NewValue, selectedPatch.TargetFile, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending ExeFS patch target is not canonical.",
+                field: PatchField,
+                expected: selectedPatch.TargetFile));
+            return;
+        }
+
+        if (edit.Sources is null
+            || edit.Sources.Count != 1
+            || edit.Sources[0].Layer != selectedPatch.Provenance.SourceLayer
+            || !string.Equals(
+                edit.Sources[0].RelativePath,
+                selectedPatch.Provenance.SourceFile,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending ExeFS patch source is not canonical.",
+                file: selectedPatch.TargetFile,
+                expected: $"One {selectedPatch.Provenance.SourceLayer} source at {selectedPatch.Provenance.SourceFile}"));
             return;
         }
 
@@ -337,6 +397,20 @@ public sealed class SwShExeFsPatchEditSessionService
             NewValue: patch.TargetFile);
     }
 
+    private static IReadOnlyList<ProjectFileReference> CreateChangePlanSources(SwShExeFsPatchRecord patch)
+    {
+        if (patch.Provenance.SourceLayer == ProjectFileLayer.Layered)
+        {
+            return
+            [
+                new ProjectFileReference(ProjectFileLayer.Base, patch.Provenance.SourceFile),
+                new ProjectFileReference(ProjectFileLayer.Layered, patch.Provenance.SourceFile),
+            ];
+        }
+
+        return [new ProjectFileReference(ProjectFileLayer.Base, patch.Provenance.SourceFile)];
+    }
+
     private static string? ResolveOutputPath(
         ProjectPaths paths,
         string targetRelativePath,
@@ -370,27 +444,6 @@ public sealed class SwShExeFsPatchEditSessionService
         }
 
         return targetPath;
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
     }
 
     private static ApplyResult CreateApplyResult(

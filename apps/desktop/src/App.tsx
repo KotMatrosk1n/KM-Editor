@@ -4882,21 +4882,41 @@ export function App({
   const handleStageExeFsPatch = async (patchId: string) => {
     setIsExeFsPatchStaging(true);
     setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
-    setAppliedChangePlan(null);
 
     try {
-      const response = await bridge.stageExeFsPatch({
-        patchId,
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setExeFsPatchWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageExeFsPatch({
+            patchId,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : exeFsPatchWorkflow
+          };
+        },
+        (response) => {
+          setEditValidationDiagnostics(response.diagnostics);
+          if (!response.didSucceed || !response.workflow) {
+            return;
+          }
+
+          setExeFsPatchWorkflow(response.workflow);
+          setEditSessionSection('exefsPatches');
+          setChangePlan(null);
+          setApplyResult(null);
+          setValidatedEditSessionSignature(null);
+          setChangePlanSessionSignature(null);
+          setAppliedChangePlan(null);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -6391,7 +6411,7 @@ export function App({
     ]
   );
 
-  const runEditSessionMutation = async <T extends { session: EditSession },>(
+  const runEditSessionMutation = async <T extends { session: EditSession | null },>(
     mutation: (session: EditSession | null) => Promise<T>,
     commit: (response: T) => void
   ) => {
@@ -6416,8 +6436,10 @@ export function App({
           return null;
         }
 
-        editSessionRef.current = response.session;
-        setEditSession(response.session);
+        if (response.session !== editSessionRef.current) {
+          editSessionRef.current = response.session;
+          setEditSession(response.session);
+        }
         commit(response);
         return response;
       });
@@ -30238,32 +30260,43 @@ function ExeFsPatchSection({
   selectedPatchId: string | null;
   workflow: ExeFsPatchWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
+  const hasSearch = searchText.trim().length > 0;
   const filteredPatches = filterExeFsPatchRecords(workflow?.patches ?? [], searchText);
   const filteredChecks = filterExeFsPatchCheckRecords(workflow?.checks ?? [], searchText);
   const filteredSegments = filterExeFsSegmentRecords(workflow?.segments ?? [], searchText);
-  const visibleSegments = filteredSegments.length > 0 ? filteredSegments : (workflow?.segments ?? []);
   const selectedPatch =
     filteredPatches.find((patch) => patch.patchId === selectedPatchId) ??
-    workflow?.patches.find((patch) => patch.patchId === selectedPatchId) ??
     filteredPatches[0] ??
-    workflow?.patches[0] ??
     null;
+  const checksForSelectedPatch = selectedPatch
+    ? filteredChecks.filter((check) => check.patchId === selectedPatch.patchId)
+    : filteredChecks;
   const selectedCheck =
-    filteredChecks.find((check) => check.checkId === selectedCheckId) ??
-    workflow?.checks.find((check) => check.checkId === selectedCheckId) ??
-    filteredChecks[0] ??
-    workflow?.checks[0] ??
+    checksForSelectedPatch.find((check) => check.checkId === selectedCheckId) ??
+    checksForSelectedPatch[0] ??
     null;
+  const selectedCheckPatchName = selectedCheck
+    ? workflow?.patches.find((patch) => patch.patchId === selectedCheck.patchId)?.name ??
+      selectedCheck.patchId
+    : null;
+  const hasMatchingRecords =
+    filteredPatches.length > 0 || filteredChecks.length > 0 || filteredSegments.length > 0;
+  const canStageWorkflow =
+    workflow?.summary.availability === 'available' &&
+    !workflow.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
 
   useEffect(() => {
-    if (selectedPatch && selectedPatch.patchId !== selectedPatchId) {
-      onSelectPatch(selectedPatch.patchId);
+    const nextPatchId = selectedPatch?.patchId ?? null;
+    if (nextPatchId !== selectedPatchId) {
+      onSelectPatch(nextPatchId);
     }
   }, [onSelectPatch, selectedPatch?.patchId, selectedPatchId]);
 
   useEffect(() => {
-    if (selectedCheck && selectedCheck.checkId !== selectedCheckId) {
-      onSelectCheck(selectedCheck.checkId);
+    const nextCheckId = selectedCheck?.checkId ?? null;
+    if (nextCheckId !== selectedCheckId) {
+      onSelectCheck(nextCheckId);
     }
   }, [onSelectCheck, selectedCheck?.checkId, selectedCheckId]);
 
@@ -30272,40 +30305,62 @@ function ExeFsPatchSection({
       <section aria-labelledby="exefs-patches-heading" className="panel wide-panel">
         <div className="panel-heading">
           <Wrench aria-hidden="true" size={18} />
-          <h2 id="exefs-patches-heading">ExeFS Patch Manager</h2>
+          <h2 id="exefs-patches-heading">{translateLiteral('ExeFS Patch Manager')}</h2>
         </div>
 
         <div className="items-toolbar exefs-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search ExeFS compatibility checks"
+              aria-label={translateLiteral('Search ExeFS records')}
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search ExeFS"
+              placeholder={translateLiteral('Search ExeFS records')}
               type="search"
               value={searchText}
             />
           </label>
-          <Metric label="Checks" value={workflow ? workflow.stats.totalCheckCount.toString() : '0'} />
-          <Metric label="Passing" value={workflow ? workflow.stats.passCount.toString() : '0'} />
-          <Metric label="Warnings" value={workflow ? workflow.stats.warningCount.toString() : '0'} />
-          <Metric label="Failing" value={workflow ? workflow.stats.failCount.toString() : '0'} />
+          <Metric
+            label={translateLiteral('Checks')}
+            value={workflow ? workflow.stats.totalCheckCount.toString() : '0'}
+          />
+          <Metric
+            label={translateLiteral('Passing')}
+            value={workflow ? workflow.stats.passCount.toString() : '0'}
+          />
+          <Metric
+            label={translateLiteral('Warnings')}
+            value={workflow ? workflow.stats.warningCount.toString() : '0'}
+          />
+          <Metric
+            label={translateLiteral('Failing')}
+            value={workflow ? workflow.stats.failCount.toString() : '0'}
+          />
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
+          hasSearch && !hasMatchingRecords ? (
+            <p className="empty-copy" role="status">
+              {translateLiteral('No matching ExeFS records.')}
+            </p>
+          ) : (
+            <div className="flagwork-layout">
             <div className="flagwork-stack">
-              <div className="exefs-table" role="table" aria-label="ExeFS patch records">
+              <div
+                className="exefs-table"
+                role="table"
+                aria-label={translateLiteral('ExeFS patch records')}
+              >
                 <div className="exefs-row exefs-row-heading" role="row">
-                  <span role="columnheader">Patch</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Target</span>
-                  <span role="columnheader">Kind</span>
-                  <span role="columnheader">Details</span>
+                  <span role="columnheader">{translateLiteral('Patch')}</span>
+                  <span role="columnheader">{translateLiteral('Status')}</span>
+                  <span role="columnheader">{translateLiteral('Target')}</span>
+                  <span role="columnheader">{translateLiteral('Kind')}</span>
+                  <span role="columnheader">{translateLiteral('Details')}</span>
                 </div>
                 {filteredPatches.map((patch) => (
                   <button
+                    aria-selected={selectedPatch?.patchId === patch.patchId}
                     className={`exefs-row ${
                       selectedPatch?.patchId === patch.patchId ? 'exefs-row-selected' : ''
                     }`}
@@ -30314,29 +30369,36 @@ function ExeFsPatchSection({
                     role="row"
                     type="button"
                   >
-                    <span role="cell">{patch.name}</span>
+                    <span role="cell">{translateLiteral(patch.name)}</span>
                     <span role="cell">
                       <span className={`status-pill ${getExeFsStatusClassName(patch.status)}`}>
-                        {patch.status}
+                        {translateLiteral(formatExeFsStatusLabel(patch.status))}
                       </span>
                     </span>
                     <span role="cell">{patch.targetFile}</span>
-                    <span role="cell">{patch.patchKind}</span>
-                    <span role="cell">{patch.details[0] ?? patch.description}</span>
+                    <span role="cell">{translateLiteral(patch.patchKind)}</span>
+                    <span role="cell">
+                      {translateLiteral(patch.details[0] ?? patch.description)}
+                    </span>
                   </button>
                 ))}
               </div>
 
-              <div className="exefs-table" role="table" aria-label="ExeFS compatibility checks">
+              <div
+                className="exefs-table"
+                role="table"
+                aria-label={translateLiteral('ExeFS compatibility checks')}
+              >
                 <div className="exefs-row exefs-check-row exefs-row-heading" role="row">
-                  <span role="columnheader">Check</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Area</span>
-                  <span role="columnheader">Offset</span>
-                  <span role="columnheader">Actual</span>
+                  <span role="columnheader">{translateLiteral('Check')}</span>
+                  <span role="columnheader">{translateLiteral('Status')}</span>
+                  <span role="columnheader">{translateLiteral('Area')}</span>
+                  <span role="columnheader">{translateLiteral('Offset')}</span>
+                  <span role="columnheader">{translateLiteral('Actual')}</span>
                 </div>
-                {filteredChecks.map((check) => (
+                {checksForSelectedPatch.map((check) => (
                   <button
+                    aria-selected={selectedCheck?.checkId === check.checkId}
                     className={`exefs-row exefs-check-row ${
                       selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
                     }`}
@@ -30348,31 +30410,34 @@ function ExeFsPatchSection({
                     role="row"
                     type="button"
                   >
-                    <span role="cell">{check.name}</span>
+                    <span role="cell">{translateLiteral(check.name)}</span>
                     <span role="cell">
                       <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
-                        {check.status}
+                        {translateLiteral(formatExeFsStatusLabel(check.status))}
                       </span>
                     </span>
-                    <span role="cell">{check.area}</span>
+                    <span role="cell">{translateLiteral(check.area)}</span>
                     <span role="cell">{check.offset || 'n/a'}</span>
-                    <span role="cell">{check.actual}</span>
+                    <span role="cell">{translateLiteral(check.actual)}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <SelectedExeFsPatchPanel
+              canStageWorkflow={canStageWorkflow}
               check={selectedCheck}
+              checkPatchName={selectedCheckPatchName}
               isStaging={isStaging}
               onStagePatch={onStagePatch}
               patch={selectedPatch}
-              segments={visibleSegments}
+              segments={filteredSegments}
             />
           </div>
+          )
         ) : (
           <p className="empty-copy">
-            Open ExeFS from Workflows to inspect backend patch compatibility.
+            {translateLiteral('Open ExeFS from Workflows to inspect backend patch compatibility.')}
           </p>
         )}
       </section>
@@ -30383,70 +30448,94 @@ function ExeFsPatchSection({
 }
 
 function SelectedExeFsPatchPanel({
+  canStageWorkflow,
   check,
+  checkPatchName,
   isStaging,
   onStagePatch,
   patch,
   segments
 }: {
+  canStageWorkflow: boolean;
   check: ExeFsPatchCheckRecord | null;
+  checkPatchName: string | null;
   isStaging: boolean;
   onStagePatch: (patchId: string) => void;
   patch: ExeFsPatchRecord | null;
   segments: ExeFsSegmentRecord[];
 }) {
+  const { translateLiteral } = useLocalization();
   const provenance = check?.provenance ?? patch?.provenance ?? segments[0]?.provenance ?? null;
-  const canStagePatch = patch?.status === 'available' || patch?.status === 'warning';
+  const canStagePatch =
+    canStageWorkflow && (patch?.status === 'available' || patch?.status === 'warning');
+  const hasSelection = patch !== null || check !== null || segments.length > 0;
+  const heading = check ? 'Selected Check' : patch ? 'Selected Patch' : 'Selected Segment';
 
   return (
-    <aside aria-label="Selected ExeFS provenance" className="encounter-inspector">
+    <aside
+      aria-label={translateLiteral('Selected ExeFS provenance')}
+      className="encounter-inspector"
+    >
       <div className="panel-heading">
         <Wrench aria-hidden="true" size={18} />
-        <h3>Selected Check</h3>
+        <h3>{translateLiteral(heading)}</h3>
       </div>
 
-      {patch || check ? (
+      {hasSelection ? (
         <>
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Patch</dt>
-              <dd>{patch?.name ?? check?.patchId ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{check?.status ?? patch?.status ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Check</dt>
-              <dd>{check?.name ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Area</dt>
-              <dd>{check ? `${check.area} ${check.offset}`.trim() : 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Expected</dt>
-              <dd>{check?.expected ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Actual</dt>
-              <dd>{check?.actual ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Source file</dt>
-              <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{provenance ? formatSourceLayer(provenance.sourceLayer) : 'n/a'}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{provenance ? formatFileState(provenance.fileState) : 'n/a'}</dd>
-            </div>
-          </dl>
+          {patch || check ? (
+            <dl className="item-provenance-list">
+              <div>
+                <dt>{translateLiteral('Patch')}</dt>
+                <dd>{translateLiteral(patch?.name ?? checkPatchName ?? 'n/a')}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Status')}</dt>
+                <dd>
+                  {check || patch
+                    ? translateLiteral(formatExeFsStatusLabel(check?.status ?? patch!.status))
+                    : 'n/a'}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Check')}</dt>
+                <dd>{check ? translateLiteral(check.name) : 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Area')}</dt>
+                <dd>{check ? `${translateLiteral(check.area)} ${check.offset}`.trim() : 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Expected')}</dt>
+                <dd>{check ? translateLiteral(check.expected) : 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Actual')}</dt>
+                <dd>{check ? translateLiteral(check.actual) : 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Source file')}</dt>
+                <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('Layer')}</dt>
+                <dd>
+                  {provenance
+                    ? translateLiteral(formatSourceLayer(provenance.sourceLayer))
+                    : 'n/a'}
+                </dd>
+              </div>
+              <div>
+                <dt>{translateLiteral('File state')}</dt>
+                <dd>
+                  {provenance ? translateLiteral(formatFileState(provenance.fileState)) : 'n/a'}
+                </dd>
+              </div>
+            </dl>
+          ) : null}
 
-          <div className="encounter-edit-form">
+          {patch || check ? (
+            <div className="encounter-edit-form">
             {patch ? (
               <div className="form-actions">
                 <button
@@ -30460,7 +30549,7 @@ function SelectedExeFsPatchPanel({
                     busyLabel="Staging"
                     icon={<Wrench aria-hidden="true" size={16} />}
                     isBusy={isStaging}
-                    label="Stage Patch"
+                    label="Stage Royal Candy ExeFS Patch"
                   />
                 </button>
               </div>
@@ -30468,41 +30557,59 @@ function SelectedExeFsPatchPanel({
 
             <dl className="encounter-slot-detail">
               <div>
-                <dt>Notes</dt>
-                <dd>{check?.notes ?? patch?.description ?? 'n/a'}</dd>
+                <dt>{translateLiteral('Notes')}</dt>
+                <dd>{translateLiteral(check?.notes ?? patch?.description ?? 'n/a')}</dd>
               </div>
               <div>
-                <dt>Patch details</dt>
-                <dd>{patch?.details.join(' | ') ?? 'n/a'}</dd>
+                <dt>{translateLiteral('Patch details')}</dt>
+                <dd>
+                  {patch
+                    ? patch.details.map((detail) => translateLiteral(detail)).join(' | ')
+                    : 'n/a'}
+                </dd>
               </div>
             </dl>
+            </div>
+          ) : null}
 
-            <div className="exefs-segment-list" aria-label="ExeFS segments">
+          {segments.length > 0 ? (
+            <div
+              className="exefs-segment-list"
+              aria-label={translateLiteral('ExeFS segments')}
+            >
               {segments.map((segment) => (
                 <dl className="encounter-slot-detail" key={segment.segmentId}>
                   <div>
                     <dt>{segment.name}</dt>
-                    <dd>{segment.hashStatus}</dd>
+                    <dd>{translateLiteral(formatExeFsStatusLabel(segment.hashStatus))}</dd>
                   </div>
                   <div>
-                    <dt>File</dt>
+                    <dt>{translateLiteral('File')}</dt>
                     <dd>{segment.fileOffset}</dd>
                   </div>
                   <div>
-                    <dt>Memory</dt>
+                    <dt>{translateLiteral('Memory')}</dt>
                     <dd>{segment.memoryOffset}</dd>
                   </div>
                   <div>
-                    <dt>Size</dt>
+                    <dt>{translateLiteral('Size')}</dt>
                     <dd>{segment.decompressedSize}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateLiteral('Compressed size')}</dt>
+                    <dd>{segment.compressedSize}</dd>
+                  </div>
+                  <div>
+                    <dt>{translateLiteral('SHA-256')}</dt>
+                    <dd>{segment.sha256}</dd>
                   </div>
                 </dl>
               ))}
             </div>
-          </div>
+          ) : null}
         </>
       ) : (
-        <p className="empty-copy">No ExeFS check selected.</p>
+        <p className="empty-copy">{translateLiteral('No ExeFS check selected.')}</p>
       )}
     </aside>
   );
@@ -40192,6 +40299,10 @@ function getExeFsStatusClassName(status: string) {
     default:
       return 'status-warning';
   }
+}
+
+function formatExeFsStatusLabel(status: string) {
+  return formatRoyalCandyStatus(status);
 }
 
 function formatRoyalCandyStatus(status: string) {

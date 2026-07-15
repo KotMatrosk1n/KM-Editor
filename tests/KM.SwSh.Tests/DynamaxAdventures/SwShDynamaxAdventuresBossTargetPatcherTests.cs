@@ -232,6 +232,26 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
     }
 
     [Fact]
+    public void ApplyConditionalTargetSpeciesRemapRejectsInsufficientMappedTextCapacity()
+    {
+        var archive = CreateBossArchive();
+        var main = SwShDynamaxAdventureTestFixtures.CreateBossTargetCompatibleMain();
+        var nso = NsoFile.Parse(main);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            main.AsSpan(0x24, sizeof(int)),
+            nso.Text.Header.MemoryOffset + nso.Text.Header.DecompressedSize);
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+                main,
+                archive,
+                fromSpecies: 144,
+                toSpecies: 150));
+
+        Assert.Contains("does not reserve enough executable space", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RestoreTextFromBaseRemovesOwnedBranchesAndStubs()
     {
         var archive = CreateBossArchive();

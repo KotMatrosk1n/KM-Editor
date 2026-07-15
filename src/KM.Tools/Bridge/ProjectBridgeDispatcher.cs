@@ -2219,7 +2219,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadExeFsPatchWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadExeFsPatchWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadExeFsPatches(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("ExeFS patch load paths are required.");
+        var workflow = swShWorkflowService.LoadExeFsPatches(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2228,12 +2230,17 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageExeFsPatch(string requestJson)
     {
         var request = DeserializeRequest<StageExeFsPatchRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("ExeFS patch stage paths are required.");
+        var patchId = string.IsNullOrWhiteSpace(request.Payload.PatchId)
+            ? throw new JsonException("ExeFS patch ID is required.")
+            : request.Payload.PatchId.Trim();
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = exeFsPatchEditSessionService.StagePatch(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.PatchId,
+            ProjectBridgeMapper.ToCore(paths),
+            patchId,
             session);
         var response = SwShBridgeMapper.ToDto(result);
 

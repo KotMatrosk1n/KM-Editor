@@ -44,6 +44,10 @@ public sealed record NsoFile(
 
     public byte[] RawHeader { get; init; } = [];
 
+    private NsoOpaqueLayout? OpaqueLayout { get; init; }
+
+    private NsoOriginalSegments? OriginalSegments { get; init; }
+
     public IReadOnlyList<NsoSegment> Segments => [Text, Ro, Data];
 
     public static NsoFile Parse(byte[] data)
@@ -74,16 +78,62 @@ public sealed record NsoFile(
         var textHash = data.AsSpan(0xA0, 0x20).ToArray();
         var roHash = data.AsSpan(0xC0, 0x20).ToArray();
         var dataHash = data.AsSpan(0xE0, 0x20).ToArray();
+        var segmentLayouts = new[]
+        {
+            new NsoSegmentLayout(".text", textHeader, textCompressedSize),
+            new NsoSegmentLayout(".ro", roHeader, roCompressedSize),
+            new NsoSegmentLayout(".data", dataHeader, dataCompressedSize),
+        };
+
+        ValidateSegmentLayouts(data.Length, segmentLayouts);
+        var opaqueLayout = HasStandardFileOrder(segmentLayouts)
+            ? CaptureOpaqueLayout(data, segmentLayouts)
+            : null;
+        var textSegment = ReadSegment(
+            data,
+            ".text",
+            textHeader,
+            textCompressedSize,
+            textHash,
+            flags.HasFlag(NsoFlags.CompressedText));
+        var roSegment = ReadSegment(
+            data,
+            ".ro",
+            roHeader,
+            roCompressedSize,
+            roHash,
+            flags.HasFlag(NsoFlags.CompressedRo));
+        var dataSegment = ReadSegment(
+            data,
+            ".data",
+            dataHeader,
+            dataCompressedSize,
+            dataHash,
+            flags.HasFlag(NsoFlags.CompressedData));
 
         return new NsoFile(
             version,
             flags,
             buildId,
-            ReadSegment(data, ".text", textHeader, textCompressedSize, textHash, flags.HasFlag(NsoFlags.CompressedText)),
-            ReadSegment(data, ".ro", roHeader, roCompressedSize, roHash, flags.HasFlag(NsoFlags.CompressedRo)),
-            ReadSegment(data, ".data", dataHeader, dataCompressedSize, dataHash, flags.HasFlag(NsoFlags.CompressedData)))
+            textSegment,
+            roSegment,
+            dataSegment)
         {
             RawHeader = data.AsSpan(0, HeaderSize).ToArray(),
+            OpaqueLayout = opaqueLayout,
+            OriginalSegments = new NsoOriginalSegments(
+                CaptureOriginalSegment(
+                    textSegment,
+                    flags.HasFlag(NsoFlags.CompressedText),
+                    flags.HasFlag(NsoFlags.CheckHashText)),
+                CaptureOriginalSegment(
+                    roSegment,
+                    flags.HasFlag(NsoFlags.CompressedRo),
+                    flags.HasFlag(NsoFlags.CheckHashRo)),
+                CaptureOriginalSegment(
+                    dataSegment,
+                    flags.HasFlag(NsoFlags.CompressedData),
+                    flags.HasFlag(NsoFlags.CheckHashData))),
         };
     }
 
@@ -97,37 +147,111 @@ public sealed record NsoFile(
         byte[]? roDecompressedData = null,
         byte[]? dataDecompressedData = null)
     {
-        var textData = textDecompressedData ?? Text.DecompressedData;
-        var roData = roDecompressedData ?? Ro.DecompressedData;
-        var dataData = dataDecompressedData ?? Data.DecompressedData;
-        var textSegment = EncodeSegment(".text", textData, Flags.HasFlag(NsoFlags.CompressedText));
-        var roSegment = EncodeSegment(".ro", roData, Flags.HasFlag(NsoFlags.CompressedRo));
-        var dataSegment = EncodeSegment(".data", dataData, Flags.HasFlag(NsoFlags.CompressedData));
+        ValidateWriteMemoryLayout(
+            textDecompressedData?.Length ?? Text.DecompressedData.Length,
+            roDecompressedData?.Length ?? Ro.DecompressedData.Length,
+            dataDecompressedData?.Length ?? Data.DecompressedData.Length);
+        var originalSegments = OriginalSegments;
+        var textSegment = PrepareSegment(
+            Text,
+            originalSegments?.Text,
+            textDecompressedData,
+            Flags.HasFlag(NsoFlags.CompressedText),
+            Flags.HasFlag(NsoFlags.CheckHashText));
+        var roSegment = PrepareSegment(
+            Ro,
+            originalSegments?.Ro,
+            roDecompressedData,
+            Flags.HasFlag(NsoFlags.CompressedRo),
+            Flags.HasFlag(NsoFlags.CheckHashRo));
+        var dataSegment = PrepareSegment(
+            Data,
+            originalSegments?.Data,
+            dataDecompressedData,
+            Flags.HasFlag(NsoFlags.CompressedData),
+            Flags.HasFlag(NsoFlags.CheckHashData));
+        var opaqueLayout = OpaqueLayout;
+        var textPlacement = default(NsoWritePlacement);
+        var roPlacement = default(NsoWritePlacement);
+        var dataPlacement = default(NsoWritePlacement);
+        var trailingOffset = 0;
+        int textOffset;
+        int roOffset;
+        int dataOffset;
+        int outputLength;
 
-        var textOffset = Math.Max(HeaderSize, Text.Header.FileOffset);
-        var roOffset = Align(textOffset + textSegment.Length, 0x10);
-        var dataOffset = Align(roOffset + roSegment.Length, 0x10);
-        var output = new byte[Align(dataOffset + dataSegment.Length, 0x10)];
+        if (opaqueLayout is null)
+        {
+            textOffset = Math.Max(HeaderSize, Text.Header.FileOffset);
+            roOffset = ToSupportedOffset(
+                Align((long)textOffset + textSegment.CompressedData.Length, 0x10),
+                ".ro segment");
+            dataOffset = ToSupportedOffset(
+                Align((long)roOffset + roSegment.CompressedData.Length, 0x10),
+                ".data segment");
+            outputLength = ToSupportedOutputLength(
+                Align((long)dataOffset + dataSegment.CompressedData.Length, 0x10));
+        }
+        else
+        {
+            long cursor = HeaderSize;
+            textPlacement = PlaceSegment(
+                ref cursor,
+                opaqueLayout.BeforeText,
+                Text,
+                textSegment.CompressedData);
+            roPlacement = PlaceSegment(
+                ref cursor,
+                opaqueLayout.BeforeRo,
+                Ro,
+                roSegment.CompressedData);
+            dataPlacement = PlaceSegment(
+                ref cursor,
+                opaqueLayout.BeforeData,
+                Data,
+                dataSegment.CompressedData);
+            trailingOffset = ToSupportedOffset(cursor, "trailing data");
+            cursor += opaqueLayout.Trailing.Length;
+
+            textOffset = textPlacement.SegmentOffset;
+            roOffset = roPlacement.SegmentOffset;
+            dataOffset = dataPlacement.SegmentOffset;
+            outputLength = ToSupportedOutputLength(
+                cursor == opaqueLayout.OriginalFileLength
+                    ? cursor
+                    : Align(cursor, 0x10));
+        }
+
+        var output = new byte[outputLength];
         var header = RawHeader.Length == HeaderSize ? (byte[])RawHeader.Clone() : new byte[HeaderSize];
 
         WriteHeader(
             header,
             textOffset,
-            textData.Length,
-            textSegment.Length,
-            ComputeHash(textData),
+            textSegment.DecompressedData.Length,
+            textSegment.CompressedData.Length,
+            textSegment.Hash,
             roOffset,
-            roData.Length,
-            roSegment.Length,
-            ComputeHash(roData),
+            roSegment.DecompressedData.Length,
+            roSegment.CompressedData.Length,
+            roSegment.Hash,
             dataOffset,
-            dataData.Length,
-            dataSegment.Length,
-            ComputeHash(dataData));
+            dataSegment.DecompressedData.Length,
+            dataSegment.CompressedData.Length,
+            dataSegment.Hash);
         header.CopyTo(output.AsSpan(0, HeaderSize));
-        textSegment.CopyTo(output.AsSpan(textOffset));
-        roSegment.CopyTo(output.AsSpan(roOffset));
-        dataSegment.CopyTo(output.AsSpan(dataOffset));
+
+        if (opaqueLayout is not null)
+        {
+            opaqueLayout.BeforeText.CopyTo(output.AsSpan(textPlacement.OpaqueOffset));
+            opaqueLayout.BeforeRo.CopyTo(output.AsSpan(roPlacement.OpaqueOffset));
+            opaqueLayout.BeforeData.CopyTo(output.AsSpan(dataPlacement.OpaqueOffset));
+            opaqueLayout.Trailing.CopyTo(output.AsSpan(trailingOffset));
+        }
+
+        textSegment.CompressedData.CopyTo(output.AsSpan(textOffset));
+        roSegment.CompressedData.CopyTo(output.AsSpan(roOffset));
+        dataSegment.CompressedData.CopyTo(output.AsSpan(dataOffset));
         return output;
     }
 
@@ -147,6 +271,12 @@ public sealed record NsoFile(
         byte[] hash,
         bool isCompressed)
     {
+        if (!isCompressed && compressedSize != header.DecompressedSize)
+        {
+            throw new InvalidDataException(
+                $"{name} segment decompressed size mismatch: expected 0x{header.DecompressedSize:X}, got 0x{compressedSize:X}.");
+        }
+
         var segmentEnd = (long)header.FileOffset + compressedSize;
         if (header.FileOffset > data.Length || compressedSize > data.Length - header.FileOffset)
         {
@@ -170,6 +300,23 @@ public sealed record NsoFile(
 
     private static byte[] DecodeLz4(string name, byte[] compressedData, int decompressedSize)
     {
+        if (decompressedSize > Array.MaxLength)
+        {
+            throw new InvalidDataException(
+                $"{name} segment decompressed size 0x{decompressedSize:X} exceeds the maximum supported byte-array length 0x{Array.MaxLength:X}.");
+        }
+
+        if (compressedData.Length == 0)
+        {
+            if (decompressedSize != 0)
+            {
+                throw new InvalidDataException(
+                    $"{name} compressed segment cannot decode to 0x{decompressedSize:X} bytes from an empty payload.");
+            }
+
+            return [];
+        }
+
         var output = new byte[decompressedSize];
         var decoded = LZ4Codec.Decode(compressedData, 0, compressedData.Length, output, 0, output.Length);
         if (decoded != decompressedSize)
@@ -183,7 +330,7 @@ public sealed record NsoFile(
 
     private static byte[] EncodeSegment(string name, byte[] decompressedData, bool shouldCompress)
     {
-        if (!shouldCompress)
+        if (!shouldCompress || decompressedData.Length == 0)
         {
             return decompressedData.ToArray();
         }
@@ -203,6 +350,72 @@ public sealed record NsoFile(
         }
 
         return output[..length];
+    }
+
+    private static NsoEncodedSegment PrepareSegment(
+        NsoSegment original,
+        NsoOriginalSegment? originalSnapshot,
+        byte[]? replacement,
+        bool shouldCompress,
+        bool shouldCheckHash)
+    {
+        var decompressedData = replacement ?? original.DecompressedData;
+        if (originalSnapshot is not null
+            && originalSnapshot.WasCompressed == shouldCompress
+            && originalSnapshot.CheckedHash == shouldCheckHash
+            && decompressedData.AsSpan().SequenceEqual(originalSnapshot.DecompressedData))
+        {
+            return new NsoEncodedSegment(
+                decompressedData,
+                originalSnapshot.CompressedData,
+                originalSnapshot.Hash);
+        }
+
+        return new NsoEncodedSegment(
+            decompressedData,
+            EncodeSegment(original.Name, decompressedData, shouldCompress),
+            ComputeHash(decompressedData));
+    }
+
+    private static NsoOriginalSegment CaptureOriginalSegment(
+        NsoSegment segment,
+        bool wasCompressed,
+        bool checkedHash)
+    {
+        return new NsoOriginalSegment(
+            segment.DecompressedData.ToArray(),
+            segment.CompressedData.ToArray(),
+            segment.Hash.ToArray(),
+            wasCompressed,
+            checkedHash);
+    }
+
+    private void ValidateWriteMemoryLayout(
+        int textDecompressedSize,
+        int roDecompressedSize,
+        int dataDecompressedSize)
+    {
+        var segments = new[]
+        {
+            new NsoSegmentLayout(
+                ".text",
+                Text.Header with { DecompressedSize = textDecompressedSize },
+                Text.CompressedSize),
+            new NsoSegmentLayout(
+                ".ro",
+                Ro.Header with { DecompressedSize = roDecompressedSize },
+                Ro.CompressedSize),
+            new NsoSegmentLayout(
+                ".data",
+                Data.Header with { DecompressedSize = dataDecompressedSize },
+                Data.CompressedSize),
+        };
+
+        ValidateNonOverlappingRanges(
+            segments,
+            static segment => segment.Header.MemoryOffset,
+            static segment => segment.Header.DecompressedSize,
+            "memory");
     }
 
     private void WriteHeader(
@@ -247,7 +460,7 @@ public sealed record NsoFile(
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x08), decompressedSize);
     }
 
-    private static int Align(int value, int alignment)
+    private static long Align(long value, int alignment)
     {
         return (value + alignment - 1) / alignment * alignment;
     }
@@ -262,4 +475,198 @@ public sealed record NsoFile(
 
         return value;
     }
+
+    private static void ValidateSegmentLayouts(int fileLength, IReadOnlyList<NsoSegmentLayout> segments)
+    {
+        foreach (var segment in segments)
+        {
+            if (segment.CompressedSize > 0 && segment.Header.FileOffset < HeaderSize)
+            {
+                throw new InvalidDataException(
+                    $"{segment.Name} segment file offset 0x{segment.Header.FileOffset:X} overlaps the 0x{HeaderSize:X}-byte NSO header.");
+            }
+
+            var fileEnd = (long)segment.Header.FileOffset + segment.CompressedSize;
+            if (fileEnd > fileLength)
+            {
+                throw new InvalidDataException(
+                    $"{segment.Name} segment range 0x{segment.Header.FileOffset:X}..0x{fileEnd:X} exceeds NSO length 0x{fileLength:X}.");
+            }
+        }
+
+        ValidateNonOverlappingRanges(
+            segments,
+            static segment => segment.Header.FileOffset,
+            static segment => segment.CompressedSize,
+            "file");
+        ValidateNonOverlappingRanges(
+            segments,
+            static segment => segment.Header.MemoryOffset,
+            static segment => segment.Header.DecompressedSize,
+            "memory");
+    }
+
+    private static bool HasStandardFileOrder(IReadOnlyList<NsoSegmentLayout> segments)
+    {
+        var occupiedSegments = segments
+            .Where(segment => segment.CompressedSize > 0)
+            .ToArray();
+
+        for (var index = 1; index < occupiedSegments.Length; index++)
+        {
+            var previous = occupiedSegments[index - 1];
+            var current = occupiedSegments[index];
+            if (current.Header.FileOffset < previous.Header.FileOffset)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void ValidateNonOverlappingRanges(
+        IReadOnlyList<NsoSegmentLayout> segments,
+        Func<NsoSegmentLayout, int> selectOffset,
+        Func<NsoSegmentLayout, int> selectSize,
+        string rangeKind)
+    {
+        var occupiedSegments = segments
+            .Where(segment => selectSize(segment) > 0)
+            .OrderBy(selectOffset)
+            .ToArray();
+
+        for (var index = 1; index < occupiedSegments.Length; index++)
+        {
+            var previous = occupiedSegments[index - 1];
+            var current = occupiedSegments[index];
+            var previousEnd = (long)selectOffset(previous) + selectSize(previous);
+            if (selectOffset(current) < previousEnd)
+            {
+                var currentEnd = (long)selectOffset(current) + selectSize(current);
+                throw new InvalidDataException(
+                    $"NSO {rangeKind} ranges overlap: {previous.Name} " +
+                    $"0x{selectOffset(previous):X}..0x{previousEnd:X} and {current.Name} " +
+                    $"0x{selectOffset(current):X}..0x{currentEnd:X}.");
+            }
+        }
+    }
+
+    private static NsoOpaqueLayout CaptureOpaqueLayout(
+        byte[] data,
+        IReadOnlyList<NsoSegmentLayout> segments)
+    {
+        var beforeSegments = Enumerable
+            .Range(0, segments.Count)
+            .Select(static _ => Array.Empty<byte>())
+            .ToArray();
+        var cursor = HeaderSize;
+        var foundOccupiedSegment = false;
+
+        for (var index = 0; index < segments.Count; index++)
+        {
+            var segment = segments[index];
+            if (segment.CompressedSize == 0)
+            {
+                continue;
+            }
+
+            var opaqueData = data
+                .AsSpan(cursor, segment.Header.FileOffset - cursor)
+                .ToArray();
+            beforeSegments[foundOccupiedSegment ? index : 0] = opaqueData;
+            cursor = segment.Header.FileOffset + segment.CompressedSize;
+            foundOccupiedSegment = true;
+        }
+
+        if (!foundOccupiedSegment)
+        {
+            beforeSegments[0] = data.AsSpan(HeaderSize).ToArray();
+            cursor = data.Length;
+        }
+
+        return new NsoOpaqueLayout(
+            beforeSegments[0],
+            beforeSegments[1],
+            beforeSegments[2],
+            data.AsSpan(cursor).ToArray(),
+            data.Length);
+    }
+
+    private static NsoWritePlacement PlaceSegment(
+        ref long cursor,
+        byte[] opaqueBefore,
+        NsoSegment original,
+        byte[] compressedData)
+    {
+        var opaqueOffset = ToSupportedOffset(cursor, $"opaque data before {original.Name}");
+        cursor += opaqueBefore.Length;
+
+        if (compressedData.Length == 0 && original.CompressedSize == 0)
+        {
+            return new NsoWritePlacement(opaqueOffset, original.Header.FileOffset);
+        }
+
+        var segmentOffset = cursor == original.Header.FileOffset
+            ? cursor
+            : Align(cursor, 0x10);
+        var supportedSegmentOffset = ToSupportedOffset(segmentOffset, original.Name);
+        cursor = segmentOffset + compressedData.Length;
+        return new NsoWritePlacement(opaqueOffset, supportedSegmentOffset);
+    }
+
+    private static int ToSupportedOffset(long value, string fieldName)
+    {
+        if (value > int.MaxValue)
+        {
+            throw new InvalidDataException(
+                $"NSO {fieldName} offset 0x{value:X} exceeds the supported 32-bit signed range.");
+        }
+
+        return (int)value;
+    }
+
+    private static int ToSupportedOutputLength(long value)
+    {
+        if (value > Array.MaxLength)
+        {
+            throw new InvalidDataException(
+                $"NSO output length 0x{value:X} exceeds the maximum supported byte-array length 0x{Array.MaxLength:X}.");
+        }
+
+        return (int)value;
+    }
+
+    private sealed record NsoSegmentLayout(
+        string Name,
+        NsoSegmentHeader Header,
+        int CompressedSize);
+
+    private sealed record NsoOpaqueLayout(
+        byte[] BeforeText,
+        byte[] BeforeRo,
+        byte[] BeforeData,
+        byte[] Trailing,
+        int OriginalFileLength);
+
+    private sealed record NsoEncodedSegment(
+        byte[] DecompressedData,
+        byte[] CompressedData,
+        byte[] Hash);
+
+    private sealed record NsoOriginalSegments(
+        NsoOriginalSegment Text,
+        NsoOriginalSegment Ro,
+        NsoOriginalSegment Data);
+
+    private sealed record NsoOriginalSegment(
+        byte[] DecompressedData,
+        byte[] CompressedData,
+        byte[] Hash,
+        bool WasCompressed,
+        bool CheckedHash);
+
+    private readonly record struct NsoWritePlacement(
+        int OpaqueOffset,
+        int SegmentOffset);
 }

@@ -2436,7 +2436,7 @@ export const loadExeFsPatchWorkflowResponseSchema = z.strictObject({
 });
 
 export const stageExeFsPatchRequestSchema = z.strictObject({
-  patchId: z.string(),
+  patchId: z.string().trim().min(1),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable()
 });

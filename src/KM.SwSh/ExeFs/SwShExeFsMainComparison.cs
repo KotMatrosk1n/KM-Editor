@@ -36,7 +36,7 @@ internal static class SwShExeFsMainComparison
             && candidate.DecompressedData.SequenceEqual(baseSegment.DecompressedData);
     }
 
-    private static bool StableHeaderBytesMatch(byte[] candidateHeader, byte[] baseHeader)
+    internal static bool StableHeaderBytesMatch(byte[] candidateHeader, byte[] baseHeader)
     {
         if (candidateHeader.Length != NsoFile.HeaderSize || baseHeader.Length != NsoFile.HeaderSize)
         {
