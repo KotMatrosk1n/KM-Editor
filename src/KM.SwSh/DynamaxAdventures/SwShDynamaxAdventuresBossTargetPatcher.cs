@@ -84,6 +84,8 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
                     $"Dynamax Adventures boss target remap stubs need text length 0x{newTextLength:X}, beyond padded text end 0x{TextEndPaddedOffset:X}."));
         }
 
+        ValidateMappedTextCapacity(nso, newTextLength);
+
         Array.Resize(ref text, newTextLength);
         WriteBranchToStub(text, callSiteAOffset, stubAOffset, CallSiteAVanillaInstruction, "boss target species call A");
         WriteBranchToStub(text, callSiteBOffset, stubBOffset, CallSiteBVanillaInstruction, "boss target species call B");
@@ -91,6 +93,29 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
         WriteStub(text, stubBOffset, callSiteBOffset, CallSiteBSourceRegister, fromSpecies, toSpecies);
 
         return nso.Write(textDecompressedData: text);
+    }
+
+    private static void ValidateMappedTextCapacity(NsoFile nso, int newTextLength)
+    {
+        var textMemoryStart = (long)nso.Text.Header.MemoryOffset;
+        var textMemoryEnd = textMemoryStart + newTextLength;
+        var nextMappedSegment = new[] { nso.Ro, nso.Data }
+            .Where(segment => segment.Header.DecompressedSize > 0)
+            .OrderBy(segment => segment.Header.MemoryOffset)
+            .FirstOrDefault();
+        if (nextMappedSegment is null)
+        {
+            return;
+        }
+
+        if (nextMappedSegment.Header.MemoryOffset < textMemoryStart
+            || textMemoryEnd > nextMappedSegment.Header.MemoryOffset)
+        {
+            throw new InvalidDataException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Dynamax Adventures boss target remap stubs need .text memory through 0x{textMemoryEnd:X}, but {nextMappedSegment.Name} begins at 0x{nextMappedSegment.Header.MemoryOffset:X}; the NSO does not reserve enough executable space."));
+        }
     }
 
     internal static byte[] RestoreTextFromBase(

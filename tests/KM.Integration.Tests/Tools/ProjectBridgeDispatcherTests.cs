@@ -3231,7 +3231,7 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadExeFsPatchWorkflowReturnsExeFsMainCompatibilityRecords()
+    public void DispatchLoadExeFsPatchWorkflowReturnsRoyalCandyExecutablePatchRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
@@ -3249,6 +3249,8 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         var patch = Assert.Single(response.Payload.Workflow.Patches);
         Assert.Equal("exefs-main-compatibility", patch.PatchId);
+        Assert.Equal("Royal Candy executable patch", patch.Name);
+        Assert.Equal("Executable patch", patch.PatchKind);
         Assert.Equal("available", patch.Status);
         Assert.Equal("exefs/main", patch.TargetFile);
         Assert.Contains(patch.Details, detail => detail.StartsWith("Build ID:", StringComparison.Ordinal));
@@ -3259,12 +3261,97 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             response.Payload.Workflow.Checks,
             check => check.Name == "Royal Candy immediate scan" && check.Status == "Info");
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.Name == "Supported game build" && check.Status == "Pass");
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.Name == "Exact Royal Candy patch preflight" && check.Status == "Pass");
         Assert.Equal(ProjectFileLayerDto.Base, patch.Provenance.SourceLayer);
         Assert.Equal("exefs/main", patch.Provenance.SourceFile);
-        Assert.Equal(26, response.Payload.Workflow.Stats.TotalCheckCount);
-        Assert.Equal(24, response.Payload.Workflow.Stats.PassCount);
+        Assert.Equal(response.Payload.Workflow.Checks.Count, response.Payload.Workflow.Stats.TotalCheckCount);
+        Assert.Equal(
+            response.Payload.Workflow.Checks.Count(check => check.Status == "Pass"),
+            response.Payload.Workflow.Stats.PassCount);
         Assert.Equal(0, response.Payload.Workflow.Stats.FailCount);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Theory]
+    [InlineData(
+        "{\"command\":\"exefsPatches.load\",\"payload\":{\"paths\":null},\"requestId\":\"request-exefs-load-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"exefsPatches.load\",\"payload\":{},\"requestId\":\"request-exefs-load-missing-paths\"}")]
+    [InlineData(
+        "{\"command\":\"exefsPatches.patch.stage\",\"payload\":{\"paths\":null,\"patchId\":\"exefs-main-compatibility\",\"session\":null},\"requestId\":\"request-exefs-stage-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"exefsPatches.patch.stage\",\"payload\":{\"patchId\":\"exefs-main-compatibility\",\"session\":null},\"requestId\":\"request-exefs-stage-missing-paths\"}")]
+    public void DispatchExeFsCommandsWithNullOrMissingPathsReturnInvalidJson(string requestJson)
+    {
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void DispatchStageExeFsPatchWithBlankPatchIdReturnsInvalidJson(string? patchId)
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.StageExeFsPatch,
+            new StageExeFsPatchRequest(temp.Paths, patchId!, Session: null),
+            requestId: "request-exefs-stage-invalid-patch-id");
+
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Fact]
+    public void DispatchStageExeFsPatchWithMissingPatchIdReturnsInvalidJson()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.StageExeFsPatch,
+            new { Paths = temp.Paths, Session = (object?)null },
+            requestId: "request-exefs-stage-missing-patch-id");
+
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Fact]
+    public void DispatchExeFsPatchCommandsForNonSwordShieldProjectReturnGameMismatch()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Scarlet };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var load = DeserializeResponse<object>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadExeFsPatchWorkflow,
+            new LoadExeFsPatchWorkflowRequest(paths),
+            requestId: "request-exefs-sv-load")));
+        var stage = DeserializeResponse<object>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StageExeFsPatch,
+            new StageExeFsPatchRequest(paths, SwShExeFsPatchWorkflowService.MainPatchId, Session: null),
+            requestId: "request-exefs-sv-stage")));
+
+        Assert.Null(load.Payload);
+        Assert.NotNull(load.Error);
+        Assert.Equal("bridge.gameMismatch", load.Error.Code);
+        Assert.Null(stage.Payload);
+        Assert.NotNull(stage.Error);
+        Assert.Equal("bridge.gameMismatch", stage.Error.Code);
     }
 
     [Fact]
@@ -3280,7 +3367,7 @@ public sealed class ProjectBridgeDispatcherTests
             KmCommandNames.StageExeFsPatch,
             new StageExeFsPatchRequest(
                 temp.Paths,
-                PatchId: SwShExeFsPatchWorkflowService.MainPatchId,
+                PatchId: $"  {SwShExeFsPatchWorkflowService.MainPatchId}  ",
                 Session: null),
             requestId: "request-exefs-stage");
 
@@ -3337,8 +3424,18 @@ public sealed class ProjectBridgeDispatcherTests
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var outputMainBytes = File.ReadAllBytes(outputMainPath);
         Assert.NotEqual(baseMainBytes, outputMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         var outputNso = NsoFile.Parse(outputMainBytes);
         var outputText = outputNso.Text.DecompressedData;
+        Assert.Equal(baseNso.Version, outputNso.Version);
+        Assert.Equal(baseNso.Flags, outputNso.Flags);
+        Assert.Equal(baseNso.BuildId, outputNso.BuildId);
+        Assert.Equal(baseNso.Text.Header.MemoryOffset, outputNso.Text.Header.MemoryOffset);
+        Assert.Equal(baseNso.Text.DecompressedData.Length, outputText.Length);
+        Assert.Equal(baseNso.Ro.Header.MemoryOffset, outputNso.Ro.Header.MemoryOffset);
+        Assert.Equal(baseNso.Ro.DecompressedData, outputNso.Ro.DecompressedData);
+        Assert.Equal(baseNso.Data.Header.MemoryOffset, outputNso.Data.Header.MemoryOffset);
+        Assert.Equal(baseNso.Data.DecompressedData, outputNso.Data.DecompressedData);
         Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1BC));
         Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1C4));
         Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));

@@ -4024,7 +4024,8 @@ export function createMockProjectBridge(
   };
   const exeFsPatchWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'ExeFS main validation, patch anchors, segment hashes, and source provenance.',
+    description:
+      'Royal Candy executable patch readiness, exact build checks, segment hashes, and source provenance.',
     diagnostics: [],
     id: 'exefsPatches',
     label: 'ExeFS Patch Manager'
@@ -4377,6 +4378,54 @@ export function createMockProjectBridge(
   const exeFsPatchWorkflow: ExeFsPatchWorkflow = {
     checks: [
       {
+        actual: 'Sword',
+        area: 'main',
+        checkId: 'exefs-main-compatibility:supported-build',
+        expected: 'Sword or Shield 1.3.2 build ID',
+        name: 'Supported game build',
+        notes: 'Build ID maps to one verified game layout.',
+        offset: '',
+        patchId: 'exefs-main-compatibility',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'Pass'
+      },
+      {
+        actual: 'Sword',
+        area: 'main',
+        checkId: 'exefs-main-compatibility:selected-game',
+        expected: 'Sword',
+        name: 'Selected game route',
+        notes: 'The selected game matches the executable build ID.',
+        offset: '',
+        patchId: 'exefs-main-compatibility',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'Pass'
+      },
+      {
+        actual: 'Base only',
+        area: 'main',
+        checkId: 'exefs-main-compatibility:base-source',
+        expected: 'Matching safe vanilla base exefs/main for any layered override',
+        name: 'Base executable source',
+        notes: 'The effective executable source is the base exefs/main.',
+        offset: '',
+        patchId: 'exefs-main-compatibility',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'Pass'
+      },
+      {
         actual: 'text+0x7BC338',
         area: '.text',
         checkId: 'exefs-main-compatibility:patch-code-cave',
@@ -4407,21 +4456,40 @@ export function createMockProjectBridge(
           sourceLayer: 'base'
         },
         status: 'Info'
+      },
+      {
+        actual: 'Ready',
+        area: '.text',
+        checkId: 'exefs-main-compatibility:exact-patch-preflight',
+        expected: 'All owned anchors, helper routes, code caves, and preserved output semantics',
+        name: 'Exact Royal Candy patch preflight',
+        notes:
+          'All required instructions, game-specific helpers, code caves, and output preservation checks passed.',
+        offset: '',
+        patchId: 'exefs-main-compatibility',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'Pass'
       }
     ],
     diagnostics: [],
     patches: [
       {
         description:
-          'Validates Sword/Shield ExeFS main structure, segment hashes, code-cave availability, and known patch anchors.',
+          'Installs only the Royal Candy executable portion after exact build and anchor verification. The Royal Candy editor owns the complete data, script, and shop install lifecycle.',
         details: [
-          'Build ID: ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB',
-          'File size: 0x7DDAB0 bytes',
-          'Checks: 26 total, 0 failing, 0 warnings'
+          'Build ID: A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000',
+          'Detected game: Sword',
+          'File size: 0x1421220 bytes',
+          'Flags: CompressedRo, CompressedData',
+          'Checks: 30 total, 0 failing, 0 warnings'
         ],
-        name: 'ExeFS main compatibility',
+        name: 'Royal Candy executable patch',
         patchId: 'exefs-main-compatibility',
-        patchKind: 'NSO signature scan',
+        patchKind: 'Executable patch',
         provenance: {
           fileState: 'baseOnly',
           sourceFile: 'exefs/main',
@@ -4450,9 +4518,9 @@ export function createMockProjectBridge(
     ],
     stats: {
       failCount: 0,
-      passCount: 24,
+      passCount: 28,
       sourceFileCount: 1,
-      totalCheckCount: 26,
+      totalCheckCount: 30,
       totalPatchCount: 1,
       warningCount: 0
     },
@@ -5765,7 +5833,7 @@ export function createMockProjectBridge(
                           ? [
                               {
                                 reason:
-                                  'Apply ExeFS patch: Royal Candy UI route and usage patch.',
+                                  "Apply ExeFS patch 'Royal Candy executable patch': Exp Candy fixed-amount bypass, allowed-consumable routing, Royal Candy virtual inventory, infinite use, and UI routing.",
                                 replacesExistingOutput: false,
                                 sources: [
                                   {
@@ -6363,7 +6431,8 @@ export function createMockProjectBridge(
       Promise.resolve({
         diagnostics: [
           {
-            message: 'ExeFS patch is staged for change-plan review.',
+            message:
+              "ExeFS patch 'Royal Candy executable patch' is staged for change-plan review.",
             severity: 'info'
           }
         ],
@@ -6381,7 +6450,7 @@ export function createMockProjectBridge(
                   relativePath: 'exefs/main'
                 }
               ],
-              summary: 'Stage ExeFS patch: ExeFS main compatibility.'
+              summary: 'Stage ExeFS patch: Royal Candy executable patch.'
             }
           ],
           sessionId: request.session?.sessionId ?? 'session-exefs'

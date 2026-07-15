@@ -70,6 +70,7 @@ import {
   shopInventoryRecordSchema,
   shopRecordSchema,
   shopsWorkflowSchema,
+  stageExeFsPatchRequestSchema,
   tradePokemonEditableFieldSchema,
   tradePokemonMoveSchema,
   tradePokemonRecordSchema,
@@ -186,6 +187,32 @@ const fileGraph = {
 } as const;
 
 describe('bridge contracts', () => {
+  it('requires a nonempty ExeFS patch ID while accepting the legacy patch ID', () => {
+    const request = {
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'sword' as const
+      },
+      session: null
+    };
+
+    expect(stageExeFsPatchRequestSchema.safeParse({ ...request, patchId: '' }).success).toBe(
+      false
+    );
+    expect(
+      stageExeFsPatchRequestSchema.safeParse({ ...request, patchId: '   ' }).success
+    ).toBe(false);
+    expect(
+      stageExeFsPatchRequestSchema.parse({
+        ...request,
+        patchId: 'exefs-main-compatibility'
+      }).patchId
+    ).toBe('exefs-main-compatibility');
+  });
+
   it('accepts the nullable Z-A Wild Zone completion role on encounter slots', () => {
     const slot = {
       form: 0,

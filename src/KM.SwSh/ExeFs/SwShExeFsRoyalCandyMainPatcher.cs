@@ -209,6 +209,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         ArgumentNullException.ThrowIfNull(mainBytes);
 
         var nso = NsoFile.Parse(mainBytes);
+        ValidateRequiredSegmentHashes(nso);
         ValidateSelectedGame(nso.BuildId, expectedGame);
         var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
@@ -220,6 +221,71 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         PatchRoyalCandyUiRoute(text);
 
         return nso.Write(textDecompressedData: text);
+    }
+
+    internal static void VerifyBasePatchOutput(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        ProjectGame expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(sourceMainBytes);
+        ArgumentNullException.ThrowIfNull(outputMainBytes);
+
+        var source = NsoFile.Parse(sourceMainBytes);
+        var output = NsoFile.Parse(outputMainBytes);
+        ValidateRequiredSegmentHashes(source);
+        ValidateRequiredSegmentHashes(output);
+        ValidateSelectedGame(source.BuildId, expectedGame);
+        ValidateSelectedGame(output.BuildId, expectedGame);
+
+        if (source.Version != output.Version
+            || source.Flags != output.Flags
+            || !source.BuildId.SequenceEqual(output.BuildId))
+        {
+            throw new InvalidDataException("Royal Candy patch verification found changed executable identity metadata.");
+        }
+
+        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(source.RawHeader, output.RawHeader))
+        {
+            throw new InvalidDataException("Royal Candy patch verification found changed executable header metadata.");
+        }
+
+        VerifyPreservedSegment(source.Ro, output.Ro, ".ro");
+        VerifyPreservedSegment(source.Data, output.Data, ".data");
+        if (source.Text.Header.MemoryOffset != output.Text.Header.MemoryOffset
+            || source.Text.Header.DecompressedSize != output.Text.Header.DecompressedSize
+            || source.Text.DecompressedData.Length != output.Text.DecompressedData.Length)
+        {
+            throw new InvalidDataException("Royal Candy patch verification found a changed .text layout.");
+        }
+
+        if (source.Text.DecompressedData.SequenceEqual(output.Text.DecompressedData))
+        {
+            throw new InvalidDataException("Royal Candy patch verification found no executable text changes.");
+        }
+
+        foreach (var reservation in NonRoyalCandyReservations)
+        {
+            var start = reservation.StartOffset!.Value;
+            var length = reservation.Length!.Value;
+            if (start + length > source.Text.DecompressedData.Length)
+            {
+                continue;
+            }
+
+            if (!source.Text.DecompressedData.AsSpan(start, length)
+                .SequenceEqual(output.Text.DecompressedData.AsSpan(start, length)))
+            {
+                throw new InvalidDataException(
+                    $"Royal Candy patch verification found a change in the {reservation.Owner} reserved range.");
+            }
+        }
+
+        var installation = AnalyzeInstallation(outputMainBytes, expectedGame);
+        if (installation.Kind != SwShRoyalCandyExeFsSignatureKind.Unlimited)
+        {
+            throw new InvalidDataException("Royal Candy patch verification did not find the complete unlimited executable signature.");
+        }
     }
 
     public static byte[] ApplyStoryLimitsPatch(
@@ -318,6 +384,11 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
     private static ProjectGame? DetectGame(byte[] buildId)
     {
+        return DetectSupportedGame(buildId);
+    }
+
+    internal static ProjectGame? DetectSupportedGame(ReadOnlySpan<byte> buildId)
+    {
         var formattedBuildId = FormatBuildId(buildId);
         if (string.Equals(formattedBuildId, SwordBuildId, StringComparison.OrdinalIgnoreCase))
         {
@@ -339,10 +410,39 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             : SwordPatchLayout;
     }
 
-    private static string FormatBuildId(byte[] buildId)
+    private static string FormatBuildId(ReadOnlySpan<byte> buildId)
     {
         var buildIdLength = Math.Min(20, buildId.Length);
-        return Convert.ToHexString(buildId.AsSpan(0, buildIdLength));
+        return Convert.ToHexString(buildId[..buildIdLength]);
+    }
+
+    private static void VerifyPreservedSegment(NsoSegment source, NsoSegment output, string name)
+    {
+        if (source.Header.MemoryOffset != output.Header.MemoryOffset
+            || source.Header.DecompressedSize != output.Header.DecompressedSize
+            || source.CompressedSize != output.CompressedSize
+            || !source.Hash.SequenceEqual(output.Hash)
+            || !source.CompressedData.SequenceEqual(output.CompressedData)
+            || !source.DecompressedData.SequenceEqual(output.DecompressedData))
+        {
+            throw new InvalidDataException($"Royal Candy patch verification found a changed {name} segment.");
+        }
+    }
+
+    private static void ValidateRequiredSegmentHashes(NsoFile nso)
+    {
+        ValidateRequiredSegmentHash(nso.Text, nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        ValidateRequiredSegmentHash(nso.Ro, nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        ValidateRequiredSegmentHash(nso.Data, nso.Flags.HasFlag(NsoFlags.CheckHashData));
+    }
+
+    private static void ValidateRequiredSegmentHash(NsoSegment segment, bool required)
+    {
+        if (required && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
+        {
+            throw new InvalidDataException(
+                $"Royal Candy patching rejected {segment.Name} because its required NSO header hash does not match the decompressed segment.");
+        }
     }
 
     private static string FormatGame(ProjectGame game)
