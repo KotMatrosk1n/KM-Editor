@@ -5,9 +5,12 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.BagHook;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.StartingItems;
 
@@ -38,6 +41,7 @@ public sealed class SwShStartingItemsEditSessionService
         ArgumentNullException.ThrowIfNull(grants);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = startingItemsWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -51,18 +55,20 @@ public sealed class SwShStartingItemsEditSessionService
             return new SwShStartingItemsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var normalized = NormalizeGrants(project, grants, diagnostics);
-        if (!CanStage(project, workflow, diagnostics) || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        var normalized = NormalizeGrants(
+            workflow.ItemOptions,
+            startingItemsWorkflowService.HasInstalledRoyalCandy(project),
+            grants,
+            diagnostics);
+        if (!CanStage(project, workflow, diagnostics)
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new SwShStartingItemsEditResult(workflow, currentSession, diagnostics);
         }
 
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, StartingItemsEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit(normalized))
-                .ToArray(),
+            PendingEdits = [CreatePendingEdit(normalized, startingItemsWorkflowService.GetPlanSources(project))],
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -77,35 +83,53 @@ public sealed class SwShStartingItemsEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = startingItemsWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (session.PendingEdits.Count == 0)
+        if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Stage Starting Items grants before validating.",
-                expected: "Pending Starting Items grants"));
-            return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
+                session.PendingEdits.Count == 0
+                    ? "Stage Starting Items grants before validating."
+                    : "Starting Items requires exactly one canonical grants edit.",
+                expected: "Exactly one pending Starting Items grants edit"));
         }
-
-        foreach (var edit in session.PendingEdits)
+        else
         {
-            if (!string.Equals(edit.Domain, StartingItemsEditDomain, StringComparison.Ordinal))
+            var edit = session.PendingEdits[0];
+            if (!string.Equals(edit.Domain, StartingItemsEditDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal)
+                || !string.Equals(edit.Field, GrantsField, StringComparison.Ordinal))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pending edit domain '{edit.Domain}' is not supported by Starting Items.",
-                    expected: StartingItemsEditDomain));
-                continue;
+                    "Pending edit does not target the Starting Items grants record.",
+                    field: edit.Field,
+                    expected: $"{StartingItemsEditDomain}/{RecordId}/{GrantsField}"));
             }
-
-            var parsedGrants = ParsePendingGrants(edit.NewValue, diagnostics);
-            _ = NormalizeGrants(project, parsedGrants.Values.ToArray(), diagnostics);
-            CanStage(project, workflow, diagnostics);
+            else
+            {
+                var parsedGrants = ParsePendingGrants(edit.NewValue, diagnostics);
+                var normalized = NormalizeGrants(
+                    workflow.ItemOptions,
+                    startingItemsWorkflowService.HasInstalledRoyalCandy(project),
+                    parsedGrants,
+                    diagnostics);
+                if (!string.Equals(edit.NewValue, SerializeGrants(normalized), StringComparison.Ordinal))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Pending Starting Items grants are not in the canonical staged format.",
+                        field: GrantsField,
+                        expected: "Unique, ordered slot:itemId:quantity entries produced by Starting Items staging"));
+                }
+            }
         }
 
+        CanStage(project, workflow, diagnostics);
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -137,11 +161,16 @@ public sealed class SwShStartingItemsEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
+        var project = projectWorkspaceService.Open(paths);
+        var canonicalPayload = session.PendingEdits[0].NewValue ?? string.Empty;
+        var sources = startingItemsWorkflowService.GetPlanSources(project)
+            .Append(CreatePendingPayloadSource(canonicalPayload))
+            .ToArray();
         var writes = new[]
         {
             new PlannedFileWrite(
                 SwShBagHookWorkflowService.BagEventScriptPath,
-                [new ProjectFileReference(ProjectFileLayer.Layered, SwShBagHookWorkflowService.BagEventScriptPath)],
+                sources,
                 File.Exists(targetPath),
                 "Update Bag Hook slots 2-20 with reviewed Starting Items grants. Slot 1 remains reserved for Royal Candy."),
         };
@@ -150,7 +179,9 @@ public sealed class SwShStartingItemsEditSessionService
             DiagnosticSeverity.Info,
             string.Create(CultureInfo.InvariantCulture, $"Starting Items change plan preview contains {writes.Length:N0} target file(s).")));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -165,7 +196,7 @@ public sealed class SwShStartingItemsEditSessionService
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -173,12 +204,15 @@ public sealed class SwShStartingItemsEditSessionService
                 expected: "Current reviewed Starting Items change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var grants = ParsePendingGrants(session.PendingEdits.Single().NewValue, diagnostics);
+        var grants = ParsePendingGrants(session.PendingEdits[0].NewValue, diagnostics)
+            .Where(grant => grant.ItemId is not null)
+            .ToDictionary(grant => grant.Slot);
         var project = projectWorkspaceService.Open(paths);
         var source = ResolveWorkflowFile(project, SwShBagHookWorkflowService.BagEventScriptPath);
         var targetPath = ResolveOutputPath(paths, diagnostics);
@@ -194,14 +228,25 @@ public sealed class SwShStartingItemsEditSessionService
 
         try
         {
-            var patches = Enumerable.Range(SwShBagHookAmxPatcher.FirstStartingItemSlot, SwShBagHookAmxPatcher.LastStartingItemSlot - SwShBagHookAmxPatcher.FirstStartingItemSlot + 1)
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var sourceAnalysis = SwShBagHookAmxPatcher.Analyze(sourceBytes);
+            if (sourceAnalysis.Kind != SwShBagHookInstallKind.InstalledV2)
+            {
+                throw new InvalidDataException("Bag Hook V2 is no longer installed in the reviewed source.");
+            }
+
+            var patches = Enumerable.Range(
+                    SwShBagHookAmxPatcher.FirstStartingItemSlot,
+                    SwShBagHookAmxPatcher.LastStartingItemSlot - SwShBagHookAmxPatcher.FirstStartingItemSlot + 1)
                 .Select(slot => grants.TryGetValue(slot, out var grant)
-                    ? new SwShBagHookSlotPatch(slot, grant.ItemId, grant.ItemId is null ? null : grant.Quantity)
+                    ? new SwShBagHookSlotPatch(slot, grant.ItemId, grant.Quantity)
                     : new SwShBagHookSlotPatch(slot, null, null))
                 .ToArray();
-            var output = SwShBagHookAmxPatcher.ApplySlotPatches(File.ReadAllBytes(source.AbsolutePath), patches);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            var output = SwShBagHookAmxPatcher.ApplySlotPatches(sourceBytes, patches);
+            WriteOutputAtomically(
+                targetPath,
+                output,
+                roundTrip => VerifyOutput(sourceAnalysis, roundTrip, grants));
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShBagHookWorkflowService.BagEventScriptPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -213,7 +258,7 @@ public sealed class SwShStartingItemsEditSessionService
                 DiagnosticSeverity.Error,
                 $"Starting Items source file could not be patched: {exception.Message}",
                 file: SwShBagHookWorkflowService.BagEventScriptPath,
-                expected: "Installed Bag Hook V2"));
+                expected: "Installed Bag Hook V2 with readable slots 1-20"));
         }
         catch (IOException exception)
         {
@@ -235,13 +280,13 @@ public sealed class SwShStartingItemsEditSessionService
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
-    private IReadOnlyList<SwShStartingItemGrantSelection> NormalizeGrants(
-        OpenedProject project,
+    private static IReadOnlyList<SwShStartingItemGrantSelection> NormalizeGrants(
+        IReadOnlyList<SwShStartingItemOptionRecord> itemOptions,
+        bool royalCandyInstalled,
         IReadOnlyList<SwShStartingItemGrantSelection> grants,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var royalCandyInstalled = startingItemsWorkflowService.HasInstalledRoyalCandy(project);
-        var itemLookup = startingItemsWorkflowService.LoadItemOptionLookup(project, diagnostics);
+        var itemLookup = itemOptions.ToDictionary(item => item.ItemId);
         var normalized = new List<SwShStartingItemGrantSelection>();
         var seenSlots = new HashSet<int>();
         foreach (var grant in grants)
@@ -266,7 +311,7 @@ public sealed class SwShStartingItemsEditSessionService
                 continue;
             }
 
-            if (grant.ItemId is null || grant.ItemId == 0)
+            if (grant.ItemId is null or 0)
             {
                 normalized.Add(new SwShStartingItemGrantSelection(grant.Slot, null, 1));
                 continue;
@@ -274,8 +319,7 @@ public sealed class SwShStartingItemsEditSessionService
 
             if (!itemLookup.TryGetValue(grant.ItemId.Value, out var item))
             {
-                if (royalCandyInstalled
-                    && grant.ItemId.Value == SwShBagHookAmxPatcher.RoyalCandyItemId)
+                if (royalCandyInstalled && grant.ItemId.Value == SwShBagHookAmxPatcher.RoyalCandyItemId)
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -293,8 +337,7 @@ public sealed class SwShStartingItemsEditSessionService
                 continue;
             }
 
-            if (royalCandyInstalled
-                && SwShStartingItemsWorkflowService.IsReservedRoyalCandyStartingItem(item.ItemId, item.Name))
+            if (royalCandyInstalled && SwShStartingItemsWorkflowService.IsReservedRoyalCandyStartingItem(item.ItemId, item.Name))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -323,11 +366,12 @@ public sealed class SwShStartingItemsEditSessionService
             : normalized.OrderBy(grant => grant.Slot).ToArray();
     }
 
-    private static IReadOnlyDictionary<int, SwShStartingItemGrantSelection> ParsePendingGrants(
+    private static IReadOnlyList<SwShStartingItemGrantSelection> ParsePendingGrants(
         string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var grants = new Dictionary<int, SwShStartingItemGrantSelection>();
+        var grants = new List<SwShStartingItemGrantSelection>();
+        var seenSlots = new HashSet<int>();
         if (string.IsNullOrWhiteSpace(value))
         {
             return grants;
@@ -359,7 +403,17 @@ public sealed class SwShStartingItemsEditSessionService
                 continue;
             }
 
-            grants[slot] = new SwShStartingItemGrantSelection(slot, itemId == 0 ? null : itemId, quantity);
+            if (!seenSlots.Add(slot))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Starting Items slot {slot} was supplied more than once.",
+                    field: GrantsField,
+                    expected: "Unique slot entries"));
+                continue;
+            }
+
+            grants.Add(new SwShStartingItemGrantSelection(slot, itemId == 0 ? null : itemId, quantity));
         }
 
         return grants;
@@ -381,11 +435,20 @@ public sealed class SwShStartingItemsEditSessionService
 
         if (workflow.InstallStatus != "available")
         {
+            var message = workflow.BlockerKind switch
+            {
+                SwShStartingItemsWorkflowService.BagHookMissingBlockerKind =>
+                    "Starting Items requires installed Bag Hook V2 before staging grants.",
+                SwShStartingItemsWorkflowService.BagHookDamagedBlockerKind =>
+                    "Starting Items cannot stage grants while the Bag Hook slot bank is damaged or incompatible.",
+                SwShStartingItemsWorkflowService.ItemMetadataUnavailableBlockerKind =>
+                    "Starting Items cannot stage grants until item metadata is readable.",
+                _ => "Starting Items is not currently available for staging.",
+            };
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Starting Items requires installed Bag Hook V2 before staging grants.",
-                expected: "Installed Bag Hook V2"));
-            return false;
+                message,
+                expected: "Available Starting Items workflow"));
         }
 
         foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -396,20 +459,106 @@ public sealed class SwShStartingItemsEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static PendingEdit CreatePendingEdit(IReadOnlyList<SwShStartingItemGrantSelection> grants)
+    private static PendingEdit CreatePendingEdit(
+        IReadOnlyList<SwShStartingItemGrantSelection> grants,
+        IReadOnlyList<ProjectFileReference> sources)
     {
-        var value = string.Join(
-            ';',
-            grants
-                .Where(grant => grant.ItemId is not null)
-                .Select(grant => string.Create(CultureInfo.InvariantCulture, $"{grant.Slot}:{grant.ItemId}:{grant.Quantity}")));
         return new PendingEdit(
             StartingItemsEditDomain,
             "Stage Starting Items grants in Bag Hook slots 2-20.",
-            [new ProjectFileReference(ProjectFileLayer.Layered, SwShBagHookWorkflowService.BagEventScriptPath)],
+            sources,
             RecordId,
             GrantsField,
-            value);
+            SerializeGrants(grants));
+    }
+
+    private static string SerializeGrants(IReadOnlyList<SwShStartingItemGrantSelection> grants)
+    {
+        return string.Join(
+            ';',
+            grants
+                .Where(grant => grant.ItemId is not null)
+                .OrderBy(grant => grant.Slot)
+                .Select(grant => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{grant.Slot}:{grant.ItemId}:{grant.Quantity}")));
+    }
+
+    private static ProjectFileReference CreatePendingPayloadSource(string canonicalPayload)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalPayload)));
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/starting-items/{hash}");
+    }
+
+    private static void VerifyOutput(
+        SwShBagHookAnalysis sourceAnalysis,
+        byte[] output,
+        IReadOnlyDictionary<int, SwShStartingItemGrantSelection> grants)
+    {
+        var outputAnalysis = SwShBagHookAmxPatcher.Analyze(output);
+        if (outputAnalysis.Kind != SwShBagHookInstallKind.InstalledV2)
+        {
+            throw new InvalidDataException("Patched Bag-event script did not round-trip as Bag Hook V2.");
+        }
+
+        var sourceRoyalSlot = sourceAnalysis.Slots.Single(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
+        var outputRoyalSlot = outputAnalysis.Slots.Single(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
+        if (sourceRoyalSlot.Status != outputRoyalSlot.Status
+            || sourceRoyalSlot.ItemId != outputRoyalSlot.ItemId
+            || sourceRoyalSlot.Quantity != outputRoyalSlot.Quantity)
+        {
+            throw new InvalidDataException("Starting Items patch changed the Royal Candy slot.");
+        }
+
+        foreach (var slot in outputAnalysis.Slots.Where(slot => slot.Slot is >=
+            SwShBagHookAmxPatcher.FirstStartingItemSlot and <= SwShBagHookAmxPatcher.LastStartingItemSlot))
+        {
+            if (grants.TryGetValue(slot.Slot, out var grant))
+            {
+                if (slot.Status != "occupied" || slot.ItemId != grant.ItemId || slot.Quantity != grant.Quantity)
+                {
+                    throw new InvalidDataException($"Starting Items slot {slot.Slot} did not round-trip with the reviewed grant.");
+                }
+            }
+            else if (slot.Status != "empty" || slot.ItemId is not null || slot.Quantity is not null)
+            {
+                throw new InvalidDataException($"Starting Items slot {slot.Slot} did not round-trip as empty.");
+            }
+        }
+    }
+
+    private static void WriteOutputAtomically(string targetPath, byte[] output, Action<byte[]> verifyRoundTrip)
+    {
+        var directoryPath = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Starting Items output directory could not be resolved.");
+        Directory.CreateDirectory(directoryPath);
+        var temporaryPath = Path.Combine(
+            directoryPath,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, output);
+            var roundTrip = File.ReadAllBytes(temporaryPath);
+            if (!roundTrip.AsSpan().SequenceEqual(output))
+            {
+                throw new IOException("Starting Items temporary output did not round-trip byte-for-byte.");
+            }
+
+            verifyRoundTrip(roundTrip);
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static string? ResolveOutputPath(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
@@ -433,27 +582,6 @@ public sealed class SwShStartingItemsEditSessionService
         }
 
         return targetPath;
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
     }
 
     private static ApplyResult CreateApplyResult(

@@ -512,9 +512,11 @@ public sealed class SwShRoyalCandyEditSessionService
                 DiagnosticSeverity.Error,
                 check.Message,
                 file: check.Target,
-                expected: check.Area == "Bag Hook"
-                    ? "Install Bag Hook from Hooks before staging Royal Candy."
-                    : "Resolve the failed Royal Candy preflight check."));
+                expected: check.CheckId.EndsWith(":bag-hook-starting-items-item-1128", StringComparison.Ordinal)
+                    ? "Clear item 1128 from Starting Items slots 2-20 before staging Royal Candy."
+                    : check.Area == "Bag Hook"
+                        ? "Install Bag Hook from Hooks before staging Royal Candy."
+                        : "Resolve the failed Royal Candy preflight check."));
         }
     }
 

@@ -5028,19 +5028,40 @@ export function App({
     }
 
     setIsStartingItemsStaging(true);
-    prepareScopedEditorPanelAction('startingItems');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageStartingItems({
-        grants,
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setStartingItemsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('startingItems', response.diagnostics);
-      registerEditorDraftDirty('startingItems', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageStartingItems({
+            grants,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : startingItemsWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('startingItems');
+          setStartingItemsWorkflow(response.workflow);
+          setEditSessionSection('startingItems');
+          setScopedEditorPanelDiagnostics('startingItems', response.diagnostics);
+          registerEditorDraftDirty('startingItems', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -17496,8 +17517,8 @@ function formatStartingItemsPendingValue(
     .filter(Boolean)
     .map((part) => {
       const [slot, itemIdText, quantity] = part.split(':');
-      const itemId = Number.parseInt(itemIdText ?? '', 10);
-      const itemName = Number.isInteger(itemId) ? itemLookup.get(itemId) : null;
+      const itemId = parseCanonicalPositiveInteger(itemIdText ?? '');
+      const itemName = itemId === null ? null : itemLookup.get(itemId);
       return slot && itemIdText && quantity
         ? `slot ${slot}: ${itemName ?? `item ${itemIdText}`} x${quantity}`
         : part;
@@ -17514,9 +17535,11 @@ function parseStartingItemsPendingGrantInputs(value: string | null | undefined) 
 
   for (const part of value.split(';')) {
     const [slotText, itemIdText, quantityText] = part.split(':');
-    const slot = Number.parseInt(slotText ?? '', 10);
+    const slot = parseCanonicalPositiveInteger(slotText ?? '');
     if (
-      !Number.isInteger(slot) ||
+      slot === null ||
+      slot < 2 ||
+      slot > 20 ||
       itemIdText === undefined ||
       quantityText === undefined
     ) {
@@ -31500,8 +31523,7 @@ function StartingItemsSection({
       itemId: grant.itemId?.toString() ?? '',
       quantity: grant.quantity.toString()
     };
-    const selectedItemId =
-      input.itemId.trim().length === 0 ? null : Number.parseInt(input.itemId, 10);
+    const selectedItemId = parseCanonicalPositiveInteger(input.itemId);
     const selectedItem =
       selectedItemId === null || !Number.isInteger(selectedItemId)
         ? null
@@ -31543,7 +31565,10 @@ function StartingItemsSection({
     const currentItemId = stagedGrantInput?.itemId ?? grant.itemId?.toString() ?? '';
     const currentQuantity =
       stagedGrantInput?.quantity ?? (grant.itemId === null ? '1' : grant.quantity.toString());
-    return grant.inputItemId.trim() !== currentItemId || grant.inputQuantity.trim() !== currentQuantity;
+    const inputQuantity = grant.inputItemId.trim().length === 0
+      ? '1'
+      : grant.inputQuantity.trim();
+    return grant.inputItemId.trim() !== currentItemId || inputQuantity !== currentQuantity;
   });
   const selectedGrants = parsedGrants
     .filter((grant) => grant.selectedItemId !== null && grant.selectedItem !== null)
@@ -31573,11 +31598,15 @@ function StartingItemsSection({
     !isChangePlanApplying;
   const canReviewPlan =
     isStartingItemsStaged &&
+    !hasLocalDrafts &&
+    !hasInputError &&
     !isChangePlanCreating &&
     !isChangePlanApplying &&
     !isStaging;
   const canApplyPlan =
     isStartingItemsStaged &&
+    !hasLocalDrafts &&
+    !hasInputError &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
@@ -31612,8 +31641,8 @@ function StartingItemsSection({
   }, [onSelectSlot, selectedGrant?.slot, selectedSlot]);
 
   useEffect(() => {
-    onDirtyChange(hasLocalDrafts || hasInputError);
-  }, [hasInputError, hasLocalDrafts, onDirtyChange]);
+    onDirtyChange(hasLocalDrafts);
+  }, [hasLocalDrafts, onDirtyChange]);
 
   return (
     <>
@@ -31633,7 +31662,7 @@ function StartingItemsSection({
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
-            label="Bag Hook"
+            label="Editor status"
             value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
           />
           <Metric
@@ -31687,14 +31716,18 @@ function StartingItemsSection({
                           disabled={workflow.installStatus !== 'available'}
                           emptyOptionLabel="No item"
                           onChange={(nextValue) => {
-                            const nextItem = nextValue.trim().length > 0
-                              ? itemOptionLookup.get(Number.parseInt(nextValue, 10))
-                              : null;
+                            const nextItemId = parseCanonicalPositiveInteger(nextValue);
+                            const nextItem = nextItemId === null
+                              ? null
+                              : itemOptionLookup.get(nextItemId);
                             setGrantInputs((current) => ({
                               ...current,
                               [grant.slot]: {
                                 itemId: nextValue,
-                                quantity: nextItem?.isKeyItem ? '1' : (current[grant.slot]?.quantity ?? '1')
+                                quantity:
+                                  nextValue.trim().length === 0 || nextItem?.isKeyItem
+                                    ? '1'
+                                    : (current[grant.slot]?.quantity ?? '1')
                               }
                             }));
                           }}
@@ -31757,7 +31790,7 @@ function StartingItemsSection({
                 <>
                   <dl className="item-provenance-list">
                     <div>
-                      <dt>Bag Hook status</dt>
+                      <dt>Starting Items status</dt>
                       <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
                     </div>
                     <div>
@@ -38896,16 +38929,14 @@ function SearchableOptionInput({
       return;
     }
 
-    const shouldCommit =
-      hasUserQuery &&
-      filteredOptions.length > 0 &&
-      (filteredOptions.length === 1 || /^\d+$/.test(trimmedQuery));
-    if (!shouldCommit) {
+    const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
+    const optionToCommit = exactOption ?? (filteredOptions.length === 1 ? filteredOptions[0] : null);
+    if (!hasUserQuery || !optionToCommit) {
       setIsOpen(false);
       return;
     }
 
-    selectOption(filteredOptions[0]!);
+    selectOption(optionToCommit);
   };
 
   const handleInputChange = (nextValue: string) => {
@@ -38948,7 +38979,19 @@ function SearchableOptionInput({
 
           if (event.key === 'Enter' && filteredOptions.length > 0) {
             event.preventDefault();
-            selectOption(filteredOptions[0]);
+            const trimmedQuery = query.trim();
+            const exactOption = findExactOptionMatch(trimmedQuery, localizedOptions);
+            const isDigitLeadingQuery = /^\d/.test(trimmedQuery);
+            const optionToCommit =
+              exactOption ??
+              (filteredOptions.length === 1 || !isDigitLeadingQuery
+                ? filteredOptions[0]
+                : null);
+            if (optionToCommit) {
+              selectOption(optionToCommit);
+            } else {
+              setIsOpen(false);
+            }
           }
         }}
         title={localizedTitle}
@@ -39035,6 +39078,14 @@ function normalizeExactOptionInputValue(
 
   const smartMatches = getSmartOptionMatches(value, options);
   return smartMatches.length === 1 ? smartMatches[0]!.value.toString() : value;
+}
+
+function findExactOptionMatch(value: string, options: EditableFieldOption[]) {
+  const normalizedValue = value.toLocaleLowerCase();
+  return options.find(
+    (option) =>
+      option.value.toString() === value || option.label.toLocaleLowerCase() === normalizedValue
+  );
 }
 
 function formatOptionInputValue(
@@ -42488,7 +42539,7 @@ function getStartingItemsDependencyWarning(
   if (
     !workflow ||
     workflow.summary.availability !== 'available' ||
-    workflow.installStatus !== 'blocked'
+    workflow.blockerKind !== 'bagHookMissing'
   ) {
     return null;
   }
@@ -42499,6 +42550,18 @@ function getStartingItemsDependencyWarning(
     fix:
       'Open Hooks > Bag Hook, stage and save the Bag Hook install, then return to Starting Items.'
   };
+}
+
+function parseCanonicalPositiveInteger(value: string) {
+  const normalizedValue = value.trim();
+  if (!/^[1-9]\d*$/.test(normalizedValue)) {
+    return null;
+  }
+
+  const parsedValue = Number(normalizedValue);
+  return Number.isSafeInteger(parsedValue) && parsedValue.toString() === normalizedValue
+    ? parsedValue
+    : null;
 }
 
 function toProjectPaths(draftPaths: ProjectPathDraft, gameTextLanguage: LanguageCode) {

@@ -2284,7 +2284,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadStartingItemsWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadStartingItemsWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadStartingItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Starting Items load paths are required.");
+        var workflow = swShWorkflowService.LoadStartingItems(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2293,12 +2295,16 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageStartingItems(string requestJson)
     {
         var request = DeserializeRequest<StageStartingItemsRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Starting Items stage paths are required.");
+        var grants = request.Payload.Grants
+            ?? throw new JsonException("Starting Items grants are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = startingItemsEditSessionService.StageGrants(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.Grants.Select(selection => new SwShStartingItemGrantSelection(
+            ProjectBridgeMapper.ToCore(paths),
+            grants.Select(selection => new SwShStartingItemGrantSelection(
                 selection.Slot,
                 selection.ItemId,
                 selection.Quantity)).ToArray(),

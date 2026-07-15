@@ -6,6 +6,7 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.Items;
+using KM.SwSh.RoyalCandy;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -13,6 +14,11 @@ namespace KM.SwSh.StartingItems;
 
 public sealed class SwShStartingItemsWorkflowService
 {
+    public const string NoBlockerKind = "none";
+    public const string BagHookMissingBlockerKind = "bagHookMissing";
+    public const string BagHookDamagedBlockerKind = "bagHookDamaged";
+    public const string ItemMetadataUnavailableBlockerKind = "itemMetadataUnavailable";
+
     private readonly SwShBagHookWorkflowService bagHookWorkflowService;
     private readonly SwShItemsWorkflowService itemsWorkflowService;
 
@@ -27,6 +33,16 @@ public sealed class SwShStartingItemsWorkflowService
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
+
+        if (!ProjectGameMetadata.IsSwordShield(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Starting Items is only available for Pokemon Sword and Pokemon Shield projects.",
+                    expected: "Pokemon Sword or Pokemon Shield"));
+        }
 
         if (!project.Health.CanOpenReadOnlyWorkflows)
         {
@@ -49,77 +65,161 @@ public sealed class SwShStartingItemsWorkflowService
 
         var summary = CreateSummary(project);
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
-        var bagHook = bagHookWorkflowService.Load(project);
-        diagnostics.AddRange(bagHook.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
-        var royalCandyInstalled = IsRoyalCandyInstalled(bagHook);
-        var itemOptions = LoadItemOptions(project, diagnostics, royalCandyInstalled);
-        var itemLookup = itemOptions.ToDictionary(item => item.ItemId);
-
-        var bagHookInstalled = IsBagHookInstalledForSlotWrites(bagHook.InstallStatus);
-        var installStatus = bagHookInstalled
-            ? summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly"
-            : "blocked";
-        var installMessage = bagHookInstalled
-            ? "Starting Items can claim Bag Hook slots 2-20. Slot 1 is never used because it is reserved for Royal Candy."
-            : "Install Bag Hook before adding Starting Items.";
-
-        if (!bagHookInstalled)
+        if (!ProjectGameMetadata.IsSwordShield(project.Paths.SelectedGame))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                "Starting Items requires Bag Hook V2 before it can write startup item grants.",
-                expected: "Installed Bag Hook V2"));
+            return new SwShStartingItemsWorkflow(
+                summary,
+                "blocked",
+                "Starting Items is unavailable for this project game.",
+                NoBlockerKind,
+                Array.Empty<SwShStartingItemGrantRecord>(),
+                Array.Empty<SwShStartingItemOptionRecord>(),
+                new SwShStartingItemsWorkflowStats(0, 0, 0, 0),
+                diagnostics);
         }
 
+        var bagHook = bagHookWorkflowService.Load(project);
+        diagnostics.AddRange(bagHook.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+
+        var royalCandyInstalled = SwShRoyalCandyCleanup.HasInstalledOwnershipMarker(project);
+        var catalog = LoadItemCatalog(project, royalCandyInstalled, diagnostics);
+        var itemLookup = catalog.Options.ToDictionary(item => item.ItemId);
         var grants = bagHook.Slots
             .Where(slot => slot.Slot is >= SwShBagHookAmxPatcher.FirstStartingItemSlot and <= SwShBagHookAmxPatcher.LastStartingItemSlot)
-            .Select(slot => ToGrant(slot, itemLookup))
+            .Select(slot => ToGrant(slot, itemLookup, diagnostics))
             .ToArray();
+
+        var bagHookInstalled = IsBagHookInstalledForSlotWrites(bagHook.InstallStatus);
+        var damagedSlots = grants
+            .Where(grant => grant.Status is not ("empty" or "occupied"))
+            .Select(grant => grant.Slot)
+            .ToArray();
+        var hasCompleteSlotBank = grants.Length ==
+            SwShBagHookAmxPatcher.LastStartingItemSlot - SwShBagHookAmxPatcher.FirstStartingItemSlot + 1;
+
+        string blockerKind;
+        string installStatus;
+        string installMessage;
+        if (!bagHookInstalled)
+        {
+            blockerKind = bagHook.InstallStatus is "available" or "readOnly"
+                ? BagHookMissingBlockerKind
+                : BagHookDamagedBlockerKind;
+            installStatus = "blocked";
+            installMessage = blockerKind == BagHookMissingBlockerKind
+                ? "Install Bag Hook before adding Starting Items."
+                : "Repair the damaged or incompatible Bag Hook before editing Starting Items.";
+            diagnostics.Add(CreateDiagnostic(
+                blockerKind == BagHookMissingBlockerKind ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
+                blockerKind == BagHookMissingBlockerKind
+                    ? "Starting Items requires Bag Hook V2 before it can write startup item grants."
+                    : "Starting Items cannot trust the current Bag Hook slot bank.",
+                file: SwShBagHookWorkflowService.BagEventScriptPath,
+                expected: "Installed, readable Bag Hook V2"));
+        }
+        else if (!hasCompleteSlotBank || damagedSlots.Length > 0)
+        {
+            blockerKind = BagHookDamagedBlockerKind;
+            installStatus = "blocked";
+            installMessage = "Repair the damaged Bag Hook slots before editing Starting Items.";
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                hasCompleteSlotBank
+                    ? $"Starting Items cannot overwrite damaged Bag Hook slot(s): {string.Join(", ", damagedSlots)}."
+                    : "Starting Items cannot trust the Bag Hook slot bank because slots 2-20 are incomplete.",
+                file: SwShBagHookWorkflowService.BagEventScriptPath,
+                expected: "Readable empty or occupied Bag Hook slots 2-20"));
+        }
+        else if (!catalog.MetadataAvailable)
+        {
+            blockerKind = ItemMetadataUnavailableBlockerKind;
+            installStatus = "blocked";
+            installMessage = "Repair the item metadata source before editing Starting Items.";
+        }
+        else
+        {
+            blockerKind = NoBlockerKind;
+            installStatus = summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly";
+            installMessage = "Starting Items can claim Bag Hook slots 2-20. Slot 1 is never used because it is reserved for Royal Candy.";
+        }
+
+        var consumedSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var source in catalog.Sources)
+        {
+            AddResolvedPhysicalSource(project, source, consumedSourcePaths);
+        }
+        var bagSource = ResolveEffectiveReference(project, SwShBagHookWorkflowService.BagEventScriptPath);
+        if (bagSource is not null)
+        {
+            AddResolvedPhysicalSource(project, bagSource, consumedSourcePaths);
+        }
+        foreach (var markerSource in SwShRoyalCandyCleanup.GetOwnershipMarkerSources(project))
+        {
+            AddResolvedPhysicalSource(project, markerSource, consumedSourcePaths);
+        }
 
         return new SwShStartingItemsWorkflow(
             summary,
             installStatus,
             installMessage,
+            blockerKind,
             grants,
-            itemOptions,
+            catalog.Options,
             new SwShStartingItemsWorkflowStats(
                 grants.Length,
                 grants.Count(grant => grant.Status == "occupied"),
-                itemOptions.Count,
-                SourceFileCount: 2),
+                catalog.Options.Count,
+                consumedSourcePaths.Count),
             diagnostics);
     }
 
-    private static bool IsBagHookInstalledForSlotWrites(string installStatus)
+    internal IReadOnlyList<ProjectFileReference> GetPlanSources(OpenedProject project)
     {
-        return installStatus is SwShBagHookWorkflowService.InstalledStatus
-            or SwShBagHookWorkflowService.RepairableStatus;
-    }
+        ArgumentNullException.ThrowIfNull(project);
 
-    internal IReadOnlyDictionary<int, SwShStartingItemOptionRecord> LoadItemOptionLookup(
-        OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var bagHook = bagHookWorkflowService.Load(project);
-        return LoadItemOptions(project, diagnostics, IsRoyalCandyInstalled(bagHook))
-            .ToDictionary(item => item.ItemId);
+        var sources = new List<ProjectFileReference>();
+        AddEffectiveSource(project, SwShBagHookWorkflowService.BagEventScriptPath, sources);
+        sources.AddRange(ResolveItemSemanticSources(project));
+        sources.AddRange(SwShRoyalCandyCleanup.GetOwnershipMarkerSources(project));
+        return sources
+            .DistinctBy(source => (source.Layer, source.RelativePath), ProjectFileReferenceKeyComparer.Instance)
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     internal bool HasInstalledRoyalCandy(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
-
-        return IsRoyalCandyInstalled(bagHookWorkflowService.Load(project));
+        return SwShRoyalCandyCleanup.HasInstalledOwnershipMarker(project);
     }
 
-    private IReadOnlyList<SwShStartingItemOptionRecord> LoadItemOptions(
+    private StartingItemCatalog LoadItemCatalog(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics,
-        bool royalCandyInstalled)
+        bool royalCandyInstalled,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
+        var sources = ResolveItemSemanticSources(project);
         try
         {
-            return itemsWorkflowService.Load(project).Items
+            var workflow = itemsWorkflowService.Load(project);
+            foreach (var diagnostic in workflow.Diagnostics)
+            {
+                diagnostics.Add(diagnostic with { Domain = SwShStartingItemsEditSessionService.StartingItemsEditDomain });
+            }
+
+            var hasMetadataError = workflow.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            if (workflow.Items.Count == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Starting Items could not load any item records from item.dat.",
+                    file: SwShItemsWorkflowService.ItemDataPath,
+                    expected: "Readable Sword/Shield item metadata"));
+                hasMetadataError = true;
+            }
+
+            var options = workflow.Items
                 .Where(item => item.ItemId > 0 && !string.Equals(item.Name, "None", StringComparison.OrdinalIgnoreCase))
                 .Where(item => !royalCandyInstalled || !IsReservedRoyalCandyStartingItem(item.ItemId, item.Name))
                 .Select(item => new SwShStartingItemOptionRecord(
@@ -130,42 +230,145 @@ public sealed class SwShStartingItemsWorkflowService
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.ItemId)
                 .ToArray();
+            if (options.Length == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Starting Items did not find any eligible item records in item.dat.",
+                    file: SwShItemsWorkflowService.ItemDataPath,
+                    expected: "At least one item with a positive item id"));
+                hasMetadataError = true;
+            }
+
+            return new StartingItemCatalog(options, sources, !hasMetadataError);
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException or OverflowException or IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Item options could not be decoded: {exception.Message}",
+                $"Item options could not be loaded: {exception.Message}",
                 file: SwShItemsWorkflowService.ItemDataPath,
-                expected: "Readable item table"));
+                expected: "Readable Sword/Shield item metadata"));
+            return new StartingItemCatalog(Array.Empty<SwShStartingItemOptionRecord>(), sources, MetadataAvailable: false);
         }
-        catch (IOException exception)
+    }
+
+    private static IReadOnlyList<ProjectFileReference> ResolveItemSemanticSources(OpenedProject project)
+    {
+        var sources = new List<ProjectFileReference>();
+        AddEffectiveSource(project, SwShItemsWorkflowService.ItemDataPath, sources);
+        AddCommonTextSource(project, "itemname.dat", sources);
+        AddCommonTextSource(project, "wazaname.dat", sources);
+        return sources
+            .DistinctBy(source => (source.Layer, source.RelativePath), ProjectFileReferenceKeyComparer.Instance)
+            .ToArray();
+    }
+
+    private static void AddCommonTextSource(
+        OpenedProject project,
+        string fileName,
+        ICollection<ProjectFileReference> sources)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        if (AddEffectiveSource(project, SwShGameTextLanguage.CommonMessagePath(language, fileName), sources))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Item options could not be read: {exception.Message}",
-                file: SwShItemsWorkflowService.ItemDataPath,
-                expected: "Readable item table"));
+            return;
         }
 
-        return Array.Empty<SwShStartingItemOptionRecord>();
+        if (!string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
+            && AddEffectiveSource(project, SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName), sources))
+        {
+            return;
+        }
+
+        var fallback = project.FileGraph.Entries
+            .Where(entry => entry.RelativePath.StartsWith("romfs/bin/message/", StringComparison.OrdinalIgnoreCase)
+                && entry.RelativePath.EndsWith($"/common/{fileName}", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(entry => ResolveEffectiveReference(project, entry.RelativePath) is not null);
+        if (fallback is not null)
+        {
+            AddEffectiveSource(project, fallback.RelativePath, sources);
+        }
+    }
+
+    private static bool AddEffectiveSource(
+        OpenedProject project,
+        string relativePath,
+        ICollection<ProjectFileReference> sources)
+    {
+        var source = ResolveEffectiveReference(project, relativePath);
+        if (source is null)
+        {
+            return false;
+        }
+
+        sources.Add(source);
+        return true;
+    }
+
+    private static ProjectFileReference? ResolveEffectiveReference(OpenedProject project, string relativePath)
+    {
+        var entry = project.FileGraph.Entries.FirstOrDefault(candidate =>
+            string.Equals(candidate.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            return null;
+        }
+
+        var absolutePath = SwShBagHookWorkflowService.ResolveSourcePath(project.Paths, entry);
+        if (absolutePath is null || !File.Exists(absolutePath))
+        {
+            return null;
+        }
+
+        return new ProjectFileReference(
+            entry.LayeredFile is not null ? ProjectFileLayer.Layered : ProjectFileLayer.Base,
+            entry.RelativePath);
+    }
+
+    private static void AddResolvedPhysicalSource(
+        OpenedProject project,
+        ProjectFileReference source,
+        ISet<string> resolvedPaths)
+    {
+        string? rootPath;
+        string relativePath;
+        switch (source.Layer)
+        {
+            case ProjectFileLayer.Base when source.RelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase):
+                rootPath = project.Paths.BaseRomFsPath;
+                relativePath = source.RelativePath["romfs/".Length..];
+                break;
+            case ProjectFileLayer.Base when source.RelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase):
+                rootPath = project.Paths.BaseExeFsPath;
+                relativePath = source.RelativePath["exefs/".Length..];
+                break;
+            case ProjectFileLayer.Layered or ProjectFileLayer.Generated:
+                rootPath = project.Paths.OutputRootPath;
+                relativePath = source.RelativePath;
+                break;
+            default:
+                return;
+        }
+
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return;
+        }
+
+        var absolutePath = Path.GetFullPath(Path.Combine(
+            rootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (File.Exists(absolutePath))
+        {
+            resolvedPaths.Add(absolutePath);
+        }
     }
 
     internal static bool IsReservedRoyalCandyStartingItem(int itemId, string? itemName = null)
     {
-        if (itemId == SwShBagHookAmxPatcher.RoyalCandyItemId)
-        {
-            return true;
-        }
-
-        return IsExpCandyXlName(itemName);
-    }
-
-    private static bool IsRoyalCandyInstalled(SwShBagHookWorkflow bagHook)
-    {
-        var slot1 = bagHook.Slots.FirstOrDefault(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
-        return slot1?.Status == "occupied"
-            && slot1.ItemId == SwShBagHookAmxPatcher.RoyalCandyItemId;
+        return itemId == SwShBagHookAmxPatcher.RoyalCandyItemId || IsExpCandyXlName(itemName);
     }
 
     private static bool IsExpCandyXlName(string? itemName)
@@ -185,24 +388,52 @@ public sealed class SwShStartingItemsWorkflowService
 
     private static SwShStartingItemGrantRecord ToGrant(
         SwShBagHookSlotRecord slot,
-        IReadOnlyDictionary<int, SwShStartingItemOptionRecord> itemLookup)
+        IReadOnlyDictionary<int, SwShStartingItemOptionRecord> itemLookup,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        var item = slot.ItemId is not null && itemLookup.TryGetValue(slot.ItemId.Value, out var option)
+        var malformedActiveGrant = slot.Status is "occupied" or "conflict"
+            && (slot.ItemId is not null || slot.Quantity is not null)
+            && (slot.ItemId is null or <= 0 || slot.Quantity is null or < 1 or > 999);
+        if (malformedActiveGrant)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Bag Hook slot {slot.Slot} contains an invalid active grant (item {slot.ItemId?.ToString(CultureInfo.InvariantCulture) ?? "missing"}, quantity {slot.Quantity?.ToString(CultureInfo.InvariantCulture) ?? "missing"})."),
+                file: SwShBagHookWorkflowService.BagEventScriptPath,
+                expected: "Item id greater than 0 and quantity 1-999"));
+        }
+
+        var safeItemId = slot.ItemId is > 0 ? slot.ItemId : null;
+        var safeQuantity = slot.Quantity is >= 1 and <= 999 ? slot.Quantity.Value : 1;
+        var item = safeItemId is not null && itemLookup.TryGetValue(safeItemId.Value, out var option)
             ? option
             : null;
+        var itemName = malformedActiveGrant
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"Invalid grant (item {slot.ItemId?.ToString(CultureInfo.InvariantCulture) ?? "missing"}, quantity {slot.Quantity?.ToString(CultureInfo.InvariantCulture) ?? "missing"})")
+            : item?.Name ?? slot.ItemName;
 
         return new SwShStartingItemGrantRecord(
             slot.Slot,
-            slot.ItemId,
-            item?.Name ?? slot.ItemName,
-            slot.Quantity ?? 1,
+            safeItemId,
+            itemName,
+            safeQuantity,
             item?.IsKeyItem ?? false,
-            slot.Status,
+            malformedActiveGrant ? "conflict" : slot.Status,
             slot.Owner,
             new SwShStartingItemsProvenance(
                 slot.Provenance.SourceFile,
                 slot.Provenance.SourceLayer,
                 slot.Provenance.FileState));
+    }
+
+    private static bool IsBagHookInstalledForSlotWrites(string installStatus)
+    {
+        return installStatus is SwShBagHookWorkflowService.InstalledStatus
+            or SwShBagHookWorkflowService.RepairableStatus;
     }
 
     private static SwShWorkflowSummary CreateSummary(
@@ -229,5 +460,28 @@ public sealed class SwShStartingItemsWorkflowService
             File: file,
             Domain: SwShStartingItemsEditSessionService.StartingItemsEditDomain,
             Expected: expected);
+    }
+
+    private sealed record StartingItemCatalog(
+        IReadOnlyList<SwShStartingItemOptionRecord> Options,
+        IReadOnlyList<ProjectFileReference> Sources,
+        bool MetadataAvailable);
+
+    private sealed class ProjectFileReferenceKeyComparer : IEqualityComparer<(ProjectFileLayer Layer, string RelativePath)>
+    {
+        public static ProjectFileReferenceKeyComparer Instance { get; } = new();
+
+        public bool Equals(
+            (ProjectFileLayer Layer, string RelativePath) x,
+            (ProjectFileLayer Layer, string RelativePath) y)
+        {
+            return x.Layer == y.Layer
+                && string.Equals(x.RelativePath, y.RelativePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode((ProjectFileLayer Layer, string RelativePath) obj)
+        {
+            return HashCode.Combine(obj.Layer, StringComparer.OrdinalIgnoreCase.GetHashCode(obj.RelativePath));
+        }
     }
 }

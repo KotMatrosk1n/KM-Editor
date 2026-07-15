@@ -267,6 +267,164 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     return direct;
   }
 
+  const startingItemsSlotFieldMatch = /^(Item|Quantity) for Bag Hook slot (\d+)$/.exec(
+    literal
+  );
+  if (startingItemsSlotFieldMatch) {
+    return formatLiteralTemplate(
+      language,
+      `${startingItemsSlotFieldMatch[1]} for Bag Hook slot {slot}`,
+      { slot: startingItemsSlotFieldMatch[2] }
+    );
+  }
+
+  const startingItemsPendingGrantMatch = /^slot (\d+): (.+) x(\d+)$/.exec(literal);
+  const startingItemsPendingGrantSegments = literal.split(', ');
+  if (
+    startingItemsPendingGrantSegments.length > 1 &&
+    startingItemsPendingGrantSegments.every((segment) => /^slot \d+: .+ x\d+$/.test(segment))
+  ) {
+    return startingItemsPendingGrantSegments
+      .map((segment) => translateLiteralBodyForLanguage(language, segment))
+      .join(', ');
+  }
+  if (startingItemsPendingGrantMatch) {
+    const unknownItemMatch = /^item (\d+)$/.exec(startingItemsPendingGrantMatch[2]);
+    const item = unknownItemMatch
+      ? formatLiteralTemplate(language, 'item {itemId}', { itemId: unknownItemMatch[1] })
+      : startingItemsPendingGrantMatch[2];
+    return formatLiteralTemplate(language, 'slot {slot}: {item} x{quantity}', {
+      item,
+      quantity: startingItemsPendingGrantMatch[3],
+      slot: startingItemsPendingGrantMatch[1]
+    });
+  }
+
+  const startingItemsKeyOptionMatch = /^(.+) \(#(\d+)\) \[Key\]$/.exec(literal);
+  if (startingItemsKeyOptionMatch) {
+    return `${startingItemsKeyOptionMatch[1]} (#${startingItemsKeyOptionMatch[2]}) [${translateLiteralBodyForLanguage(
+      language,
+      'Key item'
+    )}]`;
+  }
+
+  const startingItemsDamagedSlotsMatch =
+    /^Starting Items cannot overwrite damaged Bag Hook slot\(s\): (.+)\.$/.exec(literal);
+  if (startingItemsDamagedSlotsMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Starting Items cannot overwrite damaged Bag Hook slot(s): {slots}.',
+      { slots: startingItemsDamagedSlotsMatch[1] }
+    );
+  }
+
+  const startingItemsInvalidActiveGrantMatch =
+    /^Bag Hook slot (\d+) contains an invalid active grant \(item ([^,]+), quantity ([^)]+)\)\.$/.exec(
+      literal
+    );
+  if (startingItemsInvalidActiveGrantMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Bag Hook slot {slot} contains an invalid active grant (item {item}, quantity {quantity}).',
+      {
+        item: translateLiteralBodyForLanguage(language, startingItemsInvalidActiveGrantMatch[2]),
+        quantity: translateLiteralBodyForLanguage(language, startingItemsInvalidActiveGrantMatch[3]),
+        slot: startingItemsInvalidActiveGrantMatch[1]
+      }
+    );
+  }
+
+  const startingItemsInvalidGrantMatch =
+    /^Invalid grant \(item ([^,]+), quantity ([^)]+)\)$/.exec(literal);
+  if (startingItemsInvalidGrantMatch) {
+    return formatLiteralTemplate(language, 'Invalid grant (item {item}, quantity {quantity})', {
+      item: translateLiteralBodyForLanguage(language, startingItemsInvalidGrantMatch[1]),
+      quantity: translateLiteralBodyForLanguage(language, startingItemsInvalidGrantMatch[2])
+    });
+  }
+
+  const bagHookInvalidEncodedGrantMatch =
+    /^(Legacy one-item grant|Active slot) uses invalid encoded values \(item ([^,]+), quantity ([^)]+)\)( and cannot be overwritten safely)?\.$/.exec(
+      literal
+    );
+  if (bagHookInvalidEncodedGrantMatch) {
+    const template = bagHookInvalidEncodedGrantMatch[1] === 'Legacy one-item grant'
+      ? 'Legacy one-item grant uses invalid encoded values (item {item}, quantity {quantity}).'
+      : 'Active slot uses invalid encoded values (item {item}, quantity {quantity}) and cannot be overwritten safely.';
+    return formatLiteralTemplate(language, template, {
+      item: translateLiteralBodyForLanguage(language, bagHookInvalidEncodedGrantMatch[2]),
+      quantity: translateLiteralBodyForLanguage(language, bagHookInvalidEncodedGrantMatch[3])
+    });
+  }
+
+  const bagHookSlotDuplicateMatch = /^Bag Hook slot (\d+) was supplied more than once\.$/.exec(literal);
+  if (bagHookSlotDuplicateMatch) {
+    return formatLiteralTemplate(language, 'Bag Hook slot {slot} was supplied more than once.', {
+      slot: bagHookSlotDuplicateMatch[1]
+    });
+  }
+
+  const bagHookDamagedSlotMatch =
+    /^Bag Hook slot (\d+) is damaged and cannot be overwritten safely\.$/.exec(literal);
+  if (bagHookDamagedSlotMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Bag Hook slot {slot} is damaged and cannot be overwritten safely.',
+      { slot: bagHookDamagedSlotMatch[1] }
+    );
+  }
+
+  const startingItemsDuplicateSlotMatch =
+    /^Starting Items slot (\d+) was supplied more than once\.$/.exec(literal);
+  if (startingItemsDuplicateSlotMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Starting Items slot {slot} was supplied more than once.',
+      { slot: startingItemsDuplicateSlotMatch[1] }
+    );
+  }
+
+  const startingItemsRoundTripMatch =
+    /^Starting Items slot (\d+) did not round-trip (with the reviewed grant|as empty)\.$/.exec(literal);
+  if (startingItemsRoundTripMatch) {
+    const template = startingItemsRoundTripMatch[2] === 'with the reviewed grant'
+      ? 'Starting Items slot {slot} did not round-trip with the reviewed grant.'
+      : 'Starting Items slot {slot} did not round-trip as empty.';
+    return formatLiteralTemplate(language, template, { slot: startingItemsRoundTripMatch[1] });
+  }
+
+  const startingItemsApplyFailureMatch =
+    /^(Starting Items source file could not be patched|Starting Items output file could not be written): (.+)$/.exec(
+      literal
+    );
+  if (startingItemsApplyFailureMatch) {
+    const template = startingItemsApplyFailureMatch[1].includes('patched')
+      ? 'Starting Items source file could not be patched: {error}'
+      : 'Starting Items output file could not be written: {error}';
+    return formatLiteralTemplate(language, template, {
+      error: translateLiteralBodyForLanguage(language, startingItemsApplyFailureMatch[2])
+    });
+  }
+
+  const startingItemsItemOptionsLoadMatch = /^Item options could not be loaded: (.+)$/.exec(literal);
+  if (startingItemsItemOptionsLoadMatch) {
+    return formatLiteralTemplate(language, 'Item options could not be loaded: {error}', {
+      error: translateLiteralBodyForLanguage(language, startingItemsItemOptionsLoadMatch[1])
+    });
+  }
+
+  const royalCandyStartingItemsConflictMatch =
+    /^Clear item 1128 from Starting Items slot\(s\) (.+) before installing or refreshing Royal Candy; KM will not delete those grants automatically\.$/.exec(
+      literal
+    );
+  if (royalCandyStartingItemsConflictMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Clear item 1128 from Starting Items slot(s) {slots} before installing or refreshing Royal Candy; KM will not delete those grants automatically.',
+      { slots: royalCandyStartingItemsConflictMatch[1] }
+    );
+  }
+
   const numericPrefixedLiteralMatch = /^(-?\d{1,5})\s+(.+)$/.exec(literal);
   if (numericPrefixedLiteralMatch) {
     const translatedSuffix = translateLiteralBodyForLanguage(language, numericPrefixedLiteralMatch[2]);

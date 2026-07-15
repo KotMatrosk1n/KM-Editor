@@ -42,6 +42,7 @@ public sealed record SwShStartingItemsWorkflow(
     SwShWorkflowSummary Summary,
     string InstallStatus,
     string InstallMessage,
+    string BlockerKind,
     IReadOnlyList<SwShStartingItemGrantRecord> Grants,
     IReadOnlyList<SwShStartingItemOptionRecord> ItemOptions,
     SwShStartingItemsWorkflowStats Stats,

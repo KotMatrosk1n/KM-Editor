@@ -2919,25 +2919,39 @@ export const startingItemsProvenanceSchema = z.strictObject({
 export const startingItemOptionRecordSchema = z.strictObject({
   category: z.string(),
   isKeyItem: z.boolean(),
-  itemId: z.number().int().nonnegative(),
+  itemId: z.number().int().positive(),
   name: z.string()
 });
 
+export const startingItemsBlockerKindSchema = z.enum([
+  'none',
+  'bagHookMissing',
+  'bagHookDamaged',
+  'itemMetadataUnavailable'
+]);
+
+export const startingItemGrantStatusSchema = z.enum([
+  'empty',
+  'occupied',
+  'conflict',
+  'unavailable'
+]);
+
 export const startingItemGrantRecordSchema = z.strictObject({
   isKeyItem: z.boolean(),
-  itemId: z.number().int().nonnegative().nullable(),
+  itemId: z.number().int().positive().nullable(),
   itemName: z.string(),
   owner: z.string(),
   provenance: startingItemsProvenanceSchema,
-  quantity: z.number().int().positive(),
-  slot: z.number().int().positive(),
-  status: z.string()
+  quantity: z.number().int().min(1).max(999),
+  slot: z.number().int().min(2).max(20),
+  status: startingItemGrantStatusSchema
 });
 
 export const startingItemGrantSelectionSchema = z.strictObject({
   itemId: z.number().int().nonnegative().nullable(),
-  quantity: z.number().int().positive(),
-  slot: z.number().int().positive()
+  quantity: z.number().int().min(1).max(999),
+  slot: z.number().int().min(2).max(20)
 });
 
 export const startingItemsWorkflowStatsSchema = z.strictObject({
@@ -2948,10 +2962,11 @@ export const startingItemsWorkflowStatsSchema = z.strictObject({
 });
 
 export const startingItemsWorkflowSchema = z.strictObject({
+  blockerKind: startingItemsBlockerKindSchema,
   diagnostics: z.array(apiDiagnosticSchema),
   grants: z.array(startingItemGrantRecordSchema),
   installMessage: z.string(),
-  installStatus: z.string(),
+  installStatus: z.enum(['available', 'readOnly', 'blocked']),
   itemOptions: z.array(startingItemOptionRecordSchema),
   stats: startingItemsWorkflowStatsSchema,
   summary: workflowSummarySchema

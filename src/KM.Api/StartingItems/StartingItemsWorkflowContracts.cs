@@ -50,6 +50,7 @@ public sealed record StartingItemsWorkflowDto(
     WorkflowSummaryDto Summary,
     string InstallStatus,
     string InstallMessage,
+    string BlockerKind,
     IReadOnlyList<StartingItemGrantRecordDto> Grants,
     IReadOnlyList<StartingItemOptionRecordDto> ItemOptions,
     StartingItemsWorkflowStatsDto Stats,

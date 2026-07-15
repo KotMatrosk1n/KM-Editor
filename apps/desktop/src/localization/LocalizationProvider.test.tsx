@@ -189,6 +189,95 @@ describe('LocalizationProvider', () => {
     expect(translateLiteralForLanguage('es', 'Show Form options')).toBe(
       'Mostrar opciones de Forma'
     );
+    expect(translateLiteralForLanguage('es', 'Item for Bag Hook slot 12')).toBe(
+      'Objeto para el hueco 12 de Gancho de bolsa'
+    );
+    expect(translateLiteralForLanguage('es', 'Quantity for Bag Hook slot 12')).toBe(
+      'Cantidad para el hueco 12 de Gancho de bolsa'
+    );
+    expect(translateLiteralForLanguage('es', 'Show Item for Bag Hook slot 12 options')).toBe(
+      'Mostrar opciones de Objeto para el hueco 12 de Gancho de bolsa'
+    );
+    expect(translateLiteralForLanguage('es', 'slot 12: Master Ball x5')).toBe(
+      'hueco 12: Master Ball x5'
+    );
+    expect(translateLiteralForLanguage('es', 'slot 12: item 9999 x5')).toBe(
+      'hueco 12: objeto 9999 x5'
+    );
+    expect(
+      translateLiteralForLanguage('es', 'slot 12: Master Ball x5, slot 13: item 9999 x2')
+    ).toBe('hueco 12: Master Ball x5, hueco 13: objeto 9999 x2');
+    expect(translateLiteralForLanguage('es', 'Bike (#700) [Key]')).toBe(
+      'Bike (#700) [Objeto clave]'
+    );
+    expect(translateLiteralForLanguage('de', 'Bike (#700) [Key]')).toBe(
+      'Bike (#700) [Basis-Item]'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Clear item 1128 from Starting Items slot(s) 2, 7 before installing or refreshing Royal Candy; KM will not delete those grants automatically.'
+      )
+    ).toBe(
+      'Quita el objeto 1128 de los huecos 2, 7 de Objetos iniciales antes de instalar o actualizar Caramelo Royal; KM no eliminará esas entregas automáticamente.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Repair the damaged Bag Hook slots before editing Starting Items.'
+      )
+    ).toBe('Repara los huecos dañados de Gancho de bolsa antes de editar Objetos iniciales.');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Starting Items cannot overwrite damaged Bag Hook slot(s): 3, 7.'
+      )
+    ).toBe(
+      'Objetos iniciales no puede sobrescribir los huecos dañados de Gancho de bolsa: 3, 7.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Bag Hook slot 4 contains an invalid active grant (item missing, quantity 1000).'
+      )
+    ).toBe(
+      'Bag-Hook-Platz 4 enthält eine ungültige aktive Vergabe (Gegenstand fehlend, Menge 1000).'
+    );
+    expect(
+      translateLiteralForLanguage('es', 'Invalid grant (item missing, quantity 0)')
+    ).toBe('Entrega no válida (objeto ausente, cantidad 0)');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Starting Items cannot stage grants while the Bag Hook slot bank is damaged or incompatible.'
+      )
+    ).toBe(
+      'Objetos iniciales no puede preparar entregas mientras el banco de huecos de Gancho de bolsa esté dañado o sea incompatible.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Starting Items cannot stage grants until item metadata is readable.'
+      )
+    ).toBe(
+      'Startgegenstände können erst bereitgestellt werden, wenn die Gegenstandsmetadaten lesbar sind.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Clear item 1128 from Starting Items slots 2-20 before staging Royal Candy.'
+      )
+    ).toBe(
+      'Entferne Gegenstand 1128 aus den Startgegenstände-Plätzen 2-20, bevor du Royal Candy bereitstellst.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Item options could not be loaded: Starting Items output directory could not be resolved.'
+      )
+    ).toBe(
+      'No se pudieron cargar las opciones de objetos: No se pudo resolver el directorio de salida de Objetos iniciales.'
+    );
     expect(translateLiteralForLanguage('es', 'Custom fixed IVs')).toBe(
       'IVs fijos personalizados'
     );
@@ -435,6 +524,29 @@ describe('LocalizationProvider', () => {
 
       return [...missingKeys, ...missingLiterals].filter((entry): entry is string => entry !== null);
     });
+
+    expect(missingEntries).toEqual([]);
+  });
+
+  it('ships Starting Items backend diagnostic templates in every language resource', () => {
+    const resources = { deResource, enResource, esResource, frResource, ruResource, ukResource, zhResource };
+    const diagnosticLiterals = [
+      'Starting Items cannot overwrite damaged Bag Hook slot(s): {slots}.',
+      'Bag Hook slot {slot} contains an invalid active grant (item {item}, quantity {quantity}).',
+      'Invalid grant (item {item}, quantity {quantity})',
+      'Starting Items cannot stage grants while the Bag Hook slot bank is damaged or incompatible.',
+      'Starting Items cannot stage grants until item metadata is readable.',
+      'Starting Items requires installed Bag Hook V2 before staging grants.',
+      'Starting Items could not load any item records from item.dat.',
+      'Item options could not be loaded: {error}',
+      'Clear item 1128 from Starting Items slots 2-20 before staging Royal Candy.'
+    ];
+
+    const missingEntries = Object.entries(resources).flatMap(([language, resource]) =>
+      diagnosticLiterals
+        .filter((literal) => !(literal in resource.literals))
+        .map((literal) => `${language}:${literal}`)
+    );
 
     expect(missingEntries).toEqual([]);
   });

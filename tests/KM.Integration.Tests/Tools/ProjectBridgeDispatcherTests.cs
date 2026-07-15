@@ -4252,6 +4252,88 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal([1127, 1129, 1606], dyniteShop.Inventory.Items);
     }
 
+    [Theory]
+    [InlineData(
+        "{\"command\":\"startingItems.load\",\"payload\":{\"paths\":null},\"requestId\":\"request-starting-items-load-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"startingItems.stage\",\"payload\":{\"paths\":null,\"session\":null,\"grants\":[]},\"requestId\":\"request-starting-items-stage-null-paths\"}")]
+    public void DispatchStartingItemsCommandsWithNullPathsReturnInvalidJson(string requestJson)
+    {
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Fact]
+    public void DispatchStageStartingItemsWithNullGrantsReturnsInvalidJson()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.StageStartingItems,
+            new StageStartingItemsRequest(temp.Paths, Session: null, Grants: null!),
+            requestId: "request-starting-items-stage-null-grants");
+
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(ProjectGameDto.Scarlet)]
+    [InlineData(ProjectGameDto.Violet)]
+    public void DispatchStartingItemsCommandsForScarletVioletReturnGameMismatch(ProjectGameDto selectedGame)
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var load = DeserializeResponse<object>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadStartingItemsWorkflow,
+            new LoadStartingItemsWorkflowRequest(paths),
+            requestId: $"request-starting-items-{selectedGame}-load")));
+        var stage = DeserializeResponse<object>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StageStartingItems,
+            new StageStartingItemsRequest(paths, Session: null, Grants: []),
+            requestId: $"request-starting-items-{selectedGame}-stage")));
+
+        foreach (var response in new[] { load, stage })
+        {
+            Assert.Null(response.Payload);
+            Assert.NotNull(response.Error);
+            Assert.Equal("bridge.gameMismatch", response.Error.Code);
+            Assert.Contains("Sword/Shield", response.Error.Message);
+        }
+    }
+
+    [Theory]
+    [InlineData(ProjectGameDto.Sword)]
+    [InlineData(ProjectGameDto.Shield)]
+    public void DispatchLoadStartingItemsWorkflowRoutesSwordAndShieldAndMapsBlockerKind(ProjectGameDto selectedGame)
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        temp.WriteBaseExeFsFile(
+            "main.npdm",
+            CreateNpdm(selectedGame == ProjectGameDto.Sword
+                ? 0x0100ABF008968000UL
+                : 0x01008DB008C2C000UL));
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadStartingItemsWorkflow,
+            new LoadStartingItemsWorkflowRequest(paths),
+            requestId: $"request-starting-items-{selectedGame}-load");
+
+        var response = DeserializeResponse<LoadStartingItemsWorkflowResponse>(
+            new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("none", response.Payload.Workflow.BlockerKind);
+    }
+
     [Fact]
     public void DispatchRoyalCandyApplyPreservesStartingItemsBagHookSlots()
     {
