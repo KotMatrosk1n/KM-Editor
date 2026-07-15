@@ -77,7 +77,6 @@ internal static class SwShWorkflowDependencyValidator
                 File("personal data", SwShPokemonWorkflowService.PersonalDataPath),
                 File("learnset data", SwShPokemonWorkflowService.LearnsetDataPath),
                 Prefix("evolution data", SwShPokemonWorkflowService.EvolutionDataDirectory),
-                AnyFile("Pokemon display names", CommonMessageFiles(project, "pokelist.dat")),
                 AnyFile("species names", CommonMessageFiles(project, "monsname.dat")),
                 AnyFile("item names", CommonMessageFiles(project, "itemname.dat")),
                 AnyFile("ability names", CommonMessageFiles(project, "tokusei.dat")),

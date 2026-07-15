@@ -9,3 +9,5 @@ public sealed record SwShPokemonEditResult(
     SwShPokemonWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SwShPokemonFieldUpdate(int PersonalId, string Field, string Value);

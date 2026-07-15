@@ -19,7 +19,6 @@ public sealed class SwShPokemonWorkflowService
     public const string PersonalDataPath = SwShPersonalTable.PersonalDataRelativePath;
     public const string LearnsetDataPath = SwShPokemonLearnsetTable.LearnsetDataRelativePath;
     public const string EvolutionDataDirectory = SwShEvolutionSet.EvolutionDataRelativeDirectory;
-    public const string EnglishPokemonNamePath = "romfs/bin/message/English/common/pokelist.dat";
     public const string EnglishSpeciesNamePath = "romfs/bin/message/English/common/monsname.dat";
     public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
     public const string EnglishAbilityNamePath = "romfs/bin/message/English/common/tokusei.dat";
@@ -212,7 +211,7 @@ public sealed class SwShPokemonWorkflowService
         CreateField(EggGroup1Field, "Egg Group 1", "Traits", 0, 15, EggGroupOptions),
         CreateField(EggGroup2Field, "Egg Group 2", "Traits", 0, 15, EggGroupOptions),
         CreateField(ExpGrowthField, "EXP Growth", "Traits", 0, 5, ExpGrowthOptions),
-        CreateField(ColorField, "Color", "Traits", 0, 63, ColorOptions),
+        CreateField(ColorField, "Color", "Traits", 0, 9, ColorOptions),
         CreateField(HeldItem1Field, "Held Item 50%", "Held Items", 0, short.MaxValue),
         CreateField(HeldItem2Field, "Held Item 5%", "Held Items", 0, short.MaxValue),
         CreateField(HeldItem3Field, "Held Item 1%", "Held Items", 0, short.MaxValue),
@@ -227,8 +226,8 @@ public sealed class SwShPokemonWorkflowService
         CreateField(EvolutionStageField, "Evolution Stage", "Forms/Dex", 0, byte.MaxValue),
         CreateField(FormStatsIndexField, "Form Sprite/Stats Index", "Forms/Dex", 0, ushort.MaxValue),
         CreateField(FormCountField, "Forms Count", "Forms/Dex", 0, byte.MaxValue),
-        CreateField(FormField, "Form", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(LocalFormIndexField, "Local Form Index", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(FormField, "Form", "Forms/Dex", 0, byte.MaxValue),
+        CreateField(LocalFormIndexField, "Local Form Index", "Forms/Dex", 0, byte.MaxValue),
         CreateField(HatchedSpeciesField, "Hatched Species", "Forms/Dex", 0, ushort.MaxValue),
         CreateField(HeightField, "Height", "Forms/Dex", 0, ushort.MaxValue),
         CreateField(WeightField, "Weight", "Forms/Dex", 0, ushort.MaxValue),
@@ -274,8 +273,8 @@ public sealed class SwShPokemonWorkflowService
         CreateEvolutionMethod(27, "Level Up Cold Area", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(28, "Level Up Inverted", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(29, "Level Up Affection 50 Move Type", EvolutionArgumentKindType, "Type"),
-        CreateEvolutionMethod(30, "Level Up Move Type", EvolutionArgumentKindType, "Type"),
-        CreateEvolutionMethod(31, "Level Up Weather", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(30, "Level Up With Dark-Type Teammate", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(31, "Level Up In Rain", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(32, "Level Up Morning", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
         CreateEvolutionMethod(34, "Level Up Female Alternate Form", EvolutionArgumentKindLevel, "Level"),
@@ -380,11 +379,6 @@ public sealed class SwShPokemonWorkflowService
             return CreateWorkflow(summary, [], sourceFileCount: 0, diagnostics);
         }
 
-        var pokemonNames = LoadOptionalTextTable(
-            project,
-            "pokelist.dat",
-            "Pokemon names",
-            diagnostics);
         var speciesNames = LoadOptionalTextTable(
             project,
             "monsname.dat",
@@ -408,6 +402,7 @@ public sealed class SwShPokemonWorkflowService
             diagnostics);
         var itemRecords = LoadOptionalItemRecords(project, diagnostics);
         var itemDisplayNames = CreateItemDisplayNames(itemNames, moveNames, itemRecords);
+        var machineMoves = CreateMachineCompatibilityMoveCatalog(itemRecords, diagnostics);
         var itemOptions = CreateIndexedOptions(itemDisplayNames, "Item");
         var evolutionItemOptions = CreateEvolutionItemOptions(itemRecords, itemDisplayNames);
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
@@ -422,6 +417,15 @@ public sealed class SwShPokemonWorkflowService
         try
         {
             var personalTable = SwShPersonalTable.Parse(File.ReadAllBytes(personalSource.AbsolutePath));
+            if (learnsets.Count > 0 && learnsets.Count != personalTable.Records.Count)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Pokemon personal and learnset record counts differ ({personalTable.Records.Count} personal, {learnsets.Count} learnset); learnset editing is disabled until they match.",
+                    file: LearnsetDataPath,
+                    expected: "Matching personal and learnset record counts"));
+            }
+
             var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(personalTable.Records);
             var evolutionMethodOptions = CreateEvolutionMethodOptions(
                 itemOptions,
@@ -432,7 +436,7 @@ public sealed class SwShPokemonWorkflowService
                 displaySpeciesNames,
                 presentSpeciesIds);
             var provenance = CreateProvenance(personalSource.GraphEntry);
-            var formOwners = CreateFormOwnerLookup(personalTable.Records);
+            var formOwners = CreateFormOwnerLookup(personalTable.Records, diagnostics);
             var pokemon = personalTable.Records
                 .Select(record => ToPokemonRecord(
                     record,
@@ -441,6 +445,8 @@ public sealed class SwShPokemonWorkflowService
                     abilityNames,
                     itemDisplayNames,
                     moveNames,
+                    machineMoves.TechnicalMachines,
+                    machineMoves.TechnicalRecords,
                     learnsets,
                     evolutions,
                     formOwners,
@@ -448,7 +454,6 @@ public sealed class SwShPokemonWorkflowService
                 .ToArray();
             var sourceFileCount =
                 1
-                + (pokemonNames.Count > 0 ? 1 : 0)
                 + (speciesNames.Count > 0 ? 1 : 0)
                 + (itemNames.Count > 0 ? 1 : 0)
                 + (itemRecords.Count > 0 ? 1 : 0)
@@ -766,6 +771,8 @@ public sealed class SwShPokemonWorkflowService
         IReadOnlyList<string> abilityNames,
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
+        IReadOnlyList<int> technicalMachineMoveIds,
+        IReadOnlyList<int> technicalRecordMoveIds,
         IReadOnlyDictionary<int, SwShPokemonLearnsetRecord> learnsets,
         IReadOnlyDictionary<int, IReadOnlyList<SwShEvolutionRecord>> evolutions,
         IReadOnlyDictionary<int, PokemonFormOwner> formOwners,
@@ -786,7 +793,11 @@ public sealed class SwShPokemonWorkflowService
                 .Select(evolution => ToPokemonEvolutionRecord(evolution, itemNames, moveNames, speciesNames))
                 .ToArray()
             : [];
-        var compatibility = CreateCompatibilityGroups(personal, moveNames);
+        var compatibility = CreateCompatibilityGroups(
+            personal,
+            moveNames,
+            technicalMachineMoveIds,
+            technicalRecordMoveIds);
 
         return new SwShPokemonRecord(
             personal.PersonalId,
@@ -1002,21 +1013,23 @@ public sealed class SwShPokemonWorkflowService
 
     private static IReadOnlyList<SwShPokemonCompatibilityGroup> CreateCompatibilityGroups(
         SwShPersonalRecord personal,
-        IReadOnlyList<string> moveNames)
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<int> technicalMachineMoveIds,
+        IReadOnlyList<int> technicalRecordMoveIds)
     {
         return
         [
             CreateCompatibilityGroup(
                 TechnicalMachineCompatibilityGroupId,
                 "TMs",
-                TechnicalMachineMoveIds,
+                technicalMachineMoveIds,
                 personal.TechnicalMachines,
                 moveNames,
                 slot => $"TM{slot:00}"),
             CreateCompatibilityGroup(
                 TechnicalRecordCompatibilityGroupId,
                 "TRs",
-                TechnicalRecordMoveIds,
+                technicalRecordMoveIds,
                 personal.TechnicalRecords,
                 moveNames,
                 slot => $"TR{slot:00}"),
@@ -1064,6 +1077,51 @@ public sealed class SwShPokemonWorkflowService
             label,
             entries.Count(entry => entry.CanLearn),
             entries);
+    }
+
+    private static MachineCompatibilityMoveCatalog CreateMachineCompatibilityMoveCatalog(
+        IReadOnlyList<SwShItemTableRecord> itemRecords,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (itemRecords.Count == 0)
+        {
+            return new MachineCompatibilityMoveCatalog(TechnicalMachineMoveIds, TechnicalRecordMoveIds);
+        }
+
+        const int machineCount = SwShPersonalTable.TechnicalMachineCompatibilityCount
+            + SwShPersonalTable.TechnicalRecordCompatibilityCount;
+        var moveIds = new int[machineCount];
+        var vanillaMoveIds = TechnicalMachineMoveIds.Concat(TechnicalRecordMoveIds).ToArray();
+        var fallbackSlotCount = 0;
+        for (var slot = 0; slot < machineCount; slot++)
+        {
+            var candidates = itemRecords
+                .Where(item => item.MachineSlot == slot && item.MachineMoveId is not null)
+                .Select(item => checked((int)item.MachineMoveId!.Value))
+                .Distinct()
+                .ToArray();
+            if (candidates.Length != 1)
+            {
+                moveIds[slot] = vanillaMoveIds[slot];
+                fallbackSlotCount++;
+                continue;
+            }
+
+            moveIds[slot] = candidates[0];
+        }
+
+        if (fallbackSlotCount > 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"TM/TR machine metadata is missing or ambiguous for {fallbackSlotCount} slot{(fallbackSlotCount == 1 ? string.Empty : "s")}; only those compatibility labels use vanilla mappings.",
+                file: SwShItemsWorkflowService.ItemDataPath,
+                expected: "One current move mapping for every TM/TR slot"));
+        }
+
+        return new MachineCompatibilityMoveCatalog(
+            moveIds[..SwShPersonalTable.TechnicalMachineCompatibilityCount],
+            moveIds[SwShPersonalTable.TechnicalMachineCompatibilityCount..]);
     }
 
     private static IReadOnlyList<string> CreateItemDisplayNames(
@@ -1117,35 +1175,210 @@ public sealed class SwShPokemonWorkflowService
     }
 
     private static IReadOnlyDictionary<int, PokemonFormOwner> CreateFormOwnerLookup(
-        IReadOnlyList<SwShPersonalRecord> records)
+        IReadOnlyList<SwShPersonalRecord> records,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        return CreateFormOwnerLookup(
+            records
+                .Select(record => new PokemonFormOwnershipRecord(
+                    record.PersonalId,
+                    record.FormStatsIndex,
+                    record.FormCount,
+                    IsEmptyPersonalRecord(record)))
+                .ToArray(),
+            diagnostics);
+    }
+
+    private static IReadOnlyDictionary<int, PokemonFormOwner> CreateFormOwnerLookup(
+        IReadOnlyList<SwShPokemonRecord> records)
+    {
+        return CreateFormOwnerLookup(
+            records
+                .Select(record => new PokemonFormOwnershipRecord(
+                    record.PersonalId,
+                    record.Personal.FormStatsIndex,
+                    record.Personal.FormCount,
+                    IsEmptyPokemonRecord(record)))
+                .ToArray(),
+            diagnostics: null);
+    }
+
+    private static IReadOnlyDictionary<int, PokemonFormOwner> CreateFormOwnerLookup(
+        IReadOnlyList<PokemonFormOwnershipRecord> records,
+        ICollection<ValidationDiagnostic>? diagnostics)
     {
         var owners = new Dictionary<int, PokemonFormOwner>();
+        var ambiguousPersonalIds = new HashSet<int>();
 
         foreach (var record in records)
         {
-            if (record.FormStatsIndex == 0 || record.FormCount <= 1)
+            if (record.FormCount <= 1)
             {
                 continue;
             }
 
+            if (record.FormStatsIndex == 0)
+            {
+                diagnostics?.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Pokemon personal record {record.PersonalId} declares {record.FormCount} forms but has no form stats index.",
+                    field: FormStatsIndexField,
+                    expected: "In-range, non-overlapping alternate-form ownership"));
+                continue;
+            }
+
+            var endExclusive = (long)record.FormStatsIndex + record.FormCount - 1;
+            if (endExclusive > records.Count)
+            {
+                diagnostics?.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Pokemon personal record {record.PersonalId} has an out-of-range alternate-form index.",
+                    field: FormStatsIndexField,
+                    expected: "In-range, non-overlapping alternate-form ownership"));
+                continue;
+            }
+
+            // Alternate-form rows commonly mirror their base species' form pointer and count.
+            // They describe the same block, but are not independent owners of that block.
+            if (record.PersonalId >= record.FormStatsIndex && record.PersonalId < endExclusive)
+            {
+                continue;
+            }
+
+            var reportedInvalidRange = false;
             for (var localFormIndex = 1; localFormIndex < record.FormCount; localFormIndex++)
             {
-                var personalId = record.FormStatsIndex + localFormIndex - 1;
-                if ((uint)personalId >= (uint)records.Count || personalId == record.PersonalId)
+                var personalIdLong = (long)record.FormStatsIndex + localFormIndex - 1;
+                if (personalIdLong < 0 || personalIdLong >= records.Count)
+                {
+                    if (!reportedInvalidRange)
+                    {
+                        diagnostics?.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Warning,
+                            $"Pokemon personal record {record.PersonalId} has an out-of-range or self-referencing alternate-form index.",
+                            field: FormStatsIndexField,
+                            expected: "In-range, non-overlapping alternate-form ownership"));
+                        reportedInvalidRange = true;
+                    }
+
+                    continue;
+                }
+
+                var personalId = checked((int)personalIdLong);
+
+                if (records[personalId].IsEmpty)
                 {
                     continue;
                 }
 
-                if (IsEmptyPersonalRecord(records[personalId]))
+                if (ambiguousPersonalIds.Contains(personalId))
                 {
                     continue;
                 }
 
-                owners.TryAdd(personalId, new PokemonFormOwner(record.PersonalId, localFormIndex));
+                var owner = new PokemonFormOwner(record.PersonalId, localFormIndex);
+                if (owners.TryGetValue(personalId, out var existingOwner)
+                    && existingOwner.SpeciesId != owner.SpeciesId)
+                {
+                    owners.Remove(personalId);
+                    ambiguousPersonalIds.Add(personalId);
+                    diagnostics?.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Warning,
+                        $"Pokemon personal record {personalId} is claimed by multiple form owners; no display owner was assigned.",
+                        field: FormStatsIndexField,
+                        expected: "One unambiguous alternate-form owner"));
+                    continue;
+                }
+
+                owners.TryAdd(personalId, owner);
             }
         }
 
         return owners;
+    }
+
+    internal static IReadOnlyList<SwShPokemonRecord> RefreshDisplayIdentities(
+        IReadOnlyList<SwShPokemonRecord> sourcePokemon,
+        IReadOnlyList<SwShPokemonRecord> updatedPokemon)
+    {
+        ArgumentNullException.ThrowIfNull(sourcePokemon);
+        ArgumentNullException.ThrowIfNull(updatedPokemon);
+
+        var owners = CreateFormOwnerLookup(updatedPokemon);
+        var displayNames = CreateBaseDisplayNameLookup(sourcePokemon, useSpriteName: false);
+        var spriteNames = CreateBaseDisplayNameLookup(sourcePokemon, useSpriteName: true);
+
+        return updatedPokemon
+            .Select(pokemon => RefreshDisplayIdentity(pokemon, owners, displayNames, spriteNames))
+            .ToArray();
+    }
+
+    private static SwShPokemonRecord RefreshDisplayIdentity(
+        SwShPokemonRecord pokemon,
+        IReadOnlyDictionary<int, PokemonFormOwner> owners,
+        IReadOnlyDictionary<int, string> displayNames,
+        IReadOnlyDictionary<int, string> spriteNames)
+    {
+        if (!owners.TryGetValue(pokemon.PersonalId, out var owner)
+            && IsEmptyPokemonRecord(pokemon)
+            && string.Equals(pokemon.FormLabel, "Unused", StringComparison.Ordinal))
+        {
+            return pokemon with
+            {
+                SpeciesId = pokemon.PersonalId,
+                FormLabel = "Unused",
+            };
+        }
+
+        var speciesId = owner?.SpeciesId ?? pokemon.PersonalId;
+        var formLabel = ResolveFormLabel(
+            pokemon.PersonalId,
+            pokemon.Personal.IsRegionalForm,
+            owner);
+        var displayName = displayNames.TryGetValue(speciesId, out var currentDisplayName)
+            ? currentDisplayName
+            : string.Create(CultureInfo.InvariantCulture, $"Pokemon {speciesId}");
+        var spriteName = spriteNames.TryGetValue(speciesId, out var currentSpriteName)
+            ? currentSpriteName
+            : displayName;
+
+        return pokemon with
+        {
+            SpeciesId = speciesId,
+            Name = FormatPokemonDisplayName(displayName, formLabel),
+            FormLabel = formLabel,
+            SpriteName = FormatPokemonDisplayName(spriteName, formLabel),
+        };
+    }
+
+    private static IReadOnlyDictionary<int, string> CreateBaseDisplayNameLookup(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        bool useSpriteName)
+    {
+        return pokemon
+            .Where(record => record.PersonalId == record.SpeciesId)
+            .GroupBy(record => record.SpeciesId)
+            .ToDictionary(
+                group => group.Key,
+                group => StripDisplayFormSuffix(
+                    useSpriteName
+                        ? group.First().SpriteName ?? group.First().Name
+                        : group.First().Name,
+                    group.First().FormLabel));
+    }
+
+    private static string StripDisplayFormSuffix(string name, string formLabel)
+    {
+        if (string.Equals(formLabel, "Base", StringComparison.Ordinal)
+            || string.Equals(formLabel, "Unused", StringComparison.Ordinal))
+        {
+            return name;
+        }
+
+        var suffix = $" ({formLabel})";
+        return name.EndsWith(suffix, StringComparison.Ordinal)
+            ? name[..^suffix.Length]
+            : name;
     }
 
     private static PokemonDisplayIdentity ResolveDisplayIdentity(
@@ -1183,7 +1416,15 @@ public sealed class SwShPokemonWorkflowService
 
     private static string ResolveFormLabel(SwShPersonalRecord personal, PokemonFormOwner? owner)
     {
-        var speciesId = owner?.SpeciesId ?? personal.PersonalId;
+        return ResolveFormLabel(personal.PersonalId, personal.IsRegionalForm, owner);
+    }
+
+    private static string ResolveFormLabel(
+        int personalId,
+        bool isRegionalForm,
+        PokemonFormOwner? owner)
+    {
+        var speciesId = owner?.SpeciesId ?? personalId;
         var localFormIndex = owner?.LocalFormIndex ?? 0;
 
         var knownFormLabel = SwShSpeciesFormLabels.ResolveKnownFormLabel(speciesId, localFormIndex);
@@ -1197,7 +1438,7 @@ public sealed class SwShPokemonWorkflowService
             return SwShSpeciesFormLabels.ResolveBaseRegionalFormLabel(speciesId) ?? "Base";
         }
 
-        if (personal.IsRegionalForm)
+        if (isRegionalForm)
         {
             return SwShSpeciesFormLabels.ResolveRegionalFormLabel(speciesId, localFormIndex);
         }
@@ -1225,6 +1466,20 @@ public sealed class SwShPokemonWorkflowService
             && personal.LocalFormIndex == 0
             && personal.Form == 0
             && !personal.IsPresentInGame;
+    }
+
+    private static bool IsEmptyPokemonRecord(SwShPokemonRecord pokemon)
+    {
+        return pokemon.BaseStats.Total == 0
+            && pokemon.CatchRate == 0
+            && pokemon.EvolutionStage == 0
+            && pokemon.Personal.FormStatsIndex == 0
+            && pokemon.Personal.FormCount <= 1
+            && pokemon.Personal.ModelId == 0
+            && pokemon.Personal.HatchedSpecies == 0
+            && pokemon.Personal.LocalFormIndex == 0
+            && pokemon.Form == 0
+            && !pokemon.DexPresence.IsPresentInGame;
     }
 
     private static IReadOnlyList<SwShPokemonEditableField> CreateEditableFields(
@@ -1596,12 +1851,14 @@ public sealed class SwShPokemonWorkflowService
         DiagnosticSeverity severity,
         string message,
         string? file = null,
-        string? expected = null)
+        string? expected = null,
+        string? field = null)
     {
         return new ValidationDiagnostic(
             severity,
             message,
             File: file,
+            Field: field,
             Domain: "workflow.pokemon",
             Expected: expected);
     }
@@ -1620,8 +1877,18 @@ public sealed class SwShPokemonWorkflowService
         int SpeciesId,
         int LocalFormIndex);
 
+    private sealed record PokemonFormOwnershipRecord(
+        int PersonalId,
+        int FormStatsIndex,
+        int FormCount,
+        bool IsEmpty);
+
     private sealed record PokemonDisplayIdentity(
         int SpeciesId,
         string Name,
         string FormLabel);
+
+    private sealed record MachineCompatibilityMoveCatalog(
+        IReadOnlyList<int> TechnicalMachines,
+        IReadOnlyList<int> TechnicalRecords);
 }

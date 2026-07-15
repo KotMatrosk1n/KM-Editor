@@ -152,9 +152,10 @@ describe('workbench store', () => {
     expect(state.changePlan).toBe(changePlan);
   });
 
-  it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
+  it('preserves Pokemon search and defaults selection to the first real Pokemon instead of Egg', () => {
     useWorkbenchStore.setState({
       activeSection: 'health',
+      pokemonSearchText: 'grass',
       pokemonWorkflow: null,
       selectedPokemonPersonalId: null
     });
@@ -182,6 +183,7 @@ describe('workbench store', () => {
       }
     } as unknown as PokemonWorkflow);
 
+    expect(useWorkbenchStore.getState().pokemonSearchText).toBe('grass');
     expect(useWorkbenchStore.getState().selectedPokemonPersonalId).toBe(1);
   });
 });

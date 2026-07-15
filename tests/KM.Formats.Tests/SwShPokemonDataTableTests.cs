@@ -181,17 +181,78 @@ public sealed class SwShPokemonDataTableTests
     }
 
     [Fact]
+    public void PersonalTableWriteRequiresPhysicalPersonalIdOrder()
+    {
+        var source = new byte[SwShPersonalTable.RecordSize * 2];
+        var records = SwShPersonalTable.Parse(source).Records.ToArray();
+        records[0] = records[0] with { PersonalId = 1 };
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => SwShPersonalTable.Write(records, source));
+
+        Assert.Contains("physical index 0", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("PersonalId 1", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public void PersonalRecordWriteRequiresExactRecordLength(int sizeDelta)
+    {
+        var record = SwShPersonalTable.Parse(new byte[SwShPersonalTable.RecordSize]).Records[0];
+        var destination = new byte[SwShPersonalTable.RecordSize + sizeDelta];
+
+        Assert.Throws<InvalidDataException>(
+            () => SwShPersonalTable.WriteRecord(record, destination));
+    }
+
+    [Fact]
+    public void PersonalRecordWriteRejectsOutOfRangeEVYields()
+    {
+        var record = SwShPersonalTable.Parse(new byte[SwShPersonalTable.RecordSize]).Records[0];
+        SwShPersonalRecord[] invalidRecords =
+        [
+            record with { EVYieldHP = -1 },
+            record with { EVYieldAttack = 4 },
+            record with { EVYieldDefense = -1 },
+            record with { EVYieldSpeed = 4 },
+            record with { EVYieldSpecialAttack = -1 },
+            record with { EVYieldSpecialDefense = 4 },
+        ];
+
+        foreach (var invalidRecord in invalidRecords)
+        {
+            Assert.Throws<InvalidDataException>(
+                () => SwShPersonalTable.WriteRecord(
+                    invalidRecord,
+                    new byte[SwShPersonalTable.RecordSize]));
+        }
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(64)]
+    public void PersonalRecordWriteRejectsOutOfRangeStorageColor(int color)
+    {
+        var record = SwShPersonalTable.Parse(new byte[SwShPersonalTable.RecordSize]).Records[0]
+            with { Color = color };
+
+        Assert.Throws<InvalidDataException>(
+            () => SwShPersonalTable.WriteRecord(
+                record,
+                new byte[SwShPersonalTable.RecordSize]));
+    }
+
+    [Fact]
     public void LearnsetTableParsesMovesUntilSentinel()
     {
-        var data = new byte[SwShPokemonLearnsetTable.RecordSize];
+        var data = Enumerable.Repeat((byte)0xFF, SwShPokemonLearnsetTable.RecordSize).ToArray();
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x00), 33);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x02), 1);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), 45);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x06), 3);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x08), ushort.MaxValue);
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x0A), ushort.MaxValue);
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x0C), 99);
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x0E), 50);
 
         var parsed = SwShPokemonLearnsetTable.Parse(data);
 
@@ -216,7 +277,7 @@ public sealed class SwShPokemonDataTableTests
     [Fact]
     public void LearnsetTableWritesRowsAndClearsStaleEntries()
     {
-        var original = new byte[SwShPokemonLearnsetTable.RecordSize];
+        var original = Enumerable.Repeat((byte)0xFF, SwShPokemonLearnsetTable.RecordSize).ToArray();
         BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x00), 33);
         BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x02), 1);
         BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x04), 45);
@@ -253,6 +314,140 @@ public sealed class SwShPokemonDataTableTests
         Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0A)));
         Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0C)));
         Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0E)));
+    }
+
+    [Fact]
+    public void LearnsetTableSupportsFull65MoveRecordWithoutTerminator()
+    {
+        var original = Enumerable.Repeat((byte)0xFF, SwShPokemonLearnsetTable.RecordSize).ToArray();
+        var moves = Enumerable.Range(0, SwShPokemonLearnsetTable.MaxMovesPerRecord)
+            .Select(index => new SwShPokemonLearnsetMoveRecord(index, index + 1, index))
+            .ToArray();
+        var edited = new SwShPokemonLearnsetRecord(0, moves);
+
+        var written = SwShPokemonLearnsetTable.Write([edited], original);
+        var reparsed = Assert.Single(SwShPokemonLearnsetTable.Parse(written).Records);
+
+        Assert.Equal(65, SwShPokemonLearnsetTable.MaxMovesPerRecord);
+        Assert.Equal(65, reparsed.Moves.Count);
+        Assert.Equal(moves, reparsed.Moves);
+        Assert.NotEqual(
+            uint.MaxValue,
+            BinaryPrimitives.ReadUInt32LittleEndian(written.AsSpan(written.Length - 4)));
+    }
+
+    [Fact]
+    public void LearnsetTableWriteRequiresPhysicalPersonalIdOrder()
+    {
+        var original = Enumerable.Repeat((byte)0xFF, SwShPokemonLearnsetTable.RecordSize).ToArray();
+        var record = new SwShPokemonLearnsetRecord(1, []);
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => SwShPokemonLearnsetTable.Write([record], original));
+
+        Assert.Contains("physical index 0", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("PersonalId 1", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(0, 2)]
+    [InlineData(1, 0)]
+    [InlineData(0, 0)]
+    public void LearnsetRecordWriteRejectsNoncontiguousSlots(int firstSlot, int secondSlot)
+    {
+        var record = new SwShPokemonLearnsetRecord(
+            0,
+            [
+                new SwShPokemonLearnsetMoveRecord(firstSlot, 33, 1),
+                new SwShPokemonLearnsetMoveRecord(secondSlot, 45, 3),
+            ]);
+
+        Assert.Throws<InvalidDataException>(
+            () => SwShPokemonLearnsetTable.WriteRecord(
+                record,
+                new byte[SwShPokemonLearnsetTable.RecordSize]));
+    }
+
+    [Theory]
+    [InlineData(ushort.MaxValue, 1)]
+    [InlineData(1, 0xFF00)]
+    [InlineData(1, ushort.MaxValue)]
+    public void LearnsetTableRejectsPartialTerminatorTuples(int moveId, int level)
+    {
+        var data = Enumerable.Repeat((byte)0xFF, SwShPokemonLearnsetTable.RecordSize).ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x00), checked((ushort)moveId));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x02), checked((ushort)level));
+
+        Assert.Throws<InvalidDataException>(() => SwShPokemonLearnsetTable.Parse(data));
+
+        var record = new SwShPokemonLearnsetRecord(
+            0,
+            [new SwShPokemonLearnsetMoveRecord(0, moveId, level)]);
+        Assert.Throws<InvalidDataException>(
+            () => SwShPokemonLearnsetTable.WriteRecord(
+                record,
+                new byte[SwShPokemonLearnsetTable.RecordSize]));
+    }
+
+    [Fact]
+    public void LearnsetRecordWriteRejectsTerminatorAsMoveData()
+    {
+        var record = new SwShPokemonLearnsetRecord(
+            0,
+            [new SwShPokemonLearnsetMoveRecord(0, ushort.MaxValue, ushort.MaxValue)]);
+
+        Assert.Throws<InvalidDataException>(
+            () => SwShPokemonLearnsetTable.WriteRecord(
+                record,
+                new byte[SwShPokemonLearnsetTable.RecordSize]));
+    }
+
+    [Fact]
+    public void LearnsetTableRejectsDataAfterTerminator()
+    {
+        var data = Enumerable.Repeat((byte)0xFF, SwShPokemonLearnsetTable.RecordSize).ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), 33);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x06), 1);
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => SwShPokemonLearnsetTable.Parse(data));
+
+        Assert.Contains("data after its terminator", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LearnsetTableWholeTableWriteLeavesUntouchedRecordsByteExact()
+    {
+        var original = Enumerable.Repeat(
+                (byte)0xFF,
+                SwShPokemonLearnsetTable.RecordSize * 2)
+            .ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x00), 33);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x02), 1);
+        var secondOffset = SwShPokemonLearnsetTable.RecordSize;
+        for (var index = 0; index < SwShPokemonLearnsetTable.MaxMovesPerRecord; index++)
+        {
+            var offset = secondOffset + (index * 4);
+            BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(offset), checked((ushort)(index + 1)));
+            BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(offset + 2), checked((ushort)index));
+        }
+
+        var records = SwShPokemonLearnsetTable.Parse(original).Records.ToArray();
+        records[0] = records[0] with
+        {
+            Moves =
+            [
+                records[0].Moves[0],
+                new SwShPokemonLearnsetMoveRecord(1, 45, 3),
+            ],
+        };
+
+        var written = SwShPokemonLearnsetTable.Write(records, original);
+
+        Assert.Equal(
+            original.AsSpan(secondOffset, SwShPokemonLearnsetTable.RecordSize).ToArray(),
+            written.AsSpan(secondOffset, SwShPokemonLearnsetTable.RecordSize).ToArray());
     }
 
     [Fact]

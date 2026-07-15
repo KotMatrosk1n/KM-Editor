@@ -418,14 +418,14 @@ public sealed class SwShRandomizerService
         }
 
         var domainPlans = new List<RandomizerDomainPlan>();
-        if (pokemonWorkflow is not null)
-        {
-            AddPokemonPlan(project, pokemonWorkflow, pokemonTargets, movePool, itemPool, generationKey, options, domainPlans, diagnostics);
-        }
         AddWildEncounterPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
         AddStaticPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
         AddGiftPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
         AddRaidRewardPlan(project, itemPool, generationKey, options, domainPlans, diagnostics);
+        if (pokemonWorkflow is not null)
+        {
+            AddPokemonPlan(project, pokemonWorkflow, pokemonTargets, movePool, itemPool, generationKey, options, domainPlans, diagnostics);
+        }
         AddTypeChartPlan(project, generationKey, options, domainPlans, diagnostics);
 
         if (domainPlans.Count == 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))

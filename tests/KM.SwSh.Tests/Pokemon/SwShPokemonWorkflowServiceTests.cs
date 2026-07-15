@@ -3,6 +3,7 @@
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using KM.SwSh.Tests.Items;
@@ -28,7 +29,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(1, workflow.Stats.PresentPokemonCount);
         Assert.Equal(1, workflow.Stats.TotalEvolutionCount);
         Assert.Equal(2, workflow.Stats.TotalLearnsetMoveCount);
-        Assert.Equal(9, workflow.Stats.SourceFileCount);
+        Assert.Equal(8, workflow.Stats.SourceFileCount);
         Assert.Contains(
             workflow.EvolutionMethodOptions,
             option => option.Value == 4
@@ -114,7 +115,7 @@ public sealed class SwShPokemonWorkflowServiceTests
                 Assert.Equal("Growl", move.MoveName);
                 Assert.Equal(3, move.Level);
             });
-        Assert.Empty(workflow.Diagnostics);
+        AssertOnlyMachineFallbackWarning(workflow);
     }
 
     [Fact]
@@ -181,6 +182,50 @@ public sealed class SwShPokemonWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadUsesLayeredItemMachineMovesForCompatibilityLabels()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteOutputFile(
+            SwShItemsWorkflowService.ItemDataPath,
+            SwShItemTestFixtures.CreateItemTableWithMachineMoves(
+                new Dictionary<int, int> { [10] = 45 },
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(
+                    1,
+                    1,
+                    3000,
+                    0,
+                    0,
+                    SwShItemPouch.Items,
+                    CanUseOnPokemon: true,
+                    Boost0: 0x08),
+                new ItemFixtureRecord(
+                    2,
+                    2,
+                    1000,
+                    0,
+                    0,
+                    SwShItemPouch.TMs,
+                    FieldUseType: 2,
+                    GroupType: 4,
+                    GroupIndex: 10)));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        var tm10 = workflow.Pokemon[1].Compatibility
+            .Single(group => group.GroupId == SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId)
+            .Entries
+            .Single(entry => entry.Slot == 10);
+        Assert.Equal(45, tm10.MoveId);
+        Assert.Equal("TM10 (Growl)", tm10.Label);
+        Assert.True(tm10.CanLearn);
+        AssertOnlyMachineFallbackWarning(workflow);
+    }
+
+    [Fact]
     public void LoadPrefersLayeredPersonalDataWhenOutputOverridesBase()
     {
         using var temp = TemporaryPokemonProject.Create();
@@ -199,7 +244,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(99, pokemon.BaseStats.HP);
         Assert.Equal(ProjectFileLayer.Layered, pokemon.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, pokemon.Provenance.FileState);
-        Assert.Empty(workflow.Diagnostics);
+        AssertOnlyMachineFallbackWarning(workflow);
     }
 
     [Fact]
@@ -350,6 +395,68 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal("Alolan", workflow.Pokemon[917].FormLabel);
         Assert.Equal("Meowth (Galarian)", workflow.Pokemon[918].Name);
         Assert.Equal("Galarian", workflow.Pokemon[918].FormLabel);
+    }
+
+    [Fact]
+    public void LoadDoesNotAssignAnAmbiguousAlternateFormOwner()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 55)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[52] = CreateBulbasaurPersonalRecord(
+            hatchedSpecies: 52,
+            formStatsIndex: 54,
+            formCount: 2);
+        records[53] = CreateBulbasaurPersonalRecord(
+            hatchedSpecies: 53,
+            formStatsIndex: 54,
+            formCount: 2);
+        records[54] = CreateBulbasaurPersonalRecord(hatchedSpecies: 52, form: 1);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(55, (52, "Meowth"), (53, "Persian"), (54, "Unowned Form")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        Assert.Equal(54, workflow.Pokemon[54].SpeciesId);
+        Assert.Equal("Unowned Form", workflow.Pokemon[54].Name);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("claimed by multiple form owners", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadReportsOneOutOfRangeFormOwnershipDiagnosticPerOwner()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 55)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[52] = CreateBulbasaurPersonalRecord(
+            hatchedSpecies: 52,
+            formStatsIndex: 54,
+            formCount: 4);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        Assert.Single(
+            workflow.Diagnostics,
+            diagnostic =>
+                diagnostic.Message.Contains("record 52", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("out-of-range alternate-form", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -509,9 +616,6 @@ public sealed class SwShPokemonWorkflowServiceTests
                     GroupType: 4,
                     GroupIndex: 10)));
         temp.WriteBaseRomFsFile(
-            "bin/message/English/common/pokelist.dat",
-            CreateTextTable("None", "Which Pokemon do you want to swap with?"));
-        temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateIndexedPokemonNames());
         temp.WriteBaseRomFsFile(
@@ -599,9 +703,20 @@ public sealed class SwShPokemonWorkflowServiceTests
         data[offset + (bitIndex / 8)] |= (byte)(1 << (bitIndex % 8));
     }
 
+    private static void AssertOnlyMachineFallbackWarning(SwShPokemonWorkflow workflow)
+    {
+        var diagnostic = Assert.Single(workflow.Diagnostics);
+        Assert.Equal(KM.Core.Diagnostics.DiagnosticSeverity.Warning, diagnostic.Severity);
+        Assert.Equal(SwShItemsWorkflowService.ItemDataPath, diagnostic.File);
+        Assert.Contains("199 slots", diagnostic.Message, StringComparison.Ordinal);
+    }
+
     internal static byte[] CreateLearnsetTable(params (ushort MoveId, ushort Level)[][] learnsets)
     {
-        var data = new byte[learnsets.Length * SwShPokemonLearnsetTable.RecordSize];
+        var data = Enumerable.Repeat(
+                byte.MaxValue,
+                learnsets.Length * SwShPokemonLearnsetTable.RecordSize)
+            .ToArray();
         for (var recordIndex = 0; recordIndex < learnsets.Length; recordIndex++)
         {
             var recordOffset = recordIndex * SwShPokemonLearnsetTable.RecordSize;
@@ -666,7 +781,7 @@ public sealed class SwShPokemonWorkflowServiceTests
             (17, "Pidgeotto"));
     }
 
-    private static byte[] CreateNamedPokemonNames(int count, params (int Index, string Name)[] replacements)
+    internal static byte[] CreateNamedPokemonNames(int count, params (int Index, string Name)[] replacements)
     {
         var names = Enumerable.Range(0, count)
             .Select(index => $"Pokemon {index}")

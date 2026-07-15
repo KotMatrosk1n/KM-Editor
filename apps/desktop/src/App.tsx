@@ -1122,6 +1122,11 @@ const pokemonGlobalEvYieldFieldName = 'evYieldAll';
 const pokemonGlobalExpYieldFieldName = 'expYieldAll';
 const pokemonRemoveEvYieldValue = 'remove';
 const pokemonRestoreEvYieldValue = 'restore';
+const pokemonMaximumUshortValue = 65_535;
+const pokemonMaximumByteValue = 255;
+const swshPokemonLearnsetMaximumLevel = 100;
+const swshPokemonMaximumLearnsetRows = 65;
+const swshPokemonMaximumEvolutionRows = 9;
 const trainerClassIdFieldName = 'trainerClassId';
 const classBallIdFieldName = 'classBallId';
 const battleTypeFieldName = 'battleType';
@@ -6466,39 +6471,44 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = pokemonWorkflow;
+          if (session === null || pokemonWorkflow === null) {
+            throw new Error('An active Pokemon edit session and workflow are required.');
+          }
+
+          const originalSession = session;
+          const originalWorkflow = pokemonWorkflow;
+          let nextSession = originalSession;
+          let nextWorkflow = originalWorkflow;
           let nextDiagnostics: ApiDiagnostic[] = [];
 
-          if (
-            changes.length > 0 &&
-            (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame))
-          ) {
+          const createResult = (didSucceed: boolean) => ({
+            diagnostics: nextDiagnostics,
+            didSucceed,
+            session: didSucceed ? nextSession : originalSession,
+            workflow: didSucceed ? nextWorkflow : originalWorkflow
+          });
+
+          const retainDiagnostics = (diagnostics: ApiDiagnostic[]) => {
+            nextDiagnostics = [...nextDiagnostics, ...diagnostics];
+            return diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+          };
+
+          if (changes.length > 0) {
             const updateResponse = await bridge.updatePokemonFields({
               paths: createProjectPaths(draftPaths),
-              session,
+              session: originalSession,
               updates: changes.map((change) => ({
                 field: change.field,
                 personalId,
                 value: change.value
               }))
             });
+            if (retainDiagnostics(updateResponse.diagnostics)) {
+              return createResult(false);
+            }
+
             nextSession = updateResponse.session;
             nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          } else {
-            for (const change of changes) {
-              const updateResponse = await bridge.updatePokemonField({
-                field: change.field,
-                paths: createProjectPaths(draftPaths),
-                personalId,
-                session: nextSession,
-                value: change.value
-              });
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = updateResponse.diagnostics;
-            }
           }
 
           for (const evolutionChange of evolutionChanges) {
@@ -6514,9 +6524,12 @@ export function App({
               slot: evolutionChange.slot,
               species: evolutionChange.species
             });
+            if (retainDiagnostics(updateResponse.diagnostics)) {
+              return createResult(false);
+            }
+
             nextSession = updateResponse.session;
             nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
           }
 
           for (const learnsetChange of learnsetChanges) {
@@ -6529,25 +6542,24 @@ export function App({
               session: nextSession,
               slot: learnsetChange.slot
             });
+            if (retainDiagnostics(updateResponse.diagnostics)) {
+              return createResult(false);
+            }
+
             nextSession = updateResponse.session;
             nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
           }
 
-          return {
-            diagnostics: nextDiagnostics,
-            session: nextSession!,
-            workflow: nextWorkflow
-          };
+          return createResult(true);
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setPokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -6568,9 +6580,9 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      await runEditSessionMutation(
-        (session) =>
-          bridge.updatePokemonLearnset({
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.updatePokemonLearnset({
             action,
             level,
             moveId,
@@ -6578,14 +6590,29 @@ export function App({
             personalId,
             session,
             slot
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
         (response) => {
-          setPokemonWorkflow(response.workflow);
+          if (response.didSucceed && response.workflow) {
+            setPokemonWorkflow(response.workflow);
+          }
           setEditValidationDiagnostics(response.diagnostics);
         }
       );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsPokemonUpdating(false);
     }
@@ -6606,9 +6633,9 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      await runEditSessionMutation(
-        (session) =>
-          bridge.updatePokemonEvolution({
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.updatePokemonEvolution({
             action,
             argument,
             form,
@@ -6619,14 +6646,29 @@ export function App({
             session,
             slot,
             species
-          }),
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
         (response) => {
-          setPokemonWorkflow(response.workflow);
+          if (response.didSucceed && response.workflow) {
+            setPokemonWorkflow(response.workflow);
+          }
           setEditValidationDiagnostics(response.diagnostics);
         }
       );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsPokemonUpdating(false);
     }
@@ -11472,14 +11514,14 @@ type PokemonSectionProps = {
     species: number | null,
     form: number | null,
     level: number | null
-  ) => void;
+  ) => Promise<boolean>;
   onUpdatePokemonLearnset: (
     personalId: number,
     action: string,
     slot: number | null,
     moveId: number | null,
     level: number | null
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedPokemonPersonalId: number | null;
   workflow: PokemonWorkflow | null;
@@ -11517,8 +11559,8 @@ function PokemonSection({
 }: PokemonSectionProps) {
   const pokemon = workflow?.pokemon ?? [];
   const filteredPokemon = useMemo(
-    () => filterPokemon(pokemon, searchText),
-    [pokemon, searchText]
+    () => filterPokemon(pokemon, searchText, editorFamily),
+    [editorFamily, pokemon, searchText]
   );
   const selectedPokemon = useMemo(
     () => {
@@ -11542,6 +11584,17 @@ function PokemonSection({
     },
     [filteredPokemon, selectedPokemonPersonalId]
   );
+
+  useEffect(() => {
+    if (
+      selectedPokemon !== null &&
+      (selectedPokemonPersonalId === null ||
+        Number(selectedPokemon.personalId) !== Number(selectedPokemonPersonalId))
+    ) {
+      onSelectPokemon(selectedPokemon.personalId);
+    }
+  }, [onSelectPokemon, selectedPokemon, selectedPokemonPersonalId]);
+
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
   const canBulkUpdatePokemonYield = workflow !== null && canEditPokemon && !isPokemonUpdating;
@@ -11619,6 +11672,7 @@ function PokemonSection({
                 value={workflow ? workflow.stats.totalLearnsetMoveCount.toString() : '0'}
               />
             </div>
+            {editorFamily !== 'za' ? (
             <div className="pokemon-toolbar-actions">
               <button
                 className="primary-button compact-button"
@@ -11657,6 +11711,7 @@ function PokemonSection({
                 <span>Restore EV Yield</span>
               </button>
             </div>
+            ) : null}
           </div>
         </div>
 
@@ -11898,14 +11953,14 @@ function SelectedPokemonPanel({
     species: number | null,
     form: number | null,
     level: number | null
-  ) => void;
+  ) => Promise<boolean>;
   onUpdatePokemonLearnset: (
     personalId: number,
     action: string,
     slot: number | null,
     moveId: number | null,
     level: number | null
-  ) => void;
+  ) => Promise<boolean>;
   pokemon: PokemonRecord | null;
   pokemonRecords: PokemonRecord[];
 }) {
@@ -11916,21 +11971,55 @@ function SelectedPokemonPanel({
   const [personalDraftsByPokemonId, setPersonalDraftsByPokemonId] = useState<
     Record<string, Record<string, string>>
   >({});
-  const personalDrafts = pokemon
-    ? personalDraftsByPokemonId[pokemon.personalId.toString()] ?? personalDraftDefaults
+  const sparsePersonalDrafts = pokemon
+    ? personalDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
     : {};
+  const personalDrafts = pokemon
+    ? { ...personalDraftDefaults, ...sparsePersonalDrafts }
+    : {};
+  const writablePersonalFields = useMemo(
+    () =>
+      new Set(
+        pokemon
+          ? editableFields
+              .filter(
+                (field) =>
+                  getEditablePersonalFieldValue(pokemon, field.field) !== null &&
+                  !(field.field === formFieldName && pokemon.personal.formCount <= 1)
+              )
+              .map((field) => field.field)
+          : []
+      ),
+    [editableFields, pokemon]
+  );
   const cancelActiveEditSession = useCancelActiveEditSession();
   const [selectedCompatibilityGroupId, setSelectedCompatibilityGroupId] = useState(
     pokemon?.compatibility[0]?.groupId ?? ''
   );
   const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
+  const orderedEvolutions = useMemo(
+    () => [...(pokemon?.evolutions ?? [])].sort((left, right) => left.slot - right.slot),
+    [pokemon]
+  );
   const [selectedEvolutionSlot, setSelectedEvolutionSlot] = useState(
-    pokemon?.evolutions[0]?.slot ?? 0
+    orderedEvolutions[0]?.slot ?? 0
   );
   const selectedEvolution =
-    pokemon?.evolutions.find((evolution) => evolution.slot === selectedEvolutionSlot) ??
-    pokemon?.evolutions[0] ??
+    orderedEvolutions.find((evolution) => evolution.slot === selectedEvolutionSlot) ??
+    orderedEvolutions[0] ??
     null;
+  const selectedEvolutionIndex =
+    selectedEvolution
+      ? orderedEvolutions.findIndex((evolution) => evolution.slot === selectedEvolution.slot)
+      : -1;
+  const previousEvolutionSlot =
+    selectedEvolutionIndex > 0
+      ? (orderedEvolutions[selectedEvolutionIndex - 1]?.slot ?? null)
+      : null;
+  const nextEvolutionSlot =
+    selectedEvolutionIndex >= 0 && selectedEvolutionIndex < orderedEvolutions.length - 1
+      ? (orderedEvolutions[selectedEvolutionIndex + 1]?.slot ?? null)
+      : null;
   const [evolutionDraftsByPokemonId, setEvolutionDraftsByPokemonId] = useState<
     Record<string, Record<number, PokemonEvolutionDraftFields>>
   >({});
@@ -12054,9 +12143,14 @@ function SelectedPokemonPanel({
     }
 
     setPersonalDraftsByPokemonId((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, pokemon.personalId, personalDraftDefaults)
+      pruneSparseFieldDraftRecord(
+        currentDrafts,
+        pokemon.personalId,
+        personalDraftDefaults,
+        writablePersonalFields
+      )
     );
-  }, [personalDraftDefaults, pokemon]);
+  }, [personalDraftDefaults, pokemon, writablePersonalFields]);
 
   useEffect(() => {
     if (!pokemon) {
@@ -12103,7 +12197,8 @@ function SelectedPokemonPanel({
       const review = reviewPokemonLearnsetDrafts(
         pokemon,
         currentPokemonDrafts,
-        learnsetMoveOptions
+        learnsetMoveOptions,
+        editorFamily
       );
       if (review.changes.length > 0 || review.invalidCount > 0) {
         return currentDrafts;
@@ -12113,7 +12208,7 @@ function SelectedPokemonPanel({
       delete nextDrafts[pokemonKey];
       return nextDrafts;
     });
-  }, [learnsetMoveOptions, pokemon]);
+  }, [editorFamily, learnsetMoveOptions, pokemon]);
 
   useEffect(() => {
     if (!pokemon) {
@@ -12141,15 +12236,15 @@ function SelectedPokemonPanel({
   }, [pokemon, selectedLearnsetSlot]);
 
   useEffect(() => {
-    if (!pokemon || pokemon.evolutions.length === 0) {
+    if (orderedEvolutions.length === 0) {
       setSelectedEvolutionSlot(0);
       return;
     }
 
-    if (!pokemon.evolutions.some((evolution) => evolution.slot === selectedEvolutionSlot)) {
-      setSelectedEvolutionSlot(pokemon.evolutions[0].slot);
+    if (!orderedEvolutions.some((evolution) => evolution.slot === selectedEvolutionSlot)) {
+      setSelectedEvolutionSlot(orderedEvolutions[0]!.slot);
     }
-  }, [pokemon, selectedEvolutionSlot]);
+  }, [orderedEvolutions, selectedEvolutionSlot]);
 
   useEffect(() => {
     const localDraft =
@@ -12285,6 +12380,13 @@ function SelectedPokemonPanel({
   const canToggleCompatibility = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditEvolution = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditLearnset = canEditPokemon && editSession !== null && !isPokemonUpdating;
+  const learnsetMaximumLevel = getPokemonLearnsetMaximumLevel(editorFamily);
+  const evolutionMaximumForm = getPokemonEvolutionMaximumForm(editorFamily);
+  const evolutionMaximumLevel = getPokemonEvolutionMaximumLevel(editorFamily);
+  const hasEvolutionDrafts = Object.keys(evolutionDraftsBySlot).length > 0;
+  const hasLearnsetDrafts = Object.keys(learnsetDraftsBySlot).length > 0;
+  const canModifyEvolutionStructure = canEditEvolution && !hasEvolutionDrafts;
+  const canModifyLearnsetStructure = canEditLearnset && !hasLearnsetDrafts;
   const parsedEvolutionSpecies = parseEditableIntegerDraft(
     evolutionSpeciesDraft,
     pokemonSpeciesOptions
@@ -12325,32 +12427,23 @@ function SelectedPokemonPanel({
     newEvolutionFormDraft,
     newEvolutionFormOptions
   );
-  const parsedNewEvolutionLevel = Number.parseInt(newEvolutionLevelDraft, 10);
+  const parsedNewEvolutionLevel = parseEditableIntegerDraft(newEvolutionLevelDraft);
   const parsedNewLearnsetMoveId = parseEditableIntegerDraft(
     newLearnsetMoveIdDraft,
     newLearnsetMoveOptions
   );
-  const parsedNewLearnsetLevel = Number.parseInt(newLearnsetLevelDraft, 10);
+  const parsedNewLearnsetLevel = parseEditableIntegerDraft(newLearnsetLevelDraft);
   const canAddLearnsetMove =
-    canEditLearnset &&
-    Number.isInteger(parsedNewLearnsetMoveId) &&
-    Number.isInteger(parsedNewLearnsetLevel);
-  const clearCurrentPokemonLearnsetDrafts = useCallback(() => {
-    if (!pokemon) {
-      return;
-    }
-
-    const pokemonKey = pokemon.personalId.toString();
-    setLearnsetDraftsByPokemonId((currentDrafts) => {
-      const nextDrafts = { ...currentDrafts };
-      delete nextDrafts[pokemonKey];
-      return nextDrafts;
-    });
-  }, [pokemon]);
+    canModifyLearnsetStructure &&
+    (editorFamily !== 'swsh' || (pokemon?.learnset.length ?? 0) < swshPokemonMaximumLearnsetRows) &&
+    isIntegerInRange(parsedNewLearnsetMoveId, 0, pokemonMaximumUshortValue) &&
+    isIntegerInRange(parsedNewLearnsetLevel, 0, learnsetMaximumLevel) &&
+    (editorFamily !== 'swsh' ||
+      isValidSwShLearnsetMove(parsedNewLearnsetMoveId, learnsetMoveOptions));
   const handleDropLearnsetMove = useCallback(
-    (targetSlot: number, sourceSlot = draggedLearnsetSlot) => {
+    async (targetSlot: number, sourceSlot = draggedLearnsetSlot) => {
       if (
-        !canEditLearnset ||
+        !canModifyLearnsetStructure ||
         !pokemon ||
         sourceSlot === null ||
         !Number.isInteger(sourceSlot) ||
@@ -12361,21 +12454,21 @@ function SelectedPokemonPanel({
         return;
       }
 
-      clearCurrentPokemonLearnsetDrafts();
-      onUpdatePokemonLearnset(
+      const didMove = await onUpdatePokemonLearnset(
         pokemon.personalId,
         'moveTo',
         sourceSlot,
         targetSlot,
         null
       );
-      setSelectedLearnsetSlot(targetSlot);
+      if (didMove) {
+        setSelectedLearnsetSlot(targetSlot);
+      }
       setDraggedLearnsetSlot(null);
       setDragOverLearnsetSlot(null);
     },
     [
-      canEditLearnset,
-      clearCurrentPokemonLearnsetDrafts,
+      canModifyLearnsetStructure,
       draggedLearnsetSlot,
       onUpdatePokemonLearnset,
       pokemon
@@ -12401,8 +12494,14 @@ function SelectedPokemonPanel({
     ]
   );
   const learnsetDraftReview = useMemo(
-    () => reviewPokemonLearnsetDrafts(pokemon, learnsetDraftsBySlot, learnsetMoveOptions),
-    [learnsetDraftsBySlot, learnsetMoveOptions, pokemon]
+    () =>
+      reviewPokemonLearnsetDrafts(
+        pokemon,
+        learnsetDraftsBySlot,
+        learnsetMoveOptions,
+        editorFamily
+      ),
+    [editorFamily, learnsetDraftsBySlot, learnsetMoveOptions, pokemon]
   );
   const pokemonDraftInvalidCount =
     personalDraftSummary.invalidFields.length +
@@ -12421,12 +12520,21 @@ function SelectedPokemonPanel({
     pokemonDraftChangedCount > 0 &&
     pokemonDraftInvalidCount === 0;
   const canAddEvolution =
-    canEditEvolution &&
-    Number.isInteger(parsedNewEvolutionMethod) &&
-    Number.isInteger(parsedNewEvolutionArgument) &&
-    Number.isInteger(parsedNewEvolutionSpecies) &&
-    Number.isInteger(parsedNewEvolutionForm) &&
-    Number.isInteger(parsedNewEvolutionLevel);
+    canModifyEvolutionStructure &&
+    (editorFamily !== 'swsh' || orderedEvolutions.length < swshPokemonMaximumEvolutionRows) &&
+    isIntegerInRange(parsedNewEvolutionMethod, 0, pokemonMaximumUshortValue) &&
+    isIntegerInRange(parsedNewEvolutionArgument, 0, pokemonMaximumUshortValue) &&
+    isIntegerInRange(parsedNewEvolutionSpecies, 0, pokemonMaximumUshortValue) &&
+    isIntegerInRange(parsedNewEvolutionForm, 0, evolutionMaximumForm) &&
+    isIntegerInRange(parsedNewEvolutionLevel, 0, evolutionMaximumLevel) &&
+    (editorFamily !== 'swsh' ||
+      isValidSwShEvolutionAddition(
+        parsedNewEvolutionMethod,
+        parsedNewEvolutionArgument,
+        parsedNewEvolutionSpecies,
+        evolutionMethodOptions,
+        pokemonSpeciesOptions
+      ));
 
   return (
     <aside
@@ -12560,7 +12668,7 @@ function SelectedPokemonPanel({
                               [field.field]: value
                             };
                             setPersonalDraftsByPokemonId((currentDrafts) =>
-                              setFieldDraftRecord(
+                              setSparseFieldDraftRecord(
                                 currentDrafts,
                                 pokemon.personalId,
                                 nextDrafts,
@@ -12676,7 +12784,8 @@ function SelectedPokemonPanel({
                     const displayMove = getPokemonLearnsetDraftDisplay(
                       move,
                       localDraft,
-                      learnsetMoveOptions
+                      learnsetMoveOptions,
+                      editorFamily
                     );
 
                     return (
@@ -12686,7 +12795,7 @@ function SelectedPokemonPanel({
                         } ${
                           dragOverLearnsetSlot === move.slot ? 'learnset-drop-target' : ''
                         }`}
-                        draggable={canEditLearnset}
+                        draggable={canModifyLearnsetStructure}
                         key={move.slot}
                         onDragEnd={() => {
                           setDraggedLearnsetSlot(null);
@@ -12706,7 +12815,7 @@ function SelectedPokemonPanel({
                             draggedLearnsetSlot ??
                             (Number.isInteger(transferredSlot) ? transferredSlot : null);
                           if (
-                            !canEditLearnset ||
+                            !canModifyLearnsetStructure ||
                             sourceSlot === null ||
                             sourceSlot === move.slot
                           ) {
@@ -12718,7 +12827,7 @@ function SelectedPokemonPanel({
                           setDragOverLearnsetSlot(move.slot);
                         }}
                         onDragStart={(event) => {
-                          if (!canEditLearnset) {
+                          if (!canModifyLearnsetStructure) {
                             event.preventDefault();
                             return;
                           }
@@ -12738,7 +12847,7 @@ function SelectedPokemonPanel({
                             draggedLearnsetSlot ??
                             (Number.isInteger(transferredSlot) ? transferredSlot : null);
                           event.preventDefault();
-                          handleDropLearnsetMove(move.slot, sourceSlot);
+                          void handleDropLearnsetMove(move.slot, sourceSlot);
                         }}
                       >
                         {isSelected && editSession !== null ? (
@@ -12763,6 +12872,7 @@ function SelectedPokemonPanel({
                               ) : (
                                 <input
                                   disabled={!canEditLearnset}
+                                  max={pokemonMaximumUshortValue}
                                   min={0}
                                   onChange={(event) => {
                                     setLearnsetMoveIdDraft(event.target.value);
@@ -12777,6 +12887,7 @@ function SelectedPokemonPanel({
                               <span>Level</span>
                               <input
                                 disabled={!canEditLearnset}
+                                max={learnsetMaximumLevel}
                                 min={0}
                                 onChange={(event) => {
                                   setLearnsetLevelDraft(event.target.value);
@@ -12796,17 +12907,18 @@ function SelectedPokemonPanel({
                               <button
                                 aria-label="Move learnset row up"
                                 className="secondary-button icon-button"
-                                disabled={!canEditLearnset || move.slot === 0}
-                                onClick={() => {
-                                  clearCurrentPokemonLearnsetDrafts();
-                                  onUpdatePokemonLearnset(
+                                disabled={!canModifyLearnsetStructure || move.slot === 0}
+                                onClick={async () => {
+                                  const didMove = await onUpdatePokemonLearnset(
                                     pokemon.personalId,
                                     'moveUp',
                                     move.slot,
                                     null,
                                     null
                                   );
-                                  setSelectedLearnsetSlot(move.slot - 1);
+                                  if (didMove) {
+                                    setSelectedLearnsetSlot(move.slot - 1);
+                                  }
                                 }}
                                 title="Move learnset row up"
                                 type="button"
@@ -12816,17 +12928,21 @@ function SelectedPokemonPanel({
                               <button
                                 aria-label="Move learnset row down"
                                 className="secondary-button icon-button"
-                                disabled={!canEditLearnset || move.slot >= pokemon.learnset.length - 1}
-                                onClick={() => {
-                                  clearCurrentPokemonLearnsetDrafts();
-                                  onUpdatePokemonLearnset(
+                                disabled={
+                                  !canModifyLearnsetStructure ||
+                                  move.slot >= pokemon.learnset.length - 1
+                                }
+                                onClick={async () => {
+                                  const didMove = await onUpdatePokemonLearnset(
                                     pokemon.personalId,
                                     'moveDown',
                                     move.slot,
                                     null,
                                     null
                                   );
-                                  setSelectedLearnsetSlot(move.slot + 1);
+                                  if (didMove) {
+                                    setSelectedLearnsetSlot(move.slot + 1);
+                                  }
                                 }}
                                 title="Move learnset row down"
                                 type="button"
@@ -12836,10 +12952,9 @@ function SelectedPokemonPanel({
                               <button
                                 aria-label="Remove learnset row"
                                 className="secondary-button icon-button danger-icon-button"
-                                disabled={!canEditLearnset}
+                                disabled={!canModifyLearnsetStructure}
                                 onClick={() => {
-                                  clearCurrentPokemonLearnsetDrafts();
-                                  onUpdatePokemonLearnset(
+                                  void onUpdatePokemonLearnset(
                                     pokemon.personalId,
                                     'remove',
                                     move.slot,
@@ -12913,6 +13028,7 @@ function SelectedPokemonPanel({
                   ) : (
                     <input
                       disabled={!canEditLearnset}
+                      max={pokemonMaximumUshortValue}
                       min={0}
                       onChange={(event) => setNewLearnsetMoveIdDraft(event.target.value)}
                       type="number"
@@ -12924,6 +13040,7 @@ function SelectedPokemonPanel({
                   <span>New level</span>
                   <input
                     disabled={!canEditLearnset}
+                    max={learnsetMaximumLevel}
                     min={0}
                     onChange={(event) => setNewLearnsetLevelDraft(event.target.value)}
                     type="number"
@@ -12934,16 +13051,18 @@ function SelectedPokemonPanel({
                   aria-label="Add learnset row"
                   className="secondary-button learnset-add-button"
                   disabled={!canAddLearnsetMove}
-                  onClick={() => {
-                    onUpdatePokemonLearnset(
+                  onClick={async () => {
+                    const didAdd = await onUpdatePokemonLearnset(
                       pokemon.personalId,
                       'add',
                       null,
                       parsedNewLearnsetMoveId,
                       parsedNewLearnsetLevel
                     );
-                    setNewLearnsetMoveIdDraft('');
-                    setNewLearnsetLevelDraft('');
+                    if (didAdd) {
+                      setNewLearnsetMoveIdDraft('');
+                      setNewLearnsetLevelDraft('');
+                    }
                   }}
                   type="button"
                 >
@@ -13022,9 +13141,9 @@ function SelectedPokemonPanel({
           <div className={`inspector-block ${editorFamily}-pokemon-evolutions-block`}>
             <h4>Evolutions</h4>
             <div className="learnset-editor">
-              {pokemon.evolutions.length > 0 ? (
+              {orderedEvolutions.length > 0 ? (
                 <ul className="learnset-list">
-                  {pokemon.evolutions.map((evolution) => {
+                  {orderedEvolutions.map((evolution) => {
                     const evolutionSpeciesLabel = formatReferenceLabel(
                       pokemonSpeciesLabels,
                       evolution.species,
@@ -13193,7 +13312,7 @@ function SelectedPokemonPanel({
                     <span>Level</span>
                     <input
                       disabled={!canEditEvolution}
-                      max={255}
+                      max={evolutionMaximumLevel}
                       min={0}
                       onChange={(event) => {
                         setEvolutionLevelDraft(event.target.value);
@@ -13207,9 +13326,13 @@ function SelectedPokemonPanel({
                     <button
                       aria-label="Move evolution row up"
                       className="secondary-button icon-button"
-                      disabled={!canEditEvolution || selectedEvolution.slot === 0}
-                      onClick={() =>
-                        onUpdatePokemonEvolution(
+                      disabled={!canModifyEvolutionStructure || previousEvolutionSlot === null}
+                      onClick={async () => {
+                        if (previousEvolutionSlot === null) {
+                          return;
+                        }
+
+                        const didMove = await onUpdatePokemonEvolution(
                           pokemon.personalId,
                           'moveUp',
                           selectedEvolution.slot,
@@ -13218,8 +13341,11 @@ function SelectedPokemonPanel({
                           null,
                           null,
                           null
-                        )
-                      }
+                        );
+                        if (didMove) {
+                          setSelectedEvolutionSlot(previousEvolutionSlot);
+                        }
+                      }}
                       title="Move evolution row up"
                       type="button"
                     >
@@ -13229,10 +13355,14 @@ function SelectedPokemonPanel({
                       aria-label="Move evolution row down"
                       className="secondary-button icon-button"
                       disabled={
-                        !canEditEvolution || selectedEvolution.slot >= pokemon.evolutions.length - 1
+                        !canModifyEvolutionStructure || nextEvolutionSlot === null
                       }
-                      onClick={() =>
-                        onUpdatePokemonEvolution(
+                      onClick={async () => {
+                        if (nextEvolutionSlot === null) {
+                          return;
+                        }
+
+                        const didMove = await onUpdatePokemonEvolution(
                           pokemon.personalId,
                           'moveDown',
                           selectedEvolution.slot,
@@ -13241,8 +13371,11 @@ function SelectedPokemonPanel({
                           null,
                           null,
                           null
-                        )
-                      }
+                        );
+                        if (didMove) {
+                          setSelectedEvolutionSlot(nextEvolutionSlot);
+                        }
+                      }}
                       title="Move evolution row down"
                       type="button"
                     >
@@ -13251,9 +13384,9 @@ function SelectedPokemonPanel({
                     <button
                       aria-label="Remove evolution row"
                       className="secondary-button icon-button danger-icon-button"
-                      disabled={!canEditEvolution}
+                      disabled={!canModifyEvolutionStructure}
                       onClick={() =>
-                        onUpdatePokemonEvolution(
+                        void onUpdatePokemonEvolution(
                           pokemon.personalId,
                           'remove',
                           selectedEvolution.slot,
@@ -13356,7 +13489,7 @@ function SelectedPokemonPanel({
                   <span>New level</span>
                   <input
                     disabled={!canEditEvolution}
-                    max={255}
+                    max={evolutionMaximumLevel}
                     min={0}
                     onChange={(event) => setNewEvolutionLevelDraft(event.target.value)}
                     type="number"
@@ -13367,8 +13500,8 @@ function SelectedPokemonPanel({
                   aria-label="Add evolution row"
                   className="secondary-button learnset-add-button"
                   disabled={!canAddEvolution}
-                  onClick={() => {
-                    onUpdatePokemonEvolution(
+                  onClick={async () => {
+                    const didAdd = await onUpdatePokemonEvolution(
                       pokemon.personalId,
                       'add',
                       null,
@@ -13378,11 +13511,13 @@ function SelectedPokemonPanel({
                       parsedNewEvolutionForm,
                       parsedNewEvolutionLevel
                     );
-                    setNewEvolutionMethodDraft('');
-                    setNewEvolutionArgumentDraft('0');
-                    setNewEvolutionSpeciesDraft('');
-                    setNewEvolutionFormDraft('0');
-                    setNewEvolutionLevelDraft('');
+                    if (didAdd) {
+                      setNewEvolutionMethodDraft('');
+                      setNewEvolutionArgumentDraft('0');
+                      setNewEvolutionSpeciesDraft('');
+                      setNewEvolutionFormDraft('0');
+                      setNewEvolutionLevelDraft('');
+                    }
                   }}
                   type="button"
                 >
@@ -33167,14 +33302,29 @@ function parseMachineItemName(name: string) {
     : null;
 }
 
-function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
+function filterPokemon(
+  pokemon: PokemonRecord[],
+  searchText: string,
+  editorFamily: EditorUiFamily = 'swsh'
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
     return pokemon;
   }
 
-  return pokemon.filter((record) => record.name.toLocaleLowerCase().includes(normalizedSearch));
+  return pokemon.filter((record) =>
+    [
+      record.personalId.toString(),
+      record.speciesId.toString(),
+      record.formLabel,
+      formatPokemonRecordName(record, editorFamily),
+      record.name,
+      record.type1,
+      record.type2,
+      formatPokemonTypes(record)
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
 }
 
 function filterPokemonCompatibilityEntries(
@@ -33229,6 +33379,7 @@ function createEvolutionFormOptions(
 ): EditableFieldOption[] {
   const formValues = new Set<number>([0]);
   const parsedDraft = Number.parseInt(draftValue, 10);
+  const maximumForm = getPokemonEvolutionMaximumForm(gameFamily);
 
   const context = createEvolutionFormOptionContext(speciesId, speciesLabels, gameFamily);
   if (context !== null) {
@@ -33236,14 +33387,14 @@ function createEvolutionFormOptions(
     if (
       Number.isInteger(parsedDraft) &&
       parsedDraft >= 0 &&
-      parsedDraft <= 255 &&
+      parsedDraft <= maximumForm &&
       (parsedDraft === 0 ||
         resolveSpeciesFormLabel(context.species, parsedDraft, context.speciesId, gameFamily) !==
           undefined)
     ) {
       formValues.add(parsedDraft);
     }
-  } else if (Number.isInteger(parsedDraft) && parsedDraft >= 0 && parsedDraft <= 255) {
+  } else if (Number.isInteger(parsedDraft) && parsedDraft >= 0 && parsedDraft <= maximumForm) {
     formValues.add(parsedDraft);
   }
 
@@ -33287,16 +33438,116 @@ function createPokemonLearnsetDraftFields(move: PokemonLearnsetMove): PokemonLea
   };
 }
 
+function isIntegerInRange(
+  value: number | null,
+  minimum: number,
+  maximum: number
+): value is number {
+  return value !== null && Number.isInteger(value) && value >= minimum && value <= maximum;
+}
+
+function isValidSwShLearnsetMove(
+  moveId: number | null,
+  moveOptions: PokemonEditableFieldOption[]
+) {
+  return (
+    moveId !== null &&
+    moveId > 0 &&
+    moveId <= pokemonMaximumUshortValue &&
+    (moveOptions.length === 0 || moveOptions.some((option) => option.value === moveId))
+  );
+}
+
+function isValidSwShEvolutionMethod(
+  method: number | null,
+  methodOptions: PokemonEvolutionMethodOption[]
+) {
+  return (
+    method !== null &&
+    method > 0 &&
+    method !== 35 &&
+    method <= pokemonMaximumUshortValue &&
+    methodOptions.some((option) => option.value === method)
+  );
+}
+
+function isValidSwShEvolutionSpecies(
+  species: number | null,
+  speciesOptions: PokemonEditableFieldOption[]
+) {
+  return (
+    species !== null &&
+    species > 0 &&
+    species <= pokemonMaximumUshortValue &&
+    (speciesOptions.length === 0 || speciesOptions.some((option) => option.value === species))
+  );
+}
+
+function isValidSwShEvolutionArgument(
+  argument: number,
+  methodOption: PokemonEvolutionMethodOption
+) {
+  if (methodOption.argumentKind === 'none' || methodOption.argumentKind === 'level') {
+    return argument === 0;
+  }
+
+  if (methodOption.argumentOptions.length > 0) {
+    return methodOption.argumentOptions.some((option) => option.value === argument);
+  }
+
+  return methodOption.argumentKind === 'item' ||
+    methodOption.argumentKind === 'move' ||
+    methodOption.argumentKind === 'species'
+    ? argument !== 0
+    : true;
+}
+
+function isValidSwShEvolutionAddition(
+  method: number | null,
+  argument: number | null,
+  species: number | null,
+  methodOptions: PokemonEvolutionMethodOption[],
+  speciesOptions: PokemonEditableFieldOption[]
+) {
+  const methodOption = methodOptions.find((option) => option.value === method);
+  return (
+    isValidSwShEvolutionMethod(method, methodOptions) &&
+    argument !== null &&
+    methodOption !== undefined &&
+    isValidSwShEvolutionArgument(argument, methodOption) &&
+    isValidSwShEvolutionSpecies(species, speciesOptions)
+  );
+}
+
+function getPokemonLearnsetMaximumLevel(gameFamily: EditorUiFamily) {
+  if (gameFamily === 'swsh') {
+    return swshPokemonLearnsetMaximumLevel;
+  }
+
+  return gameFamily === 'za' ? pokemonMaximumByteValue : pokemonMaximumUshortValue;
+}
+
+function getPokemonEvolutionMaximumForm(gameFamily: EditorUiFamily) {
+  return gameFamily === 'swsh' ? pokemonMaximumByteValue : pokemonMaximumUshortValue;
+}
+
+function getPokemonEvolutionMaximumLevel(gameFamily: EditorUiFamily) {
+  return gameFamily === 'swsh' ? swshPokemonLearnsetMaximumLevel : pokemonMaximumUshortValue;
+}
+
 function getPokemonLearnsetDraftDisplay(
   move: PokemonLearnsetMove,
   draft: PokemonLearnsetDraftFields | null,
-  moveOptions: PokemonEditableFieldOption[]
+  moveOptions: PokemonEditableFieldOption[],
+  gameFamily: EditorUiFamily = 'swsh'
 ) {
   const moveIdDraft = draft?.moveId ?? move.moveId.toString();
   const levelDraft = draft?.level ?? move.level.toString();
   const moveId = parseEditableIntegerDraft(moveIdDraft, moveOptions);
-  const level = Number.parseInt(levelDraft, 10);
-  const levelValue = Number.isInteger(level) ? level : move.level;
+  const level = parseEditableIntegerDraft(levelDraft);
+  const levelValue = isIntegerInRange(level, 0, getPokemonLearnsetMaximumLevel(gameFamily))
+    ? level
+    : move.level;
   const masteryLabel = getPokemonLearnsetMasteryLabel(move);
   const levelLabel = getPokemonLearnsetPrimaryLevelLabel(
     move,
@@ -33355,7 +33606,8 @@ function pokemonLearnsetDraftEqualsRecord(
 function reviewPokemonLearnsetDrafts(
   pokemon: PokemonRecord | null,
   draftsBySlot: Record<number, PokemonLearnsetDraftFields>,
-  learnsetMoveOptions: PokemonEditableFieldOption[]
+  learnsetMoveOptions: PokemonEditableFieldOption[],
+  gameFamily: EditorUiFamily = 'swsh'
 ): { changes: PokemonLearnsetDraftChange[]; invalidCount: number } {
   if (!pokemon) {
     return { changes: [], invalidCount: 0 };
@@ -33373,9 +33625,20 @@ function reviewPokemonLearnsetDrafts(
 
     const moveOptions = addCurrentPokemonFieldOption(learnsetMoveOptions, draft.moveId, 'Move');
     const moveId = parseEditableIntegerDraft(draft.moveId, moveOptions);
-    const level = Number.parseInt(draft.level, 10);
+    const level = parseEditableIntegerDraft(draft.level);
+    const moveIdChanged = moveId !== move.moveId;
+    const levelChanged = level !== move.level;
 
-    if (!Number.isInteger(moveId) || !Number.isInteger(level)) {
+    if (
+      moveId === null ||
+      level === null ||
+      (moveIdChanged && !isIntegerInRange(moveId, 0, pokemonMaximumUshortValue)) ||
+      (levelChanged &&
+        !isIntegerInRange(level, 0, getPokemonLearnsetMaximumLevel(gameFamily))) ||
+      (gameFamily === 'swsh' &&
+        moveIdChanged &&
+        !isValidSwShLearnsetMove(moveId, learnsetMoveOptions))
+    ) {
       invalidCount += 1;
       continue;
     }
@@ -33416,6 +33679,9 @@ function reviewPokemonEvolutionDrafts(
     const methodOptions = addCurrentEvolutionMethodOption(evolutionMethodOptions, draft.method);
     const method = parseEditableIntegerDraft(draft.method, methodOptions);
     const methodOption = findEvolutionMethodOption(methodOptions, draft.method);
+    const supportedMethodOption = evolutionMethodOptions.find(
+      (option) => option.value === method
+    );
     const argumentOptions = addCurrentPokemonFieldOption(
       methodOption?.argumentOptions ?? [],
       draft.argument,
@@ -33430,14 +33696,37 @@ function reviewPokemonEvolutionDrafts(
       gameFamily
     );
     const form = parseEditableIntegerDraft(draft.form, formOptions);
-    const level = Number.parseInt(draft.level, 10);
+    const level = parseEditableIntegerDraft(draft.level);
+    const methodChanged = method !== evolution.method;
+    const argumentChanged = argument !== evolution.argument;
+    const speciesChanged = species !== evolution.species;
+    const formChanged = form !== evolution.form;
+    const levelChanged = level !== evolution.level;
 
     if (
-      !Number.isInteger(method) ||
-      !Number.isInteger(argument) ||
-      !Number.isInteger(species) ||
-      !Number.isInteger(form) ||
-      !Number.isInteger(level)
+      method === null ||
+      argument === null ||
+      species === null ||
+      form === null ||
+      level === null ||
+      (methodChanged && !isIntegerInRange(method, 0, pokemonMaximumUshortValue)) ||
+      (argumentChanged && !isIntegerInRange(argument, 0, pokemonMaximumUshortValue)) ||
+      (speciesChanged && !isIntegerInRange(species, 0, pokemonMaximumUshortValue)) ||
+      (formChanged &&
+        !isIntegerInRange(form, 0, getPokemonEvolutionMaximumForm(gameFamily))) ||
+      (levelChanged &&
+        !isIntegerInRange(level, 0, getPokemonEvolutionMaximumLevel(gameFamily))) ||
+      (gameFamily === 'swsh' &&
+        methodChanged &&
+        !isValidSwShEvolutionMethod(method, evolutionMethodOptions)) ||
+      (gameFamily === 'swsh' &&
+        speciesChanged &&
+        !isValidSwShEvolutionSpecies(species, pokemonSpeciesOptions)) ||
+      (gameFamily === 'swsh' && argumentChanged && supportedMethodOption === undefined) ||
+      (gameFamily === 'swsh' &&
+        (methodChanged || argumentChanged) &&
+        supportedMethodOption !== undefined &&
+        !isValidSwShEvolutionArgument(argument, supportedMethodOption))
     ) {
       invalidCount += 1;
       continue;
@@ -36604,6 +36893,15 @@ function getPokemonPersonalFieldDraftState(
       isChanged: normalizedValue !== currentText,
       isValid: false,
       normalizedValue: null
+    };
+  }
+
+  if (parsedValue === currentValue) {
+    return {
+      error: null,
+      isChanged: false,
+      isValid: true,
+      normalizedValue: currentText
     };
   }
 

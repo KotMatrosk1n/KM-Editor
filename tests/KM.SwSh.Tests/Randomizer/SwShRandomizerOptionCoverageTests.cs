@@ -378,6 +378,21 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShStaticEncountersWorkflowService.StaticEncounterDataPath);
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShGiftPokemonWorkflowService.GiftPokemonDataPath);
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShTypeChartWorkflowService.ExeFsMainPath);
+        Assert.DoesNotContain(
+            result.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("source layer changed", StringComparison.Ordinal));
+        var appliedMessages = result.ApplyResult.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.StartsWith("Applied ", StringComparison.Ordinal))
+            .Select(diagnostic => diagnostic.Message)
+            .ToArray();
+        var staticIndex = Array.FindIndex(
+            appliedMessages,
+            message => message.StartsWith("Applied Static Encounter", StringComparison.Ordinal));
+        var pokemonIndex = Array.FindIndex(
+            appliedMessages,
+            message => message.StartsWith("Applied Pokemon Data", StringComparison.Ordinal));
+        Assert.True(staticIndex >= 0 && pokemonIndex > staticIndex);
     }
 
     [Fact]
@@ -392,10 +407,14 @@ public sealed class SwShRandomizerOptionCoverageTests
         {
             RandomizePokemonStats = true,
             StatHp = true,
+            RandomizeStaticEncounters = true,
             RandomizeTypeChart = true,
         }));
 
         Assert.Contains(result.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(
+            result.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("source layer changed", StringComparison.Ordinal));
         Assert.Contains(
             result.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
@@ -405,6 +424,9 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShStaticEncountersWorkflowService.StaticEncounterDataPath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.True(Directory.Exists(blockedMainPath));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, ".km-editor", "randomizer-manifest.json")));
     }

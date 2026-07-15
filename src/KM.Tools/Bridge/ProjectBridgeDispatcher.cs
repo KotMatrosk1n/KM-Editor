@@ -572,20 +572,25 @@ public sealed class ProjectBridgeDispatcher
             return SerializeSuccess(zaResponse, request.RequestId);
         }
 
-        if (!IsScarletViolet(paths))
+        if (IsScarletViolet(paths))
         {
-            return SerializeFailure(
-                "bridge.unsupportedCommand",
-                "Batch Pokemon field updates are supported for Scarlet/Violet and Pokemon Legends Z-A projects.",
-                request.RequestId);
+            var svResponse = SvBridgeMapper.ToPokemonFieldsDto(
+                svWorkflowService.UpdatePokemonFields(
+                    paths,
+                    session,
+                    request.Payload.Updates
+                        .Select(update => new SvPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
+                        .ToArray()));
+
+            return SerializeSuccess(svResponse, request.RequestId);
         }
 
-        var response = SvBridgeMapper.ToPokemonFieldsDto(
-            svWorkflowService.UpdatePokemonFields(
+        var response = SwShBridgeMapper.ToPokemonFieldsDto(
+            pokemonEditSessionService.UpdateFields(
                 paths,
                 session,
                 request.Payload.Updates
-                    .Select(update => new SvPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
+                    .Select(update => new SwShPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
                     .ToArray()));
 
         return SerializeSuccess(response, request.RequestId);
