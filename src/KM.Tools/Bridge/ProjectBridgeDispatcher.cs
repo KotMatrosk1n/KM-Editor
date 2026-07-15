@@ -2250,7 +2250,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadRoyalCandyWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadRoyalCandyWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadRoyalCandy(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Royal Candy load paths are required.");
+        var workflow = swShWorkflowService.LoadRoyalCandy(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2259,12 +2261,17 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageRoyalCandyWorkflow(string requestJson)
     {
         var request = DeserializeRequest<StageRoyalCandyWorkflowRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Royal Candy stage paths are required.");
+        var workflowId = string.IsNullOrWhiteSpace(request.Payload.WorkflowId)
+            ? throw new JsonException("Royal Candy workflow ID is required.")
+            : request.Payload.WorkflowId.Trim();
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = royalCandyEditSessionService.StageWorkflow(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.WorkflowId,
+            ProjectBridgeMapper.ToCore(paths),
+            workflowId,
             request.Payload.LevelCaps?.Select(selection => new SwShRoyalCandyLevelCapSelection(
                 selection.Slot,
                 selection.LevelCap)).ToArray(),

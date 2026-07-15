@@ -74,20 +74,6 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private const int RoyalCandyAllowedConsumableAdjustedItemId = RoyalCandyItemId - 0x12;
     private const int RoyalCandyVirtualInventoryCount = 999;
 
-    private static readonly HashSet<int> ExternalBranchLinkTargets =
-    [
-        0x0077A5F0,
-        0x007C8330,
-        FlagGetOffset,
-        WorkGetOffset,
-        ShieldFlagGetOffset,
-        ShieldWorkGetOffset,
-        ItemOwnershipFunctionOffset,
-        ItemCountFunctionOffset,
-        ShieldItemOwnershipFunctionOffset,
-        ShieldItemCountFunctionOffset,
-    ];
-
     private static readonly RoyalCandyPatchLayout SwordPatchLayout = new(
         FlagworkGlobalAddress: 0x02610798,
         FlagworkObjectOffset: 0x1B8,
@@ -104,12 +90,6 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         ShieldItemOwnershipFunctionOffset,
         ShieldItemCountFunctionOffset);
 
-    private static readonly IReadOnlyList<SwShExeFsReservedRegion> MainTextReservations =
-        SwShExeFsReservedRegionLedger.MainTextRegionsForOwners(
-            SwShExeFsReservedRegionLedger.OwnerCatchCap,
-            SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
-            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits);
-
     private static readonly IReadOnlyList<SwShExeFsReservedRegion> NonRoyalCandyReservations =
         SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
             SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
@@ -119,6 +99,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         + EqualBranchChecks.Length
         + 2
         + 1
+        + 1
+        + 2
         + 1;
 
     public static SwShRoyalCandyExeFsSignature AnalyzeInstallation(byte[] mainBytes, ProjectGame? expectedGame = null)
@@ -132,57 +114,63 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             return gameMismatch;
         }
 
-        var text = nso.Text.DecompressedData;
-        var routeInstalledCount = UiRouteChecks.Count(check => IsUiRouteCheckInstalled(text, check));
-        var equalInstalledCount = EqualBranchChecks.Count(check => IsEqualBranchCheckInstalled(text, check));
-        var expCandyBypassCount = CountInstalledExpCandyBypass(text);
-        var infiniteUseInstalled = TryReadInstruction(text, QuantityMoveOffset, out var quantityMove)
-            && IsUnconditionalBranch(quantityMove);
-        var storyLimitsInstalled = TryReadInstruction(text, StoryInventoryClampSelectOffset, out var storyClampSelect)
-            && IsUnconditionalBranch(storyClampSelect);
-
-        var recognizedAnchorCount = routeInstalledCount
-            + equalInstalledCount
-            + expCandyBypassCount
-            + (infiniteUseInstalled ? 1 : 0)
-            + (storyLimitsInstalled ? 1 : 0);
-        var reservedAnchorCount = UiRouteChecks.Length
-            + EqualBranchChecks.Length
-            + 2
-            + 1
-            + 1;
-        var baseInstalled = routeInstalledCount == UiRouteChecks.Length
-            && equalInstalledCount == EqualBranchChecks.Length
-            && expCandyBypassCount == 2
-            && infiniteUseInstalled;
-
-        if (baseInstalled)
-        {
-            var kind = storyLimitsInstalled
-                ? SwShRoyalCandyExeFsSignatureKind.StoryLimits
-                : SwShRoyalCandyExeFsSignatureKind.Unlimited;
-            return new SwShRoyalCandyExeFsSignature(
-                kind,
-                storyLimitsInstalled
-                    ? "Royal Candy with Story Limits ExeFS signature detected from reserved item-route, decrement, and story-cap anchors."
-                    : "Unlimited Royal Candy ExeFS signature detected from reserved item-route and decrement anchors.",
-                reservedAnchorCount,
-                recognizedAnchorCount);
-        }
-
-        if (recognizedAnchorCount > 0 || HasForeignReservedAnchorChange(text))
+        var detectedGame = DetectSupportedGame(nso.BuildId);
+        if (detectedGame is null)
         {
             return new SwShRoyalCandyExeFsSignature(
                 SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
-                "Royal Candy reserved ExeFS anchors are partially patched or do not match a KM Royal Candy signature.",
-                reservedAnchorCount,
+                "Royal Candy cannot identify this unsupported Sword/Shield executable build.",
+                ReservedAnchorCount,
+                RecognizedAnchorCount: 0);
+        }
+
+        try
+        {
+            ValidateRequiredSegmentHashes(nso);
+        }
+        catch (InvalidDataException exception)
+        {
+            return new SwShRoyalCandyExeFsSignature(
+                SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+                exception.Message,
+                ReservedAnchorCount,
+                RecognizedAnchorCount: 0);
+        }
+
+        var text = nso.Text.DecompressedData;
+        var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
+        if (TryValidateStoryLimitsSignature(text, layout, out _))
+        {
+            return new SwShRoyalCandyExeFsSignature(
+                SwShRoyalCandyExeFsSignatureKind.StoryLimits,
+                "Royal Candy with Story Limits ExeFS signature detected from the complete item-route, virtual-inventory, decrement, and story-cap payload graph.",
+                ReservedAnchorCount,
+                ReservedAnchorCount);
+        }
+
+        if (TryValidateUnlimitedSignature(text, layout))
+        {
+            return new SwShRoyalCandyExeFsSignature(
+                SwShRoyalCandyExeFsSignatureKind.Unlimited,
+                "Unlimited Royal Candy ExeFS signature detected from the complete item-route, virtual-inventory, and decrement payload graph.",
+                ReservedAnchorCount,
+                ReservedAnchorCount);
+        }
+
+        var recognizedAnchorCount = CountRecognizedExactAnchors(text, layout);
+        if (AreRoyalCandyAnchorsVanilla(text, layout))
+        {
+            return new SwShRoyalCandyExeFsSignature(
+                SwShRoyalCandyExeFsSignatureKind.NotInstalled,
+                "Royal Candy reserved ExeFS anchors are vanilla and available.",
+                ReservedAnchorCount,
                 recognizedAnchorCount);
         }
 
         return new SwShRoyalCandyExeFsSignature(
-            SwShRoyalCandyExeFsSignatureKind.NotInstalled,
-            "Royal Candy reserved ExeFS anchors are vanilla and available.",
-            reservedAnchorCount,
+            SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+            "Royal Candy reserved ExeFS anchors or payload caves are partially patched or do not match a complete KM Royal Candy signature.",
+            ReservedAnchorCount,
             recognizedAnchorCount);
     }
 
@@ -192,16 +180,26 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var nso = NsoFile.Parse(mainBytes);
-        ValidateSelectedGame(nso.BuildId, expectedGame);
-        var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
-        var text = nso.Text.DecompressedData;
-        if (!TryResolveStoryCapHelperOffset(text, out var helperOffset))
+        var signature = AnalyzeInstallation(mainBytes, expectedGame);
+        if (signature.Kind is SwShRoyalCandyExeFsSignatureKind.NotInstalled
+            or SwShRoyalCandyExeFsSignatureKind.Unlimited)
         {
             return Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
         }
 
-        return ReadStoryCapLadder(text, helperOffset, layout);
+        if (signature.Kind != SwShRoyalCandyExeFsSignatureKind.StoryLimits)
+        {
+            throw new InvalidDataException(signature.Message);
+        }
+
+        var nso = NsoFile.Parse(mainBytes);
+        var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
+        if (!TryValidateStoryLimitsSignature(nso.Text.DecompressedData, layout, out var levelCaps))
+        {
+            throw new InvalidDataException("Royal Candy story-cap readback did not find one complete, unique milestone ladder.");
+        }
+
+        return levelCaps;
     }
 
     public static byte[] ApplyBasePatch(byte[] mainBytes, ProjectGame? expectedGame = null)
@@ -228,63 +226,55 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         byte[] outputMainBytes,
         ProjectGame expectedGame)
     {
-        ArgumentNullException.ThrowIfNull(sourceMainBytes);
-        ArgumentNullException.ThrowIfNull(outputMainBytes);
-
-        var source = NsoFile.Parse(sourceMainBytes);
-        var output = NsoFile.Parse(outputMainBytes);
-        ValidateRequiredSegmentHashes(source);
-        ValidateRequiredSegmentHashes(output);
-        ValidateSelectedGame(source.BuildId, expectedGame);
-        ValidateSelectedGame(output.BuildId, expectedGame);
-
-        if (source.Version != output.Version
-            || source.Flags != output.Flags
-            || !source.BuildId.SequenceEqual(output.BuildId))
-        {
-            throw new InvalidDataException("Royal Candy patch verification found changed executable identity metadata.");
-        }
-
-        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(source.RawHeader, output.RawHeader))
-        {
-            throw new InvalidDataException("Royal Candy patch verification found changed executable header metadata.");
-        }
-
-        VerifyPreservedSegment(source.Ro, output.Ro, ".ro");
-        VerifyPreservedSegment(source.Data, output.Data, ".data");
-        if (source.Text.Header.MemoryOffset != output.Text.Header.MemoryOffset
-            || source.Text.Header.DecompressedSize != output.Text.Header.DecompressedSize
-            || source.Text.DecompressedData.Length != output.Text.DecompressedData.Length)
-        {
-            throw new InvalidDataException("Royal Candy patch verification found a changed .text layout.");
-        }
-
-        if (source.Text.DecompressedData.SequenceEqual(output.Text.DecompressedData))
-        {
-            throw new InvalidDataException("Royal Candy patch verification found no executable text changes.");
-        }
-
-        foreach (var reservation in NonRoyalCandyReservations)
-        {
-            var start = reservation.StartOffset!.Value;
-            var length = reservation.Length!.Value;
-            if (start + length > source.Text.DecompressedData.Length)
-            {
-                continue;
-            }
-
-            if (!source.Text.DecompressedData.AsSpan(start, length)
-                .SequenceEqual(output.Text.DecompressedData.AsSpan(start, length)))
-            {
-                throw new InvalidDataException(
-                    $"Royal Candy patch verification found a change in the {reservation.Owner} reserved range.");
-            }
-        }
+        _ = VerifyPatchOutputPreservation(sourceMainBytes, outputMainBytes, expectedGame);
 
         var installation = AnalyzeInstallation(outputMainBytes, expectedGame);
         if (installation.Kind != SwShRoyalCandyExeFsSignatureKind.Unlimited)
         {
             throw new InvalidDataException("Royal Candy patch verification did not find the complete unlimited executable signature.");
+        }
+    }
+
+    internal static void VerifyStoryLimitsPatchOutput(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps,
+        ProjectGame expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(levelCaps);
+
+        var (_, output) = VerifyPatchOutputPreservation(sourceMainBytes, outputMainBytes, expectedGame);
+        var installation = AnalyzeInstallation(outputMainBytes, expectedGame);
+        if (installation.Kind != SwShRoyalCandyExeFsSignatureKind.StoryLimits)
+        {
+            throw new InvalidDataException("Royal Candy patch verification did not find the complete Story Limits executable signature.");
+        }
+
+        var layout = ResolvePatchLayout(output.BuildId, expectedGame);
+        if (!TryValidateStoryLimitsSignature(output.Text.DecompressedData, layout, out var installedLevelCaps))
+        {
+            throw new InvalidDataException("Royal Candy patch verification could not decode one complete Story Limits milestone ladder.");
+        }
+
+        var expectedLevelCaps = ValidateAndOrderStoryLevelCaps(levelCaps);
+        if (installedLevelCaps.Count != expectedLevelCaps.Count)
+        {
+            throw new InvalidDataException(
+                $"Royal Candy patch verification decoded {installedLevelCaps.Count:N0} story milestones; expected {expectedLevelCaps.Count:N0}.");
+        }
+
+        for (var index = 0; index < expectedLevelCaps.Count; index++)
+        {
+            var expected = expectedLevelCaps[index];
+            var installed = installedLevelCaps[index];
+            if (installed.LevelCap != expected.LevelCap
+                || installed.ProgressHash != expected.ProgressHash
+                || installed.ProgressKind != expected.ProgressKind
+                || installed.WorkMinimum != expected.WorkMinimum)
+            {
+                throw new InvalidDataException(
+                    $"Royal Candy patch verification found a different story milestone at ladder index {index:N0}.");
+            }
         }
     }
 
@@ -302,18 +292,23 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         }
 
         var nso = NsoFile.Parse(mainBytes);
-        ValidateSelectedGame(nso.BuildId, expectedGame);
+        ValidateRequiredSegmentHashes(nso);
         var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
+        var orderedLevelCaps = ValidateAndOrderStoryLevelCaps(levelCaps);
         var text = nso.Text.DecompressedData.ToArray();
 
         PatchExpCandyFixedAmountBypass(text);
         PatchRoyalCandyAllowedConsumableRoute(text);
         PatchRoyalCandyVirtualInventory(text, layout);
         PatchInfiniteRoyalCandyUse(text);
-        PatchStoryCapLadder(text, levelCaps, layout);
+        PatchStoryCapLadder(text, orderedLevelCaps, layout);
         PatchRoyalCandyUiRoute(text, skipStoryLimitHooks: true);
 
-        return nso.Write(textDecompressedData: text);
+        var output = nso.Write(textDecompressedData: text);
+        var detectedGame = DetectSupportedGame(nso.BuildId)
+            ?? throw new InvalidDataException("Royal Candy cannot patch an unsupported Sword/Shield executable build.");
+        VerifyStoryLimitsPatchOutput(mainBytes, output, orderedLevelCaps, detectedGame);
+        return output;
     }
 
     public static byte[] RestoreFromBase(
@@ -326,8 +321,32 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var currentNso = NsoFile.Parse(currentMainBytes);
         var baseNso = NsoFile.Parse(baseMainBytes);
-        ValidateSelectedGame(currentNso.BuildId, expectedGame);
-        ValidateSelectedGame(baseNso.BuildId, expectedGame);
+        ValidateRequiredSegmentHashes(currentNso);
+        ValidateRequiredSegmentHashes(baseNso);
+        var currentSignature = AnalyzeInstallation(currentMainBytes, expectedGame);
+        if (currentSignature.Kind is not (SwShRoyalCandyExeFsSignatureKind.Unlimited
+            or SwShRoyalCandyExeFsSignatureKind.StoryLimits))
+        {
+            throw new InvalidDataException(
+                $"Royal Candy ExeFS restore requires one complete owned install; found {currentSignature.Kind}: {currentSignature.Message}");
+        }
+
+        var baseSignature = AnalyzeInstallation(baseMainBytes, expectedGame);
+        if (baseSignature.Kind != SwShRoyalCandyExeFsSignatureKind.NotInstalled)
+        {
+            throw new InvalidDataException(
+                $"Royal Candy ExeFS restore requires a vanilla Royal Candy base executable; found {baseSignature.Kind}: {baseSignature.Message}");
+        }
+
+        var layout = ResolvePatchLayout(currentNso.BuildId, expectedGame);
+        _ = ResolvePatchLayout(baseNso.BuildId, expectedGame);
+        if (!currentNso.BuildId.SequenceEqual(baseNso.BuildId)
+            || currentNso.Text.Header.MemoryOffset != baseNso.Text.Header.MemoryOffset
+            || currentNso.Text.Header.DecompressedSize != baseNso.Text.Header.DecompressedSize)
+        {
+            throw new InvalidDataException("Royal Candy ExeFS restore requires current and base main NSO files from the same supported build and .text layout.");
+        }
+
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
         if (currentText.Length != baseText.Length)
@@ -335,17 +354,38 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             throw new InvalidDataException("Royal Candy ExeFS restore requires current and base main NSO files with matching .text sizes.");
         }
 
-        var layout = ResolvePatchLayout(currentNso.BuildId, expectedGame);
-        ClearReachableRoyalCandyCaves(currentText, baseText, layout);
+        IReadOnlyList<RoyalCandyOwnedCave> ownedCaves = Array.Empty<RoyalCandyOwnedCave>();
+        var exactSignature = currentSignature.Kind switch
+        {
+            SwShRoyalCandyExeFsSignatureKind.Unlimited =>
+                TryValidateUnlimitedSignature(currentText, layout, out ownedCaves),
+            SwShRoyalCandyExeFsSignatureKind.StoryLimits =>
+                TryValidateStoryLimitsSignature(currentText, layout, out _, out ownedCaves),
+            _ => false,
+        };
+        if (!exactSignature)
+        {
+            throw new InvalidDataException("Royal Candy ExeFS restore could not recover the exact owned cave graph from the installed signature.");
+        }
+
+        RestoreOwnedCodeCaves(currentText, baseText, ownedCaves);
         foreach (var region in SwShExeFsReservedRegionLedger.MainTextRegionsForOwners(
             SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
-            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits))
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits)
+            .Where(region => IsApplicableFixedRestoreRegion(region, layout)))
         {
             baseText.AsSpan(region.StartOffset!.Value, region.Length!.Value)
                 .CopyTo(currentText.AsSpan(region.StartOffset.Value, region.Length.Value));
         }
 
-        return currentNso.Write(textDecompressedData: currentText);
+        var restored = currentNso.Write(textDecompressedData: currentText);
+        var restoredSignature = AnalyzeInstallation(restored, expectedGame);
+        if (restoredSignature.Kind != SwShRoyalCandyExeFsSignatureKind.NotInstalled)
+        {
+            throw new InvalidDataException("Royal Candy ExeFS restore did not return every owned anchor to vanilla semantics.");
+        }
+
+        return restored;
     }
 
     private static void ValidateSelectedGame(byte[] buildId, ProjectGame? expectedGame)
@@ -405,7 +445,15 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
     private static RoyalCandyPatchLayout ResolvePatchLayout(byte[] buildId, ProjectGame? expectedGame)
     {
-        return (DetectGame(buildId) ?? expectedGame) == ProjectGame.Shield
+        var detectedGame = DetectSupportedGame(buildId)
+            ?? throw new InvalidDataException("Royal Candy cannot patch an unsupported Sword/Shield executable build.");
+        if (expectedGame is not null && detectedGame != expectedGame.Value)
+        {
+            throw new InvalidDataException(
+                $"Selected {FormatGame(expectedGame.Value)}, but exefs/main belongs to {FormatGame(detectedGame)}. Royal Candy will not patch a different game's executable.");
+        }
+
+        return detectedGame == ProjectGame.Shield
             ? ShieldPatchLayout
             : SwordPatchLayout;
     }
@@ -414,6 +462,116 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         var buildIdLength = Math.Min(20, buildId.Length);
         return Convert.ToHexString(buildId[..buildIdLength]);
+    }
+
+    private static (NsoFile Source, NsoFile Output) VerifyPatchOutputPreservation(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        ProjectGame expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(sourceMainBytes);
+        ArgumentNullException.ThrowIfNull(outputMainBytes);
+
+        var source = NsoFile.Parse(sourceMainBytes);
+        var output = NsoFile.Parse(outputMainBytes);
+        ValidateRequiredSegmentHashes(source);
+        ValidateRequiredSegmentHashes(output);
+        _ = ResolvePatchLayout(source.BuildId, expectedGame);
+        _ = ResolvePatchLayout(output.BuildId, expectedGame);
+
+        if (source.Version != output.Version
+            || source.Flags != output.Flags
+            || !source.BuildId.SequenceEqual(output.BuildId))
+        {
+            throw new InvalidDataException("Royal Candy patch verification found changed executable identity metadata.");
+        }
+
+        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(source.RawHeader, output.RawHeader))
+        {
+            throw new InvalidDataException("Royal Candy patch verification found changed executable header metadata.");
+        }
+
+        VerifyPreservedSegment(source.Ro, output.Ro, ".ro");
+        VerifyPreservedSegment(source.Data, output.Data, ".data");
+        if (source.Text.Header.MemoryOffset != output.Text.Header.MemoryOffset
+            || source.Text.Header.DecompressedSize != output.Text.Header.DecompressedSize
+            || source.Text.DecompressedData.Length != output.Text.DecompressedData.Length)
+        {
+            throw new InvalidDataException("Royal Candy patch verification found a changed .text layout.");
+        }
+
+        if (source.Text.DecompressedData.SequenceEqual(output.Text.DecompressedData))
+        {
+            throw new InvalidDataException("Royal Candy patch verification found no executable text changes.");
+        }
+
+        foreach (var reservation in NonRoyalCandyReservations)
+        {
+            var start = reservation.StartOffset!.Value;
+            var length = reservation.Length!.Value;
+            if (start + length > source.Text.DecompressedData.Length)
+            {
+                continue;
+            }
+
+            if (!source.Text.DecompressedData.AsSpan(start, length)
+                .SequenceEqual(output.Text.DecompressedData.AsSpan(start, length)))
+            {
+                throw new InvalidDataException(
+                    $"Royal Candy patch verification found a change in the {reservation.Owner} reserved range.");
+            }
+        }
+
+        return (source, output);
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyStoryLevelCap> ValidateAndOrderStoryLevelCaps(
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps)
+    {
+        if (levelCaps.Count is < 1 or > 64)
+        {
+            throw new InvalidDataException("Royal Candy Story Limits requires between 1 and 64 unique milestones.");
+        }
+
+        var milestoneKeys = new HashSet<RoyalCandyStoryMilestoneKey>();
+        foreach (var levelCap in levelCaps)
+        {
+            if (levelCap.LevelCap is < 1 or > 100)
+            {
+                throw new InvalidDataException("Royal Candy story milestone caps must be between 1 and 100.");
+            }
+
+            if (levelCap.ProgressKind is not (SwShRoyalCandyStoryLevelCapProgressKind.Flag
+                or SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast))
+            {
+                throw new InvalidDataException("Royal Candy story milestone has an unsupported progress accessor kind.");
+            }
+
+            if (levelCap.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.Flag
+                && levelCap.WorkMinimum != 0)
+            {
+                throw new InvalidDataException("Royal Candy flag milestones cannot carry a work-value minimum.");
+            }
+
+            if (levelCap.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                && levelCap.WorkMinimum is < 0 or > 0xFFF)
+            {
+                throw new InvalidDataException("Royal Candy work milestones require a minimum between 0 and 4095.");
+            }
+
+            var key = new RoyalCandyStoryMilestoneKey(
+                levelCap.ProgressHash,
+                levelCap.ProgressKind,
+                levelCap.WorkMinimum);
+            if (!milestoneKeys.Add(key))
+            {
+                throw new InvalidDataException("Royal Candy Story Limits requires one unique entry per progress milestone.");
+            }
+        }
+
+        return levelCaps
+            .OrderByDescending(levelCap => levelCap.LevelCap)
+            .ToArray();
     }
 
     private static void VerifyPreservedSegment(NsoSegment source, NsoSegment output, string name)
@@ -1026,27 +1184,379 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return !NonRoyalCandyReservations.Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, offset, length));
     }
 
-    private static bool IsUiRouteCheckInstalled(ReadOnlySpan<byte> text, RareCandyUiCheck check)
+    private static bool TryValidateUnlimitedSignature(ReadOnlySpan<byte> text, RoyalCandyPatchLayout layout)
+    {
+        return TryValidateUnlimitedSignature(text, layout, out _);
+    }
+
+    private static bool TryValidateUnlimitedSignature(
+        ReadOnlySpan<byte> text,
+        RoyalCandyPatchLayout layout,
+        out IReadOnlyList<RoyalCandyOwnedCave> ownedCaves)
+    {
+        var caves = new List<RoyalCandyOwnedCave>();
+        foreach (var check in UiRouteChecks)
+        {
+            if (!TryValidateUiRouteCheck(text, check, caves))
+            {
+                ownedCaves = Array.Empty<RoyalCandyOwnedCave>();
+                return false;
+            }
+        }
+
+        foreach (var check in EqualBranchChecks)
+        {
+            if (!TryValidateEqualBranchCheck(text, check, caves))
+            {
+                ownedCaves = Array.Empty<RoyalCandyOwnedCave>();
+                return false;
+            }
+        }
+
+        var isValid = CountInstalledExpCandyBypass(text) == 2
+            && TryValidateInfiniteUsePayload(text, caves)
+            && TryValidateAllowedConsumablePayload(text, caves)
+            && TryValidateVirtualInventoryPayload(
+                text,
+                layout.ItemOwnershipFunctionOffset,
+                ExpectedItemOwnershipFirstInstruction,
+                expectedReturnValue: 1,
+                caves)
+            && TryValidateVirtualInventoryPayload(
+                text,
+                layout.ItemCountFunctionOffset,
+                ExpectedItemCountFirstInstruction,
+                RoyalCandyVirtualInventoryCount,
+                caves)
+            && MatchesInstruction(text, 0x007BAF38, 0x6B36231F)
+            && MatchesInstruction(text, StoryInventoryClampSelectOffset, ExpectedQuantityClampSelect);
+        ownedCaves = isValid
+            ? caves.ToArray()
+            : Array.Empty<RoyalCandyOwnedCave>();
+        return isValid;
+    }
+
+    private static bool TryValidateStoryLimitsSignature(
+        ReadOnlySpan<byte> text,
+        RoyalCandyPatchLayout layout,
+        out IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> levelCaps)
+    {
+        return TryValidateStoryLimitsSignature(text, layout, out levelCaps, out _);
+    }
+
+    private static bool TryValidateStoryLimitsSignature(
+        ReadOnlySpan<byte> text,
+        RoyalCandyPatchLayout layout,
+        out IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> levelCaps,
+        out IReadOnlyList<RoyalCandyOwnedCave> ownedCaves)
+    {
+        levelCaps = Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
+        ownedCaves = Array.Empty<RoyalCandyOwnedCave>();
+        var caves = new List<RoyalCandyOwnedCave>();
+        foreach (var check in UiRouteChecks)
+        {
+            if (check.CompareOffset is StoryUseGateCompareOffset or StoryQuantityMaxCompareOffset)
+            {
+                continue;
+            }
+
+            if (!TryValidateUiRouteCheck(text, check, caves))
+            {
+                return false;
+            }
+        }
+
+        foreach (var check in EqualBranchChecks)
+        {
+            if (!TryValidateEqualBranchCheck(text, check, caves))
+            {
+                return false;
+            }
+        }
+
+        if (CountInstalledExpCandyBypass(text) != 2
+            || !TryValidateInfiniteUsePayload(text, caves)
+            || !TryValidateAllowedConsumablePayload(text, caves)
+            || !TryValidateVirtualInventoryPayload(
+                text,
+                layout.ItemOwnershipFunctionOffset,
+                ExpectedItemOwnershipFirstInstruction,
+                expectedReturnValue: 1,
+                caves)
+            || !TryValidateVirtualInventoryPayload(
+                text,
+                layout.ItemCountFunctionOffset,
+                ExpectedItemCountFirstInstruction,
+                RoyalCandyVirtualInventoryCount,
+                caves)
+            || !TryValidateStoryUseGatePayload(text, caves, out var useGateHelperOffset)
+            || !TryValidateStoryQuantityPayload(text, caves, out var quantityHelperOffset)
+            || useGateHelperOffset != quantityHelperOffset
+            || !TryValidateStoryInventoryClampPayload(text, caves)
+            || !TryReadCompleteStoryCapLadder(text, useGateHelperOffset, layout, caves, out levelCaps))
+        {
+            levelCaps = Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
+            return false;
+        }
+
+        ownedCaves = caves.ToArray();
+        return true;
+    }
+
+    private static bool TryValidateUiRouteCheck(
+        ReadOnlySpan<byte> text,
+        RareCandyUiCheck check,
+        ICollection<RoyalCandyOwnedCave> caves)
     {
         var branchOffset = check.CompareOffset + 4;
-        if (!TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
-            || compareInstruction != EncodeCmpImmediate(check.ItemRegister, RareCandyItemId)
-            || !TryReadInstruction(text, branchOffset, out var branchInstruction))
+        if (!MatchesInstruction(text, check.CompareOffset, EncodeCmpImmediate(check.ItemRegister, RareCandyItemId))
+            || !TryReadInstruction(text, branchOffset, out var branchInstruction)
+            || !IsConditionalBranch(branchInstruction, Arm64Condition.NE)
+            || !TryDecodeConditionalBranchTarget(branchInstruction, branchOffset, out var caveOffset)
+            || !TryClaimOwnedCave(text, caveOffset, 0x0C, caves))
         {
             return false;
         }
 
-        var vanillaBranch = EncodeConditionalBranch(branchOffset, check.FailOffset, Arm64Condition.NE);
-        return branchInstruction != vanillaBranch
-            && IsConditionalBranch(branchInstruction, Arm64Condition.NE);
+        return MatchesInstruction(text, caveOffset, EncodeCmpImmediate(check.ItemRegister, RoyalCandyItemId))
+            && MatchesInstruction(
+                text,
+                caveOffset + 4,
+                EncodeConditionalBranch(caveOffset + 4, check.PassOffset, Arm64Condition.EQ))
+            && MatchesInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, check.FailOffset));
     }
 
-    private static bool IsEqualBranchCheckInstalled(ReadOnlySpan<byte> text, RareCandyEqualBranchCheck check)
+    private static bool TryValidateEqualBranchCheck(
+        ReadOnlySpan<byte> text,
+        RareCandyEqualBranchCheck check,
+        ICollection<RoyalCandyOwnedCave> caves)
     {
-        return TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
-            && TryReadInstruction(text, check.CompareOffset + 4, out var branchInstruction)
-            && IsUnconditionalBranch(compareInstruction)
-            && branchInstruction == NopInstruction;
+        if (!TryReadInstruction(text, check.CompareOffset, out var firstCaveBranch)
+            || !IsUnconditionalBranch(firstCaveBranch)
+            || !TryDecodeBranchTarget(firstCaveBranch, check.CompareOffset, out var firstCaveOffset)
+            || !MatchesInstruction(text, check.CompareOffset + 4, NopInstruction)
+            || !TryClaimOwnedCave(text, firstCaveOffset, 0x0C, caves)
+            || !MatchesInstruction(text, firstCaveOffset, EncodeCmpImmediate(check.ItemRegister, RareCandyItemId))
+            || !MatchesInstruction(
+                text,
+                firstCaveOffset + 4,
+                EncodeConditionalBranch(firstCaveOffset + 4, check.TargetOffset, Arm64Condition.EQ))
+            || !TryReadInstruction(text, firstCaveOffset + 8, out var secondCaveBranch)
+            || !IsUnconditionalBranch(secondCaveBranch)
+            || !TryDecodeBranchTarget(secondCaveBranch, firstCaveOffset + 8, out var secondCaveOffset)
+            || !TryClaimOwnedCave(text, secondCaveOffset, 0x0C, caves))
+        {
+            return false;
+        }
+
+        return MatchesInstruction(text, secondCaveOffset, EncodeCmpImmediate(check.ItemRegister, RoyalCandyItemId))
+            && MatchesInstruction(
+                text,
+                secondCaveOffset + 4,
+                EncodeConditionalBranch(secondCaveOffset + 4, check.TargetOffset, Arm64Condition.EQ))
+            && MatchesInstruction(text, secondCaveOffset + 8, EncodeBranch(secondCaveOffset + 8, check.FallthroughOffset));
+    }
+
+    private static bool TryValidateInfiniteUsePayload(
+        ReadOnlySpan<byte> text,
+        ICollection<RoyalCandyOwnedCave> caves)
+    {
+        if (!TryReadInstruction(text, QuantityMoveOffset, out var branch)
+            || !IsUnconditionalBranch(branch)
+            || !TryDecodeBranchTarget(branch, QuantityMoveOffset, out var caveOffset)
+            || !TryClaimOwnedCave(text, caveOffset, 0x0C, caves))
+        {
+            return false;
+        }
+
+        return MatchesInstruction(text, caveOffset, EncodeCmpImmediate(register: 22, RoyalCandyItemId))
+            && MatchesInstruction(text, caveOffset + 4, EncodeConditionalSelect32(2, 31, 0, Arm64Condition.EQ))
+            && MatchesInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, QuantityMoveOffset + 4));
+    }
+
+    private static bool TryValidateAllowedConsumablePayload(
+        ReadOnlySpan<byte> text,
+        ICollection<RoyalCandyOwnedCave> caves)
+    {
+        if (!MatchesInstruction(text, AllowedConsumableCompareOffset, EncodeCmpImmediate(register: 8, RareCandyItemId))
+            || !TryReadInstruction(text, AllowedConsumableBranchOffset, out var branch)
+            || !IsConditionalBranch(branch, Arm64Condition.HI)
+            || !TryDecodeConditionalBranchTarget(branch, AllowedConsumableBranchOffset, out var caveOffset)
+            || !TryClaimOwnedCave(text, caveOffset, 0x0C, caves))
+        {
+            return false;
+        }
+
+        return MatchesInstruction(text, caveOffset, EncodeCmpImmediate(register: 8, RoyalCandyAllowedConsumableAdjustedItemId))
+            && MatchesInstruction(
+                text,
+                caveOffset + 4,
+                EncodeConditionalBranch(caveOffset + 4, AllowedConsumablePassOffset, Arm64Condition.EQ))
+            && MatchesInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, AllowedConsumableFailOffset));
+    }
+
+    private static bool TryValidateVirtualInventoryPayload(
+        ReadOnlySpan<byte> text,
+        int hookOffset,
+        uint expectedFirstInstruction,
+        int expectedReturnValue,
+        ICollection<RoyalCandyOwnedCave> caves)
+    {
+        if (!TryReadInstruction(text, hookOffset, out var hookBranch)
+            || !IsUnconditionalBranch(hookBranch)
+            || !TryDecodeBranchTarget(hookBranch, hookOffset, out var dispatchOffset)
+            || !TryClaimOwnedCave(text, dispatchOffset, 0x0C, caves)
+            || !TryReadInstruction(text, dispatchOffset + 4, out var returnBranch)
+            || !IsConditionalBranch(returnBranch, Arm64Condition.EQ)
+            || !TryDecodeConditionalBranchTarget(returnBranch, dispatchOffset + 4, out var returnOffset)
+            || !TryClaimOwnedCave(text, returnOffset, 0x0C, caves)
+            || !TryReadInstruction(text, dispatchOffset + 8, out var vanillaBranch)
+            || !IsUnconditionalBranch(vanillaBranch)
+            || !TryDecodeBranchTarget(vanillaBranch, dispatchOffset + 8, out var vanillaOffset)
+            || !TryClaimOwnedCave(text, vanillaOffset, 0x0C, caves))
+        {
+            return false;
+        }
+
+        return MatchesInstruction(text, dispatchOffset, EncodeCmpImmediate(register: 1, RoyalCandyItemId))
+            && MatchesInstruction(
+                text,
+                dispatchOffset + 4,
+                EncodeConditionalBranch(dispatchOffset + 4, returnOffset, Arm64Condition.EQ))
+            && MatchesInstruction(text, dispatchOffset + 8, EncodeBranch(dispatchOffset + 8, vanillaOffset))
+            && MatchesInstruction(text, returnOffset, EncodeMovzImmediate32(register: 0, expectedReturnValue))
+            && MatchesInstruction(text, returnOffset + 4, EncodeRet())
+            && MatchesInstruction(text, returnOffset + 8, NopInstruction)
+            && MatchesInstruction(text, vanillaOffset, expectedFirstInstruction)
+            && MatchesInstruction(text, vanillaOffset + 4, EncodeBranch(vanillaOffset + 4, hookOffset + 4))
+            && MatchesInstruction(text, vanillaOffset + 8, NopInstruction);
+    }
+
+    private static bool TryValidateStoryUseGatePayload(
+        ReadOnlySpan<byte> text,
+        ICollection<RoyalCandyOwnedCave> caves,
+        out int helperOffset)
+    {
+        const int branchOffset = StoryUseGateCompareOffset + 4;
+        const int nonRoyalCandyOffset = 0x007BB26C;
+        const int epilogueOffset = 0x007BB2E0;
+        const int getLevelOffset = 0x0077A5F0;
+        const int itemRegister = 20;
+        const uint moveSelectedPokemonToX0 = 0xAA1303E0;
+
+        helperOffset = 0;
+        if (!MatchesInstruction(text, StoryUseGateCompareOffset, EncodeCmpImmediate(itemRegister, RareCandyItemId))
+            || !TryReadConditionalBranchTarget(text, branchOffset, Arm64Condition.NE, out var itemCheckOffset)
+            || !TryClaimOwnedCave(text, itemCheckOffset, 0x0C, caves)
+            || !MatchesInstruction(text, itemCheckOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId))
+            || !MatchesInstruction(
+                text,
+                itemCheckOffset + 4,
+                EncodeConditionalBranch(itemCheckOffset + 4, nonRoyalCandyOffset, Arm64Condition.NE))
+            || !TryReadUnconditionalBranchTarget(text, itemCheckOffset + 8, out var firstLogicOffset)
+            || !TryClaimOwnedCave(text, firstLogicOffset, 0x0C, caves)
+            || !MatchesInstruction(text, firstLogicOffset, moveSelectedPokemonToX0)
+            || !MatchesInstruction(text, firstLogicOffset + 4, EncodeBranchLink(firstLogicOffset + 4, getLevelOffset))
+            || !TryReadUnconditionalBranchTarget(text, firstLogicOffset + 8, out var secondLogicOffset)
+            || !TryClaimOwnedCave(text, secondLogicOffset, 0x0C, caves)
+            || !MatchesInstruction(text, secondLogicOffset, EncodeMovRegister32(21, 0))
+            || !TryReadInstruction(text, secondLogicOffset + 4, out var helperCall)
+            || !IsBranchLink(helperCall)
+            || !TryDecodeBranchTarget(helperCall, secondLogicOffset + 4, out helperOffset)
+            || !TryReadUnconditionalBranchTarget(text, secondLogicOffset + 8, out var thirdLogicOffset)
+            || !TryClaimOwnedCave(text, thirdLogicOffset, 0x0C, caves)
+            || !MatchesInstruction(text, thirdLogicOffset, EncodeCmpRegister32(21, 0))
+            || !MatchesInstruction(text, thirdLogicOffset + 4, EncodeMovzImmediate32(8, 1))
+            || !TryReadUnconditionalBranchTarget(text, thirdLogicOffset + 8, out var fourthLogicOffset)
+            || !TryClaimOwnedCave(text, fourthLogicOffset, 0x0C, caves))
+        {
+            helperOffset = 0;
+            return false;
+        }
+
+        return MatchesInstruction(text, fourthLogicOffset, EncodeConditionalSelect32(0, 8, 31, Arm64Condition.LT))
+            && MatchesInstruction(text, fourthLogicOffset + 4, EncodeBranch(fourthLogicOffset + 4, epilogueOffset))
+            && MatchesInstruction(text, fourthLogicOffset + 8, NopInstruction);
+    }
+
+    private static bool TryValidateStoryQuantityPayload(
+        ReadOnlySpan<byte> text,
+        ICollection<RoyalCandyOwnedCave> caves,
+        out int helperOffset)
+    {
+        const int branchOffset = StoryQuantityMaxCompareOffset + 4;
+        const int nonRoyalCandyOffset = 0x007BB3EC;
+        const int epilogueOffset = 0x007BB458;
+        const int getLevelOffset = 0x0077A5F0;
+        const int itemRegister = 19;
+        const uint moveSelectedPokemonToX0 = 0xAA1403E0;
+
+        helperOffset = 0;
+        if (!MatchesInstruction(text, StoryQuantityMaxCompareOffset, EncodeCmpImmediate(itemRegister, RareCandyItemId))
+            || !TryReadConditionalBranchTarget(text, branchOffset, Arm64Condition.NE, out var itemCheckOffset)
+            || !TryClaimOwnedCave(text, itemCheckOffset, 0x0C, caves)
+            || !MatchesInstruction(text, itemCheckOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId))
+            || !MatchesInstruction(
+                text,
+                itemCheckOffset + 4,
+                EncodeConditionalBranch(itemCheckOffset + 4, nonRoyalCandyOffset, Arm64Condition.NE))
+            || !TryReadUnconditionalBranchTarget(text, itemCheckOffset + 8, out var firstLogicOffset)
+            || !TryClaimOwnedCave(text, firstLogicOffset, 0x0C, caves)
+            || !MatchesInstruction(text, firstLogicOffset, moveSelectedPokemonToX0)
+            || !MatchesInstruction(text, firstLogicOffset + 4, EncodeBranchLink(firstLogicOffset + 4, getLevelOffset))
+            || !TryReadUnconditionalBranchTarget(text, firstLogicOffset + 8, out var secondLogicOffset)
+            || !TryClaimOwnedCave(text, secondLogicOffset, 0x0C, caves)
+            || !MatchesInstruction(text, secondLogicOffset, EncodeMovRegister32(21, 0))
+            || !TryReadInstruction(text, secondLogicOffset + 4, out var helperCall)
+            || !IsBranchLink(helperCall)
+            || !TryDecodeBranchTarget(helperCall, secondLogicOffset + 4, out helperOffset)
+            || !TryReadUnconditionalBranchTarget(text, secondLogicOffset + 8, out var thirdLogicOffset)
+            || !TryClaimOwnedCave(text, thirdLogicOffset, 0x0C, caves)
+            || !MatchesInstruction(text, thirdLogicOffset, EncodeSubRegister32(0, 0, 21))
+            || !MatchesInstruction(text, thirdLogicOffset + 4, EncodeCmpImmediate(0, 0))
+            || !TryReadUnconditionalBranchTarget(text, thirdLogicOffset + 8, out var fourthLogicOffset)
+            || !TryClaimOwnedCave(text, fourthLogicOffset, 0x0C, caves))
+        {
+            helperOffset = 0;
+            return false;
+        }
+
+        return MatchesInstruction(text, fourthLogicOffset, EncodeConditionalSelect32(0, 0, 31, Arm64Condition.GT))
+            && MatchesInstruction(text, fourthLogicOffset + 4, EncodeBranch(fourthLogicOffset + 4, epilogueOffset))
+            && MatchesInstruction(text, fourthLogicOffset + 8, NopInstruction);
+    }
+
+    private static bool TryValidateStoryInventoryClampPayload(
+        ReadOnlySpan<byte> text,
+        ICollection<RoyalCandyOwnedCave> caves)
+    {
+        const int originalCompareOffset = 0x007BAF38;
+        const int resumeOffset = 0x007BAF40;
+        const int getItemIdOffset = 0x007C8330;
+        const uint expectedCompare = 0x6B36231F;
+        const uint moveSelectedItemToX0 = 0xAA1703E0;
+
+        if (!MatchesInstruction(text, originalCompareOffset, expectedCompare)
+            || !TryReadUnconditionalBranchTarget(text, StoryInventoryClampSelectOffset, out var firstCaveOffset)
+            || !TryClaimOwnedCave(text, firstCaveOffset, 0x0C, caves)
+            || !MatchesInstruction(text, firstCaveOffset, moveSelectedItemToX0)
+            || !MatchesInstruction(text, firstCaveOffset + 4, EncodeBranchLink(firstCaveOffset + 4, getItemIdOffset))
+            || !TryReadUnconditionalBranchTarget(text, firstCaveOffset + 8, out var secondCaveOffset)
+            || !TryClaimOwnedCave(text, secondCaveOffset, 0x0C, caves)
+            || !MatchesInstruction(text, secondCaveOffset, EncodeCmpImmediate(0, RoyalCandyItemId))
+            || !MatchesInstruction(
+                text,
+                secondCaveOffset + 4,
+                EncodeConditionalBranch(secondCaveOffset + 4, resumeOffset, Arm64Condition.EQ))
+            || !TryReadUnconditionalBranchTarget(text, secondCaveOffset + 8, out var thirdCaveOffset)
+            || !TryClaimOwnedCave(text, thirdCaveOffset, 0x0C, caves))
+        {
+            return false;
+        }
+
+        return MatchesInstruction(text, thirdCaveOffset, expectedCompare)
+            && MatchesInstruction(text, thirdCaveOffset + 4, ExpectedQuantityClampSelect)
+            && MatchesInstruction(text, thirdCaveOffset + 8, EncodeBranch(thirdCaveOffset + 8, resumeOffset));
     }
 
     private static int CountInstalledExpCandyBypass(ReadOnlySpan<byte> text)
@@ -1064,156 +1574,222 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return count;
     }
 
-    private static bool HasForeignReservedAnchorChange(ReadOnlySpan<byte> text)
+    private static bool AreRoyalCandyAnchorsVanilla(ReadOnlySpan<byte> text, RoyalCandyPatchLayout layout)
     {
-        if (TryReadInstruction(text, QuantityMoveOffset, out var quantityMove)
-            && quantityMove != ExpectedQuantityMove
-            && !IsUnconditionalBranch(quantityMove))
-        {
-            return true;
-        }
-
-        if (TryReadInstruction(text, StoryInventoryClampSelectOffset, out var storyClampSelect)
-            && storyClampSelect != ExpectedQuantityClampSelect
-            && !IsUnconditionalBranch(storyClampSelect))
-        {
-            return true;
-        }
-
-        foreach (var offset in new[] { 0x007BC1BC, 0x007BC1C4 })
-        {
-            if (TryReadInstruction(text, offset, out var instruction)
-                && instruction != EncodeCmpImmediate(register: 9, immediate: 4)
-                && instruction != EncodeCmpImmediate(register: 9, immediate: 3))
-            {
-                return true;
-            }
-        }
-
         foreach (var check in UiRouteChecks)
         {
-            var branchOffset = check.CompareOffset + 4;
-            if (!TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
-                || !TryReadInstruction(text, branchOffset, out var branchInstruction))
+            if (!MatchesInstruction(text, check.CompareOffset, EncodeCmpImmediate(check.ItemRegister, RareCandyItemId))
+                || !MatchesInstruction(
+                    text,
+                    check.CompareOffset + 4,
+                    EncodeConditionalBranch(check.CompareOffset + 4, check.FailOffset, Arm64Condition.NE)))
             {
-                return true;
-            }
-
-            var expectedCompare = EncodeCmpImmediate(check.ItemRegister, RareCandyItemId);
-            var expectedBranch = EncodeConditionalBranch(branchOffset, check.FailOffset, Arm64Condition.NE);
-            if (compareInstruction != expectedCompare)
-            {
-                return true;
-            }
-
-            if (branchInstruction != expectedBranch
-                && !IsConditionalBranch(branchInstruction, Arm64Condition.NE))
-            {
-                return true;
+                return false;
             }
         }
 
         foreach (var check in EqualBranchChecks)
         {
-            if (!TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
-                || !TryReadInstruction(text, check.CompareOffset + 4, out var branchInstruction))
+            if (!MatchesInstruction(text, check.CompareOffset, EncodeCmpImmediate(check.ItemRegister, RareCandyItemId))
+                || !MatchesInstruction(
+                    text,
+                    check.CompareOffset + 4,
+                    EncodeConditionalBranch(check.CompareOffset + 4, check.TargetOffset, Arm64Condition.EQ)))
             {
-                return true;
-            }
-
-            var expectedCompare = EncodeCmpImmediate(check.ItemRegister, RareCandyItemId);
-            var expectedBranch = EncodeConditionalBranch(check.CompareOffset + 4, check.TargetOffset, Arm64Condition.EQ);
-            var looksInstalled = IsUnconditionalBranch(compareInstruction) && branchInstruction == NopInstruction;
-            if (!looksInstalled && (compareInstruction != expectedCompare || branchInstruction != expectedBranch))
-            {
-                return true;
+                return false;
             }
         }
 
-        return false;
+        return MatchesInstruction(text, 0x007BC1BC, EncodeCmpImmediate(register: 9, immediate: 4))
+            && MatchesInstruction(text, 0x007BC1C4, EncodeCmpImmediate(register: 9, immediate: 4))
+            && MatchesInstruction(text, QuantityMoveOffset, ExpectedQuantityMove)
+            && MatchesInstruction(text, 0x007BAF38, 0x6B36231F)
+            && MatchesInstruction(text, StoryInventoryClampSelectOffset, ExpectedQuantityClampSelect)
+            && MatchesInstruction(text, AllowedConsumableCompareOffset, EncodeCmpImmediate(register: 8, RareCandyItemId))
+            && MatchesInstruction(
+                text,
+                AllowedConsumableBranchOffset,
+                EncodeConditionalBranch(AllowedConsumableBranchOffset, AllowedConsumableFailOffset, Arm64Condition.HI))
+            && MatchesInstruction(text, layout.ItemOwnershipFunctionOffset, ExpectedItemOwnershipFirstInstruction)
+            && MatchesInstruction(text, layout.ItemCountFunctionOffset, ExpectedItemCountFirstInstruction);
     }
 
-    private static bool TryResolveStoryCapHelperOffset(ReadOnlySpan<byte> text, out int helperOffset)
+    private static int CountRecognizedExactAnchors(ReadOnlySpan<byte> text, RoyalCandyPatchLayout layout)
     {
-        helperOffset = 0;
-        const int branchOffset = StoryUseGateCompareOffset + 4;
+        var count = CountInstalledExpCandyBypass(text);
+        foreach (var check in UiRouteChecks)
+        {
+            count += TryValidateUiRouteCheck(text, check, new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        }
 
-        if (!TryReadInstruction(text, branchOffset, out var itemCheckBranch)
-            || !IsConditionalBranch(itemCheckBranch, Arm64Condition.NE)
-            || !TryDecodeConditionalBranchTarget(itemCheckBranch, branchOffset, out var itemCheckOffset)
-            || !TryReadInstruction(text, itemCheckOffset + 8, out var firstLogicBranch)
-            || !TryDecodeBranchTarget(firstLogicBranch, itemCheckOffset + 8, out var firstLogicOffset)
-            || !TryReadInstruction(text, firstLogicOffset + 8, out var secondLogicBranch)
-            || !TryDecodeBranchTarget(secondLogicBranch, firstLogicOffset + 8, out var secondLogicOffset)
-            || !TryReadInstruction(text, secondLogicOffset + 4, out var helperCall)
-            || !IsBranchLink(helperCall)
-            || !TryDecodeBranchTarget(helperCall, secondLogicOffset + 4, out helperOffset))
+        foreach (var check in EqualBranchChecks)
+        {
+            count += TryValidateEqualBranchCheck(text, check, new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        }
+
+        count += TryValidateInfiniteUsePayload(text, new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        count += TryValidateAllowedConsumablePayload(text, new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        count += TryValidateVirtualInventoryPayload(
+            text,
+            layout.ItemOwnershipFunctionOffset,
+            ExpectedItemOwnershipFirstInstruction,
+            expectedReturnValue: 1,
+            new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        count += TryValidateVirtualInventoryPayload(
+            text,
+            layout.ItemCountFunctionOffset,
+            ExpectedItemCountFirstInstruction,
+            RoyalCandyVirtualInventoryCount,
+            new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        count += TryValidateStoryInventoryClampPayload(text, new List<RoyalCandyOwnedCave>()) ? 1 : 0;
+        return Math.Min(count, ReservedAnchorCount);
+    }
+
+    private static bool MatchesInstruction(ReadOnlySpan<byte> text, int offset, uint expectedInstruction)
+    {
+        return TryReadInstruction(text, offset, out var instruction)
+            && instruction == expectedInstruction;
+    }
+
+    private static bool TryReadUnconditionalBranchTarget(ReadOnlySpan<byte> text, int offset, out int targetOffset)
+    {
+        targetOffset = 0;
+        return TryReadInstruction(text, offset, out var instruction)
+            && IsUnconditionalBranch(instruction)
+            && TryDecodeBranchTarget(instruction, offset, out targetOffset);
+    }
+
+    private static bool TryReadConditionalBranchTarget(
+        ReadOnlySpan<byte> text,
+        int offset,
+        Arm64Condition condition,
+        out int targetOffset)
+    {
+        targetOffset = 0;
+        return TryReadInstruction(text, offset, out var instruction)
+            && IsConditionalBranch(instruction, condition)
+            && TryDecodeConditionalBranchTarget(instruction, offset, out targetOffset);
+    }
+
+    private static bool TryClaimOwnedCave(
+        ReadOnlySpan<byte> text,
+        int offset,
+        int length,
+        ICollection<RoyalCandyOwnedCave> caves)
+    {
+        if (offset < 0
+            || offset % 4 != 0
+            || length <= 0
+            || offset + length > text.Length
+            || NonRoyalCandyReservations.Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, offset, length))
+            || caves.Any(cave => offset < cave.Offset + cave.Length && offset + length > cave.Offset))
         {
             return false;
         }
 
-        return helperOffset >= 0 && helperOffset < text.Length;
+        caves.Add(new RoyalCandyOwnedCave(offset, length));
+        return true;
     }
 
-    private static IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> ReadStoryCapLadder(
+    private static bool TryReadCompleteStoryCapLadder(
         ReadOnlySpan<byte> text,
         int helperOffset,
-        RoyalCandyPatchLayout layout)
+        RoyalCandyPatchLayout layout,
+        ICollection<RoyalCandyOwnedCave> caves,
+        out IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> levelCaps)
     {
         var records = new List<SwShRoyalCandyInstalledStoryLevelCap>();
         var visited = new HashSet<int>();
+        var milestones = new HashSet<RoyalCandyStoryMilestoneKey>();
         var offset = helperOffset;
-        while (records.Count < 64 && visited.Add(offset))
+        var previousLevelCap = int.MaxValue;
+        while (records.Count <= 64)
         {
-            if (IsStoryCapDefaultReturn(text, offset))
+            if (IsExactStoryCapDefaultReturn(text, offset))
             {
-                break;
+                if (records.Count == 0 || !TryClaimOwnedCave(text, offset, 0x08, caves))
+                {
+                    levelCaps = Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
+                    return false;
+                }
+
+                levelCaps = records;
+                return true;
             }
 
-            if (!TryReadStoryCapCheck(text, offset, layout, out var record, out var nextOffset))
+            if (records.Count == 64
+                || !visited.Add(offset)
+                || !TryReadStoryCapCheck(text, offset, layout, caves, out var record, out var nextOffset)
+                || record.LevelCap > previousLevelCap
+                || !milestones.Add(new RoyalCandyStoryMilestoneKey(
+                    record.ProgressHash,
+                    record.ProgressKind,
+                    record.WorkMinimum)))
             {
-                break;
+                levelCaps = Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
+                return false;
             }
 
             records.Add(record);
+            previousLevelCap = record.LevelCap;
             offset = nextOffset;
         }
 
-        return records;
+        levelCaps = Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
+        return false;
     }
 
     private static bool TryReadStoryCapCheck(
         ReadOnlySpan<byte> text,
         int loadGlobalOffset,
         RoyalCandyPatchLayout layout,
+        ICollection<RoyalCandyOwnedCave> caves,
         out SwShRoyalCandyInstalledStoryLevelCap record,
         out int nextOffset)
     {
         record = null!;
         nextOffset = 0;
 
-        if (!TryReadInstruction(text, loadGlobalOffset + 8, out var loadTableBranch)
-            || !TryDecodeBranchTarget(loadTableBranch, loadGlobalOffset + 8, out var loadTableOffset)
-            || !TryReadInstruction(text, loadTableOffset + 8, out var hashLowBranch)
-            || !TryDecodeBranchTarget(hashLowBranch, loadTableOffset + 8, out var hashLowOffset)
+        if (!TryClaimOwnedCave(text, loadGlobalOffset, 0x0C, caves)
+            || !MatchesInstruction(
+                text,
+                loadGlobalOffset,
+                EncodeAdrp(register: 8, loadGlobalOffset, layout.FlagworkGlobalAddress))
+            || !MatchesInstruction(
+                text,
+                loadGlobalOffset + 4,
+                EncodeLdrUnsigned64(targetRegister: 8, baseRegister: 8, layout.FlagworkGlobalAddress & 0xFFF))
+            || !TryReadUnconditionalBranchTarget(text, loadGlobalOffset + 8, out var loadTableOffset)
+            || !TryClaimOwnedCave(text, loadTableOffset, 0x0C, caves)
+            || !MatchesInstruction(text, loadTableOffset, EncodeLdrUnsigned64(targetRegister: 8, baseRegister: 8, byteOffset: 0))
+            || !MatchesInstruction(
+                text,
+                loadTableOffset + 4,
+                EncodeLdrUnsigned64(targetRegister: 0, baseRegister: 8, layout.FlagworkObjectOffset))
+            || !TryReadUnconditionalBranchTarget(text, loadTableOffset + 8, out var hashLowOffset)
+            || !TryClaimOwnedCave(text, hashLowOffset, 0x0C, caves)
             || !TryReadInstruction(text, hashLowOffset, out var hashLowMovz)
             || !TryReadInstruction(text, hashLowOffset + 4, out var hashMidLowMovk)
             || !TryDecodeMovzImmediate64(hashLowMovz, register: 1, shift: 0, out var hashPart0)
             || !TryDecodeMovkImmediate64(hashMidLowMovk, register: 1, shift: 16, out var hashPart1)
-            || !TryReadInstruction(text, hashLowOffset + 8, out var hashHighBranch)
-            || !TryDecodeBranchTarget(hashHighBranch, hashLowOffset + 8, out var hashHighOffset)
+            || !TryReadUnconditionalBranchTarget(text, hashLowOffset + 8, out var hashHighOffset)
+            || !TryClaimOwnedCave(text, hashHighOffset, 0x0C, caves)
             || !TryReadInstruction(text, hashHighOffset, out var hashMidHighMovk)
             || !TryReadInstruction(text, hashHighOffset + 4, out var hashHighMovk)
             || !TryDecodeMovkImmediate64(hashMidHighMovk, register: 1, shift: 32, out var hashPart2)
             || !TryDecodeMovkImmediate64(hashHighMovk, register: 1, shift: 48, out var hashPart3)
-            || !TryReadInstruction(text, hashHighOffset + 8, out var callBranch)
-            || !TryDecodeBranchTarget(callBranch, hashHighOffset + 8, out var callOffset)
+            || !TryReadUnconditionalBranchTarget(text, hashHighOffset + 8, out var callOffset)
+            || !TryClaimOwnedCave(text, callOffset, 0x0C, caves)
+            || !MatchesInstruction(text, callOffset, 0xA9BF7BFD)
             || !TryReadInstruction(text, callOffset + 4, out var accessorCall)
+            || !IsBranchLink(accessorCall)
             || !TryDecodeBranchTarget(accessorCall, callOffset + 4, out var accessorOffset)
-            || !TryReadInstruction(text, callOffset + 8, out var restoreBranch)
-            || !TryDecodeBranchTarget(restoreBranch, callOffset + 8, out var restoreOffset)
-            || !TryReadInstruction(text, restoreOffset + 4, out var decisionBranch)
-            || !TryDecodeBranchTarget(decisionBranch, restoreOffset + 4, out var decisionOffset))
+            || !TryReadUnconditionalBranchTarget(text, callOffset + 8, out var restoreOffset)
+            || !TryClaimOwnedCave(text, restoreOffset, 0x0C, caves)
+            || !MatchesInstruction(text, restoreOffset, 0xA8C17BFD)
+            || !TryReadUnconditionalBranchTarget(text, restoreOffset + 4, out var decisionOffset)
+            || !MatchesInstruction(text, restoreOffset + 8, NopInstruction)
+            || !TryClaimOwnedCave(text, decisionOffset, 0x0C, caves))
         {
             return false;
         }
@@ -1244,6 +1820,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 || !IsConditionalBranch(capBranch, Arm64Condition.HS)
                 || !TryDecodeConditionalBranchTarget(capBranch, decisionOffset + 4, out returnCapOffset)
                 || !TryReadInstruction(text, decisionOffset + 8, out var nextBranch)
+                || !IsUnconditionalBranch(nextBranch)
                 || !TryDecodeBranchTarget(nextBranch, decisionOffset + 8, out nextOffset))
             {
                 return false;
@@ -1254,14 +1831,22 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             if (!TryReadInstruction(text, decisionOffset, out var capBranch)
                 || !TryDecodeCompareAndBranchNonZero32(capBranch, register: 0, decisionOffset, out returnCapOffset)
                 || !TryReadInstruction(text, decisionOffset + 4, out var nextBranch)
-                || !TryDecodeBranchTarget(nextBranch, decisionOffset + 4, out nextOffset))
+                || !IsUnconditionalBranch(nextBranch)
+                || !TryDecodeBranchTarget(nextBranch, decisionOffset + 4, out nextOffset)
+                || !MatchesInstruction(text, decisionOffset + 8, NopInstruction))
             {
                 return false;
             }
         }
 
-        if (!TryReadInstruction(text, returnCapOffset, out var returnCapInstruction)
-            || !TryDecodeMovzImmediate32(returnCapInstruction, register: 0, out var levelCap))
+        if (!TryClaimOwnedCave(text, returnCapOffset, 0x08, caves)
+            || !TryReadInstruction(text, returnCapOffset, out var returnCapInstruction)
+            || !TryDecodeMovzImmediate32(returnCapInstruction, register: 0, out var levelCap)
+            || levelCap is < 1 or > 100
+            || !MatchesInstruction(text, returnCapOffset + 4, EncodeRet())
+            || (progressKind.Value == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                && (workMinimum is < 0 or > 0xFFF
+                    || !MatchesInstruction(text, decisionOffset, EncodeCmpImmediate(0, workMinimum)))))
         {
             return false;
         }
@@ -1274,10 +1859,11 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return true;
     }
 
-    private static bool IsStoryCapDefaultReturn(ReadOnlySpan<byte> text, int offset)
+    private static bool IsExactStoryCapDefaultReturn(ReadOnlySpan<byte> text, int offset)
     {
         return TryReadInstruction(text, offset, out var capInstruction)
-            && TryDecodeMovzImmediate32(capInstruction, register: 0, out _)
+            && TryDecodeMovzImmediate32(capInstruction, register: 0, out var levelCap)
+            && levelCap == StoryDefaultLevelCap
             && TryReadInstruction(text, offset + 4, out var retInstruction)
             && retInstruction == EncodeRet();
     }
@@ -1305,190 +1891,39 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return (instruction & 0xFC000000u) == 0x14000000u;
     }
 
-    private static void ClearReachableRoyalCandyCaves(
+    private static void RestoreOwnedCodeCaves(
         byte[] currentText,
         ReadOnlySpan<byte> baseText,
+        IReadOnlyList<RoyalCandyOwnedCave> ownedCaves)
+    {
+        foreach (var cave in ownedCaves)
+        {
+            if (!IsBaseZeroUnreservedCave(baseText, cave.Offset, cave.Length))
+            {
+                throw new InvalidDataException(
+                    $"Royal Candy ExeFS restore could not prove ownership of text+0x{cave.Offset:X}..0x{cave.Offset + cave.Length - 1:X} from the base executable.");
+            }
+
+            baseText.Slice(cave.Offset, cave.Length)
+                .CopyTo(currentText.AsSpan(cave.Offset, cave.Length));
+        }
+    }
+
+    private static bool IsApplicableFixedRestoreRegion(
+        SwShExeFsReservedRegion region,
         RoyalCandyPatchLayout layout)
     {
-        var seeds = new List<int>();
-        var trustedStoryRoots = new HashSet<int>();
-        foreach (var check in UiRouteChecks)
+        var offset = region.StartOffset!.Value;
+        if (offset is ItemOwnershipFunctionOffset
+            or ItemCountFunctionOffset
+            or ShieldItemOwnershipFunctionOffset
+            or ShieldItemCountFunctionOffset)
         {
-            var branchOffset = check.CompareOffset + 4;
-            if (TryReadInstruction(currentText, branchOffset, out var instruction)
-                && IsConditionalBranch(instruction, Arm64Condition.NE)
-                && instruction != EncodeConditionalBranch(branchOffset, check.FailOffset, Arm64Condition.NE)
-                && TryDecodeConditionalBranchTarget(instruction, branchOffset, out var target))
-            {
-                seeds.Add(target);
-                if (IsVerifiedStoryItemCheckRoot(currentText, baseText, check, target))
-                {
-                    trustedStoryRoots.Add(target);
-                }
-            }
+            return offset == layout.ItemOwnershipFunctionOffset
+                || offset == layout.ItemCountFunctionOffset;
         }
 
-        foreach (var check in EqualBranchChecks)
-        {
-            if (TryReadInstruction(currentText, check.CompareOffset, out var instruction)
-                && IsUnconditionalBranch(instruction)
-                && TryDecodeBranchTarget(instruction, check.CompareOffset, out var target))
-            {
-                seeds.Add(target);
-            }
-        }
-
-        if (TryReadInstruction(currentText, QuantityMoveOffset, out var quantityMove)
-            && IsUnconditionalBranch(quantityMove)
-            && TryDecodeBranchTarget(quantityMove, QuantityMoveOffset, out var quantityMoveTarget))
-        {
-            seeds.Add(quantityMoveTarget);
-        }
-
-        if (TryReadInstruction(currentText, AllowedConsumableBranchOffset, out var allowedConsumableBranch)
-            && IsConditionalBranch(allowedConsumableBranch, Arm64Condition.HI)
-            && allowedConsumableBranch != EncodeConditionalBranch(AllowedConsumableBranchOffset, AllowedConsumableFailOffset, Arm64Condition.HI)
-            && TryDecodeConditionalBranchTarget(allowedConsumableBranch, AllowedConsumableBranchOffset, out var allowedConsumableTarget))
-        {
-            seeds.Add(allowedConsumableTarget);
-        }
-
-        AddVirtualInventoryHookSeed(
-            currentText,
-            layout.ItemOwnershipFunctionOffset,
-            ExpectedItemOwnershipFirstInstruction,
-            seeds);
-        AddVirtualInventoryHookSeed(
-            currentText,
-            layout.ItemCountFunctionOffset,
-            ExpectedItemCountFirstInstruction,
-            seeds);
-
-        if (TryReadInstruction(currentText, StoryInventoryClampSelectOffset, out var storyClampSelect)
-            && IsUnconditionalBranch(storyClampSelect)
-            && TryDecodeBranchTarget(storyClampSelect, StoryInventoryClampSelectOffset, out var storyClampTarget))
-        {
-            seeds.Add(storyClampTarget);
-        }
-
-        ClearReachableCodeCaves(currentText, baseText, seeds, trustedStoryRoots);
-    }
-
-    private static bool IsVerifiedStoryItemCheckRoot(
-        ReadOnlySpan<byte> currentText,
-        ReadOnlySpan<byte> baseText,
-        RareCandyUiCheck check,
-        int target)
-    {
-        if ((check.CompareOffset != StoryUseGateCompareOffset
-                && check.CompareOffset != StoryQuantityMaxCompareOffset)
-            || target != check.PassOffset
-            || !IsBaseZeroUnreservedCave(baseText, target, 0x0C)
-            || !TryReadInstruction(currentText, target, out var compare)
-            || compare != EncodeCmpImmediate(check.ItemRegister, RoyalCandyItemId)
-            || !TryReadInstruction(currentText, target + 4, out var nonRoyalBranch)
-            || nonRoyalBranch != EncodeConditionalBranch(target + 4, check.FailOffset, Arm64Condition.NE)
-            || !TryReadInstruction(currentText, target + 8, out var logicBranch)
-            || !IsUnconditionalBranch(logicBranch)
-            || !TryDecodeBranchTarget(logicBranch, target + 8, out var logicTarget))
-        {
-            return false;
-        }
-
-        return IsRestorableCodeCave(baseText, logicTarget, 0x0C);
-    }
-
-    private static void AddVirtualInventoryHookSeed(
-        ReadOnlySpan<byte> currentText,
-        int hookOffset,
-        uint expectedFirstInstruction,
-        ICollection<int> seeds)
-    {
-        if (TryReadInstruction(currentText, hookOffset, out var instruction)
-            && instruction != expectedFirstInstruction
-            && IsUnconditionalBranch(instruction)
-            && TryDecodeBranchTarget(instruction, hookOffset, out var target))
-        {
-            seeds.Add(target);
-        }
-    }
-
-    private static void ClearReachableCodeCaves(byte[] currentText, ReadOnlySpan<byte> baseText, IEnumerable<int> seeds)
-    {
-        ClearReachableCodeCaves(currentText, baseText, seeds, new HashSet<int>());
-    }
-
-    private static void ClearReachableCodeCaves(
-        byte[] currentText,
-        ReadOnlySpan<byte> baseText,
-        IEnumerable<int> seeds,
-        IReadOnlySet<int> trustedBelowBoundaryRoots)
-    {
-        var pending = new Queue<int>(seeds);
-        var visited = new HashSet<int>();
-        while (pending.Count > 0)
-        {
-            var offset = pending.Dequeue();
-            var isRestorable = trustedBelowBoundaryRoots.Contains(offset)
-                ? IsBaseZeroUnreservedCave(baseText, offset, 0x0C)
-                : IsRestorableCodeCave(baseText, offset, 0x0C);
-            if (!visited.Add(offset) || !isRestorable)
-            {
-                continue;
-            }
-
-            foreach (var target in ReadCaveBranchTargets(currentText, offset))
-            {
-                if (IsRestorableCodeCave(baseText, target, 0x0C))
-                {
-                    pending.Enqueue(target);
-                }
-            }
-
-            baseText.Slice(offset, 0x0C).CopyTo(currentText.AsSpan(offset, 0x0C));
-        }
-    }
-
-    private static IReadOnlyList<int> ReadCaveBranchTargets(ReadOnlySpan<byte> text, int caveOffset)
-    {
-        var targets = new List<int>();
-        for (var offset = caveOffset; offset < caveOffset + 0x0C; offset += 4)
-        {
-            if (!TryReadInstruction(text, offset, out var instruction))
-            {
-                continue;
-            }
-
-            if (IsUnconditionalBranch(instruction)
-                && TryDecodeBranchTarget(instruction, offset, out var branchTarget))
-            {
-                targets.Add(branchTarget);
-            }
-            else if (IsConditionalBranchInstruction(instruction)
-                && TryDecodeConditionalBranchTarget(instruction, offset, out var conditionalTarget))
-            {
-                targets.Add(conditionalTarget);
-            }
-            else if (IsCompareAndBranchInstruction(instruction)
-                && TryDecodeCompareAndBranchTarget(instruction, offset, out var compareBranchTarget))
-            {
-                targets.Add(compareBranchTarget);
-            }
-            else if (IsBranchLink(instruction)
-                && TryDecodeBranchTarget(instruction, offset, out var branchLinkTarget)
-                && !ExternalBranchLinkTargets.Contains(branchLinkTarget))
-            {
-                targets.Add(branchLinkTarget);
-            }
-        }
-
-        return targets;
-    }
-
-    private static bool IsRestorableCodeCave(ReadOnlySpan<byte> baseText, int offset, int length)
-    {
-        return offset >= RareCandyUiHookCodeCaveSearchStart
-            && IsBaseZeroUnreservedCave(baseText, offset, length);
+        return true;
     }
 
     private static bool IsBaseZeroUnreservedCave(ReadOnlySpan<byte> baseText, int offset, int length)
@@ -1497,7 +1932,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             && offset % 4 == 0
             && offset + length <= baseText.Length
             && baseText.Slice(offset, length).IndexOfAnyExcept((byte)0) < 0
-            && !MainTextReservations.Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, offset, length));
+            && !NonRoyalCandyReservations.Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, offset, length));
     }
 
     private static bool IsConditionalBranchInstruction(uint instruction)
@@ -1891,6 +2326,13 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         int Restore,
         int Decision,
         int ReturnCap);
+
+    private readonly record struct RoyalCandyOwnedCave(int Offset, int Length);
+
+    private readonly record struct RoyalCandyStoryMilestoneKey(
+        ulong ProgressHash,
+        SwShRoyalCandyStoryLevelCapProgressKind ProgressKind,
+        int WorkMinimum);
 
     private sealed record ZeroRun(int Offset, int Length);
 

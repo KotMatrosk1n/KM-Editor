@@ -2247,6 +2247,7 @@ export function App({
     Set<WorkflowNavigationGroup['id']>
   >(() => readExpandedWorkflowGroups(selectedGame));
   const editSessionRef = useRef<EditSession | null>(editSession);
+  const editorDraftDirtySectionsRef = useRef(editorDraftDirtySections);
   const moveEditBaselineValuesRef = useRef<{
     sessionId: string;
     valuesByMoveId: MoveBaselineValuesByMoveId;
@@ -2864,9 +2865,10 @@ export function App({
 
   const requestEditorExit = useCallback(
     (destination: WorkbenchSection | null, kind: ExitPromptState['kind']) => {
-      if (editSession) {
+      if (editSession || (kind === 'editor' && activeEditorHasLocalDrafts)) {
         setExitPrompt({
-          allowGoToChanges: !activeSectionOwnsScarletVioletAdvancedEditSession,
+          allowGoToChanges:
+            !activeSectionOwnsScarletVioletAdvancedEditSession && !activeEditorHasLocalDrafts,
           destination,
           discardPendingSession: activeSectionOwnsScarletVioletAdvancedEditSession,
           kind,
@@ -2879,7 +2881,12 @@ export function App({
         setActiveSection(destination);
       }
     },
-    [activeSectionOwnsScarletVioletAdvancedEditSession, editSession, setActiveSection]
+    [
+      activeEditorHasLocalDrafts,
+      activeSectionOwnsScarletVioletAdvancedEditSession,
+      editSession,
+      setActiveSection
+    ]
   );
 
   const handleNavigateSection = useCallback(
@@ -2922,7 +2929,8 @@ export function App({
 
       if (isLeavingActiveEditSession || isLeavingScarletVioletAdvancedEditorForChanges) {
         setExitPrompt({
-          allowGoToChanges: !activeSectionOwnsScarletVioletAdvancedEditSession,
+          allowGoToChanges:
+            !activeSectionOwnsScarletVioletAdvancedEditSession && !activeEditorHasLocalDrafts,
           destination,
           discardPendingSession: true,
           kind: 'editorSwitch',
@@ -3079,6 +3087,10 @@ export function App({
   }, [editSession]);
 
   useEffect(() => {
+    editorDraftDirtySectionsRef.current = editorDraftDirtySections;
+  }, [editorDraftDirtySections]);
+
+  useEffect(() => {
     criticalWriteOperationRef.current = hasCriticalWriteOperation;
   }, [hasCriticalWriteOperation]);
 
@@ -3092,7 +3104,9 @@ export function App({
     }
 
     void desktopServices
-      .setCloseGuardEnabled(editSession !== null || hasCriticalWriteOperation)
+      .setCloseGuardEnabled(
+        editSession !== null || editorDraftDirtySections.size > 0 || hasCriticalWriteOperation
+      )
       .catch((error) => {
       setBridgeDiagnostics(
         toDesktopDiagnostics(error, 'Could not update the desktop close guard.')
@@ -3102,6 +3116,7 @@ export function App({
     desktopServices.isAvailable,
     desktopServices.setCloseGuardEnabled,
     editSession,
+    editorDraftDirtySections,
     hasCriticalWriteOperation,
     setBridgeDiagnostics
   ]);
@@ -3559,7 +3574,8 @@ export function App({
         return;
       }
 
-      if (editSessionRef.current === null) {
+      const hasLocalDrafts = editorDraftDirtySectionsRef.current.size > 0;
+      if (editSessionRef.current === null && !hasLocalDrafts) {
         void desktopServices
           .setCloseGuardEnabled(false)
           .then(() => desktopServices.exitApp())
@@ -3570,7 +3586,12 @@ export function App({
       }
 
       if (exitPromptRef.current?.kind !== 'window') {
-        setExitPrompt({ destination: null, kind: 'window', mode: 'confirm' });
+        setExitPrompt({
+          allowGoToChanges: !hasLocalDrafts,
+          destination: null,
+          kind: 'window',
+          mode: 'confirm'
+        });
       }
     })
       .then((nextUnlisten) => {
@@ -4946,19 +4967,41 @@ export function App({
     }
 
     setIsRoyalCandyStaging(true);
-    prepareScopedEditorPanelAction('royalCandy');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageRoyalCandyWorkflow({
-        levelCaps,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        workflowId
-      });
-      setRoyalCandyWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('royalCandy', response.diagnostics);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageRoyalCandyWorkflow({
+            levelCaps,
+            paths: createProjectPaths(draftPaths),
+            session,
+            workflowId
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : royalCandyWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('royalCandy');
+          setRoyalCandyWorkflow(response.workflow);
+          setEditSessionSection('royalCandy');
+          setScopedEditorPanelDiagnostics('royalCandy', response.diagnostics);
+          registerEditorDraftDirty('royalCandy', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -10267,6 +10310,7 @@ export function App({
                 isStaging={isRoyalCandyStaging}
                 onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('royalCandy')}
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('royalCandy')}
+                onDirtyChange={(isDirty) => registerEditorDraftDirty('royalCandy', isDirty)}
                 onSearchChange={setRoyalCandySearchText}
                 onSelectCheck={setSelectedRoyalCandyCheckId}
                 onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
@@ -30615,6 +30659,12 @@ function SelectedExeFsPatchPanel({
   );
 }
 
+const royalCandyWorkflowNameKeys: Readonly<Record<string, string>> = {
+  'royal-candy-story-limits': 'royalCandy.workflow.storyLimits',
+  'royal-candy-uninstall': 'royalCandy.workflow.uninstall',
+  'royal-candy-unlimited': 'royalCandy.workflow.unlimited'
+};
+
 function RoyalCandySection({
   editSession,
   isChangePlanApplying,
@@ -30622,6 +30672,7 @@ function RoyalCandySection({
   isStaging,
   onApplyChangePlan,
   onCreateChangePlan,
+  onDirtyChange,
   onSearchChange,
   onSelectCheck,
   onSelectWorkflow,
@@ -30638,6 +30689,7 @@ function RoyalCandySection({
   isStaging: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onDirtyChange: (isDirty: boolean) => void;
   onSearchChange: (value: string) => void;
   onSelectCheck: (checkId: string | null) => void;
   onSelectWorkflow: (workflowId: string | null) => void;
@@ -30648,14 +30700,114 @@ function RoyalCandySection({
   selectedWorkflowId: string | null;
   workflow: RoyalCandyWorkflow | null;
 }) {
-  const filteredWorkflows = filterRoyalCandyWorkflows(workflow?.workflows ?? [], searchText);
-  const filteredChecks = filterRoyalCandyChecks(workflow?.checks ?? [], searchText);
-  const filteredOutputs = filterRoyalCandyOutputs(workflow?.outputs ?? [], searchText);
+  const { t, translateLiteral } = useLocalization();
+  const storyLimitWorkflow = workflow?.workflows.find(
+    (candidate) => candidate.workflowId === 'royal-candy-story-limits'
+  );
+  const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.royalCandy'
+  );
+  const stagedStoryLevelCapSignature =
+    stagedRoyalCandyEdit?.recordId === 'royal-candy-story-limits'
+      ? (stagedRoyalCandyEdit.newValue ?? '')
+      : '';
+  const stagedStoryLevelCapInputs = useMemo(
+    () => parseRoyalCandyPendingLevelCapInputs(stagedStoryLevelCapSignature),
+    [stagedStoryLevelCapSignature]
+  );
+  const storyLevelCapSignature =
+    storyLimitWorkflow?.levelCaps
+      .map(
+        (levelCap) =>
+          `${levelCap.slot}:${levelCap.levelCap}:${levelCap.minimumLevelCap}:${levelCap.maximumLevelCap}`
+      )
+      .join('|') ?? '';
+  const levelCapInputSourceSignature = storyLimitWorkflow
+    ? `${storyLevelCapSignature}\u0000${stagedStoryLevelCapSignature}`
+    : '';
+  const initializedLevelCapInputSourceRef = useRef<string | null>(null);
+  const [levelCapInputs, setLevelCapInputs] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    if (!storyLimitWorkflow) {
+      initializedLevelCapInputSourceRef.current = null;
+      setLevelCapInputs({});
+      return;
+    }
+
+    if (initializedLevelCapInputSourceRef.current === levelCapInputSourceSignature) {
+      return;
+    }
+
+    initializedLevelCapInputSourceRef.current = levelCapInputSourceSignature;
+    setLevelCapInputs(
+      Object.fromEntries(
+        storyLimitWorkflow.levelCaps.map((levelCap) => [
+          levelCap.slot,
+          stagedStoryLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString()
+        ])
+      )
+    );
+  }, [levelCapInputSourceSignature, stagedStoryLevelCapInputs, storyLimitWorkflow]);
+
+  const hasLevelCapLocalDrafts =
+    storyLimitWorkflow?.levelCaps.some((levelCap) => {
+      const currentValue =
+        stagedStoryLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString();
+      return (levelCapInputs[levelCap.slot] ?? currentValue).trim() !== currentValue;
+    }) ?? false;
+
+  useEffect(() => {
+    onDirtyChange(hasLevelCapLocalDrafts);
+  }, [hasLevelCapLocalDrafts, onDirtyChange]);
+
+  const hasSearch = searchText.trim().length > 0;
+  const filteredWorkflows = filterRoyalCandyWorkflows(
+    workflow?.workflows ?? [],
+    searchText,
+    (candidate) => [
+      royalCandyWorkflowNameKeys[candidate.workflowId]
+        ? t(royalCandyWorkflowNameKeys[candidate.workflowId]!)
+        : translateLiteral(candidate.name),
+      translateLiteral(candidate.category),
+      translateLiteral(candidate.target),
+      translateLiteral(formatRoyalCandyMode(candidate.mode)),
+      translateLiteral(formatRoyalCandyStatus(candidate.status)),
+      t('royalCandy.itemFromTemplate', {
+        itemId: candidate.itemId,
+        templateItemId: candidate.templateItemId
+      }),
+      translateLiteral(candidate.description),
+      ...candidate.steps.flatMap((step) => [
+        translateLiteral(step.label),
+        translateLiteral(step.description)
+      ])
+    ]
+  );
+  const filteredChecks = filterRoyalCandyChecks(
+    workflow?.checks ?? [],
+    searchText,
+    (check) => [
+      translateLiteral(formatRoyalCandyStatus(check.status)),
+      translateLiteral(check.area),
+      translateLiteral(check.target),
+      translateLiteral(check.message)
+    ]
+  );
+  const filteredOutputs = filterRoyalCandyOutputs(
+    workflow?.outputs ?? [],
+    searchText,
+    (output) => [
+      translateLiteral(output.outputKind),
+      translateLiteral(formatRoyalCandyStatus(output.status)),
+      translateLiteral(formatSourceLayer(output.provenance.sourceLayer)),
+      translateLiteral(output.description),
+      t('royalCandy.outputSource', { source: output.sourceFile })
+    ]
+  );
   const selectedWorkflow =
     filteredWorkflows.find((candidate) => candidate.workflowId === selectedWorkflowId) ??
-    workflow?.workflows.find((candidate) => candidate.workflowId === selectedWorkflowId) ??
     filteredWorkflows[0] ??
-    workflow?.workflows[0] ??
     null;
   const visibleChecks = filteredChecks.filter(
     (check) =>
@@ -30665,9 +30817,7 @@ function RoyalCandySection({
   );
   const selectedCheck =
     visibleChecks.find((check) => check.checkId === selectedCheckId) ??
-    workflow?.checks.find((check) => check.checkId === selectedCheckId) ??
     visibleChecks[0] ??
-    workflow?.checks[0] ??
     null;
   const visibleOutputs = selectedWorkflow
     ? filteredOutputs.filter((output) => output.workflowId === selectedWorkflow.workflowId)
@@ -30678,16 +30828,20 @@ function RoyalCandySection({
           (diagnostic) => !diagnostic.message.includes('preflight is blocked')
         )
       : (workflow?.diagnostics ?? []);
+  const hasMatchingRecords =
+    filteredWorkflows.length > 0 || filteredChecks.length > 0 || filteredOutputs.length > 0;
 
   useEffect(() => {
-    if (selectedWorkflow && selectedWorkflow.workflowId !== selectedWorkflowId) {
-      onSelectWorkflow(selectedWorkflow.workflowId);
+    const nextWorkflowId = selectedWorkflow?.workflowId ?? null;
+    if (nextWorkflowId !== selectedWorkflowId) {
+      onSelectWorkflow(nextWorkflowId);
     }
   }, [onSelectWorkflow, selectedWorkflow?.workflowId, selectedWorkflowId]);
 
   useEffect(() => {
-    if (selectedCheck && selectedCheck.checkId !== selectedCheckId) {
-      onSelectCheck(selectedCheck.checkId);
+    const nextCheckId = selectedCheck?.checkId ?? null;
+    if (nextCheckId !== selectedCheckId) {
+      onSelectCheck(nextCheckId);
     }
   }, [onSelectCheck, selectedCheck?.checkId, selectedCheckId]);
 
@@ -30696,161 +30850,198 @@ function RoyalCandySection({
       <section aria-labelledby="royal-candy-heading" className="panel wide-panel">
         <div className="panel-heading">
           <CheckCircle aria-hidden="true" size={18} />
-          <h2 id="royal-candy-heading">Royal Candy Workflows</h2>
+          <h2 id="royal-candy-heading">{translateLiteral('Royal Candy Workflows')}</h2>
         </div>
         <p className="workflow-description">
-          Royal Candy requires Bag Hook and always uses Bag Hook slot 1. Install workflows also
-          patch reserved Royal Candy regions in exefs/main; use Remove Royal Candy to clear slot 1
-          and restore only Royal Candy-owned ExeFS bytes.
+          {translateLiteral(
+            'Royal Candy requires Bag Hook and always uses Bag Hook slot 1. Install workflows also patch reserved Royal Candy regions in exefs/main; use Remove Royal Candy to clear slot 1 and restore only Royal Candy-owned ExeFS bytes.'
+          )}
         </p>
 
         <div className="items-toolbar exefs-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search Royal Candy workflows"
+              aria-label={translateLiteral('Search Royal Candy workflows')}
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search Royal Candy"
+              placeholder={translateLiteral('Search Royal Candy')}
               type="search"
               value={searchText}
             />
           </label>
           <Metric
-            label="Checks"
+            label={translateLiteral('Checks')}
             value={workflow ? workflow.stats.totalCheckCount.toString() : '0'}
           />
-          <Metric label="Passing" value={workflow ? workflow.stats.passCount.toString() : '0'} />
           <Metric
-            label="Warnings"
+            label={translateLiteral('Passing')}
+            value={workflow ? workflow.stats.passCount.toString() : '0'}
+          />
+          <Metric
+            label={translateLiteral('Warnings')}
             value={workflow ? workflow.stats.warningCount.toString() : '0'}
           />
-          <Metric label="Outputs" value={workflow ? workflow.stats.outputCount.toString() : '0'} />
+          <Metric
+            label={translateLiteral('Failing')}
+            value={workflow ? workflow.stats.failCount.toString() : '0'}
+          />
+          <Metric
+            label={translateLiteral('Outputs')}
+            value={workflow ? workflow.stats.outputCount.toString() : '0'}
+          />
         </div>
 
         {workflow ? (
-          <div className="royal-candy-layout">
-            <div
-              className="exefs-table royal-candy-workflow-table"
-              role="table"
-              aria-label="Royal Candy workflows"
-            >
-              <div className="exefs-row royal-candy-workflow-row exefs-row-heading" role="row">
-                <span role="columnheader">Workflow</span>
-                <span role="columnheader">Status</span>
-                <span role="columnheader">Mode</span>
-                <span role="columnheader">Item</span>
-                <span role="columnheader">Target</span>
-              </div>
-              {filteredWorkflows.map((candidate) => (
-                <button
-                  className={`exefs-row royal-candy-workflow-row ${
-                    selectedWorkflow?.workflowId === candidate.workflowId
-                      ? 'exefs-row-selected'
-                      : ''
-                  }`}
-                  key={candidate.workflowId}
-                  onClick={() => onSelectWorkflow(candidate.workflowId)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{candidate.name}</span>
-                  <span role="cell">
-                    <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
-                      {formatRoyalCandyStatus(candidate.status)}
-                    </span>
-                  </span>
-                  <span role="cell">{formatRoyalCandyMode(candidate.mode)}</span>
-                  <span role="cell">
-                    {candidate.itemId} from {candidate.templateItemId}
-                  </span>
-                  <span role="cell">{candidate.target}</span>
-                </button>
-              ))}
-            </div>
-
-            <SelectedRoyalCandyPanel
-              canShowDependencyWarning={
-                selectedWorkflow !== null &&
-                getRoyalCandyDependencyWarning(workflow, selectedWorkflow.workflowId) !== null
-              }
-              check={selectedCheck}
-              changePlan={panelOutput.changePlan}
-              editSession={editSession}
-              isChangePlanApplying={isChangePlanApplying}
-              isChangePlanCreating={isChangePlanCreating}
-              isStaging={isStaging}
-              onApplyChangePlan={onApplyChangePlan}
-              onCreateChangePlan={onCreateChangePlan}
-              onStageWorkflow={onStageWorkflow}
-              outputs={visibleOutputs}
-              selectedWorkflow={selectedWorkflow}
-            />
-
-            <div
-              className="exefs-table royal-candy-target-table"
-              role="table"
-              aria-label="Royal Candy checks and planned outputs"
-            >
-              <div className="exefs-row royal-candy-target-row exefs-row-heading" role="row">
-                <span role="columnheader">Type</span>
-                <span role="columnheader">Status</span>
-                <span role="columnheader">Area</span>
-                <span role="columnheader">Target</span>
-                <span role="columnheader">Message</span>
-              </div>
-              <div className="royal-candy-target-section" role="row">
-                <span role="cell">Preflight Checks</span>
-              </div>
-              {visibleChecks.map((check) => (
-                <button
-                  className={`exefs-row royal-candy-target-row ${
-                    selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
-                  }`}
-                  key={check.checkId}
-                  onClick={() => onSelectCheck(check.checkId)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{check.checkId.split(':').pop()}</span>
-                  <span role="cell">
-                    <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
-                      {formatRoyalCandyStatus(check.status)}
-                    </span>
-                  </span>
-                  <span role="cell">{check.area}</span>
-                  <span role="cell">{check.target}</span>
-                  <span role="cell">{check.message}</span>
-                </button>
-              ))}
-              <div className="royal-candy-target-section" role="row">
-                <span role="cell">Planned Outputs</span>
-              </div>
-              {visibleOutputs.map((output) => (
-                <div
-                  className="exefs-row royal-candy-target-row royal-candy-output-row"
-                  key={output.outputId}
-                  role="row"
-                >
-                  <span role="cell">{output.outputKind}</span>
-                  <span role="cell">
-                    <span className={`status-pill ${getExeFsStatusClassName(output.status)}`}>
-                      {formatRoyalCandyStatus(output.status)}
-                    </span>
-                  </span>
-                  <span role="cell">{formatSourceLayer(output.provenance.sourceLayer)}</span>
-                  <span role="cell">{output.relativePath}</span>
-                  <span role="cell">
-                    {output.description}
-                    {output.sourceFile !== output.relativePath ? ` Source: ${output.sourceFile}` : ''}
-                  </span>
+          hasSearch && !hasMatchingRecords ? (
+            <p className="empty-copy" role="status">
+              {t('royalCandy.noMatches')}
+            </p>
+          ) : (
+            <div className="royal-candy-layout">
+              <div
+                aria-label={translateLiteral('Royal Candy workflows')}
+                className="exefs-table royal-candy-workflow-table"
+                role="table"
+              >
+                <div className="exefs-row royal-candy-workflow-row exefs-row-heading" role="row">
+                  <span role="columnheader">{translateLiteral('Workflow')}</span>
+                  <span role="columnheader">{translateLiteral('Status')}</span>
+                  <span role="columnheader">{translateLiteral('Mode')}</span>
+                  <span role="columnheader">{translateLiteral('Item')}</span>
+                  <span role="columnheader">{translateLiteral('Target')}</span>
                 </div>
-              ))}
+                {filteredWorkflows.map((candidate) => (
+                  <button
+                    aria-selected={selectedWorkflow?.workflowId === candidate.workflowId}
+                    className={`exefs-row royal-candy-workflow-row ${
+                      selectedWorkflow?.workflowId === candidate.workflowId
+                        ? 'exefs-row-selected'
+                        : ''
+                    }`}
+                    key={candidate.workflowId}
+                    onClick={() => onSelectWorkflow(candidate.workflowId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">
+                      {royalCandyWorkflowNameKeys[candidate.workflowId]
+                        ? t(royalCandyWorkflowNameKeys[candidate.workflowId]!)
+                        : translateLiteral(candidate.name)}
+                    </span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
+                        {translateLiteral(formatRoyalCandyStatus(candidate.status))}
+                      </span>
+                    </span>
+                    <span role="cell">{translateLiteral(formatRoyalCandyMode(candidate.mode))}</span>
+                    <span role="cell">
+                      {t('royalCandy.itemFromTemplate', {
+                        itemId: candidate.itemId,
+                        templateItemId: candidate.templateItemId
+                      })}
+                    </span>
+                    <span role="cell">{translateLiteral(candidate.target)}</span>
+                  </button>
+                ))}
+              </div>
+
+              <SelectedRoyalCandyPanel
+                canStageWorkflow={workflow.summary.availability === 'available'}
+                canShowDependencyWarning={
+                  selectedWorkflow !== null &&
+                  getRoyalCandyDependencyWarning(workflow, selectedWorkflow.workflowId) !== null
+                }
+                check={selectedCheck}
+                changePlan={panelOutput.changePlan}
+                editSession={editSession}
+                hasLevelCapLocalDrafts={hasLevelCapLocalDrafts}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isStaging}
+                levelCapInputs={levelCapInputs}
+                onApplyChangePlan={onApplyChangePlan}
+                onCreateChangePlan={onCreateChangePlan}
+                onLevelCapInputChange={(slot, value) =>
+                  setLevelCapInputs((current) => ({ ...current, [slot]: value }))
+                }
+                onStageWorkflow={onStageWorkflow}
+                outputs={visibleOutputs}
+                selectedWorkflow={selectedWorkflow}
+              />
+
+              <div
+                aria-label={translateLiteral('Royal Candy checks and planned outputs')}
+                className="exefs-table royal-candy-target-table"
+                role="table"
+              >
+                <div className="exefs-row royal-candy-target-row exefs-row-heading" role="row">
+                  <span role="columnheader">{translateLiteral('Type')}</span>
+                  <span role="columnheader">{translateLiteral('Status')}</span>
+                  <span role="columnheader">{translateLiteral('Area')}</span>
+                  <span role="columnheader">{translateLiteral('Target')}</span>
+                  <span role="columnheader">{translateLiteral('Message')}</span>
+                </div>
+                <div className="royal-candy-target-section" role="row">
+                  <span role="cell">{translateLiteral('Preflight Checks')}</span>
+                </div>
+                {visibleChecks.map((check) => (
+                  <button
+                    aria-selected={selectedCheck?.checkId === check.checkId}
+                    className={`exefs-row royal-candy-target-row ${
+                      selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
+                    }`}
+                    key={check.checkId}
+                    onClick={() => onSelectCheck(check.checkId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{check.checkId.split(':').pop()}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
+                        {translateLiteral(formatRoyalCandyStatus(check.status))}
+                      </span>
+                    </span>
+                    <span role="cell">{translateLiteral(check.area)}</span>
+                    <span role="cell">{translateLiteral(check.target)}</span>
+                    <span role="cell">{translateLiteral(check.message)}</span>
+                  </button>
+                ))}
+                <div className="royal-candy-target-section" role="row">
+                  <span role="cell">{translateLiteral('Planned Outputs')}</span>
+                </div>
+                {visibleOutputs.map((output) => (
+                  <div
+                    className="exefs-row royal-candy-target-row royal-candy-output-row"
+                    key={output.outputId}
+                    role="row"
+                  >
+                    <span role="cell">{translateLiteral(output.outputKind)}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(output.status)}`}>
+                        {translateLiteral(formatRoyalCandyStatus(output.status))}
+                      </span>
+                    </span>
+                    <span role="cell">
+                      {translateLiteral(formatSourceLayer(output.provenance.sourceLayer))}
+                    </span>
+                    <span role="cell">{output.relativePath}</span>
+                    <span role="cell">
+                      {translateLiteral(output.description)}
+                      {output.sourceFile !== output.relativePath
+                        ? ` ${t('royalCandy.outputSource', { source: output.sourceFile })}`
+                        : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )
         ) : (
           <p className="empty-copy">
-            Open Royal Candy from Workflows to inspect backend preflight and output targets.
+            {translateLiteral(
+              'Open Royal Candy from Workflows to inspect backend preflight and output targets.'
+            )}
           </p>
         )}
       </section>
@@ -30864,38 +31055,42 @@ function RoyalCandySection({
 }
 
 function SelectedRoyalCandyPanel({
+  canStageWorkflow,
   canShowDependencyWarning,
   check,
   changePlan,
   editSession,
+  hasLevelCapLocalDrafts,
   isChangePlanApplying,
   isChangePlanCreating,
   isStaging,
+  levelCapInputs,
   onApplyChangePlan,
   onCreateChangePlan,
+  onLevelCapInputChange,
   onStageWorkflow,
   outputs,
   selectedWorkflow
 }: {
+  canStageWorkflow: boolean;
   canShowDependencyWarning: boolean;
   check: RoyalCandyWorkflowCheckRecord | null;
   changePlan: ChangePlan | null;
   editSession: EditSession | null;
+  hasLevelCapLocalDrafts: boolean;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
   isStaging: boolean;
+  levelCapInputs: Record<number, string>;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onLevelCapInputChange: (slot: number, value: string) => void;
   onStageWorkflow: (workflowId: string, levelCaps?: RoyalCandyLevelCapSelection[]) => void;
   outputs: RoyalCandyOutputRecord[];
   selectedWorkflow: RoyalCandyWorkflowRecord | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const provenance = check?.provenance ?? selectedWorkflow?.provenance ?? outputs[0]?.provenance ?? null;
-  const [levelCapInputs, setLevelCapInputs] = useState<Record<number, string>>({});
-  const selectedLevelCapSignature =
-    selectedWorkflow?.levelCaps
-      .map((levelCap) => `${levelCap.slot}:${levelCap.levelCap}`)
-      .join('|') ?? '';
   const isStoryLimitWorkflow = selectedWorkflow?.workflowId === 'royal-candy-story-limits';
   const levelCapRows = isStoryLimitWorkflow ? (selectedWorkflow?.levelCaps ?? []) : [];
   const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
@@ -30903,48 +31098,44 @@ function SelectedRoyalCandyPanel({
   );
   const isSelectedWorkflowStaged =
     selectedWorkflow !== null && stagedRoyalCandyEdit?.recordId === selectedWorkflow.workflowId;
-  const stagedRoyalCandyLevelCapInputs = useMemo(
-    () =>
-      isSelectedWorkflowStaged
-        ? parseRoyalCandyPendingLevelCapInputs(stagedRoyalCandyEdit?.newValue)
-        : new Map<number, string>(),
-    [isSelectedWorkflowStaged, stagedRoyalCandyEdit?.newValue]
-  );
-  const stagedRoyalCandyLevelCapSignature =
-    isSelectedWorkflowStaged && stagedRoyalCandyEdit?.newValue ? stagedRoyalCandyEdit.newValue : '';
   const parsedLevelCaps = levelCapRows.map((levelCap) => {
-    const rawValue =
-      levelCapInputs[levelCap.slot] ??
-      stagedRoyalCandyLevelCapInputs.get(levelCap.slot) ??
-      levelCap.levelCap.toString();
-    const parsedValue = Number.parseInt(rawValue, 10);
+    const rawValue = levelCapInputs[levelCap.slot] ?? levelCap.levelCap.toString();
+    const normalizedValue = rawValue.trim();
+    const parsedValue = /^-?\d+$/.test(normalizedValue) ? Number(normalizedValue) : Number.NaN;
     return {
       ...levelCap,
       rawValue,
-      selectedLevelCap: Number.isFinite(parsedValue) ? parsedValue : Number.NaN
+      selectedLevelCap: Number.isSafeInteger(parsedValue) ? parsedValue : Number.NaN
     };
   });
   const getLevelCapError = (
     levelCap: (typeof parsedLevelCaps)[number],
     previousLevelCap: number
   ) => {
+    if (levelCap.rawValue.trim().length === 0) {
+      return t('royalCandy.cap.emptyError');
+    }
+
     if (!Number.isFinite(levelCap.selectedLevelCap)) {
-      return 'Enter a level cap.';
+      return t('royalCandy.cap.wholeNumberError');
     }
 
     if (
       levelCap.selectedLevelCap < levelCap.minimumLevelCap ||
       levelCap.selectedLevelCap > levelCap.maximumLevelCap
     ) {
-      return `Use Lv. ${levelCap.minimumLevelCap}-${levelCap.maximumLevelCap}.`;
+      return t('royalCandy.cap.rangeError', {
+        maximum: levelCap.maximumLevelCap,
+        minimum: levelCap.minimumLevelCap
+      });
     }
 
     if (!Number.isFinite(previousLevelCap)) {
-      return 'Fix the previous cap first.';
+      return t('royalCandy.cap.previousError');
     }
 
     if (levelCap.selectedLevelCap < previousLevelCap) {
-      return `Must be Lv. ${previousLevelCap} or higher.`;
+      return t('royalCandy.cap.minimumError', { minimum: previousLevelCap });
     }
 
     return null;
@@ -30958,20 +31149,18 @@ function SelectedRoyalCandyPanel({
     levelCap: levelCap.selectedLevelCap,
     slot: levelCap.slot
   }));
-  const hasLevelCapLocalDrafts = parsedLevelCaps.some((levelCap) => {
-    const currentValue =
-      stagedRoyalCandyLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString();
-    return levelCap.rawValue.trim() !== currentValue;
-  });
   const isSelectedWorkflowStageCurrent =
     isSelectedWorkflowStaged && (!isStoryLimitWorkflow || !hasLevelCapLocalDrafts);
   const canStage = canStageAdvancedEditorAction({
     isAllowed:
+      canStageWorkflow &&
       selectedWorkflow !== null &&
       (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
         selectedWorkflow.workflowId === 'royal-candy-story-limits' ||
         selectedWorkflow.workflowId === 'royal-candy-uninstall') &&
-      (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning') &&
+      (selectedWorkflow.status === 'available' ||
+        selectedWorkflow.status === 'installed' ||
+        selectedWorkflow.status === 'warning') &&
       !hasLevelCapInputError,
     isChangePlanApplying,
     isChangePlanCreating,
@@ -30979,21 +31168,28 @@ function SelectedRoyalCandyPanel({
     isStaging
   });
   const canUseStageButton =
-    (canStage || (canShowDependencyWarning && !isSelectedWorkflowStageCurrent)) &&
+    canStageWorkflow &&
+    (canStage ||
+      (canShowDependencyWarning && !isSelectedWorkflowStageCurrent && !hasLevelCapInputError)) &&
     !isStaging &&
     !isChangePlanCreating &&
     !isChangePlanApplying;
   const canEditLevelCaps =
     isStoryLimitWorkflow &&
     selectedWorkflow !== null &&
-    (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
+    canStageWorkflow &&
+    (selectedWorkflow.status === 'available' ||
+      selectedWorkflow.status === 'installed' ||
+      selectedWorkflow.status === 'warning');
   const canReviewPlan =
     isSelectedWorkflowStaged &&
+    isSelectedWorkflowStageCurrent &&
     !isChangePlanCreating &&
     !isChangePlanApplying &&
     !isStaging;
   const canApplyPlan =
     isSelectedWorkflowStaged &&
+    isSelectedWorkflowStageCurrent &&
     changePlan !== null &&
     changePlan.canApply &&
     changePlan.writes.length > 0 &&
@@ -31001,82 +31197,73 @@ function SelectedRoyalCandyPanel({
     !isChangePlanCreating &&
     !isStaging;
 
-  useEffect(() => {
-    if (!isStoryLimitWorkflow) {
-      setLevelCapInputs({});
-      return;
-    }
-
-    setLevelCapInputs(
-      Object.fromEntries(
-        (selectedWorkflow?.levelCaps ?? []).map((levelCap) => [
-          levelCap.slot,
-          stagedRoyalCandyLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString()
-        ])
-      )
-    );
-  }, [
-    isStoryLimitWorkflow,
-    selectedLevelCapSignature,
-    selectedWorkflow?.workflowId,
-    stagedRoyalCandyLevelCapInputs,
-    stagedRoyalCandyLevelCapSignature
-  ]);
-
   return (
     <aside
-      aria-label="Selected Royal Candy workflow provenance"
+      aria-label={translateLiteral('Selected Royal Candy workflow provenance')}
       className="encounter-inspector royal-candy-inspector"
     >
       <div className="panel-heading">
         <CheckCircle aria-hidden="true" size={18} />
-        <h3>Selected Workflow</h3>
+        <h3>{translateLiteral('Selected Workflow')}</h3>
       </div>
 
       {selectedWorkflow ? (
         <>
           <dl className="item-provenance-list">
             <div>
-              <dt>Workflow</dt>
-              <dd>{selectedWorkflow.name}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{formatRoyalCandyStatus(selectedWorkflow.status)}</dd>
-            </div>
-            <div>
-              <dt>Mode</dt>
-              <dd>{formatRoyalCandyMode(selectedWorkflow.mode)}</dd>
-            </div>
-            <div>
-              <dt>Item</dt>
+              <dt>{translateLiteral('Workflow')}</dt>
               <dd>
-                {selectedWorkflow.itemId} from {selectedWorkflow.templateItemId}
+                {royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]
+                  ? t(royalCandyWorkflowNameKeys[selectedWorkflow.workflowId]!)
+                  : translateLiteral(selectedWorkflow.name)}
               </dd>
             </div>
             <div>
-              <dt>Target</dt>
-              <dd>{selectedWorkflow.target}</dd>
+              <dt>{translateLiteral('Status')}</dt>
+              <dd>{translateLiteral(formatRoyalCandyStatus(selectedWorkflow.status))}</dd>
             </div>
             <div>
-              <dt>Check</dt>
+              <dt>{translateLiteral('Mode')}</dt>
+              <dd>{translateLiteral(formatRoyalCandyMode(selectedWorkflow.mode))}</dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Item')}</dt>
+              <dd>
+                {t('royalCandy.itemFromTemplate', {
+                  itemId: selectedWorkflow.itemId,
+                  templateItemId: selectedWorkflow.templateItemId
+                })}
+              </dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Target')}</dt>
+              <dd>{translateLiteral(selectedWorkflow.target)}</dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Check')}</dt>
               <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
             </div>
             <div>
-              <dt>Check status</dt>
-              <dd>{check ? formatRoyalCandyStatus(check.status) : 'n/a'}</dd>
+              <dt>{translateLiteral('Check status')}</dt>
+              <dd>{check ? translateLiteral(formatRoyalCandyStatus(check.status)) : 'n/a'}</dd>
             </div>
             <div>
-              <dt>Source file</dt>
+              <dt>{translateLiteral('Source file')}</dt>
               <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
             </div>
             <div>
-              <dt>Layer</dt>
-              <dd>{provenance ? formatSourceLayer(provenance.sourceLayer) : 'n/a'}</dd>
+              <dt>{translateLiteral('Layer')}</dt>
+              <dd>
+                {provenance
+                  ? translateLiteral(formatSourceLayer(provenance.sourceLayer))
+                  : 'n/a'}
+              </dd>
             </div>
             <div>
-              <dt>File state</dt>
-              <dd>{provenance ? formatFileState(provenance.fileState) : 'n/a'}</dd>
+              <dt>{translateLiteral('File state')}</dt>
+              <dd>
+                {provenance ? translateLiteral(formatFileState(provenance.fileState)) : 'n/a'}
+              </dd>
             </div>
           </dl>
 
@@ -31086,13 +31273,20 @@ function SelectedRoyalCandyPanel({
             }`}
           >
             {isStoryLimitWorkflow ? (
-              <div className="royal-candy-cap-editor" aria-label="Royal Candy level caps">
+              <div
+                aria-label={translateLiteral('Royal Candy level caps')}
+                className="royal-candy-cap-editor"
+              >
                 <div className="encounter-slot-header">
-                  <strong>Story Level Caps</strong>
-                  <span className="status-pill status-warning">Default start Lv. 1</span>
+                  <strong>{translateLiteral('Story Level Caps')}</strong>
+                  <span className="status-pill status-warning">
+                    {translateLiteral('Default start Lv. 1')}
+                  </span>
                 </div>
                 <p className="royal-candy-cap-help">
-                  Each later story cap must be equal to or higher than the cap before it.
+                  {translateLiteral(
+                    'Each later story cap must be equal to or higher than the cap before it.'
+                  )}
                 </p>
                 <div className="royal-candy-cap-grid">
                   {parsedLevelCaps.map((levelCap, index) => {
@@ -31106,7 +31300,9 @@ function SelectedRoyalCandyPanel({
                       levelCap.progressKind === 'workAtLeast' && levelCap.workMinimum !== null
                         ? `${levelCap.progressHash} >= ${levelCap.workMinimum}`
                         : levelCap.progressHash;
-                    const capLabel = `After defeating ${levelCap.label}`;
+                    const capLabel = t('royalCandy.cap.afterDefeating', {
+                      label: levelCap.label
+                    });
 
                     return (
                       <label className="royal-candy-cap-row" key={levelCap.milestoneId}>
@@ -31118,16 +31314,15 @@ function SelectedRoyalCandyPanel({
                           <input
                             aria-describedby={rowError ? errorId : undefined}
                             aria-invalid={rowError ? 'true' : undefined}
-                            aria-label={`Level cap after defeating ${levelCap.label}`}
+                            aria-label={t('royalCandy.cap.levelAria', {
+                              label: levelCap.label
+                            })}
                             className={rowError ? 'input-error' : undefined}
                             disabled={!canEditLevelCaps}
                             max={levelCap.maximumLevelCap}
                             min={levelCap.minimumLevelCap}
                             onChange={(event) =>
-                              setLevelCapInputs((current) => ({
-                                ...current,
-                                [levelCap.slot]: event.target.value
-                              }))
+                              onLevelCapInputChange(levelCap.slot, event.target.value)
                             }
                             step={1}
                             type="number"
@@ -31163,10 +31358,10 @@ function SelectedRoyalCandyPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Staging"
+                    busyLabel={translateLiteral('Staging')}
                     icon={<ClipboardCheck aria-hidden="true" size={16} />}
                     isBusy={isStaging}
-                    label="Stage"
+                    label={translateLiteral('Stage')}
                   />
                 </button>
                 <button
@@ -31177,10 +31372,10 @@ function SelectedRoyalCandyPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Reviewing"
+                    busyLabel={translateLiteral('Reviewing')}
                     icon={<ClipboardCheck aria-hidden="true" size={16} />}
                     isBusy={isChangePlanCreating}
-                    label="Review"
+                    label={translateLiteral('Review')}
                   />
                 </button>
                 <button
@@ -31191,41 +31386,46 @@ function SelectedRoyalCandyPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Applying"
+                    busyLabel={translateLiteral('Applying')}
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isChangePlanApplying}
-                    label="Apply"
+                    label={translateLiteral('Apply')}
                   />
                 </button>
               </div>
 
               <dl className="encounter-slot-detail">
                 <div>
-                  <dt>Description</dt>
-                  <dd>{selectedWorkflow.description}</dd>
+                  <dt>{translateLiteral('Description')}</dt>
+                  <dd>{translateLiteral(selectedWorkflow.description)}</dd>
                 </div>
                 <div>
-                  <dt>Dependency</dt>
-                  <dd>Bag Hook must be installed before either Royal Candy install workflow.</dd>
-                </div>
-                <div>
-                  <dt>Uninstall</dt>
+                  <dt>{translateLiteral('Dependency')}</dt>
                   <dd>
-                    Select Remove Royal Candy. Bag Hook and Starting Items stay installed; Catch
-                    Cap ExeFS bytes are preserved if present.
+                    {translateLiteral(
+                      'Bag Hook must be installed before either Royal Candy install workflow.'
+                    )}
                   </dd>
                 </div>
                 <div>
-                  <dt>Check message</dt>
-                  <dd>{check?.message ?? 'n/a'}</dd>
+                  <dt>{translateLiteral('Uninstall')}</dt>
+                  <dd>
+                    {translateLiteral(
+                      'Select Remove Royal Candy. Bag Hook and Starting Items stay installed; Catch Cap ExeFS bytes are preserved if present.'
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{translateLiteral('Check message')}</dt>
+                  <dd>{check ? translateLiteral(check.message) : 'n/a'}</dd>
                 </div>
               </dl>
 
               <ol className="royal-candy-step-list">
                 {selectedWorkflow.steps.map((step) => (
                   <li key={step.step}>
-                    <strong>{step.label}</strong>
-                    <span>{step.description}</span>
+                    <strong>{translateLiteral(step.label)}</strong>
+                    <span>{translateLiteral(step.description)}</span>
                   </li>
                 ))}
               </ol>
@@ -31233,7 +31433,9 @@ function SelectedRoyalCandyPanel({
           </div>
         </>
       ) : (
-        <p className="empty-copy">No Royal Candy workflow selected.</p>
+        <p className="empty-copy">
+          {translateLiteral('No Royal Candy workflow selected.')}
+        </p>
       )}
     </aside>
   );
@@ -37214,7 +37416,11 @@ function filterExeFsSegmentRecords(segments: ExeFsSegmentRecord[], searchText: s
   );
 }
 
-function filterRoyalCandyWorkflows(workflows: RoyalCandyWorkflowRecord[], searchText: string) {
+function filterRoyalCandyWorkflows(
+  workflows: RoyalCandyWorkflowRecord[],
+  searchText: string,
+  getLocalizedSearchValues: (workflow: RoyalCandyWorkflowRecord) => string[]
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
@@ -37233,12 +37439,17 @@ function filterRoyalCandyWorkflows(workflows: RoyalCandyWorkflowRecord[], search
       workflow.templateItemId.toString(),
       workflow.description,
       workflow.provenance.sourceFile,
-      ...workflow.steps.flatMap((step) => [step.label, step.description])
+      ...workflow.steps.flatMap((step) => [step.label, step.description]),
+      ...getLocalizedSearchValues(workflow)
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
 }
 
-function filterRoyalCandyChecks(checks: RoyalCandyWorkflowCheckRecord[], searchText: string) {
+function filterRoyalCandyChecks(
+  checks: RoyalCandyWorkflowCheckRecord[],
+  searchText: string,
+  getLocalizedSearchValues: (check: RoyalCandyWorkflowCheckRecord) => string[]
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
@@ -37253,12 +37464,17 @@ function filterRoyalCandyChecks(checks: RoyalCandyWorkflowCheckRecord[], searchT
       check.area,
       check.target,
       check.message,
-      check.provenance.sourceFile
+      check.provenance.sourceFile,
+      ...getLocalizedSearchValues(check)
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
 }
 
-function filterRoyalCandyOutputs(outputs: RoyalCandyOutputRecord[], searchText: string) {
+function filterRoyalCandyOutputs(
+  outputs: RoyalCandyOutputRecord[],
+  searchText: string,
+  getLocalizedSearchValues: (output: RoyalCandyOutputRecord) => string[]
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
@@ -37274,7 +37490,8 @@ function filterRoyalCandyOutputs(outputs: RoyalCandyOutputRecord[], searchText: 
       output.outputKind,
       output.status,
       output.description,
-      output.provenance.sourceFile
+      output.provenance.sourceFile,
+      ...getLocalizedSearchValues(output)
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
 }

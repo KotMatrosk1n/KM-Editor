@@ -201,7 +201,9 @@ public sealed class SwShBagHookEditSessionService
             DiagnosticSeverity.Info,
             string.Create(CultureInfo.InvariantCulture, $"Bag Hook change plan preview contains {writes.Count:N0} target file(s).")));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -216,13 +218,15 @@ public sealed class SwShBagHookEditSessionService
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Reviewed Bag Hook change plan is stale. Review the change plan again before applying.",
                 expected: "Current reviewed Bag Hook change plan"));
         }
+
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -639,6 +643,15 @@ public sealed class SwShBagHookEditSessionService
             return false;
         }
 
+        foreach (var blocker in SwShRoyalCandyCleanup.FindBlockingCleanupTargets(project))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Bag Hook uninstall is blocked because dependent Royal Candy cleanup cannot be verified atomically: {blocker.Message}",
+                file: blocker.Entry.RelativePath,
+                expected: "Every dependent Royal Candy target decodes and maps to owned cleanup data"));
+        }
+
         foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             diagnostics.Add(diagnostic);
@@ -692,9 +705,18 @@ public sealed class SwShBagHookEditSessionService
                 continue;
             }
 
+            var sources = new List<ProjectFileReference>
+            {
+                new(ProjectFileLayer.Layered, entry.RelativePath),
+            };
+            if (isBagHookOutput || SwShRoyalCandyCleanup.IsCleanupOutputPath(entry.RelativePath))
+            {
+                sources.Add(new ProjectFileReference(ProjectFileLayer.Base, entry.RelativePath));
+            }
+
             writes[entry.RelativePath] = new PlannedFileWrite(
                 entry.RelativePath,
-                [new ProjectFileReference(ProjectFileLayer.Layered, entry.RelativePath)],
+                sources,
                 ReplacesExistingOutput: true,
                 isBagHookOutput
                     ? "Uninstall Bag Hook V2 and remove all dependent startup item grants."
@@ -863,27 +885,6 @@ public sealed class SwShBagHookEditSessionService
     {
         File.Delete(targetPath);
         return true;
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
     }
 
     private static ApplyResult CreateApplyResult(

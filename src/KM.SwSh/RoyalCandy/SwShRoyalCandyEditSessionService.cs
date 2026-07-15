@@ -4,12 +4,11 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.Executable;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
-using KM.SwSh.CatchCap;
 using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
-using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -55,6 +54,8 @@ public sealed class SwShRoyalCandyEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(workflowId);
 
+        workflowId = workflowId.Trim();
+        projectWorkspaceService.ClearMemoryCache();
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var workflow = royalCandyWorkflowService.Load(project);
@@ -102,23 +103,23 @@ public sealed class SwShRoyalCandyEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = royalCandyWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (session.PendingEdits.Count == 0)
+        if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Stage a Royal Candy workflow before validating.",
-                expected: "Pending Royal Candy workflow"));
+                session.PendingEdits.Count == 0
+                    ? "Stage a Royal Candy workflow before validating."
+                    : "Royal Candy validation requires exactly one pending Royal Candy workflow.",
+                expected: "Exactly one pending Royal Candy workflow"));
             return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
         }
 
-        foreach (var edit in session.PendingEdits)
-        {
-            ValidatePendingEdit(project, workflow, edit, diagnostics);
-        }
+        ValidatePendingEdit(project, workflow, session.PendingEdits[0], diagnostics);
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -154,7 +155,12 @@ public sealed class SwShRoyalCandyEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var writes = CreateConcreteWrites(paths, workflow, selectedWorkflow, diagnostics);
+        var writes = CreateConcreteWrites(paths, workflow, selectedWorkflow, edit, diagnostics);
+        if (!string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal))
+        {
+            var levelCaps = ParseLevelCapSelections(selectedWorkflow, edit.NewValue, diagnostics);
+            ValidateConcreteOutputs(project, selectedWorkflow, levelCaps, writes, diagnostics);
+        }
         if (writes.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -173,7 +179,9 @@ public sealed class SwShRoyalCandyEditSessionService
 
         AddDeferredOutputDiagnostics(workflow, selectedWorkflow, writes, diagnostics);
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -188,13 +196,15 @@ public sealed class SwShRoyalCandyEditSessionService
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Reviewed Royal Candy change plan is stale. Review the change plan again before applying.",
                 expected: "Current reviewed Royal Candy change plan"));
         }
+
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -293,8 +303,7 @@ public sealed class SwShRoyalCandyEditSessionService
                         break;
                     }
 
-                    Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                    File.WriteAllBytes(targetPath, output);
+                    WriteOutputAtomically(targetPath, output);
                     writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
                 }
                 catch (InvalidDataException exception)
@@ -347,6 +356,8 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (writtenFiles.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
+            projectWorkspaceService.ClearMemoryCache();
+            royalCandyWorkflowService.ClearMemoryCache();
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 isCleanup
@@ -355,6 +366,43 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
+    private static void WriteOutputAtomically(string targetPath, byte[] contents)
+    {
+        if (Directory.Exists(targetPath))
+        {
+            throw new IOException("Royal Candy output target is a directory.");
+        }
+
+        var directory = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Royal Candy output target directory could not be resolved.");
+        Directory.CreateDirectory(directory);
+        var tempPath = Path.Combine(directory, $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(tempPath, contents);
+            if (!File.ReadAllBytes(tempPath).AsSpan().SequenceEqual(contents))
+            {
+                throw new IOException("Royal Candy temporary output verification failed.");
+            }
+
+            File.Move(tempPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // The rollback scope still owns restoration of the reviewed output target.
+            }
+        }
     }
 
     private static void RollbackFailedApply(
@@ -402,7 +450,30 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         var isCleanup = string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal);
-        if (!isCleanup)
+        if (isCleanup)
+        {
+            if (selectedWorkflow.Status != "warning")
+            {
+                foreach (var check in workflow.Checks.Where(check =>
+                    check.WorkflowId == UninstallWorkflowId && check.Status == "Fail"))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        check.Message,
+                        file: check.Target,
+                        expected: "Resolve every blocked Royal Candy cleanup target before uninstalling"));
+                }
+
+                if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Royal Candy cleanup is not ready to stage.",
+                        expected: "A warning-status cleanup workflow with no blocked target"));
+                }
+            }
+        }
+        else
         {
             AddBlockingPreflightDiagnostics(workflow, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -462,6 +533,16 @@ public sealed class SwShRoyalCandyEditSessionService
             return;
         }
 
+        if (!string.Equals(edit.Field, WorkflowField, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Royal Candy workflow field is not canonical.",
+                field: edit.Field,
+                expected: WorkflowField));
+            return;
+        }
+
         var selectedWorkflow = GetApplicableWorkflow(workflow, edit.RecordId ?? string.Empty, diagnostics);
         if (selectedWorkflow is null)
         {
@@ -469,7 +550,34 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         CanStage(project, workflow, selectedWorkflow, diagnostics);
-        _ = ParseLevelCapSelections(selectedWorkflow, edit.NewValue, diagnostics);
+        var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var levelCaps = ParseLevelCapSelections(selectedWorkflow, edit.NewValue, diagnostics);
+        if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+        {
+            var canonicalValue = CreatePendingEditValue(selectedWorkflow, levelCaps);
+            if (!string.Equals(edit.NewValue, canonicalValue, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Royal Candy workflow value is not canonical.",
+                    field: WorkflowField,
+                    expected: canonicalValue));
+            }
+        }
+
+        var hasCanonicalSource = edit.Sources.Count == 1
+            && edit.Sources[0].Layer == selectedWorkflow.Provenance.SourceLayer
+            && string.Equals(
+                edit.Sources[0].RelativePath,
+                selectedWorkflow.Provenance.SourceFile,
+                StringComparison.OrdinalIgnoreCase);
+        if (!hasCanonicalSource)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Royal Candy workflow source metadata is not canonical.",
+                expected: $"{selectedWorkflow.Provenance.SourceLayer}:{selectedWorkflow.Provenance.SourceFile}"));
+        }
     }
 
     private static SwShRoyalCandyWorkflowRecord? GetApplicableWorkflow(
@@ -737,6 +845,7 @@ public sealed class SwShRoyalCandyEditSessionService
         ProjectPaths paths,
         SwShRoyalCandyWorkflow workflow,
         SwShRoyalCandyWorkflowRecord selectedWorkflow,
+        PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var writes = new List<PlannedFileWrite>();
@@ -757,14 +866,145 @@ public sealed class SwShRoyalCandyEditSessionService
 
             writes.Add(new PlannedFileWrite(
                 output.RelativePath,
-                [new ProjectFileReference(output.Provenance.SourceLayer, output.Provenance.SourceFile)],
+                CreateConcreteWriteSources(output, isCleanup),
                 File.Exists(targetPath),
                 isCleanup
-                    ? $"Remove Royal Candy LayeredFS output: {output.Description}"
-                    : $"Apply Royal Candy workflow '{selectedWorkflow.Name}': {output.Description}"));
+                    ? $"Remove Royal Candy LayeredFS output: {output.Description} Pending value: {edit.NewValue}."
+                    : $"Apply Royal Candy workflow '{selectedWorkflow.Name}': {output.Description} Pending value: {edit.NewValue}."));
         }
 
         return writes;
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateConcreteWriteSources(
+        SwShRoyalCandyOutputRecord output,
+        bool isCleanup)
+    {
+        var sources = new List<ProjectFileReference>
+        {
+            new(output.Provenance.SourceLayer, output.Provenance.SourceFile),
+        };
+        var needsBaseSource = string.Equals(
+                output.RelativePath,
+                SwShRoyalCandyWorkflowService.ExeFsMainPath,
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                output.RelativePath,
+                SwShRoyalCandyWorkflowService.ItemHashPath,
+                StringComparison.OrdinalIgnoreCase)
+            || IsShopDataOutput(output.RelativePath)
+            || string.Equals(
+                output.RelativePath,
+                SwShRoyalCandyWorkflowService.ItemPath,
+                StringComparison.OrdinalIgnoreCase)
+            || (isCleanup && IsItemTextOutput(output.RelativePath));
+        if (needsBaseSource)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, output.RelativePath));
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static void ValidateConcreteOutputs(
+        OpenedProject project,
+        SwShRoyalCandyWorkflowRecord selectedWorkflow,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection> levelCaps,
+        IReadOnlyList<PlannedFileWrite> writes,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var write in writes)
+        {
+            try
+            {
+                var output = CreateOutputBytes(
+                    project,
+                    selectedWorkflow,
+                    levelCaps,
+                    write.TargetRelativePath,
+                    diagnostics);
+                if (output is null)
+                {
+                    continue;
+                }
+
+                VerifyOutputBytes(selectedWorkflow, write.TargetRelativePath, output);
+            }
+            catch (Exception exception) when (exception is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or InvalidOperationException
+                or OverflowException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Royal Candy output '{write.TargetRelativePath}' could not be generated and verified during review: {exception.Message}",
+                    file: write.TargetRelativePath,
+                    expected: "Round-trip verified Royal Candy output"));
+            }
+        }
+    }
+
+    private static void VerifyOutputBytes(
+        SwShRoyalCandyWorkflowRecord selectedWorkflow,
+        string relativePath,
+        byte[] output)
+    {
+        if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase))
+        {
+            var table = SwShItemTable.Parse(output);
+            if (table.Records.Count(record => record.ItemId == RoyalCandyItemId) != 1)
+            {
+                throw new InvalidDataException($"Royal Candy item output does not expose exactly one item {RoyalCandyItemId} mapping.");
+            }
+
+            return;
+        }
+
+        if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase))
+        {
+            var table = SwShItemHashTable.Parse(output);
+            if (table.Entries.All(entry => entry.ItemId != RoyalCandyItemId))
+            {
+                throw new InvalidDataException($"Royal Candy item-hash output does not contain item {RoyalCandyItemId}.");
+            }
+
+            return;
+        }
+
+        if (IsShopDataOutput(relativePath))
+        {
+            _ = SwShShopDataFile.Parse(output);
+            return;
+        }
+
+        if (IsItemTextOutput(relativePath))
+        {
+            var text = SwShGameTextFile.Parse(output);
+            var expected = GetRoyalCandyTextReplacement(relativePath, selectedWorkflow.WorkflowId);
+            if (text.Lines.Count <= RoyalCandyItemId
+                || !string.Equals(text.Lines[RoyalCandyItemId].Text, expected, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException($"Royal Candy text output did not round-trip item {RoyalCandyItemId} with the expected value.");
+            }
+
+            return;
+        }
+
+        if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase))
+        {
+            var slot = SwShBagHookAmxPatcher.Analyze(output).Slots.FirstOrDefault(candidate =>
+                candidate.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
+            if (slot?.ItemId != RoyalCandyItemId || slot.Quantity != 1)
+            {
+                throw new InvalidDataException("Royal Candy Bag Hook output did not round-trip slot 1 as item 1128 with quantity 1.");
+            }
+        }
     }
 
     private static void AddDeferredOutputDiagnostics(
@@ -821,8 +1061,20 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase))
         {
+            var basePath = ResolveBaseSourcePath(project.Paths, relativePath);
+            if (basePath is null || !File.Exists(basePath))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Royal Candy item generation requires base item.dat to verify the current item 1128 mapping.",
+                    file: relativePath,
+                    expected: "Readable base item.dat"));
+                return null;
+            }
+
             return SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
                 .WriteRoyalCandyRow(
+                    SwShItemTable.Parse(File.ReadAllBytes(basePath)),
                     templateItemId: 50,
                     targetItemId: 1128);
         }
@@ -841,7 +1093,7 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
-            if (TryRestoreFilteredItemHashFromBase(project.Paths, source, sourceBytes, itemHashTable, out var restoredHashBytes))
+            if (TryRestoreFilteredItemHashFromBase(project.Paths, source, sourceBytes, out var restoredHashBytes))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
@@ -869,19 +1121,46 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
-            var baseShopData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
-            var edits = CreateRoyalCandyShopRemovalEdits(shopData, baseShopData);
-            if (edits.Count == 0)
+            var baseBytes = File.ReadAllBytes(basePath);
+            var baseShopData = SwShShopDataFile.Parse(baseBytes);
+            var mapping = SwShRoyalCandyShopPatchMapper.Analyze(shopData, baseShopData);
+            if (mapping.BaseOccurrences == 0)
             {
                 diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    "Royal Candy shop output did not find any Exp. Candy XL shop entries to remove.",
+                    DiagnosticSeverity.Error,
+                    "Royal Candy shop output could not find a base item 1128 shop occurrence.",
                     file: relativePath,
                     expected: "A vanilla shop inventory entry for item 1128"));
+                return null;
+            }
+
+            var isInstalledRefresh = string.Equals(selectedWorkflow.Status, "installed", StringComparison.Ordinal);
+            if (mapping.MissingOccurrences > 0 && !isInstalledRefresh)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Royal Candy preserved the layered shop file because a base item 1128 occurrence was already missing before this workflow was installed.",
+                    file: relativePath,
+                    expected: "Every mapped base item 1128 occurrence present before a fresh Royal Candy install"));
+                return null;
+            }
+
+            if (mapping.MatchedOccurrences == 0)
+            {
                 return sourceBytes;
             }
 
-            return shopData.WriteEdits(edits);
+            var output = shopData.WriteEdits(mapping.RemovalEdits);
+            var outputMapping = SwShRoyalCandyShopPatchMapper.Analyze(
+                SwShShopDataFile.Parse(output),
+                baseShopData);
+            if (outputMapping.MatchedOccurrences != 0
+                || outputMapping.MissingOccurrences != outputMapping.BaseOccurrences)
+            {
+                throw new InvalidDataException("Royal Candy shop output did not remove every uniquely mapped base item 1128 occurrence.");
+            }
+
+            return output;
         }
 
         if (IsItemTextOutput(relativePath))
@@ -900,7 +1179,7 @@ public sealed class SwShRoyalCandyEditSessionService
             var lines = textFile.Lines.ToArray();
             var replacement = GetRoyalCandyTextReplacement(relativePath, selectedWorkflow.WorkflowId);
             lines[RoyalCandyItemId] = lines[RoyalCandyItemId] with { Text = replacement };
-            return SwShGameTextFile.Write(lines);
+            return textFile.WritePreserving(lines);
         }
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase))
@@ -923,6 +1202,10 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
+            var selectedGame = project.Paths.SelectedGame
+                ?? SwShExeFsRoyalCandyMainPatcher.DetectSupportedGame(NsoFile.Parse(sourceBytes).BuildId)
+                ?? throw new InvalidDataException("Royal Candy requires a supported Sword or Shield executable build.");
+
             if (UsesStoryLimits(selectedWorkflow))
             {
                 var storyLevelCaps = CreateStoryLevelCapPatches(selectedWorkflow, levelCaps, diagnostics);
@@ -931,15 +1214,26 @@ public sealed class SwShRoyalCandyEditSessionService
                     return null;
                 }
 
-                return SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                var output = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
                     sourceBytes,
                     storyLevelCaps,
-                    project.Paths.SelectedGame);
+                    selectedGame);
+                SwShExeFsRoyalCandyMainPatcher.VerifyStoryLimitsPatchOutput(
+                    sourceBytes,
+                    output,
+                    storyLevelCaps,
+                    selectedGame);
+                return output;
             }
 
-            return SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
+            var baseOutput = SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
                 sourceBytes,
-                project.Paths.SelectedGame);
+                selectedGame);
+            SwShExeFsRoyalCandyMainPatcher.VerifyBasePatchOutput(
+                sourceBytes,
+                baseOutput,
+                selectedGame);
+            return baseOutput;
         }
 
         diagnostics.Add(CreateDiagnostic(
@@ -1040,7 +1334,6 @@ public sealed class SwShRoyalCandyEditSessionService
         ProjectPaths paths,
         WorkflowFileSource source,
         byte[] sourceBytes,
-        SwShItemHashTable sourceTable,
         out byte[] restoredBytes)
     {
         restoredBytes = [];
@@ -1056,11 +1349,6 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         var baseBytes = File.ReadAllBytes(basePath);
-        if (sourceBytes.Length >= baseBytes.Length)
-        {
-            return false;
-        }
-
         SwShItemHashTable baseTable;
         try
         {
@@ -1076,163 +1364,15 @@ public sealed class SwShRoyalCandyEditSessionService
             return false;
         }
 
-        var baseEntries = baseTable.Entries.ToDictionary(entry => entry.ItemId, entry => entry.Hash);
-        if (sourceTable.Entries.Any(entry => !baseEntries.TryGetValue(entry.ItemId, out var hash) || hash != entry.Hash))
+        var exactLegacyOutput = baseTable.Write();
+        if (exactLegacyOutput.SequenceEqual(baseBytes)
+            || !sourceBytes.SequenceEqual(exactLegacyOutput))
         {
             return false;
         }
 
         restoredBytes = baseBytes;
         return true;
-    }
-
-    private static bool TryRestoreRoyalCandyItemText(
-        ProjectPaths paths,
-        string targetPath,
-        string targetRelativePath,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var targetBytes = File.ReadAllBytes(targetPath);
-        var targetText = SwShGameTextFile.Parse(targetBytes);
-        if (targetText.Lines.Count <= RoyalCandyItemId)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because item {RoyalCandyItemId} is not present.",
-                file: targetRelativePath,
-                expected: $"Text table containing item {RoyalCandyItemId}"));
-            return false;
-        }
-
-        if (!IsRoyalCandyTextValue(targetRelativePath, targetText.Lines[RoyalCandyItemId].Text))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because item {RoyalCandyItemId} does not contain Royal Candy-owned text.",
-                file: targetRelativePath,
-                expected: "Royal Candy item name or description text"));
-            return false;
-        }
-
-        var basePath = ResolveBaseSourcePath(paths, targetRelativePath);
-        if (basePath is null || !File.Exists(basePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because the base text file could not be resolved for row restoration.",
-                file: targetRelativePath,
-                expected: "Readable base RomFS text file"));
-            return false;
-        }
-
-        var baseBytes = File.ReadAllBytes(basePath);
-        var baseText = SwShGameTextFile.Parse(baseBytes);
-        if (baseText.Lines.Count <= RoyalCandyItemId)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because the base text file does not contain item {RoyalCandyItemId}.",
-                file: targetRelativePath,
-                expected: $"Base text table containing item {RoyalCandyItemId}"));
-            return false;
-        }
-
-        var restoredLines = targetText.Lines.ToArray();
-        restoredLines[RoyalCandyItemId] = baseText.Lines[RoyalCandyItemId];
-        var restoredBytes = SwShGameTextFile.Write(restoredLines);
-        if (restoredBytes.SequenceEqual(baseBytes))
-        {
-            File.Delete(targetPath);
-        }
-        else
-        {
-            File.WriteAllBytes(targetPath, restoredBytes);
-        }
-
-        return true;
-    }
-
-    private static bool TryRestoreRoyalCandyShopEntries(
-        ProjectPaths paths,
-        string targetPath,
-        string targetRelativePath,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var basePath = ResolveBaseSourcePath(paths, targetRelativePath);
-        if (basePath is null || !File.Exists(basePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Skipped Royal Candy shop cleanup for '{targetRelativePath}' because the base shop data could not be resolved.",
-                file: targetRelativePath,
-                expected: "Readable base shop_data.bin"));
-            return false;
-        }
-
-        var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(targetPath));
-        var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
-        var edits = CreateRoyalCandyShopRestoreEdits(targetData, baseData);
-        if (edits.Count == 0)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Skipped Royal Candy shop cleanup for '{targetRelativePath}' because no Royal Candy-owned shop edit was detected.",
-                file: targetRelativePath,
-                expected: "Shop data missing base item 1128 entries"));
-            return false;
-        }
-
-        var restoredBytes = targetData.WriteEdits(edits);
-        var restoredData = SwShShopDataFile.Parse(restoredBytes);
-        if (ShopDataSemanticallyEquals(restoredData, baseData))
-        {
-            File.Delete(targetPath);
-        }
-        else
-        {
-            File.WriteAllBytes(targetPath, restoredBytes);
-        }
-
-        return true;
-    }
-
-    private static bool IsRoyalCandyTextValue(string relativePath, string value)
-    {
-        if (TryGetMessageCommonFileName(relativePath, out var fileName)
-            && fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Equals(value, RoyalCandyName, StringComparison.Ordinal)
-                || string.Equals(value, RoyalCandyPluralName, StringComparison.Ordinal);
-        }
-
-        return string.Equals(value, UnlimitedDescription, StringComparison.Ordinal)
-            || string.Equals(value, StoryLimitsDescription, StringComparison.Ordinal);
-    }
-
-    private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
-    {
-        return SwShIndependentExeFsHookDetector.ContainsAny(mainBytes);
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
     }
 
     private static ApplyResult CreateApplyResult(
@@ -1321,272 +1461,6 @@ public sealed class SwShRoyalCandyEditSessionService
                 // including classified plural tables used by the in-bag quantity prompt.
                 || (fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase)
                     && fileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private static IReadOnlyList<SwShShopInventoryEdit> CreateRoyalCandyShopRemovalEdits(
-        SwShShopDataFile targetData,
-        SwShShopDataFile baseData)
-    {
-        var edits = new List<SwShShopInventoryEdit>();
-
-        foreach (var (baseShop, baseIndex) in baseData.SingleShops.Select((shop, index) => (shop, index)))
-        {
-            var targetIndex = ResolveTargetSingleShopIndex(
-                targetData,
-                baseIndex,
-                baseShop.Hash,
-                baseData.SingleShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
-            if (targetIndex < 0)
-            {
-                continue;
-            }
-
-            var targetShop = targetData.SingleShops[targetIndex];
-            AddRoyalCandyRemovalEdit(
-                edits,
-                SwShShopKind.Single,
-                baseShop.Hash,
-                inventoryIndex: 0,
-                shopIndex: targetIndex,
-                targetShop.Inventory.Items,
-                baseShop.Inventory.Items);
-        }
-
-        foreach (var (baseShop, baseIndex) in baseData.MultiShops.Select((shop, index) => (shop, index)))
-        {
-            var targetIndex = ResolveTargetMultiShopIndex(
-                targetData,
-                baseIndex,
-                baseShop.Hash,
-                baseData.MultiShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
-            if (targetIndex < 0)
-            {
-                continue;
-            }
-
-            var targetShop = targetData.MultiShops[targetIndex];
-            var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
-            for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
-            {
-                AddRoyalCandyRemovalEdit(
-                    edits,
-                    SwShShopKind.Multi,
-                    baseShop.Hash,
-                    inventoryIndex,
-                    targetIndex,
-                    targetShop.Inventories[inventoryIndex].Items,
-                    baseShop.Inventories[inventoryIndex].Items);
-            }
-        }
-
-        return edits;
-    }
-
-    private static void AddRoyalCandyRemovalEdit(
-        ICollection<SwShShopInventoryEdit> edits,
-        SwShShopKind kind,
-        ulong hash,
-        int inventoryIndex,
-        int shopIndex,
-        IReadOnlyList<int> targetItems,
-        IReadOnlyList<int> baseItems)
-    {
-        var royalCandyBaseSlots = baseItems
-            .Select((itemId, slot) => (itemId, slot))
-            .Where(entry => entry.itemId == RoyalCandyItemId)
-            .Select(entry => entry.slot)
-            .OrderDescending()
-            .ToArray();
-        if (royalCandyBaseSlots.Length == 0)
-        {
-            return;
-        }
-
-        var updatedItems = targetItems.ToList();
-        foreach (var slot in royalCandyBaseSlots)
-        {
-            if ((uint)slot < (uint)updatedItems.Count && updatedItems[slot] == RoyalCandyItemId)
-            {
-                updatedItems.RemoveAt(slot);
-            }
-        }
-
-        if (updatedItems.Count == targetItems.Count)
-        {
-            return;
-        }
-
-        edits.Add(new SwShShopInventoryEdit(
-            kind,
-            hash,
-            inventoryIndex,
-            Slot: 0,
-            ItemId: 0,
-            Action: SwShShopInventoryEditAction.Set,
-            Items: updatedItems,
-            ShopIndex: shopIndex));
-    }
-
-    private static IReadOnlyList<SwShShopInventoryEdit> CreateRoyalCandyShopRestoreEdits(
-        SwShShopDataFile targetData,
-        SwShShopDataFile baseData)
-    {
-        var edits = new List<SwShShopInventoryEdit>();
-
-        foreach (var (baseShop, baseIndex) in baseData.SingleShops.Select((shop, index) => (shop, index)))
-        {
-            var targetIndex = ResolveTargetSingleShopIndex(
-                targetData,
-                baseIndex,
-                baseShop.Hash,
-                baseData.SingleShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
-            if (targetIndex < 0)
-            {
-                continue;
-            }
-
-            var targetShop = targetData.SingleShops[targetIndex];
-            AddRoyalCandyRestoreEdit(
-                edits,
-                SwShShopKind.Single,
-                baseShop.Hash,
-                inventoryIndex: 0,
-                shopIndex: targetIndex,
-                targetShop.Inventory.Items,
-                baseShop.Inventory.Items);
-        }
-
-        foreach (var (baseShop, baseIndex) in baseData.MultiShops.Select((shop, index) => (shop, index)))
-        {
-            var targetIndex = ResolveTargetMultiShopIndex(
-                targetData,
-                baseIndex,
-                baseShop.Hash,
-                baseData.MultiShops.Count(shop => shop.Hash == baseShop.Hash) == 1);
-            if (targetIndex < 0)
-            {
-                continue;
-            }
-
-            var targetShop = targetData.MultiShops[targetIndex];
-            var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
-            for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
-            {
-                AddRoyalCandyRestoreEdit(
-                    edits,
-                    SwShShopKind.Multi,
-                    baseShop.Hash,
-                    inventoryIndex,
-                    targetIndex,
-                    targetShop.Inventories[inventoryIndex].Items,
-                    baseShop.Inventories[inventoryIndex].Items);
-            }
-        }
-
-        return edits;
-    }
-
-    private static void AddRoyalCandyRestoreEdit(
-        ICollection<SwShShopInventoryEdit> edits,
-        SwShShopKind kind,
-        ulong hash,
-        int inventoryIndex,
-        int shopIndex,
-        IReadOnlyList<int> targetItems,
-        IReadOnlyList<int> baseItems)
-    {
-        var insertSlots = baseItems
-            .Select((itemId, slot) => (itemId, slot))
-            .Where(entry => entry.itemId == RoyalCandyItemId)
-            .Select(entry => entry.slot)
-            .Where(slot => (uint)slot >= (uint)targetItems.Count || targetItems[slot] != RoyalCandyItemId)
-            .ToArray();
-        if (insertSlots.Length == 0)
-        {
-            return;
-        }
-
-        var restoredItems = targetItems.ToList();
-        foreach (var slot in insertSlots)
-        {
-            restoredItems.Insert(Math.Min(slot, restoredItems.Count), RoyalCandyItemId);
-        }
-
-        edits.Add(new SwShShopInventoryEdit(
-            kind,
-            hash,
-            inventoryIndex,
-            Slot: 0,
-            ItemId: 0,
-            Action: SwShShopInventoryEditAction.Set,
-            Items: restoredItems,
-            ShopIndex: shopIndex));
-    }
-
-    private static int ResolveTargetSingleShopIndex(
-        SwShShopDataFile targetData,
-        int baseIndex,
-        ulong hash,
-        bool allowUniqueFallback)
-    {
-        if ((uint)baseIndex < (uint)targetData.SingleShops.Count
-            && targetData.SingleShops[baseIndex].Hash == hash)
-        {
-            return baseIndex;
-        }
-
-        if (!allowUniqueFallback)
-        {
-            return -1;
-        }
-
-        var matches = targetData.SingleShops
-            .Select((shop, index) => (shop, index))
-            .Where(entry => entry.shop.Hash == hash)
-            .Select(entry => entry.index)
-            .Take(2)
-            .ToArray();
-        return matches.Length == 1 ? matches[0] : -1;
-    }
-
-    private static int ResolveTargetMultiShopIndex(
-        SwShShopDataFile targetData,
-        int baseIndex,
-        ulong hash,
-        bool allowUniqueFallback)
-    {
-        if ((uint)baseIndex < (uint)targetData.MultiShops.Count
-            && targetData.MultiShops[baseIndex].Hash == hash)
-        {
-            return baseIndex;
-        }
-
-        if (!allowUniqueFallback)
-        {
-            return -1;
-        }
-
-        var matches = targetData.MultiShops
-            .Select((shop, index) => (shop, index))
-            .Where(entry => entry.shop.Hash == hash)
-            .Select(entry => entry.index)
-            .Take(2)
-            .ToArray();
-        return matches.Length == 1 ? matches[0] : -1;
-    }
-
-    private static bool ShopDataSemanticallyEquals(SwShShopDataFile left, SwShShopDataFile right)
-    {
-        return left.SingleShops.Count == right.SingleShops.Count
-            && left.MultiShops.Count == right.MultiShops.Count
-            && left.SingleShops.Zip(right.SingleShops).All(pair =>
-                pair.First.Hash == pair.Second.Hash
-                && pair.First.Inventory.Items.SequenceEqual(pair.Second.Inventory.Items))
-            && left.MultiShops.Zip(right.MultiShops).All(pair =>
-                pair.First.Hash == pair.Second.Hash
-                && pair.First.Inventories.Count == pair.Second.Inventories.Count
-                && pair.First.Inventories.Zip(pair.Second.Inventories).All(inventoryPair =>
-                    inventoryPair.First.Items.SequenceEqual(inventoryPair.Second.Items)));
     }
 
     private static string GetRoyalCandyDescription(string workflowId)

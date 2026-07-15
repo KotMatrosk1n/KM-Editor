@@ -56,6 +56,9 @@ const swshHookFilters = Object.freeze({
   otherCleanup: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy&FullyQualifiedName~Cleanup',
   otherBehavior: 'FullyQualifiedName~SwShHookReservationTests&FullyQualifiedName!~RoyalCandy&FullyQualifiedName!~Cleanup',
 });
+const swshRoyalCandyDirectFilter = 'FullyQualifiedName~RoyalCandy&FullyQualifiedName!~SwShHookReservationTests';
+const swshRoyalCandyExeFsFilter = 'FullyQualifiedName~ExeFs&FullyQualifiedName!~SwShHookReservationTests';
+const swshRoyalCandyIntegrationFilter = 'FullyQualifiedName~RoyalCandy';
 
 const swshFeatureFilters = new Map([
   ['BagHook', 'BagHook|SwShHookReservationTests'],
@@ -466,6 +469,11 @@ function addChangedCommands() {
 }
 
 function mapChangedFile(file) {
+  if (file === 'scripts/test-slice.mjs' || file === 'scripts/test-slice.test.mjs') {
+    add('test-slice-tests', 'Run changed-test routing regression tests', 'node --test scripts/test-slice.test.mjs');
+    return;
+  }
+
   if (file === 'scripts/run-tauri-rust-tests.ps1') {
     add('tauri-rust-tests', 'Run native desktop Rust tests', tauriRustTests);
     return;
@@ -482,6 +490,11 @@ function mapChangedFile(file) {
   }
 
   if (file === 'tests/README.md' || file.startsWith('docs/') || file.endsWith('.md')) {
+    return;
+  }
+
+  if (isRoyalCandyChangedFile(file)) {
+    addRoyalCandyChangedCommands();
     return;
   }
 
@@ -623,6 +636,71 @@ function mapSwShChange(file) {
   }
 
   add('swsh-tests', 'Run all Sword and Shield tests', dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj'));
+}
+
+function isRoyalCandyChangedFile(file) {
+  return file.startsWith('src/KM.SwSh/RoyalCandy/')
+    || file.startsWith('tests/KM.SwSh.Tests/RoyalCandy/')
+    || file.includes('SwShExeFsRoyalCandyMainPatcher')
+    || file === 'tests/KM.SwSh.Tests/Hooks/SwShHookReservationTests.cs';
+}
+
+function addRoyalCandyChangedCommands() {
+  add(
+    'swsh-royal-candy-build',
+    'Build backend test projects once for Royal Candy validation',
+    'dotnet build KM.Editor.slnx --no-restore --nologo',
+  );
+  addParallel('swsh-royal-candy-tests', 'Run bounded Royal Candy validation shards', [
+    {
+      label: 'Run Royal Candy cleanup hook tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        swshHookFilters.royalCleanup,
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run Royal Candy behavior hook tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        swshHookFilters.royalBehavior,
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run direct Royal Candy workflow tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        swshRoyalCandyDirectFilter,
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run direct Royal Candy ExeFS tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        swshRoyalCandyExeFsFilter,
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run Royal Candy bridge integration tests',
+      command: dotnetProject(
+        'tests/KM.Integration.Tests/KM.Integration.Tests.csproj',
+        swshRoyalCandyIntegrationFilter,
+        { noBuild: true },
+      ),
+    },
+    {
+      label: 'Run remaining hook coexistence tests',
+      command: dotnetProject(
+        'tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj',
+        swshHookFilters.otherAll,
+        { noBuild: true },
+      ),
+    },
+  ]);
 }
 
 function mapZaChange(file) {
@@ -954,6 +1032,19 @@ function getPathPartAfter(file, prefix) {
 }
 
 function getChangedFiles() {
+  const overrideJson = process.env.KM_TEST_CHANGED_FILES_JSON;
+  if (overrideJson !== undefined) {
+    const overrideFiles = JSON.parse(overrideJson);
+    if (!Array.isArray(overrideFiles) || overrideFiles.some((file) => typeof file !== 'string')) {
+      throw new TypeError('KM_TEST_CHANGED_FILES_JSON must be a JSON array of repository-relative file paths.');
+    }
+
+    return [...new Set(overrideFiles
+      .map((file) => file.trim().replaceAll('\\', '/'))
+      .filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }
+
   const files = new Set();
   const mergeBase = execCapture('git merge-base HEAD origin/master').trim() || 'HEAD';
   const commandsToRead = [

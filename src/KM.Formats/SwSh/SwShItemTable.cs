@@ -637,8 +637,12 @@ public sealed class SwShItemTable
         return result;
     }
 
-    public byte[] WriteRoyalCandyRow(int templateItemId, int targetItemId)
+    public byte[] WriteRoyalCandyRow(
+        SwShItemTable baseTable,
+        int templateItemId,
+        int targetItemId)
     {
+        ArgumentNullException.ThrowIfNull(baseTable);
         if (!recordsByItemId.TryGetValue(templateItemId, out var templateRecord))
         {
             throw new ArgumentOutOfRangeException(
@@ -653,28 +657,63 @@ public sealed class SwShItemTable
                 $"Target item {targetItemId} is not present in the item table.");
         }
 
+        if (!baseTable.recordsByItemId.TryGetValue(templateItemId, out var baseTemplateRecord)
+            || !baseTable.recordsByItemId.TryGetValue(targetItemId, out var baseTargetRecord))
+        {
+            throw new InvalidDataException(
+                "Royal Candy item generation requires template item 50 and target item 1128 in the base item table.");
+        }
+
         var maxRowIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(MaxRowIndexOffset));
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(maxRowIndex, ushort.MaxValue);
 
-        if (targetRecord.SharedItemIds.Count == 1 && IsRoyalCandyRowShape(targetRecord, templateRecord))
+        var targetRowOffset = RowsStart + (targetRecord.RawRowIndex * RowSize);
+        var expectedBaseDestinationOwners = baseTargetRecord.SharedItemIds
+            .Where(itemId => targetRecord.RawRowIndex == baseTargetRecord.RawRowIndex || itemId != targetItemId)
+            .ToHashSet();
+        var currentBaseDestinationOwners = RawRowIndexes
+            .Select((rowIndex, itemId) => (rowIndex, itemId))
+            .Where(entry => entry.rowIndex == baseTargetRecord.RawRowIndex)
+            .Select(entry => entry.itemId)
+            .ToHashSet();
+        if (!currentBaseDestinationOwners.SetEquals(expectedBaseDestinationOwners))
+        {
+            throw new InvalidDataException(
+                "The base item 1128 destination has a different owner set in the layered item table, so Royal Candy will not update a row that cannot be restored safely.");
+        }
+
+        if (targetRecord.SharedItemIds.Count == 1
+            && (IsExactRoyalCandyRow(targetRowOffset, templateRecord)
+                || IsExactRoyalCandyRow(targetRowOffset, baseTemplateRecord, baseTable)))
         {
             var refreshed = data.ToArray();
-            WriteRoyalCandyRowShape(refreshed, RowsStart + (targetRecord.RawRowIndex * RowSize), templateRecord);
+            var refreshTemplateOffset = RowsStart + (templateRecord.RawRowIndex * RowSize);
+            data.AsSpan(refreshTemplateOffset, RowSize).CopyTo(refreshed.AsSpan(targetRowOffset, RowSize));
+            WriteRoyalCandyRowShape(refreshed, targetRowOffset, templateRecord);
             return refreshed;
         }
 
-        var result = new byte[data.Length + RowSize];
-        data.CopyTo(result.AsSpan());
-
-        var templateRowOffset = RowsStart + (templateRecord.RawRowIndex * RowSize);
-        var appendedRowOffset = data.Length;
-        result.AsSpan(templateRowOffset, RowSize).CopyTo(result.AsSpan(appendedRowOffset, RowSize));
-        if (targetRecord.SharedItemIds.Count == 1)
+        if (targetRecord.RawRowIndex != baseTargetRecord.RawRowIndex)
         {
-            result.AsSpan(templateRowOffset, RowSize).CopyTo(result.AsSpan(RowsStart + (targetRecord.RawRowIndex * RowSize), RowSize));
-            WriteRoyalCandyRowShape(result, RowsStart + (targetRecord.RawRowIndex * RowSize), templateRecord);
+            throw new InvalidDataException(
+                "Item 1128 points to a non-base row that is not an exact KM Royal Candy row, so Royal Candy will not append another row or overwrite the existing mapping.");
         }
 
+        var templateRowOffset = RowsStart + (templateRecord.RawRowIndex * RowSize);
+        var appendedRowOffset = checked(RowsStart + (maxRowIndex * RowSize));
+        var result = new byte[data.Length + RowSize];
+        data.AsSpan(0, appendedRowOffset).CopyTo(result);
+        data.AsSpan(appendedRowOffset).CopyTo(result.AsSpan(appendedRowOffset + RowSize));
+        if (machineTableOffset >= appendedRowOffset)
+        {
+            var shiftedMachineTableOffset = checked(machineTableOffset + RowSize);
+            var shiftedPointer = checked((ushort)((shiftedMachineTableOffset - HeaderSize) / sizeof(ushort)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                result.AsSpan(MachineTablePointerOffset),
+                shiftedPointer);
+        }
+
+        result.AsSpan(templateRowOffset, RowSize).CopyTo(result.AsSpan(appendedRowOffset, RowSize));
         BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(MaxRowIndexOffset), checked((ushort)(maxRowIndex + 1)));
         BinaryPrimitives.WriteUInt16LittleEndian(
             result.AsSpan(EntryTableOffset + (targetItemId * sizeof(ushort))),
@@ -685,23 +724,136 @@ public sealed class SwShItemTable
         return result;
     }
 
-    private static bool IsRoyalCandyRowShape(SwShItemTableRecord record, SwShItemTableRecord templateRecord)
+    public byte[] RestoreRoyalCandyRowFromBase(
+        SwShItemTable baseTable,
+        int templateItemId,
+        int targetItemId)
     {
-        return record.BuyPrice == 1
-            && record.WattsPrice == 0
-            && record.AlternatePrice == templateRecord.AlternatePrice
-            && record.Pouch == SwShItemPouch.KeyItems
-            && record.PouchFlags == templateRecord.PouchFlags
-            && record.FlingPower == templateRecord.FlingPower
-            && record.FieldUseType == templateRecord.FieldUseType
-            && record.BattlePouch == templateRecord.BattlePouch
-            && record.CanUseOnPokemon
-            && record.ItemType == 9
-            && record.SortIndex == templateRecord.SortIndex
-            && record.ItemSprite == templateRecord.ItemSprite
-            && record.GroupType == 0
-            && record.GroupIndex == 0
-            && (record.Boost0 & 0x04) == 0x04;
+        ArgumentNullException.ThrowIfNull(baseTable);
+        if (!recordsByItemId.TryGetValue(templateItemId, out var templateRecord)
+            || !recordsByItemId.TryGetValue(targetItemId, out var targetRecord)
+            || !baseTable.recordsByItemId.TryGetValue(templateItemId, out var baseTemplateRecord)
+            || !baseTable.recordsByItemId.TryGetValue(targetItemId, out var baseTargetRecord))
+        {
+            throw new InvalidDataException("Royal Candy item restore requires template item 50 and target item 1128 in both current and base tables.");
+        }
+
+        var targetRowOffset = RowsStart + (targetRecord.RawRowIndex * RowSize);
+        if (!IsExactRoyalCandyRow(targetRowOffset, templateRecord)
+            && !IsExactRoyalCandyRow(targetRowOffset, baseTemplateRecord, baseTable))
+        {
+            throw new InvalidDataException("Item 1128 does not point to an exact KM Royal Candy row, so its mapping will not be restored automatically.");
+        }
+
+        var maxRowIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(MaxRowIndexOffset));
+        var baseMaxRowIndex = BinaryPrimitives.ReadUInt16LittleEndian(baseTable.data.AsSpan(MaxRowIndexOffset));
+        if ((uint)baseTargetRecord.RawRowIndex >= maxRowIndex || baseMaxRowIndex > maxRowIndex)
+        {
+            throw new InvalidDataException("Base item 1128 points outside the current item row table.");
+        }
+
+        var baseTargetOffset = RowsStart + (baseTargetRecord.RawRowIndex * RowSize);
+        var sourceBaseTargetOffset = baseTable.RowsStart + (baseTargetRecord.RawRowIndex * RowSize);
+        var expectedDestinationOwners = baseTargetRecord.SharedItemIds
+            .Where(itemId => itemId != targetItemId)
+            .ToHashSet();
+        var currentDestinationOwners = RawRowIndexes
+            .Select((rowIndex, itemId) => (rowIndex, itemId))
+            .Where(entry => entry.rowIndex == baseTargetRecord.RawRowIndex
+                && entry.itemId != targetItemId)
+            .Select(entry => entry.itemId)
+            .ToHashSet();
+        var destinationIsExactOwnedRow = baseTargetRecord.SharedItemIds.Count == 1
+            && (IsExactRoyalCandyRow(baseTargetOffset, templateRecord)
+                || IsExactRoyalCandyRow(baseTargetOffset, baseTemplateRecord, baseTable));
+        if (!currentDestinationOwners.SetEquals(expectedDestinationOwners))
+        {
+            throw new InvalidDataException(
+                "The base item 1128 destination row has a different owner set after Royal Candy was installed, so its mapping will not be restored automatically.");
+        }
+
+        var result = data.ToArray();
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            result.AsSpan(EntryTableOffset + (targetItemId * sizeof(ushort))),
+            checked((ushort)baseTargetRecord.RawRowIndex));
+
+        if (destinationIsExactOwnedRow)
+        {
+            baseTable.data.AsSpan(sourceBaseTargetOffset, RowSize)
+                .CopyTo(result.AsSpan(baseTargetOffset, RowSize));
+        }
+
+        if (targetRecord.RawRowIndex == baseTargetRecord.RawRowIndex)
+        {
+            return result;
+        }
+
+        var rowsEnd = checked(RowsStart + (maxRowIndex * RowSize));
+        var removableRows = Enumerable.Range(baseMaxRowIndex, maxRowIndex - baseMaxRowIndex)
+            .Where(rowIndex =>
+            {
+                var ownersAfterRestore = RawRowIndexes.Count(candidate => candidate == rowIndex)
+                    - (targetRecord.RawRowIndex == rowIndex ? 1 : 0)
+                    + (baseTargetRecord.RawRowIndex == rowIndex ? 1 : 0);
+                var rowOffset = RowsStart + (rowIndex * RowSize);
+                return ownersAfterRestore == 0
+                    && (IsExactRoyalCandyRow(rowOffset, templateRecord)
+                        || IsExactRoyalCandyRow(rowOffset, baseTemplateRecord, baseTable));
+            })
+            .OrderDescending()
+            .ToArray();
+        if (!removableRows.Contains(targetRecord.RawRowIndex))
+        {
+            throw new InvalidDataException(
+                "The active Royal Candy row is not an unowned appended KM row after restoring item 1128's base mapping.");
+        }
+
+        foreach (var removedRowIndex in removableRows)
+        {
+            var removedRowOffset = checked(RowsStart + (removedRowIndex * RowSize));
+            var compacted = new byte[result.Length - RowSize];
+            result.AsSpan(0, removedRowOffset).CopyTo(compacted);
+            result.AsSpan(removedRowOffset + RowSize).CopyTo(compacted.AsSpan(removedRowOffset));
+            for (var itemId = 0; itemId < RawRowIndexes.Count; itemId++)
+            {
+                var entryOffset = EntryTableOffset + (itemId * sizeof(ushort));
+                var rowIndex = BinaryPrimitives.ReadUInt16LittleEndian(compacted.AsSpan(entryOffset));
+                if (rowIndex > removedRowIndex)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        compacted.AsSpan(entryOffset),
+                        checked((ushort)(rowIndex - 1)));
+                }
+            }
+
+            result = compacted;
+        }
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            result.AsSpan(MaxRowIndexOffset),
+            checked((ushort)(maxRowIndex - removableRows.Length)));
+        if (machineTableOffset >= rowsEnd)
+        {
+            var shiftedMachineTableOffset = checked(machineTableOffset - (removableRows.Length * RowSize));
+            var shiftedPointer = checked((ushort)((shiftedMachineTableOffset - HeaderSize) / sizeof(ushort)));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                result.AsSpan(MachineTablePointerOffset),
+                shiftedPointer);
+        }
+
+        return result;
+    }
+
+    private bool IsExactRoyalCandyRow(
+        int rowOffset,
+        SwShItemTableRecord templateRecord,
+        SwShItemTable? templateTable = null)
+    {
+        var owner = templateTable ?? this;
+        var templateRowOffset = owner.RowsStart + (templateRecord.RawRowIndex * RowSize);
+        var expected = owner.data.AsSpan(templateRowOffset, RowSize).ToArray();
+        WriteRoyalCandyRowShape(expected, 0, templateRecord);
+        return data.AsSpan(rowOffset, RowSize).SequenceEqual(expected);
     }
 
     private static void WriteRoyalCandyRowShape(byte[] data, int rowOffset, SwShItemTableRecord templateRecord)

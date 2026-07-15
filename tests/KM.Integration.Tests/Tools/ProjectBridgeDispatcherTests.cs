@@ -3877,29 +3877,7 @@ public sealed class ProjectBridgeDispatcherTests
     public void DispatchLoadRoyalCandyWorkflowReturnsRealPreflightAndOutputs()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..],
-            CreateRoyalCandyItemTable());
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
-            [0x01]);
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
-            CreateRoyalCandyShopData());
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
-            [0x03]);
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..],
-            [0x04]);
-        temp.WriteBaseRomFsFile(
-            SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
-            CreateRoyalCandyBagEventScript());
-        temp.WriteBaseRomFsFile("bin/message/English/common/iteminfo.dat", [0x06]);
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", [0x07]);
-        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
-        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
-        InstallEmptyBagHook(temp);
+        WriteRoyalCandyApplyInputs(temp);
         var requestJson = SerializeRequest(
             KmCommandNames.LoadRoyalCandyWorkflow,
             new LoadRoyalCandyWorkflowRequest(temp.Paths),
@@ -3939,6 +3917,58 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(response.Payload.Workflow.Stats.TotalCheckCount >= 40);
         Assert.Equal(0, response.Payload.Workflow.Stats.FailCount);
         Assert.True(response.Payload.Workflow.Stats.SourceFileCount >= 10);
+    }
+
+    [Theory]
+    [InlineData(
+        "{\"command\":\"royalCandy.load\",\"payload\":{\"paths\":null},\"requestId\":\"request-royal-load-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"royalCandy.workflow.stage\",\"payload\":{\"paths\":null,\"workflowId\":\"royal-candy-unlimited\",\"session\":null},\"requestId\":\"request-royal-stage-null-paths\"}")]
+    public void DispatchRoyalCandyCommandsWithNullPathsReturnInvalidJson(string requestJson)
+    {
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void DispatchStageRoyalCandyWithBlankWorkflowIdReturnsInvalidJson(string? workflowId)
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(temp.Paths, workflowId!, Session: null),
+            requestId: "request-royal-stage-invalid-workflow-id");
+
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Fact]
+    public void DispatchStageRoyalCandyTrimsWorkflowId()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        var response = DeserializeResponse<StageRoyalCandyWorkflowResponse>(
+            new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
+                KmCommandNames.StageRoyalCandyWorkflow,
+                new StageRoyalCandyWorkflowRequest(
+                    temp.Paths,
+                    WorkflowId: "  royal-candy-unlimited  ",
+                    Session: null),
+                requestId: "request-royal-stage-padded-id")));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("royal-candy-unlimited", Assert.Single(response.Payload.Session.PendingEdits).RecordId);
     }
 
     [Fact]

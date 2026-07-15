@@ -71,6 +71,7 @@ import {
   shopRecordSchema,
   shopsWorkflowSchema,
   stageExeFsPatchRequestSchema,
+  stageRoyalCandyWorkflowRequestSchema,
   tradePokemonEditableFieldSchema,
   tradePokemonMoveSchema,
   tradePokemonRecordSchema,
@@ -211,6 +212,32 @@ describe('bridge contracts', () => {
         patchId: 'exefs-main-compatibility'
       }).patchId
     ).toBe('exefs-main-compatibility');
+  });
+
+  it('trims and requires a nonempty Royal Candy workflow ID', () => {
+    const request = {
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'sword' as const
+      },
+      session: null
+    };
+
+    expect(
+      stageRoyalCandyWorkflowRequestSchema.safeParse({ ...request, workflowId: '' }).success
+    ).toBe(false);
+    expect(
+      stageRoyalCandyWorkflowRequestSchema.safeParse({ ...request, workflowId: '   ' }).success
+    ).toBe(false);
+    expect(
+      stageRoyalCandyWorkflowRequestSchema.parse({
+        ...request,
+        workflowId: '  royal-candy-unlimited  '
+      }).workflowId
+    ).toBe('royal-candy-unlimited');
   });
 
   it('accepts the nullable Z-A Wild Zone completion role on encounter slots', () => {

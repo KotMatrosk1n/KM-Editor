@@ -2901,7 +2901,7 @@ export const stageRoyalCandyWorkflowRequestSchema = z.strictObject({
   levelCaps: z.array(royalCandyLevelCapSelectionSchema).optional(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  workflowId: z.string()
+  workflowId: z.string().trim().min(1)
 });
 
 export const stageRoyalCandyWorkflowResponseSchema = z.strictObject({
