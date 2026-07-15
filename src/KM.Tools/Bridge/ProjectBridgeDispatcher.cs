@@ -2317,7 +2317,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadNpcItemGiftWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadNpcItemGiftWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadNpcItemGift(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("NPC Item Gift project paths are required.");
+        var workflow = swShWorkflowService.LoadNpcItemGift(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2326,17 +2328,33 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageNpcItemGift(string requestJson)
     {
         var request = DeserializeRequest<StageNpcItemGiftRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("NPC Item Gift project paths are required.");
+        var gifts = request.Payload.Gifts
+            ?? throw new JsonException("NPC Item Gift selections are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = npcItemGiftEditSessionService.StageGifts(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.Gifts.Select(selection => new SwShNpcItemGiftSelection(
-                selection.GiftId,
-                selection.Quantity,
-                selection.Items.Select(item => new SwShNpcItemGiftItemSelection(
-                    item.SlotId,
-                    item.ItemId)).ToArray())).ToArray(),
+            ProjectBridgeMapper.ToCore(paths),
+            gifts.Select(selection =>
+            {
+                var gift = selection
+                    ?? throw new JsonException("NPC Item Gift selection entries are required.");
+                var items = gift.Items
+                    ?? throw new JsonException("NPC Item Gift item selections are required.");
+                return new SwShNpcItemGiftSelection(
+                    gift.GiftId,
+                    gift.Quantity,
+                    items.Select(item =>
+                    {
+                        var selectedItem = item
+                            ?? throw new JsonException("NPC Item Gift item selection entries are required.");
+                        return new SwShNpcItemGiftItemSelection(
+                            selectedItem.SlotId,
+                            selectedItem.ItemId);
+                    }).ToArray());
+            }).ToArray(),
             session);
         var response = SwShBridgeMapper.ToDto(result);
 

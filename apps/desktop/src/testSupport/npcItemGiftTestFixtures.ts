@@ -27,6 +27,7 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
         displayOrder: 10,
         gifts: [
           {
+            canEditQuantity: true,
             displayOrder: 10,
             giftId: 'mum-postwick-poke-ball',
             items: [
@@ -52,6 +53,7 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
             quantity: 5,
             quantityCell: 5118,
             relativePath: 'romfs/bin/script/amx/main_event_0180.amx',
+            status: 'available',
             vanillaQuantity: 5
           }
         ],
@@ -62,6 +64,7 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
         displayOrder: 30,
         gifts: [
           {
+            canEditQuantity: true,
             displayOrder: 30,
             giftId: 'leon-route-2-poke-ball',
             items: [
@@ -87,6 +90,7 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
             quantity: 20,
             quantityCell: 6119,
             relativePath: 'romfs/bin/script/amx/main_event_0250.amx',
+            status: 'available',
             vanillaQuantity: 20
           }
         ],
@@ -97,6 +101,7 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
         displayOrder: 210,
         gifts: [
           {
+            canEditQuantity: true,
             displayOrder: 210,
             giftId: 'sonia-stow-on-side-revive',
             items: [
@@ -122,9 +127,11 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
             quantity: 2,
             quantityCell: 5246,
             relativePath: 'romfs/bin/script/amx/main_event_1110.amx',
+            status: 'available',
             vanillaQuantity: 2
           },
           {
+            canEditQuantity: true,
             displayOrder: 270,
             giftId: 'sonia-slumbering-weald-max-revive',
             items: [
@@ -150,6 +157,7 @@ export function createNpcItemGiftWorkflowFixture(canEdit = true): NpcItemGiftWor
             quantity: 3,
             quantityCell: 6775,
             relativePath: 'romfs/bin/script/amx/main_event_1820.amx',
+            status: 'available',
             vanillaQuantity: 3
           }
         ],

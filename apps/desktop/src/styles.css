@@ -853,7 +853,8 @@ h2 {
   text-align: left;
 }
 
-.searchable-option-row:hover {
+.searchable-option-row:hover,
+.searchable-option-row.is-active {
   background: linear-gradient(135deg, #27217a, #4f46e5);
 }
 
@@ -873,6 +874,14 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.searchable-option-row small {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .action-row {
@@ -4933,6 +4942,30 @@ h2 {
   color: #d7b35b;
 }
 
+.npc-item-gift-blocker {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  color: #ffd4d4;
+  background: rgb(75 20 28 / 58%);
+  border: 1px solid rgb(255 112 125 / 38%);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.npc-item-gift-blocker svg {
+  flex: 0 0 auto;
+  color: #ff8a97;
+}
+
+.npc-item-gift-blocker ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
 .npc-item-gift-tabs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -4961,6 +4994,10 @@ h2 {
 
 .npc-item-gift-tab {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 44px;
   padding: 0 12px;
   color: var(--color-text-soft);
@@ -5007,14 +5044,12 @@ h2 {
 }
 
 .npc-item-gift-tab.is-staged {
-  padding-right: 58px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
 }
 
-.npc-item-gift-tab.is-staged::after {
-  content: 'Staged';
-  position: absolute;
-  top: 50%;
-  right: 10px;
+.npc-item-gift-staged-badge {
+  position: static;
   padding: 2px 6px;
   color: #1c2436;
   background: #d8b75f;
@@ -5023,7 +5058,6 @@ h2 {
   font-weight: 900;
   line-height: 1;
   text-transform: uppercase;
-  transform: translateY(-50%);
 }
 
 .npc-item-gift-stack {
@@ -5063,7 +5097,16 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.npc-item-gift-card-heading > span {
+.npc-item-gift-card-badges {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.npc-item-gift-card-badges > span {
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -5074,14 +5117,66 @@ h2 {
   border-radius: 8px;
   font-size: 11px;
   font-weight: 900;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.npc-item-gift-status.is-available {
+  color: #bdebd0;
+  background: #10271c;
+  border-color: rgb(72 187 120 / 48%);
+}
+
+.npc-item-gift-status.is-repairable {
+  color: #ffe2a0;
+}
+
+.npc-item-gift-status.is-damaged,
+.npc-item-gift-status.is-missing {
+  color: #ffd4d4;
+  background: #32151b;
+  border-color: rgb(255 112 125 / 42%);
+}
+
+.npc-item-gift-card-blocker {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  color: #ffd4d4;
+  background: rgb(75 20 28 / 42%);
+  border: 1px solid rgb(255 112 125 / 28%);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.npc-item-gift-card-blocker svg {
+  flex: 0 0 auto;
+  color: #ff8a97;
 }
 
 .npc-item-gift-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr)) minmax(112px, 0.35fr);
   gap: 12px;
   align-items: end;
+}
+
+.npc-item-gift-fields.has-1-items {
+  grid-template-columns: minmax(220px, 1fr) minmax(112px, 140px);
+}
+
+.npc-item-gift-fields.has-2-items {
+  grid-template-columns: repeat(2, minmax(220px, 1fr)) minmax(112px, 140px);
+}
+
+.npc-item-gift-fields.has-3-items {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+.npc-item-gift-fields.has-3-items .is-amount {
+  grid-column: 1 / -1;
 }
 
 .npc-item-gift-field {
@@ -5095,6 +5190,21 @@ h2 {
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.npc-item-gift-field small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.npc-item-gift-field .field-error {
+  color: #ff9aa5;
+}
+
+.npc-item-gift-field input[aria-invalid='true'] {
+  border-color: #d94c5c;
+  box-shadow: 0 0 0 2px rgb(217 76 92 / 18%);
 }
 
 .npc-item-gift-field select,
@@ -5191,6 +5301,12 @@ h2 {
 
 .npc-item-gift-source-table td:nth-child(2) {
   overflow-wrap: anywhere;
+}
+
+@container workspace (max-width: 1100px) {
+  .npc-item-gift-fields.has-3-items {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
 }
 
 .starting-items-row {
@@ -8051,6 +8167,29 @@ input {
 
   .workflow-actions {
     justify-content: flex-start;
+  }
+
+  .npc-item-gift-fields.has-1-items,
+  .npc-item-gift-fields.has-2-items,
+  .npc-item-gift-fields.has-3-items {
+    grid-template-columns: 1fr;
+  }
+
+  .npc-item-gift-fields.has-3-items .is-amount {
+    grid-column: auto;
+  }
+
+  .npc-item-gift-card-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .npc-item-gift-card-badges {
+    justify-content: flex-start;
+  }
+
+  .npc-item-gift-field.is-amount {
+    max-width: none;
   }
 
   .item-price-editor-row,

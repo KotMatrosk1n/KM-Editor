@@ -14,68 +14,99 @@ export const loadNpcItemGiftWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
+const npcItemGiftIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(160)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+const npcItemGiftLabelSchema = z
+  .string()
+  .min(1)
+  .max(300)
+  .refine((value) => value.trim().length > 0);
+const npcItemGiftPathSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine((value) => value.trim().length > 0);
+const npcItemGiftSemanticTextSchema = z.string().min(1);
+const npcItemGiftStatusSchema = z.enum([
+  'available',
+  'repairable',
+  'damaged',
+  'missing'
+]);
+const npcItemGiftQuantitySchema = z.number().int().min(1).max(999);
+const npcItemGiftPackedIntegerSchema = z
+  .number()
+  .int()
+  .min(-2_147_483_648)
+  .max(2_147_483_647);
+
 export const npcItemGiftProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.string(),
+  sourceFile: npcItemGiftPathSchema,
   sourceLayer: projectFileLayerSchema
 });
 
 export const npcItemGiftSourceRecordSchema = z.strictObject({
-  label: z.string(),
+  label: npcItemGiftLabelSchema,
   provenance: npcItemGiftProvenanceSchema,
-  relativePath: z.string(),
-  sourceId: z.string(),
-  status: z.string()
+  relativePath: npcItemGiftPathSchema,
+  sourceId: npcItemGiftIdentifierSchema,
+  status: npcItemGiftStatusSchema
 });
 
 export const npcItemGiftItemOptionRecordSchema = z.strictObject({
-  category: z.string(),
+  category: npcItemGiftSemanticTextSchema,
   isKeyItem: z.boolean(),
-  itemId: z.number().int().nonnegative(),
-  name: z.string()
+  itemId: z.number().int().positive(),
+  name: npcItemGiftSemanticTextSchema
 });
 
 export const npcItemGiftItemSlotRecordSchema = z.strictObject({
   itemCell: z.number().int().nonnegative(),
-  itemId: z.number().int().nonnegative(),
-  itemName: z.string(),
-  label: z.string(),
-  slotId: z.string(),
-  vanillaItemId: z.number().int().nonnegative(),
-  vanillaItemName: z.string()
+  itemId: npcItemGiftPackedIntegerSchema,
+  itemName: npcItemGiftSemanticTextSchema,
+  label: npcItemGiftLabelSchema,
+  slotId: npcItemGiftIdentifierSchema,
+  vanillaItemId: z.number().int().positive(),
+  vanillaItemName: npcItemGiftSemanticTextSchema
 });
 
 export const npcItemGiftRecordSchema = z.strictObject({
-  displayOrder: z.number().int(),
-  giftId: z.string(),
-  items: z.array(npcItemGiftItemSlotRecordSchema),
-  label: z.string(),
-  location: z.string(),
-  npcId: z.string(),
-  npcName: z.string(),
+  canEditQuantity: z.boolean(),
+  displayOrder: z.number().int().nonnegative(),
+  giftId: npcItemGiftIdentifierSchema,
+  items: z.array(npcItemGiftItemSlotRecordSchema).min(1).max(16),
+  label: npcItemGiftLabelSchema,
+  location: npcItemGiftLabelSchema,
+  npcId: npcItemGiftIdentifierSchema,
+  npcName: npcItemGiftLabelSchema,
   provenance: npcItemGiftProvenanceSchema,
-  quantity: z.number().int().positive(),
-  quantityCell: z.number().int().nonnegative(),
-  relativePath: z.string(),
-  vanillaQuantity: z.number().int().positive()
+  quantity: npcItemGiftPackedIntegerSchema,
+  quantityCell: z.number().int().nonnegative().nullable(),
+  relativePath: npcItemGiftPathSchema,
+  status: npcItemGiftStatusSchema,
+  vanillaQuantity: npcItemGiftQuantitySchema
 });
 
 export const npcItemGiftNpcGroupSchema = z.strictObject({
-  displayOrder: z.number().int(),
-  gifts: z.array(npcItemGiftRecordSchema),
-  npcId: z.string(),
-  npcName: z.string()
+  displayOrder: z.number().int().nonnegative(),
+  gifts: z.array(npcItemGiftRecordSchema).min(1),
+  npcId: npcItemGiftIdentifierSchema,
+  npcName: npcItemGiftLabelSchema
 });
 
 export const npcItemGiftItemSelectionSchema = z.strictObject({
-  itemId: z.number().int().nonnegative(),
-  slotId: z.string()
+  itemId: npcItemGiftPackedIntegerSchema,
+  slotId: npcItemGiftIdentifierSchema
 });
 
 export const npcItemGiftSelectionSchema = z.strictObject({
-  giftId: z.string(),
-  items: z.array(npcItemGiftItemSelectionSchema),
-  quantity: z.number().int().positive()
+  giftId: npcItemGiftIdentifierSchema,
+  items: z.array(npcItemGiftItemSelectionSchema).min(1).max(16),
+  quantity: npcItemGiftPackedIntegerSchema
 });
 
 export const npcItemGiftWorkflowStatsSchema = z.strictObject({
@@ -99,7 +130,7 @@ export const loadNpcItemGiftWorkflowResponseSchema = z.strictObject({
 });
 
 export const stageNpcItemGiftRequestSchema = z.strictObject({
-  gifts: z.array(npcItemGiftSelectionSchema),
+  gifts: z.array(npcItemGiftSelectionSchema).min(1),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable()
 });

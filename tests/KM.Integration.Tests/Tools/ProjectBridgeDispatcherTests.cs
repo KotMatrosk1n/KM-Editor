@@ -4735,6 +4735,7 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         WriteNpcItemGiftItemOptions(temp);
         temp.WriteBaseRomFsFile(
             "bin/script/amx/main_event_1110.amx",
@@ -4754,11 +4755,12 @@ public sealed class ProjectBridgeDispatcherTests
                 itemId: 29,
                 companionQuantityCells: [6335],
                 companionItemCells: [6336]));
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
         var dispatcher = new ProjectBridgeDispatcher();
 
         var loadResponse = DeserializeResponse<LoadNpcItemGiftWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.LoadNpcItemGiftWorkflow,
-            new LoadNpcItemGiftWorkflowRequest(temp.Paths),
+            new LoadNpcItemGiftWorkflowRequest(paths),
             requestId: "request-npc-gift-load")));
         Assert.Null(loadResponse.Error);
         Assert.NotNull(loadResponse.Payload);
@@ -4766,7 +4768,7 @@ public sealed class ProjectBridgeDispatcherTests
         var stageResponse = DeserializeResponse<StageNpcItemGiftResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.StageNpcItemGift,
             new StageNpcItemGiftRequest(
-                temp.Paths,
+                paths,
                 Session: null,
                 Gifts:
                 [
@@ -4790,7 +4792,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.ValidateEditSession,
-            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            new ValidateEditSessionRequest(paths, stageResponse.Payload.Session),
             requestId: "request-npc-gift-validate")));
         Assert.Null(validateResponse.Error);
         Assert.NotNull(validateResponse.Payload);
@@ -4798,7 +4800,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            new CreateChangePlanRequest(paths, stageResponse.Payload.Session),
             requestId: "request-npc-gift-plan")));
         Assert.Null(planResponse.Error);
         Assert.NotNull(planResponse.Payload);
@@ -4814,7 +4816,7 @@ public sealed class ProjectBridgeDispatcherTests
         var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(
-                temp.Paths,
+                paths,
                 stageResponse.Payload.Session,
                 planResponse.Payload.ChangePlan),
             requestId: "request-npc-gift-apply")));
@@ -4832,7 +4834,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var reloadResponse = DeserializeResponse<LoadNpcItemGiftWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.LoadNpcItemGiftWorkflow,
-            new LoadNpcItemGiftWorkflowRequest(temp.Paths),
+            new LoadNpcItemGiftWorkflowRequest(paths),
             requestId: "request-npc-gift-reload")));
         Assert.Null(reloadResponse.Error);
         Assert.NotNull(reloadResponse.Payload);

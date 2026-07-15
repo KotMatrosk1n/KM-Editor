@@ -220,6 +220,7 @@ import {
   type ZaModMergerWorkflow
 } from './bridge/contracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
+import { type NpcItemGiftSelection } from './bridge/npcItemGiftContracts';
 import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
 import { type ProfanityFilterStatus } from './bridge/profanityFilterContracts';
 import {
@@ -312,7 +313,6 @@ import { canStageAdvancedEditorAction } from './features/advanced-editors/stageA
 import { GameDumpSection } from './features/game-dump/GameDumpSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
 import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
-import { useNpcItemGiftWorkflowController } from './features/npc-item-gift/useNpcItemGiftWorkflowController';
 import {
   type PlacementFieldControl,
   type PlacementObjectGroup,
@@ -2128,6 +2128,7 @@ export function App({
   const [isStartingItemsLoading, setIsStartingItemsLoading] = useState(false);
   const [isStartingItemsStaging, setIsStartingItemsStaging] = useState(false);
   const [isNpcItemGiftLoading, setIsNpcItemGiftLoading] = useState(false);
+  const [isNpcItemGiftStaging, setIsNpcItemGiftStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const [modMergerDirectory1, setModMergerDirectory1] = useState('');
@@ -2533,8 +2534,6 @@ export function App({
 
   const getScopedEditorOutputMode = (section: WorkbenchSection): ChangePlanOutputMode | undefined =>
     isScarletVioletAdvancedEditorSection(section, selectedGame) ? 'standalone' : undefined;
-
-  const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: createProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
 
   const getProtectedWorkflowSections = useCallback(
     (includeActiveSection = true) => {
@@ -5066,6 +5065,49 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsStartingItemsStaging(false);
+    }
+  };
+
+  const handleStageNpcItemGifts = async (gifts: NpcItemGiftSelection[]) => {
+    setIsNpcItemGiftStaging(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageNpcItemGift({
+            gifts,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : npcItemGiftWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('npcItemGift');
+          setNpcItemGiftWorkflow(response.workflow);
+          setEditSessionSection('npcItemGift');
+          setScopedEditorPanelDiagnostics('npcItemGift', response.diagnostics);
+          registerEditorDraftDirty('npcItemGift', false);
+        }
+      );
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsNpcItemGiftStaging(false);
     }
   };
 
@@ -10374,13 +10416,13 @@ export function App({
                 editSession={getEditSessionForSection('npcItemGift')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
-                isStaging={npcItemGiftController.isStaging}
+                isStaging={isNpcItemGiftStaging}
                 onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('npcItemGift')}
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('npcItemGift')}
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('npcItemGift', isDirty)
                 }
-                onStageGifts={npcItemGiftController.stage}
+                onStageGifts={handleStageNpcItemGifts}
                 panelOutput={getScopedEditorPanelOutput('npcItemGift')}
                 workflow={npcItemGiftWorkflow}
               />

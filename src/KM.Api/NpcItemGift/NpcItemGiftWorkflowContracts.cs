@@ -58,9 +58,11 @@ public sealed record NpcItemGiftRecordDto(
     string Location,
     int DisplayOrder,
     string RelativePath,
+    string Status,
     int Quantity,
     int VanillaQuantity,
-    int QuantityCell,
+    int? QuantityCell,
+    bool CanEditQuantity,
     IReadOnlyList<NpcItemGiftItemSlotRecordDto> Items,
     NpcItemGiftProvenanceDto Provenance);
 

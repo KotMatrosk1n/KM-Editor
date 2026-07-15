@@ -43,9 +43,11 @@ public sealed record SwShNpcItemGiftRecord(
     string Location,
     int DisplayOrder,
     string RelativePath,
+    string Status,
     int Quantity,
     int VanillaQuantity,
-    int QuantityCell,
+    int? QuantityCell,
+    bool CanEditQuantity,
     IReadOnlyList<SwShNpcItemGiftItemSlotRecord> Items,
     SwShNpcItemGiftProvenance Provenance);
 
@@ -91,8 +93,9 @@ internal sealed record SwShNpcItemGiftDefinition(
     string Location,
     int DisplayOrder,
     string RelativePath,
-    int QuantityCell,
+    int? QuantityCell,
     int Quantity,
+    bool CanEditQuantity,
     IReadOnlyList<int> CompanionQuantityCells,
     IReadOnlyList<SwShNpcItemGiftItemSlotDefinition> Items,
     ProjectGame? Game = null);
@@ -110,4 +113,5 @@ internal sealed record SwShNpcItemGiftFileGroup(
 
 internal sealed record SwShNpcItemGiftSelectionPatch(
     SwShNpcItemGiftDefinition Definition,
+    SwShNpcItemGiftRecord Current,
     SwShNpcItemGiftSelection Selection);
