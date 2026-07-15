@@ -14,7 +14,7 @@ public sealed record SwShItemTableRecord(
     byte PouchFlags,
     byte FlingPower,
     byte FieldUseType,
-    byte FieldFlags,
+    byte BattlePouch,
     bool CanUseOnPokemon,
     byte ItemType,
     byte SortIndex,
@@ -61,7 +61,7 @@ public enum SwShItemTableField
     PouchFlags,
     FlingPower,
     FieldUseType,
-    FieldFlags,
+    BattlePouch,
     CanUseOnPokemon,
     ItemType,
     SortIndex,
@@ -144,7 +144,7 @@ public sealed class SwShItemTable
     private const int PouchOffset = 0x11;
     private const int FlingPowerOffset = 0x12;
     private const int FieldUseTypeOffset = 0x13;
-    private const int FieldFlagsOffset = 0x14;
+    private const int BattlePouchOffset = 0x14;
     private const int CanUseOnPokemonOffset = 0x15;
     private const int ItemTypeOffset = 0x16;
     private const int SortIndexOffset = 0x18;
@@ -181,7 +181,7 @@ public sealed class SwShItemTable
 
     private readonly byte[] data;
     private readonly int machineTableOffset;
-    private readonly IReadOnlyList<ushort>? machineMoves;
+    private readonly IReadOnlyList<MachineTableEntry>? machineEntries;
     private readonly Dictionary<int, SwShItemTableRecord> recordsByItemId;
 
     private SwShItemTable(
@@ -189,11 +189,11 @@ public sealed class SwShItemTable
         int rowsStart,
         IReadOnlyList<int> rawRowIndexes,
         int machineTableOffset,
-        IReadOnlyList<ushort>? machineMoves)
+        IReadOnlyList<MachineTableEntry>? machineEntries)
     {
         this.data = data;
         this.machineTableOffset = machineTableOffset;
-        this.machineMoves = machineMoves;
+        this.machineEntries = machineEntries;
         RowsStart = rowsStart;
         RawRowIndexes = rawRowIndexes;
 
@@ -233,9 +233,15 @@ public sealed class SwShItemTable
         }
 
         var entryTableLength = checked(itemCount * sizeof(ushort));
-        if (EntryTableOffset + entryTableLength > data.Length)
+        var entryTableEnd = checked(EntryTableOffset + entryTableLength);
+        if (entryTableEnd > data.Length)
         {
             throw new InvalidDataException("Item table index extends past the end of the file.");
+        }
+
+        if (rowsStart < entryTableEnd)
+        {
+            throw new InvalidDataException("Item table row data overlaps the header or item index.");
         }
 
         var rowsLength = checked(maxRowIndex * RowSize);
@@ -256,11 +262,13 @@ public sealed class SwShItemTable
             rawRowIndexes[itemId] = rowIndex;
         }
 
-        var machineTableOffset = TryReadMachineMoves(data, out var machineMoves)
-            ? ResolveMachineTableOffset(data)
-            : -1;
+        var (machineTableOffset, machineEntries) = ReadMachineTable(
+            data,
+            entryTableEnd,
+            rowsStart,
+            rowsLength);
 
-        return new SwShItemTable(data.ToArray(), rowsStart, rawRowIndexes, machineTableOffset, machineMoves);
+        return new SwShItemTable(data.ToArray(), rowsStart, rawRowIndexes, machineTableOffset, machineEntries);
     }
 
     public byte[] WriteEdits(IReadOnlyList<SwShItemTableEdit> edits)
@@ -273,6 +281,11 @@ public sealed class SwShItemTable
             if (!recordsByItemId.TryGetValue(edit.ItemId, out var record))
             {
                 throw new ArgumentOutOfRangeException(nameof(edits), $"Item {edit.ItemId} is not present in the item table.");
+            }
+
+            if (edit.Field == SwShItemTableField.MachineMove)
+            {
+                continue;
             }
 
             var rowOffset = RowsStart + (record.RawRowIndex * RowSize);
@@ -299,8 +312,8 @@ public sealed class SwShItemTable
                 case SwShItemTableField.FieldUseType:
                     WriteByte(result, rowOffset + FieldUseTypeOffset, edit.Value);
                     break;
-                case SwShItemTableField.FieldFlags:
-                    WriteByte(result, rowOffset + FieldFlagsOffset, edit.Value);
+                case SwShItemTableField.BattlePouch:
+                    WriteByte(result, rowOffset + BattlePouchOffset, edit.Value);
                     break;
                 case SwShItemTableField.CanUseOnPokemon:
                     WriteBooleanByte(result, rowOffset + CanUseOnPokemonOffset, edit.Value);
@@ -464,12 +477,19 @@ public sealed class SwShItemTable
                 case SwShItemTableField.FriendshipGain3:
                     WriteSignedByte(result, rowOffset + FriendshipGain3Offset, edit.Value);
                     break;
-                case SwShItemTableField.MachineMove:
-                    WriteMachineMove(result, record, edit.Value);
-                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(edits), $"Item field '{edit.Field}' is not supported.");
             }
+        }
+
+        foreach (var edit in edits)
+        {
+            if (edit.Field != SwShItemTableField.MachineMove)
+            {
+                continue;
+            }
+
+            WriteMachineMove(result, recordsByItemId[edit.ItemId], edit.Value);
         }
 
         return result;
@@ -559,11 +579,6 @@ public sealed class SwShItemTable
         ArgumentOutOfRangeException.ThrowIfNegative(value);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(value, ushort.MaxValue);
 
-        if (record.MachineSlot is null)
-        {
-            throw new ArgumentOutOfRangeException(nameof(record), $"Item {record.ItemId} is not linked to a TM/TR slot.");
-        }
-
         var machineTableLength = MachineTableCount * MachineTableEntrySize;
         if (machineTableOffset < 0
             || machineTableLength > data.Length
@@ -572,7 +587,24 @@ public sealed class SwShItemTable
             throw new InvalidDataException("Item machine move table is not available in this item data file.");
         }
 
-        var moveOffset = machineTableOffset + (record.MachineSlot.Value * MachineTableEntrySize) + MachineTableMoveOffset;
+        var rowOffset = RowsStart + (record.RawRowIndex * RowSize);
+        var groupType = data[rowOffset + GroupTypeOffset];
+        var fieldUseType = data[rowOffset + FieldUseTypeOffset];
+        var groupIndex = data[rowOffset + GroupIndexOffset];
+        if (!TryGetMachineSlot(groupType, fieldUseType, groupIndex, out var machineSlot))
+        {
+            throw new InvalidDataException($"Item {record.ItemId} is not linked to a TM/TR slot after applying its row edits.");
+        }
+
+        var entryOffset = machineTableOffset + (machineSlot * MachineTableEntrySize);
+        var ownerItemId = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(entryOffset));
+        if (ownerItemId == 0 || ownerItemId != record.ItemId)
+        {
+            throw new InvalidDataException(
+                $"TM/TR slot {machineSlot} is owned by item {ownerItemId}, not item {record.ItemId}.");
+        }
+
+        var moveOffset = entryOffset + MachineTableMoveOffset;
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(moveOffset), checked((ushort)value));
     }
 
@@ -662,7 +694,7 @@ public sealed class SwShItemTable
             && record.PouchFlags == templateRecord.PouchFlags
             && record.FlingPower == templateRecord.FlingPower
             && record.FieldUseType == templateRecord.FieldUseType
-            && record.FieldFlags == templateRecord.FieldFlags
+            && record.BattlePouch == templateRecord.BattlePouch
             && record.CanUseOnPokemon
             && record.ItemType == 9
             && record.SortIndex == templateRecord.SortIndex
@@ -697,12 +729,16 @@ public sealed class SwShItemTable
         var fieldUseType = data[rowOffset + FieldUseTypeOffset];
         var groupType = data[rowOffset + GroupTypeOffset];
         var groupIndex = data[rowOffset + GroupIndexOffset];
-        var machineSlot = TryGetMachineSlot(groupType, fieldUseType, groupIndex, out var slot)
-            ? slot
-            : (int?)null;
-        var machineMove = machineSlot is not null && machineMoves is not null
-            ? machineMoves[machineSlot.Value]
-            : (ushort?)null;
+        int? machineSlot = null;
+        ushort? machineMove = null;
+        if (machineEntries is not null
+            && TryGetMachineSlot(groupType, fieldUseType, groupIndex, out var slot)
+            && machineEntries[slot].ItemId != 0
+            && machineEntries[slot].ItemId == itemId)
+        {
+            machineSlot = slot;
+            machineMove = machineEntries[slot].MoveId;
+        }
 
         return new SwShItemTableRecord(
             itemId,
@@ -714,7 +750,7 @@ public sealed class SwShItemTable
             (byte)(pouchByte >> 4),
             data[rowOffset + FlingPowerOffset],
             fieldUseType,
-            data[rowOffset + FieldFlagsOffset],
+            data[rowOffset + BattlePouchOffset],
             data[rowOffset + CanUseOnPokemonOffset] == 1,
             data[rowOffset + ItemTypeOffset],
             data[rowOffset + SortIndexOffset],
@@ -758,44 +794,61 @@ public sealed class SwShItemTable
         return false;
     }
 
-    private static bool TryReadMachineMoves(ReadOnlySpan<byte> data, out IReadOnlyList<ushort>? moves)
+    private static (int Offset, IReadOnlyList<MachineTableEntry>? Entries) ReadMachineTable(
+        ReadOnlySpan<byte> data,
+        int entryTableEnd,
+        int rowsStart,
+        int rowsLength)
     {
-        var tableOffset = ResolveMachineTableOffset(data);
-        if (tableOffset < 0)
-        {
-            moves = null;
-            return false;
-        }
-
-        var result = new ushort[MachineTableCount];
-        for (var slot = 0; slot < result.Length; slot++)
-        {
-            result[slot] = BinaryPrimitives.ReadUInt16LittleEndian(
-                data[(tableOffset + (slot * MachineTableEntrySize) + MachineTableMoveOffset)..]);
-        }
-
-        moves = result;
-        return true;
-    }
-
-    private static int ResolveMachineTableOffset(ReadOnlySpan<byte> data)
-    {
-        if (data.Length < MachineTablePointerOffset + sizeof(ushort))
-        {
-            return -1;
-        }
-
         var tablePointer = BinaryPrimitives.ReadUInt16LittleEndian(data[MachineTablePointerOffset..]);
         if (tablePointer == 0)
         {
-            return -1;
+            return (-1, null);
         }
 
-        var tableBase = tablePointer * 2;
-        var tableOffset = HeaderSize + tableBase;
-        return tableOffset >= HeaderSize
-            && tableOffset + (MachineTableCount * MachineTableEntrySize) <= data.Length
-            ? tableOffset
-            : -1;
+        var tableOffset = checked(HeaderSize + (tablePointer * sizeof(ushort)));
+        var tableLength = MachineTableCount * MachineTableEntrySize;
+        if (tableOffset < entryTableEnd)
+        {
+            throw new InvalidDataException("Item machine table overlaps the header or item index.");
+        }
+
+        if (tableLength > data.Length || tableOffset > data.Length - tableLength)
+        {
+            throw new InvalidDataException("Item machine table extends past the end of the file.");
+        }
+
+        if (RangesOverlap(tableOffset, tableLength, rowsStart, rowsLength))
+        {
+            throw new InvalidDataException("Item machine table overlaps the item row data.");
+        }
+
+        var entries = new MachineTableEntry[MachineTableCount];
+        var ownerSlots = new Dictionary<ushort, int>();
+        for (var slot = 0; slot < entries.Length; slot++)
+        {
+            var entryOffset = tableOffset + (slot * MachineTableEntrySize);
+            var itemId = BinaryPrimitives.ReadUInt16LittleEndian(data[entryOffset..]);
+            var moveId = BinaryPrimitives.ReadUInt16LittleEndian(data[(entryOffset + MachineTableMoveOffset)..]);
+            if (itemId != 0 && !ownerSlots.TryAdd(itemId, slot))
+            {
+                throw new InvalidDataException(
+                    $"Item machine table assigns item {itemId} to both slots {ownerSlots[itemId]} and {slot}.");
+            }
+
+            entries[slot] = new MachineTableEntry(itemId, moveId);
+        }
+
+        return (tableOffset, entries);
     }
+
+    private static bool RangesOverlap(int firstStart, int firstLength, int secondStart, int secondLength)
+    {
+        return firstLength > 0
+            && secondLength > 0
+            && firstStart < secondStart + secondLength
+            && secondStart < firstStart + firstLength;
+    }
+
+    private readonly record struct MachineTableEntry(ushort ItemId, ushort MoveId);
 }

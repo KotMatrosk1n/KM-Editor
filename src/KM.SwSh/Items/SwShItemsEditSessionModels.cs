@@ -5,6 +5,11 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Items;
 
+public sealed record SwShItemFieldUpdate(
+    int ItemId,
+    string Field,
+    string Value);
+
 public sealed record SwShItemsEditResult(
     SwShItemsWorkflow Workflow,
     EditSession Session,

@@ -2579,12 +2579,20 @@ public sealed class ProjectBridgeDispatcher
                     request.Payload.Updates
                         .Select(update => new ZaItemFieldUpdate(update.ItemId, update.Field, update.Value))
                         .ToArray()))
-            : SvBridgeMapper.ToItemFieldsDto(
+            : IsScarletViolet(paths)
+            ? SvBridgeMapper.ToItemFieldsDto(
                 svWorkflowService.UpdateItemFields(
                     paths,
                     session,
                     request.Payload.Updates
                         .Select(update => new SvItemFieldUpdate(update.ItemId, update.Field, update.Value))
+                        .ToArray()))
+            : SwShBridgeMapper.ToItemFieldsDto(
+                itemsEditSessionService.UpdateFields(
+                    paths,
+                    session,
+                    request.Payload.Updates
+                        .Select(update => new SwShItemFieldUpdate(update.ItemId, update.Field, update.Value))
                         .ToArray()));
 
         return SerializeSuccess(response, request.RequestId);
@@ -3448,7 +3456,6 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsScarletVioletOnlyCommand(string command)
     {
         return command is
-            KmCommandNames.UpdateItemFields or
             KmCommandNames.UpdateTrainerFields or
             KmCommandNames.UpdateGiftPokemonFields or
             KmCommandNames.UpdateTradePokemonFields or

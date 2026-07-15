@@ -107,7 +107,9 @@ public sealed record ItemEditableFieldDto(
     string ValueKind,
     int? MinimumValue,
     int? MaximumValue,
-    IReadOnlyList<ItemEditableFieldOptionDto> Options);
+    IReadOnlyList<ItemEditableFieldOptionDto> Options,
+    bool IsReadOnly = false,
+    string? ReadOnlyReason = null);
 
 public sealed record ItemsWorkflowStatsDto(
     int TotalItemCount,

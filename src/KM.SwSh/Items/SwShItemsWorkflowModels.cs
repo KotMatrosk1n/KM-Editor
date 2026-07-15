@@ -51,7 +51,12 @@ public sealed record SwShItemMetadata(
     int FriendshipGain3,
     int? MachineSlot,
     int? MachineMoveId,
-    string? MachineMoveName);
+    string? MachineMoveName)
+{
+    // FieldFlags is retained as the serialized compatibility name. Offset 0x14 is
+    // BattlePouch, not an unknown flags byte.
+    public int BattlePouch => FieldFlags;
+}
 
 public sealed record SwShItemRecord(
     int ItemId,
@@ -64,7 +69,18 @@ public sealed record SwShItemRecord(
     SwShItemMetadata Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<SwShItemDetailGroup> DetailGroups,
-    SwShItemProvenance Provenance);
+    SwShItemProvenance Provenance)
+{
+    public string BaseName { get; init; } = Name;
+
+    public IReadOnlyDictionary<string, int?> FieldValues { get; init; } =
+        SwShItemsWorkflowService.CreateFieldValues(
+            BuyPrice,
+            SellPrice,
+            WattsPrice,
+            AlternatePrice,
+            Metadata);
+}
 
 public sealed record SwShItemEditableFieldOption(
     int Value,
@@ -76,7 +92,9 @@ public sealed record SwShItemEditableField(
     string ValueKind,
     int? MinimumValue,
     int? MaximumValue,
-    IReadOnlyList<SwShItemEditableFieldOption> Options);
+    IReadOnlyList<SwShItemEditableFieldOption> Options,
+    bool IsReadOnly = false,
+    string? ReadOnlyReason = null);
 
 public sealed record SwShItemsWorkflowStats(
     int TotalItemCount,

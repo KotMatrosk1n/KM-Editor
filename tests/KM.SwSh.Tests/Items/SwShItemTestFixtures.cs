@@ -14,18 +14,29 @@ internal static class SwShItemTestFixtures
 
     public static byte[] CreateItemTable(params ItemFixtureRecord[] records)
     {
-        return CreateItemTable(machineMovesBySlot: null, records);
+        return CreateItemTable(machineMovesBySlot: null, machineOwnersBySlot: null, records);
     }
 
     public static byte[] CreateItemTableWithMachineMoves(
         IReadOnlyDictionary<int, int> machineMovesBySlot,
         params ItemFixtureRecord[] records)
     {
-        return CreateItemTable(machineMovesBySlot, records);
+        return CreateItemTable(machineMovesBySlot, machineOwnersBySlot: null, records);
+    }
+
+    public static byte[] CreateItemTableWithMachineEntries(
+        IReadOnlyDictionary<int, (int ItemId, int MoveId)> machineEntriesBySlot,
+        params ItemFixtureRecord[] records)
+    {
+        return CreateItemTable(
+            machineEntriesBySlot.ToDictionary(entry => entry.Key, entry => entry.Value.MoveId),
+            machineEntriesBySlot.ToDictionary(entry => entry.Key, entry => entry.Value.ItemId),
+            records);
     }
 
     private static byte[] CreateItemTable(
         IReadOnlyDictionary<int, int>? machineMovesBySlot,
+        IReadOnlyDictionary<int, int>? machineOwnersBySlot,
         params ItemFixtureRecord[] records)
     {
         var itemCount = records.Length;
@@ -60,7 +71,7 @@ internal static class SwShItemTestFixtures
             data[rowOffset + 0x11] = (byte)(((record.PouchFlags & 0x0F) << 4) | ((byte)record.Pouch & 0x0F));
             data[rowOffset + 0x12] = record.FlingPower;
             data[rowOffset + 0x13] = record.FieldUseType;
-            data[rowOffset + 0x14] = record.FieldFlags;
+            data[rowOffset + 0x14] = record.BattlePouch;
             data[rowOffset + 0x15] = (byte)(record.CanUseOnPokemon ? 1 : 0);
             data[rowOffset + 0x16] = record.ItemType;
             data[rowOffset + 0x18] = record.SortIndex;
@@ -91,6 +102,20 @@ internal static class SwShItemTestFixtures
         {
             foreach (var (slot, moveId) in machineMovesBySlot)
             {
+                var ownerItemId = machineOwnersBySlot is not null
+                    && machineOwnersBySlot.TryGetValue(slot, out var configuredOwner)
+                        ? configuredOwner
+                        : records.FirstOrDefault(record =>
+                            record.GroupType == 4
+                            && record.FieldUseType == 2
+                            && record.GroupIndex == slot)?.ItemId;
+                if (ownerItemId is not null)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(
+                        data.AsSpan(machineTableOffset + (slot * sizeof(uint))),
+                        checked((ushort)ownerItemId.Value));
+                }
+
                 BinaryPrimitives.WriteUInt16LittleEndian(
                     data.AsSpan(machineTableOffset + (slot * sizeof(uint)) + 2),
                     checked((ushort)moveId));
@@ -116,7 +141,7 @@ internal sealed record ItemFixtureRecord(
     byte PouchFlags = 0,
     byte FlingPower = 0,
     byte FieldUseType = 0,
-    byte FieldFlags = 0,
+    byte BattlePouch = 0,
     bool CanUseOnPokemon = false,
     byte ItemType = 0,
     byte SortIndex = 0,

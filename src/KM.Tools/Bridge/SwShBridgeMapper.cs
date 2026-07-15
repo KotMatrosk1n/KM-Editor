@@ -623,6 +623,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateItemFieldsResponse ToItemFieldsDto(SwShItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateItemFieldsResponse(
+            ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateTextEntryResponse ToDto(SwShTextEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -1823,7 +1833,7 @@ public static class SwShBridgeMapper
             item.SellPrice,
             item.WattsPrice,
             item.AlternatePrice,
-            new Dictionary<string, int?>(),
+            item.FieldValues,
             new ItemMetadataDto(
                 item.Metadata.Pouch,
                 item.Metadata.PouchFlags,
@@ -1885,7 +1895,9 @@ public static class SwShBridgeMapper
             field.ValueKind,
             field.MinimumValue,
             field.MaximumValue,
-            field.Options.Select(option => new ItemEditableFieldOptionDto(option.Value, option.Label)).ToArray());
+            field.Options.Select(option => new ItemEditableFieldOptionDto(option.Value, option.Label)).ToArray(),
+            field.IsReadOnly,
+            field.ReadOnlyReason);
     }
 
     private static PokemonRecordDto ToDto(SwShPokemonRecord pokemon)

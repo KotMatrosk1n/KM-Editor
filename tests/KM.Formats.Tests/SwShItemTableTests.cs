@@ -60,6 +60,173 @@ public sealed class SwShItemTableTests
     }
 
     [Fact]
+    public void WriteEditsPatchesBattlePouchAndPreservesEveryOtherByte()
+    {
+        var source = CreateItemTable();
+        var rowOffset = GetRowOffset(source, itemId: 1);
+        source[rowOffset + 0x14] = 1;
+        Array.Resize(ref source, source.Length + 3);
+        source[^3] = 0xA5;
+        source[^2] = 0x5A;
+        source[^1] = 0xC3;
+        var original = source.ToArray();
+
+        var output = SwShItemTable.Parse(source).WriteEdits(
+        [
+            new SwShItemTableEdit(1, SwShItemTableField.BattlePouch, 2),
+        ]);
+
+        Assert.Equal(2, SwShItemTable.Parse(output).Records[1].BattlePouch);
+        Assert.Equal([rowOffset + 0x14], GetChangedOffsets(original, output));
+        Assert.Equal(original[^3..], output[^3..]);
+    }
+
+    [Fact]
+    public void ParseRejectsRowsThatOverlapItemIndex()
+    {
+        var data = CreateItemTable();
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x40), 0x44);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShItemTable.Parse(data));
+
+        Assert.Contains("overlaps the header or item index", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsTruncatedNonzeroMachineTable()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        Array.Resize(ref data, data.Length - 1);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShItemTable.Parse(data));
+
+        Assert.Contains("machine table extends past", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsMachineTableThatOverlapsItemIndex()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x02), 1);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShItemTable.Parse(data));
+
+        Assert.Contains("overlaps the header or item index", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsMachineTableThatOverlapsRows()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x40));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(0x02),
+            checked((ushort)((rowsStart - 0x44) / sizeof(ushort))));
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShItemTable.Parse(data));
+
+        Assert.Contains("overlaps the item row data", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsDuplicateNonzeroMachineOwners()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        WriteMachineEntry(data, slot: 11, itemId: 1, moveId: 86);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShItemTable.Parse(data));
+
+        Assert.Contains("assigns item 1 to both slots 10 and 11", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseOnlyExposesMachineMoveWhenSlotOwnsItem()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        WriteMachineEntry(data, slot: 10, itemId: 2, moveId: 345);
+
+        var table = SwShItemTable.Parse(data);
+
+        Assert.Null(table.Records[1].MachineSlot);
+        Assert.Null(table.Records[1].MachineMoveId);
+        Assert.Throws<InvalidDataException>(
+            () => table.WriteEdits([new SwShItemTableEdit(1, SwShItemTableField.MachineMove, 85)]));
+    }
+
+    [Fact]
+    public void WriteEditsUsesFinalMachineLinkageRegardlessOfEditOrder()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        WriteMachineEntry(data, slot: 10, itemId: 0, moveId: 345);
+        WriteMachineEntry(data, slot: 11, itemId: 1, moveId: 86);
+        var table = SwShItemTable.Parse(data);
+        Assert.Null(table.Records[1].MachineSlot);
+
+        var output = table.WriteEdits(
+        [
+            new SwShItemTableEdit(1, SwShItemTableField.MachineMove, 85),
+            new SwShItemTableEdit(1, SwShItemTableField.GroupIndex, 11),
+        ]);
+        var item = SwShItemTable.Parse(output).Records[1];
+
+        Assert.Equal(11, item.MachineSlot);
+        Assert.Equal((ushort)85, item.MachineMoveId);
+        Assert.Equal((ushort)345, ReadMachineMove(output, slot: 10));
+    }
+
+    [Fact]
+    public void WriteEditsRejectsMachineRelinkToSlotOwnedByAnotherItem()
+    {
+        var data = CreateItemTable(includeMachineTable: true);
+        WriteMachineEntry(data, slot: 11, itemId: 2, moveId: 86);
+        var table = SwShItemTable.Parse(data);
+
+        var exception = Assert.Throws<InvalidDataException>(() => table.WriteEdits(
+        [
+            new SwShItemTableEdit(1, SwShItemTableField.MachineMove, 85),
+            new SwShItemTableEdit(1, SwShItemTableField.GroupIndex, 11),
+        ]));
+
+        Assert.Contains("owned by item 2, not item 1", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteEditsRejectsMachineMoveWhenRowIsUnlinkedBySameBatch()
+    {
+        var table = SwShItemTable.Parse(CreateItemTable(includeMachineTable: true));
+
+        var exception = Assert.Throws<InvalidDataException>(() => table.WriteEdits(
+        [
+            new SwShItemTableEdit(1, SwShItemTableField.MachineMove, 85),
+            new SwShItemTableEdit(1, SwShItemTableField.GroupType, 0),
+        ]));
+
+        Assert.Contains("not linked to a TM/TR slot after applying", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteMachineMoveOnlyChangesMoveHalfAndPreservesTrailingBytes()
+    {
+        var source = CreateItemTable(includeMachineTable: true);
+        Array.Resize(ref source, source.Length + 4);
+        source[^4] = 0xDE;
+        source[^3] = 0xAD;
+        source[^2] = 0xBE;
+        source[^1] = 0xEF;
+        var original = source.ToArray();
+        var moveOffset = GetMachineTableOffset(source) + (10 * sizeof(uint)) + sizeof(ushort);
+
+        var output = SwShItemTable.Parse(source).WriteEdits(
+        [
+            new SwShItemTableEdit(1, SwShItemTableField.MachineMove, 85),
+        ]);
+
+        Assert.Equal([moveOffset, moveOffset + 1], GetChangedOffsets(original, output));
+        Assert.Equal(original.AsSpan(moveOffset - sizeof(ushort), sizeof(ushort)), output.AsSpan(moveOffset - sizeof(ushort), sizeof(ushort)));
+        Assert.Equal(original[^4..], output[^4..]);
+    }
+
+    [Fact]
     public void WriteEditsPatchesNamedBehaviorFlagsAndBoosts()
     {
         var data = CreateItemTable();
@@ -170,10 +337,44 @@ public sealed class SwShItemTableTests
         data[rowOffset + 0x2B] = 20;
         if (includeMachineTable)
         {
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(machineTableOffset + (10 * sizeof(uint))), 1);
             BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(machineTableOffset + (10 * sizeof(uint)) + 2), 345);
         }
 
         return data;
+    }
+
+    private static int GetRowOffset(byte[] data, int itemId)
+    {
+        var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x40));
+        var rowIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x44 + (itemId * sizeof(ushort))));
+        return rowsStart + (rowIndex * 0x30);
+    }
+
+    private static int GetMachineTableOffset(byte[] data)
+    {
+        return 0x44 + (BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x02)) * sizeof(ushort));
+    }
+
+    private static void WriteMachineEntry(byte[] data, int slot, ushort itemId, ushort moveId)
+    {
+        var entryOffset = GetMachineTableOffset(data) + (slot * sizeof(uint));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(entryOffset), itemId);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(entryOffset + sizeof(ushort)), moveId);
+    }
+
+    private static ushort ReadMachineMove(byte[] data, int slot)
+    {
+        var moveOffset = GetMachineTableOffset(data) + (slot * sizeof(uint)) + sizeof(ushort);
+        return BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(moveOffset));
+    }
+
+    private static int[] GetChangedOffsets(byte[] before, byte[] after)
+    {
+        Assert.Equal(before.Length, after.Length);
+        return Enumerable.Range(0, before.Length)
+            .Where(offset => before[offset] != after[offset])
+            .ToArray();
     }
 
     private static byte[] CreateRoyalCandyItemTable()

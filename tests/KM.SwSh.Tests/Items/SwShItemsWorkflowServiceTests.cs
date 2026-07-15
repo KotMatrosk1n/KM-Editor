@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
@@ -53,6 +54,7 @@ public sealed class SwShItemsWorkflowServiceTests
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, item.Provenance.FileState);
         Assert.Equal(SwShItemsWorkflowService.ItemDataPath, item.Provenance.SourceFile);
         Assert.Equal(0, item.Metadata.Pouch);
+        Assert.Equal(2, item.Metadata.BattlePouch);
         Assert.True(item.Metadata.CanUseOnPokemon);
         Assert.Equal(20, item.Metadata.HealAmount);
         Assert.Contains(
@@ -71,6 +73,26 @@ public sealed class SwShItemsWorkflowServiceTests
             workflow.EditableFields,
             editableField => editableField.Field == SwShItemsWorkflowService.FieldUseTypeField
                 && editableField.Options.Any(option => option.Value == 1 && option.Label == "Medicine"));
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Field Use").Details,
+            detail => detail.Label == "Battle pouch" && detail.Value == "Use (2)");
+        var battlePouch = workflow.EditableFields.Single(
+            field => field.Field == SwShItemsWorkflowService.BattlePouchField);
+        Assert.Equal([0, 1, 2], battlePouch.Options.Select(option => option.Value));
+        Assert.DoesNotContain(
+            workflow.EditableFields,
+            field => field.Field == SwShItemsWorkflowService.FieldFlagsField);
+        foreach (var rawField in new[]
+        {
+            SwShItemsWorkflowService.CureStatusFlagsField,
+            SwShItemsWorkflowService.UseFlags1Field,
+            SwShItemsWorkflowService.UseFlags2Field,
+        })
+        {
+            var field = workflow.EditableFields.Single(candidate => candidate.Field == rawField);
+            Assert.True(field.IsReadOnly);
+            Assert.Equal(SwShItemsWorkflowService.RawFlagsReadOnlyReason, field.ReadOnlyReason);
+        }
         Assert.Contains(
             workflow.EditableFields,
             editableField => editableField.Field == SwShItemsWorkflowService.EvHpField
@@ -216,6 +238,31 @@ public sealed class SwShItemsWorkflowServiceTests
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.items");
     }
 
+    [Fact]
+    public void LoadReturnsDiagnosticInsteadOfThrowingForPriceAboveSupportedRange()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var data = SwShItemTestFixtures.CreateItemTable(
+            new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+            new ItemFixtureRecord(1, 1, 300, 15, 3, SwShItemPouch.Medicine));
+        var rowsStart = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x40));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowsStart + 0x30), uint.MaxValue);
+        temp.WriteBaseRomFsFile("bin/pml/item/item.dat", data);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames("None", "Potion"));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShItemsWorkflowService().Load(project);
+
+        Assert.Empty(workflow.Items);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("outside the editor's supported range", StringComparison.Ordinal));
+    }
+
     internal static void WriteBaseItems(TemporarySwShProject temp)
     {
         temp.WriteBaseRomFsFile(
@@ -231,7 +278,7 @@ public sealed class SwShItemsWorkflowServiceTests
                     SwShItemPouch.Medicine,
                     FlingPower: 30,
                     FieldUseType: 1,
-                    FieldFlags: 2,
+                    BattlePouch: 2,
                     CanUseOnPokemon: true,
                     ItemType: 9,
                     SortIndex: 5,

@@ -20,6 +20,7 @@ public sealed class SwShItemsWorkflowService
     public const string PouchFlagsField = "pouchFlags";
     public const string FlingPowerField = "flingPower";
     public const string FieldUseTypeField = "fieldUseType";
+    public const string BattlePouchField = "battlePouch";
     public const string FieldFlagsField = "fieldFlags";
     public const string CanUseOnPokemonField = "canUseOnPokemon";
     public const string ItemTypeField = "itemType";
@@ -130,6 +131,16 @@ public sealed class SwShItemsWorkflowService
         new SwShItemEditableFieldOption(15, "Form Change"),
     ];
 
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> BattlePouchOptions =
+    [
+        new SwShItemEditableFieldOption(0, "None"),
+        new SwShItemEditableFieldOption(1, "Balls"),
+        new SwShItemEditableFieldOption(2, "Use"),
+    ];
+
+    internal const string RawFlagsReadOnlyReason =
+        "Edit the named flag controls so unrelated and unknown bits are preserved.";
+
     private static readonly IReadOnlyList<SwShItemEditableField> BaseEditableFields =
     [
         new SwShItemEditableField(
@@ -189,12 +200,12 @@ public sealed class SwShItemsWorkflowService
             MaximumValue: MaximumByteValue,
             Options: FieldUseTypeOptions),
         new SwShItemEditableField(
-            FieldFlagsField,
-            "Field flags (unknown raw)",
+            BattlePouchField,
+            "Battle pouch",
             "integer",
             MinimumValue: 0,
-            MaximumValue: MaximumByteValue,
-            Options: []),
+            MaximumValue: 2,
+            Options: BattlePouchOptions),
         new SwShItemEditableField(
             CanUseOnPokemonField,
             "Can use on Pokemon",
@@ -239,11 +250,13 @@ public sealed class SwShItemsWorkflowService
             Options: []),
         new SwShItemEditableField(
             CureStatusFlagsField,
-            "Cure status flags",
+            "Cure status flags (raw)",
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
-            Options: []),
+            Options: [],
+            IsReadOnly: true,
+            ReadOnlyReason: RawFlagsReadOnlyReason),
         CreateBooleanEditableField(CureSleepField, "Cures sleep"),
         CreateBooleanEditableField(CurePoisonField, "Cures poison"),
         CreateBooleanEditableField(CureBurnField, "Cures burn"),
@@ -277,14 +290,18 @@ public sealed class SwShItemsWorkflowService
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
-            Options: []),
+            Options: [],
+            IsReadOnly: true,
+            ReadOnlyReason: RawFlagsReadOnlyReason),
         new SwShItemEditableField(
             UseFlags2Field,
             "Use flags 2 (raw)",
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
-            Options: []),
+            Options: [],
+            IsReadOnly: true,
+            ReadOnlyReason: RawFlagsReadOnlyReason),
         CreateBooleanEditableField(RestorePpFlagField, "Restore PP flag"),
         CreateBooleanEditableField(RestoreAllPpFlagField, "Restore all PP flag"),
         CreateBooleanEditableField(RestoreHpFlagField, "Restore HP flag"),
@@ -467,6 +484,15 @@ public sealed class SwShItemsWorkflowService
                 $"Items data source is not a supported Sword/Shield item table: {exception.Message}",
                 file: itemDataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield item.dat"));
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), editableFields, sourceFileCount: 1, diagnostics);
+        }
+        catch (OverflowException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Items data contains a price outside the editor's supported range: {exception.Message}",
+                file: itemDataSource.GraphEntry.RelativePath,
+                expected: "Item prices no greater than 2147483647"));
             return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), editableFields, sourceFileCount: 1, diagnostics);
         }
         catch (IOException exception)
@@ -832,7 +858,10 @@ public sealed class SwShItemsWorkflowService
             metadata,
             item.SharedItemIds,
             CreateDetailGroups(metadata),
-            provenance);
+            provenance)
+        {
+            BaseName = GetItemName(item.ItemId, itemNames),
+        };
     }
 
     private static SwShItemMetadata CreateMetadata(
@@ -844,7 +873,7 @@ public sealed class SwShItemsWorkflowService
             item.PouchFlags,
             item.FlingPower,
             item.FieldUseType,
-            item.FieldFlags,
+            item.BattlePouch,
             item.CanUseOnPokemon,
             item.ItemType,
             item.SortIndex,
@@ -950,6 +979,85 @@ public sealed class SwShItemsWorkflowService
         };
     }
 
+    internal static IReadOnlyDictionary<string, int?> CreateFieldValues(
+        int buyPrice,
+        int sellPrice,
+        int wattsPrice,
+        int alternatePrice,
+        SwShItemMetadata item)
+    {
+        return new Dictionary<string, int?>(StringComparer.Ordinal)
+        {
+            [BuyPriceField] = buyPrice,
+            [SellPriceField] = sellPrice,
+            [WattsPriceField] = wattsPrice,
+            [AlternatePriceField] = alternatePrice,
+            [PouchField] = item.Pouch,
+            [PouchFlagsField] = item.PouchFlags,
+            [FlingPowerField] = item.FlingPower,
+            [FieldUseTypeField] = item.FieldUseType,
+            [BattlePouchField] = item.BattlePouch,
+            [FieldFlagsField] = item.BattlePouch,
+            [CanUseOnPokemonField] = item.CanUseOnPokemon ? 1 : 0,
+            [ItemTypeField] = item.ItemType,
+            [SortIndexField] = item.SortIndex,
+            [ItemSpriteField] = item.ItemSprite,
+            [GroupTypeField] = item.GroupType,
+            [GroupIndexField] = item.GroupIndex,
+            [CureStatusFlagsField] = item.CureStatusFlags,
+            [CureSleepField] = GetBit(item.CureStatusFlags, 0),
+            [CurePoisonField] = GetBit(item.CureStatusFlags, 1),
+            [CureBurnField] = GetBit(item.CureStatusFlags, 2),
+            [CureFreezeField] = GetBit(item.CureStatusFlags, 3),
+            [CureParalysisField] = GetBit(item.CureStatusFlags, 4),
+            [CureConfusionField] = GetBit(item.CureStatusFlags, 5),
+            [CureInfatuationField] = GetBit(item.CureStatusFlags, 6),
+            [GuardSpecField] = GetBit(item.CureStatusFlags, 7),
+            [CanTargetFaintedPokemonField] = GetBit(item.Boost0, 0),
+            [RevivesWholePartyField] = GetBit(item.Boost0, 1),
+            [LevelUpItemField] = GetBit(item.Boost0, 2),
+            [EvolutionItemField] = GetBit(item.Boost0, 3),
+            [AttackBoostField] = (item.Boost0 >> 4) & 0x0F,
+            [DefenseBoostField] = item.Boost1 & 0x0F,
+            [SpecialAttackBoostField] = (item.Boost1 >> 4) & 0x0F,
+            [SpecialDefenseBoostField] = item.Boost2 & 0x0F,
+            [SpeedBoostField] = (item.Boost2 >> 4) & 0x0F,
+            [AccuracyBoostField] = item.Boost3 & 0x0F,
+            [CriticalHitBoostField] = (item.Boost3 >> 4) & 0x03,
+            [PpUpFlagField] = GetBit(item.Boost3, 6),
+            [PpMaxFlagField] = GetBit(item.Boost3, 7),
+            [UseFlags1Field] = item.UseFlags1,
+            [UseFlags2Field] = item.UseFlags2,
+            [RestorePpFlagField] = GetBit(item.UseFlags1, 0),
+            [RestoreAllPpFlagField] = GetBit(item.UseFlags1, 1),
+            [RestoreHpFlagField] = GetBit(item.UseFlags1, 2),
+            [HpEvFlagField] = GetBit(item.UseFlags1, 3),
+            [AttackEvFlagField] = GetBit(item.UseFlags1, 4),
+            [DefenseEvFlagField] = GetBit(item.UseFlags1, 5),
+            [SpeedEvFlagField] = GetBit(item.UseFlags1, 6),
+            [SpecialAttackEvFlagField] = GetBit(item.UseFlags1, 7),
+            [SpecialDefenseEvFlagField] = GetBit(item.UseFlags2, 0),
+            [EvAbove100FlagField] = GetBit(item.UseFlags2, 1),
+            [Friendship1FlagField] = GetBit(item.UseFlags2, 2),
+            [Friendship2FlagField] = GetBit(item.UseFlags2, 3),
+            [Friendship3FlagField] = GetBit(item.UseFlags2, 4),
+            [EvHpField] = item.EvHp,
+            [EvAttackField] = item.EvAttack,
+            [EvDefenseField] = item.EvDefense,
+            [EvSpeedField] = item.EvSpeed,
+            [EvSpecialAttackField] = item.EvSpecialAttack,
+            [EvSpecialDefenseField] = item.EvSpecialDefense,
+            [HealAmountField] = item.HealAmount,
+            [PpGainField] = item.PpGain,
+            [FriendshipGain1Field] = item.FriendshipGain1,
+            [FriendshipGain2Field] = item.FriendshipGain2,
+            [FriendshipGain3Field] = item.FriendshipGain3,
+            [MachineMoveIdField] = item.MachineMoveId,
+        };
+    }
+
+    private static int GetBit(int value, int bitOffset) => (value >> bitOffset) & 1;
+
     internal static IReadOnlyList<SwShItemDetailGroup> CreateDetailGroups(SwShItemMetadata item)
     {
         return
@@ -970,7 +1078,7 @@ public sealed class SwShItemsWorkflowService
                 "Field Use",
                 [
                     new SwShItemDetail("Field use type", $"{FormatFieldUseType(item.FieldUseType)} ({item.FieldUseType.ToString(CultureInfo.InvariantCulture)})"),
-                    new SwShItemDetail("Field flags (unknown raw)", FormatHex(item.FieldFlags)),
+                    new SwShItemDetail("Battle pouch", FormatBattlePouch(item.BattlePouch)),
                     new SwShItemDetail("Can use on Pokemon", FormatBool(item.CanUseOnPokemon)),
                     new SwShItemDetail("Can target fainted Pokemon", FormatBool((item.Boost0 & 0x01) != 0)),
                     new SwShItemDetail("Revives whole party", FormatBool((item.Boost0 & 0x02) != 0)),
@@ -1056,6 +1164,17 @@ public sealed class SwShItemsWorkflowService
         };
     }
 
+    private static string FormatBattlePouch(int value)
+    {
+        return value switch
+        {
+            0 => "None (0)",
+            1 => "Balls (1)",
+            2 => "Use (2)",
+            _ => $"Unknown ({value.ToString(CultureInfo.InvariantCulture)})",
+        };
+    }
+
     private static string FormatMachineSummary(SwShItemMetadata item)
     {
         if (item.GroupType != TechnicalRecordMachineGroup
@@ -1077,7 +1196,7 @@ public sealed class SwShItemsWorkflowService
             $"{machineLabel} -> {item.MachineMoveName ?? GetMoveName(item.MachineMoveId.Value, Array.Empty<string>())} ({item.MachineMoveId.Value})");
     }
 
-    private static string FormatMachineLabel(int machineSlot, bool includeSlot)
+    internal static string FormatMachineLabel(int machineSlot, bool includeSlot)
     {
         if (machineSlot < 0 || machineSlot > TechnicalRecordLastSlot)
         {

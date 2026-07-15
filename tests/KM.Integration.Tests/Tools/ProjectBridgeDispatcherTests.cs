@@ -3833,6 +3833,63 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateItemFieldsIsAtomicForSwordShield()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var rejectedJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new ItemFieldUpdateDto(1, "buyPrice", "451"),
+                    new ItemFieldUpdateDto(1, "healAmount", "999"),
+                ]),
+            requestId: "request-items-batch-rejected"));
+        var rejected = DeserializeResponse<UpdateItemFieldsResponse>(rejectedJson);
+
+        Assert.Null(rejected.Error);
+        Assert.NotNull(rejected.Payload);
+        Assert.Contains(
+            rejected.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.False(rejected.Payload.Session.HasPendingChanges);
+        Assert.Empty(rejected.Payload.Session.PendingEdits);
+        Assert.Equal(300, rejected.Payload.Workflow.Items[1].BuyPrice);
+
+        var acceptedJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new ItemFieldUpdateDto(1, "buyPrice", "451"),
+                    new ItemFieldUpdateDto(1, "healAmount", "25"),
+                ]),
+            requestId: "request-items-batch-accepted"));
+        var accepted = DeserializeResponse<UpdateItemFieldsResponse>(acceptedJson);
+
+        Assert.Null(accepted.Error);
+        Assert.NotNull(accepted.Payload);
+        Assert.DoesNotContain(
+            accepted.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.True(accepted.Payload.Session.HasPendingChanges);
+        Assert.Equal(2, accepted.Payload.Session.PendingEdits.Count);
+        var item = accepted.Payload.Workflow.Items[1];
+        Assert.Equal(451, item.BuyPrice);
+        Assert.Equal(225, item.SellPrice);
+        Assert.Equal(25, item.Metadata.HealAmount);
+        Assert.Equal(25, item.FieldValues["healAmount"]);
+    }
+
+    [Fact]
     public void DispatchUpdateItemFieldReturnsPendingSellPriceSession()
     {
         using var temp = TemporaryBridgeProject.Create();

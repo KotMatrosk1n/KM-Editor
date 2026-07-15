@@ -460,13 +460,13 @@ describe('App', () => {
   it('serializes normal editor mutations across editor switches', async () => {
     const user = userEvent.setup();
     const bridge = createMockProjectBridge({}, true);
-    const originalUpdateItemField = bridge.updateItemField;
+    const originalUpdateItemFields = bridge.updateItemFields;
     const originalUpdateRentalPokemonField = bridge.updateRentalPokemonField;
     let resolveItemUpdate!: () => Promise<void>;
-    bridge.updateItemField = vi.fn(
-      (request: Parameters<typeof originalUpdateItemField>[0]) =>
-        new Promise<Awaited<ReturnType<typeof originalUpdateItemField>>>((resolve) => {
-          resolveItemUpdate = () => originalUpdateItemField(request).then(resolve);
+    bridge.updateItemFields = vi.fn(
+      (request: Parameters<typeof originalUpdateItemFields>[0]) =>
+        new Promise<Awaited<ReturnType<typeof originalUpdateItemFields>>>((resolve) => {
+          resolveItemUpdate = () => originalUpdateItemFields(request).then(resolve);
         })
     );
     const updateRentalPokemonField = vi.fn(
@@ -504,7 +504,7 @@ describe('App', () => {
     await user.clear(buyPriceInput);
     await user.type(buyPriceInput, '500');
     await user.click(within(itemInspector).getByRole('button', { name: 'Stage' }));
-    await waitFor(() => expect(bridge.updateItemField).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(bridge.updateItemFields).toHaveBeenCalledTimes(1));
 
     await user.click(within(navigation).getByRole('button', { name: 'Changes' }));
     await user.click(
