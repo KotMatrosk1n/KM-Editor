@@ -17,7 +17,23 @@ public sealed record UpdateRaidBattleSlotFieldRequest(
     string Field,
     string Value);
 
+public sealed record RaidBattleFieldUpdateDto(
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);
+
+public sealed record UpdateRaidBattleSlotFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<RaidBattleFieldUpdateDto?>? Updates);
+
 public sealed record UpdateRaidBattleSlotFieldResponse(
+    RaidBattlesWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateRaidBattleSlotFieldsResponse(
     RaidBattlesWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

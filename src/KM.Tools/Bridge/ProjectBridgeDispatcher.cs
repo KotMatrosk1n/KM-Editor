@@ -324,6 +324,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateEncounterSlotFields => DispatchUpdateEncounterSlotFields(requestJson),
                 KmCommandNames.LoadRaidBattlesWorkflow => DispatchLoadRaidBattlesWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
+                KmCommandNames.UpdateRaidBattleSlotFields => DispatchUpdateRaidBattleSlotFields(requestJson),
                 KmCommandNames.LoadTeraRaidsWorkflow => DispatchLoadTeraRaidsWorkflow(requestJson),
                 KmCommandNames.UpdateTeraRaidField => DispatchUpdateTeraRaidField(requestJson),
                 KmCommandNames.UpdateTeraRaidFields => DispatchUpdateTeraRaidFields(requestJson),
@@ -1489,6 +1490,30 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateRaidBattleSlotFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateRaidBattleSlotFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates?
+            .Select(update => update is null
+                ? null
+                : new SwShRaidBattleFieldUpdate(
+                    update.TableId,
+                    update.Slot,
+                    update.Field,
+                    update.Value))
+            .ToArray();
+        var result = raidBattlesEditSessionService.UpdateSlotFields(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            updates);
+        var response = SwShBridgeMapper.ToFieldsDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3591,6 +3616,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.SetDynamaxAdventureSaveSeed or
             KmCommandNames.LoadRaidBattlesWorkflow or
             KmCommandNames.UpdateRaidBattleSlotField or
+            KmCommandNames.UpdateRaidBattleSlotFields or
             KmCommandNames.LoadRaidRewardsWorkflow or
             KmCommandNames.UpdateRaidRewardField or
             KmCommandNames.UpdateRaidRewardFields or

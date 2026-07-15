@@ -5,6 +5,12 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Raids;
 
+public sealed record SwShRaidBattleFieldUpdate(
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);
+
 public sealed record SwShRaidBattlesEditResult(
     SwShRaidBattlesWorkflow Workflow,
     EditSession Session,

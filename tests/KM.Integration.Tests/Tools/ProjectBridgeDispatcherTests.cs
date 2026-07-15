@@ -2225,6 +2225,81 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchRaidBattleSlotFieldBatchStagesAllFieldsAtomically()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidBattleBridgeFixtures.WriteBaseRaidBattles(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadRaidBattlesWorkflow,
+            new LoadRaidBattlesWorkflowRequest(temp.Paths),
+            requestId: "request-raid-battle-batch-load");
+        var loadResponse = DeserializeResponse<LoadRaidBattlesWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        var table = Assert.Single(Assert.IsType<LoadRaidBattlesWorkflowResponse>(loadResponse.Payload).Workflow.Tables);
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateRaidBattleSlotFields,
+            new UpdateRaidBattleSlotFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RaidBattleFieldUpdateDto(table.TableId, 1, "star5Probability", "40"),
+                    new RaidBattleFieldUpdateDto(table.TableId, 2, "flawlessIvs", "6"),
+                    new RaidBattleFieldUpdateDto(table.TableId, 2, "star5Probability", "60"),
+                ]),
+            requestId: "request-raid-battle-batch-update");
+
+        var response = DeserializeResponse<UpdateRaidBattleSlotFieldsResponse>(dispatcher.Dispatch(updateJson));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        var updatedSlots = response.Payload.Workflow.Tables.Single(candidate => candidate.TableId == table.TableId).Slots;
+        Assert.Equal(40, updatedSlots[0].Probabilities[4]);
+        Assert.Equal(6, updatedSlots[1].FlawlessIvs);
+        Assert.Equal(60, updatedSlots[1].Probabilities[4]);
+        Assert.Equal(3, response.Payload.Session.PendingEdits.Count);
+        Assert.DoesNotContain(response.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchRaidBattleSlotFieldBatchRejectsTheWholeBatchWhenOneFieldIsInvalid()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidBattleBridgeFixtures.WriteBaseRaidBattles(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadRaidBattlesWorkflow,
+            new LoadRaidBattlesWorkflowRequest(temp.Paths),
+            requestId: "request-raid-battle-rejected-batch-load");
+        var loadResponse = DeserializeResponse<LoadRaidBattlesWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        var table = Assert.Single(Assert.IsType<LoadRaidBattlesWorkflowResponse>(loadResponse.Payload).Workflow.Tables);
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateRaidBattleSlotFields,
+            new UpdateRaidBattleSlotFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RaidBattleFieldUpdateDto(table.TableId, 2, "flawlessIvs", "6"),
+                    new RaidBattleFieldUpdateDto(table.TableId, 2, "star5Probability", "101"),
+                ]),
+            requestId: "request-raid-battle-rejected-batch-update");
+
+        var response = DeserializeResponse<UpdateRaidBattleSlotFieldsResponse>(dispatcher.Dispatch(updateJson));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.Session.PendingEdits);
+        var unchangedSlot = response.Payload.Workflow.Tables.Single(candidate => candidate.TableId == table.TableId).Slots[1];
+        Assert.Equal(0, unchangedSlot.FlawlessIvs);
+        Assert.Equal(50, unchangedSlot.Probabilities[4]);
+        Assert.Contains(response.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void DispatchRaidBattleEditValidatePlanAndApplyWritesNestDataPack()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2292,6 +2367,84 @@ public sealed class ProjectBridgeDispatcherTests
         var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
         var outputArchive = SwShEncounterNestArchive.Parse(outputPack.GetFileByName(SwShRaidBattlesWorkflowService.EncounterMemberName));
         Assert.Equal(6, outputArchive.Tables[0].Entries[1].FlawlessIvs);
+    }
+
+    [Fact]
+    public void DispatchRaidBattleApplyPreservesPreviouslyAppliedRaidRewardChanges()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidBattleBridgeFixtures.WriteBaseRaidBattles(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var rewards = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-raid-preservation-rewards-load"))).Payload!.Workflow;
+        var dropTable = Assert.Single(rewards.Tables);
+        var rewardUpdate = DeserializeResponse<UpdateRaidRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidRewardField,
+            new UpdateRaidRewardFieldRequest(
+                temp.Paths,
+                Session: null,
+                dropTable.TableId,
+                Slot: 2,
+                Field: "star5Value",
+                Value: "77"),
+            requestId: "request-raid-preservation-reward-update"))).Payload!;
+        var rewardPlan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, rewardUpdate.Session),
+            requestId: "request-raid-preservation-reward-plan"))).Payload!.ChangePlan;
+        var rewardApply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, rewardUpdate.Session, rewardPlan),
+            requestId: "request-raid-preservation-reward-apply"))).Payload!.ApplyResult;
+        Assert.DoesNotContain(
+            rewardApply.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var battles = DeserializeResponse<LoadRaidBattlesWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBattlesWorkflow,
+            new LoadRaidBattlesWorkflowRequest(temp.Paths),
+            requestId: "request-raid-preservation-battles-load"))).Payload!.Workflow;
+        var battleTable = Assert.Single(battles.Tables);
+        var battleUpdate = DeserializeResponse<UpdateRaidBattleSlotFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidBattleSlotField,
+            new UpdateRaidBattleSlotFieldRequest(
+                temp.Paths,
+                Session: null,
+                battleTable.TableId,
+                Slot: 2,
+                Field: "flawlessIvs",
+                Value: "6"),
+            requestId: "request-raid-preservation-battle-update"))).Payload!;
+        var battlePlan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, battleUpdate.Session),
+            requestId: "request-raid-preservation-battle-plan"))).Payload!.ChangePlan;
+        var battleApply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, battleUpdate.Session, battlePlan),
+            requestId: "request-raid-preservation-battle-apply"))).Payload!.ApplyResult;
+        Assert.DoesNotContain(
+            battleApply.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak")));
+        var battleArchive = SwShEncounterNestArchive.Parse(
+            outputPack.GetFileByName(SwShRaidBattlesWorkflowService.EncounterMemberName));
+        var rewardArchive = SwShNestHoleRewardArchive.Parse(
+            outputPack.GetFileByName("nest_hole_drop_rewards.bin"));
+        Assert.Equal(6, battleArchive.Tables[0].Entries[1].FlawlessIvs);
+        Assert.Equal(77u, rewardArchive.Tables[0].Rewards[1].Values[4]);
     }
 
     [Fact]
@@ -2591,14 +2744,20 @@ public sealed class ProjectBridgeDispatcherTests
         }
     }
 
-    [Fact]
-    public void DispatchCombinedRaidRewardEditsPreserveDropAndBonusChanges()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DispatchCombinedRaidPackEditsPreserveBattleDropAndBonusChanges(bool battleFirst)
     {
         using var temp = TemporaryBridgeProject.Create();
-        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        SwShRaidBattleBridgeFixtures.WriteBaseRaidBattles(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var dispatcher = new ProjectBridgeDispatcher();
 
+        var battleWorkflow = DeserializeResponse<LoadRaidBattlesWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBattlesWorkflow,
+            new LoadRaidBattlesWorkflowRequest(temp.Paths),
+            requestId: "request-combined-raid-battle-load"))).Payload!.Workflow;
         var dropWorkflow = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.LoadRaidRewardsWorkflow,
             new LoadRaidRewardsWorkflowRequest(temp.Paths),
@@ -2611,6 +2770,20 @@ public sealed class ProjectBridgeDispatcherTests
             KmCommandNames.StartEditSession,
             new StartEditSessionRequest(temp.Paths),
             requestId: "request-combined-raid-start"))).Payload!.Session;
+
+        if (battleFirst)
+        {
+            session = DeserializeResponse<UpdateRaidBattleSlotFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.UpdateRaidBattleSlotField,
+                new UpdateRaidBattleSlotFieldRequest(
+                    temp.Paths,
+                    session,
+                    Assert.Single(battleWorkflow.Tables).TableId,
+                    Slot: 2,
+                    Field: "flawlessIvs",
+                    Value: "6"),
+                requestId: "request-combined-raid-battle-first-update"))).Payload!.Session;
+        }
 
         var dropUpdate = DeserializeResponse<UpdateRaidRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.UpdateRaidRewardField,
@@ -2632,17 +2805,33 @@ public sealed class ProjectBridgeDispatcherTests
                 Field: "star1Value",
                 Value: "88"),
             requestId: "request-combined-raid-bonus-update"))).Payload!;
+        session = bonusUpdate.Session;
+
+        if (!battleFirst)
+        {
+            session = DeserializeResponse<UpdateRaidBattleSlotFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.UpdateRaidBattleSlotField,
+                new UpdateRaidBattleSlotFieldRequest(
+                    temp.Paths,
+                    session,
+                    Assert.Single(battleWorkflow.Tables).TableId,
+                    Slot: 2,
+                    Field: "flawlessIvs",
+                    Value: "6"),
+                requestId: "request-combined-raid-battle-last-update"))).Payload!.Session;
+        }
 
         var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, bonusUpdate.Session),
+            new CreateChangePlanRequest(temp.Paths, session),
             requestId: "request-combined-raid-plan"))).Payload!.ChangePlan;
         var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(temp.Paths, bonusUpdate.Session, plan),
+            new ApplyChangePlanRequest(temp.Paths, session, plan),
             requestId: "request-combined-raid-apply"))).Payload!.ApplyResult;
 
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(plan.Writes).TargetRelativePath);
         Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(apply.WrittenFiles));
         var outputPath = Path.Combine(
             temp.OutputRootPath,
@@ -2653,8 +2842,11 @@ public sealed class ProjectBridgeDispatcherTests
             "resident",
             "data_table.gfpak");
         var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var battleArchive = SwShEncounterNestArchive.Parse(
+            outputPack.GetFileByName(SwShRaidBattlesWorkflowService.EncounterMemberName));
         var dropArchive = SwShNestHoleRewardArchive.Parse(outputPack.GetFileByName("nest_hole_drop_rewards.bin"));
         var bonusArchive = SwShNestHoleRewardArchive.Parse(outputPack.GetFileByName("nest_hole_bonus_rewards.bin"));
+        Assert.Equal(6, battleArchive.Tables[0].Entries[1].FlawlessIvs);
         Assert.Equal(77u, dropArchive.Tables[0].Rewards[1].Values[4]);
         Assert.Equal(88u, bonusArchive.Tables[0].Rewards[0].Values[0]);
     }
@@ -5225,7 +5417,8 @@ public sealed class ProjectBridgeDispatcherTests
             new LoadRaidBattlesWorkflowRequest(temp.Paths with { SelectedGame = ProjectGameDto.Scarlet }),
             requestId: "request-swsh-only");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var responseJson = dispatcher.Dispatch(requestJson);
         var response = DeserializeResponse<object>(responseJson);
 
         Assert.Null(response.Payload);
@@ -5233,6 +5426,25 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("bridge.gameMismatch", response.Error.Code);
         Assert.Contains("Sword/Shield", response.Error.Message);
         Assert.Equal("request-swsh-only", response.RequestId);
+
+        var raidBattleBatchRequestJson = SerializeRequest(
+            KmCommandNames.UpdateRaidBattleSlotFields,
+            new UpdateRaidBattleSlotFieldsRequest(
+                temp.Paths with { SelectedGame = ProjectGameDto.Scarlet },
+                Session: null,
+                Updates:
+                [
+                    new RaidBattleFieldUpdateDto(
+                        "raid:0:AABBCCDD00112233",
+                        1,
+                        "flawlessIvs",
+                        "6"),
+                ]),
+            requestId: "request-swsh-raid-battle-fields-only");
+        var raidBattleBatchResponse = DeserializeResponse<object>(dispatcher.Dispatch(raidBattleBatchRequestJson));
+        Assert.Null(raidBattleBatchResponse.Payload);
+        Assert.NotNull(raidBattleBatchResponse.Error);
+        Assert.Equal("bridge.gameMismatch", raidBattleBatchResponse.Error.Code);
 
         var staticRequestJson = SerializeRequest(
             KmCommandNames.UpdateStaticEncounterFields,

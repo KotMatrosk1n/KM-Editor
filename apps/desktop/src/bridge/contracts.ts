@@ -35,6 +35,7 @@ export const kmCommandNameValues = [
   'encounters.slots.update',
   'raidBattles.load',
   'raidBattles.slot.update',
+  'raidBattles.slots.update',
   'teraRaids.load',
   'teraRaids.field.update', 'teraRaids.fields.update',
   'raidRewards.load',
@@ -148,6 +149,7 @@ export const kmCommandNames = {
   updateEncounterSlotFields: 'encounters.slots.update',
   loadRaidBattlesWorkflow: 'raidBattles.load',
   updateRaidBattleSlotField: 'raidBattles.slot.update',
+  updateRaidBattleSlotFields: 'raidBattles.slots.update',
   loadTeraRaidsWorkflow: 'teraRaids.load',
   updateTeraRaidField: 'teraRaids.field.update',
   updateTeraRaidFields: 'teraRaids.fields.update',
@@ -1919,9 +1921,9 @@ export const raidBattleSlotRecordSchema = z.strictObject({
   genderLabel: z.string(),
   isGigantamax: z.boolean(),
   levelTableHash: z.string(),
-  probabilities: z.array(z.number().int().nonnegative()),
+  probabilities: z.array(z.number().int().nonnegative()).min(5),
   probabilitySummary: z.string(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().positive(),
   species: z.string(),
   speciesId: z.number().int().nonnegative()
 });
@@ -3405,12 +3407,31 @@ export const updateRaidBattleSlotFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().positive(),
   tableId: z.string(),
   value: z.string()
 });
 
+export const raidBattleFieldUpdateSchema = z.strictObject({
+  field: z.string(),
+  slot: z.number().int().positive(),
+  tableId: z.string(),
+  value: z.string()
+});
+
+export const updateRaidBattleSlotFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(raidBattleFieldUpdateSchema).min(1)
+});
+
 export const updateRaidBattleSlotFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: raidBattlesWorkflowSchema
+});
+
+export const updateRaidBattleSlotFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: raidBattlesWorkflowSchema
@@ -3855,6 +3876,13 @@ export type UpdateRaidBattleSlotFieldRequest = z.infer<
 >;
 export type UpdateRaidBattleSlotFieldResponse = z.infer<
   typeof updateRaidBattleSlotFieldResponseSchema
+>;
+export type RaidBattleFieldUpdate = z.infer<typeof raidBattleFieldUpdateSchema>;
+export type UpdateRaidBattleSlotFieldsRequest = z.infer<
+  typeof updateRaidBattleSlotFieldsRequestSchema
+>;
+export type UpdateRaidBattleSlotFieldsResponse = z.infer<
+  typeof updateRaidBattleSlotFieldsResponseSchema
 >;
 export type TeraRaidFieldUpdate = z.infer<typeof teraRaidFieldUpdateSchema>;
 export type UpdateTeraRaidFieldRequest = z.infer<

@@ -230,6 +230,55 @@ describe('projectBridge', () => {
     });
   });
 
+  it('sends Raid Battles field batches through one atomic command', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.updateRaidBattleSlotFields({
+        paths: editableProjectPaths,
+        session: null,
+        updates: [
+          {
+            field: 'flawlessIvs',
+            slot: 1,
+            tableId: 'raid:0:AABBCCDD00112233',
+            value: '6'
+          },
+          {
+            field: 'star5Probability',
+            slot: 1,
+            tableId: 'raid:0:AABBCCDD00112233',
+            value: '80'
+          }
+        ]
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'raidBattles.slots.update',
+      payload: {
+        updates: [
+          {
+            field: 'flawlessIvs',
+            slot: 1,
+            tableId: 'raid:0:AABBCCDD00112233',
+            value: '6'
+          },
+          {
+            field: 'star5Probability',
+            slot: 1,
+            tableId: 'raid:0:AABBCCDD00112233',
+            value: '80'
+          }
+        ]
+      }
+    });
+  });
+
   it('sends Raid Bonus Rewards field batches through one atomic command', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {
