@@ -1633,6 +1633,12 @@ public static class SwShBridgeMapper
             workflow.InstallMessage,
             workflow.LogicExpression,
             workflow.CapLogicSha256,
+            workflow.BuildId,
+            workflow.DetectedGame is null
+                ? null
+                : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+            workflow.DisplayHookOffsetHex,
+            workflow.RuntimeHookOffsetHex,
             workflow.Caps.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance),
             new CatchCapWorkflowStatsDto(

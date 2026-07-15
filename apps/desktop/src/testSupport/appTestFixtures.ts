@@ -4079,15 +4079,28 @@ export function createMockProjectBridge(
     label: 'Catch Cap Editor'
   };
   const catchCapWorkflow: CatchCapWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
     capLogicSha256: 'AABBCC',
     caps: Array.from({ length: 9 }, (_, badgeCount) => ({
       badgeCount,
-      label: `${badgeCount} badges`,
+      label: [
+        'No badges',
+        'First badge',
+        'Second badge',
+        'Third badge',
+        'Fourth badge',
+        'Fifth badge',
+        'Sixth badge',
+        'Seventh badge',
+        'Eighth badge'
+      ][badgeCount]!,
       levelCap: badgeCount === 8 ? 100 : 20 + badgeCount * 5,
       maximumLevelCap: 100,
       minimumLevelCap: badgeCount === 8 ? 100 : 1
     })),
+    detectedGame: 'sword',
     diagnostics: [],
+    displayHookOffsetHex: 'main.text+0x13AE3AC',
     installMessage: 'Catch Cap Editor can patch display and runtime capture checks in exefs/main.',
     installStatus: canEdit ? 'available' : 'readOnly',
     logicExpression: 'badge_count < 8 ? cap_table[badge_count] : 100',
@@ -4100,6 +4113,7 @@ export function createMockProjectBridge(
       sourceFileCount: 1,
       totalCapCount: 9
     },
+    runtimeHookOffsetHex: 'main.text+0x13AE3DC',
     summary: catchCapWorkflowSummary
   };
   const hyperTrainingWorkflowSummary: WorkflowSummary = {

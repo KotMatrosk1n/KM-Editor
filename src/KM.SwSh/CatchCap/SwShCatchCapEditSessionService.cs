@@ -4,11 +4,13 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.SwSh.ExeFs;
-using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.CatchCap;
 
@@ -20,9 +22,15 @@ public sealed class SwShCatchCapEditSessionService
     private const string UninstallRecordId = "catch-cap-v1-uninstall";
     private const string CapsField = "caps";
     private const string UninstallField = "uninstall";
+    private const string StageCapsSummary = "Stage Catch Cap Editor values for badge counts 0-7 and the display/runtime hook; eight badges remains Lv.100.";
+    private const string StageUninstallSummary = "Stage Catch Cap Editor uninstall.";
+    private const string ApplyCapsReason = "Apply Catch Cap Editor display/runtime hook and reviewed badge cap values 0-7 to exefs/main; eight badges remains Lv.100.";
+    private const string UninstallReason = "Uninstall Catch Cap Editor from exefs/main while preserving unrelated supported ExeFS edits.";
 
     private readonly SwShCatchCapWorkflowService catchCapWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly Action? beforeAcquireApplyScope;
+    private readonly Action<int, string>? beforeVerifiedPromotion;
 
     public SwShCatchCapEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -30,6 +38,26 @@ public sealed class SwShCatchCapEditSessionService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.catchCapWorkflowService = catchCapWorkflowService ?? new SwShCatchCapWorkflowService();
+    }
+
+    internal SwShCatchCapEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShCatchCapWorkflowService? catchCapWorkflowService,
+        Action<int, string> beforeVerifiedPromotion)
+        : this(projectWorkspaceService, catchCapWorkflowService)
+    {
+        this.beforeVerifiedPromotion = beforeVerifiedPromotion
+            ?? throw new ArgumentNullException(nameof(beforeVerifiedPromotion));
+    }
+
+    internal SwShCatchCapEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShCatchCapWorkflowService? catchCapWorkflowService,
+        Action beforeAcquireApplyScope)
+        : this(projectWorkspaceService, catchCapWorkflowService)
+    {
+        this.beforeAcquireApplyScope = beforeAcquireApplyScope
+            ?? throw new ArgumentNullException(nameof(beforeAcquireApplyScope));
     }
 
     public SwShCatchCapEditResult StageCaps(
@@ -41,9 +69,16 @@ public sealed class SwShCatchCapEditSessionService
         ArgumentNullException.ThrowIfNull(caps);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = catchCapWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SwShCatchCapWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.AddRange(workflow.Summary.Diagnostics);
+            return new SwShCatchCapEditResult(workflow, currentSession, diagnostics);
+        }
 
         if (currentSession.PendingEdits.Any(edit => !string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal)))
         {
@@ -60,12 +95,10 @@ public sealed class SwShCatchCapEditSessionService
             return new SwShCatchCapEditResult(workflow, currentSession, diagnostics);
         }
 
+        var payload = SerializeCaps(normalizedCaps);
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit(normalizedCaps))
-                .ToArray(),
+            PendingEdits = [CreatePendingEdit(payload, CreatePendingSources(project, payload, isUninstall: false))],
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -82,9 +115,16 @@ public sealed class SwShCatchCapEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = catchCapWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SwShCatchCapWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.AddRange(workflow.Summary.Diagnostics);
+            return new SwShCatchCapEditResult(workflow, currentSession, diagnostics);
+        }
 
         if (currentSession.PendingEdits.Any(edit => !string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal)))
         {
@@ -100,12 +140,10 @@ public sealed class SwShCatchCapEditSessionService
             return new SwShCatchCapEditResult(workflow, currentSession, diagnostics);
         }
 
+        const string payload = "true";
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingUninstallEdit())
-                .ToArray(),
+            PendingEdits = [CreatePendingUninstallEdit(CreatePendingSources(project, payload, isUninstall: true))],
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -120,46 +158,53 @@ public sealed class SwShCatchCapEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = catchCapWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (session.PendingEdits.Count == 0)
+        if (!SwShCatchCapWorkflowService.IsSupportedGame(paths.SelectedGame))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Stage Catch Cap Editor values or uninstall before validating.",
-                expected: "Pending Catch Cap values or uninstall"));
+            diagnostics.AddRange(workflow.Summary.Diagnostics);
             return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
         }
 
-        foreach (var edit in session.PendingEdits)
+        if (session.PendingEdits.Count != 1)
         {
-            if (!string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal))
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                session.PendingEdits.Count == 0
+                    ? "Stage Catch Cap Editor values or uninstall before validating."
+                    : "Catch Cap Editor requires exactly one canonical pending edit.",
+                expected: "Exactly one pending Catch Cap values or uninstall edit"));
+        }
+        else
+        {
+            var edit = session.PendingEdits[0];
+            if (IsCanonicalUninstallIdentity(edit))
+            {
+                ValidateCanonicalUninstallEdit(project, edit, diagnostics);
+            }
+            else if (IsCanonicalCapsIdentity(edit))
+            {
+                ValidateCanonicalCapsEdit(project, edit, diagnostics);
+            }
+            else
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pending edit domain '{edit.Domain}' is not supported by Catch Cap Editor.",
-                    expected: CatchCapEditDomain));
-                continue;
+                    "Pending edit does not target the canonical Catch Cap values or uninstall record.",
+                    field: edit.Field,
+                    expected: $"{CatchCapEditDomain}/{RecordId}/{CapsField} or {CatchCapEditDomain}/{UninstallRecordId}/{UninstallField}"));
             }
+        }
 
-            if (IsUninstallEdit(edit))
-            {
-                CanStageUninstall(project, workflow, paths, diagnostics);
-                continue;
-            }
-
-            if (!string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pending Catch Cap edit '{edit.RecordId}' is not supported.",
-                    expected: "Catch Cap values or uninstall"));
-                continue;
-            }
-
-            _ = ParsePendingCaps(edit.NewValue, diagnostics);
+        if (session.PendingEdits.Count == 1 && IsCanonicalUninstallIdentity(session.PendingEdits[0]))
+        {
+            CanStageUninstall(project, workflow, paths, diagnostics);
+        }
+        else
+        {
             CanStage(project, workflow, diagnostics);
         }
 
@@ -194,28 +239,27 @@ public sealed class SwShCatchCapEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var isUninstall = IsUninstallSession(session);
+        var project = projectWorkspaceService.Open(paths);
+        var pendingEdit = session.PendingEdits[0];
+        var isUninstall = IsCanonicalUninstallIdentity(pendingEdit);
+        var payload = pendingEdit.NewValue ?? string.Empty;
+        var sources = CreatePendingSources(project, payload, isUninstall);
         var writes = new[]
         {
             new PlannedFileWrite(
                 SwShCatchCapWorkflowService.ExeFsMainPath,
-                isUninstall
-                    ? [
-                        new ProjectFileReference(ProjectFileLayer.Generated, SwShCatchCapWorkflowService.ExeFsMainPath),
-                        new ProjectFileReference(ProjectFileLayer.Base, SwShCatchCapWorkflowService.ExeFsMainPath),
-                    ]
-                    : [new ProjectFileReference(ProjectFileLayer.Base, SwShCatchCapWorkflowService.ExeFsMainPath)],
+                sources,
                 File.Exists(targetPath),
-                isUninstall
-                    ? "Uninstall Catch Cap Editor from exefs/main while preserving Royal Candy ExeFS bytes when present."
-                    : "Apply Catch Cap Editor display/runtime hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100."),
+                isUninstall ? UninstallReason : ApplyCapsReason),
         };
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             string.Create(CultureInfo.InvariantCulture, $"Catch Cap Editor change plan preview contains {writes.Length:N0} target file(s).")));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -224,13 +268,29 @@ public sealed class SwShCatchCapEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -238,145 +298,212 @@ public sealed class SwShCatchCapEditSessionService
                 expected: "Current reviewed Catch Cap Editor change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var pendingEdit = session.PendingEdits.Single();
-        if (IsUninstallEdit(pendingEdit))
+        beforeAcquireApplyScope?.Invoke();
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var acquireDiagnostics))
         {
-            ApplyUninstall(paths, currentPlan, writtenFiles, diagnostics);
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                acquireDiagnostics);
         }
 
+        using var verifiedScope = applyScope!;
+        var snapshotPlan = CreateChangePlan(verifiedScope.ApplyPaths, session);
+        if (!verifiedScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedPlan))
+        {
+            var staleDiagnostics = preparedPlan.Diagnostics.ToList();
+            staleDiagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Catch Cap Editor sources changed while preparing the verified apply snapshot.",
+                expected: "Sources matching the reviewed Catch Cap Editor change plan"));
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                staleDiagnostics);
+        }
+
+        var snapshotResult = ApplyPreparedPlan(
+            verifiedScope.ApplyPaths,
+            session,
+            preparedPlan,
+            applyId,
+            appliedAt);
+        return verifiedScope.Commit(snapshotResult, beforeVerifiedPromotion);
+    }
+
+    private ApplyResult ApplyPreparedPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan preparedPlan,
+        string applyId,
+        DateTimeOffset appliedAt)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        var diagnostics = preparedPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+        if (session.PendingEdits.Count != 1)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Catch Cap Editor prepared apply requires exactly one canonical pending edit.",
+                expected: "Exactly one pending Catch Cap values or uninstall edit"));
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        var pendingEdit = session.PendingEdits[0];
+        if (IsCanonicalUninstallIdentity(pendingEdit))
+        {
+            ApplyPreparedUninstall(paths, writtenFiles, diagnostics);
+        }
+        else if (IsCanonicalCapsIdentity(pendingEdit))
+        {
+            ApplyPreparedCaps(paths, pendingEdit, writtenFiles, diagnostics);
+        }
+        else
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Catch Cap Editor prepared apply received a noncanonical pending edit.",
+                expected: "Canonical Catch Cap values or uninstall edit"));
+        }
+
+        return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+    }
+
+    private void ApplyPreparedCaps(
+        ProjectPaths paths,
+        PendingEdit pendingEdit,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
         var caps = ParsePendingCaps(pendingEdit.NewValue, diagnostics);
         var project = projectWorkspaceService.Open(paths);
         var source = ResolveWorkflowFile(project, SwShCatchCapWorkflowService.ExeFsMainPath);
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (source is null || targetPath is null)
+        var basePath = SwShCatchCapWorkflowService.ResolveBaseSourcePath(
+            paths,
+            SwShCatchCapWorkflowService.ExeFsMainPath);
+        if (source is null || targetPath is null || basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Catch Cap Editor source or output target could not be resolved.",
+                "Catch Cap Editor source, vanilla base, or output target could not be resolved.",
                 file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Readable source and writable LayeredFS target"));
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-        }
-
-        try
-        {
-            var output = SwShCatchCapMainPatcher.Apply(
-                File.ReadAllBytes(source.AbsolutePath),
-                caps,
-                paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShCatchCapWorkflowService.ExeFsMainPath));
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                "Applied Catch Cap Editor changes to the configured LayeredFS output root."));
-        }
-        catch (InvalidDataException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Catch Cap Editor source file could not be patched: {exception.Message}",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword/Shield exefs/main NSO"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Catch Cap Editor output file could not be written: {exception.Message}",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Catch Cap Editor output file could not be written: {exception.Message}",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-    }
-
-    private static void ApplyUninstall(
-        ProjectPaths paths,
-        ChangePlan currentPlan,
-        ICollection<ProjectFileReference> writtenFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var targetPath = ResolveOutputPath(paths, diagnostics);
-        var basePath = ResolveBaseSourcePath(paths, SwShCatchCapWorkflowService.ExeFsMainPath);
-        if (targetPath is null || basePath is null || !File.Exists(basePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Catch Cap Editor uninstall could not resolve base exefs/main for restoration.",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Readable base ExeFS main"));
-            return;
-        }
-
-        if (!File.Exists(targetPath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Catch Cap Editor uninstall target no longer exists. Review the change plan again before applying.",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Existing reviewed LayeredFS exefs/main"));
+                expected: "Readable reviewed source and vanilla base with writable LayeredFS target"));
             return;
         }
 
         try
         {
             var baseBytes = File.ReadAllBytes(basePath);
+            var baseAnalysis = SwShCatchCapMainPatcher.Analyze(baseBytes, paths.SelectedGame);
+            EnsureVerifiedVanillaBase(baseAnalysis);
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var sourceAnalysis = SwShCatchCapMainPatcher.Analyze(sourceBytes, paths.SelectedGame);
+            EnsureEditableEffectiveSource(sourceAnalysis);
+
+            var output = SwShCatchCapMainPatcher.Apply(sourceBytes, caps, paths.SelectedGame);
+            WriteOutputAtomically(
+                targetPath,
+                output,
+                roundTrip => VerifyInstalledOutput(baseAnalysis, caps, roundTrip, paths.SelectedGame));
+            writtenFiles.Add(new ProjectFileReference(
+                ProjectFileLayer.Generated,
+                SwShCatchCapWorkflowService.ExeFsMainPath));
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Applied Catch Cap Editor changes to the configured LayeredFS output root."));
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Catch Cap Editor verified output could not be prepared: {exception.Message}",
+                file: SwShCatchCapWorkflowService.ExeFsMainPath,
+                expected: "Reviewed selected-game source, exact badge payload, and writable output"));
+        }
+    }
+
+    private static void ApplyPreparedUninstall(
+        ProjectPaths paths,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var targetPath = ResolveOutputPath(paths, diagnostics);
+        var basePath = SwShCatchCapWorkflowService.ResolveBaseSourcePath(
+            paths,
+            SwShCatchCapWorkflowService.ExeFsMainPath);
+        if (targetPath is null || basePath is null || !File.Exists(basePath) || !File.Exists(targetPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Catch Cap Editor uninstall could not resolve the reviewed generated and vanilla base exefs/main files.",
+                file: SwShCatchCapWorkflowService.ExeFsMainPath,
+                expected: "Existing reviewed LayeredFS exefs/main and readable vanilla base"));
+            return;
+        }
+
+        try
+        {
+            var baseBytes = File.ReadAllBytes(basePath);
+            var baseAnalysis = SwShCatchCapMainPatcher.Analyze(baseBytes, paths.SelectedGame);
+            EnsureVerifiedVanillaBase(baseAnalysis);
+            var currentBytes = File.ReadAllBytes(targetPath);
+            var currentAnalysis = SwShCatchCapMainPatcher.Analyze(currentBytes, paths.SelectedGame);
+            if (currentAnalysis.Kind != SwShCatchCapInstallKind.InstalledV1)
+            {
+                throw new InvalidDataException("The reviewed effective main no longer contains an exact KM Catch Cap Hook.");
+            }
+
             var restored = SwShCatchCapMainPatcher.RestoreFromBase(
-                File.ReadAllBytes(targetPath),
+                currentBytes,
                 baseBytes,
                 paths.SelectedGame);
+            VerifyUninstalledOutput(baseAnalysis, restored, paths.SelectedGame);
             if (SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(restored, baseBytes))
             {
                 File.Delete(targetPath);
+                if (File.Exists(targetPath))
+                {
+                    throw new IOException("Catch Cap Editor uninstall target still exists after verified deletion.");
+                }
             }
             else
             {
-                File.WriteAllBytes(targetPath, restored);
+                WriteOutputAtomically(
+                    targetPath,
+                    restored,
+                    roundTrip => VerifyUninstalledOutput(baseAnalysis, roundTrip, paths.SelectedGame));
             }
 
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShCatchCapWorkflowService.ExeFsMainPath));
+            writtenFiles.Add(new ProjectFileReference(
+                ProjectFileLayer.Generated,
+                SwShCatchCapWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 "Uninstalled Catch Cap Editor from the configured LayeredFS output root."));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Catch Cap Editor uninstall could not restore exefs/main: {exception.Message}",
+                $"Catch Cap Editor uninstall could not prepare a verified restoration: {exception.Message}",
                 file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword/Shield exefs/main NSO"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Catch Cap Editor uninstall could not update output: {exception.Message}",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Catch Cap Editor uninstall could not update output: {exception.Message}",
-                file: SwShCatchCapWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
+                expected: "Exact installed KM Catch Cap Hook, vanilla base, and writable output"));
         }
     }
 
@@ -385,6 +512,7 @@ public sealed class SwShCatchCapEditSessionService
         IReadOnlyList<SwShCatchCapSelection> selections,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        var initialErrorCount = CountErrors(diagnostics);
         var requested = new Dictionary<int, int>();
         foreach (var selection in selections)
         {
@@ -442,13 +570,14 @@ public sealed class SwShCatchCapEditSessionService
 
         ValidateCapOrder(normalized, definitions.Select(definition => definition.Label).ToArray(), diagnostics);
 
-        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+        return CountErrors(diagnostics) > initialErrorCount
             ? Array.Empty<int>()
             : normalized;
     }
 
     private static IReadOnlyList<int> ParsePendingCaps(string? value, ICollection<ValidationDiagnostic> diagnostics)
     {
+        var initialErrorCount = CountErrors(diagnostics);
         if (string.IsNullOrWhiteSpace(value))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -474,6 +603,16 @@ public sealed class SwShCatchCapEditSessionService
                     $"Catch Cap entry '{part}' is not valid.",
                     field: CapsField,
                     expected: "badge=level"));
+                continue;
+            }
+
+            if (seen[badgeCount])
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Catch Cap badge count {badgeCount} appears more than once in the pending payload.",
+                    field: CapsField,
+                    expected: "Unique badge counts 0-8 in ascending order"));
                 continue;
             }
 
@@ -519,7 +658,7 @@ public sealed class SwShCatchCapEditSessionService
             ValidateCapOrder(values, labels: null, diagnostics);
         }
 
-        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+        return CountErrors(diagnostics) > initialErrorCount
             ? Array.Empty<int>()
             : values;
     }
@@ -626,42 +765,270 @@ public sealed class SwShCatchCapEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static PendingEdit CreatePendingEdit(IReadOnlyList<int> caps)
+    private static PendingEdit CreatePendingEdit(
+        string payload,
+        IReadOnlyList<ProjectFileReference> sources)
     {
-        var value = string.Join(
-            ';',
-            caps.Select((cap, badgeCount) => string.Create(CultureInfo.InvariantCulture, $"{badgeCount}={cap}")));
         return new PendingEdit(
             CatchCapEditDomain,
-            "Stage Catch Cap Editor values for badge counts 0-7 and the display/runtime hook; eight badges remains Lv.100.",
-            [new ProjectFileReference(ProjectFileLayer.Base, SwShCatchCapWorkflowService.ExeFsMainPath)],
+            StageCapsSummary,
+            sources,
             RecordId,
             CapsField,
-            value);
+            payload);
     }
 
-    private static PendingEdit CreatePendingUninstallEdit()
+    private static PendingEdit CreatePendingUninstallEdit(IReadOnlyList<ProjectFileReference> sources)
     {
         return new PendingEdit(
             CatchCapEditDomain,
-            "Stage Catch Cap Editor uninstall.",
-            [
-                new ProjectFileReference(ProjectFileLayer.Generated, SwShCatchCapWorkflowService.ExeFsMainPath),
-                new ProjectFileReference(ProjectFileLayer.Base, SwShCatchCapWorkflowService.ExeFsMainPath),
-            ],
+            StageUninstallSummary,
+            sources,
             UninstallRecordId,
             UninstallField,
             "true");
     }
 
-    private static bool IsUninstallSession(EditSession session)
+    private static bool IsCanonicalCapsIdentity(PendingEdit edit)
     {
-        return session.PendingEdits.Count == 1 && IsUninstallEdit(session.PendingEdits[0]);
+        return string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, CapsField, StringComparison.Ordinal);
     }
 
-    private static bool IsUninstallEdit(PendingEdit edit)
+    private static bool IsCanonicalUninstallIdentity(PendingEdit edit)
     {
-        return string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal);
+        return string.Equals(edit.Domain, CatchCapEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, UninstallField, StringComparison.Ordinal);
+    }
+
+    private void ValidateCanonicalCapsEdit(
+        OpenedProject project,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.Summary, StageCapsSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Catch Cap values edit does not have the canonical staged summary.",
+                field: CapsField,
+                expected: StageCapsSummary));
+        }
+
+        var caps = ParsePendingCaps(edit.NewValue, diagnostics);
+        var canonicalPayload = SerializeCaps(caps);
+        if (caps.Count == SwShCatchCapMainPatcher.CapCount
+            && !string.Equals(edit.NewValue, canonicalPayload, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Catch Cap values are not in canonical ordered badge format.",
+                field: CapsField,
+                expected: "Exactly one ordered badge=level entry for badge counts 0-8"));
+        }
+
+        ValidateCanonicalSources(
+            edit.Sources,
+            CreatePendingSources(project, edit.NewValue ?? string.Empty, isUninstall: false),
+            CapsField,
+            diagnostics);
+    }
+
+    private void ValidateCanonicalUninstallEdit(
+        OpenedProject project,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.Summary, StageUninstallSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Catch Cap uninstall edit does not have the canonical staged summary.",
+                field: UninstallField,
+                expected: StageUninstallSummary));
+        }
+
+        if (!string.Equals(edit.NewValue, "true", StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Catch Cap uninstall payload must be exactly true.",
+                field: UninstallField,
+                expected: "true"));
+        }
+
+        ValidateCanonicalSources(
+            edit.Sources,
+            CreatePendingSources(project, "true", isUninstall: true),
+            UninstallField,
+            diagnostics);
+    }
+
+    private IReadOnlyList<ProjectFileReference> CreatePendingSources(
+        OpenedProject project,
+        string payload,
+        bool isUninstall)
+    {
+        return catchCapWorkflowService
+            .GetPlanSources(project)
+            .Append(CreatePendingPayloadSource(payload, isUninstall))
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static ProjectFileReference CreatePendingPayloadSource(string payload, bool isUninstall)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+        var action = isUninstall ? "uninstall" : "caps";
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/catch-cap/{action}/{hash}");
+    }
+
+    private static void ValidateCanonicalSources(
+        IReadOnlyList<ProjectFileReference> actual,
+        IReadOnlyList<ProjectFileReference> expected,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (actual.Count == expected.Count && actual.SequenceEqual(expected))
+        {
+            return;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Pending Catch Cap edit sources do not match the canonical selected-game base, effective main, and payload fingerprint.",
+            field: field,
+            expected: "Canonical ordered unique Catch Cap source references"));
+    }
+
+    private static string SerializeCaps(IReadOnlyList<int> caps)
+    {
+        return string.Join(
+            ';',
+            caps.Select((cap, badgeCount) => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{badgeCount}={cap}")));
+    }
+
+    private static void EnsureVerifiedVanillaBase(SwShCatchCapAnalysis analysis)
+    {
+        if (analysis.Kind != SwShCatchCapInstallKind.NotInstalled
+            || analysis.DetectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+            || string.Equals(analysis.BuildId, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "Catch Cap Editor requires the reviewed selected-game vanilla base exefs/main before apply or uninstall.");
+        }
+    }
+
+    private static void EnsureEditableEffectiveSource(SwShCatchCapAnalysis analysis)
+    {
+        if (analysis.Kind is not (SwShCatchCapInstallKind.NotInstalled or SwShCatchCapInstallKind.InstalledV1))
+        {
+            throw new InvalidDataException(
+                "The reviewed effective exefs/main is no longer a vanilla or exact KM Catch Cap source.");
+        }
+    }
+
+    private static void VerifyInstalledOutput(
+        SwShCatchCapAnalysis baseAnalysis,
+        IReadOnlyList<int> expectedCaps,
+        byte[] output,
+        ProjectGame? selectedGame)
+    {
+        var outputAnalysis = SwShCatchCapMainPatcher.Analyze(output, selectedGame);
+        if (outputAnalysis.Kind != SwShCatchCapInstallKind.InstalledV1)
+        {
+            throw new InvalidDataException("Patched exefs/main did not round-trip as an exact KM Catch Cap Hook.");
+        }
+
+        if (!outputAnalysis.Caps.SequenceEqual(expectedCaps.Select(cap => checked((byte)cap))))
+        {
+            throw new InvalidDataException("Patched exefs/main did not round-trip with the reviewed badge cap values.");
+        }
+
+        VerifyExecutableIdentity(baseAnalysis, outputAnalysis, selectedGame);
+    }
+
+    private static void VerifyUninstalledOutput(
+        SwShCatchCapAnalysis baseAnalysis,
+        byte[] output,
+        ProjectGame? selectedGame)
+    {
+        var outputAnalysis = SwShCatchCapMainPatcher.Analyze(output, selectedGame);
+        if (outputAnalysis.Kind != SwShCatchCapInstallKind.NotInstalled)
+        {
+            throw new InvalidDataException("Restored exefs/main did not round-trip with Catch Cap Editor uninstalled.");
+        }
+
+        VerifyExecutableIdentity(baseAnalysis, outputAnalysis, selectedGame);
+    }
+
+    private static void VerifyExecutableIdentity(
+        SwShCatchCapAnalysis baseAnalysis,
+        SwShCatchCapAnalysis outputAnalysis,
+        ProjectGame? selectedGame)
+    {
+        if (!string.Equals(baseAnalysis.BuildId, outputAnalysis.BuildId, StringComparison.Ordinal)
+            || baseAnalysis.DetectedGame != outputAnalysis.DetectedGame
+            || outputAnalysis.DetectedGame != selectedGame
+            || !string.Equals(
+                baseAnalysis.DisplayHookOffsetHex,
+                outputAnalysis.DisplayHookOffsetHex,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                baseAnalysis.RuntimeHookOffsetHex,
+                outputAnalysis.RuntimeHookOffsetHex,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Catch Cap Editor output executable identity changed during apply verification.");
+        }
+    }
+
+    private static void WriteOutputAtomically(
+        string targetPath,
+        byte[] output,
+        Action<byte[]> verifyRoundTrip)
+    {
+        var directoryPath = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Catch Cap Editor output directory could not be resolved.");
+        Directory.CreateDirectory(directoryPath);
+        var temporaryPath = Path.Combine(
+            directoryPath,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, output);
+            var roundTrip = File.ReadAllBytes(temporaryPath);
+            if (!roundTrip.AsSpan().SequenceEqual(output))
+            {
+                throw new IOException("Catch Cap Editor temporary output did not round-trip byte-for-byte.");
+            }
+
+            verifyRoundTrip(roundTrip);
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static int CountErrors(IEnumerable<ValidationDiagnostic> diagnostics)
+    {
+        return diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
     private static string? ResolveOutputPath(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
@@ -687,51 +1054,6 @@ public sealed class SwShCatchCapEditSessionService
         return targetPath;
     }
 
-    private static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
-    {
-        if (targetRelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseRomFsPath, targetRelativePath["romfs/".Length..]);
-        }
-
-        if (targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..]);
-        }
-
-        return null;
-    }
-
-    private static string? CombineGraphPath(string? rootPath, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            return null;
-        }
-
-        return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
-    }
 
     private static ApplyResult CreateApplyResult(
         string applyId,

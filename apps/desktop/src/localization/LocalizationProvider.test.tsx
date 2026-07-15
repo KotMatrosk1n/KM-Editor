@@ -635,6 +635,285 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('includes Catch Cap labels, status messages, and validation templates in every language', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals,
+      zh: zhResource.literals
+    };
+    const requiredLiterals = [
+      'Catch cap for {label}',
+      'No badges',
+      'First badge',
+      'Second badge',
+      'Third badge',
+      'Fourth badge',
+      'Fifth badge',
+      'Sixth badge',
+      'Seventh badge',
+      'Eighth badge',
+      'Display hook',
+      'Runtime hook',
+      'Enter a whole level.',
+      'Use Lv. {minimum}-{maximum}.',
+      'Must be Lv. {minimum} or higher.',
+      'Lv. {level} (locked: full badges catch any level)',
+      'Catch Cap Editor can patch display and runtime capture checks in exefs/main.',
+      'Catch Cap Editor cannot load until project paths validate.',
+      'Catch Cap Editor cannot inspect the hook because exefs/main is missing.',
+      'Catch Cap Editor hook is not installed.',
+      'Catch Cap Editor hook is installed for display and runtime capture checks.',
+      'Catch Cap Editor has a legacy display-only hook installed; stage and apply to add the runtime capture gate hook.',
+      'Catch Cap Editor values are staged for change-plan review.',
+      'Catch Cap Editor uninstall is staged for change-plan review.',
+      'Catch Cap Editor needs its own edit session before staging.',
+      'Catch Cap Editor needs its own edit session before staging uninstall.',
+      'Stage Catch Cap Editor values or uninstall before validating.',
+      'Pending Catch Cap Editor change is valid for change-plan review.',
+      'Catch Cap pending edit has no cap payload.',
+      'Reviewed Catch Cap Editor change plan is stale. Review the change plan again before applying.',
+      'Catch Cap Editor cannot stage while exefs/main has a foreign or conflicting catch-cap patch.',
+      'Catch Cap badge count {badgeCount} is not available.',
+      'Catch Cap badge count {badgeCount} was supplied more than once.',
+      'Catch Cap badge count {badgeCount} is missing.',
+      'Catch Cap badge count {badgeCount} must be between {minimum} and {maximum}.',
+      'Catch Cap badge count {badgeCount} is fixed at level {level}; the game treats eight badges as catch any level.',
+      "Catch Cap entry '{entry}' is not valid.",
+      'Catch Cap Editor change plan preview contains {count} target file(s).',
+      'Catch Cap Editor source file could not be patched: {error}',
+      'Catch Cap Editor output file could not be written: {error}',
+      'Catch Cap Editor uninstall could not restore exefs/main: {error}',
+      'Catch Cap Editor uninstall could not update output: {error}',
+      'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges remains Lv.100 because the game treats full badges as catch any level. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.',
+      'Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100 because the game treats full badge completion as catch any level. Review before apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.',
+      'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.',
+      'Caps',
+      'Badge caps',
+      'Badge level',
+      'Catch Cap',
+      'Catch Cap Editor values',
+      'Catch Cap badge levels',
+      'Eight badges is locked at Lv.100 because full badges can catch any level.',
+      'Locked: full badges catch any level.',
+      'Open Catch Cap',
+      'Selected Cap',
+      'Selected Catch Cap',
+      'Selected cap',
+      'Stage Caps',
+      'Catch Cap Editor requires valid base RomFS and base ExeFS paths before it can load.',
+      'ExeFS main is missing.',
+      'Base ExeFS main could not be resolved from the project graph.',
+      'Effective ExeFS main could not be resolved from the project graph.',
+      'ExeFS main could not be read for Catch Cap verification.',
+      'Base exefs/main is not a selected-game vanilla Catch Cap source. {detail}',
+      'Catch Cap Editor sources changed while preparing the verified apply snapshot.',
+      'Catch Cap Editor source, vanilla base, or output target could not be resolved.',
+      'Catch Cap Editor uninstall could not resolve the reviewed generated and vanilla base exefs/main files.',
+      'Catch Cap patching rejected {segment} because its required NSO header hash does not match the decompressed segment.',
+      'Catch Cap Editor apply requires valid base paths and a valid output root.',
+      'Catch Cap Editor uninstall requires valid base paths and a valid output root.',
+      'Catch Cap Editor requires Pokemon Sword or Pokemon Shield to be selected before it can load.',
+      'Catch Cap Editor cannot load until Pokemon Sword or Pokemon Shield is selected.',
+      'Selected Pokemon Sword or Pokemon Shield project',
+      'A source changed while verified apply handles were being acquired.',
+      'A source file changed after the change plan was reviewed.',
+      'Reviewed change plan does not include source-content verification.',
+      'Reviewed change plan is stale. {detail}',
+      'Change-plan source verification failed: {detail}',
+      'Catch cap for {label} is fixed at level {level}; the game treats eight badges as catch any level.',
+      'Catch cap for {label} must be between {minimum} and {maximum}.',
+      'Catch cap for {label} must be the same as or higher than the previous badge level (level {level}).',
+      'Catch Cap badge count {badgeCount} must be level {level} or higher.',
+      'Catch Cap Editor uninstall can only remove a generated LayeredFS exefs/main.',
+      'Catch Cap Editor verified output could not be prepared: {error}',
+      'Catch Cap Editor uninstall could not prepare a verified restoration: {error}',
+      'Applied Catch Cap Editor changes to the configured LayeredFS output root.',
+      'Uninstalled Catch Cap Editor from the configured LayeredFS output root.',
+      'Catch Cap Editor cannot verify the selected-game vanilla base exefs/main.',
+      'Catch Cap Editor cannot inspect the effective exefs/main.',
+      'Catch Cap Editor cannot inspect the hook because an exefs/main source could not be read.',
+      'Catch Cap Editor requires a verified selected-game vanilla base exefs/main before it can edit or restore the effective source.',
+      'Catch Cap Editor supports Sword and Shield 1.3.2 exefs/main files. This build ID is not recognized.',
+      'Catch Cap Editor marker bytes are present, but the marker version or reserved metadata is damaged.',
+      'Catch Cap Editor marker is present, but the display hook branch or cave graph is damaged or redirected.',
+      'Catch Cap Editor marker is present, but the runtime catch gate is neither the exact vanilla formula nor the exact KM hook.',
+      'Catch-cap formula tail is already branched, but the KM Catch Cap Hook marker is not present.',
+      'Catch Cap Editor found non-vanilla bytes in its display formula, runtime formula, protected epilogues, or reserved caves.',
+      'Changing values edits badge counts 0-7; eight badges is fixed at Lv.100 by the game.',
+      'The installed table has stale Lv.{level} metadata for eight badges; stage and apply to rewrite it to Lv.100.',
+      'Selected {selectedGame}, but exefs/main build ID is {detectedGame}. Catch Cap Editor will not patch this file because Sword and Shield use different hook sites.'
+    ];
+
+    const missingEntries = Object.entries(localizedResources).flatMap(([language, literals]) =>
+      requiredLiterals
+        .filter((literal) => !literals[literal])
+        .map((literal) => `${language}:literal:${literal}`)
+    );
+
+    expect(missingEntries).toEqual([]);
+    expect(translateLiteralForLanguage('es', 'Catch cap for First badge')).toBe(
+      'Límite de captura para Primera medalla'
+    );
+    expect(translateLiteralForLanguage('es', 'Use Lv. 25-100.')).toBe('Usa Nv. 25-100.');
+    expect(
+      translateLiteralForLanguage('de', 'Catch Cap badge count 3 must be between 1 and 100.')
+    ).toBe('Das Fanglimit für 3 Abzeichen muss zwischen 1 und 100 liegen.');
+    expect(translateLiteralForLanguage('zh', "Catch Cap entry '3=030' is not valid.")).toBe(
+      '捕获上限条目“3=030”无效。'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Catch Cap Editor hook is installed for display and runtime capture checks. Changing values edits badge counts 0-7; eight badges is fixed at Lv.100 by the game. The installed table has stale Lv.33 metadata for eight badges; stage and apply to rewrite it to Lv.100.'
+      )
+    ).toContain('Nv.33');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Catch Cap Editor verified output could not be prepared: raw failure 0xABC'
+      )
+    ).toBe(
+      'No se pudo preparar la salida verificada del Editor de límite de captura: raw failure 0xABC'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'zh',
+        'Uninstalled Catch Cap Editor from the configured LayeredFS output root.'
+      )
+    ).toBe('已从配置的LayeredFS输出根目录卸载捕获上限编辑器。');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges remains Lv.100 because the game treats full badges as catch any level. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.'
+      )
+    ).toContain('conserva los demás editores de hooks');
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Selected Pokemon Sword, but exefs/main build ID is Pokemon Shield 1.3.2. Catch Cap Editor will not patch this file because Sword and Shield use different hook sites.'
+      )
+    ).toBe(
+      'Ausgewählt ist Pokémon Schwert, aber die Build-ID von exefs/main gehört zu Pokémon Schild 1.3.2. Der Catch Cap-Editor patcht diese Datei nicht, weil Schwert und Schild unterschiedliche Hook-Stellen verwenden.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Base exefs/main is not a selected-game vanilla Catch Cap source. Catch Cap Editor supports Sword and Shield 1.3.2 exefs/main files. This build ID is not recognized.'
+      )
+    ).toBe(
+      'Die Basis-exefs/main ist keine unveränderte Catch Cap-Quelle für das ausgewählte Spiel. Der Catch Cap-Editor unterstützt exefs/main-Dateien der Version 1.3.2 von Schwert und Schild. Diese Build-ID ist unbekannt.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Catch Cap patching rejected main.text because its required NSO header hash does not match the decompressed segment.'
+      )
+    ).toBe(
+      'Der Catch Cap-Patch hat main.text abgelehnt, weil der erforderliche NSO-Header-Hash nicht zum dekomprimierten Segment passt.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Reviewed change plan is stale. A source changed while verified apply handles were being acquired.'
+      )
+    ).toBe(
+      'El plan de cambios revisado está obsoleto. Una fuente cambió mientras se obtenían los identificadores de aplicación verificada.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'fr',
+        'Reviewed change plan is stale. A source file changed after the change plan was reviewed.'
+      )
+    ).toBe(
+      'Le plan de modifications vérifié est obsolète. Un fichier source a changé après la vérification du plan de modifications.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Reviewed change plan is stale. Reviewed change plan does not include source-content verification.'
+      )
+    ).toBe(
+      'Der geprüfte Änderungsplan ist veraltet. Der geprüfte Änderungsplan enthält keine Prüfung des Quellinhalts.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'zh',
+        'Change-plan source verification failed: access denied by operating system'
+      )
+    ).toBe('更改计划源验证失败：access denied by operating system');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Catch cap for Third badge must be between 1 and 100.'
+      )
+    ).toBe('El límite de captura para Tercera medalla debe estar entre 1 y 100.');
+    expect(
+      translateLiteralForLanguage(
+        'uk',
+        'Catch cap for Fourth badge must be the same as or higher than the previous badge level (level 25).'
+      )
+    ).toContain('рівень 25');
+
+    expect(deResource.literals['Stage Caps']).toBe('Fanglimits bereitstellen');
+    expect(frResource.literals['Selected Cap']).toBe('Limite de capture sélectionnée');
+    expect(ruResource.literals['Catch Cap']).toBe('Лимит поимки');
+    expect(ukResource.literals['Open Catch Cap']).toBe('Відкрити ліміт упіймання');
+    expect(zhResource.literals['Stage Caps']).toBe('暂存捕获上限');
+
+    const catchCapTerminologyKeys = [
+      'Caps',
+      'Badge caps',
+      'Badge level',
+      'Catch Cap',
+      'Catch Cap Editor values',
+      'Catch Cap badge levels',
+      'Eight badges is locked at Lv.100 because full badges can catch any level.',
+      'Locked: full badges catch any level.',
+      'Lv. {level} (locked: full badges catch any level)',
+      'Open Catch Cap',
+      'Selected Cap',
+      'Selected Catch Cap',
+      'Selected cap',
+      'Stage Caps',
+      'Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100 because the game treats full badge completion as catch any level. Review before apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.',
+      'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges remains Lv.100 because the game treats full badges as catch any level. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.',
+      'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.'
+    ];
+    const mistranslatedCatchCapTerms =
+      /Kappe|Mütze|Fangkappe|Casquette|capuchon|кепк|шапк|крышк|кришк|ковпак|ковпач|сценичес|сценіч|Bühne|scène|舞台|阶段/i;
+    for (const language of ['de', 'fr', 'ru', 'uk', 'zh'] as const) {
+      for (const key of catchCapTerminologyKeys) {
+        expect(localizedResources[language][key], `${language}: ${key}`).not.toMatch(
+          mistranslatedCatchCapTerms
+        );
+      }
+    }
+
+    const exactMismatchMessages = [
+      'Selected Pokemon Sword, but exefs/main build ID is Pokemon Shield 1.3.2. Catch Cap Editor will not patch this file because Sword and Shield use different hook sites.',
+      'Selected Pokemon Shield, but exefs/main build ID is Pokemon Sword 1.3.2. Catch Cap Editor will not patch this file because Sword and Shield use different hook sites.'
+    ];
+    for (const exactMismatchMessage of exactMismatchMessages) {
+      for (const language of ['en', 'de', 'es', 'fr', 'ru', 'uk', 'zh'] as const) {
+        const translatedMismatch = translateLiteralForLanguage(language, exactMismatchMessage);
+        expect(translatedMismatch).toContain(
+          translateLiteralForLanguage(language, 'Pokemon Sword')
+        );
+        expect(translatedMismatch).toContain(
+          translateLiteralForLanguage(language, 'Pokemon Shield')
+        );
+        expect(translatedMismatch).toContain('1.3.2');
+        if (language !== 'en') {
+          expect(translatedMismatch).not.toBe(exactMismatchMessage);
+        }
+      }
+    }
+  });
+
   it('localizes German static and dynamic UI phrases', () => {
     expect(translateKeyForLanguage('de', 'settings.language.title')).toBe(
       'Sprache und Lokalisierung'

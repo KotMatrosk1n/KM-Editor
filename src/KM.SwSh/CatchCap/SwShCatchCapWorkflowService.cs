@@ -39,6 +39,16 @@ public sealed class SwShCatchCapWorkflowService
                     expected: "Readable project paths"));
         }
 
+        if (!IsSupportedGame(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Catch Cap Editor requires Pokemon Sword or Pokemon Shield to be selected before it can load.",
+                    expected: "Selected Pokemon Sword or Pokemon Shield project"));
+        }
+
         return CreateSummary(project.Health.CanOpenEditableWorkflows
             ? SwShWorkflowAvailability.Available
             : SwShWorkflowAvailability.ReadOnly);
@@ -54,10 +64,14 @@ public sealed class SwShCatchCapWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
+            var installMessage = project.Health.CanOpenReadOnlyWorkflows
+                && !IsSupportedGame(project.Paths.SelectedGame)
+                    ? "Catch Cap Editor cannot load until Pokemon Sword or Pokemon Shield is selected."
+                    : "Catch Cap Editor cannot load until project paths validate.";
             return CreateWorkflow(
                 summary,
                 "disabled",
-                "Catch Cap Editor cannot load until project paths validate.",
+                installMessage,
                 CreateDefaultAnalysis(),
                 provenance,
                 sourceFileCount: 0,
@@ -83,73 +97,138 @@ public sealed class SwShCatchCapWorkflowService
         }
 
         provenance = CreateProvenance(entry);
-        var sourcePath = ResolveSourcePath(project.Paths, entry);
-        if (sourcePath is null || !File.Exists(sourcePath))
+        var basePath = ResolveBaseSourcePath(project.Paths, ExeFsMainPath);
+        var effectivePath = ResolveSourcePath(project.Paths, entry);
+        if (basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "ExeFS main could not be resolved from the project graph.",
+                "Base ExeFS main could not be resolved from the project graph.",
                 file: entry.RelativePath,
-                expected: "Readable Sword/Shield exefs/main NSO"));
+                expected: "Readable selected-game vanilla Sword/Shield exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
-                "Catch Cap Editor cannot inspect the hook because exefs/main cannot be read.",
+                "Catch Cap Editor cannot verify the selected-game vanilla base exefs/main.",
                 CreateDefaultAnalysis(),
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
         }
 
+        if (effectivePath is null || !File.Exists(effectivePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Effective ExeFS main could not be resolved from the project graph.",
+                file: entry.RelativePath,
+                expected: "Readable base or LayeredFS exefs/main NSO"));
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Catch Cap Editor cannot inspect the effective exefs/main.",
+                CreateDefaultAnalysis(),
+                provenance,
+                sourceFileCount: 0,
+                diagnostics);
+        }
+
+        SwShCatchCapAnalysis baseAnalysis;
+        SwShCatchCapAnalysis effectiveAnalysis;
         try
         {
-            var analysis = SwShCatchCapMainPatcher.Analyze(
-                File.ReadAllBytes(sourcePath),
+            baseAnalysis = SwShCatchCapMainPatcher.Analyze(
+                File.ReadAllBytes(basePath),
                 project.Paths.SelectedGame);
-            var installStatus = analysis.Kind switch
-            {
-                SwShCatchCapInstallKind.InstalledV1 => "installed",
-                SwShCatchCapInstallKind.NotInstalled => summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly",
-                SwShCatchCapInstallKind.ForeignPatch => "foreign",
-                _ => "blocked",
-            };
-            if (analysis.Kind is SwShCatchCapInstallKind.UnsupportedBuild
-                or SwShCatchCapInstallKind.GameMismatch
-                or SwShCatchCapInstallKind.ForeignPatch
-                or SwShCatchCapInstallKind.Conflict)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    analysis.Kind == SwShCatchCapInstallKind.ForeignPatch ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
-                    analysis.Message,
-                    file: entry.RelativePath,
-                    expected: "Selected-game Sword/Shield 1.3.2 exefs/main with a vanilla catch-cap formula tail or KM Catch Cap Hook marker"));
-            }
-
-            return CreateWorkflow(
-                summary,
-                installStatus,
-                analysis.Message,
-                analysis,
-                provenance,
-                sourceFileCount: 1,
-                diagnostics);
+            effectiveAnalysis = PathsReferToSameFile(basePath, effectivePath)
+                ? baseAnalysis
+                : SwShCatchCapMainPatcher.Analyze(
+                    File.ReadAllBytes(effectivePath),
+                    project.Paths.SelectedGame);
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"ExeFS main could not be inspected: {exception.Message}",
+                "ExeFS main could not be read for Catch Cap verification.",
                 file: entry.RelativePath,
-                expected: "Readable Sword/Shield exefs/main NSO"));
+                expected: "Readable selected-game base and effective Sword/Shield exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
-                "Catch Cap Editor cannot inspect the hook because exefs/main could not be read.",
+                "Catch Cap Editor cannot inspect the hook because an exefs/main source could not be read.",
                 CreateDefaultAnalysis(),
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
         }
+
+        var sourceFileCount = PathsReferToSameFile(basePath, effectivePath) ? 1 : 2;
+        if (baseAnalysis.Kind != SwShCatchCapInstallKind.NotInstalled)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base exefs/main is not a selected-game vanilla Catch Cap source. {baseAnalysis.Message}",
+                file: entry.RelativePath,
+                expected: "Selected-game Sword/Shield 1.3.2 base exefs/main with vanilla Catch Cap regions"));
+            AddEffectiveAnalysisDiagnostic(effectiveAnalysis, entry.RelativePath, diagnostics);
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Catch Cap Editor requires a verified selected-game vanilla base exefs/main before it can edit or restore the effective source.",
+                effectiveAnalysis,
+                provenance,
+                sourceFileCount,
+                diagnostics);
+        }
+
+        AddEffectiveAnalysisDiagnostic(effectiveAnalysis, entry.RelativePath, diagnostics);
+        var installStatus = effectiveAnalysis.Kind switch
+        {
+            SwShCatchCapInstallKind.InstalledV1 => "installed",
+            SwShCatchCapInstallKind.NotInstalled => summary.Availability == SwShWorkflowAvailability.Available
+                ? "available"
+                : "readOnly",
+            SwShCatchCapInstallKind.ForeignPatch => "foreign",
+            _ => "blocked",
+        };
+
+        return CreateWorkflow(
+            summary,
+            installStatus,
+            effectiveAnalysis.Message,
+            effectiveAnalysis,
+            provenance,
+            sourceFileCount,
+            diagnostics);
+    }
+
+    internal IReadOnlyList<ProjectFileReference> GetPlanSources(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var entry = FindEntry(project, ExeFsMainPath);
+        if (entry is null)
+        {
+            return Array.Empty<ProjectFileReference>();
+        }
+
+        var sources = new List<ProjectFileReference>(2);
+        if (entry.BaseFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, ExeFsMainPath));
+        }
+
+        if (entry.LayeredFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static SwShCatchCapWorkflow CreateWorkflow(
@@ -178,6 +257,10 @@ public sealed class SwShCatchCapWorkflowService
             installMessage,
             analysis.LogicExpression,
             analysis.CapLogicSha256,
+            analysis.BuildId,
+            analysis.DetectedGame,
+            analysis.DisplayHookOffsetHex,
+            analysis.RuntimeHookOffsetHex,
             caps,
             provenance,
             new SwShCatchCapWorkflowStats(caps.Length, sourceFileCount),
@@ -192,8 +275,9 @@ public sealed class SwShCatchCapWorkflowService
             [20, 25, 30, 35, 40, 45, 50, 55, 100],
             "badge_count < 8 ? 20 + badge_count * 5 : 100",
             SwShCatchCapMainPatcher.ComputeCapLogicSha256([20, 25, 30, 35, 40, 45, 50, 55, 100]),
-            "unknown",
-            "unknown",
+            BuildId: "unknown",
+            DisplayHookOffsetHex: "unknown",
+            RuntimeHookOffsetHex: "unknown",
             DetectedGame: null);
     }
 
@@ -232,6 +316,16 @@ public sealed class SwShCatchCapWorkflowService
         return null;
     }
 
+    internal static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (!targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..]);
+    }
+
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
     {
         return SwShExeFsPatchWorkflowService.ResolveOutputPath(paths, targetRelativePath);
@@ -264,6 +358,41 @@ public sealed class SwShCatchCapWorkflowService
             relativePath,
             ProjectFileLayer.Generated,
             ProjectFileGraphEntryState.BaseOnly);
+    }
+
+    private static void AddEffectiveAnalysisDiagnostic(
+        SwShCatchCapAnalysis analysis,
+        string relativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (analysis.Kind is not (SwShCatchCapInstallKind.UnsupportedBuild
+            or SwShCatchCapInstallKind.GameMismatch
+            or SwShCatchCapInstallKind.ForeignPatch
+            or SwShCatchCapInstallKind.Conflict))
+        {
+            return;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            analysis.Kind == SwShCatchCapInstallKind.ForeignPatch
+                ? DiagnosticSeverity.Warning
+                : DiagnosticSeverity.Error,
+            analysis.Message,
+            file: relativePath,
+            expected: "Selected-game Sword/Shield 1.3.2 effective exefs/main with vanilla Catch Cap regions or an exact KM Catch Cap Hook"));
+    }
+
+    private static bool PathsReferToSameFile(string left, string right)
+    {
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    internal static bool IsSupportedGame(ProjectGame? game)
+    {
+        return game is ProjectGame.Sword or ProjectGame.Shield;
     }
 
     private static SwShWorkflowSummary CreateSummary(

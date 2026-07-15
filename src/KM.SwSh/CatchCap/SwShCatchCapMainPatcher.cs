@@ -28,8 +28,12 @@ internal sealed record SwShCatchCapAnalysis(
     string LogicExpression,
     string CapLogicSha256,
     string BuildId,
-    string PatchOffsetHex,
-    ProjectGame? DetectedGame);
+    string DisplayHookOffsetHex,
+    string RuntimeHookOffsetHex,
+    ProjectGame? DetectedGame)
+{
+    public string PatchOffsetHex => DisplayHookOffsetHex;
+}
 
 internal static class SwShCatchCapMainPatcher
 {
@@ -49,10 +53,10 @@ internal static class SwShCatchCapMainPatcher
     public const int ShieldExeFsRuntimeHookSiteOffset = 0x013AE40C;
     public const int ShieldExeFsRuntimeReturnOffset = 0x013AE424;
 
-    private const int CaveClampOffset = 0x013AE0B4;
-    private const int CaveLoadAddressOffset = 0x013AEBE4;
-    private const int CaveLoadValueOffset = 0x013AD734;
-    private const int CaveOverflowOffset = 0x013AF464;
+    internal const int ExeFsCaveClampOffset = 0x013AE0B4;
+    internal const int ExeFsCaveLoadAddressOffset = 0x013AEBE4;
+    internal const int ExeFsCaveLoadValueOffset = 0x013AD734;
+    internal const int ExeFsCaveOverflowOffset = 0x013AF464;
     private const int ShieldOffsetDelta = 0x30;
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
@@ -81,10 +85,10 @@ internal static class SwShCatchCapMainPatcher
             ExeFsReturnOffset,
             ExeFsRuntimeHookSiteOffset,
             ExeFsRuntimeReturnOffset,
-            CaveClampOffset,
-            CaveLoadAddressOffset,
-            CaveLoadValueOffset,
-            CaveOverflowOffset),
+            ExeFsCaveClampOffset,
+            ExeFsCaveLoadAddressOffset,
+            ExeFsCaveLoadValueOffset,
+            ExeFsCaveOverflowOffset),
         new(
             ProjectGame.Shield,
             "Pokemon Shield 1.3.2",
@@ -94,10 +98,10 @@ internal static class SwShCatchCapMainPatcher
             ShieldExeFsReturnOffset,
             ShieldExeFsRuntimeHookSiteOffset,
             ShieldExeFsRuntimeReturnOffset,
-            CaveClampOffset + ShieldOffsetDelta,
-            CaveLoadAddressOffset + ShieldOffsetDelta,
-            CaveLoadValueOffset + ShieldOffsetDelta,
-            CaveOverflowOffset + ShieldOffsetDelta),
+            ExeFsCaveClampOffset + ShieldOffsetDelta,
+            ExeFsCaveLoadAddressOffset + ShieldOffsetDelta,
+            ExeFsCaveLoadValueOffset + ShieldOffsetDelta,
+            ExeFsCaveOverflowOffset + ShieldOffsetDelta),
     ];
 
     public static SwShCatchCapAnalysis Analyze(byte[] mainBytes, ProjectGame? expectedGame = null)
@@ -107,8 +111,9 @@ internal static class SwShCatchCapMainPatcher
         try
         {
             var nso = NsoFile.Parse(mainBytes);
+            ValidateRequiredSegmentHashes(nso);
             var buildId = FormatBuildId(nso.BuildId);
-            var definition = FindDefinition(buildId);
+            var definition = FindDefinition(nso.BuildId);
             if (definition is null)
             {
                 return CreateAnalysis(
@@ -116,6 +121,7 @@ internal static class SwShCatchCapMainPatcher
                     "Catch Cap Editor supports Sword and Shield 1.3.2 exefs/main files. This build ID is not recognized.",
                     DefaultCaps,
                     buildId,
+                    "unknown",
                     "unknown",
                     DetectedGame: null);
             }
@@ -127,41 +133,57 @@ internal static class SwShCatchCapMainPatcher
             }
 
             var text = nso.Text.DecompressedData;
-            EnsureTextRange(text, definition.HookSiteOffset, 0x20, $"{definition.GameName} Catch Cap Hook formula tail");
+            EnsurePatchRanges(text, definition);
 
-            if (HasMarker(text, definition))
+            if (HasMarkerBytes(text, definition))
             {
                 var rawCaps = text.AsSpan(definition.TableOffset, CapCount).ToArray();
                 var caps = NormalizeCaps(rawCaps);
-                if (!IsUnconditionalBranch(ReadInstruction(text, definition.HookSiteOffset)))
+                if (!HasExactMarkerAndMetadata(text, definition))
                 {
                     return CreateAnalysis(
                         SwShCatchCapInstallKind.Conflict,
-                        "Catch Cap Editor marker is present, but the display cap formula is not branched to the KM hook.",
+                        "Catch Cap Editor marker bytes are present, but the marker version or reserved metadata is damaged.",
                         caps,
                         buildId,
                         FormatTextOffset(definition.HookSiteOffset),
+                        FormatTextOffset(definition.RuntimeHookSiteOffset),
                         definition.Game);
                 }
 
-                if (!HasRuntimeHook(text, definition) && !HasVanillaRuntimeFormula(text, definition))
+                if (!HasExactDisplayGraph(text, definition))
                 {
                     return CreateAnalysis(
                         SwShCatchCapInstallKind.Conflict,
-                        "Catch Cap Editor marker is present, but the runtime catch gate is neither vanilla nor patched by KM.",
+                        "Catch Cap Editor marker is present, but the display hook branch or cave graph is damaged or redirected.",
                         caps,
                         buildId,
                         FormatTextOffset(definition.HookSiteOffset),
+                        FormatTextOffset(definition.RuntimeHookSiteOffset),
                         definition.Game);
                 }
 
-                var message = CreateInstalledMessage(rawCaps, HasRuntimeHook(text, definition));
+                var installState = GetExactInstallState(text, definition);
+                if (installState == CatchCapInstallState.None)
+                {
+                    return CreateAnalysis(
+                        SwShCatchCapInstallKind.Conflict,
+                        "Catch Cap Editor marker is present, but the runtime catch gate is neither the exact vanilla formula nor the exact KM hook.",
+                        caps,
+                        buildId,
+                        FormatTextOffset(definition.HookSiteOffset),
+                        FormatTextOffset(definition.RuntimeHookSiteOffset),
+                        definition.Game);
+                }
+
+                var message = CreateInstalledMessage(rawCaps, installState == CatchCapInstallState.DisplayAndRuntime);
                 return CreateAnalysis(
                     SwShCatchCapInstallKind.InstalledV1,
                     message,
                     caps,
                     buildId,
                     FormatTextOffset(definition.HookSiteOffset),
+                    FormatTextOffset(definition.RuntimeHookSiteOffset),
                     definition.Game);
             }
 
@@ -174,28 +196,19 @@ internal static class SwShCatchCapMainPatcher
                     DefaultCaps,
                     buildId,
                     FormatTextOffset(definition.HookSiteOffset),
+                    FormatTextOffset(definition.RuntimeHookSiteOffset),
                     definition.Game);
             }
 
-            if (ReadInstruction(text, definition.TableOffset) != VanillaTailRestoreInstruction)
+            if (!HasVanillaInstallSurface(text, definition))
             {
                 return CreateAnalysis(
                     SwShCatchCapInstallKind.Conflict,
-                    "Catch-cap formula tail does not look vanilla and does not contain a KM Catch Cap Hook marker.",
+                    "Catch Cap Editor found non-vanilla bytes in its display formula, runtime formula, protected epilogues, or reserved caves.",
                     DefaultCaps,
                     buildId,
                     FormatTextOffset(definition.HookSiteOffset),
-                    definition.Game);
-            }
-
-            if (!HasVanillaRuntimeFormula(text, definition))
-            {
-                return CreateAnalysis(
-                    SwShCatchCapInstallKind.Conflict,
-                    "Runtime catch gate does not look vanilla and does not contain a KM Catch Cap Hook marker.",
-                    DefaultCaps,
-                    buildId,
-                    FormatTextOffset(definition.HookSiteOffset),
+                    FormatTextOffset(definition.RuntimeHookSiteOffset),
                     definition.Game);
             }
 
@@ -205,6 +218,7 @@ internal static class SwShCatchCapMainPatcher
                 DefaultCaps,
                 buildId,
                 FormatTextOffset(definition.HookSiteOffset),
+                FormatTextOffset(definition.RuntimeHookSiteOffset),
                 definition.Game);
         }
         catch (InvalidDataException exception)
@@ -213,6 +227,7 @@ internal static class SwShCatchCapMainPatcher
                 SwShCatchCapInstallKind.Conflict,
                 exception.Message,
                 DefaultCaps,
+                "unknown",
                 "unknown",
                 "unknown",
                 DetectedGame: null);
@@ -265,11 +280,11 @@ internal static class SwShCatchCapMainPatcher
         }
 
         var nso = NsoFile.Parse(mainBytes);
-        var definition = FindDefinition(FormatBuildId(nso.BuildId))
+        ValidateRequiredSegmentHashes(nso);
+        var definition = FindDefinition(nso.BuildId)
             ?? throw new InvalidDataException("Catch Cap Editor supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
-        EnsureTextRange(text, definition.HookSiteOffset, 0x20, $"{definition.GameName} Catch Cap Hook formula tail");
-        EnsureCavesAvailableOrOwned(text, definition);
+        EnsurePatchRanges(text, definition);
 
         if (analysis.Kind == SwShCatchCapInstallKind.NotInstalled)
         {
@@ -284,7 +299,9 @@ internal static class SwShCatchCapMainPatcher
         }
 
         WriteTableAndMarker(text, capBytes, definition);
-        return nso.Write(textDecompressedData: text);
+        var output = nso.Write(textDecompressedData: text);
+        VerifyApplyOutput(mainBytes, output, capBytes, definition, expectedGame);
+        return output;
     }
 
     public static byte[] RestoreFromBase(
@@ -297,15 +314,21 @@ internal static class SwShCatchCapMainPatcher
 
         var currentNso = NsoFile.Parse(currentMainBytes);
         var baseNso = NsoFile.Parse(baseMainBytes);
+        ValidateRequiredSegmentHashes(currentNso);
+        ValidateRequiredSegmentHashes(baseNso);
+
         var currentBuildId = FormatBuildId(currentNso.BuildId);
         var baseBuildId = FormatBuildId(baseNso.BuildId);
-        if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
+        var currentDefinition = FindDefinition(currentNso.BuildId)
+            ?? throw new InvalidDataException("Catch Cap restore requires a supported Sword or Shield 1.3.2 current main NSO.");
+        var definition = FindDefinition(baseNso.BuildId)
+            ?? throw new InvalidDataException("Catch Cap restore requires a supported Sword or Shield 1.3.2 base main NSO.");
+        if (currentDefinition.Game != definition.Game)
         {
-            throw new InvalidDataException("Catch Cap restore requires current and base main NSO files with the same build ID.");
+            throw new InvalidDataException("Catch Cap restore requires current and base main NSO files for the same game.");
         }
 
-        var definition = FindDefinition(baseBuildId)
-            ?? throw new InvalidDataException("Catch Cap restore requires a supported Sword or Shield 1.3.2 base main NSO.");
+        EnsureSameBuildAndLayout(currentNso, baseNso, "Catch Cap restore");
         var mismatch = CreateGameMismatchAnalysis(definition, expectedGame, baseBuildId);
         if (mismatch is not null)
         {
@@ -314,23 +337,37 @@ internal static class SwShCatchCapMainPatcher
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
+        EnsurePatchRanges(currentText, definition);
+        EnsurePatchRanges(baseText, definition);
+        EnsureVanillaBase(baseText, definition);
+        var currentAnalysis = Analyze(currentMainBytes, expectedGame);
+        if (currentAnalysis.Kind != SwShCatchCapInstallKind.InstalledV1)
         {
-            throw new InvalidDataException("Catch Cap restore requires current and base main NSO files with matching .text sizes.");
+            throw new InvalidDataException(
+                $"Catch Cap restore requires one exact installed KM hook; found {currentAnalysis.Kind}: {currentAnalysis.Message}");
         }
 
-        EnsureVanillaBase(baseText, definition);
+        var installState = GetExactInstallState(currentText, definition);
+        if (installState == CatchCapInstallState.None)
+        {
+            throw new InvalidDataException("Catch Cap restore could not verify the exact installed display and runtime graph.");
+        }
 
-        // Uninstall restores only bytes owned by Catch Cap. Other ExeFS editors can share the same
-        // generated main file, so replacing the whole file would remove their hooks too.
-        foreach (var region in OwnedRegions(definition))
+        // Restore only bytes actually written by this install shape. The display and runtime
+        // epilogues are dependencies that must remain exact, but Catch Cap never owns them.
+        var writtenRegions = WrittenRegions(
+            definition,
+            includeRuntimeGate: installState == CatchCapInstallState.DisplayAndRuntime);
+        foreach (var region in writtenRegions)
         {
             EnsureTextRange(currentText, region.Offset, region.Length, region.Label);
             EnsureTextRange(baseText, region.Offset, region.Length, $"Base {region.Label}");
             baseText.AsSpan(region.Offset, region.Length).CopyTo(currentText.AsSpan(region.Offset, region.Length));
         }
 
-        return currentNso.Write(textDecompressedData: currentText);
+        var output = currentNso.Write(textDecompressedData: currentText);
+        VerifyRestoreOutput(currentMainBytes, baseMainBytes, output, writtenRegions, expectedGame);
+        return output;
     }
 
     public static string FormatLogicExpression(IReadOnlyList<byte> caps)
@@ -387,17 +424,10 @@ internal static class SwShCatchCapMainPatcher
 
     private static void InstallDisplayHook(byte[] text, PatchDefinition definition)
     {
-        if (ReadInstruction(text, definition.TableOffset) != VanillaTailRestoreInstruction)
+        if (!HasVanillaDisplaySurface(text, definition))
         {
             throw new InvalidDataException(
-                $"Catch Cap Hook install requires the vanilla x29/x30 restore at {FormatTextOffset(definition.TableOffset)}.");
-        }
-
-        if (ReadInstruction(text, definition.ReturnOffset) != VanillaFinalRestoreInstruction
-            || ReadInstruction(text, definition.ReturnOffset + 4) != VanillaRetInstruction)
-        {
-            throw new InvalidDataException(
-                $"Catch Cap Hook install requires the vanilla final epilogue at {FormatTextOffset(definition.ReturnOffset)}.");
+                $"Catch Cap Hook install requires the exact vanilla display formula, epilogue, and empty cave bytes at {FormatTextOffset(definition.HookSiteOffset)}.");
         }
 
         // The display formula tail does not have enough contiguous space for the table lookup, so
@@ -464,12 +494,107 @@ internal static class SwShCatchCapMainPatcher
         return normalized;
     }
 
-    private static bool HasMarker(ReadOnlySpan<byte> text, PatchDefinition definition)
+    private static bool HasMarkerBytes(ReadOnlySpan<byte> text, PatchDefinition definition)
     {
-        return text.Length >= definition.TableOffset + CapCount + Marker.Length + 2
-            && text.Slice(definition.TableOffset + CapCount, Marker.Length).SequenceEqual(Marker)
+        return text.Length >= definition.TableOffset + CapCount + Marker.Length
+            && text.Slice(definition.TableOffset + CapCount, Marker.Length).SequenceEqual(Marker);
+    }
+
+    private static bool HasExactMarkerAndMetadata(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        return text.Length >= definition.TableOffset + 0x18
+            && HasMarkerBytes(text, definition)
             && text[definition.TableOffset + CapCount + Marker.Length] == CapCount
-            && text[definition.TableOffset + CapCount + Marker.Length + 1] == 1;
+            && text[definition.TableOffset + CapCount + Marker.Length + 1] == 1
+            && IsZeroFilled(text.Slice(definition.TableOffset + 0x10, 0x08));
+    }
+
+    private static CatchCapInstallState GetExactInstallState(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        if (!HasExactMarkerAndMetadata(text, definition) || !HasExactDisplayGraph(text, definition))
+        {
+            return CatchCapInstallState.None;
+        }
+
+        if (HasRuntimeHook(text, definition))
+        {
+            return CatchCapInstallState.DisplayAndRuntime;
+        }
+
+        return HasVanillaRuntimeFormula(text, definition)
+            ? CatchCapInstallState.LegacyDisplayOnly
+            : CatchCapInstallState.None;
+    }
+
+    private static bool HasExactDisplayGraph(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        return ReadInstruction(text, definition.HookSiteOffset)
+                == EncodeBranch(definition.HookSiteOffset, definition.CaveClampOffset)
+            && ReadInstruction(text, definition.CaveClampOffset) == EncodeCmpImmediate(0, 8)
+            && ReadInstruction(text, definition.CaveClampOffset + 4)
+                == EncodeConditionalBranch(
+                    definition.CaveClampOffset + 4,
+                    definition.CaveLoadAddressOffset,
+                    Arm64Condition.LS)
+            && ReadInstruction(text, definition.CaveClampOffset + 8)
+                == EncodeBranch(definition.CaveClampOffset + 8, definition.CaveOverflowOffset)
+            && ReadInstruction(text, definition.CaveOverflowOffset) == EncodeMovzImmediate32(0, 8)
+            && ReadInstruction(text, definition.CaveOverflowOffset + 4)
+                == EncodeBranch(definition.CaveOverflowOffset + 4, definition.CaveLoadAddressOffset)
+            && ReadInstruction(text, definition.CaveOverflowOffset + 8) == EncodeNop()
+            && ReadInstruction(text, definition.CaveLoadAddressOffset)
+                == EncodeAdr(8, definition.CaveLoadAddressOffset, definition.TableOffset)
+            && ReadInstruction(text, definition.CaveLoadAddressOffset + 4)
+                == EncodeBranch(definition.CaveLoadAddressOffset + 4, definition.CaveLoadValueOffset)
+            && ReadInstruction(text, definition.CaveLoadAddressOffset + 8) == EncodeNop()
+            && ReadInstruction(text, definition.CaveLoadValueOffset)
+                == EncodeLdrbRegisterOffsetUxtw(0, 8, 0)
+            && ReadInstruction(text, definition.CaveLoadValueOffset + 4) == VanillaTailRestoreInstruction
+            && ReadInstruction(text, definition.CaveLoadValueOffset + 8)
+                == EncodeBranch(definition.CaveLoadValueOffset + 8, definition.ReturnOffset)
+            && HasDisplayEpilogue(text, definition);
+    }
+
+    private static bool HasVanillaDisplaySurface(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        if (!HasVanillaDisplayFormula(text, definition))
+        {
+            return false;
+        }
+
+        foreach (var cave in definition.CaveOffsets)
+        {
+            if (!IsZeroFilled(text.Slice(cave, 0x0C)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool HasVanillaDisplayFormula(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        return ReadInstruction(text, definition.HookSiteOffset) == VanillaFormulaStartInstruction
+            && ReadInstruction(text, definition.TableOffset) == VanillaTailRestoreInstruction
+            && ReadInstruction(text, definition.TableOffset + 4) == VanillaMaskInstruction
+            && ReadInstruction(text, definition.TableOffset + 8) == VanillaCompareSevenInstruction
+            && ReadInstruction(text, definition.TableOffset + 0x0C) == VanillaLoadHundredInstruction
+            && ReadInstruction(text, definition.TableOffset + 0x10) == VanillaAddTwentyInstruction
+            && ReadInstruction(text, definition.TableOffset + 0x14) == VanillaSelectInstruction
+            && HasDisplayEpilogue(text, definition);
+    }
+
+    private static bool HasDisplayEpilogue(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        return ReadInstruction(text, definition.ReturnOffset) == VanillaFinalRestoreInstruction
+            && ReadInstruction(text, definition.ReturnOffset + 4) == VanillaRetInstruction;
+    }
+
+    private static bool HasVanillaInstallSurface(ReadOnlySpan<byte> text, PatchDefinition definition)
+    {
+        return HasVanillaDisplaySurface(text, definition)
+            && HasVanillaRuntimeFormula(text, definition);
     }
 
     private static bool HasVanillaRuntimeFormula(ReadOnlySpan<byte> text, PatchDefinition definition)
@@ -496,37 +621,228 @@ internal static class SwShCatchCapMainPatcher
             && ReadInstruction(text, definition.RuntimeReturnOffset + 4) == VanillaRetInstruction;
     }
 
-    private static void EnsureCavesAvailableOrOwned(byte[] text, PatchDefinition definition)
+    private static void EnsurePatchRanges(ReadOnlySpan<byte> text, PatchDefinition definition)
     {
-        foreach (var cave in definition.CaveOffsets)
+        foreach (var region in WrittenRegions(definition, includeRuntimeGate: true)
+            .Concat(DependencyRegions(definition)))
         {
-            EnsureTextRange(text, cave, 0x0C, $"Catch Cap Hook cave main.text+0x{cave:X}");
-            if (!HasMarker(text, definition) && !text.AsSpan(cave, 0x0C).SequenceEqual(new byte[0x0C]))
-            {
-                throw new InvalidDataException($"Catch Cap Hook cave main.text+0x{cave:X} is not empty.");
-            }
+            EnsureTextRange(text, region.Offset, region.Length, region.Label);
         }
     }
 
     private static void EnsureVanillaBase(ReadOnlySpan<byte> text, PatchDefinition definition)
     {
-        if (ReadInstruction(text, definition.HookSiteOffset) != VanillaFormulaStartInstruction
-            || ReadInstruction(text, definition.TableOffset) != VanillaTailRestoreInstruction
-            || ReadInstruction(text, definition.ReturnOffset) != VanillaFinalRestoreInstruction
-            || ReadInstruction(text, definition.ReturnOffset + 4) != VanillaRetInstruction
-            || !HasVanillaRuntimeFormula(text, definition))
+        EnsurePatchRanges(text, definition);
+        if (!HasVanillaDisplayFormula(text, definition))
         {
             throw new InvalidDataException(
-                $"{definition.GameName} Catch Cap restore expected a vanilla base main at {FormatTextOffset(definition.HookSiteOffset)} and {FormatTextOffset(definition.RuntimeHookSiteOffset)}.");
+                $"{definition.GameName} Catch Cap restore expected the exact vanilla display formula and protected epilogue at {FormatTextOffset(definition.HookSiteOffset)}.");
+        }
+
+        if (!HasVanillaRuntimeFormula(text, definition))
+        {
+            throw new InvalidDataException(
+                $"{definition.GameName} Catch Cap restore expected the exact vanilla runtime formula and protected epilogue at {FormatTextOffset(definition.RuntimeHookSiteOffset)}.");
         }
 
         foreach (var cave in definition.CaveOffsets)
         {
-            EnsureTextRange(text, cave, 0x0C, $"Catch Cap base cave main.text+0x{cave:X}");
-            if (!text.Slice(cave, 0x0C).SequenceEqual(new byte[0x0C]))
+            if (!IsZeroFilled(text.Slice(cave, 0x0C)))
             {
-                throw new InvalidDataException($"{definition.GameName} Catch Cap restore expected an empty base cave at main.text+0x{cave:X}.");
+                throw new InvalidDataException(
+                    $"{definition.GameName} Catch Cap restore expected an empty base cave at main.text+0x{cave:X}.");
             }
+        }
+    }
+
+    private static bool IsZeroFilled(ReadOnlySpan<byte> bytes)
+    {
+        foreach (var value in bytes)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void VerifyApplyOutput(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        IReadOnlyList<byte> expectedCaps,
+        PatchDefinition definition,
+        ProjectGame? expectedGame)
+    {
+        var writtenRegions = WrittenRegions(definition, includeRuntimeGate: true);
+        VerifyOutputPreservation(
+            sourceMainBytes,
+            outputMainBytes,
+            writtenRegions,
+            "Catch Cap apply");
+
+        var analysis = Analyze(outputMainBytes, expectedGame);
+        var outputNso = NsoFile.Parse(outputMainBytes);
+        var outputText = outputNso.Text.DecompressedData;
+        if (analysis.Kind != SwShCatchCapInstallKind.InstalledV1
+            || GetExactInstallState(outputText, definition) != CatchCapInstallState.DisplayAndRuntime
+            || !outputText.AsSpan(definition.TableOffset, CapCount).SequenceEqual(expectedCaps.ToArray()))
+        {
+            throw new InvalidDataException(
+                "Catch Cap apply verification did not find the exact display and runtime hook graph with the requested badge table.");
+        }
+    }
+
+    private static void VerifyRestoreOutput(
+        byte[] currentMainBytes,
+        byte[] baseMainBytes,
+        byte[] outputMainBytes,
+        IReadOnlyList<PatchRegion> restoredRegions,
+        ProjectGame? expectedGame)
+    {
+        VerifyOutputPreservation(
+            currentMainBytes,
+            outputMainBytes,
+            restoredRegions,
+            "Catch Cap restore");
+
+        var outputAnalysis = Analyze(outputMainBytes, expectedGame);
+        if (outputAnalysis.Kind != SwShCatchCapInstallKind.NotInstalled)
+        {
+            throw new InvalidDataException(
+                $"Catch Cap restore verification did not return the exact vanilla install surface: {outputAnalysis.Message}");
+        }
+
+        var baseText = NsoFile.Parse(baseMainBytes).Text.DecompressedData;
+        var outputText = NsoFile.Parse(outputMainBytes).Text.DecompressedData;
+        foreach (var region in restoredRegions)
+        {
+            if (!baseText.AsSpan(region.Offset, region.Length)
+                .SequenceEqual(outputText.AsSpan(region.Offset, region.Length)))
+            {
+                throw new InvalidDataException(
+                    $"Catch Cap restore verification found a mismatched {region.Label}.");
+            }
+        }
+    }
+
+    private static void VerifyOutputPreservation(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        IReadOnlyList<PatchRegion> writtenRegions,
+        string operation)
+    {
+        var source = NsoFile.Parse(sourceMainBytes);
+        var output = NsoFile.Parse(outputMainBytes);
+        ValidateRequiredSegmentHashes(source);
+        ValidateRequiredSegmentHashes(output);
+        EnsureSameBuildAndLayout(source, output, operation);
+        VerifyPreservedSegment(source.Ro, output.Ro, ".ro", operation);
+        VerifyPreservedSegment(source.Data, output.Data, ".data", operation);
+        VerifyTextOutsideRegions(
+            source.Text.DecompressedData,
+            output.Text.DecompressedData,
+            writtenRegions,
+            operation);
+    }
+
+    private static void EnsureSameBuildAndLayout(NsoFile left, NsoFile right, string operation)
+    {
+        if (left.Version != right.Version
+            || left.Flags != right.Flags
+            || !left.BuildId.SequenceEqual(right.BuildId))
+        {
+            throw new InvalidDataException(
+                $"{operation} requires matching NSO version, flags, and full 32-byte build identity.");
+        }
+
+        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(left.RawHeader, right.RawHeader))
+        {
+            throw new InvalidDataException($"{operation} requires matching stable NSO header metadata.");
+        }
+
+        for (var index = 0; index < left.Segments.Count; index++)
+        {
+            var leftSegment = left.Segments[index];
+            var rightSegment = right.Segments[index];
+            if (leftSegment.Header.MemoryOffset != rightSegment.Header.MemoryOffset
+                || leftSegment.Header.DecompressedSize != rightSegment.Header.DecompressedSize
+                || leftSegment.DecompressedData.Length != rightSegment.DecompressedData.Length)
+            {
+                throw new InvalidDataException(
+                    $"{operation} requires matching {leftSegment.Name} memory offsets and decompressed sizes.");
+            }
+        }
+    }
+
+    private static void VerifyPreservedSegment(
+        NsoSegment source,
+        NsoSegment output,
+        string segmentName,
+        string operation)
+    {
+        if (source.Header.MemoryOffset != output.Header.MemoryOffset
+            || source.Header.DecompressedSize != output.Header.DecompressedSize
+            || source.CompressedSize != output.CompressedSize
+            || !source.Hash.SequenceEqual(output.Hash)
+            || !source.CompressedData.SequenceEqual(output.CompressedData)
+            || !source.DecompressedData.SequenceEqual(output.DecompressedData))
+        {
+            throw new InvalidDataException($"{operation} verification found a changed {segmentName} segment.");
+        }
+    }
+
+    private static void VerifyTextOutsideRegions(
+        ReadOnlySpan<byte> sourceText,
+        ReadOnlySpan<byte> outputText,
+        IReadOnlyList<PatchRegion> writtenRegions,
+        string operation)
+    {
+        if (sourceText.Length != outputText.Length)
+        {
+            throw new InvalidDataException($"{operation} verification found a changed .text size.");
+        }
+
+        var cursor = 0;
+        foreach (var region in writtenRegions.OrderBy(region => region.Offset))
+        {
+            EnsureTextRange(sourceText, region.Offset, region.Length, region.Label);
+            if (region.Offset < cursor)
+            {
+                throw new InvalidDataException($"{operation} has overlapping written-region definitions.");
+            }
+
+            if (!sourceText.Slice(cursor, region.Offset - cursor)
+                .SequenceEqual(outputText.Slice(cursor, region.Offset - cursor)))
+            {
+                throw new InvalidDataException(
+                    $"{operation} verification found a change outside Catch Cap written ranges before {region.Label}.");
+            }
+
+            cursor = region.Offset + region.Length;
+        }
+
+        if (!sourceText[cursor..].SequenceEqual(outputText[cursor..]))
+        {
+            throw new InvalidDataException(
+                $"{operation} verification found a change outside Catch Cap written ranges after the final region.");
+        }
+    }
+
+    private static void ValidateRequiredSegmentHashes(NsoFile nso)
+    {
+        ValidateRequiredSegmentHash(nso.Text, nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        ValidateRequiredSegmentHash(nso.Ro, nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        ValidateRequiredSegmentHash(nso.Data, nso.Flags.HasFlag(NsoFlags.CheckHashData));
+    }
+
+    private static void ValidateRequiredSegmentHash(NsoSegment segment, bool required)
+    {
+        if (required && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
+        {
+            throw new InvalidDataException(
+                $"Catch Cap patching rejected {segment.Name} because its required NSO header hash does not match the decompressed segment.");
         }
     }
 
@@ -535,7 +851,8 @@ internal static class SwShCatchCapMainPatcher
         string message,
         IReadOnlyList<byte> caps,
         string buildId,
-        string patchOffsetHex,
+        string displayHookOffsetHex,
+        string runtimeHookOffsetHex,
         ProjectGame? DetectedGame)
     {
         return new SwShCatchCapAnalysis(
@@ -545,7 +862,8 @@ internal static class SwShCatchCapMainPatcher
             FormatLogicExpression(caps),
             ComputeCapLogicSha256(caps),
             buildId,
-            patchOffsetHex,
+            displayHookOffsetHex,
+            runtimeHookOffsetHex,
             DetectedGame);
     }
 
@@ -567,13 +885,36 @@ internal static class SwShCatchCapMainPatcher
             DefaultCaps,
             buildId,
             FormatTextOffset(definition.HookSiteOffset),
+            FormatTextOffset(definition.RuntimeHookSiteOffset),
             definition.Game);
     }
 
-    private static PatchDefinition? FindDefinition(string buildId)
+    private static PatchDefinition? FindDefinition(ReadOnlySpan<byte> buildId)
     {
-        return Definitions.FirstOrDefault(definition =>
-            string.Equals(definition.BuildId, buildId, StringComparison.OrdinalIgnoreCase));
+        foreach (var definition in Definitions)
+        {
+            if (IsCanonicalBuildId(buildId, definition.BuildId))
+            {
+                return definition;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsCanonicalBuildId(ReadOnlySpan<byte> buildId, string expectedPrefixHex)
+    {
+        const int nsoBuildIdLength = 0x20;
+        const int knownBuildIdLength = 0x14;
+        if (buildId.Length != nsoBuildIdLength)
+        {
+            return false;
+        }
+
+        var expectedPrefix = Convert.FromHexString(expectedPrefixHex);
+        return expectedPrefix.Length == knownBuildIdLength
+            && buildId[..knownBuildIdLength].SequenceEqual(expectedPrefix)
+            && IsZeroFilled(buildId[knownBuildIdLength..]);
     }
 
     private static string FormatBuildId(byte[] buildId)
@@ -587,18 +928,34 @@ internal static class SwShCatchCapMainPatcher
         return string.Create(CultureInfo.InvariantCulture, $"main.text+0x{offset:X8}");
     }
 
-    private static IReadOnlyList<PatchRegion> OwnedRegions(PatchDefinition definition)
+    private static IReadOnlyList<PatchRegion> WrittenRegions(
+        PatchDefinition definition,
+        bool includeRuntimeGate)
     {
-        return
+        List<PatchRegion> regions =
         [
             new(definition.HookSiteOffset, sizeof(uint), "Catch Cap hook branch site"),
             new(definition.TableOffset, 0x18, "Catch Cap cap table, marker, and reserved metadata"),
-            new(definition.ReturnOffset, sizeof(uint) * 2, "Catch Cap vanilla return target"),
-            new(definition.RuntimeHookSiteOffset, 0x18, "Catch Cap runtime capture gate"),
             new(definition.CaveClampOffset, 0x0C, "Catch Cap standard cave slot 1"),
             new(definition.CaveLoadAddressOffset, 0x0C, "Catch Cap standard cave slot 2"),
             new(definition.CaveLoadValueOffset, 0x0C, "Catch Cap standard cave slot 3"),
             new(definition.CaveOverflowOffset, 0x0C, "Catch Cap fallback cave slot 1"),
+        ];
+
+        if (includeRuntimeGate)
+        {
+            regions.Add(new(definition.RuntimeHookSiteOffset, 0x18, "Catch Cap runtime capture gate"));
+        }
+
+        return regions;
+    }
+
+    private static IReadOnlyList<PatchRegion> DependencyRegions(PatchDefinition definition)
+    {
+        return
+        [
+            new(definition.ReturnOffset, sizeof(uint) * 2, "Catch Cap protected display epilogue"),
+            new(definition.RuntimeReturnOffset, sizeof(uint) * 2, "Catch Cap protected runtime epilogue"),
         ];
     }
 
@@ -719,6 +1076,13 @@ internal static class SwShCatchCapMainPatcher
     private enum Arm64Condition
     {
         LS = 9,
+    }
+
+    private enum CatchCapInstallState
+    {
+        None,
+        LegacyDisplayOnly,
+        DisplayAndRuntime,
     }
 
     private sealed record PatchDefinition(

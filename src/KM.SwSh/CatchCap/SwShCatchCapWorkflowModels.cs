@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Projects;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.CatchCap;
@@ -32,6 +33,10 @@ public sealed record SwShCatchCapWorkflow(
     string InstallMessage,
     string LogicExpression,
     string CapLogicSha256,
+    string BuildId,
+    ProjectGame? DetectedGame,
+    string DisplayHookOffsetHex,
+    string RuntimeHookOffsetHex,
     IReadOnlyList<SwShCatchCapRecord> Caps,
     SwShCatchCapProvenance Provenance,
     SwShCatchCapWorkflowStats Stats,

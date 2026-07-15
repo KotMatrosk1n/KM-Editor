@@ -1872,7 +1872,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadCatchCapWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadCatchCapWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadCatchCap(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Catch Cap project paths are required.");
+        var workflow = swShWorkflowService.LoadCatchCap(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1881,14 +1883,21 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageCatchCap(string requestJson)
     {
         var request = DeserializeRequest<StageCatchCapRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Catch Cap stage paths are required.");
+        var caps = request.Payload.Caps
+            ?? throw new JsonException("Catch Cap selections are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = catchCapEditSessionService.StageCaps(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.Caps.Select(selection => new SwShCatchCapSelection(
-                selection.BadgeCount,
-                selection.LevelCap)).ToArray(),
+            ProjectBridgeMapper.ToCore(paths),
+            caps.Select(selection =>
+            {
+                var cap = selection
+                    ?? throw new JsonException("Catch Cap selection entries are required.");
+                return new SwShCatchCapSelection(cap.BadgeCount, cap.LevelCap);
+            }).ToArray(),
             session);
         var response = SwShBridgeMapper.ToDto(result);
 
@@ -1898,11 +1907,13 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageCatchCapUninstall(string requestJson)
     {
         var request = DeserializeRequest<StageCatchCapUninstallRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Catch Cap uninstall paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = catchCapEditSessionService.StageUninstall(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            ProjectBridgeMapper.ToCore(paths),
             session);
         var response = SwShBridgeMapper.ToCatchCapUninstallDto(result);
 

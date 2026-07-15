@@ -8,6 +8,9 @@ import {
   createChangePlanResponseSchema,
   createBridgeRequestSchema,
   createBridgeResponseSchema,
+  catchCapRecordSchema,
+  catchCapSelectionSchema,
+  catchCapWorkflowSchema,
   encounterSlotRecordSchema,
   giftPokemonEditableFieldSchema,
   giftPokemonMoveSchema,
@@ -282,6 +285,31 @@ describe('bridge contracts', () => {
         session: null
       }).success
     ).toBe(true);
+  });
+
+  it('keeps Catch Cap identity fields strict while preserving raw build and hook labels', () => {
+    expect(catchCapRecordSchema.shape.badgeCount.safeParse(0).success).toBe(true);
+    expect(catchCapRecordSchema.shape.badgeCount.safeParse(8).success).toBe(true);
+    expect(catchCapRecordSchema.shape.badgeCount.safeParse(9).success).toBe(false);
+    expect(catchCapRecordSchema.shape.levelCap.safeParse(0).success).toBe(true);
+    expect(catchCapRecordSchema.shape.levelCap.safeParse(255).success).toBe(true);
+    expect(catchCapRecordSchema.shape.levelCap.safeParse(256).success).toBe(false);
+    expect(catchCapSelectionSchema.shape.levelCap.safeParse(0).success).toBe(false);
+    expect(catchCapSelectionSchema.shape.levelCap.safeParse(1).success).toBe(true);
+    expect(catchCapSelectionSchema.shape.levelCap.safeParse(100).success).toBe(true);
+    expect(catchCapSelectionSchema.shape.levelCap.safeParse(101).success).toBe(false);
+    expect(catchCapWorkflowSchema.shape.detectedGame.safeParse('sword').success).toBe(true);
+    expect(catchCapWorkflowSchema.shape.detectedGame.safeParse('shield').success).toBe(true);
+    expect(catchCapWorkflowSchema.shape.detectedGame.safeParse('scarlet').success).toBe(false);
+    expect(catchCapWorkflowSchema.shape.buildId.parse('  RAW-BUILD-ID  ')).toBe(
+      '  RAW-BUILD-ID  '
+    );
+    expect(catchCapWorkflowSchema.shape.displayHookOffsetHex.parse('main.text+0xABC')).toBe(
+      'main.text+0xABC'
+    );
+    expect(catchCapWorkflowSchema.shape.runtimeHookOffsetHex.parse('raw/runtime/path')).toBe(
+      'raw/runtime/path'
+    );
   });
 
   it('accepts the nullable Z-A Wild Zone completion role on encounter slots', () => {
