@@ -994,8 +994,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("0x1122334455667788", rental.Hash1);
         Assert.Equal("romfs/bin/script_event_data/rental.bin", rental.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, rental.Provenance.SourceLayer);
+        Assert.Contains(rental.GenderOptions, option => option.Value == 1 && option.Label == "Male");
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivHp");
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "fixedIvPreset");
+        Assert.Equal(
+            uint.MaxValue,
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "trainerId").MaximumValue);
     }
 
     [Fact]
@@ -1033,6 +1037,118 @@ public sealed class ProjectBridgeDispatcherTests
             "romfs/bin/script_event_data/rental.bin".Replace('/', Path.DirectorySeparatorChar));
         var output = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(12, output.Rentals[0].Ivs.Attack);
+    }
+
+    [Fact]
+    public void DispatchUpdateRentalPokemonFieldsIsAtomicAndSupportsFullTrainerIdRange()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRentalPokemonBridgeFixtures.WriteBaseRentalPokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var invalidJson = SerializeRequest(
+            KmCommandNames.UpdateRentalPokemonFields,
+            new UpdateRentalPokemonFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RentalPokemonFieldUpdate(0, "ivAttack", "12"),
+                    new RentalPokemonFieldUpdate(0, "ivDefense", "80"),
+                ]),
+            requestId: "request-rental-pokemon-invalid-batch");
+
+        var invalid = DeserializeResponse<UpdateRentalPokemonFieldsResponse>(
+            dispatcher.Dispatch(invalidJson));
+
+        Assert.Null(invalid.Error);
+        Assert.NotNull(invalid.Payload);
+        Assert.Empty(invalid.Payload.Session.PendingEdits);
+        Assert.Equal(31, invalid.Payload.Workflow.Rentals[0].Ivs.Attack);
+        Assert.Contains(
+            invalid.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Field == "ivDefense");
+
+        var validJson = SerializeRequest(
+            KmCommandNames.UpdateRentalPokemonFields,
+            new UpdateRentalPokemonFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RentalPokemonFieldUpdate(0, "ivAttack", "12"),
+                    new RentalPokemonFieldUpdate(0, "trainerId", uint.MaxValue.ToString()),
+                ]),
+            requestId: "request-rental-pokemon-valid-batch");
+        var valid = DeserializeResponse<UpdateRentalPokemonFieldsResponse>(
+            dispatcher.Dispatch(validJson)).Payload!;
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, valid.Session),
+            requestId: "request-rental-pokemon-batch-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, valid.Session, plan),
+            requestId: "request-rental-pokemon-batch-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.Equal(2, valid.Session.PendingEdits.Count);
+        Assert.Equal(12, valid.Workflow.Rentals[0].Ivs.Attack);
+        Assert.Equal(uint.MaxValue, valid.Workflow.Rentals[0].TrainerId);
+        Assert.Contains("romfs/bin/script_event_data/rental.bin", apply.WrittenFiles);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/script_event_data/rental.bin".Replace('/', Path.DirectorySeparatorChar));
+        var output = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(12, output.Rentals[0].Ivs.Attack);
+        Assert.Equal(uint.MaxValue, output.Rentals[0].TrainerId);
+    }
+
+    [Fact]
+    public void DispatchUpdateRentalPokemonFieldsReturnsDiagnosticsForNullOrMissingUpdates()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRentalPokemonBridgeFixtures.WriteBaseRentalPokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var requests = new[]
+        {
+            SerializeRequest(
+                KmCommandNames.UpdateRentalPokemonFields,
+                new UpdateRentalPokemonFieldsRequest(temp.Paths, Session: null, Updates: null),
+                requestId: "request-rental-pokemon-null-updates"),
+            SerializeRequest(
+                KmCommandNames.UpdateRentalPokemonFields,
+                new
+                {
+                    Paths = temp.Paths,
+                    Session = (EditSessionDto?)null,
+                },
+                requestId: "request-rental-pokemon-missing-updates"),
+            SerializeRequest(
+                KmCommandNames.UpdateRentalPokemonFields,
+                new UpdateRentalPokemonFieldsRequest(
+                    temp.Paths,
+                    Session: null,
+                    Updates: [null]),
+                requestId: "request-rental-pokemon-null-update"),
+        };
+
+        foreach (var request in requests)
+        {
+            var response = DeserializeResponse<UpdateRentalPokemonFieldsResponse>(
+                dispatcher.Dispatch(request));
+
+            Assert.Null(response.Error);
+            Assert.NotNull(response.Payload);
+            Assert.Empty(response.Payload.Session.PendingEdits);
+            Assert.Contains(
+                response.Payload.Diagnostics,
+                diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                    && diagnostic.Field == "updates");
+        }
     }
 
     [Fact]

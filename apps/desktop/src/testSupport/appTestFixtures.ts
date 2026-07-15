@@ -2450,12 +2450,12 @@ export function createMockProjectBridge(
       {
         field: 'ability',
         label: 'Ability slot',
-        maximumValue: 3,
+        maximumValue: 2,
         minimumValue: 0,
         options: [
-          { label: 'Default', value: 0 },
-          { label: 'Ability 1', value: 1 },
-          { label: 'Hidden Ability', value: 3 }
+          { label: 'Ability 1', value: 0 },
+          { label: 'Ability 2', value: 1 },
+          { label: 'Hidden Ability', value: 2 }
         ],
         valueKind: 'integer'
       },
@@ -2532,9 +2532,12 @@ export function createMockProjectBridge(
     ],
     rentals: [
       {
-        ability: 1,
+        ability: 0,
         abilityLabel: 'Ability 1',
-        abilityOptions: [],
+        abilityOptions: [
+          { label: 'Ability 1', value: 0 },
+          { label: 'Hidden Ability', value: 2 }
+        ],
         ballItem: 'Poke Ball',
         ballItemId: 4,
         evs: {
@@ -2548,6 +2551,11 @@ export function createMockProjectBridge(
         form: 0,
         gender: 1,
         genderLabel: 'Male',
+        genderOptions: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 }
+        ],
         hash1: '0x0000000000000010',
         hash2: '0x0000000000000020',
         hasPerfectIvs: true,
@@ -4420,6 +4428,7 @@ export function createMockProjectBridge(
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
   let currentStaticEncountersWorkflow = staticEncountersWorkflow;
+  let currentRentalPokemonWorkflow = rentalPokemonWorkflow;
   const targetSameStaticEncounter = (firstRecordId: string, secondRecordId: string) => {
     if (firstRecordId === secondRecordId) {
       return true;
@@ -4646,6 +4655,199 @@ export function createMockProjectBridge(
         sessionId: session?.sessionId ?? 'session-1'
       },
       workflow: currentStaticEncountersWorkflow
+    });
+  };
+  const stageRentalPokemonUpdates = (
+    updates: ReadonlyArray<{
+      rentalIndex: number;
+      field: string;
+      value: string;
+    }>,
+    session: EditSession | null
+  ) => {
+    const invalidUpdate = updates.find(
+      (update) =>
+        !currentRentalPokemonWorkflow.rentals.some(
+          (rental) => rental.rentalIndex === update.rentalIndex
+        ) ||
+        !currentRentalPokemonWorkflow.editableFields.some(
+          (field) => field.field === update.field
+        ) ||
+        !/^[+-]?\d+$/.test(update.value)
+    );
+    if (invalidUpdate) {
+      return Promise.resolve({
+        diagnostics: [
+          {
+            domain: 'workflow.rentalPokemon',
+            field: invalidUpdate.field,
+            message: 'Rejected Rental Pokemon edit.',
+            severity: 'error' as const
+          }
+        ],
+        session: session ?? {
+          hasPendingChanges: false,
+          pendingEdits: [],
+          sessionId: 'session-1'
+        },
+        workflow: currentRentalPokemonWorkflow
+      });
+    }
+
+    for (const update of updates) {
+      const value = Number.parseInt(update.value, 10);
+      const statField = /^([ei])v(Hp|Attack|Defense|SpecialAttack|SpecialDefense|Speed)$/.exec(
+        update.field
+      );
+      const moveField = /^move([0-3])Id$/.exec(update.field);
+      const editableField = currentRentalPokemonWorkflow.editableFields.find(
+        (field) => field.field === update.field
+      );
+      const optionLabel = editableField?.options.find((option) => option.value === value)?.label;
+
+      currentRentalPokemonWorkflow = {
+        ...currentRentalPokemonWorkflow,
+        rentals: currentRentalPokemonWorkflow.rentals.map((rental) => {
+          if (rental.rentalIndex !== update.rentalIndex) {
+            return rental;
+          }
+
+          const nextRental = { ...rental };
+          if (statField) {
+            const statsKey = statField[1] === 'e' ? 'evs' : 'ivs';
+            const statKey = `${statField[2][0].toLowerCase()}${statField[2].slice(1)}` as
+              | 'hp'
+              | 'attack'
+              | 'defense'
+              | 'specialAttack'
+              | 'specialDefense'
+              | 'speed';
+            nextRental[statsKey] = { ...nextRental[statsKey], [statKey]: value };
+          } else if (moveField) {
+            const slot = Number.parseInt(moveField[1], 10);
+            nextRental.moves = nextRental.moves.map((move) =>
+              move.slot === slot
+                ? {
+                    ...move,
+                    move: value === 0 ? null : optionLabel?.replace(/^\d+\s+/, '') ?? move.move,
+                    moveId: value
+                  }
+                : move
+            );
+          } else {
+            switch (update.field) {
+              case 'species':
+                nextRental.speciesId = value;
+                nextRental.species =
+                  optionLabel?.replace(/^\d+\s+/, '') ?? nextRental.species;
+                break;
+              case 'heldItemId':
+                nextRental.heldItemId = value;
+                nextRental.heldItem =
+                  value === 0
+                    ? null
+                    : optionLabel?.replace(/^\d+\s+/, '') ?? nextRental.heldItem;
+                break;
+              case 'ballItemId':
+                nextRental.ballItemId = value;
+                nextRental.ballItem =
+                  optionLabel?.replace(/^\d+\s+/, '') ?? nextRental.ballItem;
+                break;
+              case 'ability':
+                nextRental.ability = value;
+                nextRental.abilityLabel =
+                  nextRental.abilityOptions.find((option) => option.value === value)?.label ??
+                  optionLabel ??
+                  nextRental.abilityLabel;
+                break;
+              case 'nature':
+                nextRental.nature = value;
+                nextRental.natureLabel = optionLabel ?? nextRental.natureLabel;
+                break;
+              case 'gender':
+                nextRental.gender = value;
+                nextRental.genderLabel =
+                  nextRental.genderOptions.find((option) => option.value === value)?.label ??
+                  optionLabel ??
+                  nextRental.genderLabel;
+                break;
+              case 'fixedIvPreset':
+                nextRental.ivs = {
+                  attack: value,
+                  defense: value,
+                  hp: value,
+                  specialAttack: value,
+                  specialDefense: value,
+                  speed: value
+                };
+                break;
+              case 'form':
+              case 'level':
+              case 'trainerId':
+                nextRental[update.field] = value;
+                break;
+            }
+          }
+
+          nextRental.hasPerfectIvs = Object.values(nextRental.ivs).every(
+            (iv) => iv === 31
+          );
+          nextRental.ivSummary = `HP ${nextRental.ivs.hp} / Atk ${nextRental.ivs.attack} / Def ${nextRental.ivs.defense} / SpA ${nextRental.ivs.specialAttack} / SpD ${nextRental.ivs.specialDefense} / Spe ${nextRental.ivs.speed}`;
+          nextRental.label = `Rental ${(nextRental.rentalIndex + 1)
+            .toString()
+            .padStart(3, '0')}: ${nextRental.species} Lv. ${nextRental.level}`;
+          return nextRental;
+        })
+      };
+    }
+
+    let pendingEdits = [...(session?.pendingEdits ?? [])];
+    for (const update of updates) {
+      const recordId = `rental:${update.rentalIndex}`;
+      const pendingEdit = {
+        domain: 'workflow.rentalPokemon',
+        field: update.field,
+        newValue: update.value,
+        recordId,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/script_event_data/rental.bin'
+          }
+        ],
+        summary: `Set Rental ${(update.rentalIndex + 1)
+          .toString()
+          .padStart(3, '0')} ${update.field} to ${update.value}.`
+      };
+      pendingEdits = [
+        ...pendingEdits.filter(
+          (edit) =>
+            edit.domain !== pendingEdit.domain ||
+            edit.recordId !== pendingEdit.recordId ||
+            edit.field !== pendingEdit.field
+        ),
+        pendingEdit
+      ];
+    }
+
+    currentRentalPokemonWorkflow = {
+      ...currentRentalPokemonWorkflow,
+      stats: {
+        ...currentRentalPokemonWorkflow.stats,
+        perfectIvRentalCount: currentRentalPokemonWorkflow.rentals.filter(
+          (rental) => rental.hasPerfectIvs
+        ).length
+      }
+    };
+
+    return Promise.resolve({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: pendingEdits.length > 0,
+        pendingEdits,
+        sessionId: session?.sessionId ?? 'session-1'
+      },
+      workflow: currentRentalPokemonWorkflow
     });
   };
   const createDynamaxAdventurePlanWrites = (session: EditSession): ChangePlan['writes'] => {
@@ -6274,7 +6476,7 @@ export function createMockProjectBridge(
       }),
     loadRentalPokemonWorkflow: () =>
       Promise.resolve({
-        workflow: rentalPokemonWorkflow
+        workflow: currentRentalPokemonWorkflow
       }),
     loadDynamaxAdventuresWorkflow: () => Promise.resolve({ workflow: dynamaxAdventuresWorkflow }),
     previewDynamaxAdventureDefaults: (request) => Promise.resolve({
@@ -6986,61 +7188,10 @@ export function createMockProjectBridge(
       stageStaticEncounterUpdates([request], request.session),
     updateStaticEncounterFields: (request) =>
       stageStaticEncounterUpdates(request.updates, request.session),
-    updateRentalPokemonField: (request) => {
-      const value = Number.parseInt(request.value, 10);
-
-      return Promise.resolve({
-        diagnostics: [],
-        session: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.rentalPokemon',
-              field: request.field,
-              newValue: request.value,
-              recordId: `rental:${request.rentalIndex}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/script_event_data/rental.bin'
-                }
-              ],
-              summary: `Set Rental 001 ${request.field} to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
-        },
-        workflow: {
-          ...rentalPokemonWorkflow,
-          rentals: rentalPokemonWorkflow.rentals.map((rental) =>
-            rental.rentalIndex === request.rentalIndex
-              ? {
-                  ...rental,
-                  evs:
-                    request.field === 'evHp'
-                      ? {
-                          ...rental.evs,
-                          hp: value
-                        }
-                      : rental.evs,
-                  ivs:
-                    request.field === 'ivHp'
-                      ? {
-                          ...rental.ivs,
-                          hp: value
-                        }
-                      : rental.ivs,
-                  ivSummary:
-                    request.field === 'ivHp'
-                      ? `HP ${value} / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31`
-                      : rental.ivSummary,
-                  level: request.field === 'level' ? value : rental.level
-                }
-              : rental
-          )
-        }
-      });
-    },
+    updateRentalPokemonField: (request) =>
+      stageRentalPokemonUpdates([request], request.session),
+    updateRentalPokemonFields: (request) =>
+      stageRentalPokemonUpdates(request.updates, request.session),
     updateDynamaxAdventureField: (request) => {
       const value = Number.parseInt(request.value, 10);
       const recordId = `dynamaxAdventure:${request.entryIndex}`;

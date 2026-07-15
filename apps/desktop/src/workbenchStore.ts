@@ -735,7 +735,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'rentalPokemon'),
-        rentalPokemonSearchText: '',
         rentalPokemonWorkflow,
         selectedRentalPokemonIndex
       };

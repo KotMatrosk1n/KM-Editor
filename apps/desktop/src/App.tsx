@@ -2039,6 +2039,8 @@ export function App({
   giftPokemonWorkflowRef.current = giftPokemonWorkflow;
   const tradePokemonWorkflowRef = useRef(tradePokemonWorkflow);
   tradePokemonWorkflowRef.current = tradePokemonWorkflow;
+  const rentalPokemonWorkflowRef = useRef(rentalPokemonWorkflow);
+  rentalPokemonWorkflowRef.current = rentalPokemonWorkflow;
   const lastInvalidatedGameTextLanguageRef = useRef(language);
   const workflowLoadGenerationRef = useRef(new WorkflowLoadGeneration());
   const workflowLoadTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -5134,9 +5136,17 @@ export function App({
         }
         break;
       case 'rentalPokemon':
-        if (!rentalPokemonWorkflow && !isRentalPokemonLoading) {
+        if (
+          (!rentalPokemonWorkflow && !isRentalPokemonLoading) ||
+          (!pokemonWorkflow && !isPokemonLoading)
+        ) {
           markLazyLoadStarted();
-          void handleOpenRentalPokemonWorkflow();
+          if (!rentalPokemonWorkflow && !isRentalPokemonLoading) {
+            void handleOpenRentalPokemonWorkflow();
+          }
+          if (!pokemonWorkflow && !isPokemonLoading) {
+            void handleOpenPokemonWorkflow();
+          }
         }
         break;
       case 'dynamaxAdventures':
@@ -7318,33 +7328,32 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = rentalPokemonWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
+          const incomingWorkflow = rentalPokemonWorkflowRef.current;
+          const updateResponse = await bridge.updateRentalPokemonFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({ rentalIndex, ...change }))
+          });
+          const diagnostics = [...updateResponse.diagnostics];
+          const didSucceed = !diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
-          for (const change of changes) {
-            const updateResponse = await bridge.updateRentalPokemonField({
-              field: change.field,
-              paths: createProjectPaths(draftPaths),
-              rentalIndex,
-              session: nextSession,
-              value: change.value
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+          return {
+            diagnostics,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : incomingWorkflow
+          };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setRentalPokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -9744,6 +9753,7 @@ export function App({
                 onSelectRental={setSelectedRentalPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRentalPokemonFields={handleUpdateRentalPokemonFields}
+                pokemonWorkflow={pokemonWorkflow}
                 searchText={rentalPokemonSearchText}
                 selectedRentalIndex={selectedRentalPokemonIndex}
                 workflow={rentalPokemonWorkflow}
@@ -16590,6 +16600,117 @@ function getTrainerFieldDraftState(
   };
 }
 
+function getRentalPokemonDraftSummary(
+  rental: RentalPokemonRecord | null,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>
+) {
+  const summary = getTrainerDraftSummary(
+    fields,
+    drafts,
+    rental ? (field) => getEditableRentalPokemonFieldValue(rental, field) : null
+  );
+  if (!rental) {
+    return summary;
+  }
+
+  const evIssue = getRentalPokemonEvTotalIssue(rental, fields, drafts);
+  if (evIssue === null) {
+    return summary;
+  }
+
+  const invalidFieldNames = new Set(summary.invalidFields.map((field) => field.field));
+  const evFieldNamesWithErrors = new Set(evIssue.changedFields);
+  const invalidFields = [
+    ...summary.invalidFields,
+    ...evIssue.changedFields
+      .filter((fieldName) => !invalidFieldNames.has(fieldName))
+      .map((fieldName) => {
+        const field = fields.find((candidate) => candidate.field === fieldName)!;
+        return { field: fieldName, label: field.label, value: drafts[fieldName] ?? '' };
+      })
+  ];
+
+  return {
+    ...summary,
+    changedFields: summary.changedFields.filter(
+      (change) => !evFieldNamesWithErrors.has(change.field)
+    ),
+    invalidFields
+  };
+}
+
+function getRentalPokemonFieldDraftState(
+  rental: RentalPokemonRecord,
+  draftValue: string,
+  currentValue: number | null,
+  field: NumericEditableField,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>
+) {
+  const draftState = getTrainerFieldDraftState(draftValue, currentValue, field, {
+    drafts,
+    fields,
+    getValue: (fieldName) => getEditableRentalPokemonFieldValue(rental, fieldName)
+  });
+  if (!draftState.isValid) {
+    return draftState;
+  }
+
+  const evIssue = getRentalPokemonEvTotalIssue(rental, fields, drafts);
+  if (
+    evIssue !== null &&
+    draftState.isChanged &&
+    evIssue.changedFields.includes(field.field)
+  ) {
+    return {
+      error: `EV total is ${evIssue.total}. Maximum total is ${maximumPokemonEvTotal}.`,
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  return draftState;
+}
+
+function getRentalPokemonEvTotalIssue(
+  rental: RentalPokemonRecord,
+  fields: NumericEditableField[],
+  drafts: Record<string, string>
+) {
+  let total = 0;
+  const changedFields: string[] = [];
+
+  for (const fieldName of evFieldNames) {
+    const field = fields.find((candidate) => candidate.field === fieldName);
+    if (!field) {
+      continue;
+    }
+
+    const currentValue = getEditableRentalPokemonFieldValue(rental, fieldName);
+    const draftValue = drafts[fieldName] ?? currentValue?.toString() ?? '';
+    const parsedValue = parseEditableIntegerDraft(draftValue, field.options);
+    if (parsedValue === null) {
+      return null;
+    }
+
+    const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
+    if (!draftState.isValid) {
+      return null;
+    }
+
+    total += parsedValue;
+    if (draftState.isChanged) {
+      changedFields.push(fieldName);
+    }
+  }
+
+  return total > maximumPokemonEvTotal && changedFields.length > 0
+    ? { changedFields, total }
+    : null;
+}
+
 function getStaticEncounterDraftSummary(
   encounter: StaticEncounterRecord | null,
   fields: NumericEditableField[],
@@ -19766,6 +19887,7 @@ function RentalPokemonSection({
   onSelectRental,
   onStartEditSession,
   onUpdateRentalPokemonFields,
+  pokemonWorkflow,
   searchText,
   selectedRentalIndex,
   workflow
@@ -19780,6 +19902,7 @@ function RentalPokemonSection({
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonWorkflow: PokemonWorkflow | null;
   searchText: string;
   selectedRentalIndex: number | null;
   workflow: RentalPokemonWorkflow | null;
@@ -19791,10 +19914,10 @@ function RentalPokemonSection({
   );
   const selectedRental = useMemo(
     () =>
-      rentals.find((rental) => rental.rentalIndex === selectedRentalIndex) ??
+      filteredRentals.find((rental) => rental.rentalIndex === selectedRentalIndex) ??
       filteredRentals[0] ??
       null,
-    [filteredRentals, rentals, selectedRentalIndex]
+    [filteredRentals, selectedRentalIndex]
   );
   const canEditRentals = workflow?.summary.availability === 'available';
   const pendingRentalIndexes = useMemo(
@@ -19892,6 +20015,7 @@ function RentalPokemonSection({
               isRentalPokemonUpdating={isRentalPokemonUpdating}
               onStartEditSession={onStartEditSession}
               onUpdateRentalPokemonFields={onUpdateRentalPokemonFields}
+              pokemonWorkflow={pokemonWorkflow}
               rental={selectedRental}
             />
           </div>
@@ -19913,6 +20037,7 @@ function SelectedRentalPokemonPanel({
   isRentalPokemonUpdating,
   onStartEditSession,
   onUpdateRentalPokemonFields,
+  pokemonWorkflow,
   rental
 }: {
   canEditRentals: boolean;
@@ -19925,6 +20050,7 @@ function SelectedRentalPokemonPanel({
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonWorkflow: PokemonWorkflow | null;
   rental: RentalPokemonRecord | null;
 }) {
   const [rentalDraftsByIndex, setRentalDraftsByIndex] = useState<
@@ -19940,34 +20066,100 @@ function SelectedRentalPokemonPanel({
         .map(withPokemonInstanceIvPresetOptions),
     [editableFields]
   );
-  const rentalFieldGroups = useMemo(
-    () => groupNumericEditableFields(rentalFields, getPokemonInstanceFieldGroup),
-    [rentalFields]
+  const defaultRentalFormOptionContext = useMemo(
+    () =>
+      rental
+        ? {
+            abilityOptions: rental.abilityOptions,
+            gameFamily: 'swsh' as const,
+            genderOptions: rental.genderOptions,
+            species: rental.species,
+            speciesId: rental.speciesId
+          }
+        : undefined,
+    [rental]
+  );
+  const defaultContextualRentalFields = useMemo(
+    () =>
+      rentalFields.map((field) => {
+        const options = getContextualFieldOptions(field, defaultRentalFormOptionContext);
+        return options === field.options ? field : { ...field, options };
+      }),
+    [defaultRentalFormOptionContext, rentalFields]
   );
   const rentalDraftDefaults = useMemo(
     () =>
       rental
-        ? createPokemonInstanceDrafts(rentalFields, (field) =>
+        ? createPokemonInstanceDrafts(defaultContextualRentalFields, (field) =>
             getEditableRentalPokemonFieldValue(rental, field)
           )
         : {},
-    [rental, rentalFields]
+    [defaultContextualRentalFields, rental]
   );
   const rentalDrafts = rental
     ? rentalDraftsByIndex[rental.rentalIndex.toString()] ?? rentalDraftDefaults
     : {};
+  const rentalFormOptionContext = useMemo(() => {
+    if (!rental) {
+      return undefined;
+    }
+
+    const context = createDraftSpeciesFormOptionContext(
+      defaultContextualRentalFields.find((field) => field.field === giftSpeciesFieldName),
+      rentalDrafts[giftSpeciesFieldName],
+      rental.species,
+      rental.speciesId,
+      rental.abilityOptions,
+      'swsh',
+      rental.genderOptions
+    );
+    const draftedForm = Number.parseInt(rentalDrafts[formFieldName] ?? rental.form.toString(), 10);
+    const normalizedDraftedForm = Number.isInteger(draftedForm) ? draftedForm : rental.form;
+    const usesCurrentIdentity =
+      context.speciesId === rental.speciesId && normalizedDraftedForm === rental.form;
+    const referencePokemon = pokemonWorkflow?.pokemon.find(
+      (pokemon) =>
+        pokemon.speciesId === context.speciesId && pokemon.form === normalizedDraftedForm
+    );
+    const fallbackAbilityOptions =
+      rentalFields.find((field) => field.field === abilityFieldName)?.options ?? [];
+    const fallbackGenderOptions =
+      rentalFields.find((field) => field.field === genderFieldName)?.options ?? [];
+
+    return {
+      ...context,
+      abilityOptions: referencePokemon
+        ? createRentalPokemonAbilityOptions(referencePokemon)
+        : usesCurrentIdentity
+          ? rental.abilityOptions
+          : fallbackAbilityOptions,
+      genderOptions: referencePokemon
+        ? createGiftPokemonGenderOptions(referencePokemon)
+        : usesCurrentIdentity
+          ? rental.genderOptions
+          : fallbackGenderOptions
+    };
+  }, [defaultContextualRentalFields, pokemonWorkflow, rental, rentalDrafts, rentalFields]);
+  const contextualRentalFields = useMemo(
+    () =>
+      rentalFields.map((field) => {
+        const options = getContextualFieldOptions(field, rentalFormOptionContext);
+        return options === field.options ? field : { ...field, options };
+      }),
+    [rentalFields, rentalFormOptionContext]
+  );
+  const rentalFieldGroups = useMemo(
+    () => groupNumericEditableFields(contextualRentalFields, getPokemonInstanceFieldGroup),
+    [contextualRentalFields]
+  );
   const rentalDraftSummary = useMemo(
     () =>
-      getTrainerDraftSummary(
-        getActivePokemonInstanceFields(rentalFields, rentalDrafts),
-        rentalDrafts,
-        rental ? (field) => getEditableRentalPokemonFieldValue(rental, field) : null,
-        {
-          clampIvStats: isPokemonInstanceIvCustomSelected(rentalFields, rentalDrafts),
-          enforcePokemonEvLimits: true
-        }
+      getRentalPokemonDraftSummary(
+        rental,
+        getActivePokemonInstanceFields(contextualRentalFields, rentalDrafts),
+        rentalDrafts
       ),
-    [rental, rentalDrafts, rentalFields]
+    [contextualRentalFields, rental, rentalDrafts]
   );
   useRegisterEditorDraftDirty('rentalPokemon', countFieldDraftRecords(rentalDraftsByIndex) > 0);
   const canSaveRentalDrafts =
@@ -19999,7 +20191,7 @@ function SelectedRentalPokemonPanel({
         <>
           <PokemonSummaryCard
             name={formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
-            subtitle={`Rental #${rental.rentalIndex} | Lv. ${rental.level}`}
+            subtitle={`Rental #${rental.rentalIndex + 1} | Lv. ${rental.level}`}
             title={formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
           />
 
@@ -20074,21 +20266,13 @@ function SelectedRentalPokemonPanel({
                         field.field
                       );
                       const draftValue = rentalDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
+                      const draftState = getRentalPokemonFieldDraftState(
+                        rental,
                         draftValue,
                         currentValue,
                         field,
-                        {
-                          clampIvStats: isPokemonInstanceIvCustomSelected(
-                            rentalFields,
-                            rentalDrafts
-                          ),
-                          drafts: rentalDrafts,
-                          enforcePokemonEvLimits: true,
-                          fields: rentalFields,
-                          getValue: (fieldName) =>
-                            getEditableRentalPokemonFieldValue(rental, fieldName)
-                        }
+                        contextualRentalFields,
+                        rentalDrafts
                       );
 
                       return (
@@ -20100,25 +20284,88 @@ function SelectedRentalPokemonPanel({
                           disabledReason={
                             getPokemonInstanceIvStatDisabledReason(
                               field.field,
-                              rentalFields,
+                              contextualRentalFields,
                               rentalDrafts
                             ) ?? undefined
                           }
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
-                          formOptionContext={{
-                            abilityOptions: rental.abilityOptions,
-                            gameFamily: 'swsh',
-                            species: rental.species,
-                            speciesId: rental.speciesId
-                          }}
+                          formOptionContext={rentalFormOptionContext}
                           key={field.field}
                           onChange={(value) => {
                             const nextDrafts = {
                               ...rentalDrafts,
                               [field.field]: value
                             };
+                            const speciesField = contextualRentalFields.find(
+                              (candidate) => candidate.field === giftSpeciesFieldName
+                            );
+                            const formField = contextualRentalFields.find(
+                              (candidate) => candidate.field === formFieldName
+                            );
+                            const previousSpeciesId =
+                              parseEditableIntegerDraft(
+                                rentalDrafts[giftSpeciesFieldName] ??
+                                  rental.speciesId.toString(),
+                                speciesField?.options
+                              ) ?? rental.speciesId;
+                            const previousForm =
+                              parseEditableIntegerDraft(
+                                rentalDrafts[formFieldName] ?? rental.form.toString(),
+                                formField?.options
+                              ) ?? rental.form;
+                            let nextSpeciesId = previousSpeciesId;
+                            let nextForm = previousForm;
+                            let identityChanged = false;
+
+                            if (field.field === giftSpeciesFieldName) {
+                              const parsedSpeciesId = parseEditableIntegerDraft(
+                                value,
+                                field.options
+                              );
+                              if (
+                                parsedSpeciesId !== null &&
+                                parsedSpeciesId !== previousSpeciesId
+                              ) {
+                                nextSpeciesId = parsedSpeciesId;
+                                nextForm = 0;
+                                identityChanged = true;
+                                if (formField) {
+                                  nextDrafts[formFieldName] = '0';
+                                }
+                              }
+                            } else if (field.field === formFieldName) {
+                              const parsedForm = parseEditableIntegerDraft(value, field.options);
+                              if (parsedForm !== null && parsedForm !== previousForm) {
+                                nextForm = parsedForm;
+                                identityChanged = true;
+                              }
+                            }
+
+                            if (identityChanged) {
+                              const referencePokemon = pokemonWorkflow?.pokemon.find(
+                                (pokemon) =>
+                                  pokemon.speciesId === nextSpeciesId &&
+                                  pokemon.form === nextForm
+                              );
+                              if (referencePokemon) {
+                                preserveValidGiftDependencyOrReset(
+                                  nextDrafts,
+                                  contextualRentalFields,
+                                  abilityFieldName,
+                                  rental.ability,
+                                  createRentalPokemonAbilityOptions(referencePokemon)
+                                );
+                                preserveValidGiftDependencyOrReset(
+                                  nextDrafts,
+                                  contextualRentalFields,
+                                  genderFieldName,
+                                  rental.gender,
+                                  createGiftPokemonGenderOptions(referencePokemon)
+                                );
+                              }
+                            }
                             setRentalDraftsByIndex((currentDrafts) =>
                               setFieldDraftRecord(
                                 currentDrafts,
@@ -34362,6 +34609,30 @@ function createTrainerPokemonAbilityOptions(pokemon: PokemonRecord): EditableFie
   return options;
 }
 
+function createRentalPokemonAbilityOptions(pokemon: PokemonRecord): EditableFieldOption[] {
+  const options: EditableFieldOption[] = [];
+  if (pokemon.abilities.ability1 > 0) {
+    options.push({
+      label: `Ability 1 - ${pokemon.abilities.ability1Label}`,
+      value: 0
+    });
+  }
+  if (pokemon.abilities.ability2 > 0) {
+    options.push({
+      label: `Ability 2 - ${pokemon.abilities.ability2Label}`,
+      value: 1
+    });
+  }
+  if (pokemon.abilities.hiddenAbility > 0) {
+    options.push({
+      label: `Hidden Ability - ${pokemon.abilities.hiddenAbilityLabel}`,
+      value: 2
+    });
+  }
+
+  return options;
+}
+
 function createGiftPokemonGenderOptions(pokemon: PokemonRecord): EditableFieldOption[] {
   if (pokemon.personal.genderRatio === 255) {
     return [
@@ -37288,13 +37559,13 @@ function getEditableRentalPokemonFieldValue(rental: RentalPokemonRecord, field: 
     case tradeTrainerIdFieldName:
       return rental.trainerId;
     case staticEncounterMoveFieldNames[0]:
-      return rental.moves[0]?.moveId ?? null;
+      return rental.moves.find((move) => move.slot === 0)?.moveId ?? null;
     case staticEncounterMoveFieldNames[1]:
-      return rental.moves[1]?.moveId ?? null;
+      return rental.moves.find((move) => move.slot === 1)?.moveId ?? null;
     case staticEncounterMoveFieldNames[2]:
-      return rental.moves[2]?.moveId ?? null;
+      return rental.moves.find((move) => move.slot === 2)?.moveId ?? null;
     case staticEncounterMoveFieldNames[3]:
-      return rental.moves[3]?.moveId ?? null;
+      return rental.moves.find((move) => move.slot === 3)?.moveId ?? null;
     case evFieldNames[0]:
       return rental.evs.hp;
     case evFieldNames[1]:
@@ -41240,7 +41511,8 @@ function formatRentalPokemonStats(stats: RentalPokemonRecord['evs']) {
 }
 
 function formatRentalPokemonMoves(rental: RentalPokemonRecord) {
-  const moves = rental.moves
+  const moves = [...rental.moves]
+    .sort((left, right) => left.slot - right.slot)
     .filter((move) => move.moveId > 0)
     .map((move) => move.move ?? `Move ${move.moveId}`);
 

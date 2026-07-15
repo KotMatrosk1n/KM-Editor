@@ -3,8 +3,10 @@
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Rentals;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.Moves;
 using KM.SwSh.Workflows;
 using Xunit;
 
@@ -25,7 +27,7 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
         Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
         Assert.Equal(2, workflow.Stats.TotalRentalCount);
         Assert.Equal(1, workflow.Stats.PerfectIvRentalCount);
-        Assert.Equal(4, workflow.Stats.SourceFileCount);
+        Assert.Equal(6, workflow.Stats.SourceFileCount);
         Assert.Empty(workflow.Diagnostics);
 
         var firstRental = workflow.Rentals[0];
@@ -107,7 +109,9 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.rentalPokemon");
     }
 
-    internal static void WriteRentalFixture(TemporarySwShProject temp)
+    internal static void WriteRentalFixture(
+        TemporarySwShProject temp,
+        bool includeSemanticData = true)
     {
         temp.WriteBaseRomFsFile(
             SwShRentalPokemonWorkflowService.RentalPokemonDataPath["romfs/".Length..],
@@ -115,6 +119,30 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
         temp.WriteBaseRomFsFile("bin/message/English/common/monsname.dat", CreateTextTable(133, (25, "Pikachu"), (133, "Eevee")));
         temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(4, (1, "Potion"), (4, "Poke Ball")));
         temp.WriteBaseRomFsFile("bin/message/English/common/wazaname.dat", CreateTextTable(4, (1, "Tackle"), (2, "Growl"), (3, "Vine Whip"), (4, "Razor Leaf")));
+        if (!includeSemanticData)
+        {
+            return;
+        }
+
+        temp.WriteBaseRomFsFile(
+            SwShItemsWorkflowService.ItemDataPath["romfs/".Length..],
+            SwShItemTestFixtures.CreateItemTable(
+                Enumerable.Range(0, 5)
+                    .Select(itemId => new ItemFixtureRecord(
+                        itemId,
+                        itemId,
+                        BuyPrice: 0,
+                        WattsPrice: 0,
+                        AlternatePrice: 0,
+                        SwShItemPouch.Items))
+                    .ToArray()));
+        foreach (var moveId in Enumerable.Range(1, 4))
+        {
+            temp.WriteBaseRomFsFile(
+                $"bin/pml/waza/waza{moveId:0000}.wazabin",
+                SwShMoveDataFile.Write(SwShMovesWorkflowServiceTests.CreateMoveRecord(
+                    moveId: checked((uint)moveId))));
+        }
     }
 
     internal static byte[] CreateRentalTable(SwShRentalPokemonStats firstRentalIvs)

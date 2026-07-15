@@ -16,6 +16,16 @@ public sealed record UpdateRentalPokemonFieldRequest(
     string Field,
     string Value);
 
+public sealed record RentalPokemonFieldUpdate(
+    int RentalIndex,
+    string Field,
+    string Value);
+
+public sealed record UpdateRentalPokemonFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<RentalPokemonFieldUpdate?>? Updates);
+
 public sealed record RentalPokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -58,6 +68,9 @@ public sealed record RentalPokemonRecordDto(
 {
     public IReadOnlyList<RentalPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<RentalPokemonEditableFieldOptionDto>();
+
+    public IReadOnlyList<RentalPokemonEditableFieldOptionDto> GenderOptions { get; init; } =
+        Array.Empty<RentalPokemonEditableFieldOptionDto>();
 }
 
 public sealed record RentalPokemonMoveRecordDto(
@@ -69,8 +82,8 @@ public sealed record RentalPokemonEditableFieldDto(
     string Field,
     string Label,
     string ValueKind,
-    int? MinimumValue,
-    int? MaximumValue,
+    long? MinimumValue,
+    long? MaximumValue,
     IReadOnlyList<RentalPokemonEditableFieldOptionDto> Options);
 
 public sealed record RentalPokemonEditableFieldOptionDto(
@@ -92,6 +105,11 @@ public sealed record RentalPokemonWorkflowDto(
 public sealed record LoadRentalPokemonWorkflowResponse(RentalPokemonWorkflowDto Workflow);
 
 public sealed record UpdateRentalPokemonFieldResponse(
+    RentalPokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateRentalPokemonFieldsResponse(
     RentalPokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

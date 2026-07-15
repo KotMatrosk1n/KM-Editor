@@ -10,12 +10,24 @@ using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Rentals;
 
 public sealed class SwShRentalPokemonEditSessionService
 {
     private const int MaximumPokemonEvTotal = 510;
+
+    private static readonly IReadOnlyList<string> IndividualIvFields =
+    [
+        SwShRentalPokemonWorkflowService.IvHpField,
+        SwShRentalPokemonWorkflowService.IvAttackField,
+        SwShRentalPokemonWorkflowService.IvDefenseField,
+        SwShRentalPokemonWorkflowService.IvSpeedField,
+        SwShRentalPokemonWorkflowService.IvSpecialAttackField,
+        SwShRentalPokemonWorkflowService.IvSpecialDefenseField,
+    ];
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShRentalPokemonWorkflowService rentalPokemonWorkflowService;
@@ -54,45 +66,109 @@ public sealed class SwShRentalPokemonEditSessionService
         string field,
         string value)
     {
-        ArgumentNullException.ThrowIfNull(paths);
-        ArgumentNullException.ThrowIfNull(field);
-        ArgumentNullException.ThrowIfNull(value);
+        return UpdateFields(
+            paths,
+            session,
+            [new SwShRentalPokemonFieldUpdate(rentalIndex, field, value)]);
+    }
 
-        var currentSession = session ?? StartSession();
+    public SwShRentalPokemonEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShRentalPokemonFieldUpdate?>? updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        projectWorkspaceService.ClearMemoryCache();
+        var originalSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
         var workflow = rentalPokemonWorkflowService.Load(project);
+        var originalWorkflow = OverlayPendingEdits(workflow, originalSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!CanEditRentalPokemon(project, workflow, diagnostics))
         {
-            return new SwShRentalPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SwShRentalPokemonEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
-        var rental = effectiveWorkflow.Rentals.FirstOrDefault(candidate => candidate.RentalIndex == rentalIndex);
-        if (rental is null)
+        if (updates is null || updates.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Rental Pokemon index {rentalIndex} is not present in the loaded workflow.",
-                field: "rentalIndex",
-                expected: "Existing Rental Pokemon record"));
-            return new SwShRentalPokemonEditResult(effectiveWorkflow, currentSession, diagnostics);
+                "Update at least one Rental Pokemon field.",
+                field: "updates",
+                expected: "One or more Rental Pokemon field updates"));
+            return new SwShRentalPokemonEditResult(originalWorkflow, originalSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(rental, field, value, diagnostics);
-        if (pendingEdit is null)
+        var workingSession = originalSession;
+        var effectiveWorkflow = originalWorkflow;
+        foreach (var update in updates)
         {
-            return new SwShRentalPokemonEditResult(effectiveWorkflow, currentSession, diagnostics);
+            if (update is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Rental Pokemon field update is missing.",
+                    field: "updates",
+                    expected: "Rental Pokemon field update"));
+                break;
+            }
+
+            var effectiveRental = ResolveRental(effectiveWorkflow, update.RentalIndex, diagnostics, update.Field);
+            var sourceRental = ResolveRental(workflow, update.RentalIndex, diagnostics, update.Field);
+            if (effectiveRental is null || sourceRental is null)
+            {
+                break;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                project,
+                workflow,
+                sourceRental,
+                effectiveRental,
+                update.Field,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                break;
+            }
+
+            workingSession = NormalizeIvEditsBeforeUpdate(
+                project,
+                workflow,
+                workingSession,
+                sourceRental,
+                effectiveRental,
+                pendingEdit.Field!,
+                diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                break;
+            }
+            var sourceValue = GetRentalFieldValue(sourceRental, pendingEdit.Field!);
+            var parsedValue = long.Parse(pendingEdit.NewValue!, CultureInfo.InvariantCulture);
+            workingSession = sourceValue == parsedValue
+                ? RemovePendingRentalField(workingSession, effectiveRental.RentalIndex, pendingEdit.Field!)
+                : ReplacePendingRentalEdit(workingSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(workflow, workingSession.PendingEdits);
         }
 
-        pendingEdit = AddIdentityValidationSource(project, pendingEdit);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShRentalPokemonEditResult(originalWorkflow, originalSession, diagnostics);
+        }
 
-        var updatedSession = ReplacePendingRentalEdit(currentSession, pendingEdit);
+        ValidateLoadedSession(project, workflow, workingSession, diagnostics, addSuccessDiagnostic: false);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShRentalPokemonEditResult(originalWorkflow, originalSession, diagnostics);
+        }
 
         return new SwShRentalPokemonEditResult(
-            OverlayPendingEdits(workflow, updatedSession.PendingEdits),
-            updatedSession,
+            OverlayPendingEdits(workflow, workingSession.PendingEdits),
+            workingSession,
             diagnostics);
     }
 
@@ -101,41 +177,14 @@ public sealed class SwShRentalPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = rentalPokemonWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        CanEditRentalPokemon(project, workflow, diagnostics);
-
-        var effectiveWorkflow = workflow;
-        var identityEditRentalIndexes = new HashSet<int>();
-        foreach (var edit in session.PendingEdits)
+        if (CanEditRentalPokemon(project, workflow, diagnostics))
         {
-            ValidatePendingEdit(project, effectiveWorkflow, edit, diagnostics);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
-
-            if ((edit.Field is SwShRentalPokemonWorkflowService.SpeciesField
-                or SwShRentalPokemonWorkflowService.FormField)
-                && SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var rentalIndex))
-            {
-                identityEditRentalIndexes.Add(rentalIndex);
-            }
-        }
-
-        var personalRecords = identityEditRentalIndexes.Count > 0
-            ? LoadPersonalRecords(project, required: true, diagnostics: diagnostics)
-            : [];
-        ValidateRentalSpeciesForms(
-            effectiveWorkflow,
-            identityEditRentalIndexes,
-            personalRecords,
-            diagnostics);
-
-        if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                "Pending Rental Pokemon change is valid."));
+            ValidateLoadedSession(project, workflow, session, diagnostics, addSuccessDiagnostic: true);
         }
 
         return new SwShEditSessionValidation(
@@ -149,10 +198,17 @@ public sealed class SwShRentalPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        var validation = Validate(paths, session);
-        var diagnostics = validation.Diagnostics.ToList();
+        projectWorkspaceService.ClearMemoryCache();
+        var project = projectWorkspaceService.Open(paths);
+        var workflow = rentalPokemonWorkflowService.Load(project);
+        var diagnostics = new List<ValidationDiagnostic>();
+        if (CanEditRentalPokemon(project, workflow, diagnostics))
+        {
+            ValidateLoadedSession(project, workflow, session, diagnostics, addSuccessDiagnostic: true);
+        }
 
-        if (session.PendingEdits.Count == 0)
+        var rentalEdits = GetRentalEdits(session).ToArray();
+        if (rentalEdits.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -165,7 +221,6 @@ public sealed class SwShRentalPokemonEditSessionService
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
-        var project = projectWorkspaceService.Open(paths);
         var source = SwShRentalPokemonWorkflowService.ResolveRentalPokemonDataSource(project);
         if (source is null)
         {
@@ -176,25 +231,22 @@ public sealed class SwShRentalPokemonEditSessionService
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
-        var targetPath = SwShRentalPokemonWorkflowService.ResolveOutputPath(paths, source.GraphEntry.RelativePath);
+        var targetPath = ResolveOutputPath(paths, source.GraphEntry.RelativePath, diagnostics);
         if (targetPath is null)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Rental Pokemon apply target must stay inside the configured output root.",
-                file: source.GraphEntry.RelativePath,
-                expected: "Output-root-contained target"));
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
         var write = new PlannedFileWrite(
             source.GraphEntry.RelativePath,
-            session.PendingEdits
-                .SelectMany(edit => edit.Sources)
+            rentalEdits
+                .SelectMany(edit => GetPlanSources(project, workflow, edit))
                 .Distinct()
+                .OrderBy(reference => reference.Layer)
+                .ThenBy(reference => reference.RelativePath, StringComparer.Ordinal)
                 .ToArray(),
             File.Exists(targetPath),
-            CreatePlanReason(session.PendingEdits));
+            CreatePlanReason(rentalEdits));
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
@@ -211,6 +263,22 @@ public sealed class SwShRentalPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
@@ -249,11 +317,12 @@ public sealed class SwShRentalPokemonEditSessionService
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        byte[] output;
         try
         {
             var archive = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
-            var edits = session.PendingEdits
-                .Select(edit => ToRentalEdit(edit, diagnostics))
+            var edits = GetRentalEdits(session)
+                .Select(edit => ToRentalEdit(archive, edit, diagnostics))
                 .Where(edit => edit is not null)
                 .Select(edit => edit!)
                 .ToArray();
@@ -263,47 +332,86 @@ public sealed class SwShRentalPokemonEditSessionService
                 return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            var output = archive.WriteEdits(edits);
-            WriteOutputAtomically(targetPath, output);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, source.GraphEntry.RelativePath));
+            output = archive.WriteEdits(edits);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or InvalidOperationException or OverflowException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Rental Pokemon source file could not be decoded or safely edited: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Sword/Shield Rental Pokemon table"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Rental Pokemon source file could not be read: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield Rental Pokemon table"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        if (!SwShOutputRollbackScope.TryCapture(
+                paths,
+                currentPlan.Writes.Select(write => write.TargetRelativePath),
+                out var rollbackScope,
+                out var captureFailure))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Rental Pokemon could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                file: captureFailure?.RelativePath,
+                expected: "Readable existing outputs and writable temporary storage"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        using (var outputRollback = rollbackScope!)
+        {
+            try
+            {
+                WriteOutputAtomically(targetPath, output);
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, source.GraphEntry.RelativePath));
+                outputRollback.Commit();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Rental Pokemon output file could not be written: {exception.Message}",
+                    file: source.GraphEntry.RelativePath,
+                    expected: "Writable output root"));
+                RollbackFailedApply(outputRollback, writtenFiles, diagnostics);
+            }
+        }
+
+        if (writtenFiles.Count > 0
+            && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 "Applied Rental Pokemon change plan to the configured LayeredFS output root."));
-        }
-        catch (InvalidDataException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Rental Pokemon source file could not be decoded: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Sword/Shield Rental Pokemon table"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Rental Pokemon output file could not be written: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Rental Pokemon output file could not be written: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Writable output root"));
         }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
-        SwShRentalPokemonEntry rental,
-        string field,
-        string value,
+        OpenedProject project,
+        SwShRentalPokemonWorkflow sourceWorkflow,
+        SwShRentalPokemonEntry sourceRental,
+        SwShRentalPokemonEntry effectiveRental,
+        string? field,
+        string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (field is null || value is null)
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(field ?? "(missing)"));
+            return null;
+        }
+
         var normalizedField = field.Trim();
         var editableField = SwShRentalPokemonWorkflowService.GetEditableField(normalizedField);
         if (editableField is null)
@@ -312,104 +420,36 @@ public sealed class SwShRentalPokemonEditSessionService
             return null;
         }
 
-        var parsedValue = TryParseFieldValue(editableField, value, diagnostics, rental.Evs);
+        var sourceValue = GetRentalFieldValue(sourceRental, normalizedField);
+        var parsedValue = TryParseFieldValue(editableField, value, sourceValue, diagnostics);
         if (parsedValue is null)
         {
             return null;
         }
 
-        AddLinkedUsageWarning(normalizedField, diagnostics);
-
         return new PendingEdit(
             SwShRentalPokemonWorkflowService.RentalPokemonEditDomain,
-            $"Set {rental.Label} {editableField.Label} to {parsedValue.Value}.",
-            [new ProjectFileReference(rental.Provenance.SourceLayer, rental.Provenance.SourceFile)],
-            RecordId: SwShRentalPokemonWorkflowService.CreateRentalRecordId(rental.RentalIndex),
+            $"Set {effectiveRental.Label} {editableField.Label} to {parsedValue.Value}.",
+            CreateExpectedSources(
+                project,
+                sourceWorkflow,
+                sourceRental,
+                normalizedField,
+                parsedValue.Value),
+            RecordId: SwShRentalPokemonWorkflowService.CreateRentalRecordId(
+                sourceRental.RentalIndex,
+                sourceRental.SourceIdentity),
             Field: normalizedField,
             NewValue: parsedValue.Value.ToString(CultureInfo.InvariantCulture));
     }
 
-    private static void ValidatePendingEdit(
-        OpenedProject project,
-        SwShRentalPokemonWorkflow workflow,
-        PendingEdit edit,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (!string.Equals(edit.Domain, SwShRentalPokemonWorkflowService.RentalPokemonEditDomain, StringComparison.Ordinal))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Pending edit domain '{edit.Domain}' is not supported by the Rental Pokemon workflow.",
-                expected: SwShRentalPokemonWorkflowService.RentalPokemonEditDomain));
-            return;
-        }
-
-        var editableField = SwShRentalPokemonWorkflowService.GetEditableField(edit.Field);
-        if (editableField is null)
-        {
-            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
-            return;
-        }
-
-        if (!SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var rentalIndex))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pending Rental Pokemon edit targets an invalid record.",
-                field: "rentalIndex",
-                expected: "Rental Pokemon record"));
-            return;
-        }
-
-        var rental = workflow.Rentals.FirstOrDefault(rental => rental.RentalIndex == rentalIndex);
-        if (rental is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pending Rental Pokemon edit targets a record that is not loaded.",
-                field: "rentalIndex",
-                expected: "Existing Rental Pokemon record"));
-            return;
-        }
-
-        var currentSources = new List<ProjectFileReference>
-        {
-            new(rental.Provenance.SourceLayer, rental.Provenance.SourceFile),
-        };
-        if (edit.Field is SwShRentalPokemonWorkflowService.SpeciesField
-            or SwShRentalPokemonWorkflowService.FormField)
-        {
-            var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
-            if (personalSource is not null)
-            {
-                currentSources.Add(new ProjectFileReference(
-                    GetSourceLayer(personalSource.GraphEntry),
-                    personalSource.GraphEntry.RelativePath));
-            }
-        }
-
-        if (edit.Sources.Count != currentSources.Count
-            || currentSources.Any(source => !edit.Sources.Contains(source)))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "The Rental Pokemon source layer changed after this edit was staged. Stage the edit again against the current source.",
-                field: edit.Field,
-                expected: "Pending edit staged from the current Rental Pokemon source"));
-            return;
-        }
-
-        TryParseFieldValue(editableField, edit.NewValue, diagnostics, rental.Evs);
-        AddLinkedUsageWarning(edit.Field, diagnostics);
-    }
-
-    private static int? TryParseFieldValue(
+    private static long? TryParseFieldValue(
         SwShRentalPokemonEditableField editableField,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics,
-        SwShRentalPokemonStatsRecord? currentEvs = null)
+        long sourceValue,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
+        if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -419,14 +459,42 @@ public sealed class SwShRentalPokemonEditSessionService
             return null;
         }
 
-        if (IsIvField(editableField.Field))
+        var canonical = parsedValue.ToString(CultureInfo.InvariantCulture);
+        if (!string.Equals(value, canonical, StringComparison.Ordinal))
         {
-            parsedValue = ClampFixedIvValue(parsedValue);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must use canonical integer text without whitespace, a plus sign, or leading zeroes.",
+                field: editableField.Field,
+                expected: canonical));
+            return null;
         }
 
-        if (IsEvField(editableField.Field))
+        // Preserve and permit reversion to unsupported legacy source values, but never stage new ones.
+        if (parsedValue == sourceValue)
         {
-            parsedValue = NormalizeEvValue(editableField.Field, parsedValue, currentEvs);
+            return parsedValue;
+        }
+
+        if (IsIvField(editableField.Field)
+            && parsedValue is < SwShRentalPokemonArchive.MinimumFixedIvValue
+                or > SwShRentalPokemonArchive.MaximumFixedIvValue)
+        {
+            diagnostics.Add(CreateIvDiagnostic(editableField.Field));
+            return null;
+        }
+
+        if (editableField.Field == SwShRentalPokemonWorkflowService.BallItemIdField
+            && (parsedValue < int.MinValue
+                || parsedValue > int.MaxValue
+                || !SwShRentalPokemonArchive.IsValidBallItemId((int)parsedValue)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Ball item {parsedValue.ToString(CultureInfo.InvariantCulture)} is not a supported Sword/Shield Poke Ball item ID.",
+                field: editableField.Field,
+                expected: "0, 1-16, 492-499, 576, or 851"));
+            return null;
         }
 
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
@@ -443,42 +511,370 @@ public sealed class SwShRentalPokemonEditSessionService
         return parsedValue;
     }
 
-    private static int ClampFixedIvValue(int value)
+    private static void ValidateLoadedSession(
+        OpenedProject project,
+        SwShRentalPokemonWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool addSuccessDiagnostic)
     {
-        return Math.Clamp(
-            value,
-            SwShRentalPokemonArchive.MinimumFixedIvValue,
-            SwShRentalPokemonArchive.MaximumFixedIvValue);
-    }
+        var rentalEdits = GetRentalEdits(session).ToArray();
+        var effectiveWorkflow = workflow;
+        var seenFields = new HashSet<(int RentalIndex, string Field)>();
+        var evRentalIndexes = new HashSet<int>();
+        var semanticRentalIndexes = new HashSet<int>();
+        var ivModes = new Dictionary<int, (bool HasPreset, bool HasIndividual)>();
 
-    private static int NormalizeEvValue(
-        string field,
-        int value,
-        SwShRentalPokemonStatsRecord? currentEvs)
-    {
-        var clamped = ClampEvValue(value);
-        if (currentEvs is null)
+        foreach (var edit in rentalEdits)
         {
-            return clamped;
+            var errorsBefore = CountErrors(diagnostics);
+            var rental = ValidatePendingEdit(project, workflow, effectiveWorkflow, edit, diagnostics);
+            if (rental is not null)
+            {
+                var field = edit.Field ?? string.Empty;
+                if (!seenFields.Add((rental.RentalIndex, field)))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Rental Pokemon {rental.RentalIndex} has more than one pending edit for '{field}'.",
+                        field: field,
+                        expected: "One pending value per Rental Pokemon field"));
+                }
+
+                if (IsEvField(field))
+                {
+                    evRentalIndexes.Add(rental.RentalIndex);
+                }
+
+                if (IsSemanticField(field))
+                {
+                    semanticRentalIndexes.Add(rental.RentalIndex);
+                }
+
+                if (IsIvField(field))
+                {
+                    ivModes.TryGetValue(rental.RentalIndex, out var modes);
+                    ivModes[rental.RentalIndex] = field == SwShRentalPokemonWorkflowService.FixedIvPresetField
+                        ? modes with { HasPreset = true }
+                        : modes with { HasIndividual = true };
+                }
+            }
+
+            if (CountErrors(diagnostics) == errorsBefore)
+            {
+                effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
+            }
         }
 
-        var remainingBudget = Math.Max(0, MaximumPokemonEvTotal - GetOtherEvTotal(currentEvs, field));
-        return Math.Min(clamped, remainingBudget);
+        foreach (var (rentalIndex, modes) in ivModes)
+        {
+            if (modes.HasPreset && modes.HasIndividual)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Rental Pokemon {rentalIndex} mixes an IV preset with individual IV edits.",
+                    field: SwShRentalPokemonWorkflowService.FixedIvPresetField,
+                    expected: "Either one IV preset or individual IV values"));
+            }
+        }
+
+        ValidateFinalEvValues(effectiveWorkflow, evRentalIndexes, diagnostics);
+        if (semanticRentalIndexes.Count > 0)
+        {
+            var personalRecords = LoadPersonalRecords(project, diagnostics);
+            ValidateRentalSemantics(effectiveWorkflow, semanticRentalIndexes, personalRecords, diagnostics);
+        }
+
+        if (rentalEdits.Length > 0
+            && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            PreflightArchiveWrite(project, rentalEdits, diagnostics);
+        }
+
+        if (addSuccessDiagnostic
+            && rentalEdits.Length > 0
+            && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Pending Rental Pokemon change is valid."));
+        }
     }
 
-    private static int GetOtherEvTotal(SwShRentalPokemonStatsRecord evs, string field)
+    private static SwShRentalPokemonEntry? ValidatePendingEdit(
+        OpenedProject project,
+        SwShRentalPokemonWorkflow sourceWorkflow,
+        SwShRentalPokemonWorkflow effectiveWorkflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return (field == SwShRentalPokemonWorkflowService.EvHpField ? 0 : ClampEvValue(evs.HP))
-            + (field == SwShRentalPokemonWorkflowService.EvAttackField ? 0 : ClampEvValue(evs.Attack))
-            + (field == SwShRentalPokemonWorkflowService.EvDefenseField ? 0 : ClampEvValue(evs.Defense))
-            + (field == SwShRentalPokemonWorkflowService.EvSpecialAttackField ? 0 : ClampEvValue(evs.SpecialAttack))
-            + (field == SwShRentalPokemonWorkflowService.EvSpecialDefenseField ? 0 : ClampEvValue(evs.SpecialDefense))
-            + (field == SwShRentalPokemonWorkflowService.EvSpeedField ? 0 : ClampEvValue(evs.Speed));
+        var editableField = SwShRentalPokemonWorkflowService.GetEditableField(edit.Field);
+        if (editableField is null)
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+            return null;
+        }
+
+        if (!SwShRentalPokemonWorkflowService.TryParseRentalRecordId(
+                edit.RecordId,
+                out var rentalIndex,
+                out var sourceIdentity))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Rental Pokemon edit targets an invalid record.",
+                field: "rentalIndex",
+                expected: "Rental Pokemon record"));
+            return null;
+        }
+
+        var sourceRental = ResolveRental(sourceWorkflow, rentalIndex, diagnostics, edit.Field);
+        var effectiveRental = ResolveRental(effectiveWorkflow, rentalIndex, diagnostics, edit.Field);
+        if (sourceRental is null || effectiveRental is null)
+        {
+            return null;
+        }
+
+        var signedRecord = sourceIdentity is not null;
+        if (signedRecord
+            && !string.Equals(sourceIdentity, sourceRental.SourceIdentity, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The staged Rental Pokemon source record changed. Stage the edit again against the current record.",
+                field: edit.Field,
+                expected: "Pending edit signed by the current Rental Pokemon source identity"));
+            return null;
+        }
+
+        var sourceValue = GetRentalFieldValue(sourceRental, editableField.Field);
+        var parsedValue = TryParseFieldValue(editableField, edit.NewValue, sourceValue, diagnostics);
+        if (parsedValue is null)
+        {
+            return effectiveRental;
+        }
+
+        var expectedSources = CreateExpectedSources(
+            project,
+            sourceWorkflow,
+            sourceRental,
+            editableField.Field,
+            parsedValue.Value);
+        if (!SourcesMatchCurrent(edit.Sources, expectedSources, sourceRental, signedRecord))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The Rental Pokemon source layer changed after this edit was staged. Stage the edit again against the current source.",
+                field: edit.Field,
+                expected: "Pending edit staged from the current Rental Pokemon sources"));
+            return null;
+        }
+
+        if (parsedValue.Value != sourceValue)
+        {
+            ValidateOptionBackedValue(sourceWorkflow, editableField, parsedValue.Value, diagnostics);
+        }
+
+        AddLinkedUsageWarning(edit.Field, diagnostics);
+        return effectiveRental;
     }
 
-    private static int ClampEvValue(int value)
+    private static void ValidateOptionBackedValue(
+        SwShRentalPokemonWorkflow workflow,
+        SwShRentalPokemonEditableField editableField,
+        long value,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return Math.Clamp(value, 0, SwShRentalPokemonWorkflowService.MaximumPokemonEvValue);
+        if (editableField.Field is SwShRentalPokemonWorkflowService.AbilityField
+            or SwShRentalPokemonWorkflowService.GenderField
+            or SwShRentalPokemonWorkflowService.SpeciesField
+            or SwShRentalPokemonWorkflowService.FormField
+            or SwShRentalPokemonWorkflowService.BallItemIdField)
+        {
+            return;
+        }
+
+        if (editableField.Field == SwShRentalPokemonWorkflowService.HeldItemIdField)
+        {
+            if (value == 0)
+            {
+                return;
+            }
+
+            if (!workflow.HasItemSemanticData || workflow.ItemSemanticSource is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Held item cannot be changed to a nonzero value because a valid Sword/Shield item data table is unavailable.",
+                    field: editableField.Field,
+                    expected: $"Readable {SwShItemsWorkflowService.ItemDataPath}"));
+                return;
+            }
+
+            if (value is < int.MinValue or > int.MaxValue
+                || !workflow.ValidHeldItemIds.Contains((int)value))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Held item value {value.ToString(CultureInfo.InvariantCulture)} is not present in the loaded Sword/Shield item data table.",
+                    field: editableField.Field,
+                    expected: "An item ID present in Sword/Shield item data"));
+            }
+
+            return;
+        }
+
+        if (editableField.Field is
+            SwShRentalPokemonWorkflowService.Move0Field
+            or SwShRentalPokemonWorkflowService.Move1Field
+            or SwShRentalPokemonWorkflowService.Move2Field
+            or SwShRentalPokemonWorkflowService.Move3Field)
+        {
+            if (value == 0)
+            {
+                return;
+            }
+
+            if (!workflow.HasMoveSemanticData)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Move cannot be changed to a nonzero value because valid Sword/Shield move data is unavailable.",
+                    field: editableField.Field,
+                    expected: $"Readable move records under {SwShMoveDataFile.MoveDataRelativeDirectory}"));
+                return;
+            }
+
+            if (value is < int.MinValue or > int.MaxValue
+                || !workflow.UsableMoveSources.ContainsKey((int)value))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Move value {value.ToString(CultureInfo.InvariantCulture)} is not usable in the loaded Sword/Shield move data.",
+                    field: editableField.Field,
+                    expected: "A usable move ID present in Sword/Shield move data"));
+            }
+
+            return;
+        }
+
+        if (editableField.Field != SwShRentalPokemonWorkflowService.NatureField)
+        {
+            return;
+        }
+
+        var options = workflow.EditableFields.FirstOrDefault(field =>
+            string.Equals(field.Field, editableField.Field, StringComparison.Ordinal))?.Options
+            ?? editableField.Options;
+        if (options.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} cannot be changed because its Sword/Shield lookup data is unavailable.",
+                field: editableField.Field,
+                expected: $"Loaded {editableField.Label.ToLowerInvariant()} lookup data"));
+            return;
+        }
+
+        if (options.Count > 0 && !options.Any(option => option.Value == value))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} value {value.ToString(CultureInfo.InvariantCulture)} is not available in the loaded Sword/Shield lookup data.",
+                field: editableField.Field,
+                expected: $"A listed {editableField.Label.ToLowerInvariant()} value"));
+        }
+    }
+
+    private static void ValidateFinalEvValues(
+        SwShRentalPokemonWorkflow workflow,
+        IReadOnlySet<int> rentalIndexes,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var rentalIndex in rentalIndexes)
+        {
+            var rental = ResolveRental(workflow, rentalIndex, diagnostics, SwShRentalPokemonWorkflowService.EvHpField);
+            if (rental is null)
+            {
+                continue;
+            }
+
+            var values = new[]
+            {
+                (SwShRentalPokemonWorkflowService.EvHpField, rental.Evs.HP),
+                (SwShRentalPokemonWorkflowService.EvAttackField, rental.Evs.Attack),
+                (SwShRentalPokemonWorkflowService.EvDefenseField, rental.Evs.Defense),
+                (SwShRentalPokemonWorkflowService.EvSpecialAttackField, rental.Evs.SpecialAttack),
+                (SwShRentalPokemonWorkflowService.EvSpecialDefenseField, rental.Evs.SpecialDefense),
+                (SwShRentalPokemonWorkflowService.EvSpeedField, rental.Evs.Speed),
+            };
+            foreach (var (field, value) in values)
+            {
+                if (value is < 0 or > SwShRentalPokemonWorkflowService.MaximumPokemonEvValue)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Rental Pokemon EV value {value} is outside the supported range 0-{SwShRentalPokemonWorkflowService.MaximumPokemonEvValue}.",
+                        field: field,
+                        expected: "Supported Rental Pokemon EV value"));
+                }
+            }
+
+            if (values.Sum(entry => entry.Item2) > MaximumPokemonEvTotal)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{rental.Label} has more than {MaximumPokemonEvTotal} total EVs.",
+                    field: SwShRentalPokemonWorkflowService.EvHpField,
+                    expected: $"At most {MaximumPokemonEvTotal} total EVs"));
+            }
+        }
+    }
+
+    private static void PreflightArchiveWrite(
+        OpenedProject project,
+        IReadOnlyList<PendingEdit> rentalEdits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var source = SwShRentalPokemonWorkflowService.ResolveRentalPokemonDataSource(project);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Rental Pokemon edit preflight could not resolve the source table.",
+                expected: SwShRentalPokemonWorkflowService.RentalPokemonDataPath));
+            return;
+        }
+
+        try
+        {
+            var archive = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
+            var edits = rentalEdits
+                .Select(edit => ToRentalEdit(archive, edit, diagnostics))
+                .Where(edit => edit is not null)
+                .Select(edit => edit!)
+                .ToArray();
+            if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                _ = archive.WriteEdits(edits);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentException or InvalidOperationException or OverflowException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Rental Pokemon edit cannot be written safely: {exception.Message}",
+                expected: "Safely editable Sword/Shield Rental Pokemon table",
+                file: source.GraphEntry.RelativePath));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Rental Pokemon edit preflight could not read the source table: {exception.Message}",
+                expected: "Readable Sword/Shield Rental Pokemon table",
+                file: source.GraphEntry.RelativePath));
+        }
     }
 
     private static bool IsIvField(string field)
@@ -523,45 +919,18 @@ public sealed class SwShRentalPokemonEditSessionService
         }
     }
 
-    private static PendingEdit AddIdentityValidationSource(OpenedProject project, PendingEdit pendingEdit)
-    {
-        if (pendingEdit.Field is not (SwShRentalPokemonWorkflowService.SpeciesField
-            or SwShRentalPokemonWorkflowService.FormField))
-        {
-            return pendingEdit;
-        }
-
-        var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
-        return personalSource is null
-            ? pendingEdit
-            : pendingEdit with
-            {
-                Sources = pendingEdit.Sources
-                    .Append(new ProjectFileReference(
-                        GetSourceLayer(personalSource.GraphEntry),
-                        personalSource.GraphEntry.RelativePath))
-                    .Distinct()
-                    .ToArray(),
-            };
-    }
-
     private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(
         OpenedProject project,
-        bool required,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
         if (source is null)
         {
-            if (required)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Rental Pokemon species and form validation requires the Sword/Shield personal data table.",
-                    field: SwShRentalPokemonWorkflowService.SpeciesField,
-                    expected: SwShPokemonWorkflowService.PersonalDataPath));
-            }
-
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Rental Pokemon species, form, ability, and gender validation requires the Sword/Shield personal data table.",
+                field: SwShRentalPokemonWorkflowService.SpeciesField,
+                expected: SwShPokemonWorkflowService.PersonalDataPath));
             return [];
         }
 
@@ -599,7 +968,7 @@ public sealed class SwShRentalPokemonEditSessionService
             file: relativePath));
     }
 
-    private static void ValidateRentalSpeciesForms(
+    private static void ValidateRentalSemantics(
         SwShRentalPokemonWorkflow workflow,
         IReadOnlySet<int> rentalIndexes,
         IReadOnlyList<SwShPersonalRecord> personalRecords,
@@ -661,8 +1030,162 @@ public sealed class SwShRentalPokemonEditSessionService
                     $"{rental.Label} uses a species/form that is not marked present in Sword/Shield personal data.",
                     field: SwShRentalPokemonWorkflowService.SpeciesField,
                     expected: "Species/form present in Sword/Shield personal data"));
+                continue;
+            }
+
+            var abilityIsValid = rental.Ability switch
+            {
+                0 => personal.Ability1 != 0,
+                1 => personal.Ability2 != 0,
+                2 => personal.HiddenAbility != 0,
+                _ => false,
+            };
+            if (!abilityIsValid)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{rental.Label} uses ability slot {rental.Ability}, which is not available for the selected species and form.",
+                    field: SwShRentalPokemonWorkflowService.AbilityField,
+                    expected: "An ability slot present in Sword/Shield personal data"));
+            }
+
+            if (!IsCompatibleGender(personal, rental.Gender))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{rental.Label} uses a gender that is not available for the selected species and form.",
+                    field: SwShRentalPokemonWorkflowService.GenderField,
+                    expected: "A gender compatible with Sword/Shield personal data"));
             }
         }
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateExpectedSources(
+        OpenedProject project,
+        SwShRentalPokemonWorkflow workflow,
+        SwShRentalPokemonEntry rental,
+        string field,
+        long value)
+    {
+        var sources = new List<ProjectFileReference>
+        {
+            new(rental.Provenance.SourceLayer, rental.Provenance.SourceFile),
+        };
+
+        if (IsSemanticField(field))
+        {
+            var personalSource = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+            if (personalSource is not null)
+            {
+                sources.Add(new ProjectFileReference(
+                    GetSourceLayer(personalSource.GraphEntry),
+                    personalSource.GraphEntry.RelativePath));
+            }
+        }
+
+        if (field == SwShRentalPokemonWorkflowService.HeldItemIdField
+            && value != 0
+            && workflow.ItemSemanticSource is { } itemSource)
+        {
+            sources.Add(itemSource);
+        }
+
+        if (field is
+            SwShRentalPokemonWorkflowService.Move0Field
+            or SwShRentalPokemonWorkflowService.Move1Field
+            or SwShRentalPokemonWorkflowService.Move2Field
+            or SwShRentalPokemonWorkflowService.Move3Field
+            && value is >= int.MinValue and <= int.MaxValue
+            && workflow.UsableMoveSources.TryGetValue((int)value, out var moveSource))
+        {
+            sources.Add(moveSource);
+        }
+
+        return sources.Distinct().ToArray();
+    }
+
+    private static bool SourcesMatchCurrent(
+        IReadOnlyList<ProjectFileReference> stagedSources,
+        IReadOnlyList<ProjectFileReference> expectedSources,
+        SwShRentalPokemonEntry rental,
+        bool signedRecord)
+    {
+        if (signedRecord)
+        {
+            return stagedSources.Count == expectedSources.Count
+                && expectedSources.All(stagedSources.Contains);
+        }
+
+        var currentRentalSource = new ProjectFileReference(
+            rental.Provenance.SourceLayer,
+            rental.Provenance.SourceFile);
+        return stagedSources.Contains(currentRentalSource)
+            && stagedSources
+                .Where(source => string.Equals(
+                    source.RelativePath,
+                    rental.Provenance.SourceFile,
+                    StringComparison.OrdinalIgnoreCase))
+                .All(source => source.Layer == rental.Provenance.SourceLayer)
+            && expectedSources.All(expected => stagedSources
+                .Where(source => string.Equals(
+                    source.RelativePath,
+                    expected.RelativePath,
+                    StringComparison.OrdinalIgnoreCase))
+                .All(source => source.Layer == expected.Layer));
+    }
+
+    private static IEnumerable<ProjectFileReference> GetPlanSources(
+        OpenedProject project,
+        SwShRentalPokemonWorkflow workflow,
+        PendingEdit edit)
+    {
+        foreach (var source in edit.Sources)
+        {
+            yield return source;
+        }
+
+        if (!SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var rentalIndex)
+            || edit.Field is null
+            || !long.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            yield break;
+        }
+
+        var rental = workflow.Rentals.SingleOrDefault(candidate => candidate.RentalIndex == rentalIndex);
+        if (rental is null)
+        {
+            yield break;
+        }
+
+        foreach (var source in CreateExpectedSources(project, workflow, rental, edit.Field, value))
+        {
+            yield return source;
+        }
+    }
+
+    private static int CountErrors(IEnumerable<ValidationDiagnostic> diagnostics)
+    {
+        return diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static bool IsSemanticField(string field)
+    {
+        return field is
+            SwShRentalPokemonWorkflowService.SpeciesField
+            or SwShRentalPokemonWorkflowService.FormField
+            or SwShRentalPokemonWorkflowService.AbilityField
+            or SwShRentalPokemonWorkflowService.GenderField;
+    }
+
+    private static bool IsCompatibleGender(SwShPersonalRecord personal, int gender)
+    {
+        return gender switch
+        {
+            0 => true,
+            1 => personal.GenderRatio is not 254 and not 255,
+            2 => personal.GenderRatio != 0,
+            _ => false,
+        };
     }
 
     private static bool CanEditRentalPokemon(
@@ -699,9 +1222,122 @@ public sealed class SwShRentalPokemonEditSessionService
 
     private static bool IsSameRentalEdit(PendingEdit candidate, PendingEdit pendingEdit)
     {
-        return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
-            && string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+        return IsRentalEdit(candidate)
+            && IsRentalEdit(pendingEdit)
+            && SwShRentalPokemonWorkflowService.TryParseRentalRecordId(candidate.RecordId, out var candidateIndex)
+            && SwShRentalPokemonWorkflowService.TryParseRentalRecordId(pendingEdit.RecordId, out var pendingIndex)
+            && candidateIndex == pendingIndex
             && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
+    }
+
+    private static EditSession RemovePendingRentalField(EditSession session, int rentalIndex, string field)
+    {
+        return session with
+        {
+            PendingEdits = session.PendingEdits
+                .Where(edit => !IsRentalEditForRecord(edit, rentalIndex)
+                    || !string.Equals(edit.Field, field, StringComparison.Ordinal))
+                .ToArray(),
+        };
+    }
+
+    private static EditSession NormalizeIvEditsBeforeUpdate(
+        OpenedProject project,
+        SwShRentalPokemonWorkflow sourceWorkflow,
+        EditSession session,
+        SwShRentalPokemonEntry sourceRental,
+        SwShRentalPokemonEntry effectiveRental,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (field == SwShRentalPokemonWorkflowService.FixedIvPresetField)
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
+                    .Where(edit => !IsRentalEditForRecord(edit, sourceRental.RentalIndex)
+                        || edit.Field is not (
+                            SwShRentalPokemonWorkflowService.IvHpField
+                            or SwShRentalPokemonWorkflowService.IvAttackField
+                            or SwShRentalPokemonWorkflowService.IvDefenseField
+                            or SwShRentalPokemonWorkflowService.IvSpeedField
+                            or SwShRentalPokemonWorkflowService.IvSpecialAttackField
+                            or SwShRentalPokemonWorkflowService.IvSpecialDefenseField))
+                    .ToArray(),
+            };
+        }
+
+        if (!IsIndividualIvField(field)
+            || !session.PendingEdits.Any(edit =>
+                IsRentalEditForRecord(edit, sourceRental.RentalIndex)
+                && edit.Field == SwShRentalPokemonWorkflowService.FixedIvPresetField))
+        {
+            return session;
+        }
+
+        var normalizedSession = session with
+        {
+            PendingEdits = session.PendingEdits
+                .Where(edit => !IsRentalEditForRecord(edit, sourceRental.RentalIndex)
+                    || edit.Field != SwShRentalPokemonWorkflowService.FixedIvPresetField)
+                .ToArray(),
+        };
+        foreach (var individualField in IndividualIvFields)
+        {
+            var effectiveValue = GetRentalFieldValue(effectiveRental, individualField);
+            if (effectiveValue == GetRentalFieldValue(sourceRental, individualField))
+            {
+                continue;
+            }
+
+            var materializedEdit = CreatePendingEdit(
+                project,
+                sourceWorkflow,
+                sourceRental,
+                effectiveRental,
+                individualField,
+                effectiveValue.ToString(CultureInfo.InvariantCulture),
+                diagnostics);
+            if (materializedEdit is null)
+            {
+                return session;
+            }
+
+            normalizedSession = ReplacePendingRentalEdit(normalizedSession, materializedEdit);
+        }
+
+        return normalizedSession;
+    }
+
+    private static bool IsIndividualIvField(string field)
+    {
+        return field is
+            SwShRentalPokemonWorkflowService.IvHpField
+            or SwShRentalPokemonWorkflowService.IvAttackField
+            or SwShRentalPokemonWorkflowService.IvDefenseField
+            or SwShRentalPokemonWorkflowService.IvSpeedField
+            or SwShRentalPokemonWorkflowService.IvSpecialAttackField
+            or SwShRentalPokemonWorkflowService.IvSpecialDefenseField;
+    }
+
+    private static bool IsRentalEditForRecord(PendingEdit edit, int rentalIndex)
+    {
+        return IsRentalEdit(edit)
+            && SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var candidateIndex)
+            && candidateIndex == rentalIndex;
+    }
+
+    private static bool IsRentalEdit(PendingEdit edit)
+    {
+        return string.Equals(
+            edit.Domain,
+            SwShRentalPokemonWorkflowService.RentalPokemonEditDomain,
+            StringComparison.Ordinal);
+    }
+
+    private static IEnumerable<PendingEdit> GetRentalEdits(EditSession session)
+    {
+        return session.PendingEdits.Where(IsRentalEdit);
     }
 
     private static SwShRentalPokemonWorkflow OverlayPendingEdits(
@@ -709,7 +1345,7 @@ public sealed class SwShRentalPokemonEditSessionService
         IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
-        foreach (var edit in edits)
+        foreach (var edit in edits.Where(IsRentalEdit))
         {
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
         }
@@ -723,19 +1359,34 @@ public sealed class SwShRentalPokemonEditSessionService
     {
         if (!string.Equals(edit.Domain, SwShRentalPokemonWorkflowService.RentalPokemonEditDomain, StringComparison.Ordinal)
             || !SwShRentalPokemonWorkflowService.IsEditableField(edit.Field)
-            || !SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var rentalIndex)
-            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+            || !SwShRentalPokemonWorkflowService.TryParseRentalRecordId(
+                edit.RecordId,
+                out var rentalIndex,
+                out var sourceIdentity)
+            || !long.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            || (edit.Field != SwShRentalPokemonWorkflowService.TrainerIdField
+                && value is < int.MinValue or > int.MaxValue)
+            || (edit.Field == SwShRentalPokemonWorkflowService.TrainerIdField
+                && value is < 0 or > uint.MaxValue))
         {
             return workflow;
         }
 
+        var rentals = workflow.Rentals
+            .Select(rental => rental.RentalIndex == rentalIndex
+                && (sourceIdentity is null
+                    || string.Equals(sourceIdentity, rental.SourceIdentity, StringComparison.OrdinalIgnoreCase))
+                ? OverlayRentalField(workflow, rental, edit.Field!, value)
+                : rental)
+            .ToArray();
         return workflow with
         {
-            Rentals = workflow.Rentals
-                .Select(rental => rental.RentalIndex == rentalIndex
-                    ? OverlayRentalField(workflow, rental, edit.Field!, value)
-                    : rental)
-                .ToArray(),
+            Rentals = rentals,
+            Stats = workflow.Stats with
+            {
+                TotalRentalCount = rentals.Length,
+                PerfectIvRentalCount = rentals.Count(rental => rental.HasPerfectIvs),
+            },
         };
     }
 
@@ -743,65 +1394,84 @@ public sealed class SwShRentalPokemonEditSessionService
         SwShRentalPokemonWorkflow workflow,
         SwShRentalPokemonEntry rental,
         string field,
-        int value)
+        long value)
     {
+        var intValue = field == SwShRentalPokemonWorkflowService.TrainerIdField
+            ? 0
+            : checked((int)value);
         var updatedRental = field switch
         {
             SwShRentalPokemonWorkflowService.SpeciesField => rental with
             {
-                SpeciesId = value,
-                Species = GetOptionLabel(workflow, field, value, "Species"),
+                SpeciesId = intValue,
+                Species = GetOptionDisplayName(workflow, field, intValue, "Species"),
             },
-            SwShRentalPokemonWorkflowService.FormField => rental with { Form = value },
-            SwShRentalPokemonWorkflowService.LevelField => rental with { Level = value },
+            SwShRentalPokemonWorkflowService.FormField => rental with { Form = intValue },
+            SwShRentalPokemonWorkflowService.LevelField => rental with { Level = intValue },
             SwShRentalPokemonWorkflowService.HeldItemIdField => rental with
             {
-                HeldItemId = value,
-                HeldItem = value == 0 ? null : GetOptionLabel(workflow, field, value, "Item"),
+                HeldItemId = intValue,
+                HeldItem = intValue == 0 ? null : GetOptionDisplayName(workflow, field, intValue, "Item"),
             },
             SwShRentalPokemonWorkflowService.BallItemIdField => rental with
             {
-                BallItemId = value,
-                BallItem = GetOptionLabel(workflow, field, value, "Item"),
+                BallItemId = intValue,
+                BallItem = GetOptionDisplayName(workflow, field, intValue, "Item"),
             },
             SwShRentalPokemonWorkflowService.AbilityField => rental with
             {
-                Ability = value,
-                AbilityLabel = GetOptionLabel(workflow, field, value, "Ability slot"),
+                Ability = intValue,
             },
             SwShRentalPokemonWorkflowService.NatureField => rental with
             {
-                Nature = value,
-                NatureLabel = GetOptionLabel(workflow, field, value, "Nature"),
+                Nature = intValue,
+                NatureLabel = GetOptionLabel(workflow, field, intValue, "Nature"),
             },
             SwShRentalPokemonWorkflowService.GenderField => rental with
             {
-                Gender = value,
-                GenderLabel = GetOptionLabel(workflow, field, value, "Gender"),
+                Gender = intValue,
             },
             SwShRentalPokemonWorkflowService.TrainerIdField => rental with { TrainerId = checked((uint)value) },
-            SwShRentalPokemonWorkflowService.Move0Field => rental with { Moves = SetMove(workflow, rental.Moves, 0, value) },
-            SwShRentalPokemonWorkflowService.Move1Field => rental with { Moves = SetMove(workflow, rental.Moves, 1, value) },
-            SwShRentalPokemonWorkflowService.Move2Field => rental with { Moves = SetMove(workflow, rental.Moves, 2, value) },
-            SwShRentalPokemonWorkflowService.Move3Field => rental with { Moves = SetMove(workflow, rental.Moves, 3, value) },
-            SwShRentalPokemonWorkflowService.EvHpField => rental with { Evs = rental.Evs with { HP = value } },
-            SwShRentalPokemonWorkflowService.EvAttackField => rental with { Evs = rental.Evs with { Attack = value } },
-            SwShRentalPokemonWorkflowService.EvDefenseField => rental with { Evs = rental.Evs with { Defense = value } },
-            SwShRentalPokemonWorkflowService.EvSpeedField => rental with { Evs = rental.Evs with { Speed = value } },
-            SwShRentalPokemonWorkflowService.EvSpecialAttackField => rental with { Evs = rental.Evs with { SpecialAttack = value } },
-            SwShRentalPokemonWorkflowService.EvSpecialDefenseField => rental with { Evs = rental.Evs with { SpecialDefense = value } },
-            SwShRentalPokemonWorkflowService.IvHpField => rental with { Ivs = rental.Ivs with { HP = value } },
-            SwShRentalPokemonWorkflowService.IvAttackField => rental with { Ivs = rental.Ivs with { Attack = value } },
-            SwShRentalPokemonWorkflowService.IvDefenseField => rental with { Ivs = rental.Ivs with { Defense = value } },
-            SwShRentalPokemonWorkflowService.IvSpeedField => rental with { Ivs = rental.Ivs with { Speed = value } },
-            SwShRentalPokemonWorkflowService.IvSpecialAttackField => rental with { Ivs = rental.Ivs with { SpecialAttack = value } },
-            SwShRentalPokemonWorkflowService.IvSpecialDefenseField => rental with { Ivs = rental.Ivs with { SpecialDefense = value } },
-            SwShRentalPokemonWorkflowService.FixedIvPresetField => rental with { Ivs = CreateFixedIvPreset(value) },
+            SwShRentalPokemonWorkflowService.Move0Field => rental with { Moves = SetMove(workflow, rental.Moves, 0, intValue) },
+            SwShRentalPokemonWorkflowService.Move1Field => rental with { Moves = SetMove(workflow, rental.Moves, 1, intValue) },
+            SwShRentalPokemonWorkflowService.Move2Field => rental with { Moves = SetMove(workflow, rental.Moves, 2, intValue) },
+            SwShRentalPokemonWorkflowService.Move3Field => rental with { Moves = SetMove(workflow, rental.Moves, 3, intValue) },
+            SwShRentalPokemonWorkflowService.EvHpField => rental with { Evs = rental.Evs with { HP = intValue } },
+            SwShRentalPokemonWorkflowService.EvAttackField => rental with { Evs = rental.Evs with { Attack = intValue } },
+            SwShRentalPokemonWorkflowService.EvDefenseField => rental with { Evs = rental.Evs with { Defense = intValue } },
+            SwShRentalPokemonWorkflowService.EvSpeedField => rental with { Evs = rental.Evs with { Speed = intValue } },
+            SwShRentalPokemonWorkflowService.EvSpecialAttackField => rental with { Evs = rental.Evs with { SpecialAttack = intValue } },
+            SwShRentalPokemonWorkflowService.EvSpecialDefenseField => rental with { Evs = rental.Evs with { SpecialDefense = intValue } },
+            SwShRentalPokemonWorkflowService.IvHpField => rental with { Ivs = rental.Ivs with { HP = intValue } },
+            SwShRentalPokemonWorkflowService.IvAttackField => rental with { Ivs = rental.Ivs with { Attack = intValue } },
+            SwShRentalPokemonWorkflowService.IvDefenseField => rental with { Ivs = rental.Ivs with { Defense = intValue } },
+            SwShRentalPokemonWorkflowService.IvSpeedField => rental with { Ivs = rental.Ivs with { Speed = intValue } },
+            SwShRentalPokemonWorkflowService.IvSpecialAttackField => rental with { Ivs = rental.Ivs with { SpecialAttack = intValue } },
+            SwShRentalPokemonWorkflowService.IvSpecialDefenseField => rental with { Ivs = rental.Ivs with { SpecialDefense = intValue } },
+            SwShRentalPokemonWorkflowService.FixedIvPresetField => rental with { Ivs = CreateFixedIvPreset(intValue) },
             _ => rental,
         };
 
+        var abilityOptions = SwShRentalPokemonWorkflowService.CreateAbilityOptions(
+            workflow.AbilityResolver,
+            updatedRental.SpeciesId,
+            updatedRental.Form);
+        var genderOptions = SwShRentalPokemonWorkflowService.CreateGenderOptions(
+            workflow.AbilityResolver,
+            updatedRental.SpeciesId,
+            updatedRental.Form);
         updatedRental = updatedRental with
         {
+            AbilityOptions = abilityOptions,
+            AbilityLabel = SwShRentalPokemonWorkflowService.GetOptionLabel(
+                abilityOptions,
+                updatedRental.Ability,
+                "Ability slot"),
+            GenderOptions = genderOptions,
+            GenderLabel = SwShRentalPokemonWorkflowService.GetOptionLabel(
+                genderOptions,
+                updatedRental.Gender,
+                "Gender"),
             HasPerfectIvs = ArePerfectIvs(updatedRental.Ivs),
             IvSummary = SwShRentalPokemonWorkflowService.FormatIvSummary(updatedRental.Ivs),
             Label = FormatRentalLabel(updatedRental),
@@ -823,7 +1493,7 @@ public sealed class SwShRentalPokemonEditSessionService
                     MoveId = value,
                     Move = value == 0
                         ? null
-                        : GetOptionLabel(workflow, GetMoveField(slot), value, "Move"),
+                        : GetOptionDisplayName(workflow, GetMoveField(slot), value, "Move"),
                 }
                 : move)
             .ToArray();
@@ -879,12 +1549,70 @@ public sealed class SwShRentalPokemonEditSessionService
         return SwShRentalPokemonWorkflowService.GetOptionLabel(options, value, fallbackPrefix);
     }
 
+    private static string GetOptionDisplayName(
+        SwShRentalPokemonWorkflow workflow,
+        string field,
+        int value,
+        string fallbackPrefix)
+    {
+        var label = GetOptionLabel(workflow, field, value, fallbackPrefix);
+        var prefix = $"{value.ToString("000", CultureInfo.InvariantCulture)} ";
+        return label.StartsWith(prefix, StringComparison.Ordinal)
+            ? label[prefix.Length..]
+            : label;
+    }
+
+    private static long GetRentalFieldValue(SwShRentalPokemonEntry rental, string field)
+    {
+        return field switch
+        {
+            SwShRentalPokemonWorkflowService.SpeciesField => rental.SpeciesId,
+            SwShRentalPokemonWorkflowService.FormField => rental.Form,
+            SwShRentalPokemonWorkflowService.LevelField => rental.Level,
+            SwShRentalPokemonWorkflowService.HeldItemIdField => rental.HeldItemId,
+            SwShRentalPokemonWorkflowService.BallItemIdField => rental.BallItemId,
+            SwShRentalPokemonWorkflowService.AbilityField => rental.Ability,
+            SwShRentalPokemonWorkflowService.NatureField => rental.Nature,
+            SwShRentalPokemonWorkflowService.GenderField => rental.Gender,
+            SwShRentalPokemonWorkflowService.TrainerIdField => rental.TrainerId,
+            SwShRentalPokemonWorkflowService.Move0Field => rental.Moves.Single(move => move.Slot == 0).MoveId,
+            SwShRentalPokemonWorkflowService.Move1Field => rental.Moves.Single(move => move.Slot == 1).MoveId,
+            SwShRentalPokemonWorkflowService.Move2Field => rental.Moves.Single(move => move.Slot == 2).MoveId,
+            SwShRentalPokemonWorkflowService.Move3Field => rental.Moves.Single(move => move.Slot == 3).MoveId,
+            SwShRentalPokemonWorkflowService.EvHpField => rental.Evs.HP,
+            SwShRentalPokemonWorkflowService.EvAttackField => rental.Evs.Attack,
+            SwShRentalPokemonWorkflowService.EvDefenseField => rental.Evs.Defense,
+            SwShRentalPokemonWorkflowService.EvSpeedField => rental.Evs.Speed,
+            SwShRentalPokemonWorkflowService.EvSpecialAttackField => rental.Evs.SpecialAttack,
+            SwShRentalPokemonWorkflowService.EvSpecialDefenseField => rental.Evs.SpecialDefense,
+            SwShRentalPokemonWorkflowService.IvHpField => rental.Ivs.HP,
+            SwShRentalPokemonWorkflowService.IvAttackField => rental.Ivs.Attack,
+            SwShRentalPokemonWorkflowService.IvDefenseField => rental.Ivs.Defense,
+            SwShRentalPokemonWorkflowService.IvSpeedField => rental.Ivs.Speed,
+            SwShRentalPokemonWorkflowService.IvSpecialAttackField => rental.Ivs.SpecialAttack,
+            SwShRentalPokemonWorkflowService.IvSpecialDefenseField => rental.Ivs.SpecialDefense,
+            SwShRentalPokemonWorkflowService.FixedIvPresetField =>
+                rental.Ivs.HP == rental.Ivs.Attack
+                && rental.Ivs.HP == rental.Ivs.Defense
+                && rental.Ivs.HP == rental.Ivs.Speed
+                && rental.Ivs.HP == rental.Ivs.SpecialAttack
+                && rental.Ivs.HP == rental.Ivs.SpecialDefense
+                    ? rental.Ivs.HP
+                    : long.MinValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+    }
+
     private static SwShRentalPokemonEdit? ToRentalEdit(
+        SwShRentalPokemonArchive archive,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!SwShRentalPokemonWorkflowService.TryParseRentalRecordId(edit.RecordId, out var rentalIndex)
-            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
+        if (!SwShRentalPokemonWorkflowService.TryParseRentalRecordId(
+                edit.RecordId,
+                out var rentalIndex,
+                out var sourceIdentity)
+            || !long.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
             || MapField(edit.Field) is not { } field)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -892,6 +1620,23 @@ public sealed class SwShRentalPokemonEditSessionService
                 "Pending Rental Pokemon edit does not include a valid target, field, or value.",
                 field: edit.Field,
                 expected: "Valid Rental Pokemon edit"));
+            return null;
+        }
+
+        var matches = archive.Rentals.Where(rental => rental.Index == rentalIndex).ToArray();
+        var rental = matches.Length == 1 ? matches[0] : null;
+        if (rental is null
+            || (sourceIdentity is not null
+                && !string.Equals(
+                    sourceIdentity,
+                    SwShRentalPokemonWorkflowService.CreateSourceIdentity(rental),
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Rental Pokemon edit no longer resolves to exactly one matching source record.",
+                field: edit.Field,
+                expected: "One source Rental Pokemon matching the staged index and source identity"));
             return null;
         }
 
@@ -932,6 +1677,28 @@ public sealed class SwShRentalPokemonEditSessionService
         };
     }
 
+    private static SwShRentalPokemonEntry? ResolveRental(
+        SwShRentalPokemonWorkflow workflow,
+        int rentalIndex,
+        ICollection<ValidationDiagnostic> diagnostics,
+        string? field)
+    {
+        var matches = workflow.Rentals.Where(rental => rental.RentalIndex == rentalIndex).ToArray();
+        if (matches.Length == 1)
+        {
+            return matches[0];
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            matches.Length == 0
+                ? $"Rental Pokemon index {rentalIndex} is not present in the loaded workflow."
+                : $"Rental Pokemon index {rentalIndex} is ambiguous in the loaded workflow.",
+            field: field ?? "rentalIndex",
+            expected: "Exactly one Rental Pokemon record"));
+        return null;
+    }
+
     private static string? ResolveOutputPath(
         ProjectPaths paths,
         string targetRelativePath,
@@ -946,7 +1713,32 @@ public sealed class SwShRentalPokemonEditSessionService
             return null;
         }
 
-        var targetPath = SwShRentalPokemonWorkflowService.ResolveOutputPath(paths, targetRelativePath);
+        if (Path.IsPathRooted(targetRelativePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Rental Pokemon apply target must be relative to the output root.",
+                file: targetRelativePath,
+                expected: "Relative output target"));
+            return null;
+        }
+
+        if (!SwShOutputRollbackScope.TryResolveStableOutputPaths(
+                paths,
+                out var stablePaths,
+                out var stableRootFailure))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                stableRootFailure ?? "Configured output root could not be resolved safely.",
+                file: targetRelativePath,
+                expected: "Stable output root"));
+            return null;
+        }
+
+        var targetPath = SwShOutputRollbackScope.ResolvePhysicalContainedPath(
+            stablePaths.OutputRootPath,
+            targetRelativePath);
         if (targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -1000,11 +1792,75 @@ public sealed class SwShRentalPokemonEditSessionService
         }
     }
 
+    private static void RollbackFailedApply(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        writtenFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Rental Pokemon apply failed and all output changes were rolled back."));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Rental Pokemon rollback failed: {failure.Message}",
+                file: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
+    }
+
     private static string CreatePlanReason(IReadOnlyList<PendingEdit> pendingEdits)
     {
-        return pendingEdits.Count == 1
-            ? $"Apply pending Rental Pokemon edit: {pendingEdits[0].Summary}"
-            : $"Apply {pendingEdits.Count} pending Rental Pokemon edits: {string.Join(" ", pendingEdits.Select(edit => edit.Summary))}";
+        var fingerprint = ComputePendingEditFingerprint(pendingEdits);
+        var summary = pendingEdits.Count == 1
+            ? $"Apply pending Rental Pokemon edit to {pendingEdits[0].RecordId}."
+            : $"Apply {pendingEdits.Count} pending Rental Pokemon edits.";
+        return $"{summary} Fingerprint {fingerprint}.";
+    }
+
+    private static string ComputePendingEditFingerprint(IReadOnlyList<PendingEdit> edits)
+    {
+        var canonical = new StringBuilder();
+        foreach (var edit in edits
+                     .OrderBy(edit => edit.Domain, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.NewValue, StringComparer.Ordinal))
+        {
+            AppendFingerprintComponent(canonical, edit.Domain);
+            AppendFingerprintComponent(canonical, edit.RecordId);
+            AppendFingerprintComponent(canonical, edit.Field);
+            AppendFingerprintComponent(canonical, edit.NewValue);
+            foreach (var source in edit.Sources
+                         .OrderBy(source => source.Layer)
+                         .ThenBy(source => source.RelativePath, StringComparer.Ordinal))
+            {
+                AppendFingerprintComponent(canonical, ((int)source.Layer).ToString(CultureInfo.InvariantCulture));
+                AppendFingerprintComponent(canonical, source.RelativePath);
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendFingerprintComponent(StringBuilder destination, string? value)
+    {
+        destination.Append(value?.Length ?? -1);
+        destination.Append(':');
+        destination.Append(value);
+        destination.Append('|');
     }
 
     private static ApplyResult CreateApplyResult(

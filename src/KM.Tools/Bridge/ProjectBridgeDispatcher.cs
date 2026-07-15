@@ -308,6 +308,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateStaticEncounterFields => DispatchUpdateStaticEncounterFields(requestJson),
                 KmCommandNames.LoadRentalPokemonWorkflow => DispatchLoadRentalPokemonWorkflow(requestJson),
                 KmCommandNames.UpdateRentalPokemonField => DispatchUpdateRentalPokemonField(requestJson),
+                KmCommandNames.UpdateRentalPokemonFields => DispatchUpdateRentalPokemonFields(requestJson),
                 KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
                 KmCommandNames.UpdateDynamaxAdventureField => DispatchUpdateDynamaxAdventureField(requestJson),
                 KmCommandNames.PreviewDynamaxAdventureDefaults => DispatchPreviewDynamaxAdventureDefaults(requestJson),
@@ -1178,6 +1179,29 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateRentalPokemonFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateRentalPokemonFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates?
+            .Select(update => update is null
+                ? null
+                : new SwShRentalPokemonFieldUpdate(
+                    update.RentalIndex,
+                    update.Field,
+                    update.Value))
+            .ToArray();
+        var result = rentalPokemonEditSessionService.UpdateFields(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            updates);
+        var response = SwShBridgeMapper.ToRentalPokemonFieldsDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3406,6 +3430,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateStaticEncounterFields or
             KmCommandNames.LoadRentalPokemonWorkflow or
             KmCommandNames.UpdateRentalPokemonField or
+            KmCommandNames.UpdateRentalPokemonFields or
             KmCommandNames.LoadDynamaxAdventuresWorkflow or
             KmCommandNames.UpdateDynamaxAdventureField or
             KmCommandNames.PreviewDynamaxAdventureDefaults or
