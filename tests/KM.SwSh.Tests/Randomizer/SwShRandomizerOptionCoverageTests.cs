@@ -419,6 +419,57 @@ public sealed class SwShRandomizerOptionCoverageTests
     }
 
     [Fact]
+    public void RaidRewardRandomizerUsesOnlyNamedItemsExposedByTheEditor()
+    {
+        using var temp = CreateRandomizerProject();
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateTextTable(2, (1, "Potion")));
+        var service = new SwShRandomizerService();
+
+        var preview = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeRaidRewards = true,
+            RandomizeRaidBonusRewards = true,
+        }));
+        var edits = AllEdits(preview)
+            .Where(edit => edit.Domain is
+                SwShRaidRewardsEditSessionService.RaidRewardsEditDomain or
+                SwShRaidRewardsEditSessionService.RaidBonusRewardsEditDomain)
+            .ToArray();
+
+        AssertNoErrors(preview);
+        Assert.NotEmpty(edits);
+        Assert.All(edits, edit => Assert.Equal("1", edit.NewValue));
+    }
+
+    [Fact]
+    public void RaidRewardRandomizerDiagnosesWhenOnlyUnnamedItemRowsExist()
+    {
+        using var temp = CreateRandomizerProject();
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateTextTable(2));
+        var service = new SwShRandomizerService();
+
+        var preview = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeRaidRewards = true,
+            RandomizeRaidBonusRewards = true,
+        }));
+
+        Assert.Contains(
+            preview.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains(
+                    "requires at least one item available in the loaded raid reward item choices",
+                    StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            preview.Domains,
+            domain => domain.Label is "Raid Rewards" or "Raid Bonus Rewards");
+    }
+
+    [Fact]
     public void ApplyRollsBackEarlierDomainsWhenALaterDomainFails()
     {
         using var temp = CreateRandomizerProject();

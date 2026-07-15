@@ -230,6 +230,55 @@ describe('projectBridge', () => {
     });
   });
 
+  it('sends Raid Bonus Rewards field batches through one atomic command', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.updateRaidBonusRewardFields({
+        paths: editableProjectPaths,
+        session: null,
+        updates: [
+          {
+            field: 'star1Value',
+            slot: 1,
+            tableId: 'bonus:0:1020304050607080',
+            value: '6'
+          },
+          {
+            field: 'star5Value',
+            slot: 1,
+            tableId: 'bonus:0:1020304050607080',
+            value: '7'
+          }
+        ]
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'raidBonusRewards.rewards.update',
+      payload: {
+        updates: [
+          {
+            field: 'star1Value',
+            slot: 1,
+            tableId: 'bonus:0:1020304050607080',
+            value: '6'
+          },
+          {
+            field: 'star5Value',
+            slot: 1,
+            tableId: 'bonus:0:1020304050607080',
+            value: '7'
+          }
+        ]
+      }
+    });
+  });
+
   it('sends the reviewed Mod Merger token with apply requests', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {
@@ -379,14 +428,14 @@ describe('projectBridge', () => {
               },
               {
                 availability: 'readOnly',
-                description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+                description: 'Raid drop reward tables, items, per-star drop chances, and provenance.',
                 diagnostics: [],
                 id: 'raidRewards',
                 label: 'Raid Rewards'
               },
               {
                 availability: 'readOnly',
-                description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+                description: 'Raid bonus reward tables, items, per-star quantities, and provenance.',
                 diagnostics: [],
                 id: 'raidBonusRewards',
                 label: 'Raid Bonus Rewards'
@@ -1163,7 +1212,7 @@ describe('projectBridge', () => {
               summary: {
                 availability: 'readOnly',
                 description:
-                  'Raid reward tables, den ranks, item quantities, and source provenance.',
+                  'Raid drop reward tables, items, per-star drop chances, and provenance.',
                 diagnostics: [],
                 id: 'raidRewards',
                 label: 'Raid Rewards'
@@ -1227,7 +1276,7 @@ describe('projectBridge', () => {
               summary: {
                 availability: 'readOnly',
                 description:
-                  'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+                  'Raid bonus reward tables, items, per-star quantities, and provenance.',
                 diagnostics: [],
                 id: 'raidBonusRewards',
                 label: 'Raid Bonus Rewards'

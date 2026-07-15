@@ -3022,14 +3022,14 @@ export function createMockProjectBridge(
   };
   const raidRewardsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+    description: 'Raid drop reward tables, items, per-star drop chances, and provenance.',
     diagnostics: [],
     id: 'raidRewards',
     label: 'Raid Rewards'
   };
   const raidBonusRewardsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+    description: 'Raid bonus reward tables, items, per-star quantities, and provenance.',
     diagnostics: [],
     id: 'raidBonusRewards',
     label: 'Raid Bonus Rewards'
@@ -3417,9 +3417,42 @@ export function createMockProjectBridge(
         maximumValue: 65535,
         minimumValue: 0,
         options: [
+          { label: '000 None', value: 0 },
           { label: '003 Exp. Candy L', value: 3 },
           { label: '004 Exp. Candy XL', value: 4 }
         ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star1Value',
+        label: '1-star value',
+        maximumValue: 999,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star2Value',
+        label: '2-star value',
+        maximumValue: 999,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star3Value',
+        label: '3-star value',
+        maximumValue: 999,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star4Value',
+        label: '4-star value',
+        maximumValue: 999,
+        minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -3474,9 +3507,19 @@ export function createMockProjectBridge(
     tables: raidRewardsWorkflow.tables.map((table) => ({
       ...table,
       archiveMember: 'nest_hole_bonus_rewards.bin',
+      denId: 'table_1020304050607080',
       displayName: 'Bonus 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
       rewardKind: 'bonus',
       rewardKindLabel: 'Bonus',
+      rewards: table.rewards.map((reward) => ({
+        ...reward,
+        entryId: 20,
+        itemId: 4,
+        itemName: 'Armorite Ore',
+        quantity: 1,
+        values: [1, 2, 3, 4, 5],
+        weight: 0
+      })),
       sourceTableHash: '0x1020304050607080',
       tableId: 'bonus:0:1020304050607080'
     }))
@@ -7567,11 +7610,13 @@ export function createMockProjectBridge(
                     if (update.field === 'itemId') {
                       const itemId = Number.parseInt(update.value, 10);
                       const itemName =
-                        itemId === 3
-                          ? 'Exp. Candy L'
-                          : itemId === 4
-                            ? 'Exp. Candy XL'
-                            : `Item ${itemId}`;
+                        itemId === 0
+                          ? 'None'
+                          : itemId === 3
+                            ? 'Exp. Candy L'
+                            : itemId === 4
+                              ? 'Exp. Candy XL'
+                              : `Item ${itemId}`;
                       return { ...reward, itemId, itemName };
                     }
 
@@ -7582,14 +7627,18 @@ export function createMockProjectBridge(
                       'star4Value',
                       'star5Value'
                     ].indexOf(update.field);
-                    return valueIndex < 0
-                      ? reward
-                      : {
-                          ...reward,
-                          values: reward.values.map((value, index) =>
-                            index === valueIndex ? Number.parseInt(update.value, 10) : value
-                          )
-                        };
+                    if (valueIndex < 0) {
+                      return reward;
+                    }
+
+                    const nextValue = Number.parseInt(update.value, 10);
+                    return {
+                      ...reward,
+                      values: reward.values.map((value, index) =>
+                        index === valueIndex ? nextValue : value
+                      ),
+                      weight: valueIndex === 0 ? nextValue : reward.weight
+                    };
                   })
                 }
               : table
@@ -7676,6 +7725,92 @@ export function createMockProjectBridge(
           )
         }
       }),
+    updateRaidBonusRewardFields: (request) => {
+      const updatedWorkflow = request.updates.reduce<RaidRewardsWorkflow>(
+        (currentWorkflow, update) => ({
+          ...currentWorkflow,
+          tables: currentWorkflow.tables.map((table) =>
+            table.tableId === update.tableId
+              ? {
+                  ...table,
+                  rewards: table.rewards.map((reward) => {
+                    if (reward.slot !== update.slot) {
+                      return reward;
+                    }
+
+                    if (update.field === 'itemId') {
+                      const itemId = Number.parseInt(update.value, 10);
+                      const itemName =
+                        itemId === 0
+                          ? 'None'
+                          : itemId === 4
+                            ? 'Armorite Ore'
+                            : itemId === 3
+                              ? 'Exp. Candy L'
+                              : `Item ${itemId}`;
+                      return { ...reward, itemId, itemName };
+                    }
+
+                    const valueIndex = [
+                      'star1Value',
+                      'star2Value',
+                      'star3Value',
+                      'star4Value',
+                      'star5Value'
+                    ].indexOf(update.field);
+                    if (valueIndex < 0) {
+                      return reward;
+                    }
+
+                    const nextValue = Number.parseInt(update.value, 10);
+                    return {
+                      ...reward,
+                      quantity: valueIndex === 0 ? nextValue : reward.quantity,
+                      values: reward.values.map((value, index) =>
+                        index === valueIndex ? nextValue : value
+                      )
+                    };
+                  })
+                }
+              : table
+          )
+        }),
+        raidBonusRewardsWorkflow
+      );
+      const updateKeys = new Set(
+        request.updates.map((update) => `${update.tableId}#${update.slot}:${update.field}`)
+      );
+      const pendingEdits = [
+        ...(request.session?.pendingEdits ?? []).filter(
+          (edit) =>
+            edit.domain !== 'workflow.raidBonusRewards' ||
+            !updateKeys.has(`${edit.recordId}:${edit.field}`)
+        ),
+        ...request.updates.map((update) => ({
+          domain: 'workflow.raidBonusRewards',
+          field: update.field,
+          newValue: update.value,
+          recordId: `${update.tableId}#${update.slot}`,
+          sources: [
+            {
+              layer: 'base' as const,
+              relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+            }
+          ],
+          summary: `Set Bonus 0x1020304050607080 slot ${update.slot} ${update.field} to ${update.value}.`
+        }))
+      ];
+
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: pendingEdits.length > 0,
+          pendingEdits,
+          sessionId: request.session?.sessionId ?? 'session-1'
+        },
+        workflow: updatedWorkflow
+      });
+    },
     updateBehaviorEntryField: (request) =>
       Promise.resolve({
         diagnostics: [],

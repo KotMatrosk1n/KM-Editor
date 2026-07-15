@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Editing;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Raids;
 using KM.SwSh.Tests.Items;
 using Xunit;
@@ -11,6 +13,9 @@ namespace KM.SwSh.Tests.Raids;
 
 public sealed class SwShRaidRewardsEditSessionServiceTests
 {
+    private const string ItemNamesPath = "romfs/bin/message/English/common/itemname.dat";
+    private const string MoveNamesPath = "romfs/bin/message/English/common/wazaname.dat";
+
     [Fact]
     public void UpdateRewardFieldAddsPendingEditAndOverlaysWorkflow()
     {
@@ -87,6 +92,86 @@ public sealed class SwShRaidRewardsEditSessionServiceTests
         Assert.Equal(30L, Assert.Single(result.Workflow.Tables).Rewards[0].Values[1]);
         Assert.Contains(
             result.Diagnostics,
+            diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void UpdateBonusRewardFieldsRejectsTheEntireBatchWhenOneValueIsInvalid()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShRaidRewardsEditSessionService();
+        var workflow = new SwShRaidRewardsWorkflowService().LoadBonus(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = Assert.Single(workflow.Tables);
+
+        var result = service.UpdateBonusRewardFields(
+            temp.Paths,
+            EditSession.Start(),
+            [
+                new SwShRaidRewardFieldUpdate(
+                    table.TableId,
+                    1,
+                    SwShRaidRewardsWorkflowService.Star2ValueField,
+                    "8"),
+                new SwShRaidRewardFieldUpdate(
+                    table.TableId,
+                    1,
+                    SwShRaidRewardsWorkflowService.Star1ValueField,
+                    "1000"),
+            ]);
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Equal(2L, Assert.Single(result.Workflow.Tables).Rewards[0].Values[1]);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void BonusQuantityPolicyAllows999AndRestoresAnExisting1000SourceValue()
+    {
+        using var temp = CreateEditableProject();
+        var bonusArchive = new SwShNestHoleRewardArchive(
+        [
+            new SwShNestHoleRewardTable(
+                SwShRaidRewardTestFixtures.BonusTableId,
+                [new SwShNestHoleReward(20, 4, [1000, 2, 3, 4, 5])]),
+        ]);
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "nest_hole_drop_rewards.bin",
+                    SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
+                new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", bonusArchive.Write()),
+            ]).Write());
+        var service = new SwShRaidRewardsEditSessionService();
+        var workflow = new SwShRaidRewardsWorkflowService().LoadBonus(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = Assert.Single(workflow.Tables);
+
+        var staged = service.UpdateBonusRewardField(
+            temp.Paths,
+            EditSession.Start(),
+            table.TableId,
+            1,
+            SwShRaidRewardsWorkflowService.Star1ValueField,
+            "999");
+        var restored = service.UpdateBonusRewardField(
+            temp.Paths,
+            staged.Session,
+            table.TableId,
+            1,
+            SwShRaidRewardsWorkflowService.Star1ValueField,
+            "1000");
+
+        Assert.Single(staged.Session.PendingEdits);
+        Assert.Equal(999L, Assert.Single(staged.Workflow.Tables).Rewards[0].Values[0]);
+        Assert.Empty(restored.Session.PendingEdits);
+        Assert.Equal(1000L, Assert.Single(restored.Workflow.Tables).Rewards[0].Values[0]);
+        Assert.DoesNotContain(
+            restored.Diagnostics,
             diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
     }
 
@@ -179,7 +264,7 @@ public sealed class SwShRaidRewardsEditSessionServiceTests
         Assert.Contains(
             rejected.Diagnostics,
             diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-                && diagnostic.Message.Contains("current Sword/Shield item table", StringComparison.Ordinal));
+                && diagnostic.Message.Contains("current Sword/Shield raid reward item choices", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -434,6 +519,123 @@ public sealed class SwShRaidRewardsEditSessionServiceTests
                     && diagnostic.Message.Contains("cannot be planned directly", StringComparison.Ordinal)));
     }
 
+    [Fact]
+    public void BonusItemUpdatesBindEveryItemDisplaySource()
+    {
+        using var temp = CreateEditableProject();
+        WriteItemDisplaySources(temp);
+        var service = new SwShRaidRewardsEditSessionService();
+        var workflow = new SwShRaidRewardsWorkflowService().LoadBonus(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = Assert.Single(workflow.Tables);
+
+        var result = service.UpdateBonusRewardField(
+            temp.Paths,
+            EditSession.Start(),
+            table.TableId,
+            1,
+            SwShRaidRewardsWorkflowService.ItemIdField,
+            "1");
+
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(
+            new[]
+            {
+                SwShRaidRewardsWorkflowService.NestDataPath,
+                ItemNamesPath,
+                SwShItemsWorkflowService.ItemDataPath,
+                MoveNamesPath,
+            }.OrderBy(path => path, StringComparer.OrdinalIgnoreCase),
+            edit.Sources
+                .Select(source => source.RelativePath)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase));
+        Assert.All(edit.Sources, source => Assert.Equal(ProjectFileLayer.Base, source.Layer));
+    }
+
+    [Theory]
+    [InlineData(ItemNamesPath)]
+    [InlineData(SwShItemsWorkflowService.ItemDataPath)]
+    [InlineData(MoveNamesPath)]
+    public void BonusItemValidationRejectsItemDisplaySourceLayerDrift(string sourceRelativePath)
+    {
+        using var temp = CreateEditableProject();
+        WriteItemDisplaySources(temp);
+        var service = new SwShRaidRewardsEditSessionService();
+        var workflow = new SwShRaidRewardsWorkflowService().LoadBonus(
+            new ProjectWorkspaceService().Open(temp.Paths));
+        var table = Assert.Single(workflow.Tables);
+        var staged = service.UpdateBonusRewardField(
+            temp.Paths,
+            EditSession.Start(),
+            table.TableId,
+            1,
+            SwShRaidRewardsWorkflowService.ItemIdField,
+            "1");
+        var baseSourcePath = Path.Combine(
+            temp.BaseRomFsPath,
+            sourceRelativePath["romfs/".Length..].Replace('/', Path.DirectorySeparatorChar));
+        temp.WriteOutputFile(sourceRelativePath, File.ReadAllBytes(baseSourcePath));
+
+        var validation = service.Validate(temp.Paths, staged.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(
+            validation.Diagnostics,
+            diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("source layer changed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DirectBonusServiceRejectsForeignPendingEditOwnership()
+    {
+        using var temp = CreateEditableProject();
+        var workspace = new ProjectWorkspaceService();
+        var service = new SwShRaidRewardsEditSessionService(workspace);
+        var bonusTable = Assert.Single(
+            new SwShRaidRewardsWorkflowService().LoadBonus(workspace.Open(temp.Paths)).Tables);
+        var bonusUpdate = service.UpdateBonusRewardField(
+            temp.Paths,
+            EditSession.Start(),
+            bonusTable.TableId,
+            1,
+            SwShRaidRewardsWorkflowService.Star5ValueField,
+            "9");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, bonusUpdate.Session);
+        var foreignEdit = new PendingEdit(
+            "workflow.items",
+            "Foreign item edit",
+            [],
+            RecordId: "1",
+            Field: "buyPrice",
+            NewValue: "500");
+        var mixedSession = bonusUpdate.Session with
+        {
+            PendingEdits = bonusUpdate.Session.PendingEdits.Append(foreignEdit).ToArray(),
+        };
+
+        var validation = service.Validate(temp.Paths, mixedSession);
+        var plan = service.CreateChangePlan(temp.Paths, mixedSession);
+        var apply = service.ApplyChangePlan(temp.Paths, mixedSession, reviewedPlan);
+
+        Assert.False(validation.IsValid);
+        Assert.Empty(plan.Writes);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.All(
+            [validation.Diagnostics, plan.Diagnostics, apply.Diagnostics],
+            diagnostics =>
+            {
+                Assert.Contains(
+                    diagnostics,
+                    diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+                        && diagnostic.Message.Contains("cannot be planned directly", StringComparison.Ordinal));
+                Assert.All(
+                    diagnostics,
+                    diagnostic => Assert.Equal(
+                        SwShRaidRewardsEditSessionService.RaidBonusRewardsEditDomain,
+                        diagnostic.Domain));
+            });
+    }
+
     private static TemporarySwShProject CreateEditableProject()
     {
         var temp = TemporarySwShProject.Create();
@@ -441,5 +643,13 @@ public sealed class SwShRaidRewardsEditSessionServiceTests
         temp.WriteBaseExeFsFile("main", "base-main");
 
         return temp;
+    }
+
+    private static void WriteItemDisplaySources(TemporarySwShProject temp)
+    {
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            SwShItemTestFixtures.CreateItemNames("None", "Pound"));
     }
 }

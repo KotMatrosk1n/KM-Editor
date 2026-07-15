@@ -45,6 +45,7 @@ const commandKeys = new Set();
 
 const dotnetLogger = '--logger "console;verbosity=minimal"';
 const appTimeout = '--testTimeout=30000';
+const fullAppOptions = `${appTimeout} --maxWorkers=2`;
 const tauriRustTests = 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-tauri-rust-tests.ps1';
 const broadChangeFileThreshold = 20;
 const swshHookFilters = Object.freeze({
@@ -247,7 +248,7 @@ function addFullCommands() {
   add('backend-build', 'Build backend test projects once', 'dotnet build KM.Editor.slnx --no-restore --nologo');
   addParallel('full-tests', 'Run full validation shards', [
     { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
-    { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
+    { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${fullAppOptions}` },
     { label: 'Run native desktop Rust tests', command: tauriRustTests },
     { label: 'Run core backend tests', command: dotnetProject('tests/KM.Core.Tests/KM.Core.Tests.csproj', '', { noBuild: true }) },
     { label: 'Run format backend tests', command: dotnetProject('tests/KM.Formats.Tests/KM.Formats.Tests.csproj', '', { noBuild: true }) },
@@ -307,7 +308,7 @@ function addShardCommands(shard) {
   if (shard === 'desktop') {
     addParallel('desktop-shard', 'Run desktop validation', [
       { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
-      { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
+      { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${fullAppOptions}` },
       { label: 'Run native desktop Rust tests', command: tauriRustTests },
     ]);
     return;

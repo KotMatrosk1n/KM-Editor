@@ -60,6 +60,7 @@ public static class KmCommandNames
     public const string UpdateRaidRewardFields = "raidRewards.rewards.update";
     public const string LoadRaidBonusRewardsWorkflow = "raidBonusRewards.load";
     public const string UpdateRaidBonusRewardField = "raidBonusRewards.reward.update";
+    public const string UpdateRaidBonusRewardFields = "raidBonusRewards.rewards.update";
     public const string LoadPlacementWorkflow = "placement.load";
     public const string UpdatePlacementObjectField = "placement.object.update";
     public const string UpdatePlacementObjectFields = "placement.objects.update";

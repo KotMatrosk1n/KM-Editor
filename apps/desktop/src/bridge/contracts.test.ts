@@ -59,6 +59,7 @@ import {
   refreshFileGraphResponseSchema,
   raidRewardEditableFieldSchema,
   raidRewardItemRecordSchema,
+  raidRewardTableRecordSchema,
   rentalPokemonEditableFieldSchema,
   rentalPokemonMoveSchema,
   startEditSessionRequestSchema,
@@ -77,6 +78,7 @@ import {
   updateGiftPokemonFieldResponseSchema,
   updateRentalPokemonFieldRequestSchema,
   updateRentalPokemonFieldResponseSchema,
+  updateRaidBonusRewardFieldsRequestSchema,
   updateRaidRewardFieldsRequestSchema,
   updateStaticEncounterFieldsRequestSchema,
   updateTradePokemonFieldRequestSchema,
@@ -359,6 +361,29 @@ describe('bridge contracts', () => {
       }).success
     ).toBe(false);
 
+    const bonusRequestSchema = createBridgeRequestSchema(
+      updateRaidBonusRewardFieldsRequestSchema
+    );
+    const bonusRequest = {
+      ...request,
+      command: kmCommandNames.updateRaidBonusRewardFields,
+      payload: {
+        ...request.payload,
+        updates: request.payload.updates.map((update) => ({
+          ...update,
+          tableId: 'bonus:0:1020304050607080'
+        }))
+      },
+      requestId: 'request-raid-bonus-reward-fields'
+    };
+    expect(bonusRequestSchema.parse(bonusRequest)).toMatchObject(bonusRequest);
+    expect(
+      bonusRequestSchema.safeParse({
+        ...bonusRequest,
+        payload: { ...bonusRequest.payload, updates: [] }
+      }).success
+    ).toBe(false);
+
     const reward = {
       entryId: 10,
       itemId: 3,
@@ -389,6 +414,28 @@ describe('bridge contracts', () => {
       raidRewardItemRecordSchema.safeParse({ ...reward, values: reward.values.slice(0, 4) }).success
     ).toBe(false);
     expect(raidRewardItemRecordSchema.safeParse({ ...reward, slot: 0 }).success).toBe(false);
+    const rewardTable = {
+      archiveMember: 'nest_hole_bonus_rewards.bin',
+      denId: 'table_1020304050607080',
+      displayName: 'Bonus 000',
+      gameVersion: 'Sword/Shield',
+      provenance: {
+        fileState: 'baseOnly',
+        sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+        sourceLayer: 'base'
+      },
+      rank: 0,
+      rewardKind: 'bonus',
+      rewardKindLabel: 'Bonus',
+      rewards: [reward],
+      sourceTableHash: '0x1020304050607080',
+      tableId: 'bonus:0:1020304050607080',
+      tableIndex: 0
+    };
+    expect(raidRewardTableRecordSchema.safeParse(rewardTable).success).toBe(true);
+    expect(
+      raidRewardTableRecordSchema.safeParse({ ...rewardTable, rewardKind: 'unknown' }).success
+    ).toBe(false);
     expect(
       raidRewardEditableFieldSchema.safeParse({
         field: 'itemId',
@@ -1450,7 +1497,7 @@ describe('bridge contracts', () => {
       },
       summary: {
         availability: 'readOnly',
-        description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+        description: 'Raid drop reward tables, items, per-star drop chances, and provenance.',
         diagnostics: [],
         id: 'raidRewards',
         label: 'Raid Rewards'
@@ -1490,7 +1537,7 @@ describe('bridge contracts', () => {
       ...raidRewardsWorkflow,
       summary: {
         availability: 'readOnly',
-        description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+        description: 'Raid bonus reward tables, items, per-star quantities, and provenance.',
         diagnostics: [],
         id: 'raidBonusRewards',
         label: 'Raid Bonus Rewards'
@@ -1498,9 +1545,19 @@ describe('bridge contracts', () => {
       tables: raidRewardsWorkflow.tables.map((table) => ({
         ...table,
         archiveMember: 'nest_hole_bonus_rewards.bin',
+        denId: 'table_1020304050607080',
         displayName: 'Bonus 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
         rewardKind: 'bonus',
         rewardKindLabel: 'Bonus',
+        rewards: table.rewards.map((reward) => ({
+          ...reward,
+          entryId: 20,
+          itemId: 4,
+          itemName: 'Armorite Ore',
+          quantity: 1,
+          values: [1, 2, 3, 4, 5],
+          weight: 0
+        })),
         sourceTableHash: '0x1020304050607080',
         tableId: 'bonus:0:1020304050607080'
       }))

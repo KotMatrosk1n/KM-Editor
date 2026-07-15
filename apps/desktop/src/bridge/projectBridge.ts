@@ -167,6 +167,8 @@ import {
   type UpdateRaidRewardFieldsResponse,
   type UpdateRaidBonusRewardFieldRequest,
   type UpdateRaidBonusRewardFieldResponse,
+  type UpdateRaidBonusRewardFieldsRequest,
+  type UpdateRaidBonusRewardFieldsResponse,
   type UpdateShopInventoryItemRequest,
   type UpdateShopInventoryItemResponse,
   type UpdateTextEntryRequest,
@@ -261,6 +263,7 @@ import {
   updateRaidRewardFieldResponseSchema,
   updateRaidRewardFieldsResponseSchema,
   updateRaidBonusRewardFieldResponseSchema,
+  updateRaidBonusRewardFieldsResponseSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryResponseSchema,
   updateTrainerFieldResponseSchema,
@@ -576,6 +579,9 @@ export type ProjectBridge = {
   updateRaidBonusRewardField: (
     request: UpdateRaidBonusRewardFieldRequest
   ) => Promise<UpdateRaidBonusRewardFieldResponse>;
+  updateRaidBonusRewardFields: (
+    request: UpdateRaidBonusRewardFieldsRequest
+  ) => Promise<UpdateRaidBonusRewardFieldsResponse>;
   updateBehaviorEntryField: (
     request: UpdateBehaviorEntryFieldRequest
   ) => Promise<UpdateBehaviorEntryFieldResponse>;
@@ -1268,6 +1274,13 @@ export function createProjectBridge(
         kmCommandNames.updateRaidBonusRewardField,
         request,
         updateRaidBonusRewardFieldResponseSchema
+      ),
+    updateRaidBonusRewardFields: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateRaidBonusRewardFields,
+        request,
+        updateRaidBonusRewardFieldsResponseSchema
       ),
     updateBehaviorEntryField: (request) =>
       sendProjectBridgeRequest(

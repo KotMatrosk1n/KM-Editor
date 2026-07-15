@@ -30,12 +30,29 @@ internal static class SwShRaidBattleTestFixtures
 
     public static byte[] CreateRaidBattlePack()
     {
+        return CreateRaidBattlePack(CreateArchive());
+    }
+
+    public static byte[] CreateRaidBattlePack(SwShEncounterNestArchive encounterArchive)
+    {
+        ArgumentNullException.ThrowIfNull(encounterArchive);
+
         return SwShGfPackFile.Create(
         [
-            new SwShGfPackNamedFile(SwShRaidBattlesWorkflowService.EncounterMemberName, CreateArchive().Write()),
+            new SwShGfPackNamedFile(SwShRaidBattlesWorkflowService.EncounterMemberName, encounterArchive.Write()),
             new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
             new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", SwShRaidRewardTestFixtures.CreateBonusArchive().Write()),
         ]).Write();
+    }
+
+    public static SwShEncounterNestArchive CreatePairedArchive()
+    {
+        var swordTable = CreateArchive().Tables[0];
+        return new SwShEncounterNestArchive(
+        [
+            swordTable,
+            new SwShEncounterNestTable(BattleTableId + 1, 2, Array.Empty<SwShEncounterNest>()),
+        ]);
     }
 
     public static SwShEncounterNestArchive CreateArchive()

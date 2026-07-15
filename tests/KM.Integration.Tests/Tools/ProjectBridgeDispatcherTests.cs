@@ -753,6 +753,98 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchCombinedApplyRunsBonusRewardsBeforeEarlierItemsAndTextEdits()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            SwShTextBridgeFixtures.CreateTextTable("None", "Pound"));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var itemUpdate = DeserializeResponse<UpdateItemFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(
+                temp.Paths,
+                Session: null,
+                ItemId: 1,
+                Field: "buyPrice",
+                Value: "650"),
+            requestId: "request-bonus-source-order-item"))).Payload!;
+        var textUpdate = DeserializeResponse<UpdateTextEntryResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(
+                temp.Paths,
+                itemUpdate.Session,
+                TextKey: "romfs/bin/message/English/common/itemname.dat#1",
+                Value: "Super Potion"),
+            requestId: "request-bonus-source-order-text"))).Payload!;
+        var bonusWorkflow = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(dispatcher.Dispatch(
+            SerializeRequest(
+                KmCommandNames.LoadRaidBonusRewardsWorkflow,
+                new LoadRaidBonusRewardsWorkflowRequest(temp.Paths),
+                requestId: "request-bonus-source-order-load"))).Payload!.Workflow;
+        var bonusUpdate = DeserializeResponse<UpdateRaidBonusRewardFieldResponse>(dispatcher.Dispatch(
+            SerializeRequest(
+                KmCommandNames.UpdateRaidBonusRewardField,
+                new UpdateRaidBonusRewardFieldRequest(
+                    temp.Paths,
+                    textUpdate.Session,
+                    Assert.Single(bonusWorkflow.Tables).TableId,
+                    Slot: 1,
+                    Field: "itemId",
+                    Value: "1"),
+                requestId: "request-bonus-source-order-update"))).Payload!;
+
+        Assert.Collection(
+            bonusUpdate.Session.PendingEdits,
+            edit => Assert.Equal("workflow.items", edit.Domain),
+            edit => Assert.Equal("workflow.text", edit.Domain),
+            edit => Assert.Equal("workflow.raidBonusRewards", edit.Domain));
+
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, bonusUpdate.Session),
+            requestId: "request-bonus-source-order-plan"))).Payload!.ChangePlan;
+        Assert.True(plan.CanApply);
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, bonusUpdate.Session, plan),
+            requestId: "request-bonus-source-order-apply"))).Payload!.ApplyResult;
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains("romfs/bin/pml/item/item.dat", apply.WrittenFiles);
+        Assert.Contains("romfs/bin/message/English/common/itemname.dat", apply.WrittenFiles);
+        Assert.Contains(SwShRaidRewardsWorkflowService.NestDataPath, apply.WrittenFiles);
+
+        var itemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        Assert.Equal(650u, SwShItemTable.Parse(File.ReadAllBytes(itemPath)).Records[1].BuyPrice);
+        var itemNamesPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "message",
+            "English",
+            "common",
+            "itemname.dat");
+        Assert.Equal("Super Potion", SwShGameTextFile.Parse(File.ReadAllBytes(itemNamesPath)).Lines[1].Text);
+        var rewardPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak");
+        var rewardPack = SwShGfPackFile.Parse(File.ReadAllBytes(rewardPath));
+        var bonusArchive = SwShNestHoleRewardArchive.Parse(
+            rewardPack.GetFileByName("nest_hole_bonus_rewards.bin"));
+        Assert.Equal(1u, bonusArchive.Tables[0].Rewards[0].ItemId);
+    }
+
+    [Fact]
     public void DispatchUpdateGiftPokemonFieldsStagesOneAtomicSwordShieldSession()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2361,6 +2453,97 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             response.Payload.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchRaidBonusRewardFieldBatchIsRejectionAtomic()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var workflow = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBonusRewardsWorkflow,
+            new LoadRaidBonusRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-raid-bonus-batch-load"))).Payload!.Workflow;
+        var table = Assert.Single(workflow.Tables);
+
+        var response = DeserializeResponse<UpdateRaidBonusRewardFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidBonusRewardFields,
+            new UpdateRaidBonusRewardFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RaidRewardFieldUpdateDto(table.TableId, 1, "star2Value", "8"),
+                    new RaidRewardFieldUpdateDto(table.TableId, 1, "star1Value", "1000"),
+                ]),
+            requestId: "request-raid-bonus-batch-update")));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.Session.PendingEdits);
+        Assert.Equal(2L, Assert.Single(response.Payload.Workflow.Tables).Rewards[0].Values[1]);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchRaidBonusRewardFieldBatchStagesAndAppliesEveryValidUpdate()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var workflow = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBonusRewardsWorkflow,
+            new LoadRaidBonusRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-raid-bonus-batch-success-load"))).Payload!.Workflow;
+        var table = Assert.Single(workflow.Tables);
+
+        var update = DeserializeResponse<UpdateRaidBonusRewardFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidBonusRewardFields,
+            new UpdateRaidBonusRewardFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RaidRewardFieldUpdateDto(table.TableId, 1, "star1Value", "8"),
+                    new RaidRewardFieldUpdateDto(table.TableId, 1, "star5Value", "9"),
+                ]),
+            requestId: "request-raid-bonus-batch-success-update"))).Payload!;
+
+        Assert.Collection(
+            update.Session.PendingEdits.OrderBy(edit => edit.Field, StringComparer.Ordinal),
+            edit => Assert.Equal("star1Value", edit.Field),
+            edit => Assert.Equal("star5Value", edit.Field));
+        Assert.Equal([8L, 2L, 3L, 4L, 9L], Assert.Single(Assert.Single(update.Workflow.Tables).Rewards).Values);
+
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, update.Session),
+            requestId: "request-raid-bonus-batch-success-plan"))).Payload!.ChangePlan;
+        Assert.True(plan.CanApply);
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            requestId: "request-raid-bonus-batch-success-apply"))).Payload!.ApplyResult;
+
+        Assert.DoesNotContain(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak")));
+        var bonusArchive = SwShNestHoleRewardArchive.Parse(
+            outputPack.GetFileByName("nest_hole_bonus_rewards.bin"));
+        Assert.Equal([8u, 2u, 3u, 4u, 9u], Assert.Single(Assert.Single(bonusArchive.Tables).Rewards).Values);
     }
 
     [Fact]

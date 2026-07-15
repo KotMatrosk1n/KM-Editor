@@ -332,6 +332,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRaidRewardFields => DispatchUpdateRaidRewardFields(requestJson),
                 KmCommandNames.LoadRaidBonusRewardsWorkflow => DispatchLoadRaidBonusRewardsWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBonusRewardField => DispatchUpdateRaidBonusRewardField(requestJson),
+                KmCommandNames.UpdateRaidBonusRewardFields => DispatchUpdateRaidBonusRewardFields(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
                 KmCommandNames.UpdatePlacementObjectField => DispatchUpdatePlacementObjectField(requestJson),
                 KmCommandNames.UpdatePlacementObjectFields => DispatchUpdatePlacementObjectFields(requestJson),
@@ -1610,6 +1611,30 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToBonusDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateRaidBonusRewardFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateRaidBonusRewardFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates?
+            .Select(update => update is null
+                ? null
+                : new SwShRaidRewardFieldUpdate(
+                    update.TableId,
+                    update.Slot,
+                    update.Field,
+                    update.Value))
+            .ToArray();
+        var result = raidRewardsEditSessionService.UpdateBonusRewardFields(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            updates);
+        var response = SwShBridgeMapper.ToBonusFieldsDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3186,16 +3211,47 @@ public sealed class ProjectBridgeDispatcher
             .Distinct()
             .ToList();
 
-        var shopsIndex = orderedDomains.IndexOf(EditSessionDomain.Shops);
-        var itemsIndex = orderedDomains.IndexOf(EditSessionDomain.Items);
-        if (shopsIndex > itemsIndex && itemsIndex >= 0)
-        {
-            orderedDomains.RemoveAt(shopsIndex);
-            orderedDomains.Insert(itemsIndex, EditSessionDomain.Shops);
-        }
+        OrderDomainsBySourceDependencies(orderedDomains);
 
         domains = orderedDomains;
         return orderedDomains.Count > 1 && orderedDomains.All(IsNormalSwShDomain);
+    }
+
+    private static void OrderDomainsBySourceDependencies(List<EditSessionDomain> orderedDomains)
+    {
+        var remainingDomains = orderedDomains.ToList();
+        orderedDomains.Clear();
+
+        while (remainingDomains.Count > 0)
+        {
+            var nextIndex = remainingDomains.FindIndex(domain =>
+                !HasPendingSourceDependency(domain, remainingDomains));
+            if (nextIndex < 0)
+            {
+                orderedDomains.AddRange(remainingDomains);
+                return;
+            }
+
+            orderedDomains.Add(remainingDomains[nextIndex]);
+            remainingDomains.RemoveAt(nextIndex);
+        }
+    }
+
+    private static bool HasPendingSourceDependency(
+        EditSessionDomain domain,
+        IReadOnlyCollection<EditSessionDomain> remainingDomains)
+    {
+        return domain switch
+        {
+            EditSessionDomain.Items => remainingDomains.Any(candidate => candidate is
+                EditSessionDomain.Shops or
+                EditSessionDomain.RaidRewards or
+                EditSessionDomain.RaidBonusRewards),
+            EditSessionDomain.Text => remainingDomains.Any(candidate => candidate is
+                EditSessionDomain.RaidRewards or
+                EditSessionDomain.RaidBonusRewards),
+            _ => false,
+        };
     }
 
     private static EditSessionDomain GetEditSessionDomain(string? domain)
@@ -3540,6 +3596,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateRaidRewardFields or
             KmCommandNames.LoadRaidBonusRewardsWorkflow or
             KmCommandNames.UpdateRaidBonusRewardField or
+            KmCommandNames.UpdateRaidBonusRewardFields or
             KmCommandNames.LoadBehaviorWorkflow or
             KmCommandNames.UpdateBehaviorEntryField or
             KmCommandNames.LoadFlagworkSaveWorkflow or

@@ -32,7 +32,10 @@ public sealed record SwShNestHoleRewardEdit(
 
 public sealed record SwShNestHoleRewardArchive(IReadOnlyList<SwShNestHoleRewardTable> Tables)
 {
+    [Obsolete("This is an editor policy, not a reward archive format limit. Use the Sword and Shield workflow policy instead.")]
     public const uint MaximumDropValue = 100;
+
+    [Obsolete("This is an editor policy, not a reward archive format limit. Use the Sword and Shield workflow policy instead.")]
     public const uint MaximumBonusQuantity = 999;
 
     private const int MinimumRewardValueCount = 5;

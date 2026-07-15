@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Raids;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Workflows;
@@ -77,6 +78,46 @@ public sealed class SwShRaidBattlesWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShRaidBattlesWorkflowService.FlawlessIvsField).Options,
             option => option.Value == 6 && option.Label == "6 Guaranteed Perfect IVs");
+    }
+
+    [Fact]
+    public void LoadMarksDuplicateRewardTableLinksAsAmbiguous()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShRaidBattleTestFixtures.WriteBaseRaidBattles(temp);
+        var duplicateBonusArchive = new SwShNestHoleRewardArchive(
+        [
+            new SwShNestHoleRewardTable(
+                SwShRaidRewardTestFixtures.BonusTableId,
+                [new SwShNestHoleReward(20, 4, [1, 2, 3, 4, 5])]),
+            new SwShNestHoleRewardTable(
+                SwShRaidRewardTestFixtures.BonusTableId,
+                [new SwShNestHoleReward(21, 2, [5, 4, 3, 2, 1])]),
+        ]);
+        temp.WriteBaseRomFsFile(
+            SwShRaidRewardsWorkflowService.NestDataPath["romfs/".Length..],
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    SwShRaidBattlesWorkflowService.EncounterMemberName,
+                    SwShRaidBattleTestFixtures.CreateArchive().Write()),
+                new SwShGfPackNamedFile(
+                    "nest_hole_drop_rewards.bin",
+                    SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
+                new SwShGfPackNamedFile(
+                    "nest_hole_bonus_rewards.bin",
+                    duplicateBonusArchive.Write()),
+            ]).Write());
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShRaidBattlesWorkflowService().Load(project);
+
+        var link = Assert.Single(workflow.Tables).Slots[0].BonusRewardLink;
+        Assert.False(link.IsMatched);
+        Assert.Empty(link.TableId);
+        Assert.Equal(0, link.RewardItemCount);
+        Assert.Contains("Ambiguous: 2 loaded Bonus tables share this hash", link.Preview, StringComparison.Ordinal);
     }
 
     [Fact]
