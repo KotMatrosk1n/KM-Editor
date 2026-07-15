@@ -407,6 +407,234 @@ describe('LocalizationProvider', () => {
     );
   });
 
+  it('localizes NPC Item Gift dialogs, generated labels, and diagnostics', () => {
+    expect(translateLiteralForLanguage('es', 'Stage NPC')).toBe('Preparar NPC');
+    expect(translateLiteralForLanguage('es', 'Revive unavailable (#999)')).toBe(
+      'Revive no disponible (#999)'
+    );
+    expect(translateLiteralForLanguage('es', 'Legacy unavailable (#-1)')).toBe(
+      'Legacy no disponible (#-1)'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'NPC Item Gift stages one NPC at a time. Review and apply the staged NPC before opening another NPC.'
+      )
+    ).toBe(
+      'Regalo de objeto NPC solo permite preparar un NPC a la vez. Revisa y aplica el NPC preparado antes de abrir otro.'
+    );
+    expect(translateLiteralForLanguage('es', '2 gift groups staged')).toBe(
+      '2 grupos de regalos preparados'
+    );
+    expect(translateLiteralForLanguage('es', 'Potion unavailable')).toBe(
+      'Potion no disponible'
+    );
+    expect(translateLiteralForLanguage('es', 'Item 9999')).toBe('Objeto 9999');
+    expect(translateLiteralForLanguage('es', 'Item -1')).toBe('Objeto -1');
+    expect(translateLiteralForLanguage('es', 'Rotom Bike (#41) [Key]')).toBe(
+      'Rotom Bike (#41) [Objeto clave]'
+    );
+    expect(translateLiteralForLanguage('es', 'Key Items')).toBe('Objetos clave');
+    expect(translateLiteralForLanguage('es', 'Gym Leaders NPCs')).toBe(
+      'NPC de Líderes de gimnasio'
+    );
+    expect(translateLiteralForLanguage('es', 'Main Game NPCs NPCs')).toBe(
+      'NPCs del juego principal'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'event.script is missing. NPC Item Gift can show defaults, but patching needs this AMX file.'
+      )
+    ).toBe(
+      'Falta event.script. Regalo de objeto NPC puede mostrar los valores predeterminados, pero necesita este archivo AMX para aplicar cambios.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Sonia gift quantity could not be inspected: invalid cell. Known vanilla quantity will be shown.'
+      )
+    ).toBe(
+      'No se pudo inspeccionar la cantidad de Sonia gift: invalid cell. Se mostrará la cantidad original conocida.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        "Pending edit domain 'workflow.items' is not supported by NPC Item Gift."
+      )
+    ).toBe(
+      "Regalo de objeto NPC no admite el dominio de edición pendiente 'workflow.items'."
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'NPC Item Gift change plan preview contains 2 target file(s).'
+      )
+    ).toBe(
+      'La vista previa del plan de cambios de Regalo de objeto NPC contiene 2 archivos de destino.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        "Sonia gift item slot 'item-1' is missing."
+      )
+    ).toBe("Der Gegenstandsplatz 'item-1' von Sonia gift fehlt.");
+    expect(translateLiteralForLanguage('es', 'Sonia gift is missing.')).toBe(
+      'Estado de Sonia gift: ausente.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Sonia gift cannot be staged while its mapped operands are damaged.'
+      )
+    ).toBe(
+      'Sonia gift no se puede preparar mientras sus operandos asignados estén dañado.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        "NPC Item Gift selection 'sonia-gift' is not recognized for Sword."
+      )
+    ).toBe(
+      "La selección de Regalo de objeto NPC 'sonia-gift' no se reconoce para Espada."
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Sonia gift uses a fixed helper quantity and only its item can be edited.'
+      )
+    ).toBe(
+      'Sonia gift usa una cantidad auxiliar fija y solo se puede editar su objeto.'
+    );
+    expect(
+      translateLiteralForLanguage('es', 'Sonia gift does not have a loaded source record.')
+    ).toBe('Sonia gift no tiene un registro de origen cargado.');
+    expect(translateLiteralForLanguage('zh', 'Repairable')).toBe('可修复');
+    expect(
+      translateLiteralForLanguage(
+        'zh',
+        'Discard the un-staged NPC Item Gift edits and open another NPC?'
+      )
+    ).toBe('要放弃尚未暂存的NPC道具礼物编辑并打开其他NPC吗？');
+  });
+
+  it('includes NPC Item Gift UI and diagnostic templates in every language', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals,
+      zh: zhResource.literals
+    };
+    const requiredLiterals = [
+      'NPC Item Gift stages one NPC at a time. Review and apply the staged NPC before opening another NPC.',
+      'Discard the un-staged NPC Item Gift edits and open another NPC?',
+      'Stage NPC',
+      '{count} gift group staged',
+      '{count} gift groups staged',
+      '{item} unavailable',
+      'Item {itemId}',
+      'Balls',
+      'Berries',
+      'Treasures',
+      'Key Items',
+      'Stage NPC Item Gift changes.',
+      'Update reviewed NPC item gift operands in the AMX script while preserving unrelated cells.',
+      '{gift} has companion operands that disagree with its primary value. Staging this gift will normalize all owned companions.',
+      '{gift} contains a missing item selection.',
+      'Royal Candy ownership markers could not be inspected. Item 1128 is withheld to avoid an ownership conflict.',
+      '{group} NPCs',
+      'NPC Item Gift needs its own edit session before staging.',
+      'Stage NPC Item Gift changes before validating.',
+      'NPC Item Gift expects exactly one staged NPC edit.',
+      'Pending NPC Item Gift change is valid for change-plan review.',
+      'NPC Item Gift has no changed item gifts to write.',
+      'NPC Item Gift source or output target could not be resolved.',
+      'Reviewed NPC Item Gift change plan is stale. Review the change plan again before applying.',
+      'NPC Item Gift apply requires valid base paths and a valid output root.',
+      'NPC Item Gift needs item options before gifts can be staged.',
+      'NPC Item Gift can only stage one NPC at a time.',
+      'NPC Item Gift needs at least one gift selection.',
+      'NPC Item Gift selection is missing a gift id.',
+      'NPC Item Gift pending edit has no gift payload.',
+      'NPC Item Gift pending edit payload is malformed.',
+      'NPC Item Gift pending edit item payload is malformed.',
+      'NPC Item Gift apply requires a configured output root.',
+      'NPC Item Gift target must stay inside the configured output root.',
+      'Item options could not be decoded: {error}',
+      'Item options could not be read: {error}',
+      'Item options could not be loaded: {error}',
+      '{file} is missing. NPC Item Gift can show defaults, but patching needs this AMX file.',
+      '{source} could not be read: {error}. Known vanilla values will be shown for that script.',
+      '{gift} quantity could not be inspected: {error}. Known vanilla quantity will be shown.',
+      '{gift} item could not be inspected: {error}. Known vanilla item will be shown.',
+      "Pending edit domain '{domain}' is not supported by NPC Item Gift.",
+      "Pending NPC Item Gift edit '{recordId}' is not supported.",
+      'NPC Item Gift change plan preview contains {count} target file.',
+      'NPC Item Gift change plan preview contains {count} target files.',
+      'Applied NPC Item Gift changes to {path}.',
+      'NPC Item Gift source file could not be patched: {error}',
+      'NPC Item Gift output file could not be written: {error}',
+      'NPC Item Gift has conflicting staged values for AMX cell {cell}.',
+      '{file} is required before NPC Item Gift can be staged.',
+      "NPC Item Gift selection '{giftId}' is duplicated.",
+      "NPC Item Gift selection '{giftId}' is not recognized for this game.",
+      '{gift} quantity must be between 1 and 999.',
+      "{gift} item slot '{slotId}' is not recognized.",
+      '{gift} item {itemId} is not selectable for this project.',
+      "{gift} item slot '{slotId}' is duplicated.",
+      "{gift} item slot '{slotId}' is missing.",
+      'The staged NPC Item Gift entry is invalid. Discard it from Pending Changes before editing or reviewing this workflow.',
+      'This NPC cannot be edited yet.',
+      'Fixed amount',
+      'Key item amount',
+      'Enter a whole number from 1 to 999.',
+      'Restore gift default',
+      'No valid item options are loaded.',
+      'Resolve the workflow errors before editing this NPC.',
+      '{subject} is {status}.',
+      '{gift} does not have a loaded source record.',
+      'Repairable',
+      'Damaged',
+      'available',
+      'repairable',
+      'damaged',
+      'Some changed gifts cannot be staged yet.',
+      'NPC Item Gift only supports Pokemon Sword and Pokemon Shield projects.',
+      'NPC Item Gift requires valid base RomFS and base ExeFS paths before it can load.',
+      'NPC Item Gift could not load any selectable item metadata.',
+      'NPC Item Gift has no changed or repairable gifts to stage.',
+      'NPC Item Gift changes are staged for change-plan review.',
+      'Pending NPC Item Gift selections are not in the canonical staged format.',
+      'Pending NPC Item Gift selections contain no changed or repairable gifts.',
+      'NPC Item Gift sources changed while preparing the verified apply snapshot.',
+      'NPC Item Gift did not produce any reviewed operand patches.',
+      'NPC Item Gift selection is missing.',
+      '{file} is missing. Its mapped NPC gifts are read-only until the base script is restored.',
+      '{file} is unreadable or not a supported 64-bit AMX script. Its mapped gifts are blocked.',
+      '{file} cannot verify its mapped operands against the base script. Its mapped gifts are blocked.',
+      '{gift} has an incompatible mapped operand or an unverified base layout and is blocked from editing.',
+      "Pending NPC Item Gift field '{field}' is not supported.",
+      'NPC Item Gift verified output could not be written: {error}',
+      'NPC Item Gift source file could not be patched safely: {error}',
+      'NPC Item Gift source file could not be read: {error}',
+      '{gift} cannot be staged while its mapped operands are {status}.',
+      "NPC Item Gift selection '{giftId}' is not recognized for {game}.",
+      '{gift} uses a fixed helper quantity and only its item can be edited.',
+      '{gift} is missing its item selections.'
+    ];
+
+    const missingEntries = Object.entries(localizedResources).flatMap(([language, literals]) =>
+      requiredLiterals
+        .filter((literal) => !literals[literal])
+        .map((literal) => `${language}:literal:${literal}`)
+    );
+
+    expect(missingEntries).toEqual([]);
+  });
+
   it('localizes German static and dynamic UI phrases', () => {
     expect(translateKeyForLanguage('de', 'settings.language.title')).toBe(
       'Sprache und Lokalisierung'

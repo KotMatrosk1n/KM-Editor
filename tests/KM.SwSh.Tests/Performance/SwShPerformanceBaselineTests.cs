@@ -72,7 +72,10 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var fashionUnlock = Record(measurements, "fashionUnlock.load", () => workflowService.LoadFashionUnlock(temp.Paths));
         var royalCandy = Record(measurements, "royalCandy.load", () => workflowService.LoadRoyalCandy(temp.Paths));
         var startingItems = Record(measurements, "startingItems.load", () => workflowService.LoadStartingItems(temp.Paths));
-        var npcItemGift = Record(measurements, "npcItemGift.load", () => workflowService.LoadNpcItemGift(temp.Paths));
+        var npcItemGift = Record(
+            measurements,
+            "npcItemGift.load",
+            () => workflowService.LoadNpcItemGift(temp.Paths with { SelectedGame = ProjectGame.Sword }));
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load", () => workflowService.LoadSpreadsheetImport(temp.Paths));
         var modMerger = Record(measurements, "modMerger.load", () => workflowService.LoadModMerger(temp.Paths, null, null));
 

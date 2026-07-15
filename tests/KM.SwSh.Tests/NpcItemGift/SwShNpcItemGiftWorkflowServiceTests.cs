@@ -6,6 +6,7 @@ using KM.Core.Files;
 using KM.Formats.SwSh;
 using KM.SwSh.NpcItemGift;
 using KM.SwSh.Scripts;
+using KM.SwSh.Tests.Encounters;
 using KM.SwSh.Tests.Items;
 using System.Buffers.Binary;
 using Xunit;
@@ -22,8 +23,12 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         WriteItemOptionsFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
+        var project = new ProjectWorkspaceService().Open(temp.Paths with
+        {
+            OutputRootPath = null,
+            SelectedGame = ProjectGame.Sword,
+        });
 
         var workflow = new SwShNpcItemGiftWorkflowService().Load(project);
 
@@ -42,7 +47,7 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         WriteItemOptionsFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
         var gift = SwShNpcItemGiftWorkflowService.GetDefinitionsForGame(ProjectGame.Sword)[0];
         var selection = new SwShNpcItemGiftSelection(
             gift.GiftId,
@@ -50,9 +55,10 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
             gift.Items
                 .Select(slot => new SwShNpcItemGiftItemSelection(slot.SlotId, ItemId: 0))
                 .ToArray());
+        Assert.NotNull(SwShNpcItemGiftWorkflowService.FindGift(selection.GiftId, ProjectGame.Sword));
 
         var result = new SwShNpcItemGiftEditSessionService().StageGifts(
-            temp.Paths,
+            SwordPaths(temp),
             [selection],
             session: null);
 
@@ -66,13 +72,13 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         WriteBroadItemOptionsFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
         var definition = Assert.Single(
             SwShNpcItemGiftWorkflowService.GetDefinitionsForGame(ProjectGame.Sword),
             gift => gift.GiftId == "hop-postwick-wishing-star");
         WriteGiftScriptFixture(temp, definition);
 
-        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(temp.Paths));
+        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(SwordPaths(temp)));
 
         var hop = Assert.Single(workflow.Npcs, npc => npc.NpcId == "hop");
         var gift = Assert.Single(hop.Gifts, gift => gift.GiftId == "hop-postwick-wishing-star");
@@ -87,7 +93,7 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         WriteBroadItemOptionsFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
 
         var soniaDefinitions = SwShNpcItemGiftWorkflowService
             .GetDefinitionsForGame(ProjectGame.Sword)
@@ -98,7 +104,7 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
             WriteGiftScriptFixture(temp, definition);
         }
 
-        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(temp.Paths));
+        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(SwordPaths(temp)));
         var sonia = Assert.Single(workflow.Npcs, npc => npc.NpcId == "sonia");
         var selections = sonia.Gifts
             .Select(gift => gift.GiftId switch
@@ -110,9 +116,9 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
             .ToArray();
         var service = new SwShNpcItemGiftEditSessionService();
 
-        var staged = service.StageGifts(temp.Paths, selections, session: null);
-        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
-        var apply = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+        var staged = service.StageGifts(SwordPaths(temp), selections, session: null);
+        var plan = service.CreateChangePlan(SwordPaths(temp), staged.Session);
+        var apply = service.ApplyChangePlan(SwordPaths(temp), staged.Session, plan);
 
         Assert.DoesNotContain(staged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -141,7 +147,7 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
         Assert.Equal(3, SwShAmxCellPatcher.ReadCodeCellInt(ReadBaseScript(temp, "main_event_1820.amx"), 6335));
         Assert.Equal(29, SwShAmxCellPatcher.ReadCodeCellInt(ReadBaseScript(temp, "main_event_1820.amx"), 6336));
 
-        var reloaded = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(temp.Paths));
+        var reloaded = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(SwordPaths(temp)));
         var reloadedSonia = Assert.Single(reloaded.Npcs, npc => npc.NpcId == "sonia");
         var stowGift = Assert.Single(reloadedSonia.Gifts, gift => gift.GiftId == "sonia-stow-on-side-revive");
         var slumberingGift = Assert.Single(reloadedSonia.Gifts, gift => gift.GiftId == "sonia-slumbering-weald-max-revive");
@@ -156,7 +162,7 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         WriteBroadItemOptionsFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
         var definition = Assert.Single(
             SwShNpcItemGiftWorkflowService.GetDefinitionsForGame(ProjectGame.Sword),
             gift => gift.GiftId == "sonia-stow-on-side-revive");
@@ -165,26 +171,33 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
         WriteExpandedCodeCell(layeredScript, 10, PackConstant(777));
         temp.WriteOutputFile(definition.RelativePath, layeredScript);
 
-        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(temp.Paths));
+        var workflow = new SwShNpcItemGiftWorkflowService().Load(new ProjectWorkspaceService().Open(SwordPaths(temp)));
         var sonia = Assert.Single(workflow.Npcs, npc => npc.NpcId == "sonia");
         var gift = Assert.Single(sonia.Gifts, gift => gift.GiftId == definition.GiftId);
         var service = new SwShNpcItemGiftEditSessionService();
 
         var staged = service.StageGifts(
-            temp.Paths,
+            SwordPaths(temp),
             [CreateSelection(gift, quantity: 7, itemId: 5)],
             session: null);
-        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
-        var apply = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+        var plan = service.CreateChangePlan(SwordPaths(temp), staged.Session);
+        var apply = service.ApplyChangePlan(SwordPaths(temp), staged.Session, plan);
 
         Assert.DoesNotContain(staged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var write = Assert.Single(plan.Writes);
-        Assert.Equal(ProjectFileLayer.Layered, Assert.Single(write.Sources).Layer);
+        Assert.Contains(
+            write.Sources,
+            source => source.Layer == ProjectFileLayer.Layered
+                && source.RelativePath == definition.RelativePath);
+        Assert.Contains(
+            write.Sources,
+            source => source.RelativePath == "romfs/bin/pml/item/item.dat");
+        Assert.Contains(write.Sources, source => source.Layer == ProjectFileLayer.Pending);
         var output = ReadOutputScript(temp, "main_event_1110.amx");
         Assert.Equal(777, SwShAmxCellPatcher.ReadCodeCellInt(output, 10));
-        Assert.Equal(7, SwShAmxCellPatcher.ReadCodeCellInt(output, definition.QuantityCell));
+        Assert.Equal(7, SwShAmxCellPatcher.ReadCodeCellInt(output, definition.QuantityCell!.Value));
         Assert.Equal(5, SwShAmxCellPatcher.ReadCodeCellInt(output, definition.Items.Single().ItemCell));
         Assert.Equal(0, SwShAmxCellPatcher.ReadCodeCellInt(ReadBaseScript(temp, "main_event_1110.amx"), 10));
     }
@@ -246,14 +259,21 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
 
     private static void WriteGiftScriptFixture(TemporarySwShProject temp, SwShNpcItemGiftDefinition definition)
     {
-        var maxCell = definition.Items
+        var ownedCells = definition.Items
             .Select(item => item.ItemCell)
             .Concat(definition.Items.SelectMany(item => item.CompanionItemCells))
-            .Append(definition.QuantityCell)
-            .Concat(definition.CompanionQuantityCells)
-            .Max();
+            .Concat(definition.CompanionQuantityCells);
+        if (definition.QuantityCell is int quantityCell)
+        {
+            ownedCells = ownedCells.Append(quantityCell);
+        }
+
+        var maxCell = ownedCells.Max();
         var cells = new ulong[maxCell + 1];
-        cells[definition.QuantityCell] = PackConstant(definition.Quantity);
+        if (definition.QuantityCell is int editableQuantityCell)
+        {
+            cells[editableQuantityCell] = PackConstant(definition.Quantity);
+        }
         foreach (var companionQuantityCell in definition.CompanionQuantityCells)
         {
             cells[companionQuantityCell] = PackConstant(definition.Quantity);
@@ -329,5 +349,10 @@ public sealed class SwShNpcItemGiftWorkflowServiceTests
     private static void WriteExpandedCodeCell(byte[] amx, int cell, ulong value)
     {
         BinaryPrimitives.WriteUInt64LittleEndian(amx.AsSpan(0x38 + cell * 8), value);
+    }
+
+    private static ProjectPaths SwordPaths(TemporarySwShProject temp)
+    {
+        return temp.Paths with { SelectedGame = ProjectGame.Sword };
     }
 }

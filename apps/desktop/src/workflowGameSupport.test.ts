@@ -79,4 +79,28 @@ describe('workflow game support', () => {
       isWorkflowNavigationVisibleForGame('startingItems', 'za', availableSections)
     ).toBe(false);
   });
+
+  it('routes NPC Item Gift only for Sword and Shield', () => {
+    const availableSections = new Set<WorkbenchSection>(['npcItemGift']);
+    const advancedGroup = workflowNavigationGroups.find(
+      (group) => group.id === 'advancedEditors'
+    );
+
+    expect(advancedGroup?.sectionIds).toContain('npcItemGift');
+    expect(
+      isWorkflowNavigationVisibleForGame('npcItemGift', 'sword', availableSections)
+    ).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('npcItemGift', 'shield', availableSections)
+    ).toBe(true);
+    expect(
+      isWorkflowNavigationVisibleForGame('npcItemGift', 'scarlet', availableSections)
+    ).toBe(false);
+    expect(
+      isWorkflowNavigationVisibleForGame('npcItemGift', 'violet', availableSections)
+    ).toBe(false);
+    expect(
+      isWorkflowNavigationVisibleForGame('npcItemGift', 'za', availableSections)
+    ).toBe(false);
+  });
 });

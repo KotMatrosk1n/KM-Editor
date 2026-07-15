@@ -6,7 +6,8 @@ namespace KM.SwSh.Scripts;
 
 internal sealed record SwShAmxCellPatch(
     int Cell,
-    int Value);
+    int Value,
+    bool RequirePackedConstantOperand = false);
 
 internal static class SwShAmxCellPatcher
 {
@@ -15,25 +16,46 @@ internal static class SwShAmxCellPatcher
     private const ushort PawnMagic64 = 0xF1E1;
     private const short PawnFlagCompact = 0x0004;
     private const uint PackedConstantOpcode = 0x000000BC;
+    private const int MaxExpandedAmxBytes = 512 * 1024 * 1024;
 
     public static int ReadCodeCellInt(byte[] data, int cell)
     {
         ArgumentNullException.ThrowIfNull(data);
 
+        var reader = OpenCodeCellReader(data);
+        if (!reader.TryReadInt(cell, out var value, out _))
+        {
+            throw new InvalidDataException($"AMX code cell {cell} is outside the supported code cell range.");
+        }
+
+        return value;
+    }
+
+    public static int ReadPackedCodeCellInt(byte[] data, int cell)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        var reader = OpenCodeCellReader(data);
+        if (!reader.TryReadInt(cell, out _, out _))
+        {
+            throw new InvalidDataException($"AMX code cell {cell} is outside the supported code cell range.");
+        }
+
+        if (!reader.TryReadPackedInt(cell, out var value))
+        {
+            throw new InvalidDataException($"AMX code cell {cell} is not a packed constant operand.");
+        }
+
+        return value;
+    }
+
+    internal static SwShAmxCodeCellReader OpenCodeCellReader(byte[] data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
         var decoded = Decode(data);
-        var codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
-        if ((uint)cell >= (uint)codeCells.Length)
-        {
-            throw new InvalidDataException($"AMX code cell {cell} is outside code cell count {codeCells.Length}.");
-        }
-
-        var value = ReadCodeCellValue(codeCells[cell], decoded.CellSize);
-        if (value is < int.MinValue or > int.MaxValue)
-        {
-            throw new InvalidDataException($"AMX code cell {cell} value {value} is outside the supported 32-bit integer range.");
-        }
-
-        return (int)value;
+        return new SwShAmxCodeCellReader(
+            ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize),
+            decoded.CellSize);
     }
 
     public static byte[] ApplyCodeCellPatches(byte[] data, IReadOnlyList<SwShAmxCellPatch> patches)
@@ -44,6 +66,7 @@ internal static class SwShAmxCellPatcher
         var decoded = Decode(data);
         var originalExpanded = decoded.Expanded.ToArray();
         var codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
+        var patchedCells = new HashSet<int>();
         foreach (var patch in patches)
         {
             if ((uint)patch.Cell >= (uint)codeCells.Length)
@@ -56,7 +79,16 @@ internal static class SwShAmxCellPatcher
                 throw new InvalidDataException($"AMX code cell {patch.Cell} value {patch.Value} must not be negative.");
             }
 
-            codeCells[patch.Cell] = WriteCodeCellValue(codeCells[patch.Cell], patch.Value, decoded.CellSize);
+            if (!patchedCells.Add(patch.Cell))
+            {
+                throw new InvalidDataException($"AMX code cell {patch.Cell} was supplied more than once.");
+            }
+
+            codeCells[patch.Cell] = WriteCodeCellValue(
+                codeCells[patch.Cell],
+                patch.Value,
+                decoded.CellSize,
+                patch.RequirePackedConstantOperand);
         }
 
         WriteCells(decoded.Expanded, decoded.Header.Cod, codeCells, decoded.CellSize);
@@ -122,6 +154,14 @@ internal static class SwShAmxCellPatcher
         if (header.Hea < header.Cod || header.Size < header.Cod || header.Size > data.Length)
         {
             throw new InvalidDataException("AMX compact header has inconsistent code/data bounds.");
+        }
+
+        var compactBodyLength = header.Size - header.Cod;
+        var expandedBodyLength = header.Hea - header.Cod;
+        if (header.Hea > MaxExpandedAmxBytes
+            || expandedBodyLength > (long)compactBodyLength * cellSize)
+        {
+            throw new InvalidDataException("AMX compact header requests an unsafe expanded-memory size.");
         }
 
         var expanded = new byte[header.Hea];
@@ -252,10 +292,17 @@ internal static class SwShAmxCellPatcher
             compact.AddRange(CompactAmxCell(patchedCell, cellSize));
         }
 
-        var result = new byte[header.Cod + compact.Count];
+        var compactSize = header.Cod + compact.Count;
+        var suffixLength = original.Length - header.Size;
+        var result = new byte[compactSize + suffixLength];
         Array.Copy(original, result, header.Cod);
         compact.CopyTo(result, header.Cod);
-        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(0), result.Length);
+        if (suffixLength > 0)
+        {
+            Array.Copy(original, header.Size, result, compactSize, suffixLength);
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(0), compactSize);
         return result;
     }
 
@@ -308,7 +355,7 @@ internal static class SwShAmxCellPatcher
         var cellSize = GetPawnCellSize(header.Magic);
         var expanded = ExpandAmxIfNeeded(compactData, header, cellSize);
         var normalizedExpected = expectedExpanded.ToArray();
-        BinaryPrimitives.WriteInt32LittleEndian(normalizedExpected.AsSpan(0x00), compactData.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(normalizedExpected.AsSpan(0x00), header.Size);
         if (!expanded.AsSpan(0, normalizedExpected.Length).SequenceEqual(normalizedExpected))
         {
             throw new InvalidDataException("AMX compact round trip did not preserve expanded memory.");
@@ -380,22 +427,36 @@ internal static class SwShAmxCellPatcher
 
     private static long ReadCodeCellValue(ulong cell, int cellSize)
     {
+        if (TryReadPackedConstant(cell, cellSize, out var packedValue))
+        {
+            return packedValue;
+        }
+
         var signed = SignedCellValue(cell, cellSize);
         if (signed is >= int.MinValue and <= int.MaxValue)
         {
             return signed;
         }
 
-        if (TryReadPackedConstant(cell, cellSize, out var packedValue))
-        {
-            return packedValue;
-        }
-
         return signed;
     }
 
-    private static ulong WriteCodeCellValue(ulong cell, int value, int cellSize)
+    private static ulong WriteCodeCellValue(
+        ulong cell,
+        int value,
+        int cellSize,
+        bool requirePackedConstantOperand)
     {
+        if (requirePackedConstantOperand)
+        {
+            if (!IsPackedConstantOperandCell(cell, cellSize))
+            {
+                throw new InvalidDataException("AMX code cell is not a packed constant operand.");
+            }
+
+            return ((ulong)(uint)value << 32) | PackedConstantOpcode;
+        }
+
         if (IsPackedConstantCell(cell, cellSize))
         {
             return ((ulong)(uint)value << 32) | (uint)cell;
@@ -418,7 +479,12 @@ internal static class SwShAmxCellPatcher
 
     private static bool IsPackedConstantCell(ulong cell, int cellSize)
     {
-        return cellSize == 8 && (uint)cell == PackedConstantOpcode && (cell >> 32) != 0;
+        return IsPackedConstantOperandCell(cell, cellSize) && (cell >> 32) != 0;
+    }
+
+    private static bool IsPackedConstantOperandCell(ulong cell, int cellSize)
+    {
+        return cellSize == 8 && (uint)cell == PackedConstantOpcode;
     }
 
     private sealed record DecodedAmx(
@@ -435,6 +501,57 @@ internal static class SwShAmxCellPatcher
     private readonly record struct CompactCellSpan(
         int Offset,
         int Length);
+
+    internal sealed class SwShAmxCodeCellReader
+    {
+        private readonly IReadOnlyList<ulong> codeCells;
+        private readonly int cellSize;
+
+        internal SwShAmxCodeCellReader(IReadOnlyList<ulong> codeCells, int cellSize)
+        {
+            this.codeCells = codeCells;
+            this.cellSize = cellSize;
+        }
+
+        public bool TryReadInt(int cell, out int value, out bool isPackedConstant)
+        {
+            value = 0;
+            isPackedConstant = false;
+            if ((uint)cell >= (uint)codeCells.Count)
+            {
+                return false;
+            }
+
+            var raw = codeCells[cell];
+            isPackedConstant = IsPackedConstantCell(raw, cellSize);
+            var decodedValue = ReadCodeCellValue(raw, cellSize);
+            if (decodedValue is < int.MinValue or > int.MaxValue)
+            {
+                return false;
+            }
+
+            value = (int)decodedValue;
+            return true;
+        }
+
+        public bool TryReadPackedInt(int cell, out int value)
+        {
+            value = 0;
+            if ((uint)cell >= (uint)codeCells.Count)
+            {
+                return false;
+            }
+
+            var raw = codeCells[cell];
+            if (!IsPackedConstantOperandCell(raw, cellSize))
+            {
+                return false;
+            }
+
+            value = unchecked((int)(uint)(raw >> 32));
+            return true;
+        }
+    }
 
     private sealed record SwShAmxHeader(
         int Size,
@@ -481,14 +598,23 @@ internal static class SwShAmxCellPatcher
                 BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x30)),
                 BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x34)));
 
-            if (header.Size < 0 || header.Size > data.Length)
+            if (header.Size < 0x38 || header.Size > data.Length)
             {
                 throw new InvalidDataException($"AMX header size 0x{header.Size:X} is outside the file length 0x{data.Length:X}.");
             }
 
-            if (header.Cod < 0 || header.Dat < header.Cod || header.Hea < header.Dat || header.Stp < header.Hea)
+            if (header.Cod < 0x38
+                || header.Cod > header.Size
+                || header.Dat < header.Cod
+                || header.Hea < header.Dat
+                || header.Stp < header.Hea)
             {
                 throw new InvalidDataException("AMX header has invalid COD/DAT/HEA/STP ordering.");
+            }
+
+            if ((header.Flags & PawnFlagCompact) == 0 && header.Dat > data.Length)
+            {
+                throw new InvalidDataException("AMX code section extends beyond the file.");
             }
 
             return header;

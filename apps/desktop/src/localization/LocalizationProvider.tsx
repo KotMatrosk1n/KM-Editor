@@ -267,6 +267,383 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     return direct;
   }
 
+  const npcItemGiftPendingCountMatch = /^(\d+) gift (group|groups) staged$/.exec(literal);
+  if (npcItemGiftPendingCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      npcItemGiftPendingCountMatch[2] === 'group'
+        ? '{count} gift group staged'
+        : '{count} gift groups staged',
+      { count: npcItemGiftPendingCountMatch[1] }
+    );
+  }
+
+  const npcItemGiftUnavailableItemMatch = /^(.+) unavailable$/.exec(literal);
+  if (npcItemGiftUnavailableItemMatch) {
+    return formatLiteralTemplate(language, '{item} unavailable', {
+      item: npcItemGiftUnavailableItemMatch[1]
+    });
+  }
+
+  const npcItemGiftUnavailableOptionMatch = /^(.+) unavailable \(#(-?\d+)\)$/.exec(literal);
+  if (npcItemGiftUnavailableOptionMatch) {
+    return `${formatLiteralTemplate(language, '{item} unavailable', {
+      item: npcItemGiftUnavailableOptionMatch[1]
+    })} (#${npcItemGiftUnavailableOptionMatch[2]})`;
+  }
+
+  const npcItemGiftFallbackItemMatch = /^Item (-?\d+)$/.exec(literal);
+  if (npcItemGiftFallbackItemMatch) {
+    return formatLiteralTemplate(language, 'Item {itemId}', {
+      itemId: npcItemGiftFallbackItemMatch[1]
+    });
+  }
+
+  const npcItemGiftGroupLabelMatch = /^(.+) NPCs$/.exec(literal);
+  if (npcItemGiftGroupLabelMatch) {
+    const group = translateLiteralBodyForLanguage(language, npcItemGiftGroupLabelMatch[1]);
+    if (/NPCs?/i.test(group)) {
+      return group;
+    }
+
+    return formatLiteralTemplate(language, '{group} NPCs', {
+      group
+    });
+  }
+
+  const npcItemGiftItemOptionsFailureMatch =
+    /^Item options could not be (decoded|read|loaded): (.+)$/.exec(literal);
+  if (npcItemGiftItemOptionsFailureMatch) {
+    const template = npcItemGiftItemOptionsFailureMatch[1] === 'decoded'
+      ? 'Item options could not be decoded: {error}'
+      : npcItemGiftItemOptionsFailureMatch[1] === 'read'
+        ? 'Item options could not be read: {error}'
+        : 'Item options could not be loaded: {error}';
+    return formatLiteralTemplate(language, template, {
+      error: translateLiteralBodyForLanguage(language, npcItemGiftItemOptionsFailureMatch[2])
+    });
+  }
+
+  const npcItemGiftMissingSourceMatch =
+    /^(.+) is missing\. NPC Item Gift can show defaults, but patching needs this AMX file\.$/.exec(
+      literal
+    );
+  if (npcItemGiftMissingSourceMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{file} is missing. NPC Item Gift can show defaults, but patching needs this AMX file.',
+      { file: npcItemGiftMissingSourceMatch[1] }
+    );
+  }
+
+  const npcItemGiftMappedMissingSourceMatch =
+    /^(.+) is missing\. Its mapped NPC gifts are read-only until the base script is restored\.$/.exec(
+      literal
+    );
+  if (npcItemGiftMappedMissingSourceMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{file} is missing. Its mapped NPC gifts are read-only until the base script is restored.',
+      { file: npcItemGiftMappedMissingSourceMatch[1] }
+    );
+  }
+
+  const npcItemGiftMappedSourceBlockerMatch =
+    /^(.+) (is unreadable or not a supported 64-bit AMX script|cannot verify its mapped operands against the base script)\. Its mapped gifts are blocked\.$/.exec(
+      literal
+    );
+  if (npcItemGiftMappedSourceBlockerMatch) {
+    const template = npcItemGiftMappedSourceBlockerMatch[2].startsWith('is unreadable')
+      ? '{file} is unreadable or not a supported 64-bit AMX script. Its mapped gifts are blocked.'
+      : '{file} cannot verify its mapped operands against the base script. Its mapped gifts are blocked.';
+    return formatLiteralTemplate(language, template, {
+      file: npcItemGiftMappedSourceBlockerMatch[1]
+    });
+  }
+
+  const npcItemGiftIncompatibleOperandMatch =
+    /^(.+) has an incompatible mapped operand or an unverified base layout and is blocked from editing\.$/.exec(
+      literal
+    );
+  if (npcItemGiftIncompatibleOperandMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} has an incompatible mapped operand or an unverified base layout and is blocked from editing.',
+      { gift: npcItemGiftIncompatibleOperandMatch[1] }
+    );
+  }
+
+  const npcItemGiftCompanionMismatchMatch =
+    /^(.+) has companion operands that disagree with its primary value\. Staging this gift will normalize all owned companions\.$/.exec(
+      literal
+    );
+  if (npcItemGiftCompanionMismatchMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} has companion operands that disagree with its primary value. Staging this gift will normalize all owned companions.',
+      { gift: npcItemGiftCompanionMismatchMatch[1] }
+    );
+  }
+
+  const npcItemGiftSourceReadMatch =
+    /^(.+) could not be read: (.+)\. Known vanilla values will be shown for that script\.$/.exec(
+      literal
+    );
+  if (npcItemGiftSourceReadMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{source} could not be read: {error}. Known vanilla values will be shown for that script.',
+      {
+        error: translateLiteralBodyForLanguage(language, npcItemGiftSourceReadMatch[2]),
+        source: npcItemGiftSourceReadMatch[1]
+      }
+    );
+  }
+
+  const npcItemGiftQuantityInspectMatch =
+    /^(.+) quantity could not be inspected: (.+)\. Known vanilla quantity will be shown\.$/.exec(
+      literal
+    );
+  if (npcItemGiftQuantityInspectMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} quantity could not be inspected: {error}. Known vanilla quantity will be shown.',
+      {
+        error: translateLiteralBodyForLanguage(language, npcItemGiftQuantityInspectMatch[2]),
+        gift: npcItemGiftQuantityInspectMatch[1]
+      }
+    );
+  }
+
+  const npcItemGiftItemInspectMatch =
+    /^(.+) item could not be inspected: (.+)\. Known vanilla item will be shown\.$/.exec(literal);
+  if (npcItemGiftItemInspectMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} item could not be inspected: {error}. Known vanilla item will be shown.',
+      {
+        error: translateLiteralBodyForLanguage(language, npcItemGiftItemInspectMatch[2]),
+        gift: npcItemGiftItemInspectMatch[1]
+      }
+    );
+  }
+
+  const npcItemGiftUnsupportedDomainMatch =
+    /^Pending edit domain '(.+)' is not supported by NPC Item Gift\.$/.exec(literal);
+  if (npcItemGiftUnsupportedDomainMatch) {
+    return formatLiteralTemplate(
+      language,
+      "Pending edit domain '{domain}' is not supported by NPC Item Gift.",
+      { domain: npcItemGiftUnsupportedDomainMatch[1] }
+    );
+  }
+
+  const npcItemGiftUnsupportedEditMatch =
+    /^Pending NPC Item Gift edit '(.+)' is not supported\.$/.exec(literal);
+  if (npcItemGiftUnsupportedEditMatch) {
+    return formatLiteralTemplate(
+      language,
+      "Pending NPC Item Gift edit '{recordId}' is not supported.",
+      { recordId: npcItemGiftUnsupportedEditMatch[1] }
+    );
+  }
+
+  const npcItemGiftUnsupportedFieldMatch =
+    /^Pending NPC Item Gift field '(.+)' is not supported\.$/.exec(literal);
+  if (npcItemGiftUnsupportedFieldMatch) {
+    return formatLiteralTemplate(
+      language,
+      "Pending NPC Item Gift field '{field}' is not supported.",
+      { field: npcItemGiftUnsupportedFieldMatch[1] }
+    );
+  }
+
+  const npcItemGiftPlanPreviewMatch =
+    /^NPC Item Gift change plan preview contains ([\d,]+) target file\(s\)\.$/.exec(literal);
+  if (npcItemGiftPlanPreviewMatch) {
+    const count = npcItemGiftPlanPreviewMatch[1];
+    return formatLiteralTemplate(
+      language,
+      Number(count.replaceAll(',', '')) === 1
+        ? 'NPC Item Gift change plan preview contains {count} target file.'
+        : 'NPC Item Gift change plan preview contains {count} target files.',
+      { count }
+    );
+  }
+
+  const npcItemGiftAppliedMatch = /^Applied NPC Item Gift changes to (.+)\.$/.exec(literal);
+  if (npcItemGiftAppliedMatch) {
+    return formatLiteralTemplate(language, 'Applied NPC Item Gift changes to {path}.', {
+      path: npcItemGiftAppliedMatch[1]
+    });
+  }
+
+  const npcItemGiftFileFailureMatch =
+    /^NPC Item Gift (source file could not be patched|output file could not be written): (.+)$/.exec(
+      literal
+    );
+  if (npcItemGiftFileFailureMatch) {
+    const template = npcItemGiftFileFailureMatch[1].startsWith('source')
+      ? 'NPC Item Gift source file could not be patched: {error}'
+      : 'NPC Item Gift output file could not be written: {error}';
+    return formatLiteralTemplate(language, template, {
+      error: translateLiteralBodyForLanguage(language, npcItemGiftFileFailureMatch[2])
+    });
+  }
+
+  const npcItemGiftVerifiedFileFailureMatch =
+    /^NPC Item Gift (verified output could not be written|source file could not be patched safely|source file could not be read): (.+)$/.exec(
+      literal
+    );
+  if (npcItemGiftVerifiedFileFailureMatch) {
+    const template = npcItemGiftVerifiedFileFailureMatch[1] === 'verified output could not be written'
+      ? 'NPC Item Gift verified output could not be written: {error}'
+      : npcItemGiftVerifiedFileFailureMatch[1] === 'source file could not be patched safely'
+        ? 'NPC Item Gift source file could not be patched safely: {error}'
+        : 'NPC Item Gift source file could not be read: {error}';
+    return formatLiteralTemplate(language, template, {
+      error: translateLiteralBodyForLanguage(language, npcItemGiftVerifiedFileFailureMatch[2])
+    });
+  }
+
+  const npcItemGiftConflictingCellMatch =
+    /^NPC Item Gift has conflicting staged values for AMX cell (.+)\.$/.exec(literal);
+  if (npcItemGiftConflictingCellMatch) {
+    return formatLiteralTemplate(
+      language,
+      'NPC Item Gift has conflicting staged values for AMX cell {cell}.',
+      { cell: npcItemGiftConflictingCellMatch[1] }
+    );
+  }
+
+  const npcItemGiftRequiredSourceMatch =
+    /^(.+) is required before NPC Item Gift can be staged\.$/.exec(literal);
+  if (npcItemGiftRequiredSourceMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{file} is required before NPC Item Gift can be staged.',
+      { file: npcItemGiftRequiredSourceMatch[1] }
+    );
+  }
+
+  const npcItemGiftSelectionMatch =
+    /^NPC Item Gift selection '(.+)' (is duplicated|is not recognized for this game)\.$/.exec(
+      literal
+    );
+  if (npcItemGiftSelectionMatch) {
+    const template = npcItemGiftSelectionMatch[2] === 'is duplicated'
+      ? "NPC Item Gift selection '{giftId}' is duplicated."
+      : "NPC Item Gift selection '{giftId}' is not recognized for this game.";
+    return formatLiteralTemplate(language, template, { giftId: npcItemGiftSelectionMatch[1] });
+  }
+
+  const npcItemGiftSelectionGameMatch =
+    /^NPC Item Gift selection '(.+)' is not recognized for (Sword|Shield)\.$/.exec(literal);
+  if (npcItemGiftSelectionGameMatch) {
+    return formatLiteralTemplate(
+      language,
+      "NPC Item Gift selection '{giftId}' is not recognized for {game}.",
+      {
+        game: translateLiteralBodyForLanguage(language, npcItemGiftSelectionGameMatch[2]),
+        giftId: npcItemGiftSelectionGameMatch[1]
+      }
+    );
+  }
+
+  const npcItemGiftQuantityRangeMatch = /^(.+) quantity must be between 1 and 999\.$/.exec(literal);
+  if (npcItemGiftQuantityRangeMatch) {
+    return formatLiteralTemplate(language, '{gift} quantity must be between 1 and 999.', {
+      gift: npcItemGiftQuantityRangeMatch[1]
+    });
+  }
+
+  const npcItemGiftSlotMatch =
+    /^(.+) item slot '(.+)' (is not recognized|is duplicated|is missing)\.$/.exec(literal);
+  if (npcItemGiftSlotMatch) {
+    const template = npcItemGiftSlotMatch[3] === 'is not recognized'
+      ? "{gift} item slot '{slotId}' is not recognized."
+      : npcItemGiftSlotMatch[3] === 'is duplicated'
+        ? "{gift} item slot '{slotId}' is duplicated."
+        : "{gift} item slot '{slotId}' is missing.";
+    return formatLiteralTemplate(language, template, {
+      gift: npcItemGiftSlotMatch[1],
+      slotId: npcItemGiftSlotMatch[2]
+    });
+  }
+
+  const npcItemGiftUnselectableItemMatch =
+    /^(.+) item (-?\d+) is not selectable for this project\.$/.exec(literal);
+  if (npcItemGiftUnselectableItemMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} item {itemId} is not selectable for this project.',
+      {
+        gift: npcItemGiftUnselectableItemMatch[1],
+        itemId: npcItemGiftUnselectableItemMatch[2]
+      }
+    );
+  }
+
+  const npcItemGiftMappedOperandStatusMatch =
+    /^(.+) cannot be staged while its mapped operands are (available|repairable|damaged|missing)\.$/.exec(
+      literal
+    );
+  if (npcItemGiftMappedOperandStatusMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} cannot be staged while its mapped operands are {status}.',
+      {
+        gift: npcItemGiftMappedOperandStatusMatch[1],
+        status: translateLiteralBodyForLanguage(language, npcItemGiftMappedOperandStatusMatch[2])
+      }
+    );
+  }
+
+  const npcItemGiftStatusBlockerMatch =
+    /^(.+) is (available|repairable|damaged|missing)\.$/.exec(literal);
+  if (npcItemGiftStatusBlockerMatch) {
+    return formatLiteralTemplate(language, '{subject} is {status}.', {
+      status: translateLiteralBodyForLanguage(language, npcItemGiftStatusBlockerMatch[2]),
+      subject: npcItemGiftStatusBlockerMatch[1]
+    });
+  }
+
+  const npcItemGiftMissingSourceRecordMatch =
+    /^(.+) does not have a loaded source record\.$/.exec(literal);
+  if (npcItemGiftMissingSourceRecordMatch) {
+    return formatLiteralTemplate(language, '{gift} does not have a loaded source record.', {
+      gift: npcItemGiftMissingSourceRecordMatch[1]
+    });
+  }
+
+  const npcItemGiftFixedQuantityMatch =
+    /^(.+) uses a fixed helper quantity and only its item can be edited\.$/.exec(literal);
+  if (npcItemGiftFixedQuantityMatch) {
+    return formatLiteralTemplate(
+      language,
+      '{gift} uses a fixed helper quantity and only its item can be edited.',
+      { gift: npcItemGiftFixedQuantityMatch[1] }
+    );
+  }
+
+  const npcItemGiftMissingSelectionsMatch = /^(.+) is missing its item selections\.$/.exec(
+    literal
+  );
+  if (npcItemGiftMissingSelectionsMatch) {
+    return formatLiteralTemplate(language, '{gift} is missing its item selections.', {
+      gift: npcItemGiftMissingSelectionsMatch[1]
+    });
+  }
+
+
+  const npcItemGiftMissingItemSelectionMatch =
+    /^(.+) contains a missing item selection\.$/.exec(literal);
+  if (npcItemGiftMissingItemSelectionMatch) {
+    return formatLiteralTemplate(language, '{gift} contains a missing item selection.', {
+      gift: npcItemGiftMissingItemSelectionMatch[1]
+    });
+  }
+
   const startingItemsSlotFieldMatch = /^(Item|Quantity) for Bag Hook slot (\d+)$/.exec(
     literal
   );

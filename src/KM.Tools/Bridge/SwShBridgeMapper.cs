@@ -3230,9 +3230,11 @@ public static class SwShBridgeMapper
             gift.Location,
             gift.DisplayOrder,
             gift.RelativePath,
+            gift.Status,
             gift.Quantity,
             gift.VanillaQuantity,
             gift.QuantityCell,
+            gift.CanEditQuantity,
             gift.Items.Select(ToDto).ToArray(),
             ToDto(gift.Provenance));
     }
