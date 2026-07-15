@@ -2084,6 +2084,11 @@ export function createMockProjectBridge(
         form: 1,
         gender: 0,
         genderLabel: 'Random',
+        genderOptions: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 }
+        ],
         hash0: '0x0000000000000001',
         hash1: '0x0000000000000002',
         hash2: '0x0000000000000003',

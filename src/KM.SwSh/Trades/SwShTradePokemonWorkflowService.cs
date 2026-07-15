@@ -9,6 +9,8 @@ using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Trades;
 
@@ -116,24 +118,24 @@ public sealed class SwShTradePokemonWorkflowService
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableField> BaseEditableFields =
     [
-        CreateField(SpeciesField, "Species", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
+        CreateField(SpeciesField, "Species", "integer", 1, SwShTradePokemonArchive.MaximumIdValue),
         CreateField(FormField, "Form", "integer", 0, SwShTradePokemonArchive.MaximumByteValue, FormOptions),
-        CreateField(LevelField, "Level", "integer", 0, SwShTradePokemonArchive.MaximumByteValue),
+        CreateField(LevelField, "Level", "integer", SwShTradePokemonArchive.MinimumLevel, SwShTradePokemonArchive.MaximumLevel),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
         CreateField(Field03Field, "Unknown field 03", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability slot", "integer", 0, 3, AbilityOptions),
         CreateField(NatureField, "Nature", "integer", 0, 25, NatureOptions),
         CreateField(GenderField, "Gender", "integer", 0, 2, GenderOptions),
-        CreateField(ShinyLockField, "Shiny lock", "integer", 0, SwShTradePokemonArchive.MaximumIdValue, ShinyLockOptions),
+        CreateField(ShinyLockField, "Shiny lock", "integer", 0, 2, ShinyLockOptions),
         CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
         CreateField(RequiredSpeciesField, "Requested species", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
         CreateField(RequiredFormField, "Requested form", "integer", 0, SwShTradePokemonArchive.MaximumByteValue, FormOptions),
         CreateField(RequiredNatureField, "Requested nature", "integer", 0, 25, NatureOptions),
-        CreateField(UnknownRequirementField, "Unknown requirement", "integer", 0, SwShTradePokemonArchive.MaximumByteValue),
+        CreateField(UnknownRequirementField, "Unknown requirement", "integer", 0, 0),
         CreateField(TrainerIdField, "Trainer ID", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
-        CreateField(OtGenderField, "OT gender", "integer", 0, SwShTradePokemonArchive.MaximumByteValue, OtGenderOptions),
+        CreateField(OtGenderField, "OT gender", "integer", 0, 1, OtGenderOptions),
         CreateField(MemoryCodeField, "Memory code", "integer", 0, SwShTradePokemonArchive.MaximumByteValue),
         CreateField(MemoryTextVariableField, "Memory text variable", "integer", 0, ushort.MaxValue),
         CreateField(MemoryFeelField, "Memory feeling", "integer", 0, SwShTradePokemonArchive.MaximumByteValue),
@@ -249,15 +251,107 @@ public sealed class SwShTradePokemonWorkflowService
         return $"trade:{tradeIndex.ToString(CultureInfo.InvariantCulture)}";
     }
 
+    internal static string CreateTradeRecordId(int tradeIndex, string sourceIdentity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceIdentity);
+
+        return $"{CreateTradeRecordId(tradeIndex)}:{sourceIdentity}";
+    }
+
     internal static bool TryParseTradeRecordId(string? recordId, out int tradeIndex)
     {
+        return TryParseTradeRecordId(recordId, out tradeIndex, out _);
+    }
+
+    internal static bool TryParseTradeRecordId(
+        string? recordId,
+        out int tradeIndex,
+        out string? sourceIdentity)
+    {
         tradeIndex = 0;
+        sourceIdentity = null;
 
         const string prefix = "trade:";
-        return recordId is not null
-            && recordId.StartsWith(prefix, StringComparison.Ordinal)
-            && int.TryParse(recordId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out tradeIndex)
-            && tradeIndex >= 0;
+        if (recordId is null || !recordId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var remainder = recordId[prefix.Length..];
+        var separator = remainder.IndexOf(':');
+        var indexText = separator < 0 ? remainder : remainder[..separator];
+        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out tradeIndex)
+            || tradeIndex < 0
+            || !string.Equals(
+                indexText,
+                tradeIndex.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (separator < 0)
+        {
+            return true;
+        }
+
+        sourceIdentity = remainder[(separator + 1)..];
+        return sourceIdentity.Length == 64 && sourceIdentity.All(Uri.IsHexDigit);
+    }
+
+    internal static string CreateSourceIdentity(SwShTradePokemonRecord trade)
+    {
+        ArgumentNullException.ThrowIfNull(trade);
+
+        var canonical = new StringBuilder();
+        AppendIdentityValue(canonical, trade.Index);
+        AppendIdentityValue(canonical, trade.Form);
+        AppendIdentityValue(canonical, trade.DynamaxLevel);
+        AppendIdentityValue(canonical, trade.BallItemId);
+        AppendIdentityValue(canonical, trade.Field03);
+        AppendIdentityValue(canonical, trade.Hash0);
+        AppendIdentityValue(canonical, trade.CanGigantamax ? 1 : 0);
+        AppendIdentityValue(canonical, trade.HeldItem);
+        AppendIdentityValue(canonical, trade.Level);
+        AppendIdentityValue(canonical, trade.Species);
+        AppendIdentityValue(canonical, trade.Hash1);
+        AppendIdentityValue(canonical, trade.TrainerId);
+        AppendIdentityValue(canonical, trade.MemoryCode);
+        AppendIdentityValue(canonical, trade.MemoryTextVariable);
+        AppendIdentityValue(canonical, trade.MemoryFeel);
+        AppendIdentityValue(canonical, trade.MemoryIntensity);
+        AppendIdentityValue(canonical, trade.Hash2);
+        AppendIdentityValue(canonical, trade.OtGender);
+        AppendIdentityValue(canonical, trade.RequiredForm);
+        AppendIdentityValue(canonical, trade.RequiredSpecies);
+        AppendIdentityValue(canonical, trade.RequiredNature);
+        AppendIdentityValue(canonical, trade.UnknownRequirement);
+        AppendIdentityValue(canonical, trade.ShinyLock);
+        AppendIdentityValue(canonical, trade.Nature);
+        AppendIdentityValue(canonical, trade.Gender);
+        AppendIdentityValue(canonical, trade.Ivs.Hp);
+        AppendIdentityValue(canonical, trade.Ivs.Attack);
+        AppendIdentityValue(canonical, trade.Ivs.Defense);
+        AppendIdentityValue(canonical, trade.Ivs.Speed);
+        AppendIdentityValue(canonical, trade.Ivs.SpecialAttack);
+        AppendIdentityValue(canonical, trade.Ivs.SpecialDefense);
+        AppendIdentityValue(canonical, trade.Ability);
+        foreach (var move in trade.RelearnMoves)
+        {
+            AppendIdentityValue(canonical, move);
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendIdentityValue<T>(StringBuilder destination, T value)
+        where T : IFormattable
+    {
+        var text = value.ToString(null, CultureInfo.InvariantCulture);
+        destination.Append(text.Length);
+        destination.Append(':');
+        destination.Append(text);
+        destination.Append('|');
     }
 
     internal static WorkflowFileSource? ResolveTradePokemonDataSource(OpenedProject project)
@@ -302,9 +396,12 @@ public sealed class SwShTradePokemonWorkflowService
             CreateEditableFields(lookupTables),
             new SwShTradePokemonWorkflowStats(
                 trades.Count,
-                trades.Count(trade => trade.FlawlessIvCount is null),
+                trades.Count(trade => trade.FlawlessIvCount != 0),
                 sourceFileCount),
-            diagnostics);
+            diagnostics)
+        {
+            AbilityResolver = lookupTables.AbilityResolver,
+        };
     }
 
     private static TradeLookupTables CreateEmptyLookupTables()
@@ -318,6 +415,9 @@ public sealed class SwShTradePokemonWorkflowService
             lookupTables.SpeciesNames,
             lookupTables.PresentSpeciesIds,
             (value, label) => new SwShTradePokemonEditableFieldOption(value, label));
+        var requiredSpeciesOptions = new[] { new SwShTradePokemonEditableFieldOption(0, "000 None") }
+            .Concat(speciesOptions.Where(option => option.Value != 0))
+            .ToArray();
         var itemOptions = CreateIndexedOptions(lookupTables.ItemNames, "Item");
         var moveOptions = SwShMoveAvailability.CreateMoveOptions(
             lookupTables.MoveNames,
@@ -329,8 +429,12 @@ public sealed class SwShTradePokemonWorkflowService
             .Select(field => field.Field switch
             {
                 SpeciesField => field with { Options = speciesOptions },
-                RequiredSpeciesField => field with { Options = speciesOptions },
-                HeldItemIdField or BallItemIdField => field with { Options = itemOptions },
+                RequiredSpeciesField => field with { Options = requiredSpeciesOptions },
+                HeldItemIdField => field with { Options = itemOptions },
+                BallItemIdField => field with
+                {
+                    Options = itemOptions.Where(option => SwShTradePokemonArchive.IsValidBallItemId(option.Value)).ToArray(),
+                },
                 RelearnMove0Field or RelearnMove1Field or RelearnMove2Field or RelearnMove3Field => field with { Options = moveOptions },
                 _ => field,
             })
@@ -364,7 +468,9 @@ public sealed class SwShTradePokemonWorkflowService
             trade.Ivs.Speed);
         var flawlessIvCount = SwShTradePokemonArchive.GetFlawlessIvCount(trade.Ivs);
         var species = GetIndexedName(trade.Species, lookupTables.SpeciesNames, "Species");
-        var requiredSpecies = GetIndexedName(trade.RequiredSpecies, lookupTables.SpeciesNames, "Species");
+        var requiredSpecies = trade.RequiredSpecies == 0
+            ? "None"
+            : GetIndexedName(trade.RequiredSpecies, lookupTables.SpeciesNames, "Species");
         var heldItem = trade.HeldItem == 0
             ? null
             : GetIndexedName(trade.HeldItem, lookupTables.ItemNames, "Item");
@@ -399,7 +505,10 @@ public sealed class SwShTradePokemonWorkflowService
             trade.Nature,
             GetOptionLabel(NatureOptions, trade.Nature, "Nature"),
             trade.Gender,
-            GetOptionLabel(GenderOptions, trade.Gender, "Gender"),
+            GetOptionLabel(
+                CreateGenderOptions(lookupTables.AbilityResolver, trade.Species, trade.Form),
+                trade.Gender,
+                "Gender"),
             trade.ShinyLock,
             GetOptionLabel(ShinyLockOptions, trade.ShinyLock, "Shiny lock"),
             trade.DynamaxLevel,
@@ -428,6 +537,8 @@ public sealed class SwShTradePokemonWorkflowService
             provenance)
         {
             AbilityOptions = CreateAbilityOptions(lookupTables, trade.Species, trade.Form),
+            GenderOptions = CreateGenderOptions(lookupTables.AbilityResolver, trade.Species, trade.Form),
+            SourceIdentity = CreateSourceIdentity(trade),
         };
     }
 
@@ -508,10 +619,63 @@ public sealed class SwShTradePokemonWorkflowService
         int speciesId,
         int form)
     {
-        return lookupTables.AbilityResolver
+        return CreateAbilityOptions(lookupTables.AbilityResolver, speciesId, form);
+    }
+
+    internal static IReadOnlyList<SwShTradePokemonEditableFieldOption> CreateAbilityOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var personal = abilityResolver.ResolvePersonalRecord(speciesId, form);
+        if (personal is null)
+        {
+            return AbilityOptions;
+        }
+
+        return abilityResolver
             .CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Where(option => option.Value switch
+            {
+                0 or 1 => personal.Ability1 != 0,
+                2 => personal.Ability2 != 0,
+                3 => personal.HiddenAbility != 0,
+                _ => false,
+            })
             .Select(option => new SwShTradePokemonEditableFieldOption(option.Value, option.Label))
             .ToArray();
+    }
+
+    internal static IReadOnlyList<SwShTradePokemonEditableFieldOption> CreateGenderOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var personal = abilityResolver.ResolvePersonalRecord(speciesId, form);
+        if (personal is null)
+        {
+            return GenderOptions;
+        }
+
+        return personal.GenderRatio switch
+        {
+            255 =>
+            [
+                new(0, "Random"),
+                new(2, "Genderless"),
+            ],
+            0 =>
+            [
+                new(0, "Random"),
+                new(1, "Male"),
+            ],
+            254 =>
+            [
+                new(0, "Random"),
+                new(2, "Female"),
+            ],
+            _ => GenderOptions,
+        };
     }
 
     private static string GetAbilityOptionLabel(

@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.Trades;
@@ -65,6 +66,11 @@ public sealed record SwShTradePokemonEntry(
 {
     public IReadOnlyList<SwShTradePokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShTradePokemonEditableFieldOption>();
+
+    public IReadOnlyList<SwShTradePokemonEditableFieldOption> GenderOptions { get; init; } =
+        Array.Empty<SwShTradePokemonEditableFieldOption>();
+
+    internal string SourceIdentity { get; init; } = string.Empty;
 }
 
 public sealed record SwShTradePokemonMoveRecord(
@@ -105,4 +111,8 @@ public sealed record SwShTradePokemonWorkflow(
     IReadOnlyList<SwShTradePokemonEntry> Trades,
     IReadOnlyList<SwShTradePokemonEditableField> EditableFields,
     SwShTradePokemonWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal SwShPokemonAbilityOptionResolver AbilityResolver { get; init; } =
+        SwShPokemonAbilityOptionResolver.Empty;
+}
