@@ -253,7 +253,7 @@ public sealed class SwShGameDumpService
             GameDumpWriter.CreateTableCategory(
                 SwShWorkflowIds.RaidRewards,
                 "Raid Rewards",
-                "Raid reward tables, items, quantities, weights, and provenance.",
+                "Raid drop reward tables, items, per-star drop chances, and provenance.",
                 paths =>
                 {
                     var workflow = workflowService.LoadRaidRewards(paths);
@@ -262,7 +262,7 @@ public sealed class SwShGameDumpService
             GameDumpWriter.CreateTableCategory(
                 SwShWorkflowIds.RaidBonusRewards,
                 "Raid Bonus Rewards",
-                "Raid bonus reward tables, items, quantities, weights, and provenance.",
+                "Raid bonus reward tables, items, per-star quantities, and provenance.",
                 paths =>
                 {
                     var workflow = workflowService.LoadRaidBonusRewards(paths);

@@ -464,6 +464,43 @@ describe('LocalizationProvider', () => {
     expect(translateLiteralForLanguage('es', 'Value must be at most 999999.')).toBe(
       'El valor debe ser como máximo 999999.'
     );
+    expect(translateLiteralForLanguage('es', 'Minimum value is 0.')).toBe(
+      'El valor debe ser como mínimo 0.'
+    );
+    expect(translateLiteralForLanguage('es', 'Maximum value is 999.')).toBe(
+      'El valor debe ser como máximo 999.'
+    );
+  });
+
+  it('localizes Raid Rewards fields and dynamic summaries', () => {
+    expect(translateLiteralForLanguage('es', '5-star quantity')).toBe(
+      '5 estrellas cantidad'
+    );
+    expect(translateLiteralForLanguage('es', '5-star drop chance')).toBe(
+      '5 estrellas probabilidad de recompensa'
+    );
+    expect(translateLiteralForLanguage('es', 'Quantity 1/2/3/4/5')).toBe(
+      'Cantidad 1/2/3/4/5'
+    );
+    expect(translateLiteralForLanguage('es', 'Drop chance 40/30/20/10/5%')).toBe(
+      'Probabilidad de recompensa 40/30/20/10/5%'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        '1-star 1 item / 2-star 2 items / 3-star 3 items / 4-star 4 items / 5-star 5 items'
+      )
+    ).toBe(
+      '1 estrellas: 1 objeto / 2 estrellas: 2 objetos / 3 estrellas: 3 objetos / 4 estrellas: 4 objetos / 5 estrellas: 5 objetos'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        '1-star 40% chance / 2-star 30% chance / 3-star 20% chance / 4-star 10% chance / 5-star 5% chance'
+      )
+    ).toBe(
+      '1 estrellas: 40% de probabilidad / 2 estrellas: 30% de probabilidad / 3 estrellas: 20% de probabilidad / 4 estrellas: 10% de probabilidad / 5 estrellas: 5% de probabilidad'
+    );
   });
 
   it('localizes Sword and Shield move semantics, dynamic values, and compound help', () => {

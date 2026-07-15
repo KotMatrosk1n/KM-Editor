@@ -30,9 +30,13 @@ public sealed class SwShRaidRewardsWorkflowService
     public const string Star5ValueField = "star5Value";
     public const int MinimumItemId = 0;
     public const int MaximumEditableItemId = ushort.MaxValue;
-    public const int MaximumItemId = MaximumEditableItemId;
     public const int MinimumRewardValue = 0;
-    public const int MaximumRewardValue = (int)SwShNestHoleRewardArchive.MaximumBonusQuantity;
+    public const int MaximumEditableDropChance = 100;
+    public const int MaximumEditableBonusQuantity = 999;
+    [Obsolete("Use MaximumEditableItemId. This value is an editor policy, not a reward archive storage limit.")]
+    public const int MaximumItemId = MaximumEditableItemId;
+    [Obsolete("Use MaximumEditableBonusQuantity. This value is an editor policy, not a reward archive storage limit.")]
+    public const int MaximumRewardValue = MaximumEditableBonusQuantity;
     public const string NestDataPath = "romfs/bin/archive/field/resident/data_table.gfpak";
     public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
     public const string EnglishSpeciesNamePath = "romfs/bin/message/English/common/monsname.dat";
@@ -41,19 +45,31 @@ public sealed class SwShRaidRewardsWorkflowService
 
     private static readonly IReadOnlyList<SwShRaidRewardEditableField> EditableFields =
     [
-        new SwShRaidRewardEditableField(ItemIdField, "Item", "integer", MinimumItemId, MaximumItemId),
-        new SwShRaidRewardEditableField(Star1ValueField, "1-star value", "integer", MinimumRewardValue, MaximumRewardValue),
-        new SwShRaidRewardEditableField(Star2ValueField, "2-star value", "integer", MinimumRewardValue, MaximumRewardValue),
-        new SwShRaidRewardEditableField(Star3ValueField, "3-star value", "integer", MinimumRewardValue, MaximumRewardValue),
-        new SwShRaidRewardEditableField(Star4ValueField, "4-star value", "integer", MinimumRewardValue, MaximumRewardValue),
-        new SwShRaidRewardEditableField(Star5ValueField, "5-star value", "integer", MinimumRewardValue, MaximumRewardValue),
+        new SwShRaidRewardEditableField(ItemIdField, "Item", "integer", MinimumItemId, MaximumEditableItemId),
+        new SwShRaidRewardEditableField(Star1ValueField, "1-star value", "integer", MinimumRewardValue, MaximumEditableBonusQuantity),
+        new SwShRaidRewardEditableField(Star2ValueField, "2-star value", "integer", MinimumRewardValue, MaximumEditableBonusQuantity),
+        new SwShRaidRewardEditableField(Star3ValueField, "3-star value", "integer", MinimumRewardValue, MaximumEditableBonusQuantity),
+        new SwShRaidRewardEditableField(Star4ValueField, "4-star value", "integer", MinimumRewardValue, MaximumEditableBonusQuantity),
+        new SwShRaidRewardEditableField(Star5ValueField, "5-star value", "integer", MinimumRewardValue, MaximumEditableBonusQuantity),
     ];
 
     private static readonly IReadOnlyList<RaidRewardArchiveMember> ArchiveMembers =
     [
-        new RaidRewardArchiveMember("drop", "Drop", "Raid Drops", "nest_hole_drop_rewards.bin", MaximumDropValue: 100),
-        new RaidRewardArchiveMember("bonus", "Bonus", "Raid Bonus Rewards", "nest_hole_bonus_rewards.bin", MaximumDropValue: MaximumRewardValue),
+        new RaidRewardArchiveMember("drop", "Drop", "Raid Drops", "nest_hole_drop_rewards.bin", MaximumDropValue: MaximumEditableDropChance),
+        new RaidRewardArchiveMember("bonus", "Bonus", "Raid Bonus Rewards", "nest_hole_bonus_rewards.bin", MaximumDropValue: MaximumEditableBonusQuantity),
     ];
+
+    private readonly Func<string, byte[]> readAllBytes;
+
+    public SwShRaidRewardsWorkflowService()
+        : this(File.ReadAllBytes)
+    {
+    }
+
+    internal SwShRaidRewardsWorkflowService(Func<string, byte[]> readAllBytes)
+    {
+        this.readAllBytes = readAllBytes ?? throw new ArgumentNullException(nameof(readAllBytes));
+    }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -117,6 +133,8 @@ public sealed class SwShRaidRewardsWorkflowService
                 Array.Empty<SwShRaidRewardTableRecord>(),
                 sourceFileCount: 0,
                 [],
+                [],
+                [],
                 diagnostics,
                 kind);
         }
@@ -134,16 +152,28 @@ public sealed class SwShRaidRewardsWorkflowService
                 Array.Empty<SwShRaidRewardTableRecord>(),
                 sourceFileCount: 0,
                 [],
+                [],
+                [],
                 diagnostics,
                 kind);
         }
 
         var itemNames = LoadItemNames(project, diagnostics, kind);
-        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames);
+        var itemCatalog = SwShItemsWorkflowService.CreateItemDisplayCatalog(project, itemNames);
+        var itemDisplayNames = itemCatalog.DisplayNames;
+        if (itemCatalog.ItemIds.Count == 0 && itemNames.Any(name => !string.IsNullOrWhiteSpace(name)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                kind,
+                DiagnosticSeverity.Warning,
+                "Item data is unavailable; reward item choices use nonblank item-name entries as a compatibility fallback and cannot be verified against item.dat.",
+                file: SwShItemsWorkflowService.ItemDataPath,
+                expected: "Readable Sword/Shield item.dat for verified item choices"));
+        }
 
         try
         {
-            var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
+            var pack = SwShGfPackFile.Parse(readAllBytes(dataSource.AbsolutePath));
             var tables = new List<SwShRaidRewardTableRecord>();
             var provenance = CreateProvenance(dataSource.GraphEntry);
             var usageLabels = CreateRewardUsageLabels(pack, project, diagnostics, kind);
@@ -162,7 +192,19 @@ public sealed class SwShRaidRewardsWorkflowService
                 }
 
                 var archive = SwShNestHoleRewardArchive.Parse(memberData);
-                tables.AddRange(FlattenArchive(archive, member, provenance, itemDisplayNames, usageLabels));
+                var duplicateTableIds = DiagnoseDuplicateTableIds(
+                    archive,
+                    member,
+                    dataSource.GraphEntry.RelativePath,
+                    diagnostics,
+                    kind);
+                tables.AddRange(FlattenArchive(
+                    archive,
+                    member,
+                    provenance,
+                    itemDisplayNames,
+                    usageLabels,
+                    duplicateTableIds));
             }
 
             if (tables.Count == 0)
@@ -175,7 +217,15 @@ public sealed class SwShRaidRewardsWorkflowService
                     expected: GetExpectedArchiveMembers(kind)));
             }
 
-            return CreateWorkflow(summary, tables, sourceFileCount: 1, itemDisplayNames, diagnostics, kind);
+            return CreateWorkflow(
+                summary,
+                tables,
+                sourceFileCount: 1,
+                itemDisplayNames,
+                itemCatalog.ItemIds,
+                itemNames,
+                diagnostics,
+                kind);
         }
         catch (InvalidDataException exception)
         {
@@ -190,6 +240,8 @@ public sealed class SwShRaidRewardsWorkflowService
                 Array.Empty<SwShRaidRewardTableRecord>(),
                 sourceFileCount: 1,
                 itemDisplayNames,
+                itemCatalog.ItemIds,
+                itemNames,
                 diagnostics,
                 kind);
         }
@@ -206,6 +258,8 @@ public sealed class SwShRaidRewardsWorkflowService
                 Array.Empty<SwShRaidRewardTableRecord>(),
                 sourceFileCount: 1,
                 itemDisplayNames,
+                itemCatalog.ItemIds,
+                itemNames,
                 diagnostics,
                 kind);
         }
@@ -222,6 +276,8 @@ public sealed class SwShRaidRewardsWorkflowService
                 Array.Empty<SwShRaidRewardTableRecord>(),
                 sourceFileCount: 1,
                 itemDisplayNames,
+                itemCatalog.ItemIds,
+                itemNames,
                 diagnostics,
                 kind);
         }
@@ -424,17 +480,49 @@ public sealed class SwShRaidRewardsWorkflowService
         };
     }
 
+    private static IReadOnlySet<ulong> DiagnoseDuplicateTableIds(
+        SwShNestHoleRewardArchive archive,
+        RaidRewardArchiveMember member,
+        string sourceFile,
+        ICollection<ValidationDiagnostic> diagnostics,
+        SwShRaidRewardWorkflowKind kind)
+    {
+        var duplicateGroups = archive.Tables
+            .GroupBy(table => table.TableId)
+            .Where(group => group.Count() > 1)
+            .OrderBy(group => group.Key)
+            .ToArray();
+
+        foreach (var duplicateGroup in duplicateGroups)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                kind,
+                DiagnosticSeverity.Warning,
+                $"{member.Label} member contains {duplicateGroup.Count().ToString(CultureInfo.InvariantCulture)} tables with duplicate table hash 0x{duplicateGroup.Key:X16}. Den usage is ambiguous.",
+                file: sourceFile,
+                expected: "Unique reward table hashes within each archive member"));
+        }
+
+        return duplicateGroups.Select(group => group.Key).ToHashSet();
+    }
+
     private static IReadOnlyList<SwShRaidRewardTableRecord> FlattenArchive(
         SwShNestHoleRewardArchive archive,
         RaidRewardArchiveMember member,
         SwShRaidRewardProvenance provenance,
         IReadOnlyList<string> itemNames,
-        IReadOnlyDictionary<(string RewardKind, ulong TableId), string> usageLabels)
+        IReadOnlyDictionary<(string RewardKind, ulong TableId), string> usageLabels,
+        IReadOnlySet<ulong> duplicateTableIds)
     {
         return archive.Tables
             .Select((table, tableIndex) => new SwShRaidRewardTableRecord(
                 CreateTableId(member, tableIndex, table),
-                FormatRewardTableDisplayName(member, tableIndex, table.TableId, usageLabels),
+                FormatRewardTableDisplayName(
+                    member,
+                    tableIndex,
+                    table.TableId,
+                    usageLabels,
+                    duplicateTableIds.Contains(table.TableId)),
                 $"table_{table.TableId:X16}",
                 0,
                 "Sword/Shield",
@@ -457,15 +545,21 @@ public sealed class SwShRaidRewardsWorkflowService
         RaidRewardArchiveMember member,
         int tableIndex,
         ulong tableId,
-        IReadOnlyDictionary<(string RewardKind, ulong TableId), string> usageLabels)
+        IReadOnlyDictionary<(string RewardKind, ulong TableId), string> usageLabels,
+        bool hasDuplicateTableId)
     {
         var baseName = $"{member.Label} {tableIndex.ToString("000", CultureInfo.InvariantCulture)}";
+        if (hasDuplicateTableId)
+        {
+            return $"{baseName} | Usage ambiguous: duplicate table hash";
+        }
+
         return usageLabels.TryGetValue((member.Key, tableId), out var usageLabel) && !string.IsNullOrWhiteSpace(usageLabel)
             ? $"{baseName} | {usageLabel}"
             : baseName;
     }
 
-    private static IReadOnlyDictionary<(string RewardKind, ulong TableId), string> CreateRewardUsageLabels(
+    private IReadOnlyDictionary<(string RewardKind, ulong TableId), string> CreateRewardUsageLabels(
         SwShGfPackFile pack,
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics,
@@ -481,16 +575,17 @@ public sealed class SwShRaidRewardsWorkflowService
             var speciesNames = LoadSpeciesNames(project, diagnostics, kind);
             var archive = SwShEncounterNestArchive.Parse(encounterData);
             var references = new Dictionary<(string RewardKind, ulong TableId), List<RaidRewardUsageReference>>();
+            var denTableIndexes = CreateEncounterDenTableIndexes(archive.Tables, diagnostics, kind);
 
             foreach (var (table, tableIndex) in archive.Tables.Select((table, tableIndex) => (table, tableIndex)))
             {
                 var version = FormatShortGameVersion(table.GameVersion);
-                var denTable = tableIndex / 2;
+                var denTable = denTableIndexes[tableIndex];
 
                 foreach (var (entry, entryIndex) in table.Entries.Select((entry, entryIndex) => (entry, entryIndex)))
                 {
-                    AddRewardUsageReference(references, "drop", entry.DropTableId, version, denTable, entryIndex, entry, speciesNames);
-                    AddRewardUsageReference(references, "bonus", entry.BonusTableId, version, denTable, entryIndex, entry, speciesNames);
+                    AddRewardUsageReference(references, "drop", entry.DropTableId, version, tableIndex, denTable, entryIndex, entry, speciesNames);
+                    AddRewardUsageReference(references, "bonus", entry.BonusTableId, version, tableIndex, denTable, entryIndex, entry, speciesNames);
                 }
             }
 
@@ -510,12 +605,49 @@ public sealed class SwShRaidRewardsWorkflowService
         }
     }
 
+    private static IReadOnlyList<int?> CreateEncounterDenTableIndexes(
+        IReadOnlyList<SwShEncounterNestTable> tables,
+        ICollection<ValidationDiagnostic> diagnostics,
+        SwShRaidRewardWorkflowKind kind)
+    {
+        var denTableIndexes = new int?[tables.Count];
+        for (var pairStart = 0; pairStart < tables.Count; pairStart += 2)
+        {
+            var hasCompletePair = pairStart + 1 < tables.Count;
+            var hasExpectedVersions = hasCompletePair
+                && tables[pairStart].GameVersion == 1
+                && tables[pairStart + 1].GameVersion == 2;
+            if (hasExpectedVersions)
+            {
+                denTableIndexes[pairStart] = pairStart / 2;
+                denTableIndexes[pairStart + 1] = pairStart / 2;
+                continue;
+            }
+
+            var pairEnd = hasCompletePair
+                ? $" and {pairStart + 1}"
+                : string.Empty;
+            var versions = hasCompletePair
+                ? $"{tables[pairStart].GameVersion.ToString(CultureInfo.InvariantCulture)}, {tables[pairStart + 1].GameVersion.ToString(CultureInfo.InvariantCulture)}"
+                : tables[pairStart].GameVersion.ToString(CultureInfo.InvariantCulture);
+            diagnostics.Add(CreateDiagnostic(
+                kind,
+                DiagnosticSeverity.Warning,
+                $"Raid battle encounter tables {pairStart.ToString(CultureInfo.InvariantCulture)}{pairEnd} do not form an expected Sword and Shield pair. Found game version values {versions}; reward usage labels will use physical encounter table indexes.",
+                file: NestDataPath,
+                expected: "Adjacent encounter tables with Sword game version 1 followed by Shield game version 2"));
+        }
+
+        return denTableIndexes;
+    }
+
     private static void AddRewardUsageReference(
         IDictionary<(string RewardKind, ulong TableId), List<RaidRewardUsageReference>> references,
         string rewardKind,
         ulong tableId,
         string version,
-        int denTable,
+        int encounterTableIndex,
+        int? denTable,
         int entryIndex,
         SwShEncounterNest entry,
         IReadOnlyList<string> speciesNames)
@@ -535,6 +667,7 @@ public sealed class SwShRaidRewardsWorkflowService
         var (minimumStar, maximumStar) = GetRaidStarRange(entry.Probabilities);
         rewardReferences.Add(new RaidRewardUsageReference(
             version,
+            encounterTableIndex,
             denTable,
             entryIndex,
             minimumStar,
@@ -547,7 +680,7 @@ public sealed class SwShRaidRewardsWorkflowService
         var distinctReferences = references
             .Distinct()
             .OrderBy(reference => reference.Version, StringComparer.Ordinal)
-            .ThenBy(reference => reference.DenTable)
+            .ThenBy(reference => reference.EncounterTableIndex)
             .ThenBy(reference => reference.EntryIndex)
             .ToArray();
 
@@ -556,14 +689,17 @@ public sealed class SwShRaidRewardsWorkflowService
             return string.Join(
                 "; ",
                 distinctReferences.Select(reference =>
-                    $"{reference.Version} Den {reference.DenTable.ToString(CultureInfo.InvariantCulture)} Slot {reference.EntryIndex.ToString("00", CultureInfo.InvariantCulture)}, {FormatRaidStarRange(reference.MinimumStar, reference.MaximumStar)} {reference.Species}"));
+                    $"{reference.Version} {FormatRewardUsageLocation(reference)} Slot {reference.EntryIndex.ToString("00", CultureInfo.InvariantCulture)}, {FormatRaidStarRange(reference.MinimumStar, reference.MaximumStar)} {reference.Species}"));
         }
 
         var versionLabel = FormatVersionSummary(distinctReferences.Select(reference => reference.Version));
-        var denCount = distinctReferences
-            .Select(reference => (reference.Version, reference.DenTable))
-            .Distinct()
-            .Count();
+        var allReferencesUseDenPairs = distinctReferences.All(reference => reference.DenTable is not null);
+        var locationCount = allReferencesUseDenPairs
+            ? distinctReferences.Select(reference => reference.DenTable).Distinct().Count()
+            : distinctReferences.Select(reference => reference.EncounterTableIndex).Distinct().Count();
+        var locationLabel = allReferencesUseDenPairs
+            ? $"{locationCount.ToString(CultureInfo.InvariantCulture)} dens"
+            : $"{locationCount.ToString(CultureInfo.InvariantCulture)} encounter tables";
         var speciesCount = distinctReferences
             .Select(reference => reference.Species)
             .Distinct(StringComparer.Ordinal)
@@ -581,7 +717,14 @@ public sealed class SwShRaidRewardsWorkflowService
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{versionLabel}, {distinctReferences.Length} slots, {denCount} dens, {FormatRaidStarRange(minimumStar, maximumStar)}, {speciesCount} species");
+            $"{versionLabel}, {distinctReferences.Length} slots, {locationLabel}, {FormatRaidStarRange(minimumStar, maximumStar)}, {speciesCount} species");
+    }
+
+    private static string FormatRewardUsageLocation(RaidRewardUsageReference reference)
+    {
+        return reference.DenTable is int denTable
+            ? $"Den {denTable.ToString(CultureInfo.InvariantCulture)}"
+            : $"Encounter Table {reference.EncounterTableIndex.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static (int MinimumStar, int MaximumStar) GetRaidStarRange(IReadOnlyList<uint> probabilities)
@@ -683,7 +826,7 @@ public sealed class SwShRaidRewardsWorkflowService
             : string.Create(CultureInfo.InvariantCulture, $"Item {itemId}");
     }
 
-    private static string[] LoadItemNames(
+    private string[] LoadItemNames(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics,
         SwShRaidRewardWorkflowKind kind)
@@ -696,7 +839,7 @@ public sealed class SwShRaidRewardsWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(itemNamesSource.AbsolutePath))
+            return SwShGameTextFile.Parse(readAllBytes(itemNamesSource.AbsolutePath))
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
@@ -721,9 +864,19 @@ public sealed class SwShRaidRewardsWorkflowService
                 expected: "Readable Sword/Shield itemname.dat"));
             return [];
         }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                kind,
+                DiagnosticSeverity.Warning,
+                $"Item name table could not be read: {exception.Message}",
+                file: itemNamesSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield itemname.dat"));
+            return [];
+        }
     }
 
-    private static string[] LoadSpeciesNames(
+    private string[] LoadSpeciesNames(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics,
         SwShRaidRewardWorkflowKind kind)
@@ -736,7 +889,7 @@ public sealed class SwShRaidRewardsWorkflowService
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(speciesNamesSource.AbsolutePath))
+            return SwShGameTextFile.Parse(readAllBytes(speciesNamesSource.AbsolutePath))
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
@@ -752,6 +905,16 @@ public sealed class SwShRaidRewardsWorkflowService
             return [];
         }
         catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                kind,
+                DiagnosticSeverity.Warning,
+                $"Species name table could not be read for reward labels: {exception.Message}",
+                file: speciesNamesSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield monsname.dat"));
+            return [];
+        }
+        catch (UnauthorizedAccessException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 kind,
@@ -790,9 +953,22 @@ public sealed class SwShRaidRewardsWorkflowService
         return ResolveCommonTextSource(project, "itemname.dat");
     }
 
-    internal static WorkflowFileSource? ResolveItemNamesSourceForValidation(OpenedProject project)
+    internal static IReadOnlyList<WorkflowFileSource> ResolveItemDisplaySourcesForValidation(
+        OpenedProject project)
     {
-        return ResolveItemNamesSource(project);
+        ArgumentNullException.ThrowIfNull(project);
+
+        var itemNamesSource = ResolveItemNamesSource(project);
+        var itemDataSource = ResolveWorkflowFile(project, SwShItemsWorkflowService.ItemDataPath);
+        var moveNamesSource = itemDataSource is null
+            ? null
+            : ResolveCommonTextSource(project, "wazaname.dat");
+
+        return new[] { itemNamesSource, itemDataSource, moveNamesSource }
+            .Where(source => source is not null)
+            .Select(source => source!)
+            .DistinctBy(source => source.GraphEntry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static WorkflowFileSource? ResolveSpeciesNamesSource(OpenedProject project)
@@ -879,6 +1055,8 @@ public sealed class SwShRaidRewardsWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShRaidRewardTableRecord> tables,
         int sourceFileCount,
+        IReadOnlyList<string> itemDisplayNames,
+        IReadOnlyList<int> itemRecordIds,
         IReadOnlyList<string> itemNames,
         IReadOnlyList<ValidationDiagnostic> diagnostics,
         SwShRaidRewardWorkflowKind kind)
@@ -886,7 +1064,7 @@ public sealed class SwShRaidRewardsWorkflowService
         return new SwShRaidRewardsWorkflow(
             summary,
             tables,
-            CreateEditableFields(itemNames, kind),
+            CreateEditableFields(itemDisplayNames, itemRecordIds, itemNames, kind),
             new SwShRaidRewardsWorkflowStats(
                 tables.Count,
                 tables.Sum(table => table.Rewards.Count),
@@ -895,26 +1073,40 @@ public sealed class SwShRaidRewardsWorkflowService
     }
 
     private static IReadOnlyList<SwShRaidRewardEditableField> CreateEditableFields(
+        IReadOnlyList<string> itemDisplayNames,
+        IReadOnlyList<int> itemRecordIds,
         IReadOnlyList<string> itemNames,
         SwShRaidRewardWorkflowKind kind)
     {
-        var itemOptions = Enumerable.Range(0, Math.Max(itemNames.Count, 1))
-            .Select(index =>
+        var hasLoadedItemNames = itemNames.Count > 0;
+        IEnumerable<int> candidateItemIds = itemRecordIds.Count > 0
+            ? itemRecordIds
+            : Enumerable.Range(0, Math.Min(itemNames.Count, MaximumEditableItemId + 1));
+        var itemOptions = candidateItemIds
+            .Where(itemId => itemId >= MinimumItemId && itemId <= MaximumEditableItemId)
+            .Where(itemId => itemId == 0
+                || (hasLoadedItemNames
+                    && itemId < itemNames.Count
+                    && !string.IsNullOrWhiteSpace(itemNames[itemId])))
+            .Append(0)
+            .Distinct()
+            .OrderBy(itemId => itemId)
+            .Select(itemId =>
             {
-                var name = index < itemNames.Count ? itemNames[index] : string.Empty;
-                var label = index switch
+                var name = itemId < itemDisplayNames.Count ? itemDisplayNames[itemId] : string.Empty;
+                var label = itemId switch
                 {
                     0 => "000 None",
                     _ when string.IsNullOrWhiteSpace(name) =>
-                        $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}",
-                    _ => $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}",
+                        $"{itemId.ToString("000", CultureInfo.InvariantCulture)} Item {itemId}",
+                    _ => $"{itemId.ToString("000", CultureInfo.InvariantCulture)} {name}",
                 };
-                return new SwShRaidRewardEditableFieldOption(index, label);
+                return new SwShRaidRewardEditableFieldOption(itemId, label);
             })
             .ToArray();
         var maximumStarValue = kind == SwShRaidRewardWorkflowKind.Drop
-            ? (int)SwShNestHoleRewardArchive.MaximumDropValue
-            : MaximumRewardValue;
+            ? MaximumEditableDropChance
+            : MaximumEditableBonusQuantity;
 
         return EditableFields
             .Select(field => field.Field switch
@@ -945,8 +1137,8 @@ public sealed class SwShRaidRewardsWorkflowService
             GetWorkflowId(kind),
             GetWorkflowLabel(kind),
             kind == SwShRaidRewardWorkflowKind.Bonus
-                ? "Raid bonus reward tables, star-based values, den usage links, and source provenance."
-                : "Raid drop reward tables, star-based values, den usage links, and source provenance.",
+                ? "Raid bonus reward tables, items, per-star quantities, and provenance."
+                : "Raid drop reward tables, items, per-star drop chances, and provenance.",
             availability,
             diagnostics);
     }
@@ -1033,7 +1225,11 @@ public sealed record RaidRewardArchiveMember(
     string Label,
     string TableLabel,
     string FileName,
-    int MaximumDropValue);
+    [property: Obsolete("Use MaximumEditableValue. This value is an editor policy, not a drop-only or storage limit.")]
+    int MaximumDropValue)
+{
+    public int MaximumEditableValue => MaximumDropValue;
+}
 
 internal sealed record WorkflowFileSource(
     ProjectFileGraphEntry GraphEntry,
@@ -1041,7 +1237,8 @@ internal sealed record WorkflowFileSource(
 
 internal sealed record RaidRewardUsageReference(
     string Version,
-    int DenTable,
+    int EncounterTableIndex,
+    int? DenTable,
     int EntryIndex,
     int MinimumStar,
     int MaximumStar,

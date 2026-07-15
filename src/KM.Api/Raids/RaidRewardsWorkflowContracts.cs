@@ -38,6 +38,11 @@ public sealed record UpdateRaidBonusRewardFieldRequest(
     string Field,
     string Value);
 
+public sealed record UpdateRaidBonusRewardFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<RaidRewardFieldUpdateDto?>? Updates);
+
 public sealed record UpdateRaidRewardFieldResponse(
     RaidRewardsWorkflowDto Workflow,
     EditSessionDto Session,
@@ -49,6 +54,11 @@ public sealed record UpdateRaidRewardFieldsResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateRaidBonusRewardFieldResponse(
+    RaidRewardsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateRaidBonusRewardFieldsResponse(
     RaidRewardsWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

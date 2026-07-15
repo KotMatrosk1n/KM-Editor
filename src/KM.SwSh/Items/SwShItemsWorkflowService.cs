@@ -518,13 +518,21 @@ public sealed class SwShItemsWorkflowService
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string>? moveNames = null)
     {
+        return CreateItemDisplayCatalog(project, itemNames, moveNames).DisplayNames;
+    }
+
+    internal static ItemDisplayCatalog CreateItemDisplayCatalog(
+        OpenedProject project,
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string>? moveNames = null)
+    {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(itemNames);
 
         var itemDataSource = ResolveItemDataSource(project);
         if (itemDataSource is null)
         {
-            return itemNames;
+            return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }
 
         var effectiveMoveNames = moveNames ?? LoadMoveNamesForDisplay(project);
@@ -532,19 +540,21 @@ public sealed class SwShItemsWorkflowService
         try
         {
             var itemTable = SwShItemTable.Parse(File.ReadAllBytes(itemDataSource.AbsolutePath));
-            return CreateItemDisplayNames(itemNames, effectiveMoveNames, itemTable.Records);
+            return new ItemDisplayCatalog(
+                CreateItemDisplayNames(itemNames, effectiveMoveNames, itemTable.Records),
+                itemTable.Records.Select(record => record.ItemId).ToArray());
         }
         catch (InvalidDataException)
         {
-            return itemNames;
+            return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }
         catch (IOException)
         {
-            return itemNames;
+            return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }
         catch (UnauthorizedAccessException)
         {
-            return itemNames;
+            return new ItemDisplayCatalog(itemNames, Array.Empty<int>());
         }
     }
 
@@ -1347,4 +1357,8 @@ public sealed class SwShItemsWorkflowService
     internal sealed record WorkflowFileSource(
         ProjectFileGraphEntry GraphEntry,
         string AbsolutePath);
+
+    internal sealed record ItemDisplayCatalog(
+        IReadOnlyList<string> DisplayNames,
+        IReadOnlyList<int> ItemIds);
 }

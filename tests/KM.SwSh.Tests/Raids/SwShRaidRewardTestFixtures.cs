@@ -23,6 +23,14 @@ internal static class SwShRaidRewardTestFixtures
                 "Rare Candy",
                 "Exp. Candy L",
                 "Armorite Ore"));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            SwShItemTestFixtures.CreateItemTable(
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(1, 1, 300, 15, 0, SwShItemPouch.Medicine),
+                new ItemFixtureRecord(2, 2, 10_000, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(3, 3, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(4, 4, 0, 0, 0, SwShItemPouch.Items)));
     }
 
     public static byte[] CreateRaidRewardPack()

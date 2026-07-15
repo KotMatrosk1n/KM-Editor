@@ -52,11 +52,13 @@ async function createRaidRewardsHarness(
   return { bridge, workflow };
 }
 
-async function createRaidBonusRewardsHarness() {
+async function createRaidBonusRewardsHarness(
+  createOverrides?: (workflow: RaidRewardsWorkflow) => Partial<ProjectBridge>
+) {
   const fixtureBridge = createMockProjectBridge({}, true);
   const response = await fixtureBridge.loadRaidBonusRewardsWorkflow({ paths: projectPaths });
   const workflow = response.workflow;
-  const bridge = createMockProjectBridge({}, true);
+  const bridge = createMockProjectBridge(createOverrides?.(workflow) ?? {}, true);
 
   useWorkbenchStore.setState({
     activeSection: 'raidBonusRewards',
@@ -118,6 +120,50 @@ describe('Raid Rewards UI', () => {
     expect(screen.getByRole('searchbox', { name: 'Search raid reward tables...' })).toHaveValue(
       'Candy'
     );
+  });
+
+  it('keeps an existing legacy item ID available only for its selected reward', async () => {
+    const user = userEvent.setup();
+    const { bridge } = await createRaidRewardsHarness((workflow) => ({
+      ...workflow,
+      tables: workflow.tables.map((table, tableIndex) =>
+        tableIndex === 0
+          ? {
+              ...table,
+              rewards: [
+                {
+                  ...table.rewards[0]!,
+                  itemId: 4_294_967_295,
+                  itemName: 'Item 4294967295'
+                },
+                {
+                  ...table.rewards[0]!,
+                  entryId: 11,
+                  itemId: 3,
+                  itemName: 'Exp. Candy L',
+                  slot: 2
+                }
+              ]
+            }
+          : table
+      )
+    }));
+    renderRaidRewards(bridge);
+
+    const itemInput = await screen.findByLabelText('Item ID');
+    expect(itemInput).toHaveValue('4294967295 Item 4294967295');
+    await user.click(itemInput);
+    expect(
+      screen.getByRole('option', { name: '4294967295 Item 4294967295' })
+    ).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await user.selectOptions(screen.getByLabelText('Raid reward slot'), '2');
+    await waitFor(() => expect(itemInput).toHaveValue('003 Exp. Candy L'));
+    await user.click(itemInput);
+    expect(
+      screen.queryByRole('option', { name: '4294967295 Item 4294967295' })
+    ).toBeNull();
   });
 
   it('retains the whole draft when an atomic batch is rejected', async () => {
@@ -225,6 +271,108 @@ describe('Raid Rewards UI', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('No matching reward tables.');
     expect(screen.getByText('No reward table selected.')).toBeInTheDocument();
+  });
+
+  it('stages all changed Bonus fields atomically and preserves search context', async () => {
+    const user = userEvent.setup();
+    const { bridge } = await createRaidBonusRewardsHarness();
+    const updateRaidBonusRewardFields = vi.spyOn(bridge, 'updateRaidBonusRewardFields');
+    act(() => useWorkbenchStore.getState().setRaidBonusRewardSearchText('Armorite'));
+    renderRaidRewards(bridge);
+
+    const oneStarQuantityInput = await screen.findByLabelText('1-star quantity');
+    await user.clear(oneStarQuantityInput);
+    await user.type(oneStarQuantityInput, '6');
+    const fiveStarQuantityInput = screen.getByLabelText('5-star quantity');
+    await user.clear(fiveStarQuantityInput);
+    await user.type(fiveStarQuantityInput, '7');
+    await user.click(screen.getByRole('button', { name: 'Stage' }));
+
+    await waitFor(() => expect(updateRaidBonusRewardFields).toHaveBeenCalledTimes(1));
+    expect(updateRaidBonusRewardFields.mock.calls[0]?.[0].updates).toEqual([
+      {
+        field: 'star1Value',
+        slot: 1,
+        tableId: 'bonus:0:1020304050607080',
+        value: '6'
+      },
+      {
+        field: 'star5Value',
+        slot: 1,
+        tableId: 'bonus:0:1020304050607080',
+        value: '7'
+      }
+    ]);
+    expect(
+      screen.getByRole('searchbox', { name: 'Search raid bonus reward tables...' })
+    ).toHaveValue('Armorite');
+  });
+
+  it('retains the whole Bonus draft when an atomic batch is rejected', async () => {
+    const user = userEvent.setup();
+    const rejection: ApiDiagnostic = {
+      domain: 'workflow.raidBonusRewards',
+      field: 'star5Value',
+      message: 'Raid bonus reward star5Value must be between 0 and 999.',
+      severity: 'error'
+    };
+    const harness = await createRaidBonusRewardsHarness((loadedWorkflow) => {
+      return {
+        updateRaidBonusRewardFields: async (request) => ({
+          diagnostics: [rejection],
+          session: request.session ?? editSession,
+          workflow: loadedWorkflow
+        })
+      };
+    });
+    const updateRaidBonusRewardFields = vi.spyOn(
+      harness.bridge,
+      'updateRaidBonusRewardFields'
+    );
+    renderRaidRewards(harness.bridge);
+
+    const itemInput = await screen.findByLabelText('Item ID');
+    await user.clear(itemInput);
+    await user.type(itemInput, '003{Enter}');
+    const fiveStarQuantityInput = await screen.findByLabelText('5-star quantity');
+    await user.clear(fiveStarQuantityInput);
+    await user.type(fiveStarQuantityInput, '7');
+    await user.click(screen.getByRole('button', { name: 'Stage' }));
+
+    await waitFor(() => expect(updateRaidBonusRewardFields).toHaveBeenCalledTimes(1));
+    expect(updateRaidBonusRewardFields.mock.calls[0]?.[0].updates).toEqual([
+      {
+        field: 'itemId',
+        slot: 1,
+        tableId: 'bonus:0:1020304050607080',
+        value: '3'
+      },
+      {
+        field: 'star5Value',
+        slot: 1,
+        tableId: 'bonus:0:1020304050607080',
+        value: '7'
+      }
+    ]);
+    expect(itemInput).toHaveValue('003 Exp. Candy L');
+    expect(fiveStarQuantityInput).toHaveValue(7);
+    expect(screen.getByRole('button', { name: 'Stage' })).toBeEnabled();
+    expect(useWorkbenchStore.getState().editValidationDiagnostics).toEqual([rejection]);
+    expect(useWorkbenchStore.getState().editSession).toEqual(editSession);
+  });
+
+  it('keeps the Bonus quantity policy separate from the Drop chance cap', async () => {
+    const user = userEvent.setup();
+    const { bridge } = await createRaidBonusRewardsHarness();
+    renderRaidRewards(bridge);
+
+    const quantityInput = await screen.findByLabelText('5-star quantity');
+    expect(quantityInput).toHaveAttribute('max', '999');
+    await user.clear(quantityInput);
+    await user.type(quantityInput, '1000');
+
+    expect(screen.getByText('Maximum value is 999.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stage' })).toBeDisabled();
   });
 
   it('defensively caps drop chances at 100 in the editor', async () => {

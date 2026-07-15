@@ -361,7 +361,27 @@ public sealed class SwShRaidBattlesWorkflowService
                 table.Rewards.Count,
                 FormatRewardPreview(table.Rewards)))
             .GroupBy(link => (link.RewardKind, link.SourceTableHash))
-            .ToDictionary(group => group.Key, group => group.First());
+            .ToDictionary(
+                group => group.Key,
+                group => group.Count() == 1
+                    ? group.Single()
+                    : CreateAmbiguousRewardLink(group.Key, group.Count()));
+    }
+
+    private static SwShRaidBattleRewardLinkRecord CreateAmbiguousRewardLink(
+        (string RewardKind, string SourceTableHash) key,
+        int matchCount)
+    {
+        var member = SwShRaidRewardsWorkflowService.KnownArchiveMembers.First(candidate =>
+            string.Equals(candidate.Key, key.RewardKind, StringComparison.Ordinal));
+        return new SwShRaidBattleRewardLinkRecord(
+            key.RewardKind,
+            member.Label,
+            TableId: string.Empty,
+            key.SourceTableHash,
+            IsMatched: false,
+            RewardItemCount: 0,
+            Preview: $"Ambiguous: {matchCount.ToString(CultureInfo.InvariantCulture)} loaded {member.Label} tables share this hash");
     }
 
     private static SwShRaidBattleRewardLinkRecord CreateRewardLink(

@@ -42,6 +42,7 @@ export const kmCommandNameValues = [
   'raidRewards.rewards.update',
   'raidBonusRewards.load',
   'raidBonusRewards.reward.update',
+  'raidBonusRewards.rewards.update',
   'placement.load',
   'placement.objects.update',
   'behavior.load',
@@ -155,6 +156,7 @@ export const kmCommandNames = {
   updateRaidRewardFields: 'raidRewards.rewards.update',
   loadRaidBonusRewardsWorkflow: 'raidBonusRewards.load',
   updateRaidBonusRewardField: 'raidBonusRewards.reward.update',
+  updateRaidBonusRewardFields: 'raidBonusRewards.rewards.update',
   loadPlacementWorkflow: 'placement.load',
   updatePlacementObjectFields: 'placement.objects.update',
   loadBehaviorWorkflow: 'behavior.load',
@@ -1895,7 +1897,7 @@ export const raidBattleRewardLinkSchema = z.strictObject({
   isMatched: z.boolean(),
   preview: z.string(),
   rewardItemCount: z.number().int().nonnegative(),
-  rewardKind: z.string(),
+  rewardKind: z.enum(['drop', 'bonus']),
   rewardKindLabel: z.string(),
   sourceTableHash: z.string(),
   tableId: z.string()
@@ -2137,7 +2139,7 @@ export const raidRewardTableRecordSchema = z.strictObject({
   gameVersion: z.string(),
   provenance: raidRewardProvenanceSchema,
   rank: z.number().int().nonnegative(),
-  rewardKind: z.string(),
+  rewardKind: z.enum(['drop', 'bonus']),
   rewardKindLabel: z.string(),
   rewards: z.array(raidRewardItemRecordSchema),
   sourceTableHash: z.string(),
@@ -3489,7 +3491,19 @@ export const updateRaidBonusRewardFieldRequestSchema = z.strictObject({
   value: z.string()
 });
 
+export const updateRaidBonusRewardFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(raidRewardFieldUpdateSchema).min(1)
+});
+
 export const updateRaidBonusRewardFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: raidRewardsWorkflowSchema
+});
+
+export const updateRaidBonusRewardFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: raidRewardsWorkflowSchema
@@ -3865,6 +3879,12 @@ export type UpdateRaidBonusRewardFieldRequest = z.infer<
 >;
 export type UpdateRaidBonusRewardFieldResponse = z.infer<
   typeof updateRaidBonusRewardFieldResponseSchema
+>;
+export type UpdateRaidBonusRewardFieldsRequest = z.infer<
+  typeof updateRaidBonusRewardFieldsRequestSchema
+>;
+export type UpdateRaidBonusRewardFieldsResponse = z.infer<
+  typeof updateRaidBonusRewardFieldsResponseSchema
 >;
 export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;
 export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;

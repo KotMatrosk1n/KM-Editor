@@ -7903,35 +7903,26 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        async (session) => {
-          let nextSession = session;
-          let nextWorkflow = raidBonusRewardsWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          for (const change of changes) {
-            const updateResponse = await bridge.updateRaidBonusRewardField({
+        (session) =>
+          bridge.updateRaidBonusRewardFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
               field: change.field,
-              paths: createProjectPaths(draftPaths),
-              session: nextSession,
               slot,
               tableId,
               value: change.value
-            });
-            nextWorkflow = updateResponse.workflow;
-            nextSession = updateResponse.session;
-            nextDiagnostics = updateResponse.diagnostics;
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
-        },
+            }))
+          }),
         (updateResponse) => {
-          if (updateResponse.workflow) {
-            setRaidBonusRewardsWorkflow(updateResponse.workflow);
-          }
+          setRaidBonusRewardsWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return (
+        response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -26744,10 +26735,30 @@ function SelectedRaidRewardPanel({
   const cancelActiveEditSession = useCancelActiveEditSession();
   const raidRewardFields = useMemo(
     () =>
-      editableFields.map((field) =>
-        toNumericEditableControlField(getRaidRewardFieldForKind(field, table?.rewardKind))
-      ),
-    [editableFields, table?.rewardKind]
+      editableFields.map((field) => {
+        const numericField = toNumericEditableControlField(
+          getRaidRewardFieldForKind(field, table?.rewardKind)
+        );
+        if (
+          field.field !== raidRewardItemIdFieldName ||
+          reward === null ||
+          numericField.options.some((option) => option.value === reward.itemId)
+        ) {
+          return numericField;
+        }
+
+        return {
+          ...numericField,
+          options: [
+            {
+              label: `${reward.itemId.toString().padStart(3, '0')} ${reward.itemName}`,
+              value: reward.itemId
+            },
+            ...numericField.options
+          ]
+        };
+      }),
+    [editableFields, reward, table?.rewardKind]
   );
   const raidRewardFieldGroups = useMemo(
     () => groupNumericEditableFields(raidRewardFields, getRaidRewardEditableFieldGroup),

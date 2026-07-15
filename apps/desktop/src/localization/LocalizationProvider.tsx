@@ -222,6 +222,20 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     });
   }
 
+  const minimumDraftValueMatch = /^Minimum value is (-?\d+)\.$/.exec(literal);
+  if (minimumDraftValueMatch) {
+    return formatLiteralTemplate(language, 'Value must be at least {minimum}.', {
+      minimum: minimumDraftValueMatch[1]
+    });
+  }
+
+  const maximumDraftValueMatch = /^Maximum value is (-?\d+)\.$/.exec(literal);
+  if (maximumDraftValueMatch) {
+    return formatLiteralTemplate(language, 'Value must be at most {maximum}.', {
+      maximum: maximumDraftValueMatch[1]
+    });
+  }
+
   const inventoryLabelMatch = /^Inventory (\d+) of (\d+)$/.exec(literal);
   if (inventoryLabelMatch) {
     return formatLiteralTemplate(language, 'Inventory {index} of {count}', {
@@ -360,6 +374,48 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
       count: starFieldMatch[1],
       label: translateLiteralBodyForLanguage(language, starFieldMatch[2])
     });
+  }
+
+  const raidRewardQuantitySummaryMatch = /^Quantity (\d+(?:\/\d+)*)$/.exec(literal);
+  if (raidRewardQuantitySummaryMatch) {
+    return `${translateLiteralBodyForLanguage(language, 'Quantity')} ${raidRewardQuantitySummaryMatch[1]}`;
+  }
+
+  const raidRewardDropSummaryMatch = /^Drop chance (\d+(?:\/\d+)*)%$/.exec(literal);
+  if (raidRewardDropSummaryMatch) {
+    return `${translateLiteralBodyForLanguage(language, 'Drop chance')} ${raidRewardDropSummaryMatch[1]}%`;
+  }
+
+  const raidRewardSegments = literal.split(' / ');
+  if (raidRewardSegments.length > 1) {
+    const translatedSegments = raidRewardSegments.map((segment) => {
+      const chanceMatch = /^(\d)-star (\d+)% chance$/.exec(segment);
+      if (chanceMatch) {
+        return formatLiteralTemplate(language, '{count}-star {percent}% chance', {
+          count: chanceMatch[1],
+          percent: chanceMatch[2]
+        });
+      }
+
+      const quantityMatch = /^(\d)-star (\d+) (item|items)$/.exec(segment);
+      if (quantityMatch) {
+        return formatLiteralTemplate(
+          language,
+          quantityMatch[3] === 'item'
+            ? '{count}-star {quantity} item'
+            : '{count}-star {quantity} items',
+          {
+            count: quantityMatch[1],
+            quantity: quantityMatch[2]
+          }
+        );
+      }
+
+      return null;
+    });
+    if (translatedSegments.every((segment): segment is string => segment !== null)) {
+      return translatedSegments.join(' / ');
+    }
   }
 
   const recordSummaryMatch = /^(Gift|Rental|Adventure|Static) (\d+): (.+)$/.exec(literal);

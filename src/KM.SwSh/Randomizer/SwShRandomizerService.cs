@@ -1408,20 +1408,42 @@ public sealed class SwShRandomizerService
         AddWorkflowErrors(workflow.Diagnostics, diagnostics);
         var rng = DeterministicRandom.Create(generationKey, module);
         var edits = new List<PendingEdit>();
-        var itemNamesSource = SwShRaidRewardsWorkflowService.ResolveItemNamesSourceForValidation(project);
-        var itemValidationSource = itemNamesSource is null
-            ? null
-            : new ProjectFileReference(
-                itemNamesSource.GraphEntry.LayeredFile is not null
+        var eligibleItemIds = workflow.EditableFields
+            .FirstOrDefault(field => string.Equals(
+                field.Field,
+                SwShRaidRewardsWorkflowService.ItemIdField,
+                StringComparison.Ordinal))
+            ?.Options
+            .Where(option => option.Value > 0 && option.Value <= int.MaxValue)
+            .Select(option => (int)option.Value)
+            .ToHashSet() ?? [];
+        var rewardItemPool = itemPool
+            .Where(item => eligibleItemIds.Contains(item.ItemId))
+            .ToArray();
+        if (workflow.Tables.Any(table => table.Rewards.Any(reward => reward.ItemId > 0))
+            && rewardItemPool.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{label} randomization requires at least one item available in the loaded raid reward item choices.",
+                field: module,
+                expected: "Named, reward-safe item IDs available to the raid reward editor"));
+            return;
+        }
+
+        var itemValidationSources = SwShRaidRewardsWorkflowService
+            .ResolveItemDisplaySourcesForValidation(project)
+            .Select(source => new ProjectFileReference(
+                source.GraphEntry.LayeredFile is not null
                     ? ProjectFileLayer.Layered
                     : ProjectFileLayer.Base,
-                itemNamesSource.GraphEntry.RelativePath);
+                source.GraphEntry.RelativePath))
+            .ToArray();
 
         foreach (var table in workflow.Tables.OrderBy(table => table.TableId, StringComparer.Ordinal))
         {
-            IReadOnlyList<ProjectFileReference> sources = itemValidationSource is null
-                ? [Source(table.Provenance)]
-                : [Source(table.Provenance), itemValidationSource];
+            IReadOnlyList<ProjectFileReference> sources =
+                [Source(table.Provenance), .. itemValidationSources];
             foreach (var reward in table.Rewards.OrderBy(reward => reward.Slot))
             {
                 if (reward.ItemId <= 0)
@@ -1429,7 +1451,7 @@ public sealed class SwShRandomizerService
                     continue;
                 }
 
-                var item = rng.Pick(itemPool);
+                var item = rng.Pick(rewardItemPool);
                 edits.Add(CreateEdit(
                     editDomain,
                     $"Randomize {label} {table.DisplayName} slot {reward.Slot}",
@@ -2084,7 +2106,7 @@ public sealed class SwShRandomizerService
     private static bool IsSafeItemCandidate(SwShItemRecord item, bool royalCandyInstalled, bool strict)
     {
         if (item.ItemId <= 0
-            || item.ItemId > SwShRaidRewardsWorkflowService.MaximumItemId
+            || item.ItemId > SwShRaidRewardsWorkflowService.MaximumEditableItemId
             || (royalCandyInstalled && item.ItemId == RoyalCandyItemId)
             || string.IsNullOrWhiteSpace(item.Name))
         {

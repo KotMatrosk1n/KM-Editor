@@ -92,6 +92,19 @@ public sealed class SwShRaidRewardsEditSessionService
             RaidBonusRewardsEditDomain);
     }
 
+    public SwShRaidRewardsEditResult UpdateBonusRewardFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SwShRaidRewardFieldUpdate?>? updates)
+    {
+        return UpdateRewardFields(
+            paths,
+            session,
+            updates,
+            SwShRaidRewardWorkflowKind.Bonus,
+            RaidBonusRewardsEditDomain);
+    }
+
     private SwShRaidRewardsEditResult UpdateRewardFields(
         ProjectPaths paths,
         EditSession? session,
@@ -222,7 +235,7 @@ public sealed class SwShRaidRewardsEditSessionService
                 break;
             }
 
-            pendingEdit = AddItemValidationSource(project, pendingEdit);
+            pendingEdit = AddItemValidationSources(project, pendingEdit);
             workingSession = ReplacePendingRaidRewardEdit(workingSession, pendingEdit);
             if (GetRewardFieldValue(sourceReward, pendingEdit.Field) == pendingEdit.NewValue)
             {
@@ -254,17 +267,17 @@ public sealed class SwShRaidRewardsEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        if (HasMixedRaidRewardDomains(session))
+        var editDomain = GetDirectEditDomain(session);
+        if (editDomain is null)
         {
             return new SwShEditSessionValidation(
                 session,
                 IsValid: false,
-                [CreateMixedRaidRewardDomainDiagnostic()]);
+                [CreateDirectDomainOwnershipDiagnostic(session)]);
         }
 
         projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
-        var editDomain = GetEditDomain(session);
         var workflow = raidRewardsWorkflowService.Load(project, GetWorkflowKind(editDomain));
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -284,18 +297,18 @@ public sealed class SwShRaidRewardsEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        if (HasMixedRaidRewardDomains(session))
+        var editDomain = GetDirectEditDomain(session);
+        if (editDomain is null)
         {
             return new ChangePlan(
                 session.Id,
                 Array.Empty<PlannedFileWrite>(),
-                [CreateMixedRaidRewardDomainDiagnostic()]);
+                [CreateDirectDomainOwnershipDiagnostic(session)]);
         }
 
         projectWorkspaceService.ClearMemoryCache();
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
-        var editDomain = GetEditDomain(session);
         var workflowLabel = GetWorkflowLabel(editDomain);
         var rewardEdits = GetRewardEdits(session, editDomain).ToArray();
 
@@ -379,22 +392,22 @@ public sealed class SwShRaidRewardsEditSessionService
     {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        if (HasMixedRaidRewardDomains(session))
+        var editDomain = GetDirectEditDomain(session);
+        if (editDomain is null)
         {
-            var mixedDiagnostic = CreateMixedRaidRewardDomainDiagnostic();
+            var ownershipDiagnostic = CreateDirectDomainOwnershipDiagnostic(session);
             var rejectedPlan = new ChangePlan(
                 session.Id,
                 Array.Empty<PlannedFileWrite>(),
-                [mixedDiagnostic]);
+                [ownershipDiagnostic]);
             return CreateApplyResult(
                 applyId,
                 appliedAt,
                 rejectedPlan,
                 Array.Empty<ProjectFileReference>(),
-                [mixedDiagnostic]);
+                [ownershipDiagnostic]);
         }
 
-        var editDomain = GetEditDomain(session);
         var workflowLabel = GetWorkflowLabel(editDomain);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
@@ -675,13 +688,11 @@ public sealed class SwShRaidRewardsEditSessionService
         var currentSources = new List<ProjectFileReference>();
         if (string.Equals(edit.Field, SwShRaidRewardsWorkflowService.ItemIdField, StringComparison.Ordinal))
         {
-            var itemSource = SwShRaidRewardsWorkflowService.ResolveItemNamesSourceForValidation(project);
-            if (itemSource is not null)
-            {
-                currentSources.Add(new ProjectFileReference(
-                    GetSourceLayer(itemSource.GraphEntry),
-                    itemSource.GraphEntry.RelativePath));
-            }
+            currentSources.AddRange(
+                SwShRaidRewardsWorkflowService.ResolveItemDisplaySourcesForValidation(project)
+                    .Select(source => new ProjectFileReference(
+                        GetSourceLayer(source.GraphEntry),
+                        source.GraphEntry.RelativePath)));
         }
 
         var archiveSources = edit.Sources
@@ -827,7 +838,7 @@ public sealed class SwShRaidRewardsEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 editDomain,
                 DiagnosticSeverity.Error,
-                $"Raid reward item ID {parsedValue} is not present in the current Sword/Shield item table.",
+                $"Raid reward item ID {parsedValue} is not present in the current Sword/Shield raid reward item choices.",
                 field: field,
                 expected: "Loaded item ID or the existing legacy item ID"));
             return null;
@@ -841,15 +852,15 @@ public sealed class SwShRaidRewardsEditSessionService
         return field switch
         {
             SwShRaidRewardsWorkflowService.ItemIdField =>
-                (SwShRaidRewardsWorkflowService.MinimumItemId, SwShRaidRewardsWorkflowService.MaximumItemId),
+                (SwShRaidRewardsWorkflowService.MinimumItemId, SwShRaidRewardsWorkflowService.MaximumEditableItemId),
             SwShRaidRewardsWorkflowService.Star1ValueField
                 or SwShRaidRewardsWorkflowService.Star2ValueField
                 or SwShRaidRewardsWorkflowService.Star3ValueField
                 or SwShRaidRewardsWorkflowService.Star4ValueField
                 or SwShRaidRewardsWorkflowService.Star5ValueField =>
                 table.RewardKind == "drop"
-                    ? (SwShRaidRewardsWorkflowService.MinimumRewardValue, 100)
-                    : (SwShRaidRewardsWorkflowService.MinimumRewardValue, SwShRaidRewardsWorkflowService.MaximumRewardValue),
+                    ? (SwShRaidRewardsWorkflowService.MinimumRewardValue, SwShRaidRewardsWorkflowService.MaximumEditableDropChance)
+                    : (SwShRaidRewardsWorkflowService.MinimumRewardValue, SwShRaidRewardsWorkflowService.MaximumEditableBonusQuantity),
             _ => (0, 0),
         };
     }
@@ -923,7 +934,7 @@ public sealed class SwShRaidRewardsEditSessionService
         return (uint)index < (uint)reward.Values.Count ? reward.Values[index] : null;
     }
 
-    private static PendingEdit AddItemValidationSource(OpenedProject project, PendingEdit pendingEdit)
+    private static PendingEdit AddItemValidationSources(OpenedProject project, PendingEdit pendingEdit)
     {
         if (!string.Equals(
                 pendingEdit.Field,
@@ -933,18 +944,18 @@ public sealed class SwShRaidRewardsEditSessionService
             return pendingEdit;
         }
 
-        var itemSource = SwShRaidRewardsWorkflowService.ResolveItemNamesSourceForValidation(project);
-        return itemSource is null
-            ? pendingEdit
-            : pendingEdit with
-            {
-                Sources = pendingEdit.Sources
-                    .Append(new ProjectFileReference(
-                        GetSourceLayer(itemSource.GraphEntry),
-                        itemSource.GraphEntry.RelativePath))
-                    .Distinct()
-                    .ToArray(),
-            };
+        var itemSources = SwShRaidRewardsWorkflowService.ResolveItemDisplaySourcesForValidation(project)
+            .Select(source => new ProjectFileReference(
+                GetSourceLayer(source.GraphEntry),
+                source.GraphEntry.RelativePath));
+
+        return pendingEdit with
+        {
+            Sources = pendingEdit.Sources
+                .Concat(itemSources)
+                .Distinct()
+                .ToArray(),
+        };
     }
 
     private static SwShRaidRewardsWorkflow OverlayPendingEdits(
@@ -1180,12 +1191,12 @@ public sealed class SwShRaidRewardsEditSessionService
 
         var maximum = field switch
         {
-            SwShRaidRewardsWorkflowService.ItemIdField => SwShRaidRewardsWorkflowService.MaximumItemId,
+            SwShRaidRewardsWorkflowService.ItemIdField => SwShRaidRewardsWorkflowService.MaximumEditableItemId,
             SwShRaidRewardsWorkflowService.Star1ValueField
                 or SwShRaidRewardsWorkflowService.Star2ValueField
                 or SwShRaidRewardsWorkflowService.Star3ValueField
                 or SwShRaidRewardsWorkflowService.Star4ValueField
-                or SwShRaidRewardsWorkflowService.Star5ValueField => member.MaximumDropValue,
+                or SwShRaidRewardsWorkflowService.Star5ValueField => member.MaximumEditableValue,
             _ => -1,
         };
         if (maximum < 0)
@@ -1548,30 +1559,33 @@ public sealed class SwShRaidRewardsEditSessionService
             : ProjectFileLayer.Base;
     }
 
-    private static string GetEditDomain(EditSession session)
+    private static string? GetDirectEditDomain(EditSession session)
     {
-        return session.PendingEdits.Any(edit =>
-            string.Equals(edit.Domain, RaidBonusRewardsEditDomain, StringComparison.Ordinal))
-                ? RaidBonusRewardsEditDomain
-                : RaidRewardsEditDomain;
+        var domains = session.PendingEdits
+            .Select(edit => edit.Domain)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return domains.Length == 1
+            && domains[0] is RaidRewardsEditDomain or RaidBonusRewardsEditDomain
+                ? domains[0]
+                : null;
     }
 
-    private static bool HasMixedRaidRewardDomains(EditSession session)
+    private static ValidationDiagnostic CreateDirectDomainOwnershipDiagnostic(EditSession session)
     {
-        var hasDrop = session.PendingEdits.Any(edit =>
-            string.Equals(edit.Domain, RaidRewardsEditDomain, StringComparison.Ordinal));
-        var hasBonus = session.PendingEdits.Any(edit =>
-            string.Equals(edit.Domain, RaidBonusRewardsEditDomain, StringComparison.Ordinal));
-        return hasDrop && hasBonus;
-    }
-
-    private static ValidationDiagnostic CreateMixedRaidRewardDomainDiagnostic()
-    {
+        var supportedDomains = session.PendingEdits
+            .Select(edit => edit.Domain)
+            .Where(domain => domain is RaidRewardsEditDomain or RaidBonusRewardsEditDomain)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var diagnosticDomain = supportedDomains.Length == 1
+            ? supportedDomains[0]
+            : RaidRewardsEditDomain;
         return CreateDiagnostic(
-            RaidRewardsEditDomain,
+            diagnosticDomain,
             DiagnosticSeverity.Error,
-            "Raid Rewards and Raid Bonus Rewards edits cannot be planned directly as one reward-domain operation. Use the project edit-session workflow to review and apply the combined session.",
-            expected: "One direct raid reward domain or the combined project edit-session workflow");
+            "Raid reward edits cannot be planned directly from an empty, foreign, or mixed-domain edit session. Use the project edit-session workflow to review and apply combined changes.",
+            expected: "Exactly one direct Raid Rewards or Raid Bonus Rewards domain");
     }
 
     private static SwShRaidRewardWorkflowKind GetWorkflowKind(string editDomain)

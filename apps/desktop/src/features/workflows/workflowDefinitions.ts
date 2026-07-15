@@ -118,13 +118,13 @@ export const workflowDefinitions: Array<{
   {
     id: 'raidRewards',
     label: 'Raid Rewards',
-    description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+    description: 'Raid drop reward tables, items, per-star drop chances, and provenance.',
     icon: BadgePlus
   },
   {
     id: 'raidBonusRewards',
     label: 'Raid Bonus Rewards',
-    description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+    description: 'Raid bonus reward tables, items, per-star quantities, and provenance.',
     icon: BadgeCheck
   },
   {
