@@ -68,7 +68,7 @@ internal static class SwShRaidBattleBridgeFixtures
                         false,
                         SwShRaidRewardBridgeFixtures.DropTableId,
                         0x0807060504030201,
-                        [5, 10, 15, 20, 25],
+                        [0, 80, 70, 60, 50],
                         0,
                         0),
                 ]),

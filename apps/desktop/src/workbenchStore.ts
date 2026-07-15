@@ -993,7 +993,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidBattles'),
-        raidBattleSearchText: '',
         raidBattlesWorkflow,
         selectedRaidBattleTableId
       };

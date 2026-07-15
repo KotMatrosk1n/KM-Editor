@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Formats.SwSh;
 using Xunit;
 
@@ -99,6 +100,220 @@ public sealed class SwShEncounterNestArchiveTests
             ]));
     }
 
+    [Fact]
+    public void ParsedArchivePreservesExactSourceForWriteEmptyEditsAndNoOpEdits()
+    {
+        var canonical = CreateArchive().Write();
+        var source = canonical.Concat(new byte[] { 0xA5, 0x5A, 0xC3 }).ToArray();
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var write = archive.Write();
+        var emptyEdits = archive.WriteEdits([]);
+        var noOpEdit = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 1),
+        ]);
+
+        Assert.Equal(source, write);
+        Assert.Equal(source, emptyEdits);
+        Assert.Equal(source, noOpEdit);
+    }
+
+    [Fact]
+    public void WriteEditsUsesLastValueAndReturnsExactSourceWhenLastValueRestoresSource()
+    {
+        var source = CreateArchive().Write();
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var updated = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 25),
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 133),
+        ]);
+        var restored = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 133),
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 1),
+        ]);
+
+        Assert.Equal(133, SwShEncounterNestArchive.Parse(updated).Tables[0].Entries[0].Species);
+        Assert.Equal(source, restored);
+    }
+
+    [Fact]
+    public void WriteEditsPreservesProbabilityValuesAfterEditableStarColumns()
+    {
+        var table = CreateArchive().Tables[0];
+        var entries = table.Entries.ToArray();
+        entries[0] = entries[0] with { Probabilities = [100, 20, 30, 40, 50, 60, 70] };
+        var source = new SwShEncounterNestArchive([table with { Entries = entries }]).Write();
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Star3Probability, 44),
+        ]);
+
+        Assert.Equal(source.Length, output.Length);
+        Assert.Equal(
+            [100u, 20u, 44u, 40u, 50u, 60u, 70u],
+            SwShEncounterNestArchive.Parse(output).Tables[0].Entries[0].Probabilities);
+    }
+
+    [Fact]
+    public void WriteEditsIsolatesAliasedEncounterTables()
+    {
+        var firstTable = CreateArchive().Tables[0];
+        var source = new SwShEncounterNestArchive(
+        [
+            firstTable,
+            firstTable with { TableId = firstTable.TableId + 1 },
+        ]).Write();
+        var tableVectorOffset = GetRootTableVectorOffset(source);
+        var firstTableOffset = ReadUOffset(source, tableVectorOffset + sizeof(uint));
+        PatchUOffset(source, tableVectorOffset + (sizeof(uint) * 2), firstTableOffset);
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 133),
+        ]);
+        var parsed = SwShEncounterNestArchive.Parse(output);
+
+        Assert.Equal(133, parsed.Tables[0].Entries[0].Species);
+        Assert.Equal(1, parsed.Tables[1].Entries[0].Species);
+    }
+
+    [Fact]
+    public void WriteEditsIsolatesAliasedEncounterEntries()
+    {
+        var source = CreateArchive().Write();
+        var entriesVectorOffset = GetEntriesVectorOffset(source, tableIndex: 0);
+        var firstEntryOffset = ReadUOffset(source, entriesVectorOffset + sizeof(uint));
+        PatchUOffset(source, entriesVectorOffset + (sizeof(uint) * 2), firstEntryOffset);
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 133),
+        ]);
+        var parsed = SwShEncounterNestArchive.Parse(output);
+
+        Assert.Equal(133, parsed.Tables[0].Entries[0].Species);
+        Assert.Equal(1, parsed.Tables[0].Entries[1].Species);
+    }
+
+    [Fact]
+    public void WriteEditsIsolatesAliasedProbabilityVectors()
+    {
+        var source = CreateArchive().Write();
+        var firstEntryOffset = GetEntryOffset(source, tableIndex: 0, entryIndex: 0);
+        var firstProbabilityFieldOffset = GetFieldValueOffset(source, firstEntryOffset, fieldIndex: 8);
+        var secondProbabilityVectorOffset = GetProbabilityVectorOffset(source, tableIndex: 0, entryIndex: 1);
+        PatchUOffset(source, firstProbabilityFieldOffset, secondProbabilityVectorOffset);
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Star1Probability, 77),
+        ]);
+        var parsed = SwShEncounterNestArchive.Parse(output);
+
+        Assert.Equal(77u, parsed.Tables[0].Entries[0].Probabilities[0]);
+        Assert.Equal(5u, parsed.Tables[0].Entries[1].Probabilities[0]);
+    }
+
+    [Fact]
+    public void WriteEditsMaterializesOmittedKnownScalarWhenNoUnknownFieldsArePresent()
+    {
+        var source = CreateArchive().Write();
+        var entryOffset = GetEntryOffset(source, tableIndex: 0, entryIndex: 0);
+        var vtableOffset = GetVtableOffset(source, entryOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            source.AsSpan(vtableOffset + (sizeof(ushort) * 2) + (4 * sizeof(ushort)), sizeof(ushort)),
+            0);
+        var archive = SwShEncounterNestArchive.Parse(source);
+        Assert.Equal(0, archive.Tables[0].Entries[0].Ability);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Ability, 2),
+        ]);
+
+        Assert.True(output.Length > source.Length);
+        Assert.Equal(2, SwShEncounterNestArchive.Parse(output).Tables[0].Entries[0].Ability);
+    }
+
+    [Fact]
+    public void WriteEditsPreservesUnknownMaterializedFieldsWhenEditedScalarIsPresent()
+    {
+        var (source, extendedEntryOffset) = CreateSourceWithExtendedEntry(omitAbility: false);
+        var archive = SwShEncounterNestArchive.Parse(source);
+
+        var output = archive.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 133),
+        ]);
+
+        Assert.Equal(source.Length, output.Length);
+        Assert.Equal(0xA5, output[extendedEntryOffset + 48]);
+        Assert.Equal(133, SwShEncounterNestArchive.Parse(output).Tables[0].Entries[0].Species);
+    }
+
+    [Fact]
+    public void WriteEditsRejectsMaterializingOmittedScalarWhenUnknownFieldsArePresent()
+    {
+        var (source, _) = CreateSourceWithExtendedEntry(omitAbility: true);
+        var archive = SwShEncounterNestArchive.Parse(source);
+        Assert.Equal(0, archive.Tables[0].Entries[0].Ability);
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => archive.WriteEdits(
+            [
+                new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Ability, 2),
+            ]));
+
+        Assert.Contains("unknown materialized fields", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsProbabilityVectorsWithFewerThanFiveValues()
+    {
+        var source = CreateArchive().Write();
+        var probabilitiesVectorOffset = GetProbabilityVectorOffset(source, tableIndex: 0, entryIndex: 0);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            source.AsSpan(probabilitiesVectorOffset, sizeof(uint)),
+            4);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShEncounterNestArchive.Parse(source));
+
+        Assert.Contains("contains 4 star probabilities; at least 5 are required", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseNormalizesOversizedVectorFaultToInvalidDataException()
+    {
+        var source = CreateArchive().Write();
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            source.AsSpan(GetRootTableVectorOffset(source), sizeof(uint)),
+            uint.MaxValue);
+
+        Assert.Throws<InvalidDataException>(() => SwShEncounterNestArchive.Parse(source));
+    }
+
+    [Fact]
+    public void WriteRejectsProbabilityVectorsWithFewerThanFiveValues()
+    {
+        var table = CreateArchive().Tables[0];
+        var entries = table.Entries.ToArray();
+        entries[0] = entries[0] with { Probabilities = [1, 2, 3, 4] };
+        var archive = new SwShEncounterNestArchive([table with { Entries = entries }]);
+
+        var exception = Assert.Throws<InvalidDataException>(() => archive.Write());
+
+        Assert.Contains("contains 4 star probabilities; at least 5 are required", exception.Message, StringComparison.Ordinal);
+    }
+
     private static SwShEncounterNestArchive CreateArchive()
     {
         return new SwShEncounterNestArchive(
@@ -133,5 +348,147 @@ public sealed class SwShEncounterNestArchiveTests
                         2),
                 ]),
         ]);
+    }
+
+    private static (byte[] Source, int EntryOffset) CreateSourceWithExtendedEntry(bool omitAbility)
+    {
+        var source = CreateArchive().Write();
+        var logicalEntry = SwShEncounterNestArchive.Parse(source).Tables[0].Entries[0];
+        var entryVectorElementOffset = GetEntryVectorElementOffset(source, tableIndex: 0, entryIndex: 0);
+        var output = new List<byte>(source);
+        const int vtableLength = 28;
+        const int objectLength = 56;
+        while (((output.Count + vtableLength) % sizeof(ulong)) != 0)
+        {
+            output.Add(0);
+        }
+
+        var vtableOffset = output.Count;
+        var vtable = new byte[vtableLength];
+        BinaryPrimitives.WriteUInt16LittleEndian(vtable.AsSpan(0, sizeof(ushort)), vtableLength);
+        BinaryPrimitives.WriteUInt16LittleEndian(vtable.AsSpan(2, sizeof(ushort)), objectLength);
+        var fieldOffsets = new ushort[] { 8, 12, 16, 24, 20, 21, 32, 40, 4, 22, 23, 48 };
+        if (omitAbility)
+        {
+            fieldOffsets[4] = 0;
+        }
+
+        for (var fieldIndex = 0; fieldIndex < fieldOffsets.Length; fieldIndex++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                vtable.AsSpan((sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort)), sizeof(ushort)),
+                fieldOffsets[fieldIndex]);
+        }
+
+        output.AddRange(vtable);
+        var entryOffset = output.Count;
+        var table = new byte[objectLength];
+        BinaryPrimitives.WriteInt32LittleEndian(table.AsSpan(0, sizeof(int)), entryOffset - vtableOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(table.AsSpan(8, sizeof(int)), logicalEntry.EntryIndex);
+        BinaryPrimitives.WriteInt32LittleEndian(table.AsSpan(12, sizeof(int)), logicalEntry.Species);
+        BinaryPrimitives.WriteInt32LittleEndian(table.AsSpan(16, sizeof(int)), logicalEntry.Form);
+        table[20] = checked((byte)logicalEntry.Ability);
+        table[21] = logicalEntry.IsGigantamax ? (byte)1 : (byte)0;
+        table[22] = unchecked((byte)(sbyte)logicalEntry.Gender);
+        table[23] = unchecked((byte)(sbyte)logicalEntry.FlawlessIvs);
+        BinaryPrimitives.WriteUInt64LittleEndian(table.AsSpan(24, sizeof(ulong)), logicalEntry.LevelTableId);
+        BinaryPrimitives.WriteUInt64LittleEndian(table.AsSpan(32, sizeof(ulong)), logicalEntry.DropTableId);
+        BinaryPrimitives.WriteUInt64LittleEndian(table.AsSpan(40, sizeof(ulong)), logicalEntry.BonusTableId);
+        table[48] = 0xA5;
+        output.AddRange(table);
+
+        var probabilitiesVectorOffset = output.Count;
+        var probabilities = new byte[sizeof(uint) + (logicalEntry.Probabilities.Count * sizeof(uint))];
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            probabilities.AsSpan(0, sizeof(uint)),
+            checked((uint)logicalEntry.Probabilities.Count));
+        for (var probabilityIndex = 0; probabilityIndex < logicalEntry.Probabilities.Count; probabilityIndex++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                probabilities.AsSpan(sizeof(uint) + (probabilityIndex * sizeof(uint)), sizeof(uint)),
+                logicalEntry.Probabilities[probabilityIndex]);
+        }
+
+        output.AddRange(probabilities);
+        var result = output.ToArray();
+        PatchUOffset(result, entryOffset + sizeof(int), probabilitiesVectorOffset);
+        PatchUOffset(result, entryVectorElementOffset, entryOffset);
+        return (result, entryOffset);
+    }
+
+    private static int GetRootTableVectorOffset(byte[] data)
+    {
+        var rootTableOffset = ReadUOffset(data, offset: 0);
+        return ReadUOffset(data, GetFieldValueOffset(data, rootTableOffset, fieldIndex: 0));
+    }
+
+    private static int GetTableOffset(byte[] data, int tableIndex)
+    {
+        var tableVectorOffset = GetRootTableVectorOffset(data);
+        return ReadUOffset(
+            data,
+            tableVectorOffset + sizeof(uint) + (tableIndex * sizeof(uint)));
+    }
+
+    private static int GetEntriesVectorOffset(byte[] data, int tableIndex)
+    {
+        var tableOffset = GetTableOffset(data, tableIndex);
+        return ReadUOffset(data, GetFieldValueOffset(data, tableOffset, fieldIndex: 2));
+    }
+
+    private static int GetEntryVectorElementOffset(byte[] data, int tableIndex, int entryIndex)
+    {
+        return GetEntriesVectorOffset(data, tableIndex)
+            + sizeof(uint)
+            + (entryIndex * sizeof(uint));
+    }
+
+    private static int GetEntryOffset(byte[] data, int tableIndex, int entryIndex)
+    {
+        return ReadUOffset(data, GetEntryVectorElementOffset(data, tableIndex, entryIndex));
+    }
+
+    private static int GetProbabilityVectorOffset(byte[] data, int tableIndex, int entryIndex)
+    {
+        var entryOffset = GetEntryOffset(data, tableIndex, entryIndex);
+        return ReadUOffset(data, GetFieldValueOffset(data, entryOffset, fieldIndex: 8));
+    }
+
+    private static int GetFieldValueOffset(byte[] data, int tableOffset, int fieldIndex)
+    {
+        var vtableOffset = GetVtableOffset(data, tableOffset);
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(vtableOffset, sizeof(ushort)));
+        var fieldEntryOffset = (sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort));
+        if (fieldEntryOffset + sizeof(ushort) > vtableLength)
+        {
+            throw new InvalidDataException($"FlatBuffer field {fieldIndex} is not present.");
+        }
+
+        var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.AsSpan(vtableOffset + fieldEntryOffset, sizeof(ushort)));
+        if (fieldOffset == 0)
+        {
+            throw new InvalidDataException($"FlatBuffer field {fieldIndex} is omitted.");
+        }
+
+        return tableOffset + fieldOffset;
+    }
+
+    private static int GetVtableOffset(byte[] data, int tableOffset)
+    {
+        return tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+    }
+
+    private static int ReadUOffset(byte[] data, int offset)
+    {
+        return checked(offset + (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, sizeof(uint))));
+    }
+
+    private static void PatchUOffset(byte[] data, int sourceOffset, int targetOffset)
+    {
+        Assert.True(targetOffset > sourceOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(sourceOffset, sizeof(uint)),
+            checked((uint)(targetOffset - sourceOffset)));
     }
 }

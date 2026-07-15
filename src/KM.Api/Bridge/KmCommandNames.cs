@@ -52,6 +52,7 @@ public static class KmCommandNames
     public const string UpdateEncounterSlotFields = "encounters.slots.update";
     public const string LoadRaidBattlesWorkflow = "raidBattles.load";
     public const string UpdateRaidBattleSlotField = "raidBattles.slot.update";
+    public const string UpdateRaidBattleSlotFields = "raidBattles.slots.update";
     public const string LoadTeraRaidsWorkflow = "teraRaids.load";
     public const string UpdateTeraRaidField = "teraRaids.field.update";
     public const string UpdateTeraRaidFields = "teraRaids.fields.update";

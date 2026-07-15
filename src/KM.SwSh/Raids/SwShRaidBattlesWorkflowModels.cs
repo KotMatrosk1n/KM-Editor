@@ -2,6 +2,8 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.Raids;
@@ -80,4 +82,11 @@ public sealed record SwShRaidBattlesWorkflow(
     IReadOnlyList<SwShRaidBattleTableRecord> Tables,
     IReadOnlyList<SwShRaidBattleEditableField> EditableFields,
     SwShRaidBattlesWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal IReadOnlyList<SwShPersonalRecord> PersonalRecords { get; init; } =
+        Array.Empty<SwShPersonalRecord>();
+
+    internal SwShPokemonAbilityOptionResolver AbilityResolver { get; init; } =
+        SwShPokemonAbilityOptionResolver.Empty;
+}

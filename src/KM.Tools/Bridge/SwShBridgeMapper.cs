@@ -823,6 +823,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateRaidBattleSlotFieldsResponse ToFieldsDto(SwShRaidBattlesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateRaidBattleSlotFieldsResponse(
+            ToRaidBattlesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdatePlacementObjectFieldResponse ToDto(SwShPlacementEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

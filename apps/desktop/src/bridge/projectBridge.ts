@@ -157,6 +157,8 @@ import {
   type UpdateBehaviorEntryFieldResponse,
   type UpdateRaidBattleSlotFieldRequest,
   type UpdateRaidBattleSlotFieldResponse,
+  type UpdateRaidBattleSlotFieldsRequest,
+  type UpdateRaidBattleSlotFieldsResponse,
   type UpdateTeraRaidFieldRequest,
   type UpdateTeraRaidFieldResponse,
   type UpdateTeraRaidFieldsRequest,
@@ -258,6 +260,7 @@ import {
   updatePokemonLearnsetResponseSchema,
   updateBehaviorEntryFieldResponseSchema,
   updateRaidBattleSlotFieldResponseSchema,
+  updateRaidBattleSlotFieldsResponseSchema,
   updateTeraRaidFieldResponseSchema,
   updateTeraRaidFieldsResponseSchema,
   updateRaidRewardFieldResponseSchema,
@@ -564,6 +567,9 @@ export type ProjectBridge = {
   updateRaidBattleSlotField: (
     request: UpdateRaidBattleSlotFieldRequest
   ) => Promise<UpdateRaidBattleSlotFieldResponse>;
+  updateRaidBattleSlotFields: (
+    request: UpdateRaidBattleSlotFieldsRequest
+  ) => Promise<UpdateRaidBattleSlotFieldsResponse>;
   updateTeraRaidField: (
     request: UpdateTeraRaidFieldRequest
   ) => Promise<UpdateTeraRaidFieldResponse>;
@@ -1239,6 +1245,13 @@ export function createProjectBridge(
         kmCommandNames.updateRaidBattleSlotField,
         request,
         updateRaidBattleSlotFieldResponseSchema
+      ),
+    updateRaidBattleSlotFields: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateRaidBattleSlotFields,
+        request,
+        updateRaidBattleSlotFieldsResponseSchema
       ),
     updateTeraRaidField: (request) =>
       sendProjectBridgeRequest(

@@ -6,7 +6,10 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Raids;
 
@@ -143,7 +146,7 @@ public sealed class SwShRaidBattlesWorkflowService
             var archive = SwShEncounterNestArchive.Parse(memberData);
             var provenance = CreateProvenance(dataSource.GraphEntry);
             var rewardLinks = LoadRewardLinks(project);
-            var tables = FlattenArchive(archive, provenance, lookupTables, rewardLinks);
+            var tables = FlattenArchive(archive, provenance, lookupTables, rewardLinks, diagnostics);
 
             return CreateWorkflow(summary, tables, sourceFileCount: 1 + lookupTables.SourceFileCount, lookupTables, diagnostics);
         }
@@ -187,22 +190,89 @@ public sealed class SwShRaidBattlesWorkflowService
         return GetEditableField(field) is not null;
     }
 
-    internal static string CreateTableId(int tableIndex, ulong sourceTableId)
+    internal static string CreateTableId(int tableIndex, SwShEncounterNestTable table)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"raid:{tableIndex}:{sourceTableId:X16}");
+        ArgumentNullException.ThrowIfNull(table);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"raid:{tableIndex}:{table.TableId:X16}:{CreateTableSourceIdentity(tableIndex, table)}");
     }
 
     internal static bool TryParseTableId(string? tableId, out int tableIndex, out ulong sourceTableId)
     {
+        return TryParseTableId(
+            tableId,
+            out tableIndex,
+            out sourceTableId,
+            out _,
+            out _);
+    }
+
+    internal static bool TryParseTableId(
+        string? tableId,
+        out int tableIndex,
+        out ulong sourceTableId,
+        out string sourceIdentity,
+        out bool isLegacy)
+    {
         tableIndex = -1;
         sourceTableId = 0;
+        sourceIdentity = string.Empty;
+        isLegacy = false;
 
         var parts = tableId?.Split(':') ?? [];
-        return parts.Length == 3
-            && string.Equals(parts[0], "raid", StringComparison.Ordinal)
-            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out tableIndex)
-            && tableIndex >= 0
-            && ulong.TryParse(parts[2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out sourceTableId);
+        if (parts.Length is not 3 and not 4
+            || !string.Equals(parts[0], "raid", StringComparison.Ordinal)
+            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out tableIndex)
+            || tableIndex < 0
+            || !ulong.TryParse(parts[2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out sourceTableId))
+        {
+            return false;
+        }
+
+        isLegacy = parts.Length == 3;
+        if (isLegacy)
+        {
+            return true;
+        }
+
+        sourceIdentity = parts[3];
+        return sourceIdentity.Length == 64 && sourceIdentity.All(Uri.IsHexDigit);
+    }
+
+    internal static string CreateTableSourceIdentity(int tableIndex, SwShEncounterNestTable table)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        ArgumentOutOfRangeException.ThrowIfNegative(tableIndex);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendIdentityString(hash, "swsh-raid-battle-table-v1");
+        AppendIdentityInt32(hash, tableIndex);
+        AppendIdentityUInt64(hash, table.TableId);
+        AppendIdentityInt32(hash, table.GameVersion);
+        AppendIdentityInt32(hash, table.Entries.Count);
+        foreach (var entry in table.Entries)
+        {
+            AppendIdentityInt32(hash, entry.EntryIndex);
+            AppendIdentityInt32(hash, entry.Species);
+            AppendIdentityInt32(hash, entry.Form);
+            AppendIdentityUInt64(hash, entry.LevelTableId);
+            AppendIdentityInt32(hash, entry.Ability);
+            AppendIdentityInt32(hash, entry.IsGigantamax ? 1 : 0);
+            AppendIdentityUInt64(hash, entry.DropTableId);
+            AppendIdentityUInt64(hash, entry.BonusTableId);
+            AppendIdentityInt32(hash, entry.Probabilities.Count);
+            foreach (var probability in entry.Probabilities)
+            {
+                AppendIdentityUInt32(hash, probability);
+            }
+
+            AppendIdentityInt32(hash, entry.Gender);
+            AppendIdentityInt32(hash, entry.FlawlessIvs);
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     internal static string CreateSlotRecordId(string tableId, int slot)
@@ -256,7 +326,11 @@ public sealed class SwShRaidBattlesWorkflowService
                 tables.Sum(table => table.Slots.Count),
                 tables.Sum(table => table.Slots.Count(slot => slot.IsGigantamax)),
                 sourceFileCount),
-            diagnostics);
+            diagnostics)
+        {
+            AbilityResolver = lookupTables.AbilityResolver,
+            PersonalRecords = lookupTables.PersonalRecords,
+        };
     }
 
     private static RaidBattleLookupTables CreateEmptyLookupTables()
@@ -295,18 +369,25 @@ public sealed class SwShRaidBattlesWorkflowService
         SwShEncounterNestArchive archive,
         SwShRaidBattleProvenance provenance,
         RaidBattleLookupTables lookupTables,
-        IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
+        IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
+        var denTableIndexes = CreateEncounterDenTableIndexes(archive.Tables, diagnostics);
         return archive.Tables
             .Select((table, tableIndex) => new SwShRaidBattleTableRecord(
-                CreateTableId(tableIndex, table.TableId),
-                FormatRaidTableDisplayName(table, tableIndex),
+                CreateTableId(tableIndex, table),
+                FormatRaidTableDisplayName(table, tableIndex, denTableIndexes[tableIndex]),
                 $"table_{table.TableId:X16}",
                 tableIndex,
                 FormatGameVersion(table.GameVersion),
                 FormatHash(table.TableId),
                 table.Entries
-                    .Select((entry, entryIndex) => ToSlotRecord(entry, entryIndex, lookupTables, rewardLinks))
+                    .Select((entry, entryIndex) => ToSlotRecord(
+                        entry,
+                        tableIndex,
+                        entryIndex,
+                        lookupTables,
+                        rewardLinks))
                     .ToArray(),
                 provenance))
             .ToArray();
@@ -314,11 +395,12 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private static SwShRaidBattleSlotRecord ToSlotRecord(
         SwShEncounterNest entry,
+        int tableIndex,
         int entryIndex,
         RaidBattleLookupTables lookupTables,
         IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
     {
-        var probabilities = PadProbabilities(entry.Probabilities, length: 5);
+        var probabilities = ConvertProbabilities(entry.Probabilities, tableIndex, entryIndex);
         var dropTableHash = FormatHash(entry.DropTableId);
         var bonusTableHash = FormatHash(entry.BonusTableId);
         return new SwShRaidBattleSlotRecord(
@@ -430,15 +512,38 @@ public sealed class SwShRaidBattlesWorkflowService
             $"{rewards.Count} {label}: {string.Join(", ", previewItems)}{suffix}");
     }
 
-    private static int[] PadProbabilities(IReadOnlyList<uint> values, int length)
+    private static int[] ConvertProbabilities(
+        IReadOnlyList<uint> values,
+        int tableIndex,
+        int entryIndex)
     {
-        var padded = new int[length];
-        for (var index = 0; index < padded.Length && index < values.Count; index++)
+        const int requiredProbabilityCount = 5;
+        if (values.Count < requiredProbabilityCount)
         {
-            padded[index] = checked((int)values[index]);
+            throw new InvalidDataException(
+                $"Raid battle encounter table {tableIndex.ToString(CultureInfo.InvariantCulture)} " +
+                $"slot {(entryIndex + 1).ToString(CultureInfo.InvariantCulture)} contains " +
+                $"{values.Count.ToString(CultureInfo.InvariantCulture)} probability values; " +
+                $"at least {requiredProbabilityCount.ToString(CultureInfo.InvariantCulture)} are required.");
         }
 
-        return padded;
+        var probabilities = new int[values.Count];
+        for (var index = 0; index < values.Count; index++)
+        {
+            var value = values[index];
+            if (value > int.MaxValue)
+            {
+                throw new InvalidDataException(
+                    $"Raid battle encounter table {tableIndex.ToString(CultureInfo.InvariantCulture)} " +
+                    $"slot {(entryIndex + 1).ToString(CultureInfo.InvariantCulture)} probability " +
+                    $"{(index + 1).ToString(CultureInfo.InvariantCulture)} value " +
+                    $"{value.ToString(CultureInfo.InvariantCulture)} exceeds the supported display range.");
+            }
+
+            probabilities[index] = (int)value;
+        }
+
+        return probabilities;
     }
 
     private static string FormatProbabilitySummary(IReadOnlyList<int> probabilities)
@@ -459,11 +564,52 @@ public sealed class SwShRaidBattlesWorkflowService
         };
     }
 
-    private static string FormatRaidTableDisplayName(SwShEncounterNestTable table, int tableIndex)
+    private static string FormatRaidTableDisplayName(
+        SwShEncounterNestTable table,
+        int tableIndex,
+        int? denTableIndex)
     {
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{FormatGameVersion(table.GameVersion)} - {tableIndex / 2}");
+        var location = denTableIndex is int denIndex
+            ? denIndex.ToString(CultureInfo.InvariantCulture)
+            : $"Encounter Table {tableIndex.ToString(CultureInfo.InvariantCulture)}";
+        return $"{FormatGameVersion(table.GameVersion)} - {location}";
+    }
+
+    private static IReadOnlyList<int?> CreateEncounterDenTableIndexes(
+        IReadOnlyList<SwShEncounterNestTable> tables,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var denTableIndexes = new int?[tables.Count];
+        for (var pairStart = 0; pairStart < tables.Count; pairStart += 2)
+        {
+            var hasCompletePair = pairStart + 1 < tables.Count;
+            var hasExpectedVersions = hasCompletePair
+                && tables[pairStart].GameVersion == 1
+                && tables[pairStart + 1].GameVersion == 2;
+            if (hasExpectedVersions)
+            {
+                denTableIndexes[pairStart] = pairStart / 2;
+                denTableIndexes[pairStart + 1] = pairStart / 2;
+                continue;
+            }
+
+            var pairEnd = hasCompletePair
+                ? $" and {(pairStart + 1).ToString(CultureInfo.InvariantCulture)}"
+                : string.Empty;
+            var versions = hasCompletePair
+                ? $"{tables[pairStart].GameVersion.ToString(CultureInfo.InvariantCulture)}, " +
+                    tables[pairStart + 1].GameVersion.ToString(CultureInfo.InvariantCulture)
+                : tables[pairStart].GameVersion.ToString(CultureInfo.InvariantCulture);
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Raid battle encounter tables {pairStart.ToString(CultureInfo.InvariantCulture)}{pairEnd} " +
+                $"do not form an expected Sword and Shield pair. Found game version values {versions}; " +
+                "table labels will use physical encounter table indexes.",
+                file: SwShRaidRewardsWorkflowService.NestDataPath,
+                expected: "Adjacent encounter tables with Sword game version 1 followed by Shield game version 2"));
+        }
+
+        return denTableIndexes;
     }
 
     private static string GetIndexedName(int id, IReadOnlyList<string> names, string fallbackPrefix)
@@ -479,7 +625,7 @@ public sealed class SwShRaidBattlesWorkflowService
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
-        var personalRecords = LoadPersonalRecords(project);
+        var personalRecords = LoadPersonalRecords(project, diagnostics);
         var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(personalRecords);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
@@ -496,16 +642,21 @@ public sealed class SwShRaidBattlesWorkflowService
         int speciesId,
         int currentForm)
     {
+        return CreateFormOptions(lookupTables.PersonalRecords, speciesId, currentForm);
+    }
+
+    internal static IReadOnlyList<SwShRaidBattleEditableFieldOption> CreateFormOptions(
+        IReadOnlyList<SwShPersonalRecord> personalRecords,
+        int speciesId,
+        int currentForm)
+    {
         var values = new SortedSet<int> { 0 };
-        if ((uint)speciesId < (uint)lookupTables.PersonalRecords.Count)
+        if ((uint)speciesId < (uint)personalRecords.Count)
         {
-            var formCount = lookupTables.PersonalRecords[speciesId].FormCount;
+            var formCount = personalRecords[speciesId].FormCount;
             for (var form = 1; form < formCount && form <= MaximumFormValue; form++)
             {
-                if (SwShSpeciesFormLabels.ResolveKnownFormLabel(speciesId, form) is not null)
-                {
-                    values.Add(form);
-                }
+                values.Add(form);
             }
         }
 
@@ -526,7 +677,15 @@ public sealed class SwShRaidBattlesWorkflowService
         int speciesId,
         int form)
     {
-        return lookupTables.AbilityResolver.CreateOptions(speciesId, form, SwShAbilityOptionMode.Roll)
+        return CreateAbilityOptions(lookupTables.AbilityResolver, speciesId, form);
+    }
+
+    internal static IReadOnlyList<SwShRaidBattleEditableFieldOption> CreateAbilityOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        return abilityResolver.CreateOptions(speciesId, form, SwShAbilityOptionMode.Roll)
             .Select(option => new SwShRaidBattleEditableFieldOption(option.Value, option.Label))
             .ToArray();
     }
@@ -542,7 +701,9 @@ public sealed class SwShRaidBattlesWorkflowService
             ?? GetOptionLabel(AbilityOptions, value, "Ability roll");
     }
 
-    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(OpenedProject project)
+    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
         if (source is null)
@@ -554,16 +715,31 @@ public sealed class SwShRaidBattlesWorkflowService
         {
             return SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Raid Battles personal data could not be decoded: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Sword/Shield personal data table"));
             return [];
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Raid Battles personal data could not be read: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield personal data table"));
             return [];
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Raid Battles personal data could not be read: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield personal data table"));
             return [];
         }
     }
@@ -757,6 +933,34 @@ public sealed class SwShRaidBattlesWorkflowService
             "Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.",
             availability,
             diagnostics);
+    }
+
+    private static void AppendIdentityString(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        AppendIdentityInt32(hash, bytes.Length);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityInt32(IncrementalHash hash, int value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityUInt32(IncrementalHash hash, uint value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityUInt64(IncrementalHash hash, ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
+        hash.AppendData(bytes);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

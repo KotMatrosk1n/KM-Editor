@@ -57,6 +57,7 @@ import {
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
   refreshFileGraphResponseSchema,
+  raidBattleSlotRecordSchema,
   raidRewardEditableFieldSchema,
   raidRewardItemRecordSchema,
   raidRewardTableRecordSchema,
@@ -78,6 +79,7 @@ import {
   updateGiftPokemonFieldResponseSchema,
   updateRentalPokemonFieldRequestSchema,
   updateRentalPokemonFieldResponseSchema,
+  updateRaidBattleSlotFieldsRequestSchema,
   updateRaidBonusRewardFieldsRequestSchema,
   updateRaidRewardFieldsRequestSchema,
   updateStaticEncounterFieldsRequestSchema,
@@ -444,6 +446,94 @@ describe('bridge contracts', () => {
         minimumValue: 0,
         valueKind: 'integer'
       }).success
+    ).toBe(false);
+  });
+
+  it('validates atomic raid battle slot batches and one-based slots', () => {
+    const requestSchema = createBridgeRequestSchema(updateRaidBattleSlotFieldsRequestSchema);
+    const request = {
+      command: kmCommandNames.updateRaidBattleSlotFields,
+      payload: {
+        paths: {
+          baseExeFsPath: 'base-exefs',
+          baseRomFsPath: 'base-romfs',
+          outputRootPath: 'output',
+          saveFilePath: null,
+          selectedGame: 'sword'
+        },
+        session: null,
+        updates: [
+          {
+            field: 'flawlessIvs',
+            slot: 1,
+            tableId: 'raid:0:AABBCCDD00112233',
+            value: '6'
+          },
+          {
+            field: 'star5Probability',
+            slot: 1,
+            tableId: 'raid:0:AABBCCDD00112233',
+            value: '80'
+          }
+        ]
+      },
+      requestId: 'request-raid-battle-fields'
+    };
+
+    expect(requestSchema.parse(request)).toMatchObject(request);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: { ...request.payload, updates: [] }
+      }).success
+    ).toBe(false);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: {
+          ...request.payload,
+          updates: [{ ...request.payload.updates[0], slot: 0 }]
+        }
+      }).success
+    ).toBe(false);
+  });
+
+  it('accepts preserved raid battle probability vectors beyond five star ranks', () => {
+    const rewardLink = {
+      isMatched: false,
+      preview: 'No matching rewards',
+      rewardItemCount: 0,
+      rewardKind: 'drop' as const,
+      rewardKindLabel: 'Drop',
+      sourceTableHash: '0x0000000000000000',
+      tableId: ''
+    };
+    const slot = {
+      ability: 0,
+      abilityLabel: 'Ability 1',
+      abilityOptions: [],
+      bonusRewardLink: { ...rewardLink, rewardKind: 'bonus' as const, rewardKindLabel: 'Bonus' },
+      bonusTableHash: '0x0000000000000000',
+      dropRewardLink: rewardLink,
+      dropTableHash: '0x0000000000000000',
+      entryIndex: 0,
+      flawlessIvs: 0,
+      form: 0,
+      formOptions: [],
+      gender: 0,
+      genderLabel: 'Random',
+      isGigantamax: false,
+      levelTableHash: '0x0000000000000000',
+      probabilities: [100, 20, 30, 40, 50, 60],
+      probabilitySummary: '1-star 100% / 2-star 20% / 3-star 30% / 4-star 40% / 5-star 50% / 6-star 60%',
+      slot: 1,
+      species: 'Eevee',
+      speciesId: 133
+    };
+
+    expect(raidBattleSlotRecordSchema.parse(slot).probabilities).toHaveLength(6);
+    expect(
+      raidBattleSlotRecordSchema.safeParse({ ...slot, probabilities: [100, 20, 30, 40] }).success
     ).toBe(false);
   });
 

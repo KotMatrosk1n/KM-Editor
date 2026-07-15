@@ -7932,11 +7932,9 @@ export function App({
   };
 
   const handleUpdateRaidBattleSlotFields = async (
-    tableId: string,
-    slot: number,
-    changes: Array<{ field: string; value: string }>
+    updates: Array<{ tableId: string; slot: number; field: string; value: string }>
   ) => {
-    if (changes.length === 0) {
+    if (updates.length === 0) {
       return false;
     }
 
@@ -7946,35 +7944,21 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        async (session) => {
-          let nextSession = session;
-          let nextWorkflow = raidBattlesWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          for (const change of changes) {
-            const updateResponse = await bridge.updateRaidBattleSlotField({
-              field: change.field,
-              paths: createProjectPaths(draftPaths),
-              session: nextSession,
-              slot,
-              tableId,
-              value: change.value
-            });
-            nextWorkflow = updateResponse.workflow;
-            nextSession = updateResponse.session;
-            nextDiagnostics = updateResponse.diagnostics;
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
-        },
+        (session) =>
+          bridge.updateRaidBattleSlotFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates
+          }),
         (updateResponse) => {
-          if (updateResponse.workflow) {
-            setRaidBattlesWorkflow(updateResponse.workflow);
-          }
+          setRaidBattlesWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return (
+        response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -25965,15 +25949,14 @@ function RaidBattlesSection({
   onSelectTable: (tableId: string) => void;
   onStartEditSession: () => void;
   onUpdateRaidBattleSlotFields: (
-    tableId: string,
-    slot: number,
-    changes: Array<{ field: string; value: string }>
+    updates: Array<{ tableId: string; slot: number; field: string; value: string }>
   ) => Promise<boolean>;
   searchText: string;
   selectedTableId: string | null;
   workflow: RaidBattlesWorkflow | null;
 }) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const { translateLiteral } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
   const filteredTables =
     workflow?.tables.filter((table) => {
@@ -26002,15 +25985,14 @@ function RaidBattlesSection({
           slot.bonusRewardLink.tableId
         ])
       ]
+        .flatMap((value) => [value, translateLiteral(value)])
         .join(' ')
         .toLocaleLowerCase()
         .includes(normalizedSearch);
     }) ?? [];
   const selectedTable =
     filteredTables.find((table) => table.tableId === selectedTableId) ??
-    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
     filteredTables[0] ??
-    workflow?.tables[0] ??
     null;
   const selectedBattleSlot =
     selectedTable?.slots.find((slot) => slot.slot === selectedSlot) ??
@@ -26071,12 +26053,16 @@ function RaidBattlesSection({
 
         {workflow ? (
           <div className="encounters-layout">
-            <div className="raid-rewards-table" role="table" aria-label="Raid battle tables">
+            <div
+              className="raid-rewards-table"
+              role="table"
+              aria-label={translateLiteral('Raid battle tables')}
+            >
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
-                <span role="columnheader">Table</span>
-                <span role="columnheader">Version</span>
-                <span role="columnheader">Slots</span>
-                <span role="columnheader">G-Max</span>
+                <span role="columnheader">{translateLiteral('Table')}</span>
+                <span role="columnheader">{translateLiteral('Version')}</span>
+                <span role="columnheader">{translateLiteral('Slots')}</span>
+                <span role="columnheader">{translateLiteral('G-Max')}</span>
               </div>
               {filteredTables.map((table) => (
                 <button
@@ -26085,17 +26071,23 @@ function RaidBattlesSection({
                   } ${
                     pendingRaidBattleTableIds.has(table.tableId) ? 'raid-rewards-row-pending' : ''
                   }`}
+                  aria-selected={selectedTable?.tableId === table.tableId}
                   key={table.tableId}
                   onClick={() => onSelectTable(table.tableId)}
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{table.sourceTableHash}</span>
-                  <span role="cell">{table.gameVersion}</span>
+                  <span role="cell">{translateLiteral(table.displayName)}</span>
+                  <span role="cell">{translateLiteral(table.gameVersion)}</span>
                   <span role="cell">{table.slots.length}</span>
                   <span role="cell">{table.slots.filter((slot) => slot.isGigantamax).length}</span>
                 </button>
               ))}
+              {filteredTables.length === 0 ? (
+                <p className="empty-copy raid-rewards-table-empty" role="status">
+                  {translateLiteral('No matching raid battle tables.')}
+                </p>
+              ) : null}
             </div>
 
             <SelectedRaidBattlePanel
@@ -26144,9 +26136,7 @@ function SelectedRaidBattlePanel({
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
   onUpdateRaidBattleSlotFields: (
-    tableId: string,
-    slot: number,
-    changes: Array<{ field: string; value: string }>
+    updates: Array<{ tableId: string; slot: number; field: string; value: string }>
   ) => Promise<boolean>;
   selectedSlot: number | null;
   table: RaidBattleTableRecord | null;
@@ -26155,27 +26145,32 @@ function SelectedRaidBattlePanel({
     Record<string, Record<string, string>>
   >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
+  const raidBattleDraftKey = table && battleSlot ? `${table.tableId}:${battleSlot.slot}` : null;
+  const storedRaidBattleDrafts = raidBattleDraftKey
+    ? draftsBySlotKey[raidBattleDraftKey]
+    : undefined;
+  const draftSpeciesChanged = hasRaidBattleDraftFieldChanged(
+    battleSlot,
+    storedRaidBattleDrafts,
+    raidBattleSpeciesFieldName
+  );
+  const draftFormChanged = hasRaidBattleDraftFieldChanged(
+    battleSlot,
+    storedRaidBattleDrafts,
+    raidBattleFormFieldName
+  );
   const raidBattleFields = useMemo(
     () =>
-      editableFields.map((field) =>
-        toNumericEditableControlField(
-          field,
-          battleSlot
-            ? getContextualFieldOptions(field, {
-                abilityOptions: battleSlot.abilityOptions,
-                formOptions: battleSlot.formOptions,
-                species: battleSlot.species,
-                speciesId: battleSlot.speciesId
-              })
-            : undefined
-        )
-      ),
+      battleSlot
+        ? createRaidBattleDraftFields(editableFields, battleSlot, storedRaidBattleDrafts)
+        : editableFields.map((field) => toNumericEditableControlField(field)),
     [
       battleSlot?.abilityOptions,
       battleSlot?.formOptions,
       battleSlot?.species,
       battleSlot?.speciesId,
-      editableFields
+      editableFields,
+      storedRaidBattleDrafts
     ]
   );
   const raidBattleFieldGroups = useMemo(
@@ -26202,19 +26197,47 @@ function SelectedRaidBattlePanel({
       table?.tableId
     ]
   );
-  const raidBattleDraftKey = table && battleSlot ? `${table.tableId}:${battleSlot.slot}` : null;
   const drafts = raidBattleDraftKey
-    ? draftsBySlotKey[raidBattleDraftKey] ?? raidBattleDraftDefaults
+    ? storedRaidBattleDrafts ?? raidBattleDraftDefaults
     : {};
-  const raidBattleDraftSummary = useMemo(
-    () =>
-      getTrainerDraftSummary(
-        raidBattleFields,
-        drafts,
-        battleSlot ? (field) => getEditableRaidBattleFieldValue(battleSlot, field) : null
-      ),
-    [battleSlot, drafts, raidBattleFields]
-  );
+  const raidBattleTableDraftSummary = useMemo(() => {
+    const changedFields: TrainerDraftChange[] = [];
+    const invalidFields: TrainerDraftChange[] = [];
+    const updates: Array<{ tableId: string; slot: number; field: string; value: string }> = [];
+    let dirtyFieldCount = 0;
+
+    if (!table) {
+      return { changedFields, dirtyFieldCount, invalidFields, updates };
+    }
+
+    for (const slotRecord of table.slots) {
+      const draftKey = `${table.tableId}:${slotRecord.slot}`;
+      const slotDrafts = draftsBySlotKey[draftKey];
+      if (!slotDrafts) {
+        continue;
+      }
+
+      const slotFields = createRaidBattleDraftFields(editableFields, slotRecord, slotDrafts);
+      const summary = getTrainerDraftSummary(
+        slotFields,
+        slotDrafts,
+        (field) => getEditableRaidBattleFieldValue(slotRecord, field)
+      );
+      dirtyFieldCount += summary.dirtyFieldCount;
+      changedFields.push(...summary.changedFields);
+      invalidFields.push(...summary.invalidFields);
+      updates.push(
+        ...summary.changedFields.map((change) => ({
+          field: change.field,
+          slot: slotRecord.slot,
+          tableId: table.tableId,
+          value: change.value
+        }))
+      );
+    }
+
+    return { changedFields, dirtyFieldCount, invalidFields, updates };
+  }, [draftsBySlotKey, editableFields, table]);
   useRegisterEditorDraftDirty('raidBattles', countFieldDraftRecords(draftsBySlotKey) > 0);
   const canSaveRaidBattleDrafts =
     table !== null &&
@@ -26222,8 +26245,8 @@ function SelectedRaidBattlePanel({
     editSession !== null &&
     canEditRaidBattles &&
     !isRaidBattleUpdating &&
-    raidBattleDraftSummary.changedFields.length > 0 &&
-    raidBattleDraftSummary.invalidFields.length === 0;
+    raidBattleTableDraftSummary.updates.length > 0 &&
+    raidBattleTableDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!raidBattleDraftKey) {
@@ -26295,7 +26318,7 @@ function SelectedRaidBattlePanel({
             {battleSlot ? (
               <>
                 <div className="encounter-slot-tabs" aria-label="Raid battle slot list">
-                  {table.slots.slice(0, 10).map((candidate) => {
+                  {table.slots.map((candidate) => {
                     const slotLabel = formatSpeciesFormLabel(
                       candidate.species,
                       candidate.form,
@@ -26400,13 +26423,19 @@ function SelectedRaidBattlePanel({
                               draftState={draftState}
                               draftValue={draftValue}
                               field={field}
-                              formOptionContext={{
-                                abilityOptions: battleSlot.abilityOptions,
-                                formOptions: battleSlot.formOptions,
-                                gameFamily: 'swsh',
-                                species: battleSlot.species,
-                                speciesId: battleSlot.speciesId
-                              }}
+                              formOptionContext={
+                                (field.field === raidBattleFormFieldName && draftSpeciesChanged) ||
+                                (field.field === raidBattleAbilityFieldName &&
+                                  (draftSpeciesChanged || draftFormChanged))
+                                  ? undefined
+                                  : {
+                                      abilityOptions: battleSlot.abilityOptions,
+                                      formOptions: battleSlot.formOptions,
+                                      gameFamily: 'swsh',
+                                      species: battleSlot.species,
+                                      speciesId: battleSlot.speciesId
+                                    }
+                              }
                               idPrefix="raid-battle-field"
                               key={field.field}
                               onChange={(value) => {
@@ -26446,17 +26475,16 @@ function SelectedRaidBattlePanel({
                         }
 
                         const didSave = await onUpdateRaidBattleSlotFields(
-                          table.tableId,
-                          battleSlot.slot,
-                          raidBattleDraftSummary.changedFields.map((change) => ({
-                            field: change.field,
-                            value: change.value
-                          }))
+                          raidBattleTableDraftSummary.updates
                         );
                         if (didSave) {
-                          setDraftsBySlotKey((currentDrafts) =>
-                            deleteFieldDraftRecord(currentDrafts, raidBattleDraftKey)
-                          );
+                          setDraftsBySlotKey((currentDrafts) => {
+                            const nextDrafts = { ...currentDrafts };
+                            for (const slotRecord of table.slots) {
+                              delete nextDrafts[`${table.tableId}:${slotRecord.slot}`];
+                            }
+                            return nextDrafts;
+                          });
                         }
                       }}
                       type="button"
@@ -26478,7 +26506,7 @@ function SelectedRaidBattlePanel({
                       <span>Cancel</span>
                     </button>
                     <span className="draft-action-summary">
-                      {formatDraftSummary(raidBattleDraftSummary)}
+                      {formatDraftSummary(raidBattleTableDraftSummary)}
                     </span>
                   </div>
                 ) : null}
@@ -40408,6 +40436,55 @@ function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: st
 
   const valueIndex = raidRewardValueFieldNames.findIndex((fieldName) => fieldName === field);
   return valueIndex >= 0 ? (reward.values[valueIndex] ?? 0) : null;
+}
+
+function hasRaidBattleDraftFieldChanged(
+  battleSlot: RaidBattleSlotRecord | null,
+  drafts: Record<string, string> | undefined,
+  field: string
+) {
+  if (!battleSlot || !drafts || drafts[field] === undefined) {
+    return false;
+  }
+
+  return drafts[field] !== (getEditableRaidBattleFieldValue(battleSlot, field) ?? '').toString();
+}
+
+function createRaidBattleDraftFields(
+  editableFields: RaidBattleEditableField[],
+  battleSlot: RaidBattleSlotRecord,
+  drafts?: Record<string, string>
+) {
+  const speciesChanged = hasRaidBattleDraftFieldChanged(
+    battleSlot,
+    drafts,
+    raidBattleSpeciesFieldName
+  );
+  const formChanged = hasRaidBattleDraftFieldChanged(
+    battleSlot,
+    drafts,
+    raidBattleFormFieldName
+  );
+  const context: SpeciesFormOptionContext = {
+    abilityOptions: battleSlot.abilityOptions,
+    formOptions: battleSlot.formOptions,
+    gameFamily: 'swsh',
+    species: battleSlot.species,
+    speciesId: battleSlot.speciesId
+  };
+
+  return editableFields.map((field) => {
+    const shouldUseSourceOptions =
+      !(field.field === raidBattleFormFieldName && speciesChanged) &&
+      !(
+        field.field === raidBattleAbilityFieldName &&
+        (speciesChanged || formChanged)
+      );
+    return toNumericEditableControlField(
+      field,
+      shouldUseSourceOptions ? getContextualFieldOptions(field, context) : field.options
+    );
+  });
 }
 
 function getEditableRaidBattleFieldValue(battleSlot: RaidBattleSlotRecord, field: string) {

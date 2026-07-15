@@ -3065,12 +3065,46 @@ export function createMockProjectBridge(
       {
         field: 'form',
         label: 'Form',
-        maximumValue: 31,
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability',
+        label: 'Ability roll',
+        maximumValue: 4,
         minimumValue: 0,
         options: [
-          { label: 'Base', value: 0 },
-          { label: 'Form 1', value: 1 },
-          { label: 'Form 2', value: 2 }
+          { label: 'Ability 1', value: 0 },
+          { label: 'Ability 2', value: 1 },
+          { label: 'Hidden Ability', value: 2 },
+          { label: 'Ability 1 or 2', value: 3 },
+          { label: 'Any Ability', value: 4 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'isGigantamax',
+        label: 'Gigantamax',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
+      },
+      {
+        field: 'gender',
+        label: 'Gender',
+        maximumValue: 3,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 },
+          { label: 'Genderless', value: 3 }
         ],
         valueKind: 'integer'
       },
@@ -3084,6 +3118,38 @@ export function createMockProjectBridge(
           { label: '4 Guaranteed Perfect IVs', value: 4 },
           { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star1Probability',
+        label: '1-star probability',
+        maximumValue: 100,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star2Probability',
+        label: '2-star probability',
+        maximumValue: 100,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star3Probability',
+        label: '3-star probability',
+        maximumValue: 100,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star4Probability',
+        label: '4-star probability',
+        maximumValue: 100,
+        minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -3116,7 +3182,13 @@ export function createMockProjectBridge(
           {
             ability: 4,
             abilityLabel: 'Any Ability',
-            abilityOptions: [],
+            abilityOptions: [
+              { label: 'Ability 1', value: 0 },
+              { label: 'Ability 2', value: 1 },
+              { label: 'Hidden Ability', value: 2 },
+              { label: 'Ability 1 or 2', value: 3 },
+              { label: 'Any Ability', value: 4 }
+            ],
             bonusTableHash: '0x1020304050607080',
             bonusRewardLink: {
               isMatched: true,
@@ -3157,7 +3229,13 @@ export function createMockProjectBridge(
           {
             ability: 0,
             abilityLabel: 'Ability 1',
-            abilityOptions: [],
+            abilityOptions: [
+              { label: 'Ability 1', value: 0 },
+              { label: 'Ability 2', value: 1 },
+              { label: 'Hidden Ability', value: 2 },
+              { label: 'Ability 1 or 2', value: 3 },
+              { label: 'Any Ability', value: 4 }
+            ],
             bonusTableHash: '0x0807060504030201',
             bonusRewardLink: {
               isMatched: false,
@@ -3186,8 +3264,8 @@ export function createMockProjectBridge(
             genderLabel: 'Random',
             isGigantamax: false,
             levelTableHash: '0x2233445566778899',
-            probabilities: [5, 10, 15, 20, 25],
-            probabilitySummary: '1-star 5% / 2-star 10% / 3-star 15% / 4-star 20% / 5-star 25%',
+            probabilities: [0, 80, 70, 60, 50],
+            probabilitySummary: '1-star 0% / 2-star 80% / 3-star 70% / 4-star 60% / 5-star 50%',
             slot: 2,
             species: 'Pikachu',
             speciesId: 25
@@ -4999,6 +5077,147 @@ export function createMockProjectBridge(
     typeChartOneImmunityPerType: false,
     typePrimary: true,
     typeSecondary: true
+  };
+  const updateRaidBattleSlotFields = (
+    request: Parameters<ProjectBridge['updateRaidBattleSlotFields']>[0]
+  ) => {
+    const updatedFieldKeys = new Set(
+      request.updates.map(
+        (update) => `${update.tableId}#${update.slot}\u0000${update.field}`
+      )
+    );
+    const pendingEdits = [
+      ...(request.session?.pendingEdits ?? []).filter(
+        (edit) =>
+          edit.domain !== 'workflow.raidBattles' ||
+          !updatedFieldKeys.has(`${edit.recordId}\u0000${edit.field ?? ''}`)
+      ),
+      ...request.updates.map((update) => {
+        const recordId = `${update.tableId}#${update.slot}`;
+        return {
+          domain: 'workflow.raidBattles',
+          field: update.field,
+          newValue: update.value,
+          recordId,
+          sources: [
+            {
+              layer: 'base' as const,
+              relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+            }
+          ],
+          summary: `Set Raid Battles ${update.tableId} slot ${update.slot} ${update.field} to ${update.value}.`
+        };
+      })
+    ];
+    const probabilityFields = [
+      'star1Probability',
+      'star2Probability',
+      'star3Probability',
+      'star4Probability',
+      'star5Probability'
+    ];
+    const updatedTables = raidBattlesWorkflow.tables.map((table) => {
+      const tableUpdates = request.updates.filter((update) => update.tableId === table.tableId);
+      return tableUpdates.length > 0
+        ? {
+            ...table,
+            slots: table.slots.map((slot) => {
+              const slotUpdates = tableUpdates.filter((update) => update.slot === slot.slot);
+              if (slotUpdates.length === 0) {
+                return slot;
+              }
+
+              let updatedSlot = slot;
+              for (const update of slotUpdates) {
+                const value = Number.parseInt(update.value, 10);
+                const probabilityIndex = probabilityFields.indexOf(update.field);
+                if (probabilityIndex >= 0) {
+                  const probabilities = updatedSlot.probabilities.map((probability, index) =>
+                    index === probabilityIndex ? value : probability
+                  );
+                  updatedSlot = {
+                    ...updatedSlot,
+                    probabilities,
+                    probabilitySummary: probabilities
+                      .map((probability, index) => `${index + 1}-star ${probability}%`)
+                      .join(' / ')
+                  };
+                  continue;
+                }
+
+                switch (update.field) {
+                  case 'species': {
+                    const option = raidBattlesWorkflow.editableFields
+                      .find((field) => field.field === 'species')
+                      ?.options.find((candidate) => candidate.value === value);
+                    updatedSlot = {
+                      ...updatedSlot,
+                      species: option?.label.replace(/^\d+\s+/, '') ?? `Species ${value}`,
+                      speciesId: value
+                    };
+                    break;
+                  }
+                  case 'form':
+                    updatedSlot = { ...updatedSlot, form: value };
+                    break;
+                  case 'ability': {
+                    const option = updatedSlot.abilityOptions.find(
+                      (candidate) => candidate.value === value
+                    );
+                    updatedSlot = {
+                      ...updatedSlot,
+                      ability: value,
+                      abilityLabel: option?.label ?? `Ability roll ${value}`
+                    };
+                    break;
+                  }
+                  case 'isGigantamax':
+                    updatedSlot = { ...updatedSlot, isGigantamax: update.value !== '0' };
+                    break;
+                  case 'gender': {
+                    const option = raidBattlesWorkflow.editableFields
+                      .find((field) => field.field === 'gender')
+                      ?.options.find((candidate) => candidate.value === value);
+                    updatedSlot = {
+                      ...updatedSlot,
+                      gender: value,
+                      genderLabel: option?.label ?? `Gender ${value}`
+                    };
+                    break;
+                  }
+                  case 'flawlessIvs':
+                    updatedSlot = { ...updatedSlot, flawlessIvs: value };
+                    break;
+                }
+              }
+
+              return updatedSlot;
+            })
+          }
+        : table
+    });
+    const workflow = {
+      ...raidBattlesWorkflow,
+      stats: {
+        ...raidBattlesWorkflow.stats,
+        gigantamaxSlotCount: updatedTables.reduce(
+          (count, table) =>
+            count + table.slots.filter((slot) => slot.isGigantamax).length,
+          0
+        )
+      },
+      tables: updatedTables
+    };
+
+    return Promise.resolve({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: pendingEdits.length > 0,
+        pendingEdits,
+        sessionId: request.session?.sessionId ?? 'session-1'
+      },
+      workflow
+    });
   };
   return {
     applyChangePlan: (request) =>
@@ -7454,55 +7673,14 @@ export function createMockProjectBridge(
         }
       });
     },
-    updateRaidBattleSlotField: (request) =>
-      Promise.resolve({
-        diagnostics: [],
-        session: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.raidBattles',
-              field: request.field,
-              newValue: request.value,
-              recordId: `${request.tableId}#${request.slot}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
-                }
-              ],
-              summary: `Set Raid Battles 0xAABBCCDD00112233 slot ${request.slot} ${request.field} to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
-        },
-        workflow: {
-          ...raidBattlesWorkflow,
-          tables: raidBattlesWorkflow.tables.map((table) =>
-            table.tableId === request.tableId
-              ? {
-                  ...table,
-                  slots: table.slots.map((slot) =>
-                    slot.slot === request.slot
-                      ? {
-                          ...slot,
-                          flawlessIvs:
-                            request.field === 'flawlessIvs'
-                              ? Number.parseInt(request.value, 10)
-                              : slot.flawlessIvs,
-                          probabilities: slot.probabilities.map((value, index) =>
-                            request.field === 'star5Probability' && index === 4
-                              ? Number.parseInt(request.value, 10)
-                              : value
-                          )
-                        }
-                      : slot
-                  )
-                }
-              : table
-          )
-        }
-      }),
+    updateRaidBattleSlotField: (request) => {
+      const { field, slot, tableId, value, ...batchRequest } = request;
+      return updateRaidBattleSlotFields({
+        ...batchRequest,
+        updates: [{ field, slot, tableId, value }]
+      });
+    },
+    updateRaidBattleSlotFields,
     updateTeraRaidField: (request) =>
       Promise.resolve({
         diagnostics: [],

@@ -186,7 +186,7 @@ public sealed class SwShRaidRewardsWorkflowServiceTests
         var bonusWorkflow = new SwShRaidRewardsWorkflowService().LoadBonus(project);
 
         Assert.Equal(
-            "Drop 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1; SW Den 0 Slot 01, 1-5-Star Pikachu",
+            "Drop 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1; SW Den 0 Slot 01, 2-5-Star Pikachu",
             Assert.Single(workflow.Tables).DisplayName);
         Assert.Equal(
             "Bonus 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1",
