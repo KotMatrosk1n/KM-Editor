@@ -1191,7 +1191,7 @@ export function createMockProjectBridge(
       },
       {
         field: 'heal',
-        label: 'Heal flag',
+        label: 'Unknown header flag',
         maximumValue: 1,
         minimumValue: 0,
         options: [
@@ -1210,7 +1210,7 @@ export function createMockProjectBridge(
       },
       {
         field: 'gift',
-        label: 'Gift ID',
+        label: 'Unknown header value',
         maximumValue: 65535,
         minimumValue: 0,
         options: [
@@ -1393,19 +1393,19 @@ export function createMockProjectBridge(
       {
         aiFlags: 77,
         aiFlagStates: [
-          { bit: 0, description: 'Enables basic battle decision logic.', enabled: true, label: 'Basic', mask: 1 },
-          { bit: 1, description: 'Enables stronger move and target choices.', enabled: false, label: 'Strong', mask: 2 },
-          { bit: 2, description: 'Enables expert battle decision logic.', enabled: true, label: 'Expert', mask: 4 },
-          { bit: 3, description: 'Enables double-battle-aware decision logic.', enabled: true, label: 'Double', mask: 8 },
-          { bit: 4, description: 'Enables raid-battle-specific decision logic.', enabled: false, label: 'Raid', mask: 16 },
-          { bit: 5, description: 'Allows additional AI-controlled action checks.', enabled: false, label: 'Allowance', mask: 32 },
-          { bit: 6, description: 'Allows AI-driven Pokemon switching.', enabled: true, label: 'PokeChange', mask: 64 },
-          { bit: 7, description: 'Enables the first Fire Gym behavior bit.', enabled: false, label: 'Fire Gym (1)', mask: 128 },
-          { bit: 8, description: 'Enables the second Fire Gym behavior bit.', enabled: false, label: 'Fire Gym (2)', mask: 256 },
-          { bit: 9, description: 'Reserved trainer AI bit.', enabled: false, label: 'Unused 1', mask: 512 },
-          { bit: 10, description: 'Allows AI-driven trainer item usage.', enabled: false, label: 'Item', mask: 1024 },
-          { bit: 11, description: 'Enables the third Fire Gym behavior bit.', enabled: false, label: 'Fire Gym (3)', mask: 2048 },
-          { bit: 12, description: 'Reserved trainer AI bit.', enabled: false, label: 'Unused 2', mask: 4096 }
+          { bit: 0, description: 'Enables the Basic trainer AI script slot.', enabled: true, label: 'Basic', mask: 1 },
+          { bit: 1, description: 'Enables the Strong trainer AI script slot.', enabled: false, label: 'Strong', mask: 2 },
+          { bit: 2, description: 'Enables the Expert trainer AI script slot.', enabled: true, label: 'Expert', mask: 4 },
+          { bit: 3, description: 'Enables the Double trainer AI script slot.', enabled: true, label: 'Double', mask: 8 },
+          { bit: 4, description: 'Enables the Raid trainer AI script slot.', enabled: false, label: 'Raid', mask: 16 },
+          { bit: 5, description: 'Enables the Allowance trainer AI script slot.', enabled: false, label: 'Allowance', mask: 32 },
+          { bit: 6, description: 'Enables the Fire Gym Rival trainer AI script slot.', enabled: true, label: 'Fire Gym Rival', mask: 64 },
+          { bit: 7, description: 'Enables the Fire Gym Staff trainer AI script slot.', enabled: false, label: 'Fire Gym Staff', mask: 128 },
+          { bit: 8, description: 'Enables the Fire Gym Team Yell trainer AI script slot.', enabled: false, label: 'Fire Gym Team Yell', mask: 256 },
+          { bit: 9, description: 'Enables the JK3 Ookami trainer AI script slot.', enabled: false, label: 'JK3 Ookami', mask: 512 },
+          { bit: 10, description: 'Enables the Item trainer AI script slot.', enabled: false, label: 'Item', mask: 1024 },
+          { bit: 11, description: 'Enables the Fire Gym Item trainer AI script slot.', enabled: false, label: 'Fire Gym Item', mask: 2048 },
+          { bit: 12, description: 'Enables the PokeChange trainer AI script slot.', enabled: false, label: 'PokeChange', mask: 4096 }
         ],
         battleType: 'Doubles',
         battleTypeValue: 1,

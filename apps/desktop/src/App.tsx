@@ -2033,6 +2033,8 @@ export function App({
   const supportsTrinityOutput = isScarletVioletProject || isPokemonLegendsZAProject;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
+  const trainersWorkflowRef = useRef(trainersWorkflow);
+  trainersWorkflowRef.current = trainersWorkflow;
   const lastInvalidatedGameTextLanguageRef = useRef(language);
   const workflowLoadGenerationRef = useRef(new WorkflowLoadGeneration());
   const workflowLoadTailRef = useRef<Promise<void>>(Promise.resolve());
@@ -5062,9 +5064,23 @@ export function App({
         }
         break;
       case 'trainers':
-        if (!trainersWorkflow && !isTrainersLoading) {
+        if (
+          (!trainersWorkflow && !isTrainersLoading) ||
+          ((selectedGame === 'sword' || selectedGame === 'shield') &&
+            !pokemonWorkflow &&
+            !isPokemonLoading)
+        ) {
           markLazyLoadStarted();
-          void handleOpenTrainersWorkflow();
+          if (!trainersWorkflow && !isTrainersLoading) {
+            void handleOpenTrainersWorkflow();
+          }
+          if (
+            (selectedGame === 'sword' || selectedGame === 'shield') &&
+            !pokemonWorkflow &&
+            !isPokemonLoading
+          ) {
+            void handleOpenPokemonWorkflow();
+          }
         }
         break;
       case 'giftPokemon':
@@ -6810,23 +6826,39 @@ export function App({
     setEditValidationDiagnostics([]);
 
     try {
-      await runEditSessionMutation(
-        (session) =>
-          bridge.updateTrainerField({
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const incomingWorkflow = trainersWorkflowRef.current;
+          const updateResponse = await bridge.updateTrainerField({
             field,
             paths: createProjectPaths(draftPaths),
             session,
             slot,
             trainerId,
             value
-          }),
-        (response) => {
-          setTrainersWorkflow(response.workflow);
-          setEditValidationDiagnostics(response.diagnostics);
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : incomingWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setTrainersWorkflow(updateResponse.workflow);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsTrainerUpdating(false);
     }
@@ -6848,9 +6880,11 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
+          const incomingWorkflow = trainersWorkflowRef.current;
           let nextSession = session;
-          let nextWorkflow = trainersWorkflow;
+          let nextWorkflow = incomingWorkflow;
           let nextDiagnostics: ApiDiagnostic[] = [];
+          let didSucceed = true;
 
           if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
             const updateResponse = await bridge.updateTrainerFields({
@@ -6863,9 +6897,14 @@ export function App({
                 value: change.value
               }))
             });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
             nextDiagnostics = updateResponse.diagnostics;
+            didSucceed = !updateResponse.diagnostics.some(
+              (diagnostic) => diagnostic.severity === 'error'
+            );
+            if (didSucceed) {
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+            }
           } else {
             for (const change of changes) {
               const updateResponse = await bridge.updateTrainerField({
@@ -6876,26 +6915,35 @@ export function App({
                 trainerId,
                 value: change.value
               });
+              nextDiagnostics = [...nextDiagnostics, ...updateResponse.diagnostics];
+              if (
+                updateResponse.diagnostics.some(
+                  (diagnostic) => diagnostic.severity === 'error'
+                )
+              ) {
+                didSucceed = false;
+                break;
+              }
               nextSession = updateResponse.session;
               nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = updateResponse.diagnostics;
             }
           }
 
           return {
             diagnostics: nextDiagnostics,
-            session: nextSession!,
-            workflow: nextWorkflow
+            didSucceed,
+            session: didSucceed ? nextSession! : (session ?? nextSession!),
+            workflow: didSucceed ? nextWorkflow : incomingWorkflow
           };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setTrainersWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -10429,6 +10477,7 @@ export function App({
                 staticEncountersWorkflow,
                 teraRaidsWorkflow,
                 textWorkflow,
+                selectedGame,
                 shinyRateWorkflow,
                 typeChartWorkflow,
                 tradePokemonWorkflow,
@@ -14560,7 +14609,10 @@ function TrainersSection({
     selectedTrainer?.team[0] ??
     null;
   const canEditTrainers = workflow?.summary.availability === 'available';
-  const pendingTrainerIds = useMemo(() => getPendingTrainerIds(editSession), [editSession]);
+  const pendingTrainerIds = useMemo(
+    () => getPendingTrainerIds(editSession, trainers),
+    [editSession, trainers]
+  );
 
   useEffect(() => {
     if (!selectedTrainer) {
@@ -14838,9 +14890,12 @@ function SelectedTrainerPanel({
     ? pokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
     : {};
   const selectedPokemonFormOptionContext = useMemo(
-    () =>
-      selectedPokemon
-        ? createDraftSpeciesFormOptionContext(
+    () => {
+      if (!selectedPokemon) {
+        return undefined;
+      }
+
+      const context = createDraftSpeciesFormOptionContext(
             defaultContextualPokemonFields.find(
               (field) => field.field === speciesIdFieldName
             ) ?? null,
@@ -14849,9 +14904,36 @@ function SelectedTrainerPanel({
             selectedPokemon.speciesId,
             selectedPokemon.abilityOptions,
             editorFamily
-          )
-        : undefined,
-    [defaultContextualPokemonFields, editorFamily, pokemonDrafts, selectedPokemon]
+          );
+      const draftedForm = Number.parseInt(
+        pokemonDrafts[formFieldName] ?? selectedPokemon.form.toString(),
+        10
+      );
+      const referencePokemon = pokemonWorkflow?.pokemon.find(
+        (pokemon) =>
+          pokemon.speciesId === context.speciesId &&
+          pokemon.form === (Number.isInteger(draftedForm) ? draftedForm : selectedPokemon.form)
+      );
+      const usesCurrentIdentity =
+        context.speciesId === selectedPokemon.speciesId &&
+        draftedForm === selectedPokemon.form;
+
+      return {
+        ...context,
+        abilityOptions: referencePokemon
+          ? createTrainerPokemonAbilityOptions(referencePokemon)
+          : usesCurrentIdentity
+            ? selectedPokemon.abilityOptions
+            : []
+      };
+    },
+    [
+      defaultContextualPokemonFields,
+      editorFamily,
+      pokemonDrafts,
+      pokemonWorkflow,
+      selectedPokemon
+    ]
   );
   const contextualPokemonFields = useMemo(
     () =>
@@ -14871,9 +14953,14 @@ function SelectedTrainerPanel({
         field.field === moneyFieldName
           ? {
               ...field,
-              label: editorFamily === 'za' ? field.label : 'Prize money',
+              label:
+                editorFamily === 'swsh'
+                  ? 'Prize money rate'
+                  : editorFamily === 'za'
+                    ? field.label
+                    : 'Prize money',
               options:
-                editorFamily === 'za'
+                editorFamily === 'swsh' || editorFamily === 'za'
                   ? field.options
                   : createTrainerPrizeMoneyOptions(projectedTrainerHighestLevel)
             }
@@ -14976,8 +15063,7 @@ function SelectedTrainerPanel({
       getTrainerDraftSummary(
         contextualPokemonFields,
         pokemonDrafts,
-        selectedPokemon ? (field) => getEditablePokemonFieldValue(selectedPokemon, field) : null,
-        { clampIvStats: true, enforcePokemonEvLimits: true }
+        selectedPokemon ? (field) => getEditablePokemonFieldValue(selectedPokemon, field) : null
       ),
     [contextualPokemonFields, pokemonDrafts, selectedPokemon]
   );
@@ -15140,8 +15226,10 @@ function SelectedTrainerPanel({
                       const isFieldBlocked =
                         field.field === classBallIdFieldName && !trainer.canEditClassBall;
                       const disabledReason =
-                        field.field === giftFieldName
-                          ? 'Gift ID is locked until this trainer field is fully mapped.'
+                        editorFamily === 'swsh' && field.field === giftFieldName
+                          ? 'This unknown trainer header value is preserved as raw read-only data.'
+                          : editorFamily === 'swsh' && field.field === healFieldName
+                            ? 'This unknown trainer header flag is preserved as raw read-only data.'
                           : isFieldBlocked
                           ? 'Class ball is locked for this trainer class.'
                           : undefined;
@@ -15299,15 +15387,7 @@ function SelectedTrainerPanel({
                           const draftState = getTrainerFieldDraftState(
                             draftValue,
                             currentValue,
-                            field,
-                            {
-                              clampIvStats: true,
-                              drafts: pokemonDrafts,
-                              enforcePokemonEvLimits: true,
-                              fields: contextualPokemonFields,
-                              getValue: (fieldName) =>
-                                getEditablePokemonFieldValue(selectedPokemon, fieldName)
-                            }
+                            field
                           );
                           const isDynamaxDependentField = dynamaxDependentFieldNames.includes(
                             field.field as (typeof dynamaxDependentFieldNames)[number]
@@ -17337,6 +17417,11 @@ function getTrainerPendingEditDisplayDetails(
   context: PendingEditContext,
   editorLabel: string
 ) {
+  const editorFamily: EditorUiFamily = isPokemonLegendsZAGame(context.selectedGame)
+    ? 'za'
+    : isScarletVioletGame(context.selectedGame)
+      ? 'sv'
+      : 'swsh';
   const [trainerIdText, slotText] = (edit.recordId ?? '').split(':');
   const trainerId = parseOptionalInteger(trainerIdText);
   const slot = parseOptionalInteger(slotText);
@@ -17357,9 +17442,10 @@ function getTrainerPendingEditDisplayDetails(
       : edit.field === classBallIdFieldName && trainerId !== null
         ? `Trainer class #${trainerId}`
         : trainer && trainerPokemon
-      ? `${trainer.name} (#${trainer.trainerId}) party slot #${trainerPokemon.slot + 1}: ${
-          trainerPokemon.species
-        }`
+      ? `${trainer.name} (#${trainer.trainerId}) party slot #${formatTrainerSlotNumber(
+          trainerPokemon.slot,
+          editorFamily
+        )}: ${trainerPokemon.species}`
       : trainer
         ? `${trainer.name} (#${trainer.trainerId})`
         : undefined;
@@ -31984,6 +32070,7 @@ type PendingEditContext = {
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
   rentalPokemonWorkflow: RentalPokemonWorkflow | null;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
+  selectedGame: ProjectGame;
   shopsWorkflow: ShopsWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
@@ -33835,6 +33922,36 @@ function createDraftSpeciesFormOptionContext(
     species,
     speciesId
   };
+}
+
+function createTrainerPokemonAbilityOptions(pokemon: PokemonRecord): EditableFieldOption[] {
+  const options: EditableFieldOption[] = [];
+  if (pokemon.abilities.ability1 > 0) {
+    options.push(
+      {
+        label: `Default - ${pokemon.abilities.ability1Label}`,
+        value: 0
+      },
+      {
+        label: `Ability 1 - ${pokemon.abilities.ability1Label}`,
+        value: 1
+      }
+    );
+  }
+  if (pokemon.abilities.ability2 > 0) {
+    options.push({
+      label: `Ability 2 - ${pokemon.abilities.ability2Label}`,
+      value: 2
+    });
+  }
+  if (pokemon.abilities.hiddenAbility > 0) {
+    options.push({
+      label: `Hidden Ability - ${pokemon.abilities.hiddenAbilityLabel}`,
+      value: 3
+    });
+  }
+
+  return options;
 }
 
 function addKnownSpeciesFormValues(context: SpeciesFormOptionContext, formValues: Set<number>) {
@@ -38084,9 +38201,9 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     [itemCureStatusFlagsFieldName]: 'Raw cure-status bitmask. Use the named cure controls so unrelated bits remain intact.',
     [itemFieldFlagsFieldName]: 'Legacy name for Battle pouch. It remains visible only for compatibility.',
     flinch: 'Percent chance that the move causes flinching.',
-    gift: 'Raw trainer gift/item ID. KM Editor treats this Gen 8 trainer field as unused/unknown, so confirm event scripts before treating it as a player reward.',
+    gift: 'Unknown raw Gen 8 trainer header value. It is read-only because no game behavior has been verified for it.',
     inflictPercent: 'Percent chance to inflict the selected condition or secondary effect. Zero on a move with an inflict effect means it is a primary effect with no separate chance roll.',
-    money: 'Prize payout stored as a trainer rate. Sword/Shield payout is rate x highest team level x 4; KM shows the derived cash amount.',
+    money: 'Stored trainer money value. Sword/Shield payout semantics are not verified, so KM exposes the raw rate.',
     quality: 'Advanced effect-quality value. When named options are unavailable, preserve this raw value unless the move has been verified in game.',
     rawHealing: 'Advanced signed raw HP behavior. Positive values restore that percentage of HP; negative values cost that percentage of HP. Preserve the value unless the move has been verified in game.',
     rawInflictCount: 'Duration mode for the inflicted condition/effect. Sword/Shield exposes five known modes.',
@@ -38119,7 +38236,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
   const optionHint = optionCount > 0 ? `${optionCount} available option${optionCount === 1 ? '' : 's'}` : null;
   const specificText =
     field.field === healFieldName && field.label.toLocaleLowerCase().includes('flag')
-      ? 'Raw trainer header flag. KM Editor treats this Gen 8 trainer field as unused/unknown; do not assume it heals the player after battle.'
+      ? 'Unknown raw Gen 8 trainer header flag. It is read-only because no game behavior has been verified for it.'
       : field.field === healFieldName
         ? 'True if the move is treated as a healing move for battle rules and move interactions.'
         : field.field
@@ -38489,13 +38606,35 @@ function getPendingTextKeys(editSession: EditSession | null) {
   );
 }
 
-function getPendingTrainerIds(editSession: EditSession | null) {
-  return new Set(
-    (editSession?.pendingEdits ?? [])
-      .filter((edit) => edit.domain === 'workflow.trainers')
-      .map((edit) => Number.parseInt((edit.recordId ?? '').split(':')[0] ?? '', 10))
-      .filter(Number.isInteger)
-  );
+function getPendingTrainerIds(
+  editSession: EditSession | null,
+  trainers: TrainerRecord[]
+) {
+  const pendingTrainerIds = new Set<number>();
+
+  for (const edit of editSession?.pendingEdits ?? []) {
+    if (edit.domain !== 'workflow.trainers') {
+      continue;
+    }
+
+    const recordId = Number.parseInt((edit.recordId ?? '').split(':')[0] ?? '', 10);
+    if (!Number.isInteger(recordId)) {
+      continue;
+    }
+
+    if (edit.field === classBallIdFieldName) {
+      for (const trainer of trainers) {
+        if (trainer.trainerClassId === recordId) {
+          pendingTrainerIds.add(trainer.trainerId);
+        }
+      }
+      continue;
+    }
+
+    pendingTrainerIds.add(recordId);
+  }
+
+  return pendingTrainerIds;
 }
 
 function getPendingGiftPokemonIndexes(editSession: EditSession | null) {

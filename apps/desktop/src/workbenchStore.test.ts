@@ -38,6 +38,20 @@ describe('workbench store', () => {
     );
   });
 
+  it('preserves Trainer search and selection when committing a refreshed workflow', () => {
+    useWorkbenchStore.setState({
+      selectedTrainerId: 10,
+      trainerSearchText: 'Avery'
+    });
+
+    useWorkbenchStore.getState().setTrainersWorkflow({
+      trainers: [{ trainerId: 10 }, { trainerId: 11 }]
+    } as never);
+
+    expect(useWorkbenchStore.getState().trainerSearchText).toBe('Avery');
+    expect(useWorkbenchStore.getState().selectedTrainerId).toBe(10);
+  });
+
   it('invalidates the committed project session when a project path changes', () => {
     useWorkbenchStore.setState({
       activeSection: 'pokemon',

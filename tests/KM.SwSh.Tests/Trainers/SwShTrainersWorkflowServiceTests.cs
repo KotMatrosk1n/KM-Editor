@@ -8,6 +8,7 @@ using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Pokemon;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
+using System.Buffers.Binary;
 using Xunit;
 
 namespace KM.SwSh.Tests.Trainers;
@@ -39,13 +40,8 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Basic" && flag.Enabled);
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Expert" && flag.Enabled);
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Double" && flag.Enabled);
-        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "PokeChange" && flag.Enabled);
-        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (1)" && !flag.Enabled);
-        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (2)" && !flag.Enabled);
-        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (3)" && !flag.Enabled);
-        var aiFlagLabels = trainer.AiFlagStates.Select(flag => flag.Label).ToList();
-        Assert.Equal(aiFlagLabels.IndexOf("Fire Gym (2)") + 1, aiFlagLabels.IndexOf("Fire Gym (3)"));
-        Assert.Equal(11, trainer.AiFlagStates.Single(flag => flag.Label == "Fire Gym (3)").Bit);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym Rival" && flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "PokeChange" && !flag.Enabled);
         Assert.True(trainer.Heal);
         Assert.Equal(24, trainer.Money);
         Assert.Equal(7, trainer.Gift);
@@ -65,12 +61,12 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal(1, trainer.Team[0].Gender);
         Assert.Equal("Male", trainer.Team[0].GenderLabel);
         Assert.Equal(2, trainer.Team[0].Ability);
-        Assert.Equal("Ability 2", trainer.Team[0].AbilityLabel);
+        Assert.Equal("Ability 2 - 066 Blaze", trainer.Team[0].AbilityLabel);
         Assert.Equal(13, trainer.Team[0].Nature);
         Assert.Equal("Jolly (+Spe/-Sp.Atk)", trainer.Team[0].NatureLabel);
         Assert.Equal(new SwShTrainerPokemonStatsRecord(10, 20, 30, 40, 50, 60), trainer.Team[0].Evs);
         Assert.Equal(7, trainer.Team[0].DynamaxLevel);
-        Assert.True(trainer.Team[0].CanGigantamax);
+        Assert.False(trainer.Team[0].CanGigantamax);
         Assert.Equal(new SwShTrainerPokemonStatsRecord(1, 2, 3, 5, 6, 4), trainer.Team[0].Ivs);
         Assert.True(trainer.Team[0].Shiny);
         Assert.False(trainer.Team[0].CanDynamax);
@@ -108,9 +104,14 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal(
             "Prize money",
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.MoneyField).Label);
-        Assert.Contains(
-            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.GiftField).Options,
-            option => option.Value == 1 && option.Label == "001 Potion");
+        Assert.Empty(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.GiftField).Options);
+        Assert.Equal(
+            "Unknown header value",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.GiftField).Label);
+        Assert.Equal(
+            "Unknown header flag",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.HealField).Label);
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.Move1IdField).Options,
             option => option.Value == 1 && option.Label == "001 Scratch");
@@ -164,6 +165,70 @@ public sealed class SwShTrainersWorkflowServiceTests
     }
 
     [Fact]
+    public void CreateAiFlagStatesUsesVerifiedScriptSlotOrder()
+    {
+        var states = SwShTrainersWorkflowService.CreateAiFlagStates(SwShTrainerDataFile.KnownAiFlagsMask);
+
+        Assert.Equal(0x1FFF, SwShTrainerDataFile.KnownAiFlagsMask);
+        Assert.Equal(
+            [
+                (0, 1 << 0, "Basic", "Enables the Basic trainer AI script slot."),
+                (1, 1 << 1, "Strong", "Enables the Strong trainer AI script slot."),
+                (2, 1 << 2, "Expert", "Enables the Expert trainer AI script slot."),
+                (3, 1 << 3, "Double", "Enables the Double trainer AI script slot."),
+                (4, 1 << 4, "Raid", "Enables the Raid trainer AI script slot."),
+                (5, 1 << 5, "Allowance", "Enables the Allowance trainer AI script slot."),
+                (6, 1 << 6, "Fire Gym Rival", "Enables the Fire Gym Rival trainer AI script slot."),
+                (7, 1 << 7, "Fire Gym Staff", "Enables the Fire Gym Staff trainer AI script slot."),
+                (8, 1 << 8, "Fire Gym Team Yell", "Enables the Fire Gym Team Yell trainer AI script slot."),
+                (9, 1 << 9, "JK3 Ookami", "Enables the JK3 Ookami trainer AI script slot."),
+                (10, 1 << 10, "Item", "Enables the Item trainer AI script slot."),
+                (11, 1 << 11, "Fire Gym Item", "Enables the Fire Gym Item trainer AI script slot."),
+                (12, 1 << 12, "PokeChange", "Enables the PokeChange trainer AI script slot."),
+            ],
+            states.Select(state => (state.Bit, state.Mask, state.Label, state.Description)));
+        Assert.All(states, state => Assert.True(state.Enabled));
+        Assert.Equal(
+            SwShTrainerDataFile.KnownAiFlagsMask,
+            states.Aggregate(0, (mask, state) => mask | state.Mask));
+    }
+
+    [Fact]
+    public void LoadTreatsIdenticallyNamedDistinctTrainerIdsAsSharedClassOwners()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_data/trainer_010.bin",
+            CreateTrainerData(classId: 5, battleMode: 0, pokemonCount: 1));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_data/trainer_011.bin",
+            CreateTrainerData(classId: 5, battleMode: 0, pokemonCount: 1));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_poke/trainer_010.bin",
+            CreateTrainerTeam((speciesId: 810, level: 12, heldItemId: 0, moves: [1, 0, 0, 0])));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_poke/trainer_011.bin",
+            CreateTrainerTeam((speciesId: 821, level: 12, heldItemId: 0, moves: [1, 0, 0, 0])));
+        temp.WriteBaseRomFsFile("bin/trainer/trainer_type/trainer_type_005.bin", CreateTrainerClass(ballId: 4));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/trname.dat",
+            CreateTextTable(11, (10, "Gym Trainer"), (11, "Gym Trainer")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/trtype.dat",
+            CreateTextTable(5, (5, "Pokemon Trainer")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShTrainersWorkflowService().Load(project);
+
+        Assert.Equal([10, 11], workflow.Trainers.Select(trainer => trainer.TrainerId));
+        Assert.All(workflow.Trainers, trainer => Assert.Equal("Gym Trainer", trainer.Name));
+        Assert.All(workflow.Trainers, trainer => Assert.False(trainer.CanEditClassBall));
+        Assert.All(workflow.Trainers, trainer => Assert.Equal("Shared trainer class", trainer.ClassBallScope));
+        Assert.Equal(5, workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
     public void LoadReturnsDiagnosticWhenTrainerFilesAreMissing()
     {
         using var temp = TemporarySwShProject.Create();
@@ -175,6 +240,29 @@ public sealed class SwShTrainersWorkflowServiceTests
 
         Assert.Empty(workflow.Trainers);
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.trainers");
+    }
+
+    [Fact]
+    public void LoadOmitsTrainerFilesWithoutTrailingNumericIds()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_data/trainer_data_copy.bin",
+            CreateTrainerData(classId: 5, battleMode: 0, pokemonCount: 1));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_poke/trainer_poke_copy.bin",
+            CreateTrainerTeam((speciesId: 810, level: 12, heldItemId: 0, moves: [1, 0, 0, 0])));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShTrainersWorkflowService().Load(project);
+
+        Assert.Empty(workflow.Trainers);
+        Assert.Equal(
+            2,
+            workflow.Diagnostics.Count(diagnostic =>
+                diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("filename does not end with a numeric ID", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -255,6 +343,15 @@ public sealed class SwShTrainersWorkflowServiceTests
         temp.WriteBaseRomFsFile("bin/message/English/common/monsname.dat", CreateTextTable(821, (810, "Grookey"), (821, "Rookidee")));
         temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(2, (1, "Potion"), (2, "Antidote")));
         temp.WriteBaseRomFsFile("bin/message/English/common/wazaname.dat", CreateTextTable(3, (1, "Scratch"), (2, "Growl"), (3, "Peck")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/tokusei.dat",
+            CreateTextTable(66, (34, "Chlorophyll"), (65, "Overgrow"), (66, "Blaze")));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(
+                822,
+                (810, hatchedSpecies: 810),
+                (821, hatchedSpecies: 821)));
     }
 
     internal static byte[] CreatePersonalTable(
@@ -269,6 +366,7 @@ public sealed class SwShTrainersWorkflowServiceTests
         {
             records[record.personalId] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
                 hatchedSpecies: record.hatchedSpecies);
+            BinaryPrimitives.WriteUInt16LittleEndian(records[record.personalId].AsSpan(0x1A), 66);
         }
 
         return SwShPokemonWorkflowServiceTests.CreatePersonalTable(records);
@@ -320,7 +418,7 @@ public sealed class SwShTrainersWorkflowServiceTests
                 data[rowOffset + 0x06] = 50;
                 data[rowOffset + 0x07] = 60;
                 data[rowOffset + 0x08] = 7;
-                data[rowOffset + 0x09] = 1;
+                data[rowOffset + 0x09] = 0;
                 WriteUInt32(data, rowOffset + 0x1C, PackIvs(1, 2, 3, 4, 5, 6, shiny: true, canDynamax: false));
             }
 

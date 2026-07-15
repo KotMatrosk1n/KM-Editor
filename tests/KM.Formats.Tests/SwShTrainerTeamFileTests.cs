@@ -60,6 +60,49 @@ public sealed class SwShTrainerTeamFileTests
         Assert.True(pokemon.CanDynamax);
     }
 
+    [Fact]
+    public void ParseRejectsMoreThanSixPokemonRows()
+    {
+        var data = new byte[(SwShTrainerTeamFile.MaximumPartySize + 1) * SwShTrainerTeamFile.RowSize];
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShTrainerTeamFile.Parse(data));
+
+        Assert.Contains("at most 6 Pokemon rows", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteEditsPreservesAllOtherBytesInSixPokemonFile()
+    {
+        var data = Enumerable
+            .Range(0, SwShTrainerTeamFile.MaximumPartySize)
+            .SelectMany(index =>
+            {
+                var row = CreateTrainerTeamRow();
+                row[0x1A] = checked((byte)(0xA0 + index));
+                row[0x1B] = checked((byte)(0xB0 + index));
+                return row;
+            })
+            .ToArray();
+        var expected = data.ToArray();
+        WriteUInt16(
+            expected,
+            ((SwShTrainerTeamFile.MaximumPartySize - 1) * SwShTrainerTeamFile.RowSize) + 0x0A,
+            99);
+
+        var output = SwShTrainerTeamFile.Parse(data).WriteEdits(
+        [
+            new SwShTrainerPokemonEdit(
+                SwShTrainerTeamFile.MaximumPartySize,
+                SwShTrainerPokemonField.Level,
+                99),
+        ]);
+
+        Assert.Equal(expected, output);
+        Assert.Equal(
+            SwShTrainerTeamFile.MaximumPartySize,
+            SwShTrainerTeamFile.Parse(output).Records.Count);
+    }
+
     private static byte[] CreateTrainerTeamRow()
     {
         var data = new byte[SwShTrainerTeamFile.RowSize];

@@ -64,7 +64,7 @@ public sealed class SwShTrainersWorkflowService
     private const string MessageRootPath = "romfs/bin/message";
     private const int MaximumEditableBattleMode = 1;
 
-    private static readonly Regex DigitsRegex = new("(\\d+)(?!.*\\d)", RegexOptions.Compiled);
+    private static readonly Regex TrailingDigitsRegex = new("(\\d+)$", RegexOptions.Compiled);
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BattleTypeOptions =
     [
@@ -97,7 +97,6 @@ public sealed class SwShTrainersWorkflowService
         new SwShTrainerEditableFieldOption(0, "Random"),
         new SwShTrainerEditableFieldOption(1, "Male"),
         new SwShTrainerEditableFieldOption(2, "Female"),
-        new SwShTrainerEditableFieldOption(3, "Genderless"),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
@@ -109,19 +108,19 @@ public sealed class SwShTrainersWorkflowService
 
     private static readonly IReadOnlyList<TrainerAiFlagDefinition> AiFlagDefinitions =
     [
-        new(0, "Basic", "Enables basic battle decision logic."),
-        new(1, "Strong", "Enables stronger move and target choices."),
-        new(2, "Expert", "Enables expert battle decision logic."),
-        new(3, "Double", "Enables double-battle-aware decision logic."),
-        new(4, "Raid", "Enables raid-battle-specific decision logic."),
-        new(5, "Allowance", "Allows additional AI-controlled action checks."),
-        new(6, "PokeChange", "Allows AI-driven Pokemon switching."),
-        new(7, "Fire Gym (1)", "Enables the first Fire Gym behavior bit."),
-        new(8, "Fire Gym (2)", "Enables the second Fire Gym behavior bit."),
-        new(11, "Fire Gym (3)", "Enables the third Fire Gym behavior bit."),
-        new(9, "Unused 1", "Reserved trainer AI bit."),
-        new(10, "Item", "Allows AI-driven trainer item usage."),
-        new(12, "Unused 2", "Reserved trainer AI bit."),
+        new(0, "Basic", "Enables the Basic trainer AI script slot."),
+        new(1, "Strong", "Enables the Strong trainer AI script slot."),
+        new(2, "Expert", "Enables the Expert trainer AI script slot."),
+        new(3, "Double", "Enables the Double trainer AI script slot."),
+        new(4, "Raid", "Enables the Raid trainer AI script slot."),
+        new(5, "Allowance", "Enables the Allowance trainer AI script slot."),
+        new(6, "Fire Gym Rival", "Enables the Fire Gym Rival trainer AI script slot."),
+        new(7, "Fire Gym Staff", "Enables the Fire Gym Staff trainer AI script slot."),
+        new(8, "Fire Gym Team Yell", "Enables the Fire Gym Team Yell trainer AI script slot."),
+        new(9, "JK3 Ookami", "Enables the JK3 Ookami trainer AI script slot."),
+        new(10, "Item", "Enables the Item trainer AI script slot."),
+        new(11, "Fire Gym Item", "Enables the Fire Gym Item trainer AI script slot."),
+        new(12, "PokeChange", "Enables the PokeChange trainer AI script slot."),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BallOptions =
@@ -209,7 +208,7 @@ public sealed class SwShTrainersWorkflowService
             SwShTrainerDataFile.MaximumAiFlags),
         new SwShTrainerEditableField(
             HealField,
-            "Heal flag",
+            "Unknown header flag",
             "integer",
             0,
             1,
@@ -222,7 +221,7 @@ public sealed class SwShTrainersWorkflowService
             SwShTrainerDataFile.MaximumMoney),
         new SwShTrainerEditableField(
             GiftField,
-            "Gift ID",
+            "Unknown header value",
             "integer",
             0,
             SwShTrainerDataFile.MaximumGiftId),
@@ -428,9 +427,9 @@ public sealed class SwShTrainersWorkflowService
             return CreateWorkflow(summary, Array.Empty<SwShTrainerRecord>(), diagnostics, sourceFileCount: 0);
         }
 
-        var trainerDataSources = ResolveTrainerFolder(project, TrainerDataRootPath);
-        var trainerPokeSources = ResolveTrainerFolder(project, TrainerPokeRootPath);
-        var trainerClassSources = ResolveTrainerFolder(project, TrainerClassRootPath);
+        var trainerDataSources = ResolveTrainerFolder(project, TrainerDataRootPath, "trainer data", diagnostics);
+        var trainerPokeSources = ResolveTrainerFolder(project, TrainerPokeRootPath, "trainer party", diagnostics);
+        var trainerClassSources = ResolveTrainerFolder(project, TrainerClassRootPath, "trainer class", diagnostics);
         if (trainerDataSources.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -460,19 +459,32 @@ public sealed class SwShTrainersWorkflowService
             return CreateWorkflow(summary, Array.Empty<SwShTrainerRecord>(), diagnostics, sourceFileCount: 0);
         }
 
-        var names = LoadLookupTables(project, diagnostics);
-        var classRecordsByClassId = LoadTrainerClassRecords(trainerClassSources, diagnostics);
-        var classOwnershipByClassId = CreateTrainerClassOwnership(trainerDataSources, names);
-        var pokeSourcesByTrainerId = trainerPokeSources
-            .GroupBy(source => source.TrainerId)
-            .ToDictionary(group => group.Key, group => group.First());
-        var classSourcesByClassId = trainerClassSources
-            .GroupBy(source => source.TrainerId)
-            .ToDictionary(group => group.Key, group => group.First());
-        var trainers = new List<SwShTrainerRecord>();
-        var parsedSourceFileCount = 0;
+        var dataSourceGroups = trainerDataSources.GroupBy(source => source.TrainerId).ToArray();
+        var pokeSourceGroups = trainerPokeSources.GroupBy(source => source.TrainerId).ToArray();
+        var classSourceGroups = trainerClassSources.GroupBy(source => source.TrainerId).ToArray();
+        AddDuplicateSourceDiagnostics(dataSourceGroups, "trainer data", diagnostics);
+        AddDuplicateSourceDiagnostics(pokeSourceGroups, "trainer party", diagnostics);
+        AddDuplicateSourceDiagnostics(classSourceGroups, "trainer class", diagnostics);
 
-        foreach (var dataSource in trainerDataSources)
+        var uniqueDataSources = dataSourceGroups
+            .Where(group => group.Count() == 1)
+            .Select(group => group.Single())
+            .ToArray();
+        var uniqueClassSources = classSourceGroups
+            .Where(group => group.Count() == 1)
+            .Select(group => group.Single())
+            .ToArray();
+        var names = LoadLookupTables(project, diagnostics);
+        var classRecordsByClassId = LoadTrainerClassRecords(uniqueClassSources, diagnostics);
+        var classOwnershipByClassId = CreateTrainerClassOwnership(uniqueDataSources, names);
+        var pokeSourcesByTrainerId = pokeSourceGroups
+            .Where(group => group.Count() == 1)
+            .ToDictionary(group => group.Key, group => group.Single());
+        var classSourcesByClassId = uniqueClassSources.ToDictionary(source => source.TrainerId);
+        var trainers = new List<SwShTrainerRecord>();
+        var parsedSourceFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dataSource in uniqueDataSources)
         {
             if (!pokeSourcesByTrainerId.TryGetValue(dataSource.TrainerId, out var pokeSource))
             {
@@ -488,7 +500,8 @@ public sealed class SwShTrainersWorkflowService
             {
                 var dataFile = SwShTrainerDataFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
                 var teamFile = SwShTrainerTeamFile.Parse(File.ReadAllBytes(pokeSource.AbsolutePath));
-                parsedSourceFileCount += classRecordsByClassId.ContainsKey(dataFile.Record.ClassId) ? 3 : 2;
+                parsedSourceFiles.Add(dataSource.Entry.RelativePath);
+                parsedSourceFiles.Add(pokeSource.Entry.RelativePath);
 
                 if (dataFile.Record.PokemonCount != teamFile.Records.Count)
                 {
@@ -502,6 +515,10 @@ public sealed class SwShTrainersWorkflowService
                 classSourcesByClassId.TryGetValue(dataFile.Record.ClassId, out var classSource);
                 classRecordsByClassId.TryGetValue(dataFile.Record.ClassId, out var classRecord);
                 classOwnershipByClassId.TryGetValue(dataFile.Record.ClassId, out var classOwnership);
+                if (classRecord is not null && classSource is not null)
+                {
+                    parsedSourceFiles.Add(classSource.Entry.RelativePath);
+                }
 
                 trainers.Add(ToTrainerRecord(
                     dataSource,
@@ -546,7 +563,7 @@ public sealed class SwShTrainersWorkflowService
                 .OrderBy(trainer => trainer.TrainerId)
                 .ToArray(),
             diagnostics,
-            parsedSourceFileCount,
+            parsedSourceFiles.Count,
             names);
     }
 
@@ -563,9 +580,14 @@ public sealed class SwShTrainersWorkflowService
         }
 
         var sourcePath = ResolveSourcePath(project.Paths, entry);
-        return sourcePath is null || !File.Exists(sourcePath)
-            ? null
-            : new WorkflowFileSource(GetTrainerId(entry.RelativePath, 0), entry, sourcePath);
+        if (sourcePath is null
+            || !File.Exists(sourcePath)
+            || !TryGetTrainerId(entry.RelativePath, out var trainerId))
+        {
+            return null;
+        }
+
+        return new WorkflowFileSource(trainerId, entry, sourcePath);
     }
 
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
@@ -718,7 +740,6 @@ public sealed class SwShTrainersWorkflowService
                 {
                     TrainerClassIdField => trainerClassOptions,
                     TrainerItem1IdField or TrainerItem2IdField or TrainerItem3IdField or TrainerItem4IdField => itemOptions,
-                    GiftField => itemOptions,
                     SpeciesIdField => speciesOptions,
                     HeldItemIdField => itemOptions,
                     Move1IdField or Move2IdField or Move3IdField or Move4IdField => moveOptions,
@@ -752,21 +773,37 @@ public sealed class SwShTrainersWorkflowService
                 .ToArray();
     }
 
-    private static IReadOnlyList<WorkflowFileSource> ResolveTrainerFolder(OpenedProject project, string rootPath)
+    private static IReadOnlyList<WorkflowFileSource> ResolveTrainerFolder(
+        OpenedProject project,
+        string rootPath,
+        string sourceKind,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return project.FileGraph.Entries
-            .Where(entry =>
-                entry.RelativePath.StartsWith($"{rootPath}/", StringComparison.OrdinalIgnoreCase)
-                && !entry.RelativePath.EndsWith("/", StringComparison.Ordinal))
-            .Select((entry, index) =>
+        var sources = new List<WorkflowFileSource>();
+        foreach (var entry in project.FileGraph.Entries.Where(entry =>
+                     entry.RelativePath.StartsWith($"{rootPath}/", StringComparison.OrdinalIgnoreCase)
+                     && !entry.RelativePath.EndsWith("/", StringComparison.Ordinal)))
+        {
+            var sourcePath = ResolveSourcePath(project.Paths, entry);
+            if (sourcePath is null || !File.Exists(sourcePath))
             {
-                var sourcePath = ResolveSourcePath(project.Paths, entry);
-                return sourcePath is null || !File.Exists(sourcePath)
-                    ? null
-                    : new WorkflowFileSource(GetTrainerId(entry.RelativePath, index), entry, sourcePath);
-            })
-            .Where(source => source is not null)
-            .Select(source => source!)
+                continue;
+            }
+
+            if (!TryGetTrainerId(entry.RelativePath, out var trainerId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"A {sourceKind} file was omitted because its filename does not end with a numeric ID.",
+                    file: entry.RelativePath,
+                    expected: $"Canonical {sourceKind} filename ending in a numeric trainer or class ID"));
+                continue;
+            }
+
+            sources.Add(new WorkflowFileSource(trainerId, entry, sourcePath));
+        }
+
+        return sources
             .OrderBy(source => source.SortKey)
             .ThenBy(source => source.Entry.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -813,12 +850,27 @@ public sealed class SwShTrainersWorkflowService
         return records;
     }
 
+    private static void AddDuplicateSourceDiagnostics(
+        IEnumerable<IGrouping<int, WorkflowFileSource>> sourceGroups,
+        string sourceKind,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var group in sourceGroups.Where(group => group.Skip(1).Any()))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Trainer {group.Key} has multiple {sourceKind} files and is omitted because the source is ambiguous.",
+                file: string.Join(", ", group.Select(source => source.Entry.RelativePath)),
+                expected: $"One canonical {sourceKind} file per trainer ID"));
+        }
+    }
+
     private static IReadOnlyDictionary<int, TrainerClassOwnership> CreateTrainerClassOwnership(
         IReadOnlyList<WorkflowFileSource> trainerDataSources,
         TrainerLookupTables names)
     {
         var firstOwnerNames = new Dictionary<int, string>();
-        var sharedClasses = new HashSet<int>();
+        var ownerIdsByClassId = new Dictionary<int, HashSet<int>>();
 
         foreach (var source in trainerDataSources)
         {
@@ -841,22 +893,26 @@ public sealed class SwShTrainersWorkflowService
             }
 
             var ownerName = GetLookupValue(names.TrainerNames, source.TrainerId, $"Trainer {source.TrainerId}");
-            if (!firstOwnerNames.TryGetValue(trainer.ClassId, out var firstOwnerName))
+            if (!firstOwnerNames.ContainsKey(trainer.ClassId))
             {
                 firstOwnerNames[trainer.ClassId] = ownerName;
-                continue;
             }
 
-            if (!string.Equals(firstOwnerName, ownerName, StringComparison.Ordinal))
+            if (!ownerIdsByClassId.TryGetValue(trainer.ClassId, out var ownerIds))
             {
-                sharedClasses.Add(trainer.ClassId);
+                ownerIds = [];
+                ownerIdsByClassId[trainer.ClassId] = ownerIds;
             }
+
+            ownerIds.Add(source.TrainerId);
         }
 
         return firstOwnerNames
             .ToDictionary(
                 entry => entry.Key,
-                entry => new TrainerClassOwnership(entry.Value, sharedClasses.Contains(entry.Key)));
+                entry => new TrainerClassOwnership(
+                    entry.Value,
+                    ownerIdsByClassId[entry.Key].Count > 1));
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -886,15 +942,14 @@ public sealed class SwShTrainersWorkflowService
             relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
-    private static int GetTrainerId(string relativePath, int fallback)
+    private static bool TryGetTrainerId(string relativePath, out int trainerId)
     {
+        trainerId = -1;
         var fileName = Path.GetFileNameWithoutExtension(relativePath);
-        var match = DigitsRegex.Match(fileName);
+        var match = TrailingDigitsRegex.Match(fileName);
 
         return match.Success
-            && int.TryParse(match.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var trainerId)
-            ? trainerId
-            : fallback;
+            && int.TryParse(match.Value, NumberStyles.None, CultureInfo.InvariantCulture, out trainerId);
     }
 
     private static TrainerLookupTables LoadLookupTables(
@@ -1283,7 +1338,15 @@ public sealed class SwShTrainersWorkflowService
         int speciesId,
         int form)
     {
+        var personal = names.AbilityResolver.ResolvePersonalRecord(speciesId, form);
         return names.AbilityResolver.CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Where(option => personal is not null && option.Value switch
+            {
+                0 or 1 => personal.Ability1 != 0,
+                2 => personal.Ability2 != 0,
+                3 => personal.HiddenAbility != 0,
+                _ => false,
+            })
             .Select(option => new SwShTrainerEditableFieldOption(option.Value, option.Label))
             .ToArray();
     }
