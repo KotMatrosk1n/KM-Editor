@@ -77,6 +77,8 @@ public sealed class SwShTextWorkflowServiceTests
     [Theory]
     [InlineData("fr", "French", "Ligne francaise.")]
     [InlineData("zh", "Simp_Chinese", "中文行。")]
+    [InlineData("ja-kanji", "JPN_KANJI", "漢字行。")]
+    [InlineData("japanese-kanji", "JPN_KANJI", "漢字行。")]
     public void LoadUsesSelectedLanguageWhenAvailable(
         string languageCode,
         string messageFolder,
@@ -123,6 +125,32 @@ public sealed class SwShTextWorkflowServiceTests
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
                 && diagnostic.Domain == "workflow.text"
                 && diagnostic.Message.Contains("English message tables were not found", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadWarnsWhenSelectedLanguageFallsBackToEnglish()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/story.dat",
+            CreateTextTable("English line."));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with
+        {
+            GameTextLanguage = "fr",
+            OutputRootPath = null,
+        });
+
+        var workflow = new SwShTextWorkflowService().Load(project);
+
+        var entry = Assert.Single(workflow.Entries);
+        Assert.Equal("English", entry.Language);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Domain == "workflow.text"
+                && diagnostic.Message.Contains("French", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("English", StringComparison.Ordinal));
     }
 
     [Fact]

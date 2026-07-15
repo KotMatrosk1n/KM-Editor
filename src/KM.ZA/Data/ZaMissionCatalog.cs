@@ -38,6 +38,7 @@ internal sealed record ZaMissionDescriptor(
     {
         return string.IsNullOrWhiteSpace(localizedTitle)
             || localizedTitle.Contains("[VAR BDFF", StringComparison.OrdinalIgnoreCase)
+            || localizedTitle.Contains("[~ ", StringComparison.Ordinal)
                 ? EnglishTitle
                 : localizedTitle.Trim();
     }

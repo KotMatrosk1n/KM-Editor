@@ -4209,6 +4209,7 @@ public sealed class ProjectBridgeDispatcherTests
         var write = Assert.Single(response.Payload.ChangePlan.Writes);
         Assert.Equal("romfs/bin/message/English/common/story.dat", write.TargetRelativePath);
         Assert.Equal(FileLayerDto.Base, Assert.Single(write.Sources).Layer);
+        Assert.False(string.IsNullOrWhiteSpace(write.SourceFingerprint));
     }
 
     [Fact]

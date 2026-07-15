@@ -19,6 +19,25 @@ describe('workbench store', () => {
     expect(useWorkbenchStore.getState().selectedItemId).toBe(2);
   });
 
+  it('preserves Text search and selection when committing a refreshed workflow', () => {
+    useWorkbenchStore.setState({
+      selectedTextKey: 'romfs/bin/message/English/common/story.dat#1',
+      textSearchText: 'Pikachu'
+    });
+
+    useWorkbenchStore.getState().setTextWorkflow({
+      entries: [
+        { textKey: 'romfs/bin/message/English/common/story.dat#0' },
+        { textKey: 'romfs/bin/message/English/common/story.dat#1' }
+      ]
+    } as never);
+
+    expect(useWorkbenchStore.getState().textSearchText).toBe('Pikachu');
+    expect(useWorkbenchStore.getState().selectedTextKey).toBe(
+      'romfs/bin/message/English/common/story.dat#1'
+    );
+  });
+
   it('invalidates the committed project session when a project path changes', () => {
     useWorkbenchStore.setState({
       activeSection: 'pokemon',

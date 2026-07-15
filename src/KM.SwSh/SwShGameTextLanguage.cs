@@ -24,6 +24,7 @@ internal static class SwShGameTextLanguage
             "fr" or "french" => "French",
             "it" or "italian" => "Italian",
             "ja" or "jp" or "jpn" or "japanese" => "JPN",
+            "ja_kanji" or "ja-kanji" or "jpn_kanji" or "jpn-kanji" or "japanese_kanji" or "japanese-kanji" => "JPN_KANJI",
             "ko" or "kr" or "korean" => "Korean",
             "zh" or "zh-cn" or "zh-hans" or "cn" or "simplifiedchinese" or "simplified_chinese" or "simp_chinese" => "Simp_Chinese",
             "zh-tw" or "zh-hant" or "tw" or "traditionalchinese" or "traditional_chinese" or "trad_chinese" => "Trad_Chinese",
