@@ -439,6 +439,33 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('does not ship unresolved localization placeholder tokens', () => {
+    const resources = { deResource, enResource, esResource, frResource, ruResource, ukResource, zhResource };
+    const unresolvedEntries = Object.entries(resources).flatMap(([language, resource]) =>
+      Object.entries(resource.literals)
+        .filter(([, value]) => /(?:KM)?PLA(?:CE|C)?HOLDER\d*TOKEN/i.test(value))
+        .map(([literal]) => `${language}:${literal}`)
+    );
+
+    expect(unresolvedEntries).toEqual([]);
+  });
+
+  it('localizes Shops currencies and range validation messages', () => {
+    expect(translateLiteralForLanguage('es', 'BP')).toBe('PB');
+    expect(translateLiteralForLanguage('es', 'Dynite Ore')).toBe('Maxinium');
+    expect(translateLiteralForLanguage('es', 'Multi')).toBe('Múltiple');
+    expect(translateLiteralForLanguage('es', 'Inventory 2 of 4')).toBe('Inventario 2 de 4');
+    expect(translateLiteralForLanguage('es', 'Poke Mart Inventories [0-8 Badges] [1 Badge]')).toBe(
+      'Inventarios de Poke Mart [0-8 insignias] [1 medalla]'
+    );
+    expect(translateLiteralForLanguage('es', 'Value must be at least 1.')).toBe(
+      'El valor debe ser como mínimo 1.'
+    );
+    expect(translateLiteralForLanguage('es', 'Value must be at most 999999.')).toBe(
+      'El valor debe ser como máximo 999999.'
+    );
+  });
+
   it('localizes Sword and Shield move semantics, dynamic values, and compound help', () => {
     expect(translateLiteralForLanguage('es', 'Always hits')).toBe('Siempre acierta');
     expect(translateLiteralForLanguage('es', '2-5 hits')).toBe('2-5 golpes');

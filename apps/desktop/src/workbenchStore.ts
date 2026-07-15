@@ -951,7 +951,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'shops'),
         selectedShopId,
-        shopSearchText: '',
         shopsWorkflow
       };
     }),

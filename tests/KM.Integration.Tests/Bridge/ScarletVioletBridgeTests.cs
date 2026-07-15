@@ -2173,6 +2173,7 @@ public sealed class ScarletVioletBridgeTests
         var pokeMart = shops.Payload.Workflow.Shops.Single(shop => shop.ShopId == "lineup:shop_00_lineup");
         Assert.Equal("Poke Mart", pokeMart.Name);
         Assert.True(pokeMart.CanEditInventoryOrder);
+        Assert.Equal("buyPrice", pokeMart.GlobalPriceField);
         Assert.Equal("Master Ball", pokeMart.Inventory[0].ItemName);
         Assert.Contains("sortOrder", pokeMart.Inventory[0].SupportedFields);
         Assert.Null(pokeMart.Inventory[0].PriceField);
@@ -2180,6 +2181,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("TM Machine [Paldea]", tmMachine.Name);
         Assert.False(tmMachine.CanEditInventoryOrder);
         Assert.Equal("LP", tmMachine.Currency);
+        Assert.Null(tmMachine.GlobalPriceField);
         var tmEntry = Assert.Single(tmMachine.Inventory);
         Assert.Equal("TM001", tmEntry.ItemName);
         Assert.Equal("Take Down", tmEntry.FieldDisplayValues["moveId"]);

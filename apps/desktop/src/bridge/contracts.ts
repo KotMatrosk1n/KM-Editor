@@ -1746,7 +1746,7 @@ export const shopInventoryRecordSchema = z.strictObject({
   price: z.number().int().nonnegative(),
   priceField: z.string().nullable().default(null),
   rowId: z.string().nullable().default(null),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().positive(),
   stockLimit: z.number().int().nonnegative().nullable(),
   supportedFields: z.array(z.string()).default([])
 });
@@ -1755,6 +1755,7 @@ export const shopEditableFieldOptionSchema = z.strictObject({
   itemName: z.string(),
   label: z.string(),
   price: z.number().int().nonnegative(),
+  prices: z.record(z.string(), z.number().int().nonnegative()).default({}),
   value: z.number().int()
 });
 
@@ -1764,13 +1765,14 @@ export const shopEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(shopEditableFieldOptionSchema).default([]),
-  valueKind: z.string()
+  valueKind: z.enum(['integer', 'text'])
 });
 
 export const shopRecordSchema = z.strictObject({
   canEditInventoryOrder: z.boolean().default(true),
   currency: z.string(),
-  editorFamily: z.string().default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
+  globalPriceField: z.string().nullable().default(null),
   inventory: z.array(shopInventoryRecordSchema),
   inventoryCount: z.number().int().positive().default(1),
   inventoryIndex: z.number().int().positive().default(1),
@@ -1793,7 +1795,7 @@ export const shopsWorkflowStatsSchema = z.strictObject({
 export const shopsWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(shopEditableFieldSchema),
-  editorFamily: z.string().default('swsh'),
+  editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   shops: z.array(shopRecordSchema),
   stats: shopsWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -3383,7 +3385,7 @@ export const updateShopInventoryItemRequestSchema = z.strictObject({
   rowId: z.string().optional(),
   session: editSessionSchema.nullable(),
   shopId: z.string(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().positive(),
   value: z.string()
 });
 

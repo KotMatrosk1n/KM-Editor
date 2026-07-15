@@ -3080,10 +3080,18 @@ public sealed class ProjectBridgeDispatcher
             .Select(edit => GetEditSessionDomain(edit.Domain))
             .Where(domain => domain != EditSessionDomain.None)
             .Distinct()
-            .ToArray();
+            .ToList();
+
+        var shopsIndex = orderedDomains.IndexOf(EditSessionDomain.Shops);
+        var itemsIndex = orderedDomains.IndexOf(EditSessionDomain.Items);
+        if (shopsIndex > itemsIndex && itemsIndex >= 0)
+        {
+            orderedDomains.RemoveAt(shopsIndex);
+            orderedDomains.Insert(itemsIndex, EditSessionDomain.Shops);
+        }
 
         domains = orderedDomains;
-        return orderedDomains.Length > 1 && orderedDomains.All(IsNormalSwShDomain);
+        return orderedDomains.Count > 1 && orderedDomains.All(IsNormalSwShDomain);
     }
 
     private static EditSessionDomain GetEditSessionDomain(string? domain)

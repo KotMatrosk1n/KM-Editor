@@ -52,6 +52,20 @@ describe('workbench store', () => {
     expect(useWorkbenchStore.getState().selectedTrainerId).toBe(10);
   });
 
+  it('preserves Shops search and selection when committing a refreshed workflow', () => {
+    useWorkbenchStore.setState({
+      selectedShopId: 'watt-shop',
+      shopSearchText: 'Hammerlocke'
+    });
+
+    useWorkbenchStore.getState().setShopsWorkflow({
+      shops: [{ shopId: 'money-shop' }, { shopId: 'watt-shop' }]
+    } as never);
+
+    expect(useWorkbenchStore.getState().shopSearchText).toBe('Hammerlocke');
+    expect(useWorkbenchStore.getState().selectedShopId).toBe('watt-shop');
+  });
+
   it('preserves Gift Pokemon search and selection when committing a refreshed workflow', () => {
     useWorkbenchStore.setState({
       giftPokemonSearchText: 'Grookey',

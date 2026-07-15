@@ -7,6 +7,8 @@ using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Shops;
 
@@ -16,7 +18,7 @@ public sealed class SwShShopsWorkflowService
     public const string AddItemField = "addItem";
     public const string RemoveItemField = "removeItem";
     public const string SetInventoryField = "setInventory";
-    public const int MinimumItemId = 0;
+    public const int MinimumItemId = 1;
     public const int MaximumItemId = 65_535;
     public const string ShopDataPath = "romfs/bin/appli/shop/bin/shop_data.bin";
     public const string LegacyShopDataPath = "romfs/bin/app/shop/shop_data.bin";
@@ -33,7 +35,7 @@ public sealed class SwShShopsWorkflowService
         [0x8E308B85B43031E8] = "Battle Tower [TMs]",
         [0xCBD67969D873539B] = "Motostoke [Lower Tier, Miscellaneous]",
         [0xCBD67869D87351E8] = "Hammerlocke [South, Miscellaneous]",
-        [0xCBD67B69D8735701] = "Wyndon [South, Miscellaneous]",
+        [0x00CBD669D8735701] = "Wyndon [South, Miscellaneous]",
         [0x04D7046DA09D3C78] = "Hulbury [Herb Shop]",
         [0x4B2F9E98DDCB0707] = "Hulbury [Incense Shop]",
         [0xE379CDF67A297070] = "Wedgehurst [Berry Shop]",
@@ -111,6 +113,38 @@ public sealed class SwShShopsWorkflowService
         [0x5870BD165650F18C] = "Fields of Honor [Watt Trader, 0-8 Badges]",
     };
 
+    private static readonly IReadOnlySet<ulong> KnownWattsSingleShopHashes = new HashSet<ulong>
+    {
+        0xD1BEAA2EAAE52D0D, 0xD1BEA72EAAE527F4, 0xD1BEA82EAAE529A7,
+        0xD1BEA52EAAE5248E, 0xD1BEA62EAAE52641, 0xD1BEA32EAAE52128,
+        0xD1BEA42EAAE522DB, 0xD1BEA12EAAE51DC2, 0xD1BEA22EAAE51F75,
+        0xD1C20F2EAAE80E83, 0xD1C20E2EAAE80CD0, 0xD1C2112EAAE811E9,
+        0xD1C2102EAAE81036, 0xD1C2132EAAE8154F, 0xD1C2122EAAE8139C,
+        0xD1C2152EAAE818B5, 0xD1C2142EAAE81702, 0xD1C2172EAAE81C1B,
+        0xD1C2162EAAE81A68, 0xD1B79D2EAADEF848, 0xD1B79E2EAADEF9FB,
+        0xD1B79F2EAADEFBAE, 0xD1B7A02EAADEFD61, 0xD1B7A12EAADEFF14,
+        0xD1B7A22EAADF00C7, 0xD1B7A32EAADF027A, 0xD1B7A42EAADF042D,
+        0xD1B7952EAADEEAB0, 0xD1B7962EAADEEC63, 0xD1BB232EAAE211D1,
+        0xD1BB222EAAE2101E, 0xD1BB212EAAE20E6B, 0xD1BB202EAAE20CB8,
+        0xD1BB272EAAE2189D, 0xD1BB262EAAE216EA, 0xD1BB252EAAE21537,
+        0xD1BB242EAAE21384, 0xD1BB1B2EAAE20439, 0xD1BB1A2EAAE20286,
+        0xD1CC212EAAF0819E, 0xD1CC222EAAF08351, 0xD1CC1F2EAAF07E38,
+        0xD1CC202EAAF07FEB, 0xD1CC252EAAF0886A, 0xD1CC262EAAF08A1D,
+        0xD1CC232EAAF08504, 0xD1CC242EAAF086B7, 0xD1CC192EAAF07406,
+        0xD1CC1A2EAAF075B9, 0xD1CFA72EAAF39B27,
+        0x813C350B0B777943, 0x813C360B0B777AF6, 0x813C370B0B777CA9,
+        0x813C380B0B777E5C, 0x813C390B0B77800F, 0x813C3A0B0B7781C2,
+        0x813C3B0B0B778375, 0x813C3C0B0B778528, 0x813C3D0B0B7786DB,
+        0x813F3A0B0B79B799,
+    };
+
+    private static readonly IReadOnlySet<ulong> KnownBpSingleShopHashes = new HashSet<ulong>
+    {
+        0x3FD7A44219BF30BB,
+        0x3FD7A34219BF2F08,
+        0x3FD7A64219BF3421,
+    };
+
     private readonly SwShItemsWorkflowService itemsWorkflowService;
 
     public SwShShopsWorkflowService(SwShItemsWorkflowService? itemsWorkflowService = null)
@@ -169,7 +203,7 @@ public sealed class SwShShopsWorkflowService
                 diagnostics);
         }
 
-        var itemLookup = CreateItemLookup(project, diagnostics);
+        var itemLookup = CreateItemLookup(project, diagnostics, out var itemSemanticSource);
         var editableFields = CreateEditableFields(itemLookup.Values);
 
         try
@@ -178,7 +212,15 @@ public sealed class SwShShopsWorkflowService
             var provenance = CreateProvenance(shopDataSource.GraphEntry);
             var shops = FlattenShops(shopData, itemLookup, provenance, diagnostics);
 
-            return CreateWorkflow(summary, shops, editableFields, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(
+                summary,
+                shops,
+                editableFields,
+                sourceFileCount: 1,
+                diagnostics,
+                hasItemSemanticData: itemSemanticSource is not null && itemLookup.Count > 0,
+                itemLookup.Keys.ToHashSet(),
+                itemSemanticSource);
         }
         catch (InvalidDataException exception)
         {
@@ -192,7 +234,10 @@ public sealed class SwShShopsWorkflowService
                 Array.Empty<SwShShopRecord>(),
                 editableFields,
                 sourceFileCount: 1,
-                diagnostics);
+                diagnostics,
+                hasItemSemanticData: itemSemanticSource is not null && itemLookup.Count > 0,
+                itemLookup.Keys.ToHashSet(),
+                itemSemanticSource);
         }
         catch (IOException exception)
         {
@@ -206,7 +251,10 @@ public sealed class SwShShopsWorkflowService
                 Array.Empty<SwShShopRecord>(),
                 editableFields,
                 sourceFileCount: 1,
-                diagnostics);
+                diagnostics,
+                hasItemSemanticData: itemSemanticSource is not null && itemLookup.Count > 0,
+                itemLookup.Keys.ToHashSet(),
+                itemSemanticSource);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -220,7 +268,10 @@ public sealed class SwShShopsWorkflowService
                 Array.Empty<SwShShopRecord>(),
                 editableFields,
                 sourceFileCount: 1,
-                diagnostics);
+                diagnostics,
+                hasItemSemanticData: itemSemanticSource is not null && itemLookup.Count > 0,
+                itemLookup.Keys.ToHashSet(),
+                itemSemanticSource);
         }
     }
 
@@ -230,15 +281,38 @@ public sealed class SwShShopsWorkflowService
         out ulong hash,
         out int inventoryIndex)
     {
+        return TryParseShopId(
+            shopId,
+            out kind,
+            out _,
+            out hash,
+            out inventoryIndex,
+            out _,
+            out _);
+    }
+
+    internal static bool TryParseShopId(
+        string? shopId,
+        out SwShShopKind kind,
+        out int sourceIndex,
+        out ulong hash,
+        out int inventoryIndex,
+        out string? sourceIdentity,
+        out bool isLegacy)
+    {
         kind = SwShShopKind.Single;
+        sourceIndex = -1;
         hash = 0;
         inventoryIndex = 0;
+        sourceIdentity = null;
+        isLegacy = false;
 
         var parts = shopId?.Split(':') ?? [];
         if (parts.Length == 2
             && string.Equals(parts[0], "single", StringComparison.Ordinal)
             && ulong.TryParse(parts[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hash))
         {
+            isLegacy = true;
             return true;
         }
 
@@ -249,6 +323,32 @@ public sealed class SwShShopsWorkflowService
             && inventoryIndex >= 0)
         {
             kind = SwShShopKind.Multi;
+            isLegacy = true;
+            return true;
+        }
+
+        if (parts.Length == 4
+            && string.Equals(parts[0], "single", StringComparison.Ordinal)
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out sourceIndex)
+            && sourceIndex >= 0
+            && ulong.TryParse(parts[2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hash)
+            && IsSourceIdentity(parts[3]))
+        {
+            sourceIdentity = parts[3].ToUpperInvariant();
+            return true;
+        }
+
+        if (parts.Length == 5
+            && string.Equals(parts[0], "multi", StringComparison.Ordinal)
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out sourceIndex)
+            && sourceIndex >= 0
+            && ulong.TryParse(parts[2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hash)
+            && int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out inventoryIndex)
+            && inventoryIndex >= 0
+            && IsSourceIdentity(parts[4]))
+        {
+            kind = SwShShopKind.Multi;
+            sourceIdentity = parts[4].ToUpperInvariant();
             return true;
         }
 
@@ -311,12 +411,26 @@ public sealed class SwShShopsWorkflowService
             : null;
     }
 
-    internal static string CreateShopId(SwShShopKind kind, ulong hash, int inventoryIndex)
+    internal static string CreateShopId(
+        SwShShopKind kind,
+        int sourceIndex,
+        ulong hash,
+        int inventoryIndex,
+        string sourceIdentity)
     {
         return kind == SwShShopKind.Single
+            ? string.Create(
+                CultureInfo.InvariantCulture,
+                $"single:{sourceIndex}:{hash:X16}:{sourceIdentity}")
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"multi:{sourceIndex}:{hash:X16}:{inventoryIndex}:{sourceIdentity}");
+    }
+
+    internal static string CreateLegacyShopId(SwShShopKind kind, ulong hash, int inventoryIndex) =>
+        kind == SwShShopKind.Single
             ? $"single:{hash:X16}"
             : $"multi:{hash:X16}:{inventoryIndex.ToString(CultureInfo.InvariantCulture)}";
-    }
 
     internal static string CreateInventoryRecordId(string shopId, int slot)
     {
@@ -344,7 +458,10 @@ public sealed class SwShShopsWorkflowService
         IReadOnlyList<SwShShopRecord> shops,
         IReadOnlyList<SwShShopEditableField> editableFields,
         int sourceFileCount,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        bool hasItemSemanticData = false,
+        IReadOnlySet<int>? validItemIds = null,
+        ProjectFileReference? itemSemanticSource = null)
     {
         return new SwShShopsWorkflow(
             summary,
@@ -354,7 +471,12 @@ public sealed class SwShShopsWorkflowService
                 shops.Count,
                 shops.Sum(shop => shop.Inventory.Count),
                 sourceFileCount),
-            diagnostics);
+            diagnostics)
+        {
+            HasItemSemanticData = hasItemSemanticData,
+            ValidItemIds = validItemIds ?? new HashSet<int>(),
+            ItemSemanticSource = itemSemanticSource,
+        };
     }
 
     private static IReadOnlyList<SwShShopEditableField> CreateEditableFields(IEnumerable<SwShItemRecord> items)
@@ -365,7 +487,15 @@ public sealed class SwShShopsWorkflowService
                 item.ItemId,
                 FormatItemOptionLabel(item),
                 item.Name,
-                item.BuyPrice))
+                item.BuyPrice)
+            {
+                Prices = new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    [SwShItemsWorkflowService.BuyPriceField] = item.BuyPrice,
+                    [SwShItemsWorkflowService.WattsPriceField] = item.WattsPrice,
+                    [SwShItemsWorkflowService.AlternatePriceField] = item.AlternatePrice,
+                },
+            })
             .ToArray();
 
         return
@@ -389,9 +519,18 @@ public sealed class SwShShopsWorkflowService
 
     private IReadOnlyDictionary<int, SwShItemRecord> CreateItemLookup(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        out ProjectFileReference? itemSemanticSource)
     {
         var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemDataSource = SwShItemsWorkflowService.ResolveItemDataSource(project);
+        itemSemanticSource = itemDataSource is null
+            ? null
+            : new ProjectFileReference(
+                itemDataSource.GraphEntry.LayeredFile is null
+                    ? ProjectFileLayer.Base
+                    : ProjectFileLayer.Layered,
+                itemDataSource.GraphEntry.RelativePath);
         if (itemsWorkflow.Items.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -414,12 +553,21 @@ public sealed class SwShShopsWorkflowService
         var shops = new List<SwShShopRecord>();
         var unresolvedItemIds = new HashSet<int>();
 
-        foreach (var (shop, index) in shopData.SingleShops.OrderBy(shop => shop.Hash).Select((shop, index) => (shop, index)))
+        foreach (var (shop, sourceIndex) in shopData.SingleShops
+                     .Select((shop, sourceIndex) => (shop, sourceIndex))
+                     .OrderBy(entry => entry.shop.Hash)
+                     .ThenBy(entry => entry.sourceIndex))
         {
-            var inventoryRows = CreateInventoryRecords(shop.Inventory, itemLookup, unresolvedItemIds);
-            var name = FormatSingleShopName(shop.Hash, index, [inventoryRows]);
+            var metadata = GetShopMetadata(SwShShopKind.Single, shop.Hash);
+            var sourceIdentity = CreateSourceIdentity(SwShShopKind.Single, sourceIndex, shop.Hash, [shop.Inventory]);
+            var inventoryRows = CreateInventoryRecords(
+                shop.Inventory,
+                itemLookup,
+                unresolvedItemIds,
+                metadata.GlobalPriceField);
+            var name = FormatSingleShopName(shop.Hash, sourceIndex, [inventoryRows]);
             shops.Add(ToShopRecord(
-                CreateShopId(SwShShopKind.Single, shop.Hash, inventoryIndex: 0),
+                CreateShopId(SwShShopKind.Single, sourceIndex, shop.Hash, inventoryIndex: 0, sourceIdentity),
                 name,
                 "Single",
                 "Inventory",
@@ -427,15 +575,27 @@ public sealed class SwShShopsWorkflowService
                 1,
                 shop.Hash,
                 inventoryRows,
-                provenance));
+                provenance,
+                metadata,
+                sourceIndex,
+                sourceIdentity));
         }
 
-        foreach (var (shop, shopIndex) in shopData.MultiShops.OrderBy(shop => shop.Hash).Select((shop, index) => (shop, index)))
+        foreach (var (shop, sourceIndex) in shopData.MultiShops
+                     .Select((shop, sourceIndex) => (shop, sourceIndex))
+                     .OrderBy(entry => entry.shop.Hash)
+                     .ThenBy(entry => entry.sourceIndex))
         {
+            var metadata = GetShopMetadata(SwShShopKind.Multi, shop.Hash);
+            var sourceIdentity = CreateSourceIdentity(SwShShopKind.Multi, sourceIndex, shop.Hash, shop.Inventories);
             var inventoryRowsByIndex = shop.Inventories
-                .Select(inventory => CreateInventoryRecords(inventory, itemLookup, unresolvedItemIds))
+                .Select(inventory => CreateInventoryRecords(
+                    inventory,
+                    itemLookup,
+                    unresolvedItemIds,
+                    metadata.GlobalPriceField))
                 .ToArray();
-            var name = FormatMultiShopName(shop.Hash, shopIndex, inventoryRowsByIndex);
+            var name = FormatMultiShopName(shop.Hash, sourceIndex, inventoryRowsByIndex);
             for (var inventoryIndex = 0; inventoryIndex < shop.Inventories.Count; inventoryIndex++)
             {
                 var inventoryLabel = IsBadgeIndexedMultiShop(name, shop.Inventories.Count)
@@ -445,7 +605,7 @@ public sealed class SwShShopsWorkflowService
                     ? $"{name} [{inventoryLabel}]"
                     : $"{name} #{inventoryIndex + 1}";
                 shops.Add(ToShopRecord(
-                    CreateShopId(SwShShopKind.Multi, shop.Hash, inventoryIndex),
+                    CreateShopId(SwShShopKind.Multi, sourceIndex, shop.Hash, inventoryIndex, sourceIdentity),
                     recordName,
                     "Multi",
                     inventoryLabel,
@@ -453,7 +613,10 @@ public sealed class SwShShopsWorkflowService
                     shop.Inventories.Count,
                     shop.Hash,
                     inventoryRowsByIndex[inventoryIndex],
-                    provenance));
+                    provenance,
+                    metadata,
+                    sourceIndex,
+                    sourceIdentity));
             }
         }
 
@@ -494,7 +657,10 @@ public sealed class SwShShopsWorkflowService
         int inventoryCount,
         ulong hash,
         IReadOnlyList<SwShShopInventoryRecord> inventoryRows,
-        SwShShopProvenance provenance)
+        SwShShopProvenance provenance,
+        ShopMetadata metadata,
+        int sourceIndex,
+        string sourceIdentity)
     {
         return new SwShShopRecord(
             shopId,
@@ -506,18 +672,29 @@ public sealed class SwShShopsWorkflowService
             $"0x{hash:X16}",
             FormatInventorySummary(inventoryRows),
             FormatLocation(name),
-            FormatCurrency(name),
+            metadata.Currency,
             inventoryRows,
-            provenance);
+            provenance)
+        {
+            GlobalPriceField = metadata.GlobalPriceField,
+            SourceIndex = sourceIndex,
+            SourceIdentity = sourceIdentity,
+        };
     }
 
     private static SwShShopInventoryRecord[] CreateInventoryRecords(
         SwShShopInventory inventory,
         IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
-        ISet<int> unresolvedItemIds)
+        ISet<int> unresolvedItemIds,
+        string? globalPriceField)
     {
         return inventory.Items
-            .Select((itemId, index) => ToInventoryRecord(index, itemId, itemLookup, unresolvedItemIds))
+            .Select((itemId, index) => ToInventoryRecord(
+                index,
+                itemId,
+                itemLookup,
+                unresolvedItemIds,
+                globalPriceField))
             .ToArray();
     }
 
@@ -525,7 +702,8 @@ public sealed class SwShShopsWorkflowService
         int index,
         int itemId,
         IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
-        ISet<int> unresolvedItemIds)
+        ISet<int> unresolvedItemIds,
+        string? globalPriceField)
     {
         if (itemLookup.TryGetValue(itemId, out var item))
         {
@@ -533,7 +711,7 @@ public sealed class SwShShopsWorkflowService
                 index + 1,
                 itemId,
                 item.Name,
-                item.BuyPrice,
+                GetDisplayPrice(item, globalPriceField),
                 IsKnownItem: true,
                 StockLimit: null);
         }
@@ -617,25 +795,89 @@ public sealed class SwShShopsWorkflowService
             : name;
     }
 
-    private static string FormatCurrency(string name)
+    private static ShopMetadata GetShopMetadata(SwShShopKind kind, ulong hash)
     {
-        if (name.Contains("Watt", StringComparison.OrdinalIgnoreCase))
+        if (kind == SwShShopKind.Multi)
         {
-            return "Watts";
+            if (!KnownMultiShopNames.ContainsKey(hash))
+            {
+                return new ShopMetadata("Unknown", GlobalPriceField: null);
+            }
+
+            return hash == 0x5870BD165650F18C
+                ? new ShopMetadata("Watts", SwShItemsWorkflowService.WattsPriceField)
+                : new ShopMetadata("Money", SwShItemsWorkflowService.BuyPriceField);
         }
 
-        if (name.Contains("BP Shop", StringComparison.OrdinalIgnoreCase)
-            || name.Contains("Battle Tower", StringComparison.OrdinalIgnoreCase))
+        if (!KnownSingleShopNames.ContainsKey(hash))
         {
-            return "BP";
+            return new ShopMetadata("Unknown", GlobalPriceField: null);
         }
 
-        if (name.Contains("Dynite", StringComparison.OrdinalIgnoreCase))
+        if (KnownWattsSingleShopHashes.Contains(hash))
         {
-            return "Dynite Ore";
+            return new ShopMetadata("Watts", SwShItemsWorkflowService.WattsPriceField);
         }
 
-        return "Money";
+        if (KnownBpSingleShopHashes.Contains(hash))
+        {
+            return new ShopMetadata("BP", SwShItemsWorkflowService.AlternatePriceField);
+        }
+
+        return hash == 0xF49C86F8683842BF
+            ? new ShopMetadata("Dynite Ore", SwShItemsWorkflowService.AlternatePriceField)
+            : new ShopMetadata("Money", SwShItemsWorkflowService.BuyPriceField);
+    }
+
+    private static int GetDisplayPrice(SwShItemRecord item, string? globalPriceField)
+    {
+        return globalPriceField switch
+        {
+            SwShItemsWorkflowService.WattsPriceField => item.WattsPrice,
+            SwShItemsWorkflowService.AlternatePriceField => item.AlternatePrice,
+            _ => item.BuyPrice,
+        };
+    }
+
+    internal static string CreateSourceIdentity(
+        SwShShopKind kind,
+        int sourceIndex,
+        ulong hash,
+        IReadOnlyList<SwShShopInventory> inventories)
+    {
+        var canonical = new StringBuilder()
+            .Append((int)kind)
+            .Append('|')
+            .Append(sourceIndex.ToString(CultureInfo.InvariantCulture))
+            .Append('|')
+            .Append(hash.ToString("X16", CultureInfo.InvariantCulture))
+            .Append('|')
+            .Append(inventories.Count.ToString(CultureInfo.InvariantCulture));
+
+        foreach (var inventory in inventories)
+        {
+            canonical
+                .Append('|')
+                .Append(inventory.Items.Count.ToString(CultureInfo.InvariantCulture))
+                .Append(':');
+            foreach (var itemId in inventory.Items)
+            {
+                canonical
+                    .Append(itemId.ToString(CultureInfo.InvariantCulture))
+                    .Append(',');
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static bool IsSourceIdentity(string value)
+    {
+        return value.Length == SHA256.HashSizeInBytes * 2
+            && value.All(character =>
+                character is >= '0' and <= '9'
+                || character is >= 'a' and <= 'f'
+                || character is >= 'A' and <= 'F');
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -703,4 +945,8 @@ public sealed class SwShShopsWorkflowService
     internal sealed record WorkflowFileSource(
         ProjectFileGraphEntry GraphEntry,
         string AbsolutePath);
+
+    private sealed record ShopMetadata(
+        string Currency,
+        string? GlobalPriceField);
 }
