@@ -339,6 +339,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdatePlacementObjectFields => DispatchUpdatePlacementObjectFields(requestJson),
                 KmCommandNames.LoadBehaviorWorkflow => DispatchLoadBehaviorWorkflow(requestJson),
                 KmCommandNames.UpdateBehaviorEntryField => DispatchUpdateBehaviorEntryField(requestJson),
+                KmCommandNames.UpdateBehaviorEntryFields => DispatchUpdateBehaviorEntryFields(requestJson),
                 KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
                 KmCommandNames.LoadBagHookWorkflow => DispatchLoadBagHookWorkflow(requestJson),
                 KmCommandNames.StageBagHookInstall => DispatchStageBagHookInstall(requestJson),
@@ -1775,7 +1776,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadBehaviorWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadBehaviorWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Behavior load paths are required.");
+        var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1784,16 +1787,38 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchUpdateBehaviorEntryField(string requestJson)
     {
         var request = DeserializeRequest<UpdateBehaviorEntryFieldRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Behavior update paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = behaviorEditSessionService.UpdateEntryField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            ProjectBridgeMapper.ToCore(paths),
             session,
             request.Payload.EntryId,
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateBehaviorEntryFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateBehaviorEntryFieldsRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("Behavior batch update paths are required.");
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates?.Select(update => update is null
+            ? null
+            : new SwShBehaviorFieldUpdate(update.EntryId, update.Field, update.Value)).ToArray();
+        var result = behaviorEditSessionService.UpdateEntryFields(
+            ProjectBridgeMapper.ToCore(paths),
+            session,
+            updates);
+        var response = SwShBridgeMapper.ToBehaviorEntryFieldsDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3625,6 +3650,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateRaidBonusRewardFields or
             KmCommandNames.LoadBehaviorWorkflow or
             KmCommandNames.UpdateBehaviorEntryField or
+            KmCommandNames.UpdateBehaviorEntryFields or
             KmCommandNames.LoadFlagworkSaveWorkflow or
             KmCommandNames.LoadBagHookWorkflow or
             KmCommandNames.StageBagHookInstall or

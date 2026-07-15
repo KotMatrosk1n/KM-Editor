@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.Behavior;
@@ -60,7 +61,11 @@ public sealed record SwShBehaviorEntryRecord(
     string Hash2,
     string InternalSpeciesName,
     IReadOnlyList<SwShBehaviorFieldValue> Fields,
-    SwShBehaviorProvenance Provenance);
+    SwShBehaviorProvenance Provenance)
+{
+    public IReadOnlyList<SwShBehaviorFieldOption> FormOptions { get; init; } =
+        Array.Empty<SwShBehaviorFieldOption>();
+}
 
 public sealed record SwShBehaviorWorkflowStats(
     int TotalEntryCount,
@@ -72,4 +77,8 @@ public sealed record SwShBehaviorWorkflow(
     IReadOnlyList<SwShBehaviorEntryRecord> Entries,
     IReadOnlyList<SwShBehaviorField> Fields,
     SwShBehaviorWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal IReadOnlyList<SwShPersonalRecord> PersonalRecords { get; init; } =
+        Array.Empty<SwShPersonalRecord>();
+}

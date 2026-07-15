@@ -5,6 +5,11 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Behavior;
 
+public sealed record SwShBehaviorFieldUpdate(
+    string EntryId,
+    string Field,
+    string Value);
+
 public sealed record SwShBehaviorEditResult(
     SwShBehaviorWorkflow Workflow,
     EditSession Session,

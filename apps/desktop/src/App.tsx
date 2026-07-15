@@ -8144,33 +8144,34 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = behaviorWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          for (const change of changes) {
-            const updateResponse = await bridge.updateBehaviorEntryField({
+          const updateResponse = await bridge.updateBehaviorEntryFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
               entryId,
               field: change.field,
-              paths: createProjectPaths(draftPaths),
-              session: nextSession,
               value: change.value
-            });
-            nextWorkflow = updateResponse.workflow;
-            nextSession = updateResponse.session;
-            nextDiagnostics = updateResponse.diagnostics;
-          }
+            }))
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
+          return {
+            diagnostics: updateResponse.diagnostics,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : behaviorWorkflow
+          };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setBehaviorWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -27145,15 +27146,48 @@ function BehaviorSection({
         return true;
       }
 
+      const fieldSearchValues = entry.fields.flatMap((fieldValue) => {
+        const field = workflow.fields.find((candidate) => candidate.field === fieldValue.field);
+        const options = fieldValue.field === 'form' ? entry.formOptions : field?.options;
+        const option = options?.find(
+          (candidate) => candidate.value === fieldValue.value
+        );
+        const hasLocalizedOption =
+          field?.field === 'behavior' || field?.field === 'form';
+
+        return [
+          fieldValue.field,
+          fieldValue.value,
+          option?.label ?? '',
+          hasLocalizedOption && option ? translateLiteral(option.label) : ''
+        ];
+      });
+
       return [
         entry.behavior,
         entry.behaviorLabel,
+        translateLiteral(entry.behaviorLabel),
         entry.form.toString(),
+        formatBehaviorSpecies(entry),
+        formatBehaviorNumber(entry.grassShakeRadius),
+        formatBehaviorNumber(entry.hitboxRadius),
+        entry.hash1,
+        entry.hash2,
+        entry.index.toString(),
+        `#${entry.index}`,
         entry.internalSpeciesName,
         entry.label,
         entry.modelPart,
+        entry.provenance.fileState,
+        entry.provenance.sourceFile,
+        entry.provenance.sourceLayer,
+        formatFileState(entry.provenance.fileState),
+        translateLiteral(formatFileState(entry.provenance.fileState)),
+        formatSourceLayer(entry.provenance.sourceLayer),
+        translateLiteral(formatSourceLayer(entry.provenance.sourceLayer)),
         entry.speciesId.toString(),
-        entry.speciesName
+        entry.speciesName,
+        ...fieldSearchValues
       ]
         .join(' ')
         .toLocaleLowerCase()
@@ -27161,12 +27195,13 @@ function BehaviorSection({
     }) ?? [];
   const selectedEntry =
     filteredEntries.find((entry) => entry.entryId === selectedEntryId) ??
-    workflow?.entries.find((entry) => entry.entryId === selectedEntryId) ??
     filteredEntries[0] ??
-    workflow?.entries[0] ??
     null;
   const canEditBehavior = workflow?.summary.availability === 'available';
   const pendingBehaviorEntryIds = getPendingBehaviorEntryIds(editSession);
+  const pendingBehaviorEditCount = (editSession?.pendingEdits ?? []).filter(
+    (edit) => edit.domain === 'workflow.behavior'
+  ).length;
 
   useEffect(() => {
     if (selectedEntry && selectedEntry.entryId !== selectedEntryId) {
@@ -27204,7 +27239,7 @@ function BehaviorSection({
           />
           <Metric
             label={translateLiteral('Pending changes')}
-            value={(editSession?.pendingEdits.length ?? 0).toString()}
+            value={pendingBehaviorEditCount.toString()}
           />
         </div>
 
@@ -27219,6 +27254,7 @@ function BehaviorSection({
               </div>
               {filteredEntries.map((entry) => (
                 <button
+                  aria-selected={selectedEntry?.entryId === entry.entryId}
                   className={`raid-rewards-row ${
                     selectedEntry?.entryId === entry.entryId
                       ? 'raid-rewards-row-selected'
@@ -27231,12 +27267,25 @@ function BehaviorSection({
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{formatBehaviorSpecies(entry)}</span>
+                  <span data-localization-ignore="true" role="cell">
+                    {formatBehaviorSpecies(entry)}
+                  </span>
                   <span role="cell">{translateLiteral(entry.behaviorLabel)}</span>
-                  <span role="cell">{translateLiteral(entry.modelPart || 'n/a')}</span>
-                  <span role="cell">{translateLiteral(formatBehaviorRanges(entry))}</span>
+                  <span data-localization-ignore={entry.modelPart ? 'true' : undefined} role="cell">
+                    {entry.modelPart || translateLiteral('n/a')}
+                  </span>
+                  <span role="cell">
+                    {translateLiteral('Hitbox radius')} {formatBehaviorNumber(entry.hitboxRadius)} /{' '}
+                    {translateLiteral('Grass shake radius')}{' '}
+                    {formatBehaviorNumber(entry.grassShakeRadius)}
+                  </span>
                 </button>
               ))}
+              {filteredEntries.length === 0 ? (
+                <div className="empty-copy" role="status">
+                  {translateLiteral('No matching behavior entries.')}
+                </div>
+              ) : null}
             </div>
 
             <SelectedBehaviorPanel
@@ -27333,7 +27382,7 @@ function SelectedBehaviorPanel({
           <dl className="item-provenance-list">
             <div>
               <dt>{translateLiteral('Pokemon')}</dt>
-              <dd>{formatBehaviorSpecies(entry)}</dd>
+              <dd data-localization-ignore="true">{formatBehaviorSpecies(entry)}</dd>
             </div>
             <div>
               <dt>{translateLiteral('Behavior')}</dt>
@@ -27341,7 +27390,9 @@ function SelectedBehaviorPanel({
             </div>
             <div>
               <dt>{translateLiteral('Model anchor')}</dt>
-              <dd>{translateLiteral(entry.modelPart || 'n/a')}</dd>
+              <dd data-localization-ignore={entry.modelPart ? 'true' : undefined}>
+                {entry.modelPart || translateLiteral('n/a')}
+              </dd>
             </div>
             <div>
               <dt>{translateLiteral('Source file')}</dt>
@@ -27369,7 +27420,9 @@ function SelectedBehaviorPanel({
               </div>
               <div>
                 <dt>{translateLiteral('Internal name')}</dt>
-                <dd>{translateLiteral(entry.internalSpeciesName || 'n/a')}</dd>
+                <dd data-localization-ignore={entry.internalSpeciesName ? 'true' : undefined}>
+                  {entry.internalSpeciesName || translateLiteral('n/a')}
+                </dd>
               </div>
               <div>
                 <dt>{translateLiteral('Hash 1')}</dt>
@@ -27393,7 +27446,17 @@ function SelectedBehaviorPanel({
                     {group.fields.map((field) => {
                       const currentValue = getBehaviorEntryFieldValue(entry, field.field);
                       const draftValue = drafts[field.field] ?? currentValue;
-                      const draftState = getBehaviorDraftState(draftValue, currentValue, field);
+                      const fieldOptions = getEffectiveBehaviorFieldOptions(
+                        field,
+                        entry,
+                        drafts
+                      );
+                      const draftState = getBehaviorDraftState(
+                        draftValue,
+                        currentValue,
+                        field,
+                        fieldOptions
+                      );
                       const isDirty = draftValue !== currentValue;
                       const isInvalid =
                         !field.isReadOnly &&
@@ -27409,7 +27472,7 @@ function SelectedBehaviorPanel({
                       const statusText = field.isReadOnly
                         ? field.description || 'Read-only'
                         : isInvalid
-                          ? getBehaviorFieldRangeText(field)
+                          ? getBehaviorFieldValidationText(field, fieldOptions, draftValue)
                           : isChanged
                             ? 'Changed'
                             : null;
@@ -27423,7 +27486,7 @@ function SelectedBehaviorPanel({
                           key={field.field}
                         >
                           <span>{translateLiteral(field.label)}</span>
-                          {field.options && field.options.length > 0 ? (
+                          {fieldOptions && fieldOptions.length > 0 ? (
                             <select
                               aria-label={translateLiteral(field.label)}
                               disabled={isDisabled}
@@ -27446,12 +27509,22 @@ function SelectedBehaviorPanel({
                               value={draftValue}
                             >
                               {addBehaviorDraftFallbackOption(
-                                field.options,
+                                fieldOptions,
                                 draftValue,
                                 currentValue
                               ).map((option) => (
-                                <option key={`${field.field}-${option.value}`} value={option.value}>
-                                  {translateLiteral(option.label)}
+                                <option
+                                  data-localization-ignore={
+                                    field.field === 'behavior' || field.field === 'form'
+                                      ? undefined
+                                      : 'true'
+                                  }
+                                  key={`${field.field}-${option.value}`}
+                                  value={option.value}
+                                >
+                                  {field.field === 'behavior' || field.field === 'form'
+                                    ? translateLiteral(option.label)
+                                    : option.label}
                                 </option>
                               ))}
                             </select>
@@ -27566,7 +27639,7 @@ function SelectedBehaviorPanel({
           </div>
         </>
       ) : (
-        <p className="empty-copy">No behavior entry selected.</p>
+        <p className="empty-copy">{translateLiteral('No behavior entry selected.')}</p>
       )}
     </aside>
   );
@@ -39879,10 +39952,25 @@ function getBehaviorEntryFieldValue(entry: BehaviorEntryRecord, field: string) {
   return entry.fields.find((fieldValue) => fieldValue.field === field)?.value ?? '';
 }
 
+function getEffectiveBehaviorFieldOptions(
+  field: BehaviorField,
+  entry: BehaviorEntryRecord,
+  drafts: Record<string, string>
+) {
+  if (field.field !== 'form' || !entry.formOptions || entry.formOptions.length === 0) {
+    return field.options;
+  }
+
+  const currentSpeciesValue = getBehaviorEntryFieldValue(entry, 'speciesId');
+  const draftSpeciesValue = drafts.speciesId ?? currentSpeciesValue;
+  return draftSpeciesValue === currentSpeciesValue ? entry.formOptions : field.options;
+}
+
 function getBehaviorDraftState(
   draftValue: string,
   currentValue: string,
-  field: BehaviorField
+  field: BehaviorField,
+  fieldOptions: BehaviorFieldOption[] | undefined = field.options
 ) {
   const normalizedValue = draftValue.trim();
   if (field.isReadOnly || !normalizedValue) {
@@ -39894,9 +39982,9 @@ function getBehaviorDraftState(
 
   if (field.valueKind === 'string') {
     const isKnownOption =
-      !field.options ||
-      field.options.length === 0 ||
-      field.options.some((option) => option.value === normalizedValue);
+      !fieldOptions ||
+      fieldOptions.length === 0 ||
+      fieldOptions.some((option) => option.value === normalizedValue);
     const isInRange =
       normalizedValue.length >= field.minimumValue &&
       normalizedValue.length <= field.maximumValue;
@@ -39920,9 +40008,9 @@ function getBehaviorDraftState(
       parsedValue.toString() === normalizedValue &&
       parsedValue >= field.minimumValue &&
       parsedValue <= field.maximumValue &&
-      (!field.options ||
-        field.options.length === 0 ||
-        field.options.some((option) => option.value === normalizedValue));
+      (!fieldOptions ||
+        fieldOptions.length === 0 ||
+        fieldOptions.some((option) => option.value === normalizedValue));
 
     return {
       isChanged: isValid && normalizedValue !== currentValue,
@@ -39970,7 +40058,8 @@ function getBehaviorDraftSummary(
 
     const currentValue = getBehaviorEntryFieldValue(entry, field.field);
     const draftValue = drafts[field.field] ?? currentValue;
-    const draftState = getBehaviorDraftState(draftValue, currentValue, field);
+    const fieldOptions = getEffectiveBehaviorFieldOptions(field, entry, drafts);
+    const draftState = getBehaviorDraftState(draftValue, currentValue, field, fieldOptions);
     const isDirty = draftValue !== currentValue;
     const isChanged = isDirty && draftState.normalizedValue !== null;
     const isInvalid = isDirty && draftState.normalizedValue === null;
@@ -39984,7 +40073,7 @@ function getBehaviorDraftSummary(
       continue;
     }
 
-    if (draftState.normalizedValue !== null) {
+    if (isChanged && draftState.normalizedValue !== null) {
       changedFields.push({
         field: field.field,
         label: field.label,
@@ -40026,14 +40115,24 @@ function getBehaviorFieldRangeText(field: BehaviorField) {
   return `Allowed range: ${field.minimumValue}-${field.maximumValue}.`;
 }
 
-function formatBehaviorSpecies(entry: BehaviorEntryRecord) {
-  return entry.form === 0 ? entry.speciesName : `${entry.speciesName}-${entry.form}`;
+function getBehaviorFieldValidationText(
+  field: BehaviorField,
+  options: BehaviorFieldOption[] | undefined,
+  draftValue: string
+) {
+  if (
+    options &&
+    options.length > 0 &&
+    !options.some((option) => option.value === draftValue.trim())
+  ) {
+    return 'Choose one of the available options.';
+  }
+
+  return getBehaviorFieldRangeText(field);
 }
 
-function formatBehaviorRanges(entry: BehaviorEntryRecord) {
-  return `Hitbox ${formatBehaviorNumber(entry.hitboxRadius)} / Grass ${formatBehaviorNumber(
-    entry.grassShakeRadius
-  )}`;
+function formatBehaviorSpecies(entry: BehaviorEntryRecord) {
+  return entry.form === 0 ? entry.speciesName : `${entry.speciesName}-${entry.form}`;
 }
 
 function formatBehaviorNumber(value: number) {

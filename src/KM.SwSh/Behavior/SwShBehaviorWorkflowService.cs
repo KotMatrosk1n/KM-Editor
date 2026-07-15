@@ -6,12 +6,16 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Behavior;
 
 public sealed class SwShBehaviorWorkflowService
 {
+    public const string BehaviorEditDomain = "workflow.behavior";
     public const string BehaviorDataPath = "romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin";
     public const string EnglishSpeciesNamePath = "romfs/bin/message/English/common/monsname.dat";
 
@@ -49,7 +53,7 @@ public sealed class SwShBehaviorWorkflowService
                 "Model / Offset",
                 "Varies with species visual size across the vanilla table. Likely model scale tuning, but read-only until the loader mapping is confirmed."),
             [SwShSymbolBehaviorArchive.Field07] = new(
-                "Rare Position Offset",
+                "Likely Rare Position Offset",
                 "Model / Offset",
                 "Only a handful of vanilla entries use this signed offset-like value. Exact target is not confirmed, so it stays read-only."),
             [SwShSymbolBehaviorArchive.Field08] = CreateUnusedMapping("08"),
@@ -192,17 +196,19 @@ public sealed class SwShBehaviorWorkflowService
         }
 
         var speciesNames = LoadSpeciesNames(project, diagnostics, out var speciesSourceCount);
-        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var personalRecords = LoadPersonalRecords(project, diagnostics, out var personalSourceCount);
+        var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(personalRecords);
 
         try
         {
             var archive = SwShSymbolBehaviorArchive.Parse(File.ReadAllBytes(behaviorSource.AbsolutePath));
             var provenance = CreateProvenance(behaviorSource.GraphEntry);
             var behaviorOptions = CreateBehaviorOptions(archive.Entries);
+            var modelPartOptions = CreateModelPartOptions(archive.Entries);
             var speciesOptions = CreateSpeciesOptions(speciesNames, presentSpeciesIds);
-            var fields = CreateFields(speciesOptions, behaviorOptions);
+            var fields = CreateFields(speciesOptions, behaviorOptions, modelPartOptions);
             var entries = archive.Entries
-                .Select(entry => CreateEntryRecord(entry, speciesNames, provenance))
+                .Select(entry => CreateEntryRecord(entry, speciesNames, personalRecords, provenance))
                 .OrderBy(entry => entry.SpeciesName, StringComparer.Ordinal)
                 .ThenBy(entry => entry.Form)
                 .ThenBy(entry => entry.Index)
@@ -212,8 +218,11 @@ public sealed class SwShBehaviorWorkflowService
                 summary,
                 entries,
                 fields,
-                sourceFileCount: 1 + speciesSourceCount + (presentSpeciesIds.Count > 0 ? 1 : 0),
-                diagnostics);
+                sourceFileCount: 1 + speciesSourceCount + personalSourceCount,
+                diagnostics) with
+            {
+                PersonalRecords = personalRecords,
+            };
         }
         catch (InvalidDataException exception)
         {
@@ -226,7 +235,7 @@ public sealed class SwShBehaviorWorkflowService
                 summary,
                 Array.Empty<SwShBehaviorEntryRecord>(),
                 [],
-                sourceFileCount: 1 + speciesSourceCount + (presentSpeciesIds.Count > 0 ? 1 : 0),
+                sourceFileCount: 1 + speciesSourceCount + personalSourceCount,
                 diagnostics);
         }
         catch (IOException exception)
@@ -240,7 +249,21 @@ public sealed class SwShBehaviorWorkflowService
                 summary,
                 Array.Empty<SwShBehaviorEntryRecord>(),
                 [],
-                sourceFileCount: 1 + speciesSourceCount + (presentSpeciesIds.Count > 0 ? 1 : 0),
+                sourceFileCount: 1 + speciesSourceCount + personalSourceCount,
+                diagnostics);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Behavior data source could not be read: {exception.Message}",
+                file: behaviorSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield symbol encounter behavior data"));
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShBehaviorEntryRecord>(),
+                [],
+                sourceFileCount: 1 + speciesSourceCount + personalSourceCount,
                 diagnostics);
         }
     }
@@ -280,18 +303,103 @@ public sealed class SwShBehaviorWorkflowService
         return EditableFields.Contains(field);
     }
 
+    internal static string CreateEntryId(SwShSymbolBehaviorEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"behavior:{entry.Index}:{CreateEntrySourceIdentity(entry)}");
+    }
+
+    internal static bool TryParseEntryId(
+        string? entryId,
+        out int entryIndex,
+        out string sourceIdentity,
+        out bool isLegacy)
+    {
+        entryIndex = -1;
+        sourceIdentity = string.Empty;
+        isLegacy = false;
+
+        if (int.TryParse(entryId, NumberStyles.None, CultureInfo.InvariantCulture, out entryIndex)
+            && entryIndex >= 0)
+        {
+            isLegacy = true;
+            return true;
+        }
+
+        var parts = entryId?.Split(':') ?? [];
+        if (parts.Length != 3
+            || !string.Equals(parts[0], "behavior", StringComparison.Ordinal)
+            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out entryIndex)
+            || entryIndex < 0)
+        {
+            entryIndex = -1;
+            return false;
+        }
+
+        sourceIdentity = parts[2];
+        return sourceIdentity.Length == 64 && sourceIdentity.All(Uri.IsHexDigit);
+    }
+
+    internal static string CreateEntrySourceIdentity(SwShSymbolBehaviorEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendIdentityString(hash, "swsh-symbol-behavior-entry-v1");
+        AppendIdentityInt32(hash, entry.Index);
+        AppendIdentityInt32(hash, entry.Fields.Count);
+        foreach (var field in entry.Fields.OrderBy(field => field.FieldIndex))
+        {
+            AppendIdentityString(hash, field.Field);
+            AppendIdentityInt32(hash, field.FieldIndex);
+            AppendIdentityInt32(hash, (int)field.FieldType);
+            switch (field.Value)
+            {
+                case float single:
+                    AppendIdentityInt32(hash, BitConverter.SingleToInt32Bits(single));
+                    break;
+                case int integer:
+                    AppendIdentityInt32(hash, integer);
+                    break;
+                case byte byteValue:
+                    hash.AppendData([byteValue]);
+                    break;
+                case ulong unsigned:
+                    AppendIdentityUInt64(hash, unsigned);
+                    break;
+                case string text:
+                    AppendIdentityString(hash, text);
+                    break;
+                default:
+                    throw new InvalidDataException(
+                        $"Symbol behavior field '{field.Field}' has unsupported identity value type '{field.Value?.GetType().Name ?? "null"}'.");
+            }
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
     internal static SwShBehaviorEntryRecord CreateEntryRecord(
         SwShSymbolBehaviorEntry entry,
         IReadOnlyList<string> speciesNames,
+        IReadOnlyList<SwShPersonalRecord> personalRecords,
         SwShBehaviorProvenance provenance)
     {
+        if (!float.IsFinite(entry.HitboxRadius) || !float.IsFinite(entry.GrassShakeRadius))
+        {
+            throw new InvalidDataException(
+                $"Symbol behavior entry {entry.Index} contains a non-finite editable radius.");
+        }
+
         var speciesName = GetIndexedName(entry.SpeciesId, speciesNames, "Species");
         var form = entry.Form == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"-{entry.Form}");
         var behaviorLabel = GetBehaviorLabel(entry.Behavior);
         var mode = string.IsNullOrWhiteSpace(entry.Behavior) ? "No Behavior" : behaviorLabel;
 
         return new SwShBehaviorEntryRecord(
-            entry.Index.ToString(CultureInfo.InvariantCulture),
+            CreateEntryId(entry),
             entry.Index,
             string.Create(CultureInfo.InvariantCulture, $"{entry.Index:000} {speciesName}{form} | {mode}"),
             entry.SpeciesId,
@@ -308,15 +416,46 @@ public sealed class SwShBehaviorWorkflowService
             entry.Fields
                 .Select(field => new SwShBehaviorFieldValue(field.Field, entry.GetStringValue(field.Field)))
                 .ToArray(),
-            provenance);
+            provenance)
+        {
+            FormOptions = CreateFormOptions(personalRecords, entry.SpeciesId, entry.Form),
+        };
     }
 
     internal static IReadOnlyList<SwShBehaviorField> CreateFields(
         IReadOnlyList<SwShBehaviorFieldOption> speciesOptions,
-        IReadOnlyList<SwShBehaviorFieldOption> behaviorOptions)
+        IReadOnlyList<SwShBehaviorFieldOption> behaviorOptions,
+        IReadOnlyList<SwShBehaviorFieldOption> modelPartOptions)
     {
         return SwShSymbolBehaviorArchive.FieldSpecs
-            .Select(spec => CreateField(spec, speciesOptions, behaviorOptions))
+            .Select(spec => CreateField(spec, speciesOptions, behaviorOptions, modelPartOptions))
+            .ToArray();
+    }
+
+    internal static IReadOnlyList<SwShBehaviorFieldOption> CreateFormOptions(
+        IReadOnlyList<SwShPersonalRecord> personalRecords,
+        int speciesId,
+        int currentForm)
+    {
+        var values = new SortedSet<int> { 0 };
+        if ((uint)speciesId < (uint)personalRecords.Count)
+        {
+            var formCount = Math.Max(1, personalRecords[speciesId].FormCount);
+            for (var form = 1; form < formCount && form <= MaximumFormValue; form++)
+            {
+                values.Add(form);
+            }
+        }
+
+        if (currentForm >= MinimumFormValue && currentForm <= MaximumFormValue)
+        {
+            values.Add(currentForm);
+        }
+
+        return values
+            .Select(form => new SwShBehaviorFieldOption(
+                form.ToString(CultureInfo.InvariantCulture),
+                SwShSpeciesFormLabels.FormatSpeciesFormOptionLabel(speciesId, form)))
             .ToArray();
     }
 
@@ -385,7 +524,8 @@ public sealed class SwShBehaviorWorkflowService
     private static SwShBehaviorField CreateField(
         SwShSymbolBehaviorFieldSpec spec,
         IReadOnlyList<SwShBehaviorFieldOption> speciesOptions,
-        IReadOnlyList<SwShBehaviorFieldOption> behaviorOptions)
+        IReadOnlyList<SwShBehaviorFieldOption> behaviorOptions,
+        IReadOnlyList<SwShBehaviorFieldOption> modelPartOptions)
     {
         var field = spec.Field;
         var isReadOnly = !IsEditableField(field) || spec.IsUnusedDefault;
@@ -393,6 +533,7 @@ public sealed class SwShBehaviorWorkflowService
         {
             SwShSymbolBehaviorArchive.SpeciesIdField => speciesOptions,
             SwShSymbolBehaviorArchive.BehaviorField => behaviorOptions,
+            SwShSymbolBehaviorArchive.ModelPartField => modelPartOptions,
             _ => Array.Empty<SwShBehaviorFieldOption>(),
         };
         var valueKind = spec.FieldType switch
@@ -465,6 +606,12 @@ public sealed class SwShBehaviorWorkflowService
 
     private static double GetMinimumValue(SwShSymbolBehaviorFieldSpec spec)
     {
+        if (spec.Field is SwShSymbolBehaviorArchive.HitboxRadiusField
+            or SwShSymbolBehaviorArchive.GrassShakeRadiusField)
+        {
+            return 0;
+        }
+
         if (spec.Field == SwShSymbolBehaviorArchive.FormField || spec.Field == SwShSymbolBehaviorArchive.SpeciesIdField)
         {
             return 0;
@@ -526,6 +673,18 @@ public sealed class SwShBehaviorWorkflowService
             .ToArray();
     }
 
+    private static IReadOnlyList<SwShBehaviorFieldOption> CreateModelPartOptions(
+        IReadOnlyList<SwShSymbolBehaviorEntry> entries)
+    {
+        return entries
+            .Select(entry => entry.ModelPart)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .Select(value => new SwShBehaviorFieldOption(value, value))
+            .ToArray();
+    }
+
     private static IReadOnlyList<SwShBehaviorFieldOption> CreateSpeciesOptions(
         IReadOnlyList<string> speciesNames,
         IReadOnlySet<int> presentSpeciesIds)
@@ -571,13 +730,54 @@ public sealed class SwShBehaviorWorkflowService
                 expected: "Sword/Shield monsname.dat"));
             return [];
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 $"Species name table could not be read: {exception.Message}",
                 file: source.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield monsname.dat"));
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out int sourceFileCount)
+    {
+        var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        if (source is null)
+        {
+            sourceFileCount = 0;
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Behavior personal data is not available; species and form changes are disabled until it can be loaded.",
+                expected: SwShPersonalTable.PersonalDataRelativePath));
+            return [];
+        }
+
+        sourceFileCount = 1;
+        try
+        {
+            return SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Behavior personal data could not be decoded: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Sword/Shield personal data table"));
+            return [];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Behavior personal data could not be read: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield personal data table"));
             return [];
         }
     }
@@ -691,6 +891,27 @@ public sealed class SwShBehaviorWorkflowService
             "Symbol encounter behavior profiles, model anchors, collision radii, and source provenance.",
             availability,
             diagnostics);
+    }
+
+    private static void AppendIdentityString(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        AppendIdentityInt32(hash, bytes.Length);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityInt32(IncrementalHash hash, int value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityUInt64(IncrementalHash hash, ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
+        hash.AppendData(bytes);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

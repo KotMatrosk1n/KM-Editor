@@ -3666,8 +3666,8 @@ export function createMockProjectBridge(
     entries: [
       {
         behavior: 'Common',
-        behaviorLabel: 'Common',
-        entryId: 'behavior:0',
+        behaviorLabel: 'Common - standard wild movement behavior',
+        entryId: '0',
         fields: [
           { field: 'speciesId', value: '25' },
           { field: 'form', value: '0' },
@@ -3675,16 +3675,22 @@ export function createMockProjectBridge(
           { field: 'modelPart', value: 'body' },
           { field: 'hitboxRadius', value: '1.5' },
           { field: 'grassShakeRadius', value: '2' },
-          { field: 'hash1', value: '0x0000000000000001' }
+          { field: 'internalSpeciesName', value: 'PIKACHU' },
+          { field: 'hash1', value: '0x0000000000000001' },
+          { field: 'hash2', value: '0x0000000000000002' }
         ],
         form: 0,
+        formOptions: [
+          { label: 'Base', value: '0' },
+          { label: 'Original Cap', value: '1' }
+        ],
         grassShakeRadius: 2,
         hash1: '0x0000000000000001',
         hash2: '0x0000000000000002',
         hitboxRadius: 1.5,
         index: 0,
         internalSpeciesName: 'PIKACHU',
-        label: '#0 Pikachu - Common',
+        label: '000 Pikachu | Common - standard wild movement behavior',
         modelPart: 'body',
         provenance: {
           fileState: 'baseOnly',
@@ -3693,58 +3699,250 @@ export function createMockProjectBridge(
         },
         speciesId: 25,
         speciesName: 'Pikachu'
+      },
+      {
+        behavior: 'Approach',
+        behaviorLabel: 'Approach - moves toward or chases player',
+        entryId: '1',
+        fields: [
+          { field: 'speciesId', value: '133' },
+          { field: 'form', value: '0' },
+          { field: 'behavior', value: 'Approach' },
+          { field: 'modelPart', value: 'body' },
+          { field: 'hitboxRadius', value: '1.25' },
+          { field: 'grassShakeRadius', value: '0' },
+          { field: 'internalSpeciesName', value: 'EEVEE' },
+          { field: 'hash1', value: '0x0000000000000003' },
+          { field: 'hash2', value: '0x0000000000000004' }
+        ],
+        form: 0,
+        formOptions: [{ label: 'Base', value: '0' }],
+        grassShakeRadius: 0,
+        hash1: '0x0000000000000003',
+        hash2: '0x0000000000000004',
+        hitboxRadius: 1.25,
+        index: 1,
+        internalSpeciesName: 'EEVEE',
+        label: '001 Eevee | Approach - moves toward or chases player',
+        modelPart: 'body',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin',
+          sourceLayer: 'base'
+        },
+        speciesId: 133,
+        speciesName: 'Eevee'
       }
     ],
     fields: [
       {
-        description: 'Species ID used by this symbol encounter behavior entry.',
+        description: 'Pokemon species this behavior entry applies to.',
         field: 'speciesId',
         group: 'Identity',
         isReadOnly: false,
-        label: 'Pokemon',
-        maximumValue: 999,
+        label: 'Species',
+        maximumValue: 65535,
         minimumValue: 0,
-        options: [{ label: 'Pikachu', value: '25' }],
+        options: [
+          { label: 'Pikachu', value: '25' },
+          { label: 'Eevee', value: '133' }
+        ],
         valueKind: 'integer'
       },
       {
-        description: 'Form index used by this symbol encounter behavior entry.',
+        description: 'Form index for the selected species. Zero is the default form.',
         field: 'form',
         group: 'Identity',
         isReadOnly: false,
         label: 'Form',
         maximumValue: 999,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
-        description: 'Named movement behavior used by this symbol encounter.',
+        description: 'Primary field AI profile used by symbol encounters.',
         field: 'behavior',
         group: 'Behavior',
         isReadOnly: false,
         label: 'Behavior',
         maximumValue: 128,
         minimumValue: 0,
-        options: [{ label: 'Common', value: 'Common' }],
+        options: [
+          { label: 'Approach - moves toward or chases player', value: 'Approach' },
+          { label: 'Common - standard wild movement behavior', value: 'Common' }
+        ],
         valueKind: 'string'
       },
       {
-        description: 'Internal reference hash. This is shown for inspection only.',
+        description: 'Named model part used as the interaction or collision anchor.',
+        field: 'modelPart',
+        group: 'Collision / Range',
+        isReadOnly: false,
+        label: 'Model Anchor',
+        maximumValue: 128,
+        minimumValue: 0,
+        options: [
+          { label: 'body', value: 'body' },
+          { label: 'head', value: 'head' }
+        ],
+        valueKind: 'string'
+      },
+      {
+        description: "Radius used by the symbol encounter's collision or interaction hitbox.",
+        field: 'hitboxRadius',
+        group: 'Collision / Range',
+        isReadOnly: false,
+        label: 'Hitbox Radius',
+        maximumValue: 1000000,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'number'
+      },
+      {
+        description: 'Radius used by grass-shake behavior. Zero disables that radius for entries that do not use it.',
+        field: 'grassShakeRadius',
+        group: 'Collision / Range',
+        isReadOnly: false,
+        label: 'Grass Shake Radius',
+        maximumValue: 1000000,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'number'
+      },
+      {
+        description: 'Internal species identifier stored in the symbol behavior archive.',
+        field: 'internalSpeciesName',
+        group: 'Identity',
+        isReadOnly: true,
+        label: 'Internal Species Name',
+        maximumValue: 128,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'string'
+      },
+      {
+        description: 'Unresolved internal reference. Disabled until its role is confirmed.',
         field: 'hash1',
         group: 'Internal References',
         isReadOnly: true,
-        label: 'Hash 1',
+        label: 'Internal Hash 1',
         maximumValue: Number.MAX_SAFE_INTEGER,
         minimumValue: 0,
+        options: [],
+        valueKind: 'hash'
+      },
+      {
+        description: 'Unresolved internal reference. Disabled until its role is confirmed.',
+        field: 'hash2',
+        group: 'Internal References',
+        isReadOnly: true,
+        label: 'Internal Hash 2',
+        maximumValue: Number.MAX_SAFE_INTEGER,
+        minimumValue: 0,
+        options: [],
         valueKind: 'hash'
       }
     ],
     stats: {
       sourceFileCount: 1,
-      totalBehaviorCount: 1,
-      totalEntryCount: 1
+      totalBehaviorCount: 2,
+      totalEntryCount: 2
     },
     summary: behaviorWorkflowSummary
+  };
+  let currentBehaviorWorkflow = behaviorWorkflow;
+  const updateBehaviorEntries = (
+    session: EditSession | null,
+    updates: Array<{ entryId: string; field: string; value: string }>
+  ) => {
+    currentBehaviorWorkflow = {
+      ...currentBehaviorWorkflow,
+      entries: currentBehaviorWorkflow.entries.map((entry) => {
+        const entryUpdates = updates.filter((update) => update.entryId === entry.entryId);
+        if (entryUpdates.length === 0) {
+          return entry;
+        }
+
+        const fields = entry.fields.map((fieldValue) => {
+          const update = entryUpdates.find((candidate) => candidate.field === fieldValue.field);
+          return update ? { ...fieldValue, value: update.value } : fieldValue;
+        });
+        const getFieldValue = (field: string) =>
+          fields.find((fieldValue) => fieldValue.field === field)?.value ?? '';
+        const speciesId = Number.parseInt(getFieldValue('speciesId'), 10);
+        const form = Number.parseInt(getFieldValue('form'), 10);
+        const behavior = getFieldValue('behavior');
+        const behaviorLabel =
+          currentBehaviorWorkflow.fields
+            .find((field) => field.field === 'behavior')
+            ?.options?.find((option) => option.value === behavior)?.label ?? behavior;
+        const speciesName =
+          currentBehaviorWorkflow.fields
+            .find((field) => field.field === 'speciesId')
+            ?.options?.find((option) => option.value === speciesId.toString())?.label ??
+          entry.speciesName;
+        const formSuffix = form === 0 ? '' : `-${form}`;
+        const formOptions = [
+          { label: 'Base', value: '0' },
+          ...(speciesId === 25 ? [{ label: 'Original Cap', value: '1' }] : []),
+          ...(form > 0 && !(speciesId === 25 && form === 1)
+            ? [{ label: `Form ${form}`, value: form.toString() }]
+            : [])
+        ];
+
+        return {
+          ...entry,
+          behavior,
+          behaviorLabel,
+          fields,
+          form,
+          formOptions,
+          grassShakeRadius: Number.parseFloat(getFieldValue('grassShakeRadius')),
+          hash1: getFieldValue('hash1'),
+          hash2: getFieldValue('hash2'),
+          hitboxRadius: Number.parseFloat(getFieldValue('hitboxRadius')),
+          internalSpeciesName: getFieldValue('internalSpeciesName'),
+          label: `${entry.index.toString().padStart(3, '0')} ${speciesName}${formSuffix} | ${behaviorLabel}`,
+          modelPart: getFieldValue('modelPart'),
+          speciesId,
+          speciesName
+        };
+      })
+    };
+
+    const updateKeys = new Set(updates.map((update) => `${update.entryId}:${update.field}`));
+    const pendingEdits = [
+      ...(session?.pendingEdits ?? []).filter(
+        (edit) =>
+          edit.domain !== 'workflow.behavior' ||
+          !updateKeys.has(`${edit.recordId}:${edit.field}`)
+      ),
+      ...updates.map((update) => ({
+        domain: 'workflow.behavior',
+        field: update.field,
+        newValue: update.value,
+        recordId: update.entryId,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath:
+              'romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin'
+          }
+        ],
+        summary: `Set behavior entry ${update.entryId} ${update.field} to ${update.value}.`
+      }))
+    ];
+
+    return {
+      diagnostics: [],
+      session: {
+        hasPendingChanges: pendingEdits.length > 0,
+        pendingEdits,
+        sessionId: session?.sessionId ?? 'session-1'
+      },
+      workflow: currentBehaviorWorkflow
+    };
   };
   const flagworkSaveWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -6710,7 +6908,7 @@ export function createMockProjectBridge(
       }),
     loadBehaviorWorkflow: () =>
       Promise.resolve({
-        workflow: behaviorWorkflow
+        workflow: currentBehaviorWorkflow
       }),
     loadRaidBattlesWorkflow: () =>
       Promise.resolve({
@@ -7990,54 +8188,13 @@ export function createMockProjectBridge(
       });
     },
     updateBehaviorEntryField: (request) =>
-      Promise.resolve({
-        diagnostics: [],
-        session: {
-          hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.behavior',
-              field: request.field,
-              newValue: request.value,
-              recordId: request.entryId,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath:
-                    'romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin'
-                }
-              ],
-              summary: `Set Pikachu ${request.field} to ${request.value}.`
-            }
-          ],
-          sessionId: 'session-1'
-        },
-        workflow: {
-          ...behaviorWorkflow,
-          entries: behaviorWorkflow.entries.map((entry) =>
-            entry.entryId === request.entryId
-              ? {
-                  ...entry,
-                  behavior:
-                    request.field === 'behavior'
-                      ? request.value
-                      : entry.behavior,
-                  behaviorLabel:
-                    request.field === 'behavior'
-                      ? request.value
-                      : entry.behaviorLabel,
-                  fields: entry.fields.map((field) =>
-                    field.field === request.field ? { ...field, value: request.value } : field
-                  ),
-                  speciesId:
-                    request.field === 'speciesId'
-                      ? Number.parseInt(request.value, 10)
-                      : entry.speciesId
-                }
-              : entry
-          )
-        }
-      }),
+      Promise.resolve(
+        updateBehaviorEntries(request.session, [
+          { entryId: request.entryId, field: request.field, value: request.value }
+        ])
+      ),
+    updateBehaviorEntryFields: (request) =>
+      Promise.resolve(updateBehaviorEntries(request.session, request.updates)),
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [

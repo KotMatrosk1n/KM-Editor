@@ -48,6 +48,7 @@ export const kmCommandNameValues = [
   'placement.objects.update',
   'behavior.load',
   'behavior.entry.update',
+  'behavior.fields.update',
   'flagworkSave.load',
   'bagHook.load',
   'bagHook.install.stage',
@@ -163,6 +164,7 @@ export const kmCommandNames = {
   updatePlacementObjectFields: 'placement.objects.update',
   loadBehaviorWorkflow: 'behavior.load',
   updateBehaviorEntryField: 'behavior.entry.update',
+  updateBehaviorEntryFields: 'behavior.fields.update',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadBagHookWorkflow: 'bagHook.load',
   stageBagHookInstall: 'bagHook.install.stage',
@@ -2276,6 +2278,7 @@ export const behaviorEntryRecordSchema = z.strictObject({
   behaviorLabel: z.string(),
   entryId: z.string(),
   fields: z.array(behaviorFieldValueSchema),
+  formOptions: z.array(behaviorFieldOptionSchema).optional(),
   form: z.number().int(),
   grassShakeRadius: z.number(),
   hash1: z.string(),
@@ -3544,6 +3547,26 @@ export const updateBehaviorEntryFieldResponseSchema = z.strictObject({
   workflow: behaviorWorkflowSchema
 });
 
+export const updateBehaviorEntryFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z
+    .array(
+      z.strictObject({
+        entryId: z.string().min(1),
+        field: z.string().min(1),
+        value: z.string()
+      })
+    )
+    .min(1)
+});
+
+export const updateBehaviorEntryFieldsResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: behaviorWorkflowSchema
+});
+
 export const startEditSessionResponseSchema = z.strictObject({
   session: editSessionSchema
 });
@@ -3923,6 +3946,12 @@ export type UpdateBehaviorEntryFieldRequest = z.infer<
 >;
 export type UpdateBehaviorEntryFieldResponse = z.infer<
   typeof updateBehaviorEntryFieldResponseSchema
+>;
+export type UpdateBehaviorEntryFieldsRequest = z.infer<
+  typeof updateBehaviorEntryFieldsRequestSchema
+>;
+export type UpdateBehaviorEntryFieldsResponse = z.infer<
+  typeof updateBehaviorEntryFieldsResponseSchema
 >;
 export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;

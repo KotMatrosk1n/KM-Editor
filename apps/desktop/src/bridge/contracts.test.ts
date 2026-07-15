@@ -75,6 +75,7 @@ import {
   tradePokemonRecordSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updateBehaviorEntryFieldsRequestSchema,
   updateGiftPokemonFieldRequestSchema,
   updateGiftPokemonFieldResponseSchema,
   updateRentalPokemonFieldRequestSchema,
@@ -311,6 +312,45 @@ describe('bridge contracts', () => {
       requestSchema.safeParse({
         ...request,
         payload: { ...request.payload, updates: [] }
+      }).success
+    ).toBe(false);
+  });
+
+  it('validates non-empty atomic Behavior field batches', () => {
+    const requestSchema = createBridgeRequestSchema(updateBehaviorEntryFieldsRequestSchema);
+    const request = {
+      command: kmCommandNames.updateBehaviorEntryFields,
+      payload: {
+        paths: {
+          baseExeFsPath: 'base-exefs',
+          baseRomFsPath: 'base-romfs',
+          outputRootPath: 'output',
+          saveFilePath: null,
+          selectedGame: 'sword'
+        },
+        session: null,
+        updates: [
+          { entryId: '0', field: 'modelPart', value: 'head' },
+          { entryId: '0', field: 'hitboxRadius', value: '2.5' }
+        ]
+      },
+      requestId: 'request-behavior-fields'
+    };
+
+    expect(requestSchema.parse(request)).toMatchObject(request);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: { ...request.payload, updates: [] }
+      }).success
+    ).toBe(false);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: {
+          ...request.payload,
+          updates: [{ ...request.payload.updates[0], entryId: '' }]
+        }
       }).success
     ).toBe(false);
   });

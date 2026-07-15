@@ -67,6 +67,7 @@ public static class KmCommandNames
     public const string UpdatePlacementObjectFields = "placement.objects.update";
     public const string LoadBehaviorWorkflow = "behavior.load";
     public const string UpdateBehaviorEntryField = "behavior.entry.update";
+    public const string UpdateBehaviorEntryFields = "behavior.fields.update";
     public const string LoadFlagworkSaveWorkflow = "flagworkSave.load";
     public const string LoadBagHookWorkflow = "bagHook.load";
     public const string StageBagHookInstall = "bagHook.install.stage";

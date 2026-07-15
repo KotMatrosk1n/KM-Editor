@@ -49,7 +49,8 @@ public sealed record BehaviorEntryRecordDto(
     string Hash2,
     string InternalSpeciesName,
     IReadOnlyList<BehaviorFieldValueDto> Fields,
-    BehaviorProvenanceDto Provenance);
+    BehaviorProvenanceDto Provenance,
+    IReadOnlyList<BehaviorFieldOptionDto> FormOptions);
 
 public sealed record BehaviorWorkflowStatsDto(
     int TotalEntryCount,
@@ -73,6 +74,21 @@ public sealed record UpdateBehaviorEntryFieldRequest(
     string Value);
 
 public sealed record UpdateBehaviorEntryFieldResponse(
+    BehaviorWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record BehaviorFieldUpdateDto(
+    string EntryId,
+    string Field,
+    string Value);
+
+public sealed record UpdateBehaviorEntryFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<BehaviorFieldUpdateDto?>? Updates);
+
+public sealed record UpdateBehaviorEntryFieldsResponse(
     BehaviorWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

@@ -155,6 +155,8 @@ import {
   type UpdateMoveFieldResponse,
   type UpdateBehaviorEntryFieldRequest,
   type UpdateBehaviorEntryFieldResponse,
+  type UpdateBehaviorEntryFieldsRequest,
+  type UpdateBehaviorEntryFieldsResponse,
   type UpdateRaidBattleSlotFieldRequest,
   type UpdateRaidBattleSlotFieldResponse,
   type UpdateRaidBattleSlotFieldsRequest,
@@ -259,6 +261,7 @@ import {
   updatePokemonEvolutionResponseSchema,
   updatePokemonLearnsetResponseSchema,
   updateBehaviorEntryFieldResponseSchema,
+  updateBehaviorEntryFieldsResponseSchema,
   updateRaidBattleSlotFieldResponseSchema,
   updateRaidBattleSlotFieldsResponseSchema,
   updateTeraRaidFieldResponseSchema,
@@ -591,6 +594,9 @@ export type ProjectBridge = {
   updateBehaviorEntryField: (
     request: UpdateBehaviorEntryFieldRequest
   ) => Promise<UpdateBehaviorEntryFieldResponse>;
+  updateBehaviorEntryFields: (
+    request: UpdateBehaviorEntryFieldsRequest
+  ) => Promise<UpdateBehaviorEntryFieldsResponse>;
   updateShopInventoryItem: (
     request: UpdateShopInventoryItemRequest
   ) => Promise<UpdateShopInventoryItemResponse>;
@@ -1301,6 +1307,13 @@ export function createProjectBridge(
         kmCommandNames.updateBehaviorEntryField,
         request,
         updateBehaviorEntryFieldResponseSchema
+      ),
+    updateBehaviorEntryFields: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateBehaviorEntryFields,
+        request,
+        updateBehaviorEntryFieldsResponseSchema
       ),
     updateShopInventoryItem: (request) =>
       sendProjectBridgeRequest(

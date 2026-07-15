@@ -1050,7 +1050,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'behavior'),
-        behaviorSearchText: '',
         behaviorWorkflow,
         selectedBehaviorEntryId
       };
