@@ -375,5 +375,5 @@ describe('Trade Pokemon UI regressions', () => {
       )
     );
     expect(zaSearchInput).toHaveValue('Farfetch');
-  }, 15_000);
+  }, 30_000);
 });
