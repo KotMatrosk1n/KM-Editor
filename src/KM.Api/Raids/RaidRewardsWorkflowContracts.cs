@@ -19,6 +19,17 @@ public sealed record UpdateRaidRewardFieldRequest(
     string Field,
     string Value);
 
+public sealed record RaidRewardFieldUpdateDto(
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);
+
+public sealed record UpdateRaidRewardFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<RaidRewardFieldUpdateDto?>? Updates);
+
 public sealed record UpdateRaidBonusRewardFieldRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
@@ -28,6 +39,11 @@ public sealed record UpdateRaidBonusRewardFieldRequest(
     string Value);
 
 public sealed record UpdateRaidRewardFieldResponse(
+    RaidRewardsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateRaidRewardFieldsResponse(
     RaidRewardsWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
@@ -44,12 +60,12 @@ public sealed record RaidRewardProvenanceDto(
 
 public sealed record RaidRewardItemRecordDto(
     int Slot,
-    int EntryId,
-    int ItemId,
+    long EntryId,
+    long ItemId,
     string ItemName,
-    int Quantity,
-    int Weight,
-    IReadOnlyList<int> Values);
+    long Quantity,
+    long Weight,
+    IReadOnlyList<long> Values);
 
 public sealed record RaidRewardTableRecordDto(
     string TableId,
@@ -74,7 +90,7 @@ public sealed record RaidRewardEditableFieldDto(
     IReadOnlyList<RaidRewardEditableFieldOptionDto> Options);
 
 public sealed record RaidRewardEditableFieldOptionDto(
-    int Value,
+    long Value,
     string Label);
 
 public sealed record RaidRewardsWorkflowStatsDto(

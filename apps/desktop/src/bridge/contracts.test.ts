@@ -57,6 +57,8 @@ import {
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
   refreshFileGraphResponseSchema,
+  raidRewardEditableFieldSchema,
+  raidRewardItemRecordSchema,
   rentalPokemonEditableFieldSchema,
   rentalPokemonMoveSchema,
   startEditSessionRequestSchema,
@@ -75,6 +77,7 @@ import {
   updateGiftPokemonFieldResponseSchema,
   updateRentalPokemonFieldRequestSchema,
   updateRentalPokemonFieldResponseSchema,
+  updateRaidRewardFieldsRequestSchema,
   updateStaticEncounterFieldsRequestSchema,
   updateTradePokemonFieldRequestSchema,
   updateTradePokemonFieldResponseSchema,
@@ -304,6 +307,95 @@ describe('bridge contracts', () => {
       requestSchema.safeParse({
         ...request,
         payload: { ...request.payload, updates: [] }
+      }).success
+    ).toBe(false);
+  });
+
+  it('validates atomic raid reward batches and one-based reward records', () => {
+    const requestSchema = createBridgeRequestSchema(updateRaidRewardFieldsRequestSchema);
+    const request = {
+      command: kmCommandNames.updateRaidRewardFields,
+      payload: {
+        paths: {
+          baseExeFsPath: 'base-exefs',
+          baseRomFsPath: 'base-romfs',
+          outputRootPath: 'output',
+          saveFilePath: null,
+          selectedGame: 'sword'
+        },
+        session: null,
+        updates: [
+          {
+            field: 'itemId',
+            slot: 1,
+            tableId: 'drop:0:AABBCCDD00112233',
+            value: '4'
+          },
+          {
+            field: 'star5Value',
+            slot: 1,
+            tableId: 'drop:0:AABBCCDD00112233',
+            value: '6'
+          }
+        ]
+      },
+      requestId: 'request-raid-reward-fields'
+    };
+
+    expect(requestSchema.parse(request)).toMatchObject(request);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: { ...request.payload, updates: [] }
+      }).success
+    ).toBe(false);
+    expect(
+      requestSchema.safeParse({
+        ...request,
+        payload: {
+          ...request.payload,
+          updates: [{ ...request.payload.updates[0], slot: 0 }]
+        }
+      }).success
+    ).toBe(false);
+
+    const reward = {
+      entryId: 10,
+      itemId: 3,
+      itemName: 'Exp. Candy L',
+      quantity: 0,
+      slot: 1,
+      values: [40, 30, 20, 10, 5],
+      weight: 40
+    };
+    expect(raidRewardItemRecordSchema.safeParse(reward).success).toBe(true);
+    expect(
+      raidRewardItemRecordSchema.safeParse({
+        ...reward,
+        entryId: 0xffff_ffff,
+        itemId: 0xffff_ffff,
+        quantity: 0xffff_ffff,
+        values: Array.from({ length: 5 }, () => 0xffff_ffff),
+        weight: 0xffff_ffff
+      }).success
+    ).toBe(true);
+    expect(
+      raidRewardItemRecordSchema.safeParse({ ...reward, itemId: 0x1_0000_0000 }).success
+    ).toBe(false);
+    expect(
+      raidRewardItemRecordSchema.safeParse({ ...reward, values: [...reward.values, 1] }).success
+    ).toBe(true);
+    expect(
+      raidRewardItemRecordSchema.safeParse({ ...reward, values: reward.values.slice(0, 4) }).success
+    ).toBe(false);
+    expect(raidRewardItemRecordSchema.safeParse({ ...reward, slot: 0 }).success).toBe(false);
+    expect(
+      raidRewardEditableFieldSchema.safeParse({
+        field: 'itemId',
+        label: 'Item ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
       }).success
     ).toBe(false);
   });
@@ -1347,6 +1439,7 @@ describe('bridge contracts', () => {
           label: 'Item ID',
           maximumValue: 65535,
           minimumValue: 0,
+          options: [],
           valueKind: 'integer'
         }
       ],

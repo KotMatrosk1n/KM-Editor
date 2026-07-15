@@ -39,6 +39,7 @@ export const kmCommandNameValues = [
   'teraRaids.field.update', 'teraRaids.fields.update',
   'raidRewards.load',
   'raidRewards.reward.update',
+  'raidRewards.rewards.update',
   'raidBonusRewards.load',
   'raidBonusRewards.reward.update',
   'placement.load',
@@ -151,6 +152,7 @@ export const kmCommandNames = {
   updateTeraRaidFields: 'teraRaids.fields.update',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   updateRaidRewardField: 'raidRewards.reward.update',
+  updateRaidRewardFields: 'raidRewards.rewards.update',
   loadRaidBonusRewardsWorkflow: 'raidBonusRewards.load',
   updateRaidBonusRewardField: 'raidBonusRewards.reward.update',
   loadPlacementWorkflow: 'placement.load',
@@ -2116,14 +2118,16 @@ export const raidRewardProvenanceSchema = z.strictObject({
   sourceLayer: projectFileLayerSchema
 });
 
+const raidRewardUint32Schema = z.number().int().nonnegative().max(0xffff_ffff);
+
 export const raidRewardItemRecordSchema = z.strictObject({
-  entryId: z.number().int().nonnegative(),
-  itemId: z.number().int().nonnegative(),
+  entryId: raidRewardUint32Schema,
+  itemId: raidRewardUint32Schema,
   itemName: z.string(),
-  quantity: z.number().int().nonnegative(),
-  slot: z.number().int().nonnegative(),
-  values: z.array(z.number().int().nonnegative()),
-  weight: z.number().int().nonnegative()
+  quantity: raidRewardUint32Schema,
+  slot: z.number().int().positive(),
+  values: z.array(raidRewardUint32Schema).min(5),
+  weight: raidRewardUint32Schema
 });
 
 export const raidRewardTableRecordSchema = z.strictObject({
@@ -2143,7 +2147,7 @@ export const raidRewardTableRecordSchema = z.strictObject({
 
 export const raidRewardEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: raidRewardUint32Schema
 });
 
 export const raidRewardEditableFieldSchema = z.strictObject({
@@ -2151,7 +2155,7 @@ export const raidRewardEditableFieldSchema = z.strictObject({
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
-  options: z.array(raidRewardEditableFieldOptionSchema).optional(),
+  options: z.array(raidRewardEditableFieldOptionSchema),
   valueKind: z.string()
 });
 
@@ -3446,12 +3450,31 @@ export const updateRaidRewardFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().positive(),
   tableId: z.string(),
   value: z.string()
 });
 
+export const raidRewardFieldUpdateSchema = z.strictObject({
+  field: z.string(),
+  slot: z.number().int().positive(),
+  tableId: z.string(),
+  value: z.string()
+});
+
+export const updateRaidRewardFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(raidRewardFieldUpdateSchema).min(1)
+});
+
 export const updateRaidRewardFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: raidRewardsWorkflowSchema
+});
+
+export const updateRaidRewardFieldsResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: raidRewardsWorkflowSchema
@@ -3461,7 +3484,7 @@ export const updateRaidBonusRewardFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  slot: z.number().int().nonnegative(),
+  slot: z.number().int().positive(),
   tableId: z.string(),
   value: z.string()
 });
@@ -3834,6 +3857,9 @@ export type UpdateTeraRaidFieldsResponse = z.infer<
 >;
 export type UpdateRaidRewardFieldRequest = z.infer<typeof updateRaidRewardFieldRequestSchema>;
 export type UpdateRaidRewardFieldResponse = z.infer<typeof updateRaidRewardFieldResponseSchema>;
+export type RaidRewardFieldUpdate = z.infer<typeof raidRewardFieldUpdateSchema>;
+export type UpdateRaidRewardFieldsRequest = z.infer<typeof updateRaidRewardFieldsRequestSchema>;
+export type UpdateRaidRewardFieldsResponse = z.infer<typeof updateRaidRewardFieldsResponseSchema>;
 export type UpdateRaidBonusRewardFieldRequest = z.infer<
   typeof updateRaidBonusRewardFieldRequestSchema
 >;

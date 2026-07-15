@@ -7860,35 +7860,26 @@ export function App({
 
     try {
       const response = await runEditSessionMutation(
-        async (session) => {
-          let nextSession = session;
-          let nextWorkflow = raidRewardsWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          for (const change of changes) {
-            const updateResponse = await bridge.updateRaidRewardField({
+        (session) =>
+          bridge.updateRaidRewardFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
               field: change.field,
-              paths: createProjectPaths(draftPaths),
-              session: nextSession,
               slot,
               tableId,
               value: change.value
-            });
-            nextWorkflow = updateResponse.workflow;
-            nextSession = updateResponse.session;
-            nextDiagnostics = updateResponse.diagnostics;
-          }
-
-          return { diagnostics: nextDiagnostics, session: nextSession!, workflow: nextWorkflow };
-        },
+            }))
+          }),
         (updateResponse) => {
-          if (updateResponse.workflow) {
-            setRaidRewardsWorkflow(updateResponse.workflow);
-          }
+          setRaidRewardsWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return (
+        response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -26569,31 +26560,34 @@ function RaidRewardsSection({
   title: string;
   workflow: RaidRewardsWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
-  const normalizedSearch = searchText.trim().toLocaleLowerCase();
-  const filteredTables =
-    workflow?.tables.filter((table) => {
-      if (!normalizedSearch) {
-        return true;
-      }
+  const filteredTables = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLocaleLowerCase();
+    if (!normalizedSearch) {
+      return workflow?.tables ?? [];
+    }
 
-      return [
-        table.archiveMember,
-        table.denId,
-        table.displayName,
-        table.rewardKindLabel,
-        table.sourceTableHash,
-        ...table.rewards.flatMap((reward) => [reward.itemName, reward.itemId.toString()])
-      ]
-        .join(' ')
-        .toLocaleLowerCase()
-        .includes(normalizedSearch);
-    }) ?? [];
+    return (
+      workflow?.tables.filter((table) =>
+        [
+          table.archiveMember,
+          table.denId,
+          table.displayName,
+          table.rewardKindLabel,
+          table.sourceTableHash,
+          ...table.rewards.flatMap((reward) => [reward.itemName, reward.itemId.toString()])
+        ]
+          .flatMap((value) => [value, translateLiteral(value)])
+          .join(' ')
+          .toLocaleLowerCase()
+          .includes(normalizedSearch)
+      ) ?? []
+    );
+  }, [searchText, translateLiteral, workflow?.tables]);
   const selectedTable =
     filteredTables.find((table) => table.tableId === selectedTableId) ??
-    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
     filteredTables[0] ??
-    workflow?.tables[0] ??
     null;
   const selectedReward =
     selectedTable?.rewards.find((reward) => reward.slot === selectedSlot) ??
@@ -26619,43 +26613,47 @@ function RaidRewardsSection({
       <section aria-labelledby={headingId} className="panel wide-panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id={headingId}>{title}</h2>
+          <h2 id={headingId}>{translateLiteral(title)}</h2>
         </div>
 
         <div className="items-toolbar encounters-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search raid rewards"
+              aria-label={translateLiteral(searchPlaceholder)}
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder={searchPlaceholder}
+              placeholder={translateLiteral(searchPlaceholder)}
               type="search"
               value={searchText}
             />
           </label>
           <Metric
-            label="Loaded tables"
+            label={translateLiteral('Loaded tables')}
             value={workflow ? workflow.stats.totalTableCount.toString() : '0'}
           />
           <Metric
-            label="Reward rows"
+            label={translateLiteral('Reward rows')}
             value={workflow ? workflow.stats.totalRewardItemCount.toString() : '0'}
           />
           <Metric
-            label="Pending changes"
+            label={translateLiteral('Pending changes')}
             value={(editSession?.pendingEdits.length ?? 0).toString()}
           />
         </div>
 
         {workflow ? (
           <div className="encounters-layout">
-            <div className="raid-rewards-table" role="table" aria-label={`${title} tables`}>
+            <div
+              className="raid-rewards-table"
+              role="table"
+              aria-label={translateLiteral(title)}
+            >
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
-                <span role="columnheader">Table</span>
-                <span role="columnheader">Hash</span>
-                <span role="columnheader">Rewards</span>
-                <span role="columnheader">Member</span>
+                <span role="columnheader">{translateLiteral('Table')}</span>
+                <span role="columnheader">{translateLiteral('Hash')}</span>
+                <span role="columnheader">{translateLiteral('Rewards')}</span>
+                <span role="columnheader">{translateLiteral('Member')}</span>
               </div>
               {filteredTables.map((table) => (
                 <button
@@ -26664,17 +26662,23 @@ function RaidRewardsSection({
                   } ${
                     pendingRaidRewardTableIds.has(table.tableId) ? 'raid-rewards-row-pending' : ''
                   }`}
+                  aria-selected={selectedTable?.tableId === table.tableId}
                   key={table.tableId}
                   onClick={() => onSelectTable(table.tableId)}
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{table.displayName}</span>
+                  <span role="cell">{translateLiteral(table.displayName)}</span>
                   <span role="cell">{table.sourceTableHash}</span>
                   <span role="cell">{table.rewards.length}</span>
-                  <span role="cell">{table.archiveMember}</span>
+                  <span role="cell">{translateLiteral(table.archiveMember)}</span>
                 </button>
               ))}
+              {filteredTables.length === 0 ? (
+                <p className="empty-copy raid-rewards-table-empty" role="status">
+                  {translateLiteral('No matching reward tables.')}
+                </p>
+              ) : null}
             </div>
 
             <SelectedRaidRewardPanel
@@ -26693,7 +26697,7 @@ function RaidRewardsSection({
             />
           </div>
         ) : (
-          <p className="empty-copy">{emptyCopy}</p>
+          <p className="empty-copy">{translateLiteral(emptyCopy)}</p>
         )}
       </section>
 
@@ -26733,6 +26737,7 @@ function SelectedRaidRewardPanel({
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -26791,53 +26796,57 @@ function SelectedRaidRewardPanel({
   }, [raidRewardDraftDefaults, raidRewardDraftKey]);
 
   return (
-    <aside aria-label="Selected raid reward provenance" className="encounter-inspector">
+    <aside
+      aria-label={translateLiteral('Selected raid reward provenance')}
+      className="encounter-inspector"
+    >
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Reward</h3>
+        <h3>{translateLiteral('Selected Reward')}</h3>
       </div>
 
       {table ? (
         <>
           <dl className="item-provenance-list">
             <div>
-              <dt>Table</dt>
+              <dt>{translateLiteral('Table')}</dt>
               <dd>{table.sourceTableHash}</dd>
             </div>
             <div>
-              <dt>Kind</dt>
-              <dd>{table.rewardKindLabel}</dd>
+              <dt>{translateLiteral('Kind')}</dt>
+              <dd>{translateLiteral(table.rewardKindLabel)}</dd>
             </div>
             <div>
-              <dt>Archive member</dt>
-              <dd>{table.archiveMember}</dd>
+              <dt>{translateLiteral('Archive member')}</dt>
+              <dd>{translateLiteral(table.archiveMember)}</dd>
             </div>
             <div>
-              <dt>Source file</dt>
+              <dt>{translateLiteral('Source file')}</dt>
               <dd>{table.provenance.sourceFile}</dd>
             </div>
             <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+              <dt>{translateLiteral('Layer')}</dt>
+              <dd>{translateLiteral(formatSourceLayer(table.provenance.sourceLayer))}</dd>
             </div>
             <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(table.provenance.fileState)}</dd>
+              <dt>{translateLiteral('File state')}</dt>
+              <dd>{translateLiteral(formatFileState(table.provenance.fileState))}</dd>
             </div>
           </dl>
 
           <div className="encounter-edit-form">
             <div className="encounter-slot-header">
-              <strong>Rewards</strong>
+              <strong>{translateLiteral('Rewards')}</strong>
               <select
-                aria-label="Raid reward slot"
+                aria-label={translateLiteral('Raid reward slot')}
                 disabled={table.rewards.length === 0}
                 onChange={(event) => onSelectSlot(Number(event.target.value))}
                 value={selectedSlot ?? ''}
               >
                 {table.rewards.map((candidate) => (
                   <option key={candidate.slot} value={candidate.slot}>
-                    Slot {candidate.slot}: {candidate.itemName}
+                    {translateLiteral('Slot')} {candidate.slot}:{' '}
+                    {translateLiteral(candidate.itemName)}
                   </option>
                 ))}
               </select>
@@ -26847,22 +26856,27 @@ function SelectedRaidRewardPanel({
               <>
                 <dl className="encounter-slot-detail">
                   <div>
-                    <dt>Item</dt>
+                    <dt>{translateLiteral('Item')}</dt>
                     <dd>
-                      {reward.itemName} ({reward.itemId})
+                      {translateLiteral(reward.itemName)} ({reward.itemId})
                     </dd>
                   </div>
                   <div>
-                    <dt>Entry ID</dt>
+                    <dt>{translateLiteral('Entry ID')}</dt>
                     <dd>{reward.entryId}</dd>
                   </div>
                   <div>
-                    <dt>{getRaidRewardValuesLabel(table.rewardKind)}</dt>
-                    <dd>{formatRaidRewardValues(table.rewardKind, reward.values)}</dd>
+                    <dt>{translateLiteral(getRaidRewardValuesLabel(table.rewardKind))}</dt>
+                    <dd>
+                      {translateLiteral(formatRaidRewardValues(table.rewardKind, reward.values))}
+                    </dd>
                   </div>
                 </dl>
 
-                <div className="raid-reward-slot-grid" aria-label="Raid reward slots">
+                <div
+                  className="raid-reward-slot-grid"
+                  aria-label={translateLiteral('Raid reward slots')}
+                >
                   {table.rewards.slice(0, 10).map((candidate) => (
                     <button
                       aria-pressed={candidate.slot === selectedSlot}
@@ -26872,8 +26886,10 @@ function SelectedRaidRewardPanel({
                       type="button"
                     >
                       <strong>{`#${candidate.slot}`}</strong>
-                      <span>{candidate.itemName}</span>
-                      <small>{formatRaidRewardSlotSummary(table.rewardKind, candidate)}</small>
+                      <span>{translateLiteral(candidate.itemName)}</span>
+                      <small>
+                        {translateLiteral(formatRaidRewardSlotSummary(table.rewardKind, candidate))}
+                      </small>
                     </button>
                   ))}
                 </div>
@@ -26881,7 +26897,7 @@ function SelectedRaidRewardPanel({
                 <div className="editable-field-groups">
                   {raidRewardFieldGroups.map((group) => (
                     <fieldset className="editable-field-group" key={group.group}>
-                      <legend>{group.group}</legend>
+                      <legend>{translateLiteral(group.group)}</legend>
                       <div className="editable-field-grid">
                         {group.fields.map((field) => {
                           const currentValue = getEditableRaidRewardFieldValue(
@@ -26974,7 +26990,7 @@ function SelectedRaidRewardPanel({
                       type="button"
                     >
                       <X aria-hidden="true" size={16} />
-                      <span>Cancel</span>
+                      <span>{translateLiteral('Cancel')}</span>
                     </button>
                     <span className="draft-action-summary">
                       {formatDraftSummary(raidRewardDraftSummary)}
@@ -26983,7 +26999,7 @@ function SelectedRaidRewardPanel({
                 ) : null}
               </>
             ) : (
-              <p className="empty-copy">No raid reward selected.</p>
+              <p className="empty-copy">{translateLiteral('No raid reward selected.')}</p>
             )}
 
             {!editSession ? (
@@ -27005,7 +27021,7 @@ function SelectedRaidRewardPanel({
           </div>
         </>
       ) : (
-        <p className="empty-copy">No raid reward table selected.</p>
+        <p className="empty-copy">{translateLiteral('No reward table selected.')}</p>
       )}
     </aside>
   );
@@ -27027,7 +27043,12 @@ function getRaidRewardFieldForKind(
   }
 
   const valueLabel = rewardKind === 'drop' ? 'drop chance' : 'quantity';
-  return { ...field, label: `${starLabel} ${valueLabel}` };
+  return {
+    ...field,
+    label: `${starLabel} ${valueLabel}`,
+    maximumValue:
+      rewardKind === 'drop' ? Math.min(field.maximumValue ?? 100, 100) : field.maximumValue
+  };
 }
 
 function getRaidRewardValuesLabel(rewardKind: string) {

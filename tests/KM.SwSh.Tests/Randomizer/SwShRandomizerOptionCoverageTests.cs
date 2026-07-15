@@ -396,6 +396,29 @@ public sealed class SwShRandomizerOptionCoverageTests
     }
 
     [Fact]
+    public void RaidRewardRandomizerPlansValidateAndApplyAgainstSemanticSources()
+    {
+        using var temp = CreateRandomizerProject();
+        var service = new SwShRandomizerService();
+
+        var result = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeRaidRewards = true,
+            RandomizeRaidBonusRewards = true,
+        }));
+
+        Assert.DoesNotContain(
+            result.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(
+            result.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("source layer changed", StringComparison.Ordinal));
+        Assert.Contains(
+            result.ApplyResult.WrittenFiles,
+            file => file.RelativePath == SwShRaidRewardsWorkflowService.NestDataPath);
+    }
+
+    [Fact]
     public void ApplyRollsBackEarlierDomainsWhenALaterDomainFails()
     {
         using var temp = CreateRandomizerProject();
