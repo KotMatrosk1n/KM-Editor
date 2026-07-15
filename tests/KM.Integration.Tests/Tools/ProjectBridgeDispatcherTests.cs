@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.BagHook;
+using KM.Api.Behavior;
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.DynamaxAdventures;
@@ -5406,6 +5407,188 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Error);
         Assert.Equal("bridge.unsupportedCommand", response.Error.Code);
         Assert.Equal("request-unsupported", response.RequestId);
+    }
+
+    [Fact]
+    public void DispatchBehaviorFieldBatchMapsSignedEntriesAndStagesAtomically()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShBehaviorBridgeFixtures.WriteBaseBehavior(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        Assert.Equal("behavior.fields.update", KmCommandNames.UpdateBehaviorEntryFields);
+        var load = DeserializeResponse<LoadBehaviorWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadBehaviorWorkflow,
+            new LoadBehaviorWorkflowRequest(temp.Paths),
+            requestId: "request-behavior-load")));
+        var workflow = Assert.IsType<LoadBehaviorWorkflowResponse>(load.Payload).Workflow;
+        var entry = workflow.Entries.Single(candidate => candidate.Index == 0);
+        Assert.Matches("^behavior:0:[0-9A-F]{64}$", entry.EntryId);
+        Assert.Equal(["0"], entry.FormOptions.Select(option => option.Value));
+        Assert.Equal(
+            ["body", "head"],
+            workflow.Fields.Single(field => field.Field == SwShSymbolBehaviorArchive.ModelPartField)
+                .Options.Select(option => option.Value));
+
+        var response = DeserializeResponse<UpdateBehaviorEntryFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            "behavior.fields.update",
+            new UpdateBehaviorEntryFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new BehaviorFieldUpdateDto(
+                        entry.EntryId,
+                        SwShSymbolBehaviorArchive.BehaviorField,
+                        "WaterDash"),
+                    new BehaviorFieldUpdateDto(
+                        entry.EntryId,
+                        SwShSymbolBehaviorArchive.ModelPartField,
+                        "head"),
+                    new BehaviorFieldUpdateDto(
+                        entry.EntryId,
+                        SwShSymbolBehaviorArchive.GrassShakeRadiusField,
+                        "6.25"),
+                ]),
+            requestId: "request-behavior-fields-update")));
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-behavior-fields-update", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(3, response.Payload.Session.PendingEdits.Count);
+        var updated = response.Payload.Workflow.Entries.Single(candidate => candidate.Index == 0);
+        Assert.Equal("WaterDash", updated.Behavior);
+        Assert.Equal("head", updated.ModelPart);
+        Assert.Equal(6.25, updated.GrassShakeRadius);
+        Assert.DoesNotContain(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchBehaviorFieldBatchRollsBackAndPreservesSingularCommandSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShBehaviorBridgeFixtures.WriteBaseBehavior(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var load = DeserializeResponse<LoadBehaviorWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadBehaviorWorkflow,
+            new LoadBehaviorWorkflowRequest(temp.Paths),
+            requestId: "request-behavior-atomic-load")));
+        var entries = Assert.IsType<LoadBehaviorWorkflowResponse>(load.Payload).Workflow.Entries;
+        var firstEntry = entries.Single(entry => entry.Index == 0);
+        var secondEntry = entries.Single(entry => entry.Index == 1);
+        var singular = DeserializeResponse<UpdateBehaviorEntryFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateBehaviorEntryField,
+            new UpdateBehaviorEntryFieldRequest(
+                temp.Paths,
+                Session: null,
+                EntryId: secondEntry.EntryId,
+                Field: SwShSymbolBehaviorArchive.BehaviorField,
+                Value: "Common"),
+            requestId: "request-behavior-singular-update")));
+        var existingEdit = Assert.Single(Assert.IsType<UpdateBehaviorEntryFieldResponse>(singular.Payload).Session.PendingEdits);
+
+        var response = DeserializeResponse<UpdateBehaviorEntryFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateBehaviorEntryFields,
+            new UpdateBehaviorEntryFieldsRequest(
+                temp.Paths,
+                singular.Payload.Session,
+                [
+                    new BehaviorFieldUpdateDto(
+                        firstEntry.EntryId,
+                        SwShSymbolBehaviorArchive.ModelPartField,
+                        "head"),
+                    new BehaviorFieldUpdateDto(
+                        firstEntry.EntryId,
+                        SwShSymbolBehaviorArchive.BehaviorField,
+                        "NotAProfile"),
+                ]),
+            requestId: "request-behavior-atomic-reject")));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        var preservedEdit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal(existingEdit.Domain, preservedEdit.Domain);
+        Assert.Equal(existingEdit.RecordId, preservedEdit.RecordId);
+        Assert.Equal(existingEdit.Field, preservedEdit.Field);
+        Assert.Equal(existingEdit.NewValue, preservedEdit.NewValue);
+        Assert.Equal("body", response.Payload.Workflow.Entries.Single(entry => entry.Index == 0).ModelPart);
+        Assert.Equal("Common", response.Payload.Workflow.Entries.Single(entry => entry.Index == 1).Behavior);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchBehaviorBatchReturnsDiagnosticsForMissingUpdates()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShBehaviorBridgeFixtures.WriteBaseBehavior(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+
+        var response = DeserializeResponse<UpdateBehaviorEntryFieldsResponse>(
+            new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
+                KmCommandNames.UpdateBehaviorEntryFields,
+                new UpdateBehaviorEntryFieldsRequest(temp.Paths, Session: null, Updates: null),
+                requestId: "request-behavior-fields-missing")));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.Session.PendingEdits);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData(
+        "{\"command\":\"behavior.fields.update\",\"payload\":{\"paths\":null,\"session\":null,\"updates\":[]},\"requestId\":\"request-behavior-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"behavior.fields.update\",\"payload\":{\"session\":null,\"updates\":[]},\"requestId\":\"request-behavior-missing-paths\"}")]
+    public void DispatchBehaviorBatchWithNullOrMissingPathsReturnsInvalidJson(string requestJson)
+    {
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
+    }
+
+    [Fact]
+    public void DispatchBehaviorCommandsForScarletVioletProjectReturnGameMismatch()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Scarlet };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var load = DeserializeResponse<object>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadBehaviorWorkflow,
+            new LoadBehaviorWorkflowRequest(paths),
+            requestId: "request-sv-behavior-load")));
+
+        Assert.Null(load.Payload);
+        Assert.NotNull(load.Error);
+        Assert.Equal("bridge.gameMismatch", load.Error.Code);
+
+        var update = DeserializeResponse<object>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateBehaviorEntryFields,
+            new UpdateBehaviorEntryFieldsRequest(
+                paths,
+                Session: null,
+                Updates:
+                [
+                    new BehaviorFieldUpdateDto(
+                        $"behavior:0:{new string('0', 64)}",
+                        SwShSymbolBehaviorArchive.BehaviorField,
+                        "WaterDash"),
+                ]),
+            requestId: "request-sv-behavior-update")));
+
+        Assert.Null(update.Payload);
+        Assert.NotNull(update.Error);
+        Assert.Equal("bridge.gameMismatch", update.Error.Code);
+        Assert.Contains("Sword/Shield", update.Error.Message);
     }
 
     [Fact]

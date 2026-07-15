@@ -103,6 +103,35 @@ const fileGraph = {
 } as const;
 
 describe('projectBridge', () => {
+  it('sends Behavior field batches through one atomic Sword and Shield command', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.updateBehaviorEntryFields({
+        paths: editableProjectPaths,
+        session: null,
+        updates: [
+          { entryId: '0', field: 'modelPart', value: 'head' },
+          { entryId: '0', field: 'hitboxRadius', value: '2.5' }
+        ]
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'behavior.fields.update',
+      payload: {
+        updates: [
+          { entryId: '0', field: 'modelPart', value: 'head' },
+          { entryId: '0', field: 'hitboxRadius', value: '2.5' }
+        ]
+      }
+    });
+  });
+
   it('sends Rental Pokemon field batches through one Sword and Shield command', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {

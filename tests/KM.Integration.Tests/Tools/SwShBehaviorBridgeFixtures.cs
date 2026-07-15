@@ -1,24 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
-using KM.SwSh.Tests.Items;
-using KM.SwSh.Tests.Pokemon;
-using KM.SwSh.Pokemon;
+using System.Buffers.Binary;
 
-namespace KM.SwSh.Tests.Behavior;
+namespace KM.Integration.Tests.Tools;
 
-internal static class SwShBehaviorTestFixtures
+internal static class SwShBehaviorBridgeFixtures
 {
-    public static void WriteBaseBehavior(TemporarySwShProject temp)
+    public const string BehaviorDataPath =
+        "romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin";
+
+    public static void WriteBaseBehavior(TemporaryBridgeProject temp)
     {
         temp.WriteBaseRomFsFile(
-            "bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin",
+            BehaviorDataPath["romfs/".Length..],
             CreateBehaviorArchive().Write());
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateSpeciesNames());
         temp.WriteBaseRomFsFile(
-            SwShPokemonWorkflowService.PersonalDataPath["romfs/".Length..],
+            "bin/pml/personal/personal_total.bin",
             CreatePersonalData());
     }
 
@@ -63,25 +64,25 @@ internal static class SwShBehaviorTestFixtures
         ulong hash1,
         ulong hash2)
     {
-        var fields = SwShSymbolBehaviorArchive.FieldSpecs
-            .Select(spec => new SwShSymbolBehaviorFieldValue(
-                spec.Field,
-                spec.FieldIndex,
-                spec.FieldType,
-                CreateValue(
-                    spec,
-                    speciesId,
-                    form,
-                    behavior,
-                    modelPart,
-                    internalSpeciesName,
-                    hitboxRadius,
-                    grassShakeRadius,
-                    hash1,
-                    hash2)))
-            .ToArray();
-
-        return new SwShSymbolBehaviorEntry(index, fields);
+        return new SwShSymbolBehaviorEntry(
+            index,
+            SwShSymbolBehaviorArchive.FieldSpecs
+                .Select(spec => new SwShSymbolBehaviorFieldValue(
+                    spec.Field,
+                    spec.FieldIndex,
+                    spec.FieldType,
+                    CreateValue(
+                        spec,
+                        speciesId,
+                        form,
+                        behavior,
+                        modelPart,
+                        internalSpeciesName,
+                        hitboxRadius,
+                        grassShakeRadius,
+                        hash1,
+                        hash2)))
+                .ToArray());
     }
 
     private static object CreateValue(
@@ -114,7 +115,9 @@ internal static class SwShBehaviorTestFixtures
                 SwShSymbolBehaviorFieldType.Byte => (byte)0,
                 SwShSymbolBehaviorFieldType.UInt64 => 0UL,
                 SwShSymbolBehaviorFieldType.String => string.Empty,
-                _ => throw new ArgumentOutOfRangeException(nameof(spec), $"Unsupported symbol behavior field type '{spec.FieldType}'."),
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(spec),
+                    $"Unsupported symbol behavior field type '{spec.FieldType}'."),
             },
         };
     }
@@ -122,31 +125,27 @@ internal static class SwShBehaviorTestFixtures
     private static byte[] CreateSpeciesNames()
     {
         var lines = Enumerable.Range(0, 134)
-            .Select(index => $"Species {index}")
+            .Select(index => new SwShGameTextLine($"Species {index}", Flags: 0))
             .ToArray();
-        lines[25] = "Pikachu";
-        lines[133] = "Eevee";
-
-        return SwShGameTextFile.Write(lines.Select(line => new SwShGameTextLine(line, Flags: 0)).ToArray());
+        lines[25] = new SwShGameTextLine("Pikachu", Flags: 0);
+        lines[133] = new SwShGameTextLine("Eevee", Flags: 0);
+        return SwShGameTextFile.Write(lines);
     }
 
     private static byte[] CreatePersonalData()
     {
-        var records = Enumerable.Range(0, 135)
-            .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
-            .ToArray();
-        records[1] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 1);
-        records[25] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 25);
-        records[133] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
-            hatchedSpecies: 133,
-            formStatsIndex: 134,
-            formCount: 2);
-        records[134] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
-            hatchedSpecies: 133,
-            formStatsIndex: 134,
-            formCount: 2,
-            form: 1);
+        var data = new byte[134 * SwShPersonalTable.RecordSize];
+        WritePersonalRecord(data, speciesId: 25, formCount: 1);
+        WritePersonalRecord(data, speciesId: 133, formCount: 2);
+        return data;
+    }
 
-        return SwShPokemonWorkflowServiceTests.CreatePersonalTable(records);
+    private static void WritePersonalRecord(byte[] data, int speciesId, byte formCount)
+    {
+        var record = data.AsSpan(speciesId * SwShPersonalTable.RecordSize, SwShPersonalTable.RecordSize);
+        record[0] = 1;
+        record[0x20] = formCount;
+        record[0x21] = 1 << 6;
+        BinaryPrimitives.WriteUInt16LittleEndian(record[0x56..], checked((ushort)speciesId));
     }
 }

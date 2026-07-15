@@ -864,6 +864,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateBehaviorEntryFieldsResponse ToBehaviorEntryFieldsDto(SwShBehaviorEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateBehaviorEntryFieldsResponse(
+            ToBehaviorWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -2695,7 +2705,8 @@ public static class SwShBridgeMapper
             entry.Hash2,
             entry.InternalSpeciesName,
             entry.Fields.Select(ToDto).ToArray(),
-            ToDto(entry.Provenance));
+            ToDto(entry.Provenance),
+            entry.FormOptions.Select(ToDto).ToArray());
     }
 
     private static BehaviorFieldDto ToDto(SwShBehaviorField field)
