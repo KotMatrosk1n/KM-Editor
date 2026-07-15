@@ -461,7 +461,7 @@ describe('App', () => {
     const user = userEvent.setup();
     const bridge = createMockProjectBridge({}, true);
     const originalUpdateItemFields = bridge.updateItemFields;
-    const originalUpdateRentalPokemonField = bridge.updateRentalPokemonField;
+    const originalUpdateRentalPokemonFields = bridge.updateRentalPokemonFields;
     let resolveItemUpdate!: () => Promise<void>;
     bridge.updateItemFields = vi.fn(
       (request: Parameters<typeof originalUpdateItemFields>[0]) =>
@@ -469,9 +469,9 @@ describe('App', () => {
           resolveItemUpdate = () => originalUpdateItemFields(request).then(resolve);
         })
     );
-    const updateRentalPokemonField = vi.fn(
-      async (request: Parameters<typeof originalUpdateRentalPokemonField>[0]) => {
-        const updateResponse = await originalUpdateRentalPokemonField(request);
+    const updateRentalPokemonFields = vi.fn(
+      async (request: Parameters<typeof originalUpdateRentalPokemonFields>[0]) => {
+        const updateResponse = await originalUpdateRentalPokemonFields(request);
         return {
           ...updateResponse,
           session: {
@@ -484,7 +484,7 @@ describe('App', () => {
         };
       }
     );
-    bridge.updateRentalPokemonField = updateRentalPokemonField;
+    bridge.updateRentalPokemonFields = updateRentalPokemonFields;
 
     render(<App bridge={bridge} />);
 
@@ -519,14 +519,14 @@ describe('App', () => {
     await user.clear(levelInput);
     await user.type(levelInput, '65');
     await user.click(within(rentalInspector).getByRole('button', { name: 'Stage' }));
-    expect(updateRentalPokemonField).not.toHaveBeenCalled();
+    expect(updateRentalPokemonFields).not.toHaveBeenCalled();
 
     await act(async () => {
       await resolveItemUpdate();
     });
 
-    await waitFor(() => expect(updateRentalPokemonField).toHaveBeenCalledTimes(1));
-    expect(updateRentalPokemonField.mock.calls[0]?.[0].session?.pendingEdits).toEqual(
+    await waitFor(() => expect(updateRentalPokemonFields).toHaveBeenCalledTimes(1));
+    expect(updateRentalPokemonFields.mock.calls[0]?.[0].session?.pendingEdits).toEqual(
       expect.arrayContaining([expect.objectContaining({ domain: 'workflow.items' })])
     );
     await waitFor(() =>

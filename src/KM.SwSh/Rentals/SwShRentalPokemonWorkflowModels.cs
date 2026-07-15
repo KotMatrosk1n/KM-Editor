@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.Rentals;
@@ -48,6 +49,11 @@ public sealed record SwShRentalPokemonEntry(
 {
     public IReadOnlyList<SwShRentalPokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShRentalPokemonEditableFieldOption>();
+
+    public IReadOnlyList<SwShRentalPokemonEditableFieldOption> GenderOptions { get; init; } =
+        Array.Empty<SwShRentalPokemonEditableFieldOption>();
+
+    internal string SourceIdentity { get; init; } = string.Empty;
 }
 
 public sealed record SwShRentalPokemonMoveRecord(
@@ -59,16 +65,16 @@ public sealed record SwShRentalPokemonEditableField(
     string Field,
     string Label,
     string ValueKind,
-    int? MinimumValue,
-    int? MaximumValue,
+    long? MinimumValue,
+    long? MaximumValue,
     IReadOnlyList<SwShRentalPokemonEditableFieldOption> Options)
 {
     public SwShRentalPokemonEditableField(
         string Field,
         string Label,
         string ValueKind,
-        int? MinimumValue,
-        int? MaximumValue)
+        long? MinimumValue,
+        long? MaximumValue)
         : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShRentalPokemonEditableFieldOption>())
     {
     }
@@ -88,4 +94,19 @@ public sealed record SwShRentalPokemonWorkflow(
     IReadOnlyList<SwShRentalPokemonEntry> Rentals,
     IReadOnlyList<SwShRentalPokemonEditableField> EditableFields,
     SwShRentalPokemonWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal SwShPokemonAbilityOptionResolver AbilityResolver { get; init; } =
+        SwShPokemonAbilityOptionResolver.Empty;
+
+    internal bool HasItemSemanticData { get; init; }
+
+    internal IReadOnlySet<int> ValidHeldItemIds { get; init; } = new HashSet<int>();
+
+    internal ProjectFileReference? ItemSemanticSource { get; init; }
+
+    internal bool HasMoveSemanticData { get; init; }
+
+    internal IReadOnlyDictionary<int, ProjectFileReference> UsableMoveSources { get; init; } =
+        new Dictionary<int, ProjectFileReference>();
+}

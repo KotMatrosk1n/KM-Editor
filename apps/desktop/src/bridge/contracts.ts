@@ -26,6 +26,7 @@ export const kmCommandNameValues = [
   'staticEncounters.fields.update',
   'rentalPokemon.load',
   'rentalPokemon.field.update',
+  'rentalPokemon.fields.update',
   'dynamaxAdventures.load',
   'dynamaxAdventures.field.update', 'dynamaxAdventures.defaults.preview',
   'shops.load',
@@ -136,6 +137,7 @@ export const kmCommandNames = {
   updateStaticEncounterFields: 'staticEncounters.fields.update',
   loadRentalPokemonWorkflow: 'rentalPokemon.load',
   updateRentalPokemonField: 'rentalPokemon.field.update',
+  updateRentalPokemonFields: 'rentalPokemon.fields.update',
   loadDynamaxAdventuresWorkflow: 'dynamaxAdventures.load',
   updateDynamaxAdventureField: 'dynamaxAdventures.field.update', previewDynamaxAdventureDefaults: 'dynamaxAdventures.defaults.preview',
   loadShopsWorkflow: 'shops.load',
@@ -1547,7 +1549,7 @@ export const rentalPokemonStatsSchema = z.strictObject({
 export const rentalPokemonMoveSchema = z.strictObject({
   move: z.string().nullable(),
   moveId: z.number().int().nonnegative(),
-  slot: z.number().int().nonnegative()
+  slot: z.number().int().min(0).max(3)
 });
 
 export const rentalPokemonEditableFieldOptionSchema = z.strictObject({
@@ -1561,7 +1563,7 @@ export const rentalPokemonEditableFieldSchema = z.strictObject({
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(rentalPokemonEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.enum(['boolean', 'integer'])
 });
 
 export const rentalPokemonRecordSchema = z.strictObject({
@@ -1574,6 +1576,7 @@ export const rentalPokemonRecordSchema = z.strictObject({
   form: z.number().int().nonnegative(),
   gender: z.number().int().nonnegative(),
   genderLabel: z.string(),
+  genderOptions: z.array(rentalPokemonEditableFieldOptionSchema).default([]),
   hash1: z.string(),
   hash2: z.string(),
   hasPerfectIvs: z.boolean(),

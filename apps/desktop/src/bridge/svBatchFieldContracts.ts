@@ -12,6 +12,7 @@ import {
   placementWorkflowSchema,
   pokemonWorkflowSchema,
   projectPathsSchema,
+  rentalPokemonWorkflowSchema,
   tradePokemonWorkflowSchema,
   trainersWorkflowSchema
 } from './contracts';
@@ -125,6 +126,24 @@ export const updateTradePokemonFieldsResponseSchema = z.strictObject({
   workflow: tradePokemonWorkflowSchema
 });
 
+export const rentalPokemonFieldUpdateSchema = z.strictObject({
+  field: z.string(),
+  rentalIndex: z.number().int().nonnegative(),
+  value: z.string()
+});
+
+export const updateRentalPokemonFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(rentalPokemonFieldUpdateSchema).min(1)
+});
+
+export const updateRentalPokemonFieldsResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: rentalPokemonWorkflowSchema
+});
+
 export const encounterSlotFieldUpdateSchema = z.strictObject({
   field: z.string(),
   slot: z.number().int().nonnegative(),
@@ -188,6 +207,13 @@ export type UpdateTradePokemonFieldsRequest = z.infer<
 >;
 export type UpdateTradePokemonFieldsResponse = z.infer<
   typeof updateTradePokemonFieldsResponseSchema
+>;
+export type RentalPokemonFieldUpdate = z.infer<typeof rentalPokemonFieldUpdateSchema>;
+export type UpdateRentalPokemonFieldsRequest = z.infer<
+  typeof updateRentalPokemonFieldsRequestSchema
+>;
+export type UpdateRentalPokemonFieldsResponse = z.infer<
+  typeof updateRentalPokemonFieldsResponseSchema
 >;
 export type EncounterSlotFieldUpdate = z.infer<typeof encounterSlotFieldUpdateSchema>;
 export type UpdateEncounterSlotFieldsRequest = z.infer<

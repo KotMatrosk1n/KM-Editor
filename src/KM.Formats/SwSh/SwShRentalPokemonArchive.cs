@@ -63,7 +63,7 @@ public enum SwShRentalPokemonField
 public sealed record SwShRentalPokemonEdit(
     int RentalIndex,
     SwShRentalPokemonField Field,
-    int Value);
+    long Value);
 
 public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRecord> Rentals)
 {
@@ -73,8 +73,50 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
     public const int MaximumFixedIvValue = 31;
     public const int MinimumPokemonLevel = 1;
     public const int MaximumPokemonLevel = 100;
+    public const int MaximumPokemonEvValue = 252;
+    public const int MaximumPokemonEvTotal = 510;
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumIdValue = int.MaxValue;
+    public const uint MaximumTrainerIdValue = uint.MaxValue;
+
+    public static IReadOnlyList<int> ValidBallItemIds { get; } = Array.AsReadOnly<int>(
+    [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        492,
+        493,
+        494,
+        495,
+        496,
+        497,
+        498,
+        499,
+        576,
+        851,
+    ]);
+
+    public static bool IsValidBallItemId(int itemId)
+    {
+        return itemId == 0
+            || itemId is >= 1 and <= 16
+            || itemId is >= 492 and <= 499
+            || itemId is 576 or 851;
+    }
 
     private byte[]? SourceData { get; init; }
 
@@ -90,15 +132,38 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         }
 
         var rootTableOffset = ReadUOffset(data, offset: 0);
+        var rootTableLayout = ReadTableLayout(data, rootTableOffset);
         var rentalVectorOffset = ReadTableUOffset(data, rootTableOffset, fieldIndex: 0, required: true);
         var rentalCount = ReadVectorLength(data, rentalVectorOffset);
+        var rentalVectorLength = checked(sizeof(uint) + (rentalCount * sizeof(uint)));
+        EnsureRange(data, rentalVectorOffset, rentalVectorLength);
+        var protectedRanges = new ArchiveRange[]
+        {
+            new("root pointer", 0, sizeof(uint)),
+            new("root table", rootTableOffset, rootTableLayout.ObjectSize),
+            new("root vtable", rootTableLayout.VtableOffset, rootTableLayout.VtableLength),
+            new("rental vector", rentalVectorOffset, rentalVectorLength),
+        };
+        ValidateProtectedRanges(protectedRanges);
         var rentalTableOffsets = new int[rentalCount];
         var rentalVectorElementOffsets = new int[rentalCount];
         var rentals = new SwShRentalPokemonRecord[rentalCount];
+        var uniqueTableLayouts = new Dictionary<int, RentalTableLayout>();
         for (var index = 0; index < rentalCount; index++)
         {
-            var elementOffset = rentalVectorOffset + sizeof(uint) + (index * sizeof(uint));
+            var elementOffset = checked(rentalVectorOffset + sizeof(uint) + (index * sizeof(uint)));
             var tableOffset = ReadUOffset(data, elementOffset);
+            var tableLayout = ReadRentalTableLayout(data, tableOffset, rejectUnknownFields: false);
+            if (!uniqueTableLayouts.ContainsKey(tableOffset))
+            {
+                ValidateRentalLayoutOwnership(
+                    tableOffset,
+                    tableLayout,
+                    protectedRanges,
+                    uniqueTableLayouts);
+                uniqueTableLayouts.Add(tableOffset, tableLayout);
+            }
+
             rentalVectorElementOffsets[index] = elementOffset;
             rentalTableOffsets[index] = tableOffset;
             rentals[index] = ReadRental(data, tableOffset, index);
@@ -110,6 +175,85 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             SourceRentalTableOffsets = rentalTableOffsets,
             SourceRentalVectorElementOffsets = rentalVectorElementOffsets,
         };
+    }
+
+    private static void ValidateProtectedRanges(IReadOnlyList<ArchiveRange> protectedRanges)
+    {
+        for (var firstIndex = 0; firstIndex < protectedRanges.Count; firstIndex++)
+        {
+            for (var secondIndex = firstIndex + 1; secondIndex < protectedRanges.Count; secondIndex++)
+            {
+                var first = protectedRanges[firstIndex];
+                var second = protectedRanges[secondIndex];
+                if (RangesOverlap(first.Offset, first.Length, second.Offset, second.Length))
+                {
+                    throw new InvalidDataException(
+                        $"FlatBuffer archive structures '{first.Name}' and '{second.Name}' overlap.");
+                }
+            }
+        }
+    }
+
+    private static void ValidateRentalLayoutOwnership(
+        int tableOffset,
+        RentalTableLayout tableLayout,
+        IReadOnlyList<ArchiveRange> protectedRanges,
+        IReadOnlyDictionary<int, RentalTableLayout> existingTableLayouts)
+    {
+        foreach (var protectedRange in protectedRanges)
+        {
+            if (RangesOverlap(tableOffset, tableLayout.ObjectSize, protectedRange.Offset, protectedRange.Length))
+            {
+                throw new InvalidDataException(
+                    $"Rental Pokemon table object overlaps the {protectedRange.Name}.");
+            }
+
+            if (RangesOverlap(
+                tableLayout.VtableOffset,
+                tableLayout.VtableLength,
+                protectedRange.Offset,
+                protectedRange.Length))
+            {
+                throw new InvalidDataException(
+                    $"Rental Pokemon table vtable overlaps the {protectedRange.Name}.");
+            }
+        }
+
+        foreach (var existing in existingTableLayouts)
+        {
+            var existingTableOffset = existing.Key;
+            var existingLayout = existing.Value;
+            if (RangesOverlap(tableOffset, tableLayout.ObjectSize, existingTableOffset, existingLayout.ObjectSize))
+            {
+                throw new InvalidDataException("Rental Pokemon table objects partially overlap.");
+            }
+
+            if (RangesOverlap(
+                tableOffset,
+                tableLayout.ObjectSize,
+                existingLayout.VtableOffset,
+                existingLayout.VtableLength)
+                || RangesOverlap(
+                    tableLayout.VtableOffset,
+                    tableLayout.VtableLength,
+                    existingTableOffset,
+                    existingLayout.ObjectSize))
+            {
+                throw new InvalidDataException(
+                    "A Rental Pokemon table object overlaps another rental table vtable.");
+            }
+
+            if (RangesOverlap(
+                tableLayout.VtableOffset,
+                tableLayout.VtableLength,
+                existingLayout.VtableOffset,
+                existingLayout.VtableLength)
+                && (tableLayout.VtableOffset != existingLayout.VtableOffset
+                    || tableLayout.VtableLength != existingLayout.VtableLength))
+            {
+                throw new InvalidDataException("Rental Pokemon table vtables partially overlap.");
+            }
+        }
     }
 
     public byte[] Write()
@@ -140,10 +284,24 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             ApplyEdit(rentals, edit);
         }
 
+        foreach (var rentalIndex in materializedEdits
+            .Where(edit => IsEvField(edit.Field))
+            .Select(edit => edit.RentalIndex)
+            .Distinct())
+        {
+            ValidateEvTotal(rentals[rentalIndex].Evs);
+        }
+
         if (SourceData is not null
             && SourceRentalTableOffsets is not null
             && SourceRentalVectorElementOffsets is not null)
         {
+            if (SourceRentalTableOffsets.Count != Rentals.Count
+                || SourceRentalVectorElementOffsets.Count != Rentals.Count)
+            {
+                throw new InvalidDataException("Rental Pokemon archive source layout is inconsistent.");
+            }
+
             var finalEdits = materializedEdits
                 .Select(edit => edit.RentalIndex)
                 .Distinct()
@@ -161,27 +319,42 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             var outputBytes = new List<byte>(SourceData.Length + (finalEdits.Length * 8));
             outputBytes.AddRange(SourceData);
             var effectiveTableOffsets = SourceRentalTableOffsets.ToArray();
+            var aliasedTableOffsets = SourceRentalTableOffsets
+                .GroupBy(tableOffset => tableOffset)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToHashSet();
             foreach (var rentalEdits in finalEdits.GroupBy(edit => edit.RentalIndex))
             {
                 var rentalIndex = rentalEdits.Key;
                 var tableOffset = effectiveTableOffsets[rentalIndex];
-                var missingEdits = rentalEdits
-                    .Where(edit => edit.Value != 0
-                        && ReadTableFieldOffset(
-                            SourceData,
-                            tableOffset,
-                            GetScalarFieldIndex(edit.Field)) == 0)
+                var tableLayout = ReadRentalTableLayout(SourceData, tableOffset, rejectUnknownFields: false);
+                if (tableLayout.HasMaterializedUnknownFields)
+                {
+                    throw new InvalidDataException(
+                        $"Rental Pokemon table {rentalIndex} contains materialized unknown fields and cannot be safely edited.");
+                }
+
+                var missingFieldIndexes = rentalEdits
+                    .Where(edit => edit.Value != 0)
+                    .Select(edit => GetScalarFieldIndex(edit.Field))
+                    .Where(fieldIndex => ReadTableFieldOffset(
+                        SourceData,
+                        tableOffset,
+                        fieldIndex,
+                        GetRentalFieldSize(fieldIndex)) == 0)
+                    .Distinct()
                     .ToArray();
-                if (missingEdits.Length == 0)
+                if (missingFieldIndexes.Length == 0 && !aliasedTableOffsets.Contains(tableOffset))
                 {
                     continue;
                 }
 
-                var expandedTableOffset = AppendExpandedRentalTable(
+                var expandedTableOffset = AppendRentalTableCopy(
                     outputBytes,
                     SourceData,
                     tableOffset,
-                    missingEdits);
+                    missingFieldIndexes);
                 PatchUOffset(
                     outputBytes,
                     SourceRentalVectorElementOffsets[rentalIndex],
@@ -226,30 +399,30 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         var rental = rentals[edit.RentalIndex];
         mutableRentals[edit.RentalIndex] = edit.Field switch
         {
-            SwShRentalPokemonField.EvHp => rental with { Evs = rental.Evs with { HP = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShRentalPokemonField.EvAttack => rental with { Evs = rental.Evs with { Attack = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShRentalPokemonField.EvDefense => rental with { Evs = rental.Evs with { Defense = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShRentalPokemonField.EvSpeed => rental with { Evs = rental.Evs with { Speed = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShRentalPokemonField.EvSpecialAttack => rental with { Evs = rental.Evs with { SpecialAttack = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShRentalPokemonField.EvSpecialDefense => rental with { Evs = rental.Evs with { SpecialDefense = ValidateRange(edit.Value, 0, MaximumByteValue) } },
-            SwShRentalPokemonField.Form => rental with { Form = ValidateRange(edit.Value, 0, MaximumByteValue) },
-            SwShRentalPokemonField.BallItemId => rental with { BallItemId = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShRentalPokemonField.HeldItem => rental with { HeldItem = ValidateRange(edit.Value, 0, MaximumIdValue) },
+            SwShRentalPokemonField.EvHp => rental with { Evs = rental.Evs with { HP = ValidateIntRange(edit.Value, 0, MaximumPokemonEvValue) } },
+            SwShRentalPokemonField.EvAttack => rental with { Evs = rental.Evs with { Attack = ValidateIntRange(edit.Value, 0, MaximumPokemonEvValue) } },
+            SwShRentalPokemonField.EvDefense => rental with { Evs = rental.Evs with { Defense = ValidateIntRange(edit.Value, 0, MaximumPokemonEvValue) } },
+            SwShRentalPokemonField.EvSpeed => rental with { Evs = rental.Evs with { Speed = ValidateIntRange(edit.Value, 0, MaximumPokemonEvValue) } },
+            SwShRentalPokemonField.EvSpecialAttack => rental with { Evs = rental.Evs with { SpecialAttack = ValidateIntRange(edit.Value, 0, MaximumPokemonEvValue) } },
+            SwShRentalPokemonField.EvSpecialDefense => rental with { Evs = rental.Evs with { SpecialDefense = ValidateIntRange(edit.Value, 0, MaximumPokemonEvValue) } },
+            SwShRentalPokemonField.Form => rental with { Form = ValidateIntRange(edit.Value, 0, MaximumByteValue) },
+            SwShRentalPokemonField.BallItemId => rental with { BallItemId = ValidateBallItemId(edit.Value) },
+            SwShRentalPokemonField.HeldItem => rental with { HeldItem = ValidateIntRange(edit.Value, 0, MaximumIdValue) },
             SwShRentalPokemonField.Level => rental with
             {
-                Level = ValidateRange(edit.Value, MinimumPokemonLevel, MaximumPokemonLevel),
+                Level = ValidateIntRange(edit.Value, MinimumPokemonLevel, MaximumPokemonLevel),
             },
-            SwShRentalPokemonField.Species => rental with { Species = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShRentalPokemonField.TrainerId => rental with { TrainerId = checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)) },
-            SwShRentalPokemonField.Nature => rental with { Nature = ValidateRange(edit.Value, 0, MaximumIdValue) },
-            SwShRentalPokemonField.Gender => rental with { Gender = ValidateRange(edit.Value, 0, MaximumIdValue) },
+            SwShRentalPokemonField.Species => rental with { Species = ValidateIntRange(edit.Value, 1, MaximumIdValue) },
+            SwShRentalPokemonField.TrainerId => rental with { TrainerId = ValidateUIntRange(edit.Value, 0, MaximumTrainerIdValue) },
+            SwShRentalPokemonField.Nature => rental with { Nature = ValidateIntRange(edit.Value, 0, 24) },
+            SwShRentalPokemonField.Gender => rental with { Gender = ValidateIntRange(edit.Value, 0, 2) },
             SwShRentalPokemonField.IvHp => rental with { Ivs = rental.Ivs with { HP = ValidateIvValue(edit.Value) } },
             SwShRentalPokemonField.IvAttack => rental with { Ivs = rental.Ivs with { Attack = ValidateIvValue(edit.Value) } },
             SwShRentalPokemonField.IvDefense => rental with { Ivs = rental.Ivs with { Defense = ValidateIvValue(edit.Value) } },
             SwShRentalPokemonField.IvSpeed => rental with { Ivs = rental.Ivs with { Speed = ValidateIvValue(edit.Value) } },
             SwShRentalPokemonField.IvSpecialAttack => rental with { Ivs = rental.Ivs with { SpecialAttack = ValidateIvValue(edit.Value) } },
             SwShRentalPokemonField.IvSpecialDefense => rental with { Ivs = rental.Ivs with { SpecialDefense = ValidateIvValue(edit.Value) } },
-            SwShRentalPokemonField.Ability => rental with { Ability = ValidateRange(edit.Value, 0, MaximumIdValue) },
+            SwShRentalPokemonField.Ability => rental with { Ability = ValidateIntRange(edit.Value, 0, 2) },
             SwShRentalPokemonField.Move0 => rental with { Moves = SetMove(rental.Moves, 0, edit.Value) },
             SwShRentalPokemonField.Move1 => rental with { Moves = SetMove(rental.Moves, 1, edit.Value) },
             SwShRentalPokemonField.Move2 => rental with { Moves = SetMove(rental.Moves, 2, edit.Value) },
@@ -259,7 +432,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         };
     }
 
-    private static IReadOnlyList<int> SetMove(IReadOnlyList<int> moves, int slot, int value)
+    private static IReadOnlyList<int> SetMove(IReadOnlyList<int> moves, int slot, long value)
     {
         var updatedMoves = moves.ToArray();
         if ((uint)slot >= (uint)updatedMoves.Length)
@@ -267,22 +440,22 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             throw new InvalidDataException($"Rental Pokemon move slot {slot} is not present.");
         }
 
-        updatedMoves[slot] = ValidateRange(value, 0, MaximumIdValue);
+        updatedMoves[slot] = ValidateIntRange(value, 0, MaximumIdValue);
 
         return updatedMoves;
     }
 
-    private static SwShRentalPokemonStats CreateFixedIvPreset(int value)
+    private static SwShRentalPokemonStats CreateFixedIvPreset(long value)
     {
         var fixedValue = ValidateIvValue(value);
         return new SwShRentalPokemonStats(fixedValue, fixedValue, fixedValue, fixedValue, fixedValue, fixedValue);
     }
 
-    private static int ValidateIvValue(int value)
+    private static int ValidateIvValue(long value)
     {
         if (value is >= MinimumFixedIvValue and <= MaximumFixedIvValue)
         {
-            return value;
+            return checked((int)value);
         }
 
         throw new ArgumentOutOfRangeException(
@@ -290,7 +463,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             $"Rental Pokemon IV value {value} is outside the supported range {MinimumFixedIvValue}-{MaximumFixedIvValue}.");
     }
 
-    private static int ValidateRange(int value, int minimum, int maximum)
+    private static int ValidateIntRange(long value, int minimum, int maximum)
     {
         if (value < minimum || value > maximum)
         {
@@ -299,7 +472,57 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
                 $"Rental Pokemon value {value} is outside the supported range {minimum}-{maximum}.");
         }
 
-        return value;
+        return checked((int)value);
+    }
+
+    private static uint ValidateUIntRange(long value, uint minimum, uint maximum)
+    {
+        if (value < minimum || value > maximum)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value),
+                $"Rental Pokemon value {value} is outside the supported range {minimum}-{maximum}.");
+        }
+
+        return checked((uint)value);
+    }
+
+    private static int ValidateBallItemId(long value)
+    {
+        if (value is >= int.MinValue and <= int.MaxValue && IsValidBallItemId((int)value))
+        {
+            return (int)value;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            nameof(value),
+            $"Rental Pokemon ball item ID {value} is not a supported Sword/Shield ball item ID.");
+    }
+
+    private static bool IsEvField(SwShRentalPokemonField field)
+    {
+        return field is SwShRentalPokemonField.EvHp
+            or SwShRentalPokemonField.EvAttack
+            or SwShRentalPokemonField.EvDefense
+            or SwShRentalPokemonField.EvSpeed
+            or SwShRentalPokemonField.EvSpecialAttack
+            or SwShRentalPokemonField.EvSpecialDefense;
+    }
+
+    private static void ValidateEvTotal(SwShRentalPokemonStats evs)
+    {
+        var total = checked(evs.HP
+            + evs.Attack
+            + evs.Defense
+            + evs.Speed
+            + evs.SpecialAttack
+            + evs.SpecialDefense);
+        if (total > MaximumPokemonEvTotal)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(evs),
+                $"Rental Pokemon EV total {total} exceeds the supported total {MaximumPokemonEvTotal}.");
+        }
     }
 
     private static IEnumerable<SwShRentalPokemonEdit> GetChangedScalarEdits(
@@ -384,7 +607,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             yield return new SwShRentalPokemonEdit(
                 rentalIndex,
                 SwShRentalPokemonField.TrainerId,
-                checked((int)updated.TrainerId));
+                updated.TrainerId);
         }
 
         if (original.Nature != updated.Nature)
@@ -499,35 +722,31 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         };
     }
 
-    private static int AppendExpandedRentalTable(
+    private static int AppendRentalTableCopy(
         List<byte> output,
         ReadOnlySpan<byte> source,
         int tableOffset,
-        IReadOnlyList<SwShRentalPokemonEdit> missingEdits)
+        IReadOnlyList<int> missingFieldIndexes)
     {
         var layout = ReadRentalTableLayout(source, tableOffset, rejectUnknownFields: true);
-        var missingFieldIndexes = missingEdits
-            .Select(edit => GetScalarFieldIndex(edit.Field))
+        var orderedFieldIndexes = missingFieldIndexes
             .Distinct()
             .OrderByDescending(GetRentalFieldSize)
             .ThenBy(fieldIndex => fieldIndex)
             .ToArray();
-        if (missingFieldIndexes.Length == 0)
-        {
-            throw new InvalidOperationException("No omitted Rental Pokemon fields were selected for materialization.");
-        }
 
-        foreach (var fieldIndex in missingFieldIndexes)
+        foreach (var fieldIndex in orderedFieldIndexes)
         {
-            if (ReadTableFieldOffset(source, tableOffset, fieldIndex) != 0)
+            if (ReadTableFieldOffset(source, tableOffset, fieldIndex, GetRentalFieldSize(fieldIndex)) != 0)
             {
                 throw new InvalidOperationException(
                     $"Rental Pokemon field {fieldIndex} is already materialized in the source table.");
             }
         }
 
-        var requiredVtableLength = checked(
-            (sizeof(ushort) * 2) + ((missingFieldIndexes.Max() + 1) * sizeof(ushort)));
+        var requiredVtableLength = orderedFieldIndexes.Length == 0
+            ? layout.VtableLength
+            : checked((sizeof(ushort) * 2) + ((orderedFieldIndexes.Max() + 1) * sizeof(ushort)));
         var expandedVtableLength = Math.Max(layout.VtableLength, requiredVtableLength);
         if (expandedVtableLength > ushort.MaxValue)
         {
@@ -548,7 +767,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             expandedTableOffset,
             checked(expandedTableOffset - expandedVtableOffset));
 
-        foreach (var fieldIndex in missingFieldIndexes)
+        foreach (var fieldIndex in orderedFieldIndexes)
         {
             var fieldSize = GetRentalFieldSize(fieldIndex);
             AlignBuffer(output, fieldSize);
@@ -583,49 +802,14 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         int tableOffset,
         bool rejectUnknownFields)
     {
-        EnsureRange(data, tableOffset, sizeof(int));
-        var vtableDelta = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
-        if (vtableDelta == 0)
-        {
-            throw new InvalidDataException("Rental Pokemon table has an invalid zero vtable offset.");
-        }
-
-        var vtableOffsetValue = (long)tableOffset - vtableDelta;
-        if (vtableOffsetValue < 0 || vtableOffsetValue > int.MaxValue)
-        {
-            throw new InvalidDataException("Rental Pokemon table has an invalid vtable offset.");
-        }
-
-        var vtableOffset = (int)vtableOffsetValue;
-        EnsureRange(data, vtableOffset, sizeof(ushort) * 2);
-        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(
-            data.Slice(vtableOffset, sizeof(ushort)));
-        var objectSize = BinaryPrimitives.ReadUInt16LittleEndian(
-            data.Slice(vtableOffset + sizeof(ushort), sizeof(ushort)));
-        if (vtableLength < sizeof(ushort) * 2
-            || (vtableLength - (sizeof(ushort) * 2)) % sizeof(ushort) != 0)
-        {
-            throw new InvalidDataException("Rental Pokemon table has an invalid vtable length.");
-        }
-
-        if (objectSize < sizeof(int))
-        {
-            throw new InvalidDataException("Rental Pokemon table has an invalid object size.");
-        }
-
-        EnsureRange(data, vtableOffset, vtableLength);
-        EnsureRange(data, tableOffset, objectSize);
-        if (RangesOverlap(vtableOffset, vtableLength, tableOffset, objectSize))
-        {
-            throw new InvalidDataException("Rental Pokemon table overlaps its vtable.");
-        }
-
-        var materializedFieldRanges = new List<(int Start, int End, int FieldIndex)>();
-        var fieldCount = (vtableLength - (sizeof(ushort) * 2)) / sizeof(ushort);
+        var layout = ReadTableLayout(data, tableOffset);
+        var materializedFieldRanges = new List<(int Start, int End)>();
+        var hasMaterializedUnknownFields = false;
+        var fieldCount = (layout.VtableLength - (sizeof(ushort) * 2)) / sizeof(ushort);
         for (var fieldIndex = 0; fieldIndex < fieldCount; fieldIndex++)
         {
             var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(
-                vtableOffset + (sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort)),
+                layout.VtableOffset + (sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort)),
                 sizeof(ushort)));
             if (fieldOffset == 0)
             {
@@ -634,30 +818,25 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
             if (fieldIndex >= RentalFieldCount)
             {
+                hasMaterializedUnknownFields = true;
+                if (fieldOffset < sizeof(int) || fieldOffset >= layout.ObjectSize)
+                {
+                    throw new InvalidDataException(
+                        $"Rental Pokemon unknown field {fieldIndex} points outside its table object.");
+                }
+
                 if (rejectUnknownFields)
                 {
                     throw new InvalidDataException(
-                        $"Rental Pokemon table contains unknown field {fieldIndex} and cannot be safely expanded.");
+                        $"Rental Pokemon table contains unknown field {fieldIndex} and cannot be safely copied.");
                 }
 
                 continue;
             }
 
             var fieldSize = GetRentalFieldSize(fieldIndex);
-            if (fieldOffset < sizeof(int) || fieldOffset > objectSize - fieldSize)
-            {
-                throw new InvalidDataException(
-                    $"Rental Pokemon field {fieldIndex} points outside its table object.");
-            }
-
-            var absoluteFieldOffset = checked(tableOffset + fieldOffset);
-            if (absoluteFieldOffset % fieldSize != 0)
-            {
-                throw new InvalidDataException(
-                    $"Rental Pokemon field {fieldIndex} is not naturally aligned.");
-            }
-
-            var fieldEnd = fieldOffset + fieldSize;
+            _ = ReadTableFieldOffset(data, tableOffset, fieldIndex, fieldSize);
+            var fieldEnd = checked(fieldOffset + fieldSize);
             if (materializedFieldRanges.Any(range =>
                 fieldOffset < range.End && fieldEnd > range.Start))
             {
@@ -665,10 +844,10 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
                     $"Rental Pokemon field {fieldIndex} overlaps another scalar field.");
             }
 
-            materializedFieldRanges.Add((fieldOffset, fieldEnd, fieldIndex));
+            materializedFieldRanges.Add((fieldOffset, fieldEnd));
         }
 
-        return new RentalTableLayout(vtableOffset, vtableLength, objectSize);
+        return layout with { HasMaterializedUnknownFields = hasMaterializedUnknownFields };
     }
 
     private static bool RangesOverlap(int firstOffset, int firstLength, int secondOffset, int secondLength)
@@ -759,25 +938,25 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
                 PatchByte(data, tableOffset, fieldIndex: 6, checked((byte)edit.Value));
                 break;
             case SwShRentalPokemonField.BallItemId:
-                PatchInt32(data, tableOffset, fieldIndex: 7, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 7, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.HeldItem:
-                PatchInt32(data, tableOffset, fieldIndex: 9, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 9, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.Level:
                 PatchByte(data, tableOffset, fieldIndex: 10, checked((byte)edit.Value));
                 break;
             case SwShRentalPokemonField.Species:
-                PatchInt32(data, tableOffset, fieldIndex: 11, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 11, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.TrainerId:
                 PatchUInt32(data, tableOffset, fieldIndex: 13, checked((uint)edit.Value));
                 break;
             case SwShRentalPokemonField.Nature:
-                PatchInt32(data, tableOffset, fieldIndex: 14, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 14, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.Gender:
-                PatchInt32(data, tableOffset, fieldIndex: 15, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 15, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.IvHp:
                 PatchSByte(data, tableOffset, fieldIndex: 19, checked((sbyte)edit.Value));
@@ -798,19 +977,19 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
                 PatchSByte(data, tableOffset, fieldIndex: 21, checked((sbyte)edit.Value));
                 break;
             case SwShRentalPokemonField.Ability:
-                PatchInt32(data, tableOffset, fieldIndex: 22, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 22, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.Move0:
-                PatchInt32(data, tableOffset, fieldIndex: 23, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 23, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.Move1:
-                PatchInt32(data, tableOffset, fieldIndex: 24, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 24, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.Move2:
-                PatchInt32(data, tableOffset, fieldIndex: 25, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 25, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.Move3:
-                PatchInt32(data, tableOffset, fieldIndex: 26, edit.Value);
+                PatchInt32(data, tableOffset, fieldIndex: 26, checked((int)edit.Value));
                 break;
             case SwShRentalPokemonField.FixedIvPreset:
                 var fixedValue = checked((sbyte)edit.Value);
@@ -865,7 +1044,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         int valueSize)
     {
         _ = ReadRentalTableLayout(data, tableOffset, rejectUnknownFields: false);
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, valueSize);
         if (fieldOffset == 0)
         {
             if (isDefaultValue)
@@ -923,7 +1102,18 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
     {
         EnsureRange(data, offset, sizeof(uint));
         var relativeOffset = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint)));
-        var targetOffset = checked(offset + (int)relativeOffset);
+        if (relativeOffset == 0 || relativeOffset > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer archive contains an invalid unsigned offset.");
+        }
+
+        var targetOffsetValue = offset + (long)relativeOffset;
+        if (targetOffsetValue > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer archive contains an invalid unsigned offset.");
+        }
+
+        var targetOffset = (int)targetOffsetValue;
         EnsureRange(data, targetOffset, sizeof(int));
 
         return targetOffset;
@@ -931,7 +1121,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
     private static int ReadTableUOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(uint));
         if (fieldOffset == 0)
         {
             if (required)
@@ -947,7 +1137,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
     private static byte ReadTableByte(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(byte));
         if (fieldOffset == 0)
         {
             if (required)
@@ -965,7 +1155,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
     private static sbyte ReadTableSByte(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(sbyte));
         if (fieldOffset == 0)
         {
             if (required)
@@ -983,7 +1173,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
     private static int ReadTableInt32(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(int));
         if (fieldOffset == 0)
         {
             if (required)
@@ -1001,7 +1191,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
     private static uint ReadTableUInt32(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(uint));
         if (fieldOffset == 0)
         {
             if (required)
@@ -1019,7 +1209,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
 
     private static ulong ReadTableUInt64(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(ulong));
         if (fieldOffset == 0)
         {
             if (required)
@@ -1035,31 +1225,97 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
         return BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(tableOffset + fieldOffset, sizeof(ulong)));
     }
 
-    private static int ReadTableFieldOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex)
+    private static int ReadTableFieldOffset(
+        ReadOnlySpan<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        int fieldSize)
     {
-        EnsureRange(data, tableOffset, sizeof(int));
-        var vtableOffset = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
-        var vtableStart = tableOffset - vtableOffset;
-        EnsureRange(data, vtableStart, sizeof(ushort) * 2);
-        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableStart, sizeof(ushort)));
-        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
-        if (fieldEntryOffset + sizeof(ushort) > vtableLength)
+        if (fieldIndex < 0 || fieldSize <= 0)
+        {
+            throw new InvalidDataException("FlatBuffer table field metadata is invalid.");
+        }
+
+        var layout = ReadTableLayout(data, tableOffset);
+        var fieldEntryOffset = checked((sizeof(ushort) * 2) + (fieldIndex * sizeof(ushort)));
+        if (fieldEntryOffset + sizeof(ushort) > layout.VtableLength)
         {
             return 0;
         }
 
-        EnsureRange(data, vtableStart + fieldEntryOffset, sizeof(ushort));
+        var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(layout.VtableOffset + fieldEntryOffset, sizeof(ushort)));
+        if (fieldOffset == 0)
+        {
+            return 0;
+        }
 
-        return BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableStart + fieldEntryOffset, sizeof(ushort)));
+        if (fieldOffset < sizeof(int) || fieldOffset > layout.ObjectSize - fieldSize)
+        {
+            throw new InvalidDataException(
+                $"FlatBuffer field {fieldIndex} points outside its table object.");
+        }
+
+        var absoluteFieldOffset = checked(tableOffset + fieldOffset);
+        if (absoluteFieldOffset % fieldSize != 0)
+        {
+            throw new InvalidDataException(
+                $"FlatBuffer field {fieldIndex} is not naturally aligned.");
+        }
+
+        return fieldOffset;
+    }
+
+    private static RentalTableLayout ReadTableLayout(ReadOnlySpan<byte> data, int tableOffset)
+    {
+        EnsureRange(data, tableOffset, sizeof(int));
+        var vtableDelta = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
+        if (vtableDelta == 0)
+        {
+            throw new InvalidDataException("FlatBuffer table has an invalid zero vtable offset.");
+        }
+
+        var vtableOffsetValue = (long)tableOffset - vtableDelta;
+        if (vtableOffsetValue < 0 || vtableOffsetValue > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer table has an invalid vtable offset.");
+        }
+
+        var vtableOffset = (int)vtableOffsetValue;
+        EnsureRange(data, vtableOffset, sizeof(ushort) * 2);
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(vtableOffset, sizeof(ushort)));
+        var objectSize = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(vtableOffset + sizeof(ushort), sizeof(ushort)));
+        if (vtableLength < sizeof(ushort) * 2
+            || (vtableLength - (sizeof(ushort) * 2)) % sizeof(ushort) != 0)
+        {
+            throw new InvalidDataException("FlatBuffer table has an invalid vtable length.");
+        }
+
+        if (objectSize < sizeof(int))
+        {
+            throw new InvalidDataException("FlatBuffer table has an invalid object size.");
+        }
+
+        EnsureRange(data, vtableOffset, vtableLength);
+        EnsureRange(data, tableOffset, objectSize);
+        if (RangesOverlap(vtableOffset, vtableLength, tableOffset, objectSize))
+        {
+            throw new InvalidDataException("FlatBuffer table overlaps its vtable.");
+        }
+
+        return new RentalTableLayout(vtableOffset, vtableLength, objectSize, HasMaterializedUnknownFields: false);
     }
 
     private static int ReadVectorLength(ReadOnlySpan<byte> data, int vectorOffset)
     {
         EnsureRange(data, vectorOffset, sizeof(uint));
         var count = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(vectorOffset, sizeof(uint)));
-        if (count > int.MaxValue)
+        var availableElementCount = (data.Length - vectorOffset - sizeof(uint)) / sizeof(uint);
+        if (count > int.MaxValue || count > (uint)availableElementCount)
         {
-            throw new InvalidDataException("FlatBuffer vector is too large.");
+            throw new InvalidDataException("FlatBuffer table vector length exceeds the available archive data.");
         }
 
         return (int)count;
@@ -1144,7 +1400,7 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             WriteByte(checked((byte)rental.Evs.SpecialAttack));
             WriteByte(checked((byte)rental.Evs.SpecialDefense));
             WriteByte(checked((byte)rental.Form));
-            WriteByte(checked((byte)ValidateRange(
+            WriteByte(checked((byte)ValidateIntRange(
                 rental.Level,
                 MinimumPokemonLevel,
                 MaximumPokemonLevel)));
@@ -1289,8 +1545,11 @@ public sealed record SwShRentalPokemonArchive(IReadOnlyList<SwShRentalPokemonRec
             IReadOnlyList<int> ElementOffsets);
     }
 
+    private readonly record struct ArchiveRange(string Name, int Offset, int Length);
+
     private readonly record struct RentalTableLayout(
         int VtableOffset,
         int VtableLength,
-        int ObjectSize);
+        int ObjectSize,
+        bool HasMaterializedUnknownFields);
 }

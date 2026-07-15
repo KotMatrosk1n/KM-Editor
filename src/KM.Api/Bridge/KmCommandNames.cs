@@ -38,6 +38,7 @@ public static class KmCommandNames
     public const string UpdateStaticEncounterFields = "staticEncounters.fields.update";
     public const string LoadRentalPokemonWorkflow = "rentalPokemon.load";
     public const string UpdateRentalPokemonField = "rentalPokemon.field.update";
+    public const string UpdateRentalPokemonFields = "rentalPokemon.fields.update";
     public const string LoadDynamaxAdventuresWorkflow = "dynamaxAdventures.load";
     public const string UpdateDynamaxAdventureField = "dynamaxAdventures.field.update";
     public const string PreviewDynamaxAdventureDefaults = "dynamaxAdventures.defaults.preview";

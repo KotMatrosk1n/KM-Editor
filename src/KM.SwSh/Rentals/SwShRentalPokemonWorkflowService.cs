@@ -9,6 +9,8 @@ using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Rentals;
 
@@ -82,7 +84,7 @@ public sealed class SwShRentalPokemonWorkflowService
 
     private static readonly IReadOnlyList<SwShRentalPokemonEditableField> BaseEditableFields =
     [
-        CreateField(SpeciesField, "Species", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
+        CreateField(SpeciesField, "Species", "integer", 1, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(FormField, "Form", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue, FormOptions),
         CreateField(
             LevelField,
@@ -95,7 +97,7 @@ public sealed class SwShRentalPokemonWorkflowService
         CreateField(AbilityField, "Ability slot", "integer", 0, 2, AbilityOptions),
         CreateField(NatureField, "Nature", "integer", 0, 24, NatureOptions),
         CreateField(GenderField, "Gender", "integer", 0, 2, GenderOptions),
-        CreateField(TrainerIdField, "Trainer ID", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
+        CreateField(TrainerIdField, "Trainer ID", "integer", 0, uint.MaxValue),
         CreateField(Move0Field, "Move 1", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(Move1Field, "Move 2", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(Move2Field, "Move 3", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
@@ -213,15 +215,99 @@ public sealed class SwShRentalPokemonWorkflowService
         return $"rental:{rentalIndex.ToString(CultureInfo.InvariantCulture)}";
     }
 
+    internal static string CreateRentalRecordId(int rentalIndex, string sourceIdentity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceIdentity);
+
+        return $"{CreateRentalRecordId(rentalIndex)}:{sourceIdentity}";
+    }
+
     internal static bool TryParseRentalRecordId(string? recordId, out int rentalIndex)
     {
+        return TryParseRentalRecordId(recordId, out rentalIndex, out _);
+    }
+
+    internal static bool TryParseRentalRecordId(
+        string? recordId,
+        out int rentalIndex,
+        out string? sourceIdentity)
+    {
         rentalIndex = 0;
+        sourceIdentity = null;
 
         const string prefix = "rental:";
-        return recordId is not null
-            && recordId.StartsWith(prefix, StringComparison.Ordinal)
-            && int.TryParse(recordId[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out rentalIndex)
-            && rentalIndex >= 0;
+        if (recordId is null || !recordId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var remainder = recordId[prefix.Length..];
+        var separator = remainder.IndexOf(':');
+        var indexText = separator < 0 ? remainder : remainder[..separator];
+        if (!int.TryParse(indexText, NumberStyles.None, CultureInfo.InvariantCulture, out rentalIndex)
+            || rentalIndex < 0
+            || !string.Equals(
+                indexText,
+                rentalIndex.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (separator < 0)
+        {
+            return true;
+        }
+
+        sourceIdentity = remainder[(separator + 1)..];
+        return sourceIdentity.Length == 64 && sourceIdentity.All(Uri.IsHexDigit);
+    }
+
+    internal static string CreateSourceIdentity(SwShRentalPokemonRecord rental)
+    {
+        ArgumentNullException.ThrowIfNull(rental);
+
+        var canonical = new StringBuilder();
+        AppendIdentityValue(canonical, rental.Index);
+        AppendIdentityValue(canonical, rental.Evs.HP);
+        AppendIdentityValue(canonical, rental.Evs.Attack);
+        AppendIdentityValue(canonical, rental.Evs.Defense);
+        AppendIdentityValue(canonical, rental.Evs.Speed);
+        AppendIdentityValue(canonical, rental.Evs.SpecialAttack);
+        AppendIdentityValue(canonical, rental.Evs.SpecialDefense);
+        AppendIdentityValue(canonical, rental.Form);
+        AppendIdentityValue(canonical, rental.BallItemId);
+        AppendIdentityValue(canonical, rental.Hash1);
+        AppendIdentityValue(canonical, rental.HeldItem);
+        AppendIdentityValue(canonical, rental.Level);
+        AppendIdentityValue(canonical, rental.Species);
+        AppendIdentityValue(canonical, rental.Hash2);
+        AppendIdentityValue(canonical, rental.TrainerId);
+        AppendIdentityValue(canonical, rental.Nature);
+        AppendIdentityValue(canonical, rental.Gender);
+        AppendIdentityValue(canonical, rental.Ivs.HP);
+        AppendIdentityValue(canonical, rental.Ivs.Attack);
+        AppendIdentityValue(canonical, rental.Ivs.Defense);
+        AppendIdentityValue(canonical, rental.Ivs.Speed);
+        AppendIdentityValue(canonical, rental.Ivs.SpecialAttack);
+        AppendIdentityValue(canonical, rental.Ivs.SpecialDefense);
+        AppendIdentityValue(canonical, rental.Ability);
+        foreach (var move in rental.Moves)
+        {
+            AppendIdentityValue(canonical, move);
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendIdentityValue<T>(StringBuilder destination, T value)
+        where T : IFormattable
+    {
+        var text = value.ToString(null, CultureInfo.InvariantCulture);
+        destination.Append(text.Length);
+        destination.Append(':');
+        destination.Append(text);
+        destination.Append('|');
     }
 
     internal static WorkflowFileSource? ResolveRentalPokemonDataSource(OpenedProject project)
@@ -267,12 +353,31 @@ public sealed class SwShRentalPokemonWorkflowService
                 rentals.Count,
                 rentals.Count(rental => rental.HasPerfectIvs),
                 sourceFileCount),
-            diagnostics);
+            diagnostics)
+        {
+            AbilityResolver = lookupTables.AbilityResolver,
+            HasItemSemanticData = lookupTables.ItemSemanticData.HasSemanticData,
+            ValidHeldItemIds = lookupTables.ItemSemanticData.ValidItemIds,
+            ItemSemanticSource = lookupTables.ItemSemanticData.Source,
+            HasMoveSemanticData = lookupTables.MoveAvailability.HasSemanticData,
+            UsableMoveSources = lookupTables.MoveAvailability.UsableMoveSources,
+        };
     }
 
     private static RentalLookupTables CreateEmptyLookupTables()
     {
-        return new RentalLookupTables([], new HashSet<int>(), [], [], new HashSet<int>(), SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
+        return new RentalLookupTables(
+            [],
+            new HashSet<int>(),
+            [],
+            [],
+            ItemSemanticData.Empty,
+            new SwShMoveAvailabilityResult(
+                new HashSet<int>(),
+                new Dictionary<int, ProjectFileReference>(),
+                HasSemanticData: false),
+            SwShPokemonAbilityOptionResolver.Empty,
+            SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShRentalPokemonEditableField> CreateEditableFields(RentalLookupTables lookupTables)
@@ -281,18 +386,29 @@ public sealed class SwShRentalPokemonWorkflowService
             lookupTables.SpeciesNames,
             lookupTables.PresentSpeciesIds,
             (value, label) => new SwShRentalPokemonEditableFieldOption(value, label));
-        var itemOptions = CreateIndexedOptions(lookupTables.ItemNames, "Item");
-        var moveOptions = SwShMoveAvailability.CreateMoveOptions(
-            lookupTables.MoveNames,
-            lookupTables.UsableMoveIds,
-            (value, label) => new SwShRentalPokemonEditableFieldOption(value, label),
-            includeNone: true);
+        var heldItemOptions = CreateIndexedOptions(
+            lookupTables.ItemSemanticData.ValidItemIds.Append(0),
+            lookupTables.ItemNames,
+            "Item");
+        var ballOptions = CreateIndexedOptions(
+            SwShRentalPokemonArchive.ValidBallItemIds,
+            lookupTables.ItemNames,
+            "Item");
+        IReadOnlyList<SwShRentalPokemonEditableFieldOption> moveOptions =
+            lookupTables.MoveAvailability.UsableMoveIds.Count > 0
+                ? SwShMoveAvailability.CreateMoveOptions(
+                    lookupTables.MoveNames,
+                    lookupTables.MoveAvailability.UsableMoveIds,
+                    (value, label) => new SwShRentalPokemonEditableFieldOption(value, label),
+                    includeNone: true)
+                : [new SwShRentalPokemonEditableFieldOption(0, "000 None")];
 
         return BaseEditableFields
             .Select(field => field.Field switch
             {
                 SpeciesField => field with { Options = speciesOptions },
-                HeldItemIdField or BallItemIdField => field with { Options = itemOptions },
+                HeldItemIdField => field with { Options = heldItemOptions },
+                BallItemIdField => field with { Options = ballOptions },
                 Move0Field or Move1Field or Move2Field or Move3Field => field with { Options = moveOptions },
                 _ => field,
             })
@@ -300,15 +416,17 @@ public sealed class SwShRentalPokemonWorkflowService
     }
 
     private static IReadOnlyList<SwShRentalPokemonEditableFieldOption> CreateIndexedOptions(
+        IEnumerable<int> ids,
         IReadOnlyList<string> names,
         string fallbackPrefix)
     {
-        return names
-            .Select((name, index) => new SwShRentalPokemonEditableFieldOption(
-                index,
-                string.IsNullOrWhiteSpace(name)
-                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} {fallbackPrefix} {index}"
-                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
+        return ids
+            .Where(id => id >= 0)
+            .Distinct()
+            .Order()
+            .Select(id => new SwShRentalPokemonEditableFieldOption(
+                id,
+                $"{id.ToString("000", CultureInfo.InvariantCulture)} {GetIndexedName(id, names, fallbackPrefix)}"))
             .ToArray();
     }
 
@@ -359,7 +477,10 @@ public sealed class SwShRentalPokemonWorkflowService
             rental.Nature,
             GetOptionLabel(NatureOptions, rental.Nature, "Nature"),
             rental.Gender,
-            GetOptionLabel(GenderOptions, rental.Gender, "Gender"),
+            GetOptionLabel(
+                CreateGenderOptions(lookupTables.AbilityResolver, rental.Species, rental.Form),
+                rental.Gender,
+                "Gender"),
             rental.TrainerId,
             FormatHash(rental.Hash1),
             FormatHash(rental.Hash2),
@@ -371,6 +492,8 @@ public sealed class SwShRentalPokemonWorkflowService
             provenance)
         {
             AbilityOptions = CreateAbilityOptions(lookupTables, rental.Species, rental.Form),
+            GenderOptions = CreateGenderOptions(lookupTables.AbilityResolver, rental.Species, rental.Form),
+            SourceIdentity = CreateSourceIdentity(rental),
         };
     }
 
@@ -425,7 +548,8 @@ public sealed class SwShRentalPokemonWorkflowService
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
-        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+        var itemSemanticData = LoadItemSemanticData(project);
+        var moveAvailability = SwShMoveAvailability.Load(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RentalLookupTables(
@@ -433,13 +557,53 @@ public sealed class SwShRentalPokemonWorkflowService
             presentSpeciesIds,
             itemDisplayNames,
             moveNames,
-            usableMoveIds,
+            itemSemanticData,
+            moveAvailability,
             abilityResolver,
             CountSource(speciesNames)
                 + CountSource(itemNames)
                 + CountSource(moveNames)
                 + (presentSpeciesIds.Count > 0 ? 1 : 0)
-                + (usableMoveIds.Count > 0 ? 1 : 0));
+                + (itemSemanticData.HasSemanticData ? 1 : 0)
+                + (moveAvailability.HasSemanticData ? 1 : 0));
+    }
+
+    private static ItemSemanticData LoadItemSemanticData(OpenedProject project)
+    {
+        var source = SwShItemsWorkflowService.ResolveItemDataSource(project);
+        if (source is null)
+        {
+            return ItemSemanticData.Empty;
+        }
+
+        try
+        {
+            var itemIds = SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
+                .Records
+                .Select(record => record.ItemId)
+                .Where(itemId => itemId >= 0)
+                .ToHashSet();
+            if (itemIds.Count == 0)
+            {
+                return ItemSemanticData.Empty;
+            }
+
+            return new ItemSemanticData(
+                itemIds,
+                new ProjectFileReference(
+                    source.GraphEntry.LayeredFile is not null
+                        ? ProjectFileLayer.Layered
+                        : ProjectFileLayer.Base,
+                    source.GraphEntry.RelativePath),
+                HasSemanticData: true);
+        }
+        catch (Exception exception) when (exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or OverflowException)
+        {
+            return ItemSemanticData.Empty;
+        }
     }
 
     private static IReadOnlyList<SwShRentalPokemonEditableFieldOption> CreateAbilityOptions(
@@ -447,10 +611,63 @@ public sealed class SwShRentalPokemonWorkflowService
         int speciesId,
         int form)
     {
-        return lookupTables.AbilityResolver
+        return CreateAbilityOptions(lookupTables.AbilityResolver, speciesId, form);
+    }
+
+    internal static IReadOnlyList<SwShRentalPokemonEditableFieldOption> CreateAbilityOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var personal = abilityResolver.ResolvePersonalRecord(speciesId, form);
+        if (personal is null)
+        {
+            return AbilityOptions;
+        }
+
+        return abilityResolver
             .CreateOptions(speciesId, form, SwShAbilityOptionMode.ZeroBasedSlots)
+            .Where(option => option.Value switch
+            {
+                0 => personal.Ability1 != 0,
+                1 => personal.Ability2 != 0,
+                2 => personal.HiddenAbility != 0,
+                _ => false,
+            })
             .Select(option => new SwShRentalPokemonEditableFieldOption(option.Value, option.Label))
             .ToArray();
+    }
+
+    internal static IReadOnlyList<SwShRentalPokemonEditableFieldOption> CreateGenderOptions(
+        SwShPokemonAbilityOptionResolver abilityResolver,
+        int speciesId,
+        int form)
+    {
+        var personal = abilityResolver.ResolvePersonalRecord(speciesId, form);
+        if (personal is null)
+        {
+            return GenderOptions;
+        }
+
+        return personal.GenderRatio switch
+        {
+            255 =>
+            [
+                new(0, "Random"),
+                new(2, "Genderless"),
+            ],
+            0 =>
+            [
+                new(0, "Random"),
+                new(1, "Male"),
+            ],
+            254 =>
+            [
+                new(0, "Random"),
+                new(2, "Female"),
+            ],
+            _ => GenderOptions,
+        };
     }
 
     private static string GetAbilityOptionLabel(
@@ -640,8 +857,8 @@ public sealed class SwShRentalPokemonWorkflowService
         string field,
         string label,
         string valueKind,
-        int? minimumValue,
-        int? maximumValue,
+        long? minimumValue,
+        long? maximumValue,
         IReadOnlyList<SwShRentalPokemonEditableFieldOption>? options = null)
     {
         return new SwShRentalPokemonEditableField(
@@ -690,7 +907,17 @@ public sealed class SwShRentalPokemonWorkflowService
         IReadOnlySet<int> PresentSpeciesIds,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
-        IReadOnlySet<int> UsableMoveIds,
+        ItemSemanticData ItemSemanticData,
+        SwShMoveAvailabilityResult MoveAvailability,
         SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
+
+    private sealed record ItemSemanticData(
+        IReadOnlySet<int> ValidItemIds,
+        ProjectFileReference? Source,
+        bool HasSemanticData)
+    {
+        public static ItemSemanticData Empty { get; } =
+            new(new HashSet<int>(), Source: null, HasSemanticData: false);
+    }
 }

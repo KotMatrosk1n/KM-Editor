@@ -5,6 +5,11 @@ using KM.Core.Editing;
 
 namespace KM.SwSh.Rentals;
 
+public sealed record SwShRentalPokemonFieldUpdate(
+    int RentalIndex,
+    string Field,
+    string Value);
+
 public sealed record SwShRentalPokemonEditResult(
     SwShRentalPokemonWorkflow Workflow,
     EditSession Session,

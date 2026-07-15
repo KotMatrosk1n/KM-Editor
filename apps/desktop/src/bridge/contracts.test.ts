@@ -57,6 +57,8 @@ import {
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
   refreshFileGraphResponseSchema,
+  rentalPokemonEditableFieldSchema,
+  rentalPokemonMoveSchema,
   startEditSessionRequestSchema,
   startEditSessionResponseSchema,
   tradePokemonEditableFieldSchema,
@@ -90,6 +92,10 @@ import {
   validateProjectRequestSchema,
   validateProjectResponseSchema
 } from './contracts';
+import {
+  updateRentalPokemonFieldsRequestSchema,
+  updateRentalPokemonFieldsResponseSchema
+} from './svBatchFieldContracts';
 
 const itemMetadata = {
   boost0: 0,
@@ -1150,8 +1156,12 @@ describe('bridge contracts', () => {
       ],
       rentals: [
         {
-          ability: 1,
+          ability: 0,
           abilityLabel: 'Ability 1',
+          abilityOptions: [
+            { label: 'Ability 1', value: 0 },
+            { label: 'Hidden Ability', value: 2 }
+          ],
           ballItem: 'Poke Ball',
           ballItemId: 4,
           evs: {
@@ -1165,6 +1175,11 @@ describe('bridge contracts', () => {
           form: 0,
           gender: 1,
           genderLabel: 'Male',
+          genderOptions: [
+            { label: 'Random', value: 0 },
+            { label: 'Male', value: 1 },
+            { label: 'Female', value: 2 }
+          ],
           hash1: '0x1122334455667788',
           hash2: '0x8877665544332211',
           hasPerfectIvs: true,
@@ -2252,6 +2267,12 @@ describe('bridge contracts', () => {
     const updateRentalPokemonResponseSchema = createBridgeResponseSchema(
       updateRentalPokemonFieldResponseSchema
     );
+    const updateRentalPokemonFieldsBridgeRequestSchema = createBridgeRequestSchema(
+      updateRentalPokemonFieldsRequestSchema
+    );
+    const updateRentalPokemonFieldsBridgeResponseSchema = createBridgeResponseSchema(
+      updateRentalPokemonFieldsResponseSchema
+    );
     const updateShopRequestSchema = createBridgeRequestSchema(
       updateShopInventoryItemRequestSchema
     );
@@ -2979,8 +3000,12 @@ describe('bridge contracts', () => {
       ],
       rentals: [
         {
-          ability: 1,
+          ability: 0,
           abilityLabel: 'Ability 1',
+          abilityOptions: [
+            { label: 'Ability 1', value: 0 },
+            { label: 'Hidden Ability', value: 2 }
+          ],
           ballItem: 'Poke Ball',
           ballItemId: 4,
           evs: {
@@ -2994,6 +3019,11 @@ describe('bridge contracts', () => {
           form: 0,
           gender: 1,
           genderLabel: 'Male',
+          genderOptions: [
+            { label: 'Random', value: 0 },
+            { label: 'Male', value: 1 },
+            { label: 'Female', value: 2 }
+          ],
           hash1: '0x1122334455667788',
           hash2: '0x8877665544332211',
           hasPerfectIvs: false,
@@ -3410,6 +3440,49 @@ describe('bridge contracts', () => {
         }
       }).success
     ).toBe(true);
+
+    expect(
+      updateRentalPokemonFieldsBridgeRequestSchema.safeParse({
+        command: kmCommandNames.updateRentalPokemonFields,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          session: editSession,
+          updates: [
+            { field: 'level', rentalIndex: 0, value: '51' },
+            { field: 'trainerId', rentalIndex: 0, value: '54321' }
+          ]
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateRentalPokemonFieldsBridgeResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: rentalPokemonSession,
+          workflow: rentalPokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      rentalPokemonMoveSchema.safeParse({ move: 'Scratch', moveId: 1, slot: 4 }).success
+    ).toBe(false);
+    expect(
+      rentalPokemonEditableFieldSchema.safeParse({
+        field: 'level',
+        label: 'Level',
+        maximumValue: 100,
+        minimumValue: 1,
+        options: [],
+        valueKind: 'number'
+      }).success
+    ).toBe(false);
 
     expect(
       updateShopRequestSchema.safeParse({

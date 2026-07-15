@@ -7,9 +7,19 @@ using System.Globalization;
 
 namespace KM.SwSh.Moves;
 
+internal sealed record SwShMoveAvailabilityResult(
+    IReadOnlySet<int> UsableMoveIds,
+    IReadOnlyDictionary<int, ProjectFileReference> UsableMoveSources,
+    bool HasSemanticData);
+
 internal static class SwShMoveAvailability
 {
     public static IReadOnlySet<int> LoadUsableMoveIds(OpenedProject project)
+    {
+        return Load(project).UsableMoveIds;
+    }
+
+    public static SwShMoveAvailabilityResult Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
@@ -44,7 +54,7 @@ internal static class SwShMoveAvailability
             }
         }
 
-        return records
+        var selectedRecords = records
             .GroupBy(record => record.MoveId)
             .Select(group => group
                 .OrderByDescending(record => IsCanonicalMoveDataFile(record.RelativePath, record.MoveId))
@@ -52,9 +62,17 @@ internal static class SwShMoveAvailability
                 .ThenByDescending(record => IsPreferredMoveDataFile(record.RelativePath))
                 .ThenBy(record => record.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .First())
+            .ToArray();
+        var usableMoveSources = selectedRecords
             .Where(record => record.CanUseMove)
-            .Select(record => record.MoveId)
-            .ToHashSet();
+            .ToDictionary(
+                record => record.MoveId,
+                record => new ProjectFileReference(record.SourceLayer, record.RelativePath));
+
+        return new SwShMoveAvailabilityResult(
+            usableMoveSources.Keys.ToHashSet(),
+            usableMoveSources,
+            records.Count > 0);
     }
 
     public static IReadOnlyList<TOption> CreateMoveOptions<TOption>(

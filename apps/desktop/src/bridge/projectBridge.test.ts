@@ -103,6 +103,35 @@ const fileGraph = {
 } as const;
 
 describe('projectBridge', () => {
+  it('sends Rental Pokemon field batches through one Sword and Shield command', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.updateRentalPokemonFields({
+        paths: editableProjectPaths,
+        session: null,
+        updates: [
+          { field: 'level', rentalIndex: 0, value: '51' },
+          { field: 'trainerId', rentalIndex: 0, value: '54321' }
+        ]
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'rentalPokemon.fields.update',
+      payload: {
+        updates: [
+          { field: 'level', rentalIndex: 0, value: '51' },
+          { field: 'trainerId', rentalIndex: 0, value: '54321' }
+        ]
+      }
+    });
+  });
+
   it('sends identity-aware static encounter field batches through one command', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {
