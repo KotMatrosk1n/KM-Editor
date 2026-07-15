@@ -60,7 +60,7 @@ internal static class SwShItemBridgeFixtures
             data[rowOffset + 0x11] = (byte)(((record.PouchFlags & 0x0F) << 4) | ((byte)record.Pouch & 0x0F));
             data[rowOffset + 0x12] = record.FlingPower;
             data[rowOffset + 0x13] = record.FieldUseType;
-            data[rowOffset + 0x14] = record.FieldFlags;
+            data[rowOffset + 0x14] = record.BattlePouch;
             data[rowOffset + 0x15] = (byte)(record.CanUseOnPokemon ? 1 : 0);
             data[rowOffset + 0x16] = record.ItemType;
             data[rowOffset + 0x18] = record.SortIndex;
@@ -91,6 +91,15 @@ internal static class SwShItemBridgeFixtures
         {
             foreach (var (slot, moveId) in machineMovesBySlot)
             {
+                var ownerItemId = records
+                    .FirstOrDefault(record =>
+                        record.GroupType == 4
+                        && record.FieldUseType == 2
+                        && record.GroupIndex == slot)
+                    ?.ItemId ?? 0;
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(machineTableOffset + (slot * sizeof(uint))),
+                    checked((ushort)ownerItemId));
                 BinaryPrimitives.WriteUInt16LittleEndian(
                     data.AsSpan(machineTableOffset + (slot * sizeof(uint)) + 2),
                     checked((ushort)moveId));
@@ -120,7 +129,7 @@ internal static class SwShItemBridgeFixtures
                     SwShItemPouch.Medicine,
                     FlingPower: 30,
                     FieldUseType: 1,
-                    FieldFlags: 2,
+                    BattlePouch: 2,
                     CanUseOnPokemon: true,
                     ItemType: 9,
                     SortIndex: 5,
@@ -182,7 +191,7 @@ internal sealed record ItemBridgeFixtureRecord(
     byte PouchFlags = 0,
     byte FlingPower = 0,
     byte FieldUseType = 0,
-    byte FieldFlags = 0,
+    byte BattlePouch = 0,
     bool CanUseOnPokemon = false,
     byte ItemType = 0,
     byte SortIndex = 0,

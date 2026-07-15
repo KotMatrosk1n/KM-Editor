@@ -1112,6 +1112,8 @@ const sellPriceFieldName = 'sellPrice';
 const wattsPriceFieldName = 'wattsPrice';
 const alternatePriceFieldName = 'alternatePrice';
 const itemFieldFlagsFieldName = 'fieldFlags';
+const itemBattlePouchFieldName = 'battlePouch';
+const itemCureStatusFlagsFieldName = 'cureStatusFlags';
 const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
 const itemCanUseOnPokemonFieldName = 'canUseOnPokemon';
@@ -6384,52 +6386,34 @@ export function App({
     try {
       const response = await runEditSessionMutation(
         async (session) => {
-          let nextSession = session;
-          let nextWorkflow = itemsWorkflow;
-          let nextDiagnostics: ApiDiagnostic[] = [];
-
-          if (isScarletVioletGame(selectedGame) || isPokemonLegendsZAGame(selectedGame)) {
-            const updateResponse = await bridge.updateItemFields({
-              paths: createProjectPaths(draftPaths),
-              session,
-              updates: changes.map((change) => ({
-                field: change.field,
-                itemId,
-                value: change.value
-              }))
-            });
-            nextSession = updateResponse.session;
-            nextWorkflow = updateResponse.workflow;
-            nextDiagnostics = updateResponse.diagnostics;
-          } else {
-            for (const change of changes) {
-              const updateResponse = await bridge.updateItemField({
-                field: change.field,
-                itemId,
-                paths: createProjectPaths(draftPaths),
-                session: nextSession,
-                value: change.value
-              });
-              nextSession = updateResponse.session;
-              nextWorkflow = updateResponse.workflow;
-              nextDiagnostics = updateResponse.diagnostics;
-            }
-          }
+          const updateResponse = await bridge.updateItemFields({
+            paths: createProjectPaths(draftPaths),
+            session,
+            updates: changes.map((change) => ({
+              field: change.field,
+              itemId,
+              value: change.value
+            }))
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
 
           return {
-            diagnostics: nextDiagnostics,
-            session: nextSession!,
-            workflow: nextWorkflow
+            diagnostics: updateResponse.diagnostics,
+            didSucceed,
+            session: didSucceed ? updateResponse.session : (session ?? updateResponse.session),
+            workflow: didSucceed ? updateResponse.workflow : itemsWorkflow
           };
         },
         (updateResponse) => {
-          if (updateResponse.workflow) {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
             setItemsWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
         }
       );
-      return response !== null;
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -11070,11 +11054,15 @@ function ItemsSection({
   );
   const filteredItems = useMemo(() => filterItems(items, searchText), [items, searchText]);
   const selectedItem = useMemo(
-    () => items.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
-    [filteredItems, items, selectedItemId]
+    () => filteredItems.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
+    [filteredItems, selectedItemId]
   );
   const canEditItems = workflow?.summary.availability === 'available';
-  const pendingItemIds = useMemo(() => getPendingItemIds(editSession), [editSession]);
+  const pendingItemIds = useMemo(
+    () => getPendingItemIds(editSession, items),
+    [editSession, items]
+  );
+  const secondaryPriceLabels = getItemSecondaryPriceLabels(editorFamily);
 
   return (
     <>
@@ -11124,8 +11112,8 @@ function ItemsSection({
                 <span role="columnheader">Category</span>
                 <span role="columnheader">Buy</span>
                 <span role="columnheader">Sell</span>
-                <span role="columnheader">Watts</span>
-                <span role="columnheader">Alt</span>
+                <span role="columnheader">{secondaryPriceLabels.primary}</span>
+                <span role="columnheader">{secondaryPriceLabels.secondary}</span>
                 <span role="columnheader">Source</span>
               </div>
               <VirtualTableBody
@@ -11175,6 +11163,17 @@ function ItemsSection({
   );
 }
 
+function getItemSecondaryPriceLabels(editorFamily: EditorUiFamily) {
+  switch (editorFamily) {
+    case 'sv':
+      return { primary: 'BP', secondary: 'Unused' };
+    case 'za':
+      return { primary: 'Mega Shards', secondary: 'Colorful Screws' };
+    default:
+      return { primary: 'Watts', secondary: 'Alt' };
+  }
+}
+
 function SelectedItemPanel({
   canEditItems,
   editSession,
@@ -11219,9 +11218,19 @@ function SelectedItemPanel({
         : {},
     [editableFields, item]
   );
-  const fieldDrafts = item
-    ? fieldDraftsByItemId[item.itemId.toString()] ?? itemDraftDefaults
-    : {};
+  const itemDraftKey = item ? getItemStorageDraftKey(item) : null;
+  const sparseFieldDrafts =
+    itemDraftKey === null ? {} : (fieldDraftsByItemId[itemDraftKey] ?? {});
+  const fieldDrafts = item ? { ...itemDraftDefaults, ...sparseFieldDrafts } : {};
+  const writableItemFields = useMemo(
+    () =>
+      new Set(
+        editableFields
+          .filter((field) => getItemFieldDisabledReason(field, editorFamily, item) === null)
+          .map((field) => field.field)
+      ),
+    [editableFields, editorFamily, item]
+  );
   const itemDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -11230,6 +11239,10 @@ function SelectedItemPanel({
         item ? (field) => getEditableItemFieldValue(item, field) : null
       ),
     [editableFields, fieldDrafts, item]
+  );
+  const stagedItemChanges = useMemo(
+    () => normalizeLinkedItemPriceChanges(itemDraftSummary.changedFields),
+    [itemDraftSummary.changedFields]
   );
   useRegisterEditorDraftDirty('items', countFieldDraftRecords(fieldDraftsByItemId) > 0);
   const canSaveItemDrafts =
@@ -11246,9 +11259,14 @@ function SelectedItemPanel({
     }
 
     setFieldDraftsByItemId((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, item.itemId, itemDraftDefaults)
+      pruneSparseFieldDraftRecord(
+        currentDrafts,
+        getItemStorageDraftKey(item),
+        itemDraftDefaults,
+        writableItemFields
+      )
     );
-  }, [item, itemDraftDefaults]);
+  }, [item, itemDraftDefaults, writableItemFields]);
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -11292,14 +11310,17 @@ function SelectedItemPanel({
                   onClick={async () => {
                     const didSave = await onUpdateItemFields(
                       item.itemId,
-                      itemDraftSummary.changedFields.map((change) => ({
+                      stagedItemChanges.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
                     );
                     if (didSave) {
                       setFieldDraftsByItemId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, item.itemId)
+                        deleteFieldDraftRecord(
+                          currentDrafts,
+                          getItemStorageDraftKey(item)
+                        )
                       );
                     }
                   }}
@@ -11357,11 +11378,7 @@ function SelectedItemPanel({
                         currentValue,
                         field
                       );
-                      const disabledReason = getItemFieldDisabledReason(
-                        field.field,
-                        editorFamily,
-                        item
-                      );
+                      const disabledReason = getItemFieldDisabledReason(field, editorFamily, item);
 
                       return (
                         <GiftPokemonDraftField
@@ -11379,14 +11396,19 @@ function SelectedItemPanel({
                           idPrefix="item-field"
                           key={field.field}
                           onChange={(value) => {
-                            const nextDrafts = {
-                              ...fieldDrafts,
-                              [field.field]: value
-                            };
+                            const nextDrafts = synchronizeLinkedItemPriceDrafts(
+                              field.field,
+                              value,
+                              {
+                                ...fieldDrafts,
+                                [field.field]: value
+                              },
+                              itemDraftDefaults
+                            );
                             setFieldDraftsByItemId((currentDrafts) =>
-                              setFieldDraftRecord(
+                              setSparseFieldDraftRecord(
                                 currentDrafts,
-                                item.itemId,
+                                getItemStorageDraftKey(item),
                                 nextDrafts,
                                 itemDraftDefaults
                               )
@@ -17859,16 +17881,25 @@ function getTradeFieldDisabledReason(fieldName: string) {
 }
 
 function getItemFieldDisabledReason(
-  fieldName: string,
+  field: ItemEditableField,
   editorFamily: EditorUiFamily,
   item?: ItemRecord | null
 ) {
+  const fieldName = field.field;
+  if (field.isReadOnly) {
+    return field.readOnlyReason ?? 'This field is read-only.';
+  }
+
   if (editorFamily === 'za' && fieldName === itemCanUseOnPokemonFieldName) {
     return 'Derived from item effects. Edit healing, revive, EV, form change, or Evolution Item instead.';
   }
 
   if (fieldName === itemFieldFlagsFieldName) {
-    return 'Unknown raw field flags are visible for research and locked until their meanings are confirmed.';
+    return 'This legacy raw field is visible for compatibility. Use Battle pouch instead.';
+  }
+
+  if (fieldName === itemCureStatusFlagsFieldName) {
+    return 'Raw cure status flags are visible for reference. Edit the named cure controls instead.';
   }
 
   if (fieldName === itemUseFlags1FieldName) {
@@ -17879,8 +17910,14 @@ function getItemFieldDisabledReason(
     return 'Raw use flags 2 includes unknown bits 5-7. Edit the decoded known flags instead.';
   }
 
-  if (fieldName === itemMachineMoveIdFieldName && item?.metadata.machineSlot === null) {
-    return 'Only TM item records can edit the taught move.';
+  if (fieldName === itemMachineMoveIdFieldName) {
+    if (!item || item.metadata.machineSlot === null) {
+      return 'Only TM and TR item records can edit the taught move.';
+    }
+
+    if (item.metadata.machineMoveId === null) {
+      return 'This item table does not expose a writable TM or TR move entry.';
+    }
   }
 
   return null;
@@ -35655,6 +35692,8 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
       return item.metadata.fieldUseType;
     case 'fieldFlags':
       return item.metadata.fieldFlags;
+    case itemBattlePouchFieldName:
+      return item.metadata.fieldFlags;
     case 'canUseOnPokemon':
       return item.metadata.canUseOnPokemon ? 1 : 0;
     case 'itemType':
@@ -37728,7 +37767,9 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     [zaRankFieldName]: 'Z-A trainer rank value.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
     effectSequence: 'Advanced raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet; preserve it unless the move has been verified in game.',
-    [itemFieldFlagsFieldName]: 'Unknown raw item field flags. Visible for research, locked from editing until the bits are mapped.',
+    [itemBattlePouchFieldName]: 'Controls the battle item category: none, Balls, or usable battle items.',
+    [itemCureStatusFlagsFieldName]: 'Raw cure-status bitmask. Use the named cure controls so unrelated bits remain intact.',
+    [itemFieldFlagsFieldName]: 'Legacy name for Battle pouch. It remains visible only for compatibility.',
     flinch: 'Percent chance that the move causes flinching.',
     gift: 'Raw trainer gift/item ID. KM Editor treats this Gen 8 trainer field as unused/unknown, so confirm event scripts before treating it as a player reward.',
     inflictPercent: 'Percent chance to inflict the selected condition or secondary effect. Zero on a move with an inflict effect means it is a primary effect with no separate chance roll.',
@@ -38002,13 +38043,111 @@ function formatRaidBattleRewardLink(link: RaidBattleSlotRecord['dropRewardLink']
   return `${status}: ${link.preview} (${target})`;
 }
 
-function getPendingItemIds(editSession: EditSession | null) {
-  return new Set(
-    (editSession?.pendingEdits ?? [])
-      .filter((edit) => edit.domain === 'workflow.items')
-      .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
-      .filter(Number.isInteger)
-  );
+function getPendingItemIds(editSession: EditSession | null, items: ItemRecord[]) {
+  const pendingItemIds = new Set<number>();
+  for (const edit of editSession?.pendingEdits ?? []) {
+    if (edit.domain !== 'workflow.items') {
+      continue;
+    }
+
+    const itemId = Number.parseInt(edit.recordId ?? '', 10);
+    if (!Number.isInteger(itemId)) {
+      continue;
+    }
+
+    const item = items.find((candidate) => candidate.itemId === itemId);
+    const affectedItems =
+      edit.field === itemMachineMoveIdFieldName && item && item.metadata.machineSlot !== null
+        ? items.filter(
+            (candidate) => candidate.metadata.machineSlot === item.metadata.machineSlot
+          )
+        : item
+          ? [item]
+          : [];
+
+    if (affectedItems.length === 0) {
+      pendingItemIds.add(itemId);
+      continue;
+    }
+
+    for (const affectedItem of affectedItems) {
+      const sharedIds =
+        affectedItem.sharedItemIds.length > 0
+          ? affectedItem.sharedItemIds
+          : [affectedItem.itemId];
+      for (const sharedId of sharedIds) {
+        pendingItemIds.add(sharedId);
+      }
+    }
+  }
+
+  return pendingItemIds;
+}
+
+function getItemStorageDraftKey(item: ItemRecord) {
+  const physicalRowItemIds = [item.itemId, ...item.sharedItemIds].filter(Number.isInteger);
+  return `row:${Math.min(...physicalRowItemIds)}`;
+}
+
+function synchronizeLinkedItemPriceDrafts(
+  field: string,
+  value: string,
+  drafts: Record<string, string>,
+  defaults: Record<string, string>
+) {
+  if (field !== buyPriceFieldName && field !== sellPriceFieldName) {
+    return drafts;
+  }
+
+  const linkedField = field === buyPriceFieldName ? sellPriceFieldName : buyPriceFieldName;
+  if (value === (defaults[field] ?? '')) {
+    return {
+      ...drafts,
+      [linkedField]: defaults[linkedField] ?? drafts[linkedField] ?? ''
+    };
+  }
+
+  const parsedValue = parseUnsignedIntegerDraft(value);
+  if (parsedValue === null) {
+    return drafts;
+  }
+
+  return {
+    ...drafts,
+    [linkedField]:
+      field === buyPriceFieldName
+        ? (parsedValue / 2n).toString()
+        : (parsedValue * 2n).toString()
+  };
+}
+
+function normalizeLinkedItemPriceChanges(changes: TrainerDraftChange[]) {
+  const buyPriceChange = changes.find((change) => change.field === buyPriceFieldName);
+  const sellPriceChange = changes.find((change) => change.field === sellPriceFieldName);
+  if (!buyPriceChange || !sellPriceChange) {
+    return changes;
+  }
+
+  const buyPrice = parseUnsignedIntegerDraft(buyPriceChange.value);
+  const sellPrice = parseUnsignedIntegerDraft(sellPriceChange.value);
+  if (buyPrice === null || sellPrice === null || buyPrice / 2n !== sellPrice) {
+    return changes;
+  }
+
+  return changes.filter((change) => change.field !== sellPriceFieldName);
+}
+
+function parseUnsignedIntegerDraft(value: string) {
+  const trimmedValue = value.trim();
+  if (!/^\d+$/.test(trimmedValue)) {
+    return null;
+  }
+
+  try {
+    return BigInt(trimmedValue);
+  } catch {
+    return null;
+  }
 }
 
 function getPendingMoveIds(editSession: EditSession | null) {

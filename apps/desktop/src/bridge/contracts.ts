@@ -717,10 +717,12 @@ export const itemEditableFieldOptionSchema = z.strictObject({
 
 export const itemEditableFieldSchema = z.strictObject({
   field: z.string(),
+  isReadOnly: z.boolean().optional().default(false),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(itemEditableFieldOptionSchema),
+  readOnlyReason: z.string().nullable().optional().default(null),
   valueKind: z.string()
 });
 

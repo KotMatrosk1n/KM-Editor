@@ -270,38 +270,47 @@ export function createMockProjectBridge(
     editableFields: [
       {
         field: 'buyPrice',
+        isReadOnly: false,
         label: 'Buy price',
         maximumValue: 999_999,
         minimumValue: 0,
         options: [],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'sellPrice',
+        isReadOnly: false,
         label: 'Sell price',
         maximumValue: 499_999,
         minimumValue: 0,
         options: [],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'wattsPrice',
+        isReadOnly: false,
         label: 'Watts price',
         maximumValue: 999_999,
         minimumValue: 0,
         options: [],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'alternatePrice',
+        isReadOnly: false,
         label: 'Alternate price',
         maximumValue: 999_999,
         minimumValue: 0,
         options: [],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'pouch',
+        isReadOnly: false,
         label: 'Pouch',
         maximumValue: 8,
         minimumValue: 0,
@@ -309,26 +318,32 @@ export function createMockProjectBridge(
           { label: 'Medicine', value: 0 },
           { label: 'Items', value: 4 }
         ],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'healAmount',
+        isReadOnly: false,
         label: 'Heal amount',
         maximumValue: 255,
         minimumValue: 0,
         options: [],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'evAttack',
+        isReadOnly: false,
         label: 'Attack EV gain',
         maximumValue: 127,
         minimumValue: -128,
         options: [],
+        readOnlyReason: null,
         valueKind: 'integer'
       },
       {
         field: 'canUseOnPokemon',
+        isReadOnly: false,
         label: 'Can use on Pokemon',
         maximumValue: 1,
         minimumValue: 0,
@@ -336,6 +351,7 @@ export function createMockProjectBridge(
           { label: 'No', value: 0 },
           { label: 'Yes', value: 1 }
         ],
+        readOnlyReason: null,
         valueKind: 'boolean'
       }
     ],

@@ -5,6 +5,20 @@ import { type PokemonWorkflow } from './bridge/contracts';
 import { useWorkbenchStore } from './workbenchStore';
 
 describe('workbench store', () => {
+  it('preserves item search and skips the placeholder item when selecting after refresh', () => {
+    useWorkbenchStore.setState({
+      itemSearchText: 'Potion',
+      selectedItemId: 0
+    });
+
+    useWorkbenchStore.getState().setItemsWorkflow({
+      items: [{ itemId: 0 }, { itemId: 2 }]
+    } as never);
+
+    expect(useWorkbenchStore.getState().itemSearchText).toBe('Potion');
+    expect(useWorkbenchStore.getState().selectedItemId).toBe(2);
+  });
+
   it('invalidates the committed project session when a project path changes', () => {
     useWorkbenchStore.setState({
       activeSection: 'pokemon',

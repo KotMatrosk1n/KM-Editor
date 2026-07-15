@@ -644,15 +644,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ spreadsheetImportPreview }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
-      const selectedItemId = itemsWorkflow.items.some(
-        (item) => item.itemId === state.selectedItemId
-      )
+      const selectableItems = itemsWorkflow.items.filter((item) => item.itemId !== 0);
+      const selectedItemId = selectableItems.some((item) => item.itemId === state.selectedItemId)
         ? state.selectedItemId
-        : (itemsWorkflow.items[0]?.itemId ?? null);
+        : (selectableItems[0]?.itemId ?? null);
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'items'),
-        itemSearchText: '',
         itemsWorkflow,
         selectedItemId
       };
