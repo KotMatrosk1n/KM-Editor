@@ -644,6 +644,257 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     });
   }
 
+  const catchCapInstalledMessageMatch =
+    /^(Catch Cap Editor hook is installed for display and runtime capture checks\.|Catch Cap Editor has a legacy display-only hook installed; stage and apply to add the runtime capture gate hook\.) Changing values edits badge counts 0-7; eight badges is fixed at Lv\.100 by the game\.(?: The installed table has stale Lv\.(\d+) metadata for eight badges; stage and apply to rewrite it to Lv\.100\.)?$/.exec(
+      literal
+    );
+  if (catchCapInstalledMessageMatch) {
+    const translatedParts = [
+      translateLiteralBodyForLanguage(language, catchCapInstalledMessageMatch[1]),
+      translateLiteralBodyForLanguage(
+        language,
+        'Changing values edits badge counts 0-7; eight badges is fixed at Lv.100 by the game.'
+      )
+    ];
+    if (catchCapInstalledMessageMatch[2]) {
+      translatedParts.push(
+        formatLiteralTemplate(
+          language,
+          'The installed table has stale Lv.{level} metadata for eight badges; stage and apply to rewrite it to Lv.100.',
+          { level: catchCapInstalledMessageMatch[2] }
+        )
+      );
+    }
+
+    return translatedParts.join(' ');
+  }
+
+  const catchCapGameMismatchMatch =
+    /^Selected (Pokemon Sword|Pokemon Shield), but exefs\/main build ID is (Pokemon Sword|Pokemon Shield) (1\.3\.2)\. Catch Cap Editor will not patch this file because Sword and Shield use different hook sites\.$/.exec(
+      literal
+    );
+  if (catchCapGameMismatchMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Selected {selectedGame}, but exefs/main build ID is {detectedGame}. Catch Cap Editor will not patch this file because Sword and Shield use different hook sites.',
+      {
+        detectedGame: `${translateLiteralBodyForLanguage(
+          language,
+          catchCapGameMismatchMatch[2]
+        )} ${catchCapGameMismatchMatch[3]}`,
+        selectedGame: translateLiteralBodyForLanguage(language, catchCapGameMismatchMatch[1])
+      }
+    );
+  }
+
+  const catchCapInvalidBaseMatch =
+    /^Base exefs\/main is not a selected-game vanilla Catch Cap source\. (.+)$/.exec(literal);
+  if (catchCapInvalidBaseMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Base exefs/main is not a selected-game vanilla Catch Cap source. {detail}',
+      {
+        detail: translateLiteralBodyForLanguage(language, catchCapInvalidBaseMatch[1])
+      }
+    );
+  }
+
+  const catchCapSegmentHashMatch =
+    /^Catch Cap patching rejected (.+) because its required NSO header hash does not match the decompressed segment\.$/.exec(
+      literal
+    );
+  if (catchCapSegmentHashMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch Cap patching rejected {segment} because its required NSO header hash does not match the decompressed segment.',
+      { segment: catchCapSegmentHashMatch[1] }
+    );
+  }
+
+  const reviewedChangePlanStaleMatch = /^Reviewed change plan is stale\. (.+)$/.exec(literal);
+  if (reviewedChangePlanStaleMatch) {
+    return formatLiteralTemplate(language, 'Reviewed change plan is stale. {detail}', {
+      detail: translateLiteralBodyForLanguage(language, reviewedChangePlanStaleMatch[1])
+    });
+  }
+
+  const changePlanSourceVerificationMatch =
+    /^Change-plan source verification failed: (.+)$/.exec(literal);
+  if (changePlanSourceVerificationMatch) {
+    return formatLiteralTemplate(language, 'Change-plan source verification failed: {detail}', {
+      detail: translateLiteralBodyForLanguage(language, changePlanSourceVerificationMatch[1])
+    });
+  }
+
+  const catchCapBadgeCountFixedMatch =
+    /^Catch cap for badge count (\d+) is fixed at level (\d+); the game treats eight badges as catch any level\.$/.exec(
+      literal
+    );
+  if (catchCapBadgeCountFixedMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch Cap badge count {badgeCount} is fixed at level {level}; the game treats eight badges as catch any level.',
+      { badgeCount: catchCapBadgeCountFixedMatch[1], level: catchCapBadgeCountFixedMatch[2] }
+    );
+  }
+
+  const catchCapBadgeCountOrderMatch =
+    /^Catch cap for badge count (\d+) must be level (\d+) or higher\.$/.exec(literal);
+  if (catchCapBadgeCountOrderMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch Cap badge count {badgeCount} must be level {level} or higher.',
+      { badgeCount: catchCapBadgeCountOrderMatch[1], level: catchCapBadgeCountOrderMatch[2] }
+    );
+  }
+
+  const catchCapLabelFixedMatch =
+    /^Catch cap for (.+) is fixed at level (\d+); the game treats eight badges as catch any level\.$/.exec(
+      literal
+    );
+  if (catchCapLabelFixedMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch cap for {label} is fixed at level {level}; the game treats eight badges as catch any level.',
+      {
+        label: translateLiteralBodyForLanguage(language, catchCapLabelFixedMatch[1]),
+        level: catchCapLabelFixedMatch[2]
+      }
+    );
+  }
+
+  const catchCapLabelRangeMatch =
+    /^Catch cap for (.+) must be between (\d+) and (\d+)\.$/.exec(literal);
+  if (catchCapLabelRangeMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch cap for {label} must be between {minimum} and {maximum}.',
+      {
+        label: translateLiteralBodyForLanguage(language, catchCapLabelRangeMatch[1]),
+        maximum: catchCapLabelRangeMatch[3],
+        minimum: catchCapLabelRangeMatch[2]
+      }
+    );
+  }
+
+  const catchCapLabelOrderMatch =
+    /^Catch cap for (.+) must be the same as or higher than the previous badge level \(level (\d+)\)\.$/.exec(
+      literal
+    );
+  if (catchCapLabelOrderMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch cap for {label} must be the same as or higher than the previous badge level (level {level}).',
+      {
+        label: translateLiteralBodyForLanguage(language, catchCapLabelOrderMatch[1]),
+        level: catchCapLabelOrderMatch[2]
+      }
+    );
+  }
+
+  const catchCapAriaMatch = /^Catch cap for (.+)$/.exec(literal);
+  if (catchCapAriaMatch) {
+    return formatLiteralTemplate(language, 'Catch cap for {label}', {
+      label: translateLiteralBodyForLanguage(language, catchCapAriaMatch[1])
+    });
+  }
+
+  const catchCapRangeMatch = /^Use Lv\. (\d+)-(\d+)\.$/.exec(literal);
+  if (catchCapRangeMatch) {
+    return formatLiteralTemplate(language, 'Use Lv. {minimum}-{maximum}.', {
+      maximum: catchCapRangeMatch[2],
+      minimum: catchCapRangeMatch[1]
+    });
+  }
+
+  const catchCapOrderMatch = /^Must be Lv\. (\d+) or higher\.$/.exec(literal);
+  if (catchCapOrderMatch) {
+    return formatLiteralTemplate(language, 'Must be Lv. {minimum} or higher.', {
+      minimum: catchCapOrderMatch[1]
+    });
+  }
+
+  const catchCapLockedSelectionMatch =
+    /^Lv\. (\d+) \(locked: full badges catch any level\)$/.exec(literal);
+  if (catchCapLockedSelectionMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Lv. {level} (locked: full badges catch any level)',
+      { level: catchCapLockedSelectionMatch[1] }
+    );
+  }
+
+  const catchCapBadgeRangeDiagnosticMatch =
+    /^Catch Cap badge count (\d+) must be between (\d+) and (\d+)\.$/.exec(literal);
+  if (catchCapBadgeRangeDiagnosticMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch Cap badge count {badgeCount} must be between {minimum} and {maximum}.',
+      {
+        badgeCount: catchCapBadgeRangeDiagnosticMatch[1],
+        maximum: catchCapBadgeRangeDiagnosticMatch[3],
+        minimum: catchCapBadgeRangeDiagnosticMatch[2]
+      }
+    );
+  }
+
+  const catchCapBadgeIdentityDiagnosticMatch =
+    /^Catch Cap badge count (\d+) (is not available|was supplied more than once|is missing)\.$/.exec(
+      literal
+    );
+  if (catchCapBadgeIdentityDiagnosticMatch) {
+    const template = catchCapBadgeIdentityDiagnosticMatch[2] === 'is not available'
+      ? 'Catch Cap badge count {badgeCount} is not available.'
+      : catchCapBadgeIdentityDiagnosticMatch[2] === 'was supplied more than once'
+        ? 'Catch Cap badge count {badgeCount} was supplied more than once.'
+        : 'Catch Cap badge count {badgeCount} is missing.';
+    return formatLiteralTemplate(language, template, {
+      badgeCount: catchCapBadgeIdentityDiagnosticMatch[1]
+    });
+  }
+
+  const catchCapFixedBadgeDiagnosticMatch =
+    /^Catch Cap badge count (\d+) is fixed at level (\d+); the game treats eight badges as catch any level\.$/.exec(
+      literal
+    );
+  if (catchCapFixedBadgeDiagnosticMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch Cap badge count {badgeCount} is fixed at level {level}; the game treats eight badges as catch any level.',
+      {
+        badgeCount: catchCapFixedBadgeDiagnosticMatch[1],
+        level: catchCapFixedBadgeDiagnosticMatch[2]
+      }
+    );
+  }
+
+  const catchCapEntryDiagnosticMatch = /^Catch Cap entry '(.+)' is not valid\.$/.exec(literal);
+  if (catchCapEntryDiagnosticMatch) {
+    return formatLiteralTemplate(language, "Catch Cap entry '{entry}' is not valid.", {
+      entry: catchCapEntryDiagnosticMatch[1]
+    });
+  }
+
+  const catchCapPlanCountMatch =
+    /^Catch Cap Editor change plan preview contains ([\d,]+) target file\(s\)\.$/.exec(literal);
+  if (catchCapPlanCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Catch Cap Editor change plan preview contains {count} target file(s).',
+      { count: catchCapPlanCountMatch[1] }
+    );
+  }
+
+  const catchCapFailureMatch =
+    /^(Catch Cap Editor source file could not be patched|Catch Cap Editor output file could not be written|Catch Cap Editor uninstall could not restore exefs\/main|Catch Cap Editor uninstall could not update output|Catch Cap Editor verified output could not be prepared|Catch Cap Editor uninstall could not prepare a verified restoration): (.+)$/.exec(
+      literal
+    );
+  if (catchCapFailureMatch) {
+    return formatLiteralTemplate(language, `${catchCapFailureMatch[1]}: {error}`, {
+      error: translateLiteralBodyForLanguage(language, catchCapFailureMatch[2])
+    });
+  }
+
   const startingItemsSlotFieldMatch = /^(Item|Quantity) for Bag Hook slot (\d+)$/.exec(
     literal
   );

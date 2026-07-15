@@ -2516,16 +2516,18 @@ export const catchCapProvenanceSchema = z.strictObject({
 });
 
 export const catchCapRecordSchema = z.strictObject({
-  badgeCount: z.number().int().nonnegative(),
+  badgeCount: z.number().int().min(0).max(8),
   label: z.string(),
-  levelCap: z.number().int(),
-  maximumLevelCap: z.number().int(),
-  minimumLevelCap: z.number().int()
+  // Installed KM tables are owned bytes. Keep malformed raw values decodable so the
+  // editor can show the problem and still let the user repair or uninstall the hook.
+  levelCap: z.number().int().min(0).max(255),
+  maximumLevelCap: z.number().int().min(1).max(100),
+  minimumLevelCap: z.number().int().min(1).max(100)
 });
 
 export const catchCapSelectionSchema = z.strictObject({
-  badgeCount: z.number().int().nonnegative(),
-  levelCap: z.number().int()
+  badgeCount: z.number().int().min(0).max(8),
+  levelCap: z.number().int().min(1).max(100)
 });
 
 export const catchCapWorkflowStatsSchema = z.strictObject({
@@ -2534,13 +2536,17 @@ export const catchCapWorkflowStatsSchema = z.strictObject({
 });
 
 export const catchCapWorkflowSchema = z.strictObject({
+  buildId: z.string(),
   capLogicSha256: z.string(),
   caps: z.array(catchCapRecordSchema),
+  detectedGame: z.enum(['sword', 'shield']).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
+  displayHookOffsetHex: z.string(),
   installMessage: z.string(),
-  installStatus: z.string(),
+  installStatus: z.enum(['disabled', 'readOnly', 'available', 'installed', 'blocked', 'foreign']),
   logicExpression: z.string(),
   provenance: catchCapProvenanceSchema,
+  runtimeHookOffsetHex: z.string(),
   stats: catchCapWorkflowStatsSchema,
   summary: workflowSummarySchema
 });

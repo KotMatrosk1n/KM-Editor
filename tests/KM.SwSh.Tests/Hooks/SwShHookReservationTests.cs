@@ -244,7 +244,8 @@ public sealed class SwShHookReservationTests
             {
                 var left = regions[leftIndex];
                 var right = regions[rightIndex];
-                if (IsSameFeatureFamily(left.Owner, right.Owner))
+                if (IsSameFeatureFamily(left.Owner, right.Owner)
+                    || IsMutuallyExclusiveCatchCapLayout(left, right))
                 {
                     continue;
                 }
@@ -258,6 +259,51 @@ public sealed class SwShHookReservationTests
                     SwShExeFsReservedRegionLedger.Overlaps(left, right.StartOffset!.Value, right.Length!.Value),
                     $"{left.Owner} {left.FeatureId} {left.OffsetLabel} overlaps {right.Owner} {right.FeatureId} {right.OffsetLabel}.");
             }
+        }
+    }
+
+    [Fact]
+    public void CatchCapLedgerReservesExactSwordAndShieldWrittenAndDependencyRanges()
+    {
+        var regions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerCatchCap);
+        var pairs = new (string SwordId, string ShieldId)[]
+        {
+            ("catch-cap-hook-site", "catch-cap-shield-hook-site"),
+            ("catch-cap-table", "catch-cap-shield-table"),
+            ("catch-cap-marker", "catch-cap-shield-marker"),
+            ("catch-cap-reserved-metadata", "catch-cap-shield-reserved-metadata"),
+            ("catch-cap-return", "catch-cap-shield-return"),
+            ("catch-cap-runtime-gate", "catch-cap-shield-runtime-gate"),
+            ("catch-cap-runtime-return", "catch-cap-shield-runtime-return"),
+            ("catch-cap-cave-1", "catch-cap-shield-cave-1"),
+            ("catch-cap-cave-2", "catch-cap-shield-cave-2"),
+            ("catch-cap-cave-3", "catch-cap-shield-cave-3"),
+            ("catch-cap-cave-4", "catch-cap-shield-cave-4"),
+        };
+
+        Assert.Equal(pairs.Length * 2, regions.Count);
+        Assert.DoesNotContain(regions, region => region.FeatureId.Contains("cave-5", StringComparison.Ordinal));
+        foreach (var (swordId, shieldId) in pairs)
+        {
+            var sword = Assert.Single(regions, region => region.FeatureId == swordId);
+            var shield = Assert.Single(regions, region => region.FeatureId == shieldId);
+            Assert.Equal(sword.StartOffset + 0x30, shield.StartOffset);
+            Assert.Equal(sword.Length, shield.Length);
+            Assert.Equal(sword.Rule, shield.Rule);
+        }
+
+        foreach (var dependencyId in new[]
+        {
+            "catch-cap-return",
+            "catch-cap-runtime-return",
+            "catch-cap-shield-return",
+            "catch-cap-shield-runtime-return",
+        })
+        {
+            var dependency = Assert.Single(regions, region => region.FeatureId == dependencyId);
+            Assert.Equal(0x08, dependency.Length);
+            Assert.Equal("requires-vanilla", dependency.Rule);
         }
     }
 
@@ -2586,6 +2632,150 @@ public sealed class SwShHookReservationTests
         Assert.Contains("fixed at level 100", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapAnalysisRejectsRedirectedDisplayBranch(ProjectGame game)
+    {
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var patched = SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(game), caps, game);
+        var nso = NsoFile.Parse(patched);
+        var text = nso.Text.DecompressedData.ToArray();
+        var hookOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsHookSiteOffset
+            : SwShCatchCapMainPatcher.ExeFsHookSiteOffset;
+        var caveOffset = SwShCatchCapMainPatcher.ExeFsCaveClampOffset
+            + (game == ProjectGame.Shield ? 0x30 : 0);
+        WriteInstruction(text, hookOffset, EncodeBranch(hookOffset, caveOffset + 4));
+
+        var analysis = SwShCatchCapMainPatcher.Analyze(
+            nso.Write(textDecompressedData: text),
+            game);
+
+        Assert.Equal(SwShCatchCapInstallKind.Conflict, analysis.Kind);
+        Assert.Contains("damaged or redirected", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapAnalysisRejectsDamagedOwnedCave(ProjectGame game)
+    {
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var patched = SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(game), caps, game);
+        var nso = NsoFile.Parse(patched);
+        var text = nso.Text.DecompressedData.ToArray();
+        var caveOffset = SwShCatchCapMainPatcher.ExeFsCaveLoadValueOffset
+            + (game == ProjectGame.Shield ? 0x30 : 0);
+        WriteInstruction(text, caveOffset + 8, EncodeNop());
+
+        var analysis = SwShCatchCapMainPatcher.Analyze(
+            nso.Write(textDecompressedData: text),
+            game);
+
+        Assert.Equal(SwShCatchCapInstallKind.Conflict, analysis.Kind);
+        Assert.Contains("damaged or redirected", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapRestoreRejectsDamagedProtectedEpilogue(ProjectGame game)
+    {
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var baseMain = CreateSharedHookNso(game);
+        var patched = SwShCatchCapMainPatcher.Apply(baseMain, caps, game);
+        var nso = NsoFile.Parse(patched);
+        var text = nso.Text.DecompressedData.ToArray();
+        var returnOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsReturnOffset
+            : SwShCatchCapMainPatcher.ExeFsReturnOffset;
+        WriteInstruction(text, returnOffset + 4, EncodeNop());
+        var damaged = nso.Write(textDecompressedData: text);
+
+        Assert.Equal(
+            SwShCatchCapInstallKind.Conflict,
+            SwShCatchCapMainPatcher.Analyze(damaged, game).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShCatchCapMainPatcher.RestoreFromBase(damaged, baseMain, game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapRejectsNonCanonicalFullBuildIdentity(ProjectGame game)
+    {
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var baseMain = CreateSharedHookNso(game);
+        var patched = SwShCatchCapMainPatcher.Apply(baseMain, caps, game);
+        var nonCanonicalMain = baseMain.ToArray();
+        nonCanonicalMain[0x40 + 0x1F] = 0x01;
+
+        var analysis = SwShCatchCapMainPatcher.Analyze(nonCanonicalMain, game);
+        Assert.Equal(SwShCatchCapInstallKind.UnsupportedBuild, analysis.Kind);
+        Assert.Equal(game == ProjectGame.Shield ? ShieldBuildId : SwordBuildId, analysis.BuildId);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShCatchCapMainPatcher.Apply(nonCanonicalMain, caps, game));
+
+        using var temp = CreateHookProject(game);
+        temp.WriteBaseExeFsFile("main", nonCanonicalMain);
+        var paths = temp.Paths with { SelectedGame = game };
+        var workflow = new SwShCatchCapWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("build ID", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Throws<InvalidDataException>(() =>
+            SwShCatchCapMainPatcher.RestoreFromBase(patched, nonCanonicalMain, game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapApplyAndRestorePreserveOutsideOwnedTextAndOtherSegments(ProjectGame game)
+    {
+        const int outsideOffset = 0x1000;
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var initialNso = NsoFile.Parse(CreateSharedHookNso(game));
+        var baseText = initialNso.Text.DecompressedData.ToArray();
+        var baseRo = initialNso.Ro.DecompressedData.ToArray();
+        var baseData = initialNso.Data.DecompressedData.ToArray();
+        baseText[outsideOffset] = 0x5A;
+        baseRo[0] = 0x66;
+        baseData[0] = 0x77;
+        var baseMain = initialNso.Write(
+            textDecompressedData: baseText,
+            roDecompressedData: baseRo,
+            dataDecompressedData: baseData);
+
+        var patched = SwShCatchCapMainPatcher.Apply(baseMain, caps, game);
+        var patchedNso = NsoFile.Parse(patched);
+        Assert.Equal(0x5A, patchedNso.Text.DecompressedData[outsideOffset]);
+        Assert.Equal(0x66, patchedNso.Ro.DecompressedData[0]);
+        Assert.Equal(0x77, patchedNso.Data.DecompressedData[0]);
+
+        var currentText = patchedNso.Text.DecompressedData.ToArray();
+        var currentRo = patchedNso.Ro.DecompressedData.ToArray();
+        var currentData = patchedNso.Data.DecompressedData.ToArray();
+        currentText[outsideOffset + 1] = 0xA5;
+        currentRo[0] = 0x88;
+        currentData[0] = 0x99;
+        var currentMain = patchedNso.Write(
+            textDecompressedData: currentText,
+            roDecompressedData: currentRo,
+            dataDecompressedData: currentData);
+
+        var restored = SwShCatchCapMainPatcher.RestoreFromBase(currentMain, baseMain, game);
+        var restoredNso = NsoFile.Parse(restored);
+        Assert.Equal(0x5A, restoredNso.Text.DecompressedData[outsideOffset]);
+        Assert.Equal(0xA5, restoredNso.Text.DecompressedData[outsideOffset + 1]);
+        Assert.Equal(0x88, restoredNso.Ro.DecompressedData[0]);
+        Assert.Equal(0x99, restoredNso.Data.DecompressedData[0]);
+        Assert.Equal(SwShCatchCapInstallKind.NotInstalled, SwShCatchCapMainPatcher.Analyze(restored, game).Kind);
+    }
+
     [Fact]
     public void CatchCapAnalysisNormalizesStaleEighthBadgeMetadata()
     {
@@ -2666,6 +2856,16 @@ public sealed class SwShHookReservationTests
     private static bool IsSameFeatureFamily(string leftOwner, string rightOwner)
     {
         return IsRoyalCandyFamily(leftOwner) && IsRoyalCandyFamily(rightOwner);
+    }
+
+    private static bool IsMutuallyExclusiveCatchCapLayout(
+        SwShExeFsReservedRegion left,
+        SwShExeFsReservedRegion right)
+    {
+        return left.Owner == SwShExeFsReservedRegionLedger.OwnerCatchCap
+            && right.Owner == SwShExeFsReservedRegionLedger.OwnerCatchCap
+            && left.FeatureId.Contains("-shield-", StringComparison.Ordinal)
+                != right.FeatureId.Contains("-shield-", StringComparison.Ordinal);
     }
 
     private static bool IsRoyalCandyFamily(string owner)
@@ -3645,7 +3845,6 @@ public sealed class SwShHookReservationTests
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
-        output.AsSpan(0x40, 0x20).Fill(0xAB);
         (buildId ?? Convert.FromHexString(SwordBuildId)).CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);

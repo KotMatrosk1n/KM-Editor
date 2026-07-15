@@ -309,6 +309,12 @@ import {
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
+import {
+  createCanonicalCatchCapSelections,
+  getOwnedCatchCapPendingEdit,
+  isCatchCapUninstallPending,
+  parseCatchCapPendingCaps
+} from './features/catch-cap/catchCapPending';
 import { canStageAdvancedEditorAction } from './features/advanced-editors/stageActionGuard';
 import { GameDumpSection } from './features/game-dump/GameDumpSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
@@ -4478,19 +4484,40 @@ export function App({
 
   const handleStageCatchCap = async (caps: CatchCapSelection[]) => {
     setIsCatchCapStaging(true);
-    prepareScopedEditorPanelAction('catchCap');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageCatchCap({
-        caps,
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setCatchCapWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('catchCap', response.diagnostics);
-      registerEditorDraftDirty('catchCap', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageCatchCap({
+            caps,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : catchCapWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('catchCap');
+          setCatchCapWorkflow(response.workflow);
+          setEditSessionSection('catchCap');
+          setScopedEditorPanelDiagnostics('catchCap', response.diagnostics);
+          registerEditorDraftDirty('catchCap', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -4500,18 +4527,39 @@ export function App({
 
   const handleStageCatchCapUninstall = async () => {
     setIsCatchCapStaging(true);
-    prepareScopedEditorPanelAction('catchCap');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageCatchCapUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setCatchCapWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('catchCap', response.diagnostics);
-      registerEditorDraftDirty('catchCap', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageCatchCapUninstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : catchCapWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('catchCap');
+          setCatchCapWorkflow(response.workflow);
+          setEditSessionSection('catchCap');
+          setScopedEditorPanelDiagnostics('catchCap', response.diagnostics);
+          registerEditorDraftDirty('catchCap', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -17504,6 +17552,20 @@ function formatCatchCapPendingValue(value: string | null | undefined) {
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
+function formatCatchCapProjectGame(
+  game: ProjectGame | null,
+  translateLiteral: (literal: string) => string
+) {
+  switch (game) {
+    case 'sword':
+      return translateLiteral('Pokemon Sword');
+    case 'shield':
+      return translateLiteral('Pokemon Shield');
+    default:
+      return translateLiteral('Unknown');
+  }
+}
+
 function formatHyperTrainingPendingValue(value: string | null | undefined) {
   if (!value) {
     return undefined;
@@ -29992,10 +30054,22 @@ function CatchCapSection({
   selectedBadgeCount: number | null;
   workflow: CatchCapWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [capInputs, setCapInputs] = useState<Record<number, string>>({});
   const capSignature =
     workflow?.caps.map((cap) => `${cap.badgeCount}:${cap.levelCap}`).join('|') ?? '';
-  const parsedCaps = (workflow?.caps ?? []).reduce<
+  const ownedCatchCapEdit = getOwnedCatchCapPendingEdit(editSession);
+  const stagedCatchCapCaps = useMemo(
+    () => parseCatchCapPendingCaps(ownedCatchCapEdit),
+    [ownedCatchCapEdit]
+  );
+  const stagedCatchCapSignature = ownedCatchCapEdit?.newValue ?? '';
+  const isCatchCapStaged = stagedCatchCapCaps !== null;
+  const isCatchCapUninstallStaged = isCatchCapUninstallPending(ownedCatchCapEdit);
+  const hasStagedCatchCapChange = isCatchCapStaged || isCatchCapUninstallStaged;
+  const parsedCaps = [...(workflow?.caps ?? [])]
+    .sort((left, right) => left.badgeCount - right.badgeCount)
+    .reduce<
     Array<
       CatchCapRecord & {
         error: string | null;
@@ -30036,26 +30110,24 @@ function CatchCapSection({
   const selectedCap =
     parsedCaps.find((cap) => cap.badgeCount === selectedBadgeCount) ?? parsedCaps[0] ?? null;
   const hasInputError = parsedCaps.some((cap) => cap.error !== null);
-  const hasLocalDrafts = parsedCaps.some(
-    (cap) => cap.rawValue.trim() !== cap.levelCap.toString()
+  const hasLocalDrafts = parsedCaps.some((cap) => {
+    const stagedLevelCap = stagedCatchCapCaps?.get(cap.badgeCount);
+    const baselineLevelCap = stagedLevelCap ?? cap.levelCap;
+    return cap.rawValue.trim() !== baselineLevelCap.toString();
+  });
+  const selectedCaps = createCanonicalCatchCapSelections(
+    parsedCaps.map((cap) => ({
+      badgeCount: cap.badgeCount,
+      levelCap: cap.selectedLevelCap
+    }))
   );
-  const selectedCaps = parsedCaps.map((cap) => ({
-    badgeCount: cap.badgeCount,
-    levelCap: cap.selectedLevelCap
-  }));
-  const stagedCatchCapEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.catchCap'
-  );
-  const isCatchCapStaged = stagedCatchCapEdit?.recordId === 'catch-cap-v1';
-  const isCatchCapUninstallStaged =
-    stagedCatchCapEdit?.recordId === 'catch-cap-v1-uninstall';
-  const hasStagedCatchCapChange = isCatchCapStaged || isCatchCapUninstallStaged;
   const canStage = canStageAdvancedEditorAction({
     isAllowed:
       workflow?.summary.availability === 'available' &&
       workflow.installStatus !== 'blocked' &&
       workflow.installStatus !== 'foreign' &&
-      !hasInputError,
+      !hasInputError &&
+      selectedCaps !== null,
     isChangePlanApplying,
     isChangePlanCreating,
     isCurrent: isCatchCapStaged && !hasLocalDrafts,
@@ -30071,11 +30143,13 @@ function CatchCapSection({
   });
   const canReviewPlan =
     hasStagedCatchCapChange &&
+    (isCatchCapUninstallStaged || (!hasLocalDrafts && !hasInputError)) &&
     !isChangePlanCreating &&
     !isChangePlanApplying &&
     !isStaging;
   const canApplyPlan =
     hasStagedCatchCapChange &&
+    (isCatchCapUninstallStaged || (!hasLocalDrafts && !hasInputError)) &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
@@ -30085,9 +30159,14 @@ function CatchCapSection({
 
   useEffect(() => {
     setCapInputs(
-      Object.fromEntries((workflow?.caps ?? []).map((cap) => [cap.badgeCount, cap.levelCap.toString()]))
+      Object.fromEntries(
+        (workflow?.caps ?? []).map((cap) => [
+          cap.badgeCount,
+          (stagedCatchCapCaps?.get(cap.badgeCount) ?? cap.levelCap).toString()
+        ])
+      )
     );
-  }, [capSignature, workflow?.caps]);
+  }, [capSignature, stagedCatchCapCaps, stagedCatchCapSignature, workflow?.caps]);
 
   useEffect(() => {
     if (selectedCap && selectedCap.badgeCount !== selectedBadgeCount) {
@@ -30096,22 +30175,20 @@ function CatchCapSection({
   }, [onSelectCap, selectedBadgeCount, selectedCap?.badgeCount]);
 
   useEffect(() => {
-    onDirtyChange(hasLocalDrafts || hasInputError);
-  }, [hasInputError, hasLocalDrafts, onDirtyChange]);
+    onDirtyChange(hasLocalDrafts);
+  }, [hasLocalDrafts, onDirtyChange]);
 
   return (
     <>
       <section aria-labelledby="catch-cap-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id="catch-cap-heading">Catch Cap Editor</h2>
+          <h2 id="catch-cap-heading">{translateLiteral('Catch Cap Editor')}</h2>
         </div>
         <p className="workflow-description">
-          Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits
-          only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the
-          trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100
-          because the game treats full badge completion as catch any level. Review before apply or
-          uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.
+          {translateLiteral(
+            'Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100 because the game treats full badge completion as catch any level. Review before apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.'
+          )}
         </p>
 
         <div className="items-toolbar exefs-toolbar">
@@ -30125,13 +30202,17 @@ function CatchCapSection({
         {workflow ? (
           <div className="flagwork-layout">
             <div className="flagwork-stack">
-              <div className="exefs-table catch-cap-table" role="table" aria-label="Catch Cap badge levels">
+              <div
+                className="exefs-table catch-cap-table"
+                role="table"
+                aria-label={translateLiteral('Catch Cap badge levels')}
+              >
                 <div className="exefs-row catch-cap-row exefs-row-heading" role="row">
-                  <span role="columnheader">Badge level</span>
-                  <span role="columnheader">Current</span>
-                  <span role="columnheader">Selected</span>
-                  <span role="columnheader">Range</span>
-                  <span role="columnheader">Status</span>
+                  <span role="columnheader">{translateLiteral('Badge level')}</span>
+                  <span role="columnheader">{translateLiteral('Current')}</span>
+                  <span role="columnheader">{translateLiteral('Selected')}</span>
+                  <span role="columnheader">{translateLiteral('Range')}</span>
+                  <span role="columnheader">{translateLiteral('Status')}</span>
                 </div>
                 {parsedCaps.map((cap) => {
                   const errorId = `catch-cap-error-${cap.badgeCount}`;
@@ -30139,23 +30220,62 @@ function CatchCapSection({
                   // The backend enforces this too; the UI lock keeps badge 8 from looking editable.
                   const isFinalBadge = cap.badgeCount === 8;
                   const isFixed = cap.minimumLevelCap === cap.maximumLevelCap;
-                  const hasDraft = cap.rawValue.trim() !== cap.levelCap.toString();
+                  const stagedLevelCap = stagedCatchCapCaps?.get(cap.badgeCount);
+                  const baselineLevelCap = stagedLevelCap ?? cap.levelCap;
+                  const hasDraft = cap.rawValue.trim() !== baselineLevelCap.toString();
+                  const hasStagedValue =
+                    stagedLevelCap !== undefined && stagedLevelCap !== cap.levelCap;
                   return (
                     <div
+                      aria-selected={selectedCap?.badgeCount === cap.badgeCount}
                       className={`exefs-row catch-cap-row ${isFixed ? 'catch-cap-row-fixed' : ''} ${
                         selectedCap?.badgeCount === cap.badgeCount ? 'exefs-row-selected' : ''
                       }`}
+                      data-catch-cap-row="true"
                       key={cap.badgeCount}
                       onClick={() => onSelectCap(cap.badgeCount)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) {
+                          return;
+                        }
+
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onSelectCap(cap.badgeCount);
+                          return;
+                        }
+
+                        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+                          return;
+                        }
+
+                        const rows = Array.from(
+                          event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
+                            '[data-catch-cap-row="true"]'
+                          ) ?? []
+                        );
+                        const currentIndex = rows.indexOf(event.currentTarget);
+                        const nextIndex = event.key === 'ArrowDown'
+                          ? Math.min(rows.length - 1, currentIndex + 1)
+                          : Math.max(0, currentIndex - 1);
+                        const nextRow = rows[nextIndex];
+                        if (nextRow && nextRow !== event.currentTarget) {
+                          event.preventDefault();
+                          nextRow.focus();
+                          onSelectCap(Number.parseInt(nextRow.dataset.catchCapBadgeCount ?? '', 10));
+                        }
+                      }}
                       role="row"
+                      tabIndex={0}
+                      data-catch-cap-badge-count={cap.badgeCount}
                     >
-                      <span role="cell">{cap.label}</span>
+                      <span role="cell">{translateLiteral(cap.label)}</span>
                       <span role="cell">Lv. {cap.levelCap}</span>
                       <div className="table-cell-control" role="cell">
                         <input
                           aria-describedby={cap.error ? errorId : isFinalBadge ? fixedNoteId : undefined}
                           aria-invalid={cap.error ? 'true' : undefined}
-                          aria-label={`Catch cap for ${cap.label}`}
+                          aria-label={translateLiteral(`Catch cap for ${cap.label}`)}
                           className={cap.error ? 'input-error' : undefined}
                           disabled={isFixed}
                           max={cap.maximumLevelCap}
@@ -30170,7 +30290,9 @@ function CatchCapSection({
                           step={1}
                           title={
                             isFinalBadge
-                              ? 'Eight badges is locked at Lv.100 because full badges can catch any level.'
+                              ? translateLiteral(
+                                  'Eight badges is locked at Lv.100 because full badges can catch any level.'
+                                )
                               : undefined
                           }
                           type="number"
@@ -30178,12 +30300,12 @@ function CatchCapSection({
                         />
                         {cap.error ? (
                           <small className="editable-field-error" id={errorId}>
-                            {cap.error}
+                            {translateLiteral(cap.error)}
                           </small>
                         ) : null}
                         {isFinalBadge ? (
                           <small className="catch-cap-fixed-note" id={fixedNoteId}>
-                            Locked: full badges catch any level.
+                            {translateLiteral('Locked: full badges catch any level.')}
                           </small>
                         ) : null}
                       </div>
@@ -30196,7 +30318,17 @@ function CatchCapSection({
                             cap.error ? 'status-blocked' : !isFixed && hasDraft ? 'status-warning' : 'status-ready'
                           }`}
                         >
-                          {cap.error ? 'Invalid' : isFinalBadge ? 'Locked' : hasDraft ? 'Changed' : 'Ready'}
+                          {translateLiteral(
+                            cap.error
+                              ? 'Invalid'
+                              : isFinalBadge
+                                ? 'Locked'
+                                : hasDraft
+                                  ? 'Changed'
+                                  : hasStagedValue
+                                    ? 'Staged'
+                                    : 'Ready'
+                          )}
                         </span>
                       </span>
                     </div>
@@ -30205,44 +30337,65 @@ function CatchCapSection({
               </div>
             </div>
 
-            <aside aria-label="Selected Catch Cap" className="encounter-inspector">
+            <aside
+              aria-label={translateLiteral('Selected Catch Cap')}
+              className="encounter-inspector"
+            >
               <div className="panel-heading">
                 <ShieldCheck aria-hidden="true" size={18} />
-                <h3>Selected Cap</h3>
+                <h3>{translateLiteral('Selected Cap')}</h3>
               </div>
 
               {selectedCap ? (
                 <>
                   <dl className="item-provenance-list">
                     <div>
-                      <dt>Install status</dt>
-                      <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                      <dt>{translateLiteral('Install status')}</dt>
+                      <dd>{translateLiteral(formatBagHookStatus(workflow.installStatus))}</dd>
                     </div>
                     <div>
-                      <dt>Badge level</dt>
-                      <dd>{selectedCap.label}</dd>
+                      <dt>{translateLiteral('Badge level')}</dt>
+                      <dd>{translateLiteral(selectedCap.label)}</dd>
                     </div>
                     <div>
-                      <dt>Selected cap</dt>
+                      <dt>{translateLiteral('Selected cap')}</dt>
                       <dd>
                         {selectedCap.error
-                          ? selectedCap.error
+                          ? translateLiteral(selectedCap.error)
                           : selectedCap.minimumLevelCap === selectedCap.maximumLevelCap
-                            ? `Lv. ${selectedCap.selectedLevelCap} (locked: full badges catch any level)`
+                            ? translateLiteral(
+                                `Lv. ${selectedCap.selectedLevelCap} (locked: full badges catch any level)`
+                              )
                             : `Lv. ${selectedCap.selectedLevelCap}`}
                       </dd>
                     </div>
                     <div>
-                      <dt>Source file</dt>
+                      <dt>{translateLiteral('Game')}</dt>
+                      <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Build ID')}</dt>
+                      <dd>{workflow.buildId}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Display hook')}</dt>
+                      <dd>{workflow.displayHookOffsetHex}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Runtime hook')}</dt>
+                      <dd>{workflow.runtimeHookOffsetHex}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Source file')}</dt>
                       <dd>{workflow.provenance.sourceFile}</dd>
                     </div>
                     <div>
-                      <dt>Layer</dt>
-                      <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
+                      <dt>{translateLiteral('Layer')}</dt>
+                      <dd>{translateLiteral(formatSourceLayer(workflow.provenance.sourceLayer))}</dd>
                     </div>
                     <div>
-                      <dt>File state</dt>
-                      <dd>{formatFileState(workflow.provenance.fileState)}</dd>
+                      <dt>{translateLiteral('File state')}</dt>
+                      <dd>{translateLiteral(formatFileState(workflow.provenance.fileState))}</dd>
                     </div>
                   </dl>
 
@@ -30252,14 +30405,14 @@ function CatchCapSection({
                         aria-busy={isStaging || undefined}
                         className="primary-button"
                         disabled={!canStage}
-                        onClick={() => onStageCaps(selectedCaps)}
+                        onClick={() => selectedCaps && onStageCaps(selectedCaps)}
                         type="button"
                       >
                         <BusyActionContent
-                          busyLabel="Staging"
+                          busyLabel={translateLiteral('Staging')}
                           icon={<ClipboardCheck aria-hidden="true" size={16} />}
                           isBusy={isStaging}
-                          label="Stage Caps"
+                          label={translateLiteral('Stage Caps')}
                         />
                       </button>
                       <button
@@ -30270,10 +30423,10 @@ function CatchCapSection({
                         type="button"
                       >
                         <BusyActionContent
-                          busyLabel="Staging"
+                          busyLabel={translateLiteral('Staging')}
                           icon={<Trash2 aria-hidden="true" size={16} />}
                           isBusy={isStaging}
-                          label="Stage Uninstall"
+                          label={translateLiteral('Stage Uninstall')}
                         />
                       </button>
                       <button
@@ -30284,10 +30437,10 @@ function CatchCapSection({
                         type="button"
                       >
                         <BusyActionContent
-                          busyLabel="Reviewing"
+                          busyLabel={translateLiteral('Reviewing')}
                           icon={<ClipboardCheck aria-hidden="true" size={16} />}
                           isBusy={isChangePlanCreating}
-                          label="Review"
+                          label={translateLiteral('Review')}
                         />
                       </button>
                       <button
@@ -30298,45 +30451,49 @@ function CatchCapSection({
                         type="button"
                       >
                         <BusyActionContent
-                          busyLabel="Applying"
+                          busyLabel={translateLiteral('Applying')}
                           icon={<Save aria-hidden="true" size={16} />}
                           isBusy={isChangePlanApplying}
-                          label="Apply"
+                          label={translateLiteral('Apply')}
                         />
                       </button>
                     </div>
 
                     <dl className="encounter-slot-detail">
                       <div>
-                        <dt>Install message</dt>
-                        <dd>{workflow.installMessage}</dd>
+                        <dt>{translateLiteral('Install message')}</dt>
+                        <dd>{translateLiteral(workflow.installMessage)}</dd>
                       </div>
                       <div>
-                        <dt>Logic</dt>
+                        <dt>{translateLiteral('Logic')}</dt>
                         <dd>{workflow.logicExpression}</dd>
                       </div>
                       <div>
-                        <dt>Logic SHA-256</dt>
+                        <dt>{translateLiteral('Logic SHA-256')}</dt>
                         <dd>{workflow.capLogicSha256}</dd>
                       </div>
                       <div>
-                        <dt>Uninstall</dt>
+                        <dt>{translateLiteral('Uninstall')}</dt>
                         <dd>
-                          Use Stage Uninstall, then Review and Apply. It restores only Catch
-                          Cap-owned ExeFS bytes, preserves Royal Candy when installed, and does
-                          not touch Bag Hook or Starting Items.
+                          {translateLiteral(
+                            'Use Stage Uninstall, then Review and Apply. It restores only Catch Cap-owned ExeFS bytes, preserves Royal Candy when installed, and does not touch Bag Hook or Starting Items.'
+                          )}
                         </dd>
                       </div>
                     </dl>
                   </div>
                 </>
               ) : (
-                <p className="empty-copy">No Catch Cap row selected.</p>
+                <p className="empty-copy">
+                  {translateLiteral('No Catch Cap row selected.')}
+                </p>
               )}
             </aside>
           </div>
         ) : (
-          <p className="empty-copy">Open Catch Cap from Advanced Editors to load cap values.</p>
+          <p className="empty-copy">
+            {translateLiteral('Open Catch Cap from Advanced Editors to load cap values.')}
+          </p>
         )}
       </section>
 

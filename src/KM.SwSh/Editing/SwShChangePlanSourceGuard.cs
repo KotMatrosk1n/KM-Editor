@@ -170,6 +170,20 @@ public static class SwShChangePlanSourceGuard
                 return false;
             }
 
+            var inputHasCapturedFingerprints = currentPlan.Writes.Count > 0
+                && currentPlan.Writes.All(write => !string.IsNullOrWhiteSpace(write.SourceFingerprint));
+            if (inputHasCapturedFingerprints
+                && !ChangePlanReview.Matches(currentPlan, capturedPlan))
+            {
+                DisposeStreams(sourceStreams.Values);
+                scopeDiagnostics.Add(CreateStaleDiagnostic(
+                    currentTarget,
+                    "A source changed while verified apply handles were being acquired."));
+                scope = null;
+                diagnostics = scopeDiagnostics;
+                return false;
+            }
+
             snapshotRootPath = Path.Combine(
                 Path.GetTempPath(),
                 "km-editor-swsh-verified-apply",
@@ -637,14 +651,6 @@ public static class SwShChangePlanSourceGuard
             if (Directory.Exists(snapshotRootPath))
             {
                 Directory.Delete(snapshotRootPath, recursive: true);
-            }
-
-            var parentPath = Path.GetDirectoryName(snapshotRootPath);
-            if (!string.IsNullOrWhiteSpace(parentPath)
-                && Directory.Exists(parentPath)
-                && !Directory.EnumerateFileSystemEntries(parentPath).Any())
-            {
-                Directory.Delete(parentPath);
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

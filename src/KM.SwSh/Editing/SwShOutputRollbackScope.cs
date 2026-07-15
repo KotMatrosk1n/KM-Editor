@@ -388,14 +388,6 @@ public sealed class SwShOutputRollbackScope : IDisposable
                 Directory.Delete(snapshotRootPath, recursive: true);
             }
 
-            var parentPath = Path.GetDirectoryName(snapshotRootPath);
-            if (!string.IsNullOrWhiteSpace(parentPath)
-                && Directory.Exists(parentPath)
-                && !Directory.EnumerateFileSystemEntries(parentPath).Any())
-            {
-                Directory.Delete(parentPath);
-            }
-
             return true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
