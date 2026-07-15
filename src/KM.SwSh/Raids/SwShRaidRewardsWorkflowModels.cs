@@ -31,17 +31,17 @@ public sealed record SwShRaidRewardEditableField(
 }
 
 public sealed record SwShRaidRewardEditableFieldOption(
-    int Value,
+    long Value,
     string Label);
 
 public sealed record SwShRaidRewardItemRecord(
     int Slot,
-    int EntryId,
-    int ItemId,
+    long EntryId,
+    long ItemId,
     string ItemName,
-    int Quantity,
-    int Weight,
-    IReadOnlyList<int> Values);
+    long Quantity,
+    long Weight,
+    IReadOnlyList<long> Values);
 
 public sealed record SwShRaidRewardTableRecord(
     string TableId,

@@ -783,6 +783,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateRaidRewardFieldsResponse ToFieldsDto(SwShRaidRewardsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateRaidRewardFieldsResponse(
+            ToRaidRewardsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateRaidBonusRewardFieldResponse ToBonusDto(SwShRaidRewardsEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

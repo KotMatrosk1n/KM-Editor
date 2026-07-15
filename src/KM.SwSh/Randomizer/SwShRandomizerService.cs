@@ -1408,9 +1408,20 @@ public sealed class SwShRandomizerService
         AddWorkflowErrors(workflow.Diagnostics, diagnostics);
         var rng = DeterministicRandom.Create(generationKey, module);
         var edits = new List<PendingEdit>();
+        var itemNamesSource = SwShRaidRewardsWorkflowService.ResolveItemNamesSourceForValidation(project);
+        var itemValidationSource = itemNamesSource is null
+            ? null
+            : new ProjectFileReference(
+                itemNamesSource.GraphEntry.LayeredFile is not null
+                    ? ProjectFileLayer.Layered
+                    : ProjectFileLayer.Base,
+                itemNamesSource.GraphEntry.RelativePath);
 
         foreach (var table in workflow.Tables.OrderBy(table => table.TableId, StringComparer.Ordinal))
         {
+            IReadOnlyList<ProjectFileReference> sources = itemValidationSource is null
+                ? [Source(table.Provenance)]
+                : [Source(table.Provenance), itemValidationSource];
             foreach (var reward in table.Rewards.OrderBy(reward => reward.Slot))
             {
                 if (reward.ItemId <= 0)
@@ -1425,7 +1436,7 @@ public sealed class SwShRandomizerService
                     SwShRaidRewardsWorkflowService.CreateRewardRecordId(table.TableId, reward.Slot),
                     SwShRaidRewardsWorkflowService.ItemIdField,
                     item.ItemId,
-                    Source(table.Provenance)));
+                    sources));
             }
         }
 

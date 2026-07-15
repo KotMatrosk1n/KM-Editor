@@ -104,6 +104,8 @@ public sealed class ProjectBridgeDispatcher
 {
     private static readonly object SwShApplySyncRoot = new();
 
+    internal Action<int, string>? NormalSwShApplyMutationHook { get; init; }
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShDynamaxAdventuresEditSessionService dynamaxAdventuresEditSessionService;
     private readonly SwShDynamaxAdventureSeedPlanningService dynamaxAdventureSeedPlanningService;
@@ -327,6 +329,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateTeraRaidFields => DispatchUpdateTeraRaidFields(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
                 KmCommandNames.UpdateRaidRewardField => DispatchUpdateRaidRewardField(requestJson),
+                KmCommandNames.UpdateRaidRewardFields => DispatchUpdateRaidRewardFields(requestJson),
                 KmCommandNames.LoadRaidBonusRewardsWorkflow => DispatchLoadRaidBonusRewardsWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBonusRewardField => DispatchUpdateRaidBonusRewardField(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
@@ -1556,6 +1559,30 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateRaidRewardFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateRaidRewardFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates?
+            .Select(update => update is null
+                ? null
+                : new SwShRaidRewardFieldUpdate(
+                    update.TableId,
+                    update.Slot,
+                    update.Field,
+                    update.Value))
+            .ToArray();
+        var result = raidRewardsEditSessionService.UpdateRewardFields(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            updates);
+        var response = SwShBridgeMapper.ToFieldsDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2996,7 +3023,9 @@ public sealed class ProjectBridgeDispatcher
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        return new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics));
     }
 
     private ApplyResult ApplyNormalSwShChangePlan(
@@ -3025,20 +3054,64 @@ public sealed class ProjectBridgeDispatcher
             return CreateCombinedApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        foreach (var domain in domains)
+        SwShOutputRollbackScope? rollbackScope = null;
+        if (domains.Count > 1
+            && !SwShOutputRollbackScope.TryCapture(
+                paths,
+                currentPlan.Writes.Select(write => write.TargetRelativePath),
+                out rollbackScope,
+                out var captureFailure))
         {
-            var domainSession = SliceSession(session, domain);
-            var domainPlan = CreateSingleSwShChangePlan(paths, domainSession, domain);
-            var result = ApplySingleSwShChangePlan(paths, domainSession, domainPlan, domain);
-            diagnostics.AddRange(result.Diagnostics);
-            writtenFiles.AddRange(result.WrittenFiles);
+            diagnostics.Add(new ValidationDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Combined Sword/Shield apply could not snapshot output before apply: {captureFailure?.Message ?? "Unknown snapshot error."}",
+                Domain: "workflow.editSession",
+                File: string.IsNullOrWhiteSpace(captureFailure?.RelativePath) ? null : captureFailure.RelativePath,
+                Expected: "Readable existing outputs and writable temporary storage"));
+            return CreateCombinedApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
 
-            if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        using (rollbackScope)
+        {
+            try
             {
-                break;
+                for (var index = 0; index < domains.Count; index++)
+                {
+                    var domain = domains[index];
+                    NormalSwShApplyMutationHook?.Invoke(index, GetEditSessionDomainName(domain));
+                    var domainSession = SliceSession(session, domain);
+                    var domainPlan = CreateSingleSwShChangePlan(paths, domainSession, domain);
+                    var result = ApplySingleSwShChangePlan(paths, domainSession, domainPlan, domain);
+                    diagnostics.AddRange(result.Diagnostics);
+                    writtenFiles.AddRange(result.WrittenFiles);
+
+                    if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                    {
+                        break;
+                    }
+
+                    ClearCriticalSwShApplyCaches();
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(new ValidationDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Combined Sword/Shield apply failed: {exception.Message}",
+                    Domain: "workflow.editSession",
+                    Expected: "All selected editor changes applied together"));
             }
 
-            ClearCriticalSwShApplyCaches();
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                && rollbackScope is not null)
+            {
+                RollbackCombinedSwShApply(rollbackScope, writtenFiles, diagnostics);
+                ClearCriticalSwShApplyCaches();
+            }
+            else
+            {
+                rollbackScope?.Commit();
+            }
         }
 
         return CreateCombinedApplyResult(
@@ -3047,6 +3120,37 @@ public sealed class ProjectBridgeDispatcher
             currentPlan,
             writtenFiles.Distinct().ToArray(),
             diagnostics);
+    }
+
+    private static void RollbackCombinedSwShApply(
+        SwShOutputRollbackScope rollbackScope,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var rollbackFailures = rollbackScope.Rollback();
+        writtenFiles.Clear();
+        if (rollbackFailures.Count == 0)
+        {
+            diagnostics.Add(new ValidationDiagnostic(
+                DiagnosticSeverity.Info,
+                "Combined Sword/Shield apply failed and all output changes were rolled back.",
+                Domain: "workflow.editSession"));
+            return;
+        }
+
+        foreach (var failure in rollbackFailures)
+        {
+            diagnostics.Add(new ValidationDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Combined Sword/Shield apply rollback failed: {failure.Message}",
+                Domain: "workflow.editSession",
+                File: string.IsNullOrWhiteSpace(failure.RelativePath) ? null : failure.RelativePath,
+                Expected: "Output restored to its exact pre-apply state"));
+            if (!string.IsNullOrWhiteSpace(failure.RelativePath))
+            {
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, failure.RelativePath));
+            }
+        }
     }
 
     private void ClearCriticalSwShApplyCaches()
@@ -3235,23 +3339,7 @@ public sealed class ProjectBridgeDispatcher
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        return ChangePlanReview.Matches(reviewedPlan, currentPlan);
     }
 
     private static EditSessionDomain GetEditSessionDomain(EditSession session)
@@ -3449,6 +3537,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateRaidBattleSlotField or
             KmCommandNames.LoadRaidRewardsWorkflow or
             KmCommandNames.UpdateRaidRewardField or
+            KmCommandNames.UpdateRaidRewardFields or
             KmCommandNames.LoadRaidBonusRewardsWorkflow or
             KmCommandNames.UpdateRaidBonusRewardField or
             KmCommandNames.LoadBehaviorWorkflow or

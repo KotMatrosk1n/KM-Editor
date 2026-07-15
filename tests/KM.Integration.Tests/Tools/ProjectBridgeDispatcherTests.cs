@@ -2227,7 +2227,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
         var reward = table.Rewards[0];
         Assert.Equal("Exp. Candy L", reward.ItemName);
-        Assert.Equal([40, 30, 20, 10, 5], reward.Values);
+        Assert.Equal([40L, 30L, 20L, 10L, 5L], reward.Values);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
@@ -2255,7 +2255,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("0x1020304050607080", table.SourceTableHash);
         var reward = table.Rewards[0];
         Assert.Equal("Armorite Ore", reward.ItemName);
-        Assert.Equal([1, 2, 3, 4, 5], reward.Values);
+        Assert.Equal([1L, 2L, 3L, 4L, 5L], reward.Values);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
@@ -2330,6 +2330,85 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchRaidRewardFieldBatchIsRejectionAtomic()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var workflow = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-raid-batch-load"))).Payload!.Workflow;
+        var table = Assert.Single(workflow.Tables);
+
+        var response = DeserializeResponse<UpdateRaidRewardFieldsResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidRewardFields,
+            new UpdateRaidRewardFieldsRequest(
+                temp.Paths,
+                Session: null,
+                Updates:
+                [
+                    new RaidRewardFieldUpdateDto(table.TableId, 1, "star2Value", "50"),
+                    new RaidRewardFieldUpdateDto(table.TableId, 1, "star1Value", "101"),
+                ]),
+            requestId: "request-raid-batch-update")));
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.Session.PendingEdits);
+        Assert.Equal(30L, Assert.Single(response.Payload.Workflow.Tables).Rewards[0].Values[1]);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchRaidRewardFieldBatchReturnsDiagnosticsForNullOrMissingUpdates()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var requests = new[]
+        {
+            SerializeRequest(
+                KmCommandNames.UpdateRaidRewardFields,
+                new UpdateRaidRewardFieldsRequest(temp.Paths, Session: null, Updates: null),
+                requestId: "request-raid-null-updates"),
+            SerializeRequest(
+                KmCommandNames.UpdateRaidRewardFields,
+                new
+                {
+                    Paths = temp.Paths,
+                    Session = (EditSessionDto?)null,
+                },
+                requestId: "request-raid-missing-updates"),
+            SerializeRequest(
+                KmCommandNames.UpdateRaidRewardFields,
+                new UpdateRaidRewardFieldsRequest(
+                    temp.Paths,
+                    Session: null,
+                    Updates: [null]),
+                requestId: "request-raid-null-update"),
+        };
+
+        foreach (var request in requests)
+        {
+            var response = DeserializeResponse<UpdateRaidRewardFieldsResponse>(
+                dispatcher.Dispatch(request));
+
+            Assert.Null(response.Error);
+            Assert.NotNull(response.Payload);
+            Assert.Empty(response.Payload.Session.PendingEdits);
+            Assert.Contains(
+                response.Payload.Diagnostics,
+                diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                    && diagnostic.Field == "updates");
+        }
+    }
+
+    [Fact]
     public void DispatchCombinedRaidRewardEditsPreserveDropAndBonusChanges()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2395,6 +2474,166 @@ public sealed class ProjectBridgeDispatcherTests
         var bonusArchive = SwShNestHoleRewardArchive.Parse(outputPack.GetFileByName("nest_hole_bonus_rewards.bin"));
         Assert.Equal(77u, dropArchive.Tables[0].Rewards[1].Values[4]);
         Assert.Equal(88u, bonusArchive.Tables[0].Rewards[0].Values[0]);
+    }
+
+    [Fact]
+    public void DispatchCombinedRaidRewardApplyRejectsPendingValueChangedAfterReview()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var dropWorkflow = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-stale-combined-raid-drop-load"))).Payload!.Workflow;
+        var bonusWorkflow = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBonusRewardsWorkflow,
+            new LoadRaidBonusRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-stale-combined-raid-bonus-load"))).Payload!.Workflow;
+        var session = DeserializeResponse<StartEditSessionResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StartEditSession,
+            new StartEditSessionRequest(temp.Paths),
+            requestId: "request-stale-combined-raid-start"))).Payload!.Session;
+        var dropUpdate = DeserializeResponse<UpdateRaidRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidRewardField,
+            new UpdateRaidRewardFieldRequest(
+                temp.Paths,
+                session,
+                dropWorkflow.Tables.Single(table => table.RewardKind == "drop").TableId,
+                Slot: 2,
+                Field: "star5Value",
+                Value: "77"),
+            requestId: "request-stale-combined-raid-drop-update"))).Payload!;
+        var bonusUpdate = DeserializeResponse<UpdateRaidBonusRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidBonusRewardField,
+            new UpdateRaidBonusRewardFieldRequest(
+                temp.Paths,
+                dropUpdate.Session,
+                Assert.Single(bonusWorkflow.Tables).TableId,
+                Slot: 1,
+                Field: "star1Value",
+                Value: "88"),
+            requestId: "request-stale-combined-raid-bonus-update"))).Payload!;
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, bonusUpdate.Session),
+            requestId: "request-stale-combined-raid-plan"))).Payload!.ChangePlan;
+        var changedSession = bonusUpdate.Session with
+        {
+            PendingEdits = bonusUpdate.Session.PendingEdits
+                .Select(edit => edit.Domain == "workflow.raidBonusRewards"
+                    ? edit with { NewValue = "89" }
+                    : edit)
+                .ToArray(),
+        };
+
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, changedSession, plan),
+            requestId: "request-stale-combined-raid-apply"))).Payload!.ApplyResult;
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak")));
+    }
+
+    [Fact]
+    public void DispatchCombinedRaidRewardApplyRollsBackWhenSecondDomainFails()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var outputRelativePath = "romfs/bin/archive/field/resident/data_table.gfpak";
+        var originalOutput = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak"));
+        temp.WriteOutputFile(outputRelativePath, originalOutput);
+        var dispatcher = new ProjectBridgeDispatcher
+        {
+            NormalSwShApplyMutationHook = (index, _) =>
+            {
+                if (index == 1)
+                {
+                    throw new IOException("Injected second-domain apply failure.");
+                }
+            },
+        };
+
+        var dropWorkflow = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-rollback-combined-raid-drop-load"))).Payload!.Workflow;
+        var bonusWorkflow = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.LoadRaidBonusRewardsWorkflow,
+            new LoadRaidBonusRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-rollback-combined-raid-bonus-load"))).Payload!.Workflow;
+        var session = DeserializeResponse<StartEditSessionResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.StartEditSession,
+            new StartEditSessionRequest(temp.Paths),
+            requestId: "request-rollback-combined-raid-start"))).Payload!.Session;
+        var dropUpdate = DeserializeResponse<UpdateRaidRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidRewardField,
+            new UpdateRaidRewardFieldRequest(
+                temp.Paths,
+                session,
+                dropWorkflow.Tables.Single(table => table.RewardKind == "drop").TableId,
+                Slot: 2,
+                Field: "star5Value",
+                Value: "77"),
+            requestId: "request-rollback-combined-raid-drop-update"))).Payload!;
+        var bonusUpdate = DeserializeResponse<UpdateRaidBonusRewardFieldResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateRaidBonusRewardField,
+            new UpdateRaidBonusRewardFieldRequest(
+                temp.Paths,
+                dropUpdate.Session,
+                Assert.Single(bonusWorkflow.Tables).TableId,
+                Slot: 1,
+                Field: "star1Value",
+                Value: "88"),
+            requestId: "request-rollback-combined-raid-bonus-update"))).Payload!;
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, bonusUpdate.Session),
+            requestId: "request-rollback-combined-raid-plan"))).Payload!.ChangePlan;
+
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, bonusUpdate.Session, plan),
+            requestId: "request-rollback-combined-raid-apply"))).Payload!.ApplyResult;
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Injected second-domain apply failure", StringComparison.Ordinal));
+        Assert.Contains(
+            apply.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Info
+                && diagnostic.Message.Contains("rolled back", StringComparison.Ordinal));
+        Assert.Equal(originalOutput, File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak")));
     }
 
     [Fact]

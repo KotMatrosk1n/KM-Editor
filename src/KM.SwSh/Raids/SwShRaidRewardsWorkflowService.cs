@@ -6,7 +6,10 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Raids;
 
@@ -26,7 +29,8 @@ public sealed class SwShRaidRewardsWorkflowService
     public const string Star4ValueField = "star4Value";
     public const string Star5ValueField = "star5Value";
     public const int MinimumItemId = 0;
-    public const int MaximumItemId = (int)SwShNestHoleRewardArchive.MaximumItemId;
+    public const int MaximumEditableItemId = ushort.MaxValue;
+    public const int MaximumItemId = MaximumEditableItemId;
     public const int MinimumRewardValue = 0;
     public const int MaximumRewardValue = (int)SwShNestHoleRewardArchive.MaximumBonusQuantity;
     public const string NestDataPath = "romfs/bin/archive/field/resident/data_table.gfpak";
@@ -108,7 +112,13 @@ public sealed class SwShRaidRewardsWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 0, [], diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShRaidRewardTableRecord>(),
+                sourceFileCount: 0,
+                [],
+                diagnostics,
+                kind);
         }
 
         var dataSource = ResolveNestDataSource(project);
@@ -119,7 +129,13 @@ public sealed class SwShRaidRewardsWorkflowService
                 DiagnosticSeverity.Warning,
                 $"{GetWorkflowLabel(kind)} data is not available for this project.",
                 expected: NestDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 0, [], diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShRaidRewardTableRecord>(),
+                sourceFileCount: 0,
+                [],
+                diagnostics,
+                kind);
         }
 
         var itemNames = LoadItemNames(project, diagnostics, kind);
@@ -159,7 +175,7 @@ public sealed class SwShRaidRewardsWorkflowService
                     expected: GetExpectedArchiveMembers(kind)));
             }
 
-            return CreateWorkflow(summary, tables, sourceFileCount: 1, itemDisplayNames, diagnostics);
+            return CreateWorkflow(summary, tables, sourceFileCount: 1, itemDisplayNames, diagnostics, kind);
         }
         catch (InvalidDataException exception)
         {
@@ -169,7 +185,13 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"{GetWorkflowLabel(kind)} source is not supported: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield data_table.gfpak with nest-hole reward members"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemDisplayNames, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShRaidRewardTableRecord>(),
+                sourceFileCount: 1,
+                itemDisplayNames,
+                diagnostics,
+                kind);
         }
         catch (IOException exception)
         {
@@ -179,7 +201,13 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"{GetWorkflowLabel(kind)} source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemDisplayNames, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShRaidRewardTableRecord>(),
+                sourceFileCount: 1,
+                itemDisplayNames,
+                diagnostics,
+                kind);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -189,7 +217,13 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"{GetWorkflowLabel(kind)} source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemDisplayNames, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShRaidRewardTableRecord>(),
+                sourceFileCount: 1,
+                itemDisplayNames,
+                diagnostics,
+                kind);
         }
     }
 
@@ -252,12 +286,31 @@ public sealed class SwShRaidRewardsWorkflowService
         out int tableIndex,
         out ulong sourceTableId)
     {
+        return TryParseTableId(
+            tableId,
+            out member,
+            out tableIndex,
+            out sourceTableId,
+            out _,
+            out _);
+    }
+
+    internal static bool TryParseTableId(
+        string? tableId,
+        out RaidRewardArchiveMember member,
+        out int tableIndex,
+        out ulong sourceTableId,
+        out string sourceIdentity,
+        out bool isLegacy)
+    {
         member = ArchiveMembers[0];
         tableIndex = -1;
         sourceTableId = 0;
+        sourceIdentity = string.Empty;
+        isLegacy = true;
 
         var parts = tableId?.Split(':') ?? [];
-        if (parts.Length != 3)
+        if (parts.Length is not 3 and not 4)
         {
             return false;
         }
@@ -278,6 +331,17 @@ public sealed class SwShRaidRewardsWorkflowService
         if (!ulong.TryParse(parts[2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out sourceTableId))
         {
             return false;
+        }
+
+        if (parts.Length == 4)
+        {
+            if (parts[3].Length != SHA256.HashSizeInBytes * 2 || !parts[3].All(Uri.IsHexDigit))
+            {
+                return false;
+            }
+
+            sourceIdentity = parts[3].ToUpperInvariant();
+            isLegacy = false;
         }
 
         member = foundMember;
@@ -305,9 +369,45 @@ public sealed class SwShRaidRewardsWorkflowService
             && slot >= 1;
     }
 
-    internal static string CreateTableId(RaidRewardArchiveMember member, int tableIndex, ulong sourceTableId)
+    internal static string CreateTableId(
+        RaidRewardArchiveMember member,
+        int tableIndex,
+        SwShNestHoleRewardTable table)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{member.Key}:{tableIndex}:{sourceTableId:X16}");
+        var sourceIdentity = CreateTableSourceIdentity(member, tableIndex, table);
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{member.Key}:{tableIndex}:{table.TableId:X16}:{sourceIdentity}");
+    }
+
+    internal static string CreateTableSourceIdentity(
+        RaidRewardArchiveMember member,
+        int tableIndex,
+        SwShNestHoleRewardTable table)
+    {
+        ArgumentNullException.ThrowIfNull(member);
+        ArgumentNullException.ThrowIfNull(table);
+        ArgumentOutOfRangeException.ThrowIfNegative(tableIndex);
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendIdentityString(hash, member.Key);
+        AppendIdentityString(hash, member.FileName);
+        AppendIdentityInt32(hash, tableIndex);
+        AppendIdentityUInt64(hash, table.TableId);
+        AppendIdentityInt32(hash, table.Rewards.Count);
+
+        foreach (var reward in table.Rewards)
+        {
+            AppendIdentityUInt32(hash, reward.EntryId);
+            AppendIdentityUInt32(hash, reward.ItemId);
+            AppendIdentityInt32(hash, reward.Values.Count);
+            foreach (var value in reward.Values)
+            {
+                AppendIdentityUInt32(hash, value);
+            }
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     internal static IReadOnlyList<RaidRewardArchiveMember> KnownArchiveMembers => ArchiveMembers;
@@ -333,7 +433,7 @@ public sealed class SwShRaidRewardsWorkflowService
     {
         return archive.Tables
             .Select((table, tableIndex) => new SwShRaidRewardTableRecord(
-                CreateTableId(member, tableIndex, table.TableId),
+                CreateTableId(member, tableIndex, table),
                 FormatRewardTableDisplayName(member, tableIndex, table.TableId, usageLabels),
                 $"table_{table.TableId:X16}",
                 0,
@@ -344,7 +444,8 @@ public sealed class SwShRaidRewardsWorkflowService
                 tableIndex,
                 $"0x{table.TableId:X16}",
                 table.Rewards
-                    .Select((reward, rewardIndex) => ToRewardRecord(reward, rewardIndex, member, itemNames))
+                    .Select((reward, rewardIndex) =>
+                        ToRewardRecord(reward, rewardIndex, tableIndex, member, itemNames))
                     .ToArray(),
                 provenance))
             .OrderBy(table => table.RewardKind, StringComparer.Ordinal)
@@ -547,34 +648,36 @@ public sealed class SwShRaidRewardsWorkflowService
     private static SwShRaidRewardItemRecord ToRewardRecord(
         SwShNestHoleReward reward,
         int rewardIndex,
+        int tableIndex,
         RaidRewardArchiveMember member,
         IReadOnlyList<string> itemNames)
     {
-        var values = PadValues(reward.Values, length: 5);
+        if (reward.Values.Count < 5)
+        {
+            throw new InvalidDataException(
+                $"Raid reward member '{member.FileName}' table {tableIndex} slot {rewardIndex + 1} " +
+                $"contains {reward.Values.Count} star values; at least 5 are required.");
+        }
+
+        var values = reward.Values.Select(value => (long)value).ToArray();
         var firstValue = values[0];
         return new SwShRaidRewardItemRecord(
             Slot: rewardIndex + 1,
-            EntryId: checked((int)reward.EntryId),
-            ItemId: checked((int)reward.ItemId),
+            EntryId: reward.EntryId,
+            ItemId: reward.ItemId,
             ItemName: GetItemName(reward.ItemId, itemNames),
             Quantity: member.Key == "bonus" ? firstValue : 0,
             Weight: member.Key == "drop" ? firstValue : 0,
             Values: values);
     }
 
-    private static int[] PadValues(IReadOnlyList<uint> values, int length)
-    {
-        var padded = new int[length];
-        for (var index = 0; index < padded.Length && index < values.Count; index++)
-        {
-            padded[index] = checked((int)values[index]);
-        }
-
-        return padded;
-    }
-
     private static string GetItemName(uint itemId, IReadOnlyList<string> itemNames)
     {
+        if (itemId == 0)
+        {
+            return "None";
+        }
+
         return itemId < (uint)itemNames.Count && !string.IsNullOrWhiteSpace(itemNames[(int)itemId])
             ? itemNames[(int)itemId]
             : string.Create(CultureInfo.InvariantCulture, $"Item {itemId}");
@@ -665,7 +768,7 @@ public sealed class SwShRaidRewardsWorkflowService
         ICollection<ValidationDiagnostic> diagnostics,
         SwShRaidRewardWorkflowKind kind)
     {
-        var fallback = ResolveCommonTextSource(project, "itemname.dat");
+        var fallback = ResolveItemNamesSource(project);
 
         if (fallback is null)
         {
@@ -678,6 +781,18 @@ public sealed class SwShRaidRewardsWorkflowService
         }
 
         return fallback;
+    }
+
+    internal static WorkflowFileSource? ResolveItemNamesSource(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return ResolveCommonTextSource(project, "itemname.dat");
+    }
+
+    internal static WorkflowFileSource? ResolveItemNamesSourceForValidation(OpenedProject project)
+    {
+        return ResolveItemNamesSource(project);
     }
 
     private static WorkflowFileSource? ResolveSpeciesNamesSource(OpenedProject project)
@@ -765,12 +880,13 @@ public sealed class SwShRaidRewardsWorkflowService
         IReadOnlyList<SwShRaidRewardTableRecord> tables,
         int sourceFileCount,
         IReadOnlyList<string> itemNames,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        SwShRaidRewardWorkflowKind kind)
     {
         return new SwShRaidRewardsWorkflow(
             summary,
             tables,
-            CreateEditableFields(itemNames),
+            CreateEditableFields(itemNames, kind),
             new SwShRaidRewardsWorkflowStats(
                 tables.Count,
                 tables.Sum(table => table.Rewards.Count),
@@ -779,20 +895,35 @@ public sealed class SwShRaidRewardsWorkflowService
     }
 
     private static IReadOnlyList<SwShRaidRewardEditableField> CreateEditableFields(
-        IReadOnlyList<string> itemNames)
+        IReadOnlyList<string> itemNames,
+        SwShRaidRewardWorkflowKind kind)
     {
-        var itemOptions = itemNames
-            .Select((name, index) => new SwShRaidRewardEditableFieldOption(
-                index,
-                string.IsNullOrWhiteSpace(name)
-                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}"
-                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
+        var itemOptions = Enumerable.Range(0, Math.Max(itemNames.Count, 1))
+            .Select(index =>
+            {
+                var name = index < itemNames.Count ? itemNames[index] : string.Empty;
+                var label = index switch
+                {
+                    0 => "000 None",
+                    _ when string.IsNullOrWhiteSpace(name) =>
+                        $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}",
+                    _ => $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}",
+                };
+                return new SwShRaidRewardEditableFieldOption(index, label);
+            })
             .ToArray();
+        var maximumStarValue = kind == SwShRaidRewardWorkflowKind.Drop
+            ? (int)SwShNestHoleRewardArchive.MaximumDropValue
+            : MaximumRewardValue;
 
         return EditableFields
-            .Select(field => field.Field == ItemIdField
-                ? field with { Options = itemOptions }
-                : field)
+            .Select(field => field.Field switch
+            {
+                ItemIdField => field with { Options = itemOptions },
+                Star1ValueField or Star2ValueField or Star3ValueField or Star4ValueField or Star5ValueField =>
+                    field with { MaximumValue = maximumStarValue },
+                _ => field,
+            })
             .ToArray();
     }
 
@@ -814,8 +945,8 @@ public sealed class SwShRaidRewardsWorkflowService
             GetWorkflowId(kind),
             GetWorkflowLabel(kind),
             kind == SwShRaidRewardWorkflowKind.Bonus
-                ? "Raid bonus reward tables, item quantities, den usage, and source provenance."
-                : "Raid reward tables, den ranks, item quantities, and source provenance.",
+                ? "Raid bonus reward tables, star-based values, den usage links, and source provenance."
+                : "Raid drop reward tables, star-based values, den usage links, and source provenance.",
             availability,
             diagnostics);
     }
@@ -839,6 +970,34 @@ public sealed class SwShRaidRewardsWorkflowService
         return string.Join(
             " or ",
             GetArchiveMembers(kind).Select(member => $"{member.FileName} inside data_table.gfpak"));
+    }
+
+    private static void AppendIdentityString(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        AppendIdentityInt32(hash, bytes.Length);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityInt32(IncrementalHash hash, int value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityUInt32(IncrementalHash hash, uint value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendIdentityUInt64(IncrementalHash hash, ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
+        hash.AppendData(bytes);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

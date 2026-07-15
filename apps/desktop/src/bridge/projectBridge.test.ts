@@ -181,6 +181,55 @@ describe('projectBridge', () => {
     });
   });
 
+  it('sends Raid Rewards field batches through one atomic command', async () => {
+    let capturedRequest: unknown;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+      throw new Error('Stop after request capture.');
+    });
+
+    await expect(
+      bridge.updateRaidRewardFields({
+        paths: editableProjectPaths,
+        session: null,
+        updates: [
+          {
+            field: 'itemId',
+            slot: 1,
+            tableId: 'drop:0:AABBCCDD00112233',
+            value: '4'
+          },
+          {
+            field: 'star5Value',
+            slot: 1,
+            tableId: 'drop:0:AABBCCDD00112233',
+            value: '6'
+          }
+        ]
+      })
+    ).rejects.toThrow('Stop after request capture.');
+
+    expect(capturedRequest).toMatchObject({
+      command: 'raidRewards.rewards.update',
+      payload: {
+        updates: [
+          {
+            field: 'itemId',
+            slot: 1,
+            tableId: 'drop:0:AABBCCDD00112233',
+            value: '4'
+          },
+          {
+            field: 'star5Value',
+            slot: 1,
+            tableId: 'drop:0:AABBCCDD00112233',
+            value: '6'
+          }
+        ]
+      }
+    });
+  });
+
   it('sends the reviewed Mod Merger token with apply requests', async () => {
     let capturedRequest: unknown;
     const bridge = createProjectBridge(async (requestJson) => {
@@ -1102,6 +1151,7 @@ describe('projectBridge', () => {
                   label: 'Item ID',
                   maximumValue: 65535,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 }
               ],
@@ -1165,6 +1215,7 @@ describe('projectBridge', () => {
                   label: 'Item ID',
                   maximumValue: 65535,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 }
               ],

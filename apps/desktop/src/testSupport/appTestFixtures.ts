@@ -3416,6 +3416,10 @@ export function createMockProjectBridge(
         label: 'Item ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '003 Exp. Candy L', value: 3 },
+          { label: '004 Exp. Candy XL', value: 4 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -3423,6 +3427,7 @@ export function createMockProjectBridge(
         label: '5-star value',
         maximumValue: 999,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       }
     ],
@@ -7546,6 +7551,86 @@ export function createMockProjectBridge(
           )
         }
       }),
+    updateRaidRewardFields: (request) => {
+      const updatedWorkflow = request.updates.reduce<RaidRewardsWorkflow>(
+        (currentWorkflow, update) => ({
+          ...currentWorkflow,
+          tables: currentWorkflow.tables.map((table) =>
+            table.tableId === update.tableId
+              ? {
+                  ...table,
+                  rewards: table.rewards.map((reward) => {
+                    if (reward.slot !== update.slot) {
+                      return reward;
+                    }
+
+                    if (update.field === 'itemId') {
+                      const itemId = Number.parseInt(update.value, 10);
+                      const itemName =
+                        itemId === 3
+                          ? 'Exp. Candy L'
+                          : itemId === 4
+                            ? 'Exp. Candy XL'
+                            : `Item ${itemId}`;
+                      return { ...reward, itemId, itemName };
+                    }
+
+                    const valueIndex = [
+                      'star1Value',
+                      'star2Value',
+                      'star3Value',
+                      'star4Value',
+                      'star5Value'
+                    ].indexOf(update.field);
+                    return valueIndex < 0
+                      ? reward
+                      : {
+                          ...reward,
+                          values: reward.values.map((value, index) =>
+                            index === valueIndex ? Number.parseInt(update.value, 10) : value
+                          )
+                        };
+                  })
+                }
+              : table
+          )
+        }),
+        raidRewardsWorkflow
+      );
+      const updateKeys = new Set(
+        request.updates.map((update) => `${update.tableId}#${update.slot}:${update.field}`)
+      );
+      const pendingEdits = [
+        ...(request.session?.pendingEdits ?? []).filter(
+          (edit) =>
+            edit.domain !== 'workflow.raidRewards' ||
+            !updateKeys.has(`${edit.recordId}:${edit.field}`)
+        ),
+        ...request.updates.map((update) => ({
+          domain: 'workflow.raidRewards',
+          field: update.field,
+          newValue: update.value,
+          recordId: `${update.tableId}#${update.slot}`,
+          sources: [
+            {
+              layer: 'base' as const,
+              relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+            }
+          ],
+          summary: `Set Drop 0xAABBCCDD00112233 slot ${update.slot} ${update.field} to ${update.value}.`
+        }))
+      ];
+
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: pendingEdits.length > 0,
+          pendingEdits,
+          sessionId: request.session?.sessionId ?? 'session-1'
+        },
+        workflow: updatedWorkflow
+      });
+    },
     updateRaidBonusRewardField: (request) =>
       Promise.resolve({
         diagnostics: [],

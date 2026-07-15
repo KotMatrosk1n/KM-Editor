@@ -37,19 +37,25 @@ public sealed class SwShGfPackFile
 
     private readonly List<FileEntry> entries;
     private readonly List<FolderEntry> folders;
+    private readonly byte[]? sourceData;
+    private readonly IReadOnlyList<int>? sourceFileEntryOffsets;
 
     private SwShGfPackFile(
         uint version,
         uint isRelocated,
         List<FileHashAbsoluteEntry> absoluteHashes,
         List<FolderEntry> folders,
-        List<FileEntry> entries)
+        List<FileEntry> entries,
+        byte[]? sourceData = null,
+        IReadOnlyList<int>? sourceFileEntryOffsets = null)
     {
         Version = version;
         IsRelocated = isRelocated;
         AbsoluteHashes = absoluteHashes;
         this.folders = folders;
         this.entries = entries;
+        this.sourceData = sourceData;
+        this.sourceFileEntryOffsets = sourceFileEntryOffsets;
     }
 
     public uint Version { get; }
@@ -62,7 +68,21 @@ public sealed class SwShGfPackFile
 
     public static SwShGfPackFile Parse(ReadOnlySpan<byte> data)
     {
+        try
+        {
+            return ParseCore(data);
+        }
+        catch (OverflowException exception)
+        {
+            throw new InvalidDataException("GFPAK contains an invalid count, size, or offset.", exception);
+        }
+    }
+
+    private static SwShGfPackFile ParseCore(ReadOnlySpan<byte> data)
+    {
         EnsureRange(data, 0, HeaderSize, "GFPAK header");
+        var ranges = new StructuralRangeRegistry();
+        ranges.Register(0, HeaderSize, "GFPAK header", "metadata", allowExactAlias: false);
         var magic = BinaryPrimitives.ReadUInt64LittleEndian(data[..sizeof(ulong)]);
         if (magic != Magic)
         {
@@ -74,7 +94,14 @@ public sealed class SwShGfPackFile
         var fileCount = ReadNonNegativeInt32(data, 0x10, "GFPAK file count");
         var folderCount = ReadNonNegativeInt32(data, 0x14, "GFPAK folder count");
         var pointerTableOffset = HeaderSize;
-        EnsureRange(data, pointerTableOffset, checked(sizeof(long) * (2 + folderCount)), "GFPAK pointer table");
+        var pointerTableLength = checked(sizeof(long) * (2 + folderCount));
+        EnsureRange(data, pointerTableOffset, pointerTableLength, "GFPAK pointer table");
+        ranges.Register(
+            pointerTableOffset,
+            pointerTableLength,
+            "GFPAK pointer table",
+            "metadata",
+            allowExactAlias: false);
 
         var fileTablePointer = ReadOffset(data, pointerTableOffset, "GFPAK file table pointer");
         var absoluteHashPointer = ReadOffset(data, pointerTableOffset + sizeof(long), "GFPAK absolute hash pointer");
@@ -87,11 +114,38 @@ public sealed class SwShGfPackFile
                 "GFPAK folder hash pointer");
         }
 
-        var absoluteHashes = ReadAbsoluteHashes(data, absoluteHashPointer, fileCount);
-        var folders = ReadFolders(data, folderPointers, fileCount);
-        var entries = ReadFileEntries(data, fileTablePointer, fileCount);
+        var absoluteHashLength = checked(fileCount * FileHashAbsoluteSize);
+        EnsureRange(data, absoluteHashPointer, absoluteHashLength, "GFPAK absolute hash table");
+        ranges.Register(
+            absoluteHashPointer,
+            absoluteHashLength,
+            "GFPAK absolute hash table",
+            "metadata",
+            allowExactAlias: false);
+        var fileTableLength = checked(fileCount * FileDataSize);
+        EnsureRange(data, fileTablePointer, fileTableLength, "GFPAK file table");
+        ranges.Register(
+            fileTablePointer,
+            fileTableLength,
+            "GFPAK file table",
+            "metadata",
+            allowExactAlias: false);
 
-        return new SwShGfPackFile(version, isRelocated, absoluteHashes, folders, entries);
+        var absoluteHashes = ReadAbsoluteHashes(data, absoluteHashPointer, fileCount);
+        var folders = ReadFolders(data, folderPointers, fileCount, ranges);
+        var entries = ReadFileEntries(data, fileTablePointer, fileCount, ranges);
+        var sourceFileEntryOffsets = Enumerable.Range(0, fileCount)
+            .Select(index => checked((int)fileTablePointer + (index * FileDataSize)))
+            .ToArray();
+
+        return new SwShGfPackFile(
+            version,
+            isRelocated,
+            absoluteHashes,
+            folders,
+            entries,
+            data.ToArray(),
+            sourceFileEntryOffsets);
     }
 
     public static SwShGfPackFile Create(IReadOnlyList<SwShGfPackNamedFile> files)
@@ -165,15 +219,21 @@ public sealed class SwShGfPackFile
 
         var entry = entries[index];
         EnsureCanCompress(entry.CompressionType);
+        var isOriginalData = data.AsSpan().SequenceEqual(GetOriginalFile(entry));
         entries[index] = entry with
         {
             DecompressedData = data.ToArray(),
-            Modified = true,
+            Modified = !isOriginalData,
         };
     }
 
     public byte[] Write()
     {
+        if (sourceData is not null && sourceFileEntryOffsets is not null)
+        {
+            return WriteSourcePreserving();
+        }
+
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
 
@@ -222,6 +282,54 @@ public sealed class SwShGfPackFile
         return stream.ToArray();
     }
 
+    private byte[] WriteSourcePreserving()
+    {
+        var original = sourceData
+            ?? throw new InvalidDataException("GFPAK source bytes are unavailable.");
+        var fileEntryOffsets = sourceFileEntryOffsets
+            ?? throw new InvalidDataException("GFPAK source file-table layout is unavailable.");
+        if (fileEntryOffsets.Count != entries.Count)
+        {
+            throw new InvalidDataException("GFPAK source file-table layout is inconsistent.");
+        }
+
+        var modifiedEntries = entries
+            .Select((entry, index) => (Entry: entry, Index: index))
+            .Where(item => item.Entry.Modified)
+            .ToArray();
+        if (modifiedEntries.Length == 0)
+        {
+            return original.ToArray();
+        }
+
+        var output = new List<byte>(original.Length);
+        output.AddRange(original);
+        foreach (var (entry, index) in modifiedEntries)
+        {
+            while ((output.Count % 0x10) != 0)
+            {
+                output.Add(0);
+            }
+
+            var decompressed = entry.DecompressedData
+                ?? throw new InvalidDataException("Modified GFPAK member data is unavailable.");
+            var compressed = Compress(decompressed, entry.CompressionType);
+            var packedOffset = output.Count;
+            output.AddRange(compressed);
+            while ((output.Count % 0x10) != 0)
+            {
+                output.Add(0);
+            }
+
+            var fileEntryOffset = fileEntryOffsets[index];
+            WriteInt32At(output, checked(fileEntryOffset + 0x04), decompressed.Length);
+            WriteInt32At(output, checked(fileEntryOffset + 0x08), compressed.Length);
+            WriteInt32At(output, checked(fileEntryOffset + 0x10), packedOffset);
+        }
+
+        return output.ToArray();
+    }
+
     public static ulong HashFnv1a64(ReadOnlySpan<char> input)
     {
         var hash = FnvOffsetBasis64;
@@ -247,6 +355,24 @@ public sealed class SwShGfPackFile
         entries[index] = entry with { DecompressedData = decompressed };
 
         return decompressed.ToArray();
+    }
+
+    private static byte[] GetOriginalFile(FileEntry entry)
+    {
+        EnsureCanDecompress(entry.CompressionType);
+        return Decompress(entry.CompressedData, entry.SizeDecompressed, entry.CompressionType);
+    }
+
+    private static void WriteInt32At(List<byte> output, int offset, int value)
+    {
+        if (offset < 0 || offset > output.Count - sizeof(int))
+        {
+            throw new InvalidDataException("GFPAK file-table patch points outside the output.");
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(output).Slice(offset, sizeof(int)),
+            value);
     }
 
     private int FindFileNameIndex(string fileName)
@@ -334,7 +460,8 @@ public sealed class SwShGfPackFile
     private static List<FolderEntry> ReadFolders(
         ReadOnlySpan<byte> data,
         IReadOnlyList<long> offsets,
-        int fileCount)
+        int fileCount,
+        StructuralRangeRegistry ranges)
     {
         var folders = new List<FolderEntry>(offsets.Count);
         foreach (var offset in offsets)
@@ -347,6 +474,12 @@ public sealed class SwShGfPackFile
                 folderOffset + FileHashFolderInfoSize,
                 checked(fileCountInFolder * FileHashIndexSize),
                 "GFPAK folder file hash table");
+            ranges.Register(
+                folderOffset,
+                checked(FileHashFolderInfoSize + (fileCountInFolder * FileHashIndexSize)),
+                "GFPAK folder hash table",
+                "metadata",
+                allowExactAlias: false);
             var folder = new FolderEntry(
                 BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(folderOffset, sizeof(ulong))),
                 [])
@@ -375,7 +508,11 @@ public sealed class SwShGfPackFile
         return folders;
     }
 
-    private static List<FileEntry> ReadFileEntries(ReadOnlySpan<byte> data, long offset, int fileCount)
+    private static List<FileEntry> ReadFileEntries(
+        ReadOnlySpan<byte> data,
+        long offset,
+        int fileCount,
+        StructuralRangeRegistry ranges)
     {
         EnsureRange(data, offset, checked(fileCount * FileDataSize), "GFPAK file table");
         var entries = new List<FileEntry>(fileCount);
@@ -387,6 +524,12 @@ public sealed class SwShGfPackFile
             var sizeCompressed = ReadNonNegativeInt32(data, entryOffset + 0x08, "GFPAK compressed file size");
             var offsetPacked = ReadNonNegativeInt32(data, entryOffset + 0x10, "GFPAK packed file offset");
             EnsureRange(data, offsetPacked, sizeCompressed, "GFPAK packed file data");
+            ranges.Register(
+                offsetPacked,
+                sizeCompressed,
+                $"GFPAK packed file {index}",
+                "packed file data",
+                allowExactAlias: true);
             var compressedData = data.Slice(offsetPacked, sizeCompressed).ToArray();
             entries.Add(new FileEntry(
                 Level: BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(entryOffset, sizeof(ushort))),
@@ -606,5 +749,64 @@ public sealed class SwShGfPackFile
                 DecompressedData: data.ToArray(),
                 Modified: true);
         }
+    }
+
+    private sealed class StructuralRangeRegistry
+    {
+        private readonly List<StructuralRange> ranges = [];
+
+        public void Register(
+            long offset,
+            int length,
+            string label,
+            string kind,
+            bool allowExactAlias)
+        {
+            if (length == 0)
+            {
+                return;
+            }
+
+            if (offset < 0 || offset > int.MaxValue)
+            {
+                throw new InvalidDataException($"{label} points outside the supported GFPAK range.");
+            }
+
+            var intOffset = (int)offset;
+            foreach (var existing in ranges)
+            {
+                if (!RangesOverlap(intOffset, length, existing.Offset, existing.Length))
+                {
+                    continue;
+                }
+
+                var exactAlias = intOffset == existing.Offset && length == existing.Length;
+                if (exactAlias
+                    && allowExactAlias
+                    && existing.AllowExactAlias
+                    && string.Equals(kind, existing.Kind, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                throw new InvalidDataException(
+                    $"{label} and {existing.Label} overlap unsafely.");
+            }
+
+            ranges.Add(new StructuralRange(intOffset, length, label, kind, allowExactAlias));
+        }
+
+        private static bool RangesOverlap(int firstOffset, int firstLength, int secondOffset, int secondLength)
+        {
+            return firstOffset < (long)secondOffset + secondLength
+                && secondOffset < (long)firstOffset + firstLength;
+        }
+
+        private sealed record StructuralRange(
+            int Offset,
+            int Length,
+            string Label,
+            string Kind,
+            bool AllowExactAlias);
     }
 }
