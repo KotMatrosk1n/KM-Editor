@@ -535,7 +535,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         try
         {
             var result = new SwShRandomizerService().Apply(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGame.Sword },
                 CreateConfig(SwShRandomizerOptions.Empty with { RandomizeTypeChart = true }));
 
             Assert.Contains(
@@ -568,7 +568,11 @@ public sealed class SwShRandomizerOptionCoverageTests
         try
         {
             var result = new SwShRandomizerService().Apply(
-                temp.Paths with { OutputRootPath = rootLink },
+                temp.Paths with
+                {
+                    OutputRootPath = rootLink,
+                    SelectedGame = ProjectGame.Sword,
+                },
                 CreateConfig(SwShRandomizerOptions.Empty with { RandomizeTypeChart = true }));
 
             Assert.DoesNotContain(
