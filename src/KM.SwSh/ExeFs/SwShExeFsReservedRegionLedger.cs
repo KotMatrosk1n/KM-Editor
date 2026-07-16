@@ -36,6 +36,7 @@ internal static class SwShExeFsReservedRegionLedger
 {
     public const string OwnerBagHook = "Bag Hook";
     public const string OwnerCatchCap = "Catch Cap";
+    public const string OwnerDynamaxAdventures = "Dynamax Adventures";
     public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerFpsPatch = "60FPS Patch";
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
@@ -56,6 +57,40 @@ internal static class SwShExeFsReservedRegionLedger
     [
         new(OwnerBagHook, "bag-hook-v2", BagEventScriptPath, "whole-file", null, null, "Bag-event AMX grant route", "owns-file"),
         new(OwnerStartingItems, "starting-items-bag-hook-slots", BagEventScriptPath, "bag-hook-slots", null, null, "Bag Hook slots 2-20 startup grants", "payload-only"),
+
+        // The six-byte summary rows contain five owned bytes and one opaque padding byte at +1.
+        // DA writers preserve that padding byte while owning the surrounding summary projection.
+        new(OwnerDynamaxAdventures, "dynamax-adventures-summary", ExeFsMainPath, "main.ro", 0x00774054, 0x0666, "Dynamax Adventures 273-row summary mirror", "payload-preserve-stride-padding"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-local-species-present", ExeFsMainPath, "main.text", 0x00EA52AC, 0x04, "Dynamax Adventures Sword local species-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-local-species-missing", ExeFsMainPath, "main.text", 0x00EA52C0, 0x04, "Dynamax Adventures Sword local species-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-local-form-present", ExeFsMainPath, "main.text", 0x00EA52F4, 0x04, "Dynamax Adventures Sword local form-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-local-form-missing", ExeFsMainPath, "main.text", 0x00EA5308, 0x04, "Dynamax Adventures Sword local form-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-local-gigantamax", ExeFsMainPath, "main.text", 0x00EA5310, 0x04, "Dynamax Adventures Sword local Gigantamax validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-nest-species-present", ExeFsMainPath, "main.text", 0x00EA76AC, 0x04, "Dynamax Adventures Sword nest species-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-nest-species-missing", ExeFsMainPath, "main.text", 0x00EA76C0, 0x04, "Dynamax Adventures Sword nest species-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-nest-form-present", ExeFsMainPath, "main.text", 0x00EA76F4, 0x04, "Dynamax Adventures Sword nest form-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-nest-form-missing", ExeFsMainPath, "main.text", 0x00EA7708, 0x04, "Dynamax Adventures Sword nest form-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-nest-gigantamax", ExeFsMainPath, "main.text", 0x00EA7710, 0x04, "Dynamax Adventures Sword nest Gigantamax validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-dai-species-present", ExeFsMainPath, "main.text", 0x00EA78B4, 0x04, "Dynamax Adventures Sword DAI species-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-dai-species-missing", ExeFsMainPath, "main.text", 0x00EA78C8, 0x04, "Dynamax Adventures Sword DAI species-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-dai-form-present", ExeFsMainPath, "main.text", 0x00EA78FC, 0x04, "Dynamax Adventures Sword DAI form-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-dai-form-missing", ExeFsMainPath, "main.text", 0x00EA7910, 0x04, "Dynamax Adventures Sword DAI form-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-sword-dai-gigantamax", ExeFsMainPath, "main.text", 0x00EA7918, 0x04, "Dynamax Adventures Sword DAI Gigantamax validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-local-species-present", ExeFsMainPath, "main.text", 0x00EA52DC, 0x04, "Dynamax Adventures Shield local species-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-local-species-missing", ExeFsMainPath, "main.text", 0x00EA52F0, 0x04, "Dynamax Adventures Shield local species-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-local-form-present", ExeFsMainPath, "main.text", 0x00EA5324, 0x04, "Dynamax Adventures Shield local form-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-local-form-missing", ExeFsMainPath, "main.text", 0x00EA5338, 0x04, "Dynamax Adventures Shield local form-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-local-gigantamax", ExeFsMainPath, "main.text", 0x00EA5340, 0x04, "Dynamax Adventures Shield local Gigantamax validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-nest-species-present", ExeFsMainPath, "main.text", 0x00EA76DC, 0x04, "Dynamax Adventures Shield nest species-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-nest-species-missing", ExeFsMainPath, "main.text", 0x00EA76F0, 0x04, "Dynamax Adventures Shield nest species-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-nest-form-present", ExeFsMainPath, "main.text", 0x00EA7724, 0x04, "Dynamax Adventures Shield nest form-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-nest-form-missing", ExeFsMainPath, "main.text", 0x00EA7738, 0x04, "Dynamax Adventures Shield nest form-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-nest-gigantamax", ExeFsMainPath, "main.text", 0x00EA7740, 0x04, "Dynamax Adventures Shield nest Gigantamax validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-dai-species-present", ExeFsMainPath, "main.text", 0x00EA78E4, 0x04, "Dynamax Adventures Shield DAI species-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-dai-species-missing", ExeFsMainPath, "main.text", 0x00EA78F8, 0x04, "Dynamax Adventures Shield DAI species-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-dai-form-present", ExeFsMainPath, "main.text", 0x00EA792C, 0x04, "Dynamax Adventures Shield DAI form-present validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-dai-form-missing", ExeFsMainPath, "main.text", 0x00EA7940, 0x04, "Dynamax Adventures Shield DAI form-missing validator", "do-not-overwrite"),
+        new(OwnerDynamaxAdventures, "dynamax-adventures-shield-dai-gigantamax", ExeFsMainPath, "main.text", 0x00EA7948, 0x04, "Dynamax Adventures Shield DAI Gigantamax validator", "do-not-overwrite"),
 
         // Catch Cap shares one cap table between the trainer card display path and the runtime
         // capture gate. Sword and Shield use the same graph shifted by 0x30 bytes. Return ranges
@@ -350,7 +385,8 @@ internal static class SwShExeFsReservedRegionLedger
     {
         var ownerRegions = MainTextRegionsForOwner(owner);
         if ((string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
-                || string.Equals(owner, OwnerShinyRate, StringComparison.Ordinal))
+                || string.Equals(owner, OwnerShinyRate, StringComparison.Ordinal)
+                || string.Equals(owner, OwnerDynamaxAdventures, StringComparison.Ordinal))
             && game is ProjectGame.Sword or ProjectGame.Shield)
         {
             var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
@@ -423,6 +459,15 @@ internal static class SwShExeFsReservedRegionLedger
         params string[] allowedOwners)
     {
         var reservations = CanonicalMainTextReservationsForOtherOwners(allowedOwners);
+        if (game is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            var inactiveDynamaxGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
+            reservations = reservations
+                .Where(region => !string.Equals(region.Owner, OwnerDynamaxAdventures, StringComparison.Ordinal)
+                    || !region.FeatureId.Contains(inactiveDynamaxGameToken, StringComparison.Ordinal))
+                .ToArray();
+        }
+
         if (game != ProjectGame.Shield)
         {
             return reservations;

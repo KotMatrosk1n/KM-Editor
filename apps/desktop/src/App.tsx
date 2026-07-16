@@ -367,6 +367,7 @@ import {
   getTypeChartWorkflowValues
 } from './features/type-chart/TypeChartSection';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
+import { calculatePendingPayloadSha256 } from './utils/pendingPayloadHash';
 import { getSectionWikiUrl } from './wikiLinks';
 
 const appVersion = tauriConfig.version;
@@ -1470,6 +1471,13 @@ const dynamaxAdventureIvFieldNames = [
 const dynamaxAdventureIsSingleCaptureFieldName = 'isSingleCapture';
 const dynamaxAdventureIsStoryProgressGatedFieldName = 'isStoryProgressGated';
 const dynamaxAdventureOtGenderFieldName = 'otGender';
+const dynamaxAdventureNormalEncounterCount = 226;
+const dynamaxAdventurePreviewDependentFieldNames = [
+  formFieldName,
+  abilityFieldName,
+  dynamaxAdventureGigantamaxStateFieldName,
+  ...staticEncounterMoveFieldNames
+] as const;
 const dynamaxAdventureFieldNames = [
   giftSpeciesFieldName,
   formFieldName,
@@ -2279,6 +2287,7 @@ export function App({
   const svCacheWarmupRunRef = useRef(0);
   const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
   const editSessionOperationRunRef = useRef(0);
+  const dynamaxAdventurePreviewRunRef = useRef(0);
   const editSessionMutationGenerationRef = useRef(0);
   const editSessionMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const editSessionMutationTokenRef = useRef(0);
@@ -2449,6 +2458,10 @@ export function App({
   const visibleDynamaxAdventureChangePlan = isDynamaxAdventureChangePlanCurrent
     ? dynamaxAdventureChangePlan
     : null;
+  const visibleDynamaxAdventureChangePlanRef = useRef<ChangePlan | null>(
+    visibleDynamaxAdventureChangePlan
+  );
+  visibleDynamaxAdventureChangePlanRef.current = visibleDynamaxAdventureChangePlan;
   const isEditSessionOperationBusy =
     isSessionValidating || isChangePlanCreating || isChangePlanApplying;
   const canSaveValidatedChanges =
@@ -2538,6 +2551,7 @@ export function App({
   );
 
   const clearDynamaxAdventurePanelState = useCallback(() => {
+    dynamaxAdventurePreviewRunRef.current += 1;
     setDynamaxAdventurePanelDiagnostics([]);
     setDynamaxAdventureChangePlan(null);
     setDynamaxAdventureChangePlanSessionSignature(null);
@@ -7827,22 +7841,47 @@ export function App({
     form: number,
     level: number
   ): Promise<PreviewDynamaxAdventureDefaultsResponse | null> => {
-    setBridgeDiagnostics([]);
-    setDynamaxAdventurePanelDiagnostics([]);
-    setEditValidationDiagnostics([]);
+    const previewRun = dynamaxAdventurePreviewRunRef.current + 1;
+    dynamaxAdventurePreviewRunRef.current = previewRun;
+    const mutationGeneration = editSessionMutationGenerationRef.current;
+    const previewSession = editSessionRef.current;
+    const sessionSignature = getEditSessionSignature(previewSession);
+    const paths = createProjectPaths(draftPathsRef.current);
+    const pathsSignature = JSON.stringify(paths);
+    const projectScopeGeneration = projectScopeGenerationRef.current;
 
     try {
       const response = await bridge.previewDynamaxAdventureDefaults({
         entryIndex,
         form,
         level,
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
+        paths,
+        session: previewSession,
         species
       });
+      if (
+        dynamaxAdventurePreviewRunRef.current !== previewRun ||
+        editSessionMutationGenerationRef.current !== mutationGeneration ||
+        getEditSessionSignature(editSessionRef.current) !== sessionSignature ||
+        projectScopeGenerationRef.current !== projectScopeGeneration ||
+        JSON.stringify(createProjectPaths(draftPathsRef.current)) !== pathsSignature ||
+        useWorkbenchStore.getState().selectedDynamaxAdventureEntryIndex !== entryIndex
+      ) {
+        return null;
+      }
       setDynamaxAdventurePanelDiagnostics(response.diagnostics);
       return response;
     } catch (error) {
+      if (
+        dynamaxAdventurePreviewRunRef.current !== previewRun ||
+        editSessionMutationGenerationRef.current !== mutationGeneration ||
+        getEditSessionSignature(editSessionRef.current) !== sessionSignature ||
+        projectScopeGenerationRef.current !== projectScopeGeneration ||
+        JSON.stringify(createProjectPaths(draftPathsRef.current)) !== pathsSignature ||
+        useWorkbenchStore.getState().selectedDynamaxAdventureEntryIndex !== entryIndex
+      ) {
+        return null;
+      }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return null;
     }
@@ -7850,7 +7889,7 @@ export function App({
 
   const handleUpdateDynamaxAdventureFields = async (
     entryIndex: number,
-    changes: Array<{ field: string; value: string }>
+    changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>
   ) => handleUpdateDynamaxAdventureEntryChanges([{ entryIndex, changes }]);
 
   const handleUpdateDynamaxAdventureEntryChanges = async (
@@ -7868,46 +7907,190 @@ export function App({
     }
 
     setIsDynamaxAdventureUpdating(true);
+    dynamaxAdventurePreviewRunRef.current += 1;
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const originalSession = session;
+          const originalWorkflow = dynamaxAdventuresWorkflow;
+          let nextSession = session;
+          let nextWorkflow = originalWorkflow;
+          const nextDiagnostics: ApiDiagnostic[] = [];
+          let didSucceed = true;
+
+          for (const group of activeGroups) {
+            for (const change of group.changes) {
+              const updateResponse = await bridge.updateDynamaxAdventureField({
+                entryIndex: group.entryIndex,
+                field: change.field,
+                paths: createProjectPaths(draftPaths),
+                session: nextSession,
+                value: change.value
+              });
+              nextDiagnostics.push(...updateResponse.diagnostics);
+              if (
+                updateResponse.diagnostics.some(
+                  (diagnostic) => diagnostic.severity === 'error'
+                )
+              ) {
+                didSucceed = false;
+                break;
+              }
+              nextSession = updateResponse.session;
+              nextWorkflow = updateResponse.workflow;
+            }
+
+            if (!didSucceed) {
+              break;
+            }
+          }
+
+          return {
+            diagnostics: nextDiagnostics,
+            didSucceed,
+            session: didSucceed ? nextSession : originalSession,
+            workflow: didSucceed ? nextWorkflow : originalWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (!updateResponse.didSucceed) {
+            setDynamaxAdventurePanelDiagnostics((currentDiagnostics) => [
+              ...currentDiagnostics,
+              ...updateResponse.diagnostics
+            ]);
+            return;
+          }
+
+          if (updateResponse.workflow) {
+            setDynamaxAdventuresWorkflow(updateResponse.workflow);
+          }
+          setEditSessionSection(
+            updateResponse.session?.pendingEdits.length ? 'dynamaxAdventures' : null
+          );
+          setDynamaxAdventurePanelDiagnostics(updateResponse.diagnostics);
+          setDynamaxAdventureChangePlan(null);
+          setDynamaxAdventureChangePlanSessionSignature(null);
+          setDynamaxAdventureApplyResult(null);
+          setChangePlan(null);
+          setApplyResult(null);
+          setChangePlanSessionSignature(null);
+          setAppliedChangePlan(null);
+          setValidatedEditSessionSignature(null);
+        }
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsDynamaxAdventureUpdating(false);
+    }
+  };
+
+  const handleStageDynamaxAdventureRepair = async () => {
+    setIsDynamaxAdventureUpdating(true);
+    dynamaxAdventurePreviewRunRef.current += 1;
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
-    setDynamaxAdventurePanelDiagnostics([]);
-    setDynamaxAdventureChangePlan(null);
-    setDynamaxAdventureChangePlanSessionSignature(null);
-    setDynamaxAdventureApplyResult(null);
-    setChangePlan(null);
-    setApplyResult(null);
 
     try {
-      let nextSession = editSession;
-      let nextWorkflow = dynamaxAdventuresWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
-
-      for (const group of activeGroups) {
-        for (const change of group.changes) {
-          const response = await bridge.updateDynamaxAdventureField({
-            entryIndex: group.entryIndex,
-            field: change.field,
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const repairResponse = await bridge.stageDynamaxAdventureRepair({
             paths: createProjectPaths(draftPaths),
-            session: nextSession,
-            value: change.value
+            session
           });
-          nextSession = response.session;
-          nextWorkflow = response.workflow;
-          nextDiagnostics = response.diagnostics;
-        }
-      }
+          const didSucceed = !repairResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...repairResponse,
+            didSucceed,
+            session: didSucceed ? repairResponse.session : session,
+            workflow: didSucceed ? repairResponse.workflow : dynamaxAdventuresWorkflow
+          };
+        },
+        (repairResponse) => {
+          if (!repairResponse.didSucceed || !repairResponse.workflow) {
+            setDynamaxAdventurePanelDiagnostics(repairResponse.diagnostics);
+            return;
+          }
 
-      if (nextWorkflow) {
-        setDynamaxAdventuresWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditSessionSection(nextSession?.pendingEdits.length ? 'dynamaxAdventures' : null);
-      setDynamaxAdventurePanelDiagnostics(nextDiagnostics);
-      setChangePlan(null);
-      setChangePlanSessionSignature(null);
-      setAppliedChangePlan(null);
-      setValidatedEditSessionSignature(null);
-      return true;
+          setDynamaxAdventuresWorkflow(repairResponse.workflow);
+          setEditSessionSection('dynamaxAdventures');
+          setDynamaxAdventurePanelDiagnostics(repairResponse.diagnostics);
+          setDynamaxAdventureChangePlan(null);
+          setDynamaxAdventureChangePlanSessionSignature(null);
+          setDynamaxAdventureApplyResult(null);
+          setChangePlan(null);
+          setApplyResult(null);
+          setChangePlanSessionSignature(null);
+          setAppliedChangePlan(null);
+          setValidatedEditSessionSignature(null);
+          const repairOwner = getPendingDynamaxAdventureOwner(repairResponse.session);
+          if (repairOwner !== null) {
+            setSelectedDynamaxAdventureEntryIndex(repairOwner);
+          }
+        }
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsDynamaxAdventureUpdating(false);
+    }
+  };
+
+  const handleStageDynamaxAdventureTableRestore = async () => {
+    setIsDynamaxAdventureUpdating(true);
+    dynamaxAdventurePreviewRunRef.current += 1;
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const restoreResponse = await bridge.stageDynamaxAdventureRestore({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !restoreResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          return {
+            ...restoreResponse,
+            didSucceed,
+            session: didSucceed ? restoreResponse.session : session,
+            workflow: didSucceed ? restoreResponse.workflow : dynamaxAdventuresWorkflow
+          };
+        },
+        (restoreResponse) => {
+          if (!restoreResponse.didSucceed || !restoreResponse.workflow) {
+            setDynamaxAdventurePanelDiagnostics(restoreResponse.diagnostics);
+            return;
+          }
+
+          setDynamaxAdventuresWorkflow(restoreResponse.workflow);
+          setEditSessionSection('dynamaxAdventures');
+          setDynamaxAdventurePanelDiagnostics(restoreResponse.diagnostics);
+          setDynamaxAdventureChangePlan(null);
+          setDynamaxAdventureChangePlanSessionSignature(null);
+          setDynamaxAdventureApplyResult(null);
+          setChangePlan(null);
+          setApplyResult(null);
+          setChangePlanSessionSignature(null);
+          setAppliedChangePlan(null);
+          setValidatedEditSessionSignature(null);
+          const restoreOwner = getPendingDynamaxAdventureOwner(
+            restoreResponse.session
+          );
+          if (restoreOwner !== null) {
+            setSelectedDynamaxAdventureEntryIndex(restoreOwner);
+          }
+        }
+      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -7924,10 +8107,9 @@ export function App({
     const runId = editSessionOperationRunRef.current + 1;
     editSessionOperationRunRef.current = runId;
     const initialSessionSignature = getEditSessionSignature(editSession);
-    let operationSessionSignature = initialSessionSignature;
     const isCurrentOperation = () =>
       editSessionOperationRunRef.current === runId &&
-      getEditSessionSignature(editSessionRef.current) === operationSessionSignature;
+      getEditSessionSignature(editSessionRef.current) === initialSessionSignature;
 
     setIsSessionValidating(true);
     setIsChangePlanCreating(true);
@@ -7954,12 +8136,6 @@ export function App({
       const nextSessionSignature = getEditSessionSignature(response.session);
 
       if (!response.isValid || nextSessionSignature === null) {
-        operationSessionSignature = nextSessionSignature;
-        editSessionRef.current = response.session;
-        setEditSession(response.session);
-        setEditSessionSection(
-          response.session.pendingEdits.length > 0 ? 'dynamaxAdventures' : null
-        );
         setDynamaxAdventurePanelDiagnostics(response.diagnostics);
         return;
       }
@@ -7971,7 +8147,6 @@ export function App({
       if (!isCurrentOperation()) {
         return;
       }
-      operationSessionSignature = nextSessionSignature;
       editSessionRef.current = response.session;
       setEditSession(response.session);
       setEditSessionSection(
@@ -7998,6 +8173,32 @@ export function App({
       return;
     }
 
+    const runId = editSessionOperationRunRef.current + 1;
+    editSessionOperationRunRef.current = runId;
+    const reviewedSession = editSession;
+    const reviewedPlan = visibleDynamaxAdventureChangePlan;
+    const reviewedSessionSignature = getEditSessionSignature(reviewedSession);
+    const reviewedPlanFingerprint = calculatePendingPayloadSha256(
+      JSON.stringify(reviewedPlan)
+    );
+    const paths = createProjectPaths(draftPathsRef.current);
+    const pathsSignature = JSON.stringify(paths);
+    const projectScopeGeneration = projectScopeGenerationRef.current;
+    const isCurrentProjectOperation = () =>
+      editSessionOperationRunRef.current === runId &&
+      projectScopeGenerationRef.current === projectScopeGeneration &&
+      JSON.stringify(createProjectPaths(draftPathsRef.current)) === pathsSignature;
+    const isCurrentReviewedOperation = () => {
+      const currentPlan = visibleDynamaxAdventureChangePlanRef.current;
+      return (
+        isCurrentProjectOperation() &&
+        getEditSessionSignature(editSessionRef.current) === reviewedSessionSignature &&
+        currentPlan !== null &&
+        calculatePendingPayloadSha256(JSON.stringify(currentPlan)) ===
+          reviewedPlanFingerprint
+      );
+    };
+
     setIsChangePlanApplying(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -8013,27 +8214,35 @@ export function App({
     ));
 
     try {
-      const paths = createProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
-        changePlan: visibleDynamaxAdventureChangePlan,
+        changePlan: reviewedPlan,
         paths,
-        session: editSession
+        session: reviewedSession
       });
+      if (!isCurrentReviewedOperation()) {
+        return;
+      }
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
 
       if (!hasApplyErrors) {
+        editSessionMutationGenerationRef.current += 1;
+        editSessionMutationQueueRef.current = Promise.resolve();
+        editSessionRef.current = null;
         setEditSession(null);
         setEditSessionSection(null);
         setDynamaxAdventureChangePlan(null);
         setDynamaxAdventureChangePlanSessionSignature(null);
         setDynamaxAdventurePanelDiagnostics([]);
         setChangePlan(null);
+        setApplyResult(null);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
         setAppliedChangePlan(null);
       }
+
+      setDynamaxAdventureApplyResult(response.applyResult);
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
         setWorkProgress(createIndeterminateWorkProgress(
@@ -8042,17 +8251,31 @@ export function App({
           applyProgressSteps,
           2
         ));
-        await refreshLoadedWorkflowsAfterApply(paths);
+        try {
+          await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
+        } catch (error) {
+          if (isCurrentProjectOperation()) {
+            setDynamaxAdventureApplyResult(response.applyResult);
+            setBridgeDiagnostics(toBridgeDiagnostics(error));
+          }
+        }
       }
-
-      setDynamaxAdventureApplyResult(response.applyResult);
     } catch (error) {
+      if (!isCurrentReviewedOperation()) {
+        return;
+      }
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      setIsChangePlanApplying(false);
-      setWorkProgress(null);
+      if (editSessionOperationRunRef.current === runId) {
+        setIsChangePlanApplying(false);
+        setWorkProgress(null);
+      }
     }
   };
+
+  const handleCancelDynamaxAdventurePreview = useCallback(() => {
+    dynamaxAdventurePreviewRunRef.current += 1;
+  }, []);
 
   const handleUpdateShopChanges = async (
     shopId: string,
@@ -10221,12 +10444,19 @@ export function App({
                 editSession={getEditSessionForSection('dynamaxAdventures')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
-                isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
+                isDynamaxAdventureUpdating={
+                  isDynamaxAdventureUpdating ||
+                  isEditSessionMutating ||
+                  isEditSessionOperationBusy
+                }
                 onApplyChangePlan={handleApplyDynamaxAdventureChangePlan}
+                onCancelDynamaxAdventurePreview={handleCancelDynamaxAdventurePreview}
                 onCreateChangePlan={handleValidateDynamaxAdventureEditSession}
                 onPreviewDynamaxAdventureDefaults={handlePreviewDynamaxAdventureDefaults}
                 onSearchChange={setDynamaxAdventureSearchText}
                 onSelectAdventure={setSelectedDynamaxAdventureEntryIndex}
+                onStageRepair={handleStageDynamaxAdventureRepair}
+                onStageTableRestore={handleStageDynamaxAdventureTableRestore}
                 onUpdateDynamaxAdventureEntryChanges={handleUpdateDynamaxAdventureEntryChanges}
                 onUpdateDynamaxAdventureFields={handleUpdateDynamaxAdventureFields}
                 searchText={dynamaxAdventureSearchText}
@@ -16034,7 +16264,11 @@ function TrainerPokemonProjectedStatsPanel({
     </section>
   );
 }
-type DynamaxAdventureEntryChangeGroup = { entryIndex: number; changes: Array<{ field: string; value: string }> };
+type DynamaxAdventureEditableFieldName = DynamaxAdventureEditableField['field'];
+type DynamaxAdventureEntryChangeGroup = {
+  entryIndex: number;
+  changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>;
+};
 type DynamaxAdventureDraftFieldOptions = Record<string, EditableFieldOption[]>;
 
 type DraftStateContext = {
@@ -16204,13 +16438,12 @@ function withDynamaxAdventureSpeciesOptions<T extends NumericEditableField>(
   fieldOptions: DynamaxAdventureDraftFieldOptions
 ): T {
   const overrideOptions = fieldOptions[field.field];
-  if (overrideOptions?.length) {
+  if (overrideOptions !== undefined) {
     return { ...field, options: overrideOptions };
   }
 
   if (
     encounter !== null &&
-    encounter.moveOptions.length > 0 &&
     staticEncounterMoveFieldNames.includes(
       field.field as (typeof staticEncounterMoveFieldNames)[number]
     )
@@ -16218,7 +16451,7 @@ function withDynamaxAdventureSpeciesOptions<T extends NumericEditableField>(
     return { ...field, options: encounter.moveOptions };
   }
 
-  if (field.field === abilityFieldName && encounter !== null && encounter.abilityOptions.length > 0) {
+  if (field.field === abilityFieldName && encounter !== null) {
     return { ...field, options: encounter.abilityOptions };
   }
 
@@ -16230,14 +16463,31 @@ function withDynamaxAdventureSpeciesOptions<T extends NumericEditableField>(
     return field;
   }
 
-  if (safeNormalSpeciesOptions.length === 0) return field;
+  if (safeNormalSpeciesOptions.length === 0) {
+    return { ...field, options: [] };
+  }
 
-  const options = safeNormalSpeciesOptions.some((option) => option.value === encounter.speciesId)
-    ? safeNormalSpeciesOptions
-    : [
-        ...safeNormalSpeciesOptions,
-        { label: `${encounter.speciesId.toString().padStart(3, '0')} ${encounter.species}`, value: encounter.speciesId }
-      ].sort((left, right) => left.value - right.value);
+  const options = [...safeNormalSpeciesOptions];
+  const selectedIdentityOptions = [
+    {
+      label: `${encounter.speciesId.toString().padStart(3, '0')} ${encounter.species}`,
+      value: encounter.speciesId
+    },
+    ...(encounter.vanillaPokemon
+      ? [
+          {
+            label: `${encounter.vanillaPokemon.speciesId.toString().padStart(3, '0')} ${encounter.vanillaPokemon.species}`,
+            value: encounter.vanillaPokemon.speciesId
+          }
+        ]
+      : [])
+  ];
+  for (const option of selectedIdentityOptions) {
+    if (!options.some((candidate) => candidate.value === option.value)) {
+      options.push(option);
+    }
+  }
+  options.sort((left, right) => left.value - right.value);
   return { ...field, options };
 }
 
@@ -16312,6 +16562,15 @@ function normalizePokemonStatDraftValue(
   context?: DraftStateContext
 ) {
   if (context?.clampIvStats && isPokemonIvStatField(fieldName)) {
+    if (
+      value === -1 &&
+      dynamaxAdventureIvFieldNames.includes(
+        fieldName as (typeof dynamaxAdventureIvFieldNames)[number]
+      )
+    ) {
+      return value;
+    }
+
     return clampInteger(value, 0, maximumPokemonIvValue);
   }
 
@@ -17616,7 +17875,7 @@ function getPendingEditDisplayDetails(
       });
     }
     case 'workflow.dynamaxAdventures': {
-      const entryIndex = parsePrefixedRecordId(edit.recordId, 'dynamaxAdventure');
+      const entryIndex = parseDynamaxAdventureRecordId(edit.recordId);
       const encounter = context.dynamaxAdventuresWorkflow?.encounters.find(
         (candidate) => candidate.entryIndex === entryIndex
       );
@@ -18515,6 +18774,16 @@ function parsePrefixedRecordId(recordId: string | null | undefined, prefix: stri
   return recordPrefix === prefix ? parseOptionalInteger(value) : null;
 }
 
+function parseDynamaxAdventureRecordId(recordId: string | null | undefined) {
+  const match = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(recordId ?? '');
+  if (!match) {
+    return null;
+  }
+
+  const entryIndex = Number(match[1]);
+  return Number.isSafeInteger(entryIndex) ? entryIndex : null;
+}
+
 function parseOptionalInteger(value: string | null | undefined) {
   if (value === null || value === undefined || value.trim().length === 0) {
     return null;
@@ -18865,10 +19134,37 @@ function getItemFieldDisabledReason(
   return null;
 }
 
-function getDynamaxAdventureFieldDisabledReason(field: NumericEditableField) {
+function getDynamaxAdventureFieldDisabledReason(
+  field: NumericEditableField,
+  encounter: DynamaxAdventureRecord
+) {
+  if (
+    !encounter.layoutWritableFields.includes(
+      field.field as DynamaxAdventureEditableFieldName
+    )
+  ) {
+    return 'Read-only';
+  }
+
+  if (field.field === formFieldName) {
+    return 'Read-only';
+  }
+
+  if (
+    (field.field === giftSpeciesFieldName ||
+      field.field === abilityFieldName ||
+      field.field === dynamaxAdventureGigantamaxStateFieldName ||
+      staticEncounterMoveFieldNames.includes(
+        field.field as (typeof staticEncounterMoveFieldNames)[number]
+      )) &&
+    field.options.length === 0
+  ) {
+    return 'Unavailable';
+  }
+
   if (
     field.field === dynamaxAdventureGigantamaxStateFieldName &&
-    !field.options.some((option) => option.value === 2)
+    field.options.length <= 1
   ) {
     return 'Selected Pokemon does not have a Gigantamax form.';
   }
@@ -21027,10 +21323,13 @@ function DynamaxAdventuresSection({
   isChangePlanCreating,
   isDynamaxAdventureUpdating,
   onApplyChangePlan,
+  onCancelDynamaxAdventurePreview,
   onCreateChangePlan,
   onPreviewDynamaxAdventureDefaults,
   onSearchChange,
   onSelectAdventure,
+  onStageRepair,
+  onStageTableRestore,
   onUpdateDynamaxAdventureEntryChanges,
   onUpdateDynamaxAdventureFields,
   searchText,
@@ -21045,34 +21344,54 @@ function DynamaxAdventuresSection({
   isChangePlanCreating: boolean;
   isDynamaxAdventureUpdating: boolean;
   onApplyChangePlan: () => void;
+  onCancelDynamaxAdventurePreview: () => void;
   onCreateChangePlan: () => void;
   onPreviewDynamaxAdventureDefaults: (entryIndex: number, species: number, form: number, level: number) => Promise<PreviewDynamaxAdventureDefaultsResponse | null>;
   onSearchChange: (searchText: string) => void;
   onSelectAdventure: (entryIndex: number | null) => void;
+  onStageRepair: () => Promise<boolean>;
+  onStageTableRestore: () => Promise<boolean>;
   onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
-  onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: string; value: string }>) => Promise<boolean>;
+  onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>) => Promise<boolean>;
   searchText: string;
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const encounters = workflow?.encounters ?? [];
   const editableEncounters = useMemo(() => encounters.filter((encounter) => encounter.isEditable), [encounters]);
-  const filteredEncounters = useMemo(
-    () => filterDynamaxAdventures(editableEncounters, searchText),
-    [editableEncounters, searchText]
-  );
-  const selectedEncounter = useMemo(
-    () =>
-      editableEncounters.find((encounter) => encounter.entryIndex === selectedEntryIndex) ??
-      filteredEncounters[0] ??
-      null,
-    [editableEncounters, filteredEncounters, selectedEntryIndex]
-  );
-  const canEditDynamaxAdventures = workflow?.summary.availability === 'available';
   const pendingEntryIndexes = useMemo(
     () => getPendingDynamaxAdventureIndexes(editSession),
     [editSession]
   );
+  const filteredEncounters = useMemo(
+    () => {
+      const matches = filterDynamaxAdventures(encounters, searchText);
+      const pinnedPendingEncounters = encounters.filter((encounter) =>
+        pendingEntryIndexes.has(encounter.entryIndex)
+      );
+      return [
+        ...pinnedPendingEncounters,
+        ...matches.filter((encounter) => !pendingEntryIndexes.has(encounter.entryIndex))
+      ];
+    },
+    [encounters, pendingEntryIndexes, searchText]
+  );
+  const selectedEncounter = useMemo(
+    () =>
+      encounters.find((encounter) => encounter.entryIndex === selectedEntryIndex) ??
+      filteredEncounters[0] ??
+      null,
+    [encounters, filteredEncounters, selectedEntryIndex]
+  );
+  const canUseDynamaxAdventuresWorkflow =
+    workflow?.summary.availability === 'available' &&
+    !workflow.usesVanillaRecoveryProjection;
+  const canEditDynamaxAdventures =
+    canUseDynamaxAdventuresWorkflow && !workflow?.hasLegacyBossTargetPatch;
+  const dynamaxAdventureEditDisabledReason = workflow?.hasLegacyBossTargetPatch
+    ? 'Stage Repair or a full vanilla table restore must remove the unsupported legacy final-boss target remap before this field can be edited.'
+    : undefined;
   const combinedDiagnostics = [
     ...(workflow?.diagnostics ?? []),
     ...actionDiagnostics,
@@ -21117,18 +21436,140 @@ function DynamaxAdventuresSection({
         </div>
 
         {workflow ? (
-          <div className="trainers-layout">
+          <>
+            <div className="dynamax-adventure-integrity-notice" role="note">
+              <ShieldCheck aria-hidden="true" size={16} />
+              <div>
+                <dl className="item-provenance-list">
+                  <div>
+                    <dt>Install status</dt>
+                    <dd>{humanizePendingEditKey(workflow.installStatus)}</dd>
+                  </div>
+                  <div>
+                    <dt>Detected game</dt>
+                    <dd>
+                      {workflow.detectedGame
+                        ? gameDefinitions[workflow.detectedGame].label
+                        : 'Unknown'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Build ID</dt>
+                    <dd data-localization-ignore="true">{workflow.buildId}</dd>
+                  </div>
+                  <div>
+                    <dt>Reserved regions</dt>
+                    <dd data-localization-ignore="true">
+                      {workflow.reservedRegions.length}
+                    </dd>
+                  </div>
+                </dl>
+                <p data-localization-ignore="true">{workflow.installMessage}</p>
+                {workflow.canRestoreVanillaTable ? (
+                  <div className="dynamax-adventure-table-restore">
+                    <p data-localization-ignore="true">
+                      {workflow.restoreVanillaTableMessage}
+                    </p>
+                    <p>
+                      {translateLiteral(
+                        'Restoring the vanilla table removes all layered Dynamax Adventures table changes.'
+                      )}
+                    </p>
+                    <div className="draft-action-row">
+                      <button
+                        aria-busy={isDynamaxAdventureUpdating || undefined}
+                        className="danger-button"
+                        disabled={
+                          isDynamaxAdventureUpdating ||
+                          isChangePlanCreating ||
+                          isChangePlanApplying ||
+                          editSession?.hasPendingChanges === true ||
+                          (editSession?.pendingEdits.length ?? 0) > 0
+                        }
+                        onClick={() => void onStageTableRestore()}
+                        type="button"
+                      >
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<RotateCcw aria-hidden="true" size={16} />}
+                          isBusy={isDynamaxAdventureUpdating}
+                          label="Stage Table Restore"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {workflow.reservedRegions.length > 0 ? (
+                  <ul>
+                    {workflow.reservedRegions.map((region) => (
+                      <li key={`${region.area}:${region.offset}`}>
+                        <span data-localization-ignore="true">{region.label}</span>{' '}
+                        <code data-localization-ignore="true">
+                          {region.area} {region.offset}
+                        </code>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {workflow.installStatus === 'repairable' &&
+                canUseDynamaxAdventuresWorkflow &&
+                !workflow.canRestoreVanillaTable &&
+                !workflow.usesVanillaRecoveryProjection ? (
+                  <button
+                    aria-busy={isDynamaxAdventureUpdating || undefined}
+                    className="secondary-button"
+                    disabled={
+                      isDynamaxAdventureUpdating ||
+                      isChangePlanCreating ||
+                      isChangePlanApplying ||
+                      editSession?.hasPendingChanges === true ||
+                      (editSession?.pendingEdits.length ?? 0) > 0
+                    }
+                    onClick={() => void onStageRepair()}
+                    type="button"
+                  >
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<Wrench aria-hidden="true" size={16} />}
+                      isBusy={isDynamaxAdventureUpdating}
+                      label="Stage Repair"
+                    />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {workflow.hasLegacyBossTargetPatch ? (
+              <div className="dynamax-adventure-recovery-projection" role="note">
+                <AlertTriangle aria-hidden="true" size={16} />
+                <p>
+                  {translateLiteral(
+                    'Unsupported legacy final-boss target remap detected. Ordinary row editing and default previews are disabled. Stage Repair or a full vanilla table restore removes it.'
+                  )}
+                </p>
+              </div>
+            ) : null}
+            {workflow.usesVanillaRecoveryProjection ? (
+              <div className="dynamax-adventure-recovery-projection" role="note">
+                <RotateCcw aria-hidden="true" size={16} />
+                <p>
+                  {translateLiteral(
+                    'Recovery view: the rows below show verified vanilla target values. Current layered values that require recovery are hidden and cannot be edited.'
+                  )}
+                </p>
+              </div>
+            ) : null}
+            <div className="trainers-layout dynamax-adventures-layout">
             <div
               aria-colcount={6}
               aria-label="Dynamax Adventure encounters"
               aria-rowcount={filteredEncounters.length + 1}
-              className="trainers-table"
+              className="trainers-table dynamax-adventures-table"
               role="table"
             >
-              <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
+              <div className="trainers-row dynamax-adventures-row trainers-row-heading" role="row">
                 <span role="columnheader">Index</span>
-                <span role="columnheader">Adventure</span>
                 <span role="columnheader">Pokemon</span>
+                <span role="columnheader">Level</span>
                 <span role="columnheader">IVs</span>
                 <span role="columnheader">Moves</span>
                 <span role="columnheader">Source</span>
@@ -21138,7 +21579,7 @@ function DynamaxAdventuresSection({
                 items={filteredEncounters}
                 renderRow={(encounter) => (
                   <button
-                    className={`trainers-row static-encounters-row ${
+                    className={`trainers-row dynamax-adventures-row ${
                       selectedEncounter?.entryIndex === encounter.entryIndex
                         ? 'trainers-row-selected'
                         : ''
@@ -21146,22 +21587,28 @@ function DynamaxAdventuresSection({
                       pendingEntryIndexes.has(encounter.entryIndex)
                         ? 'trainers-row-pending'
                         : ''
+                    } ${
+                      encounter.isEditable ? '' : 'trainers-row-read-only'
                     }`}
                     onClick={() => onSelectAdventure(encounter.entryIndex)}
                     role="row"
                     type="button"
                   >
-                    <span role="cell">{encounter.entryIndex + 1}</span>
-                    <span role="cell">{encounter.label}</span>
-                    <span role="cell">
+                    <span data-localization-ignore="true" role="cell">
+                      {encounter.entryIndex}
+                    </span>
+                    <span data-localization-ignore="true" role="cell">
                       {formatSpeciesFormLabel(
                         encounter.species,
                         encounter.form,
                         encounter.speciesId
                       )}
                     </span>
-                    <span role="cell">{encounter.ivSummary}</span>
-                    <span role="cell">{formatDynamaxAdventureMoves(encounter)}</span>
+                    <span data-localization-ignore="true" role="cell">{encounter.level}</span>
+                    <span data-localization-ignore="true" role="cell">{encounter.ivSummary}</span>
+                    <span data-localization-ignore="true" role="cell">
+                      {formatDynamaxAdventureMoves(encounter)}
+                    </span>
                     <span role="cell">
                       {formatSourceLayer(encounter.provenance.sourceLayer)}
                     </span>
@@ -21173,21 +21620,23 @@ function DynamaxAdventuresSection({
             <SelectedDynamaxAdventurePanel
               canEditDynamaxAdventures={canEditDynamaxAdventures}
               changePlan={changePlan}
+              editDisabledReason={dynamaxAdventureEditDisabledReason}
               editSession={editSession}
               editableFields={workflow.editableFields}
               encounter={selectedEncounter}
               isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
               isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
-              encounters={editableEncounters}
               onApplyChangePlan={onApplyChangePlan}
+              onCancelDynamaxAdventurePreview={onCancelDynamaxAdventurePreview}
               onCreateChangePlan={onCreateChangePlan}
               onPreviewDynamaxAdventureDefaults={onPreviewDynamaxAdventureDefaults}
               onUpdateDynamaxAdventureEntryChanges={onUpdateDynamaxAdventureEntryChanges}
               onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
-          </div>
+            </div>
+          </>
         ) : (
           <p className="empty-copy">
             Open Dynamax Adventures from Advanced Editors to load backend encounter data.
@@ -21205,14 +21654,15 @@ function DynamaxAdventuresSection({
 function SelectedDynamaxAdventurePanel({
   canEditDynamaxAdventures,
   changePlan,
+  editDisabledReason,
   editSession,
   editableFields,
   encounter,
-  encounters,
   isChangePlanApplying,
   isChangePlanCreating,
   isDynamaxAdventureUpdating,
   onApplyChangePlan,
+  onCancelDynamaxAdventurePreview,
   onCreateChangePlan,
   onPreviewDynamaxAdventureDefaults,
   onUpdateDynamaxAdventureEntryChanges,
@@ -21221,26 +21671,30 @@ function SelectedDynamaxAdventurePanel({
 }: {
   canEditDynamaxAdventures: boolean;
   changePlan: ChangePlan | null;
+  editDisabledReason?: string;
   editSession: EditSession | null;
   editableFields: DynamaxAdventureEditableField[];
   encounter: DynamaxAdventureRecord | null;
-  encounters: DynamaxAdventureRecord[];
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
   isDynamaxAdventureUpdating: boolean;
   onApplyChangePlan: () => void;
+  onCancelDynamaxAdventurePreview: () => void;
   onCreateChangePlan: () => void;
   onPreviewDynamaxAdventureDefaults: (entryIndex: number, species: number, form: number, level: number) => Promise<PreviewDynamaxAdventureDefaultsResponse | null>;
   onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
-  onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: string; value: string }>) => Promise<boolean>;
+  onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: DynamaxAdventureEditableFieldName; value: string }>) => Promise<boolean>;
   safeNormalSpeciesOptions: EditableFieldOption[];
 }) {
+  const { translateLiteral } = useLocalization();
   const [draftsByEntryIndex, setDraftsByEntryIndex] = useState<
     Record<string, Record<string, string>>
   >({});
   const [draftFieldOptionsByEntryIndex, setDraftFieldOptionsByEntryIndex] = useState<
     Record<string, DynamaxAdventureDraftFieldOptions>
   >({});
+  const previewRunRef = useRef(0);
+  const previewRequestKeyRef = useRef<string | null>(null);
   const encounterDraftKey = encounter?.entryIndex.toString() ?? null;
   const adventureFieldOptions =
     encounter && encounterDraftKey
@@ -21288,9 +21742,27 @@ function SelectedDynamaxAdventurePanel({
     'dynamaxAdventures',
     countFieldDraftRecords(draftsByEntryIndex) > 0
   );
+  const canEditSelectedAdventure =
+    canEditDynamaxAdventures && encounter?.isEditable === true;
+  const pendingOwnerEntryIndex = useMemo(
+    () => getPendingDynamaxAdventureOwner(editSession),
+    [editSession]
+  );
+  const hasPendingSessionChanges = (editSession?.pendingEdits.length ?? 0) > 0;
+  const hasPendingTableRestore =
+    editSession?.pendingEdits.some(
+      (edit) =>
+        edit.domain === 'workflow.dynamaxAdventures' &&
+        edit.summary === 'Restore the vanilla Dynamax Adventures table.'
+    ) ?? false;
+  const ownsSolePendingAdventure =
+    encounter !== null && pendingOwnerEntryIndex === encounter.entryIndex;
+  const hasPendingDifferentAdventure =
+    hasPendingSessionChanges && !ownsSolePendingAdventure;
   const canSaveAdventureDrafts =
     encounter !== null &&
-    canEditDynamaxAdventures &&
+    canEditSelectedAdventure &&
+    !hasPendingDifferentAdventure &&
     !isDynamaxAdventureUpdating &&
     !isChangePlanCreating &&
     !isChangePlanApplying &&
@@ -21301,11 +21773,13 @@ function SelectedDynamaxAdventurePanel({
     false;
   const canReviewPlan =
     hasPendingDynamaxAdventureChange &&
+    ownsSolePendingAdventure &&
     !isDynamaxAdventureUpdating &&
     !isChangePlanCreating &&
     !isChangePlanApplying;
   const canApplyPlan =
     hasPendingDynamaxAdventureChange &&
+    ownsSolePendingAdventure &&
     changePlan !== null &&
     changePlan.canApply &&
     changePlan.writes.length > 0 &&
@@ -21315,19 +21789,13 @@ function SelectedDynamaxAdventurePanel({
     () => (encounter ? getDynamaxAdventureVanillaRestoreChanges(encounter) : []),
     [encounter]
   );
-  const vanillaRestoreGroups = useMemo(
-    () =>
-      encounters
-        .map((candidate) => ({ entryIndex: candidate.entryIndex, changes: getDynamaxAdventureVanillaRestoreChanges(candidate) }))
-        .filter((group) => group.changes.length > 0),
-    [encounters]
-  );
   const canRestoreVanilla =
-    canEditDynamaxAdventures &&
+    canEditSelectedAdventure &&
+    !hasPendingDifferentAdventure &&
     !isDynamaxAdventureUpdating &&
     !isChangePlanCreating &&
     !isChangePlanApplying &&
-    (vanillaRestoreChanges.length > 0 || vanillaRestoreGroups.length > 0);
+    vanillaRestoreChanges.length > 0;
 
   useEffect(() => {
     if (!encounter) {
@@ -21340,6 +21808,8 @@ function SelectedDynamaxAdventurePanel({
   }, [adventureDraftDefaults, encounter]);
 
   useEffect(() => {
+    previewRunRef.current += 1;
+    previewRequestKeyRef.current = null;
     if (encounter) {
       setDraftFieldOptionsByEntryIndex((currentOptions) =>
         deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
@@ -21347,73 +21817,235 @@ function SelectedDynamaxAdventurePanel({
     }
   }, [encounter]);
 
-  const handleAdventureDraftChange = (field: NumericEditableField, value: string) => {
-    if (!encounter) {
+  const requestAdventureDefaultsPreview = (
+    nextDrafts: Record<string, string>,
+    species: number,
+    form: number,
+    level: number
+  ) => {
+    if (!encounter || !canEditSelectedAdventure) {
       return;
     }
 
-    const nextDrafts = { ...drafts, [field.field]: value };
-
-    if (field.field !== giftSpeciesFieldName) {
-      setDraftsByEntryIndex((currentDrafts) =>
-        setFieldDraftRecord(currentDrafts, encounter.entryIndex, nextDrafts, adventureDraftDefaults)
-      );
-      return;
+    const previewRun = previewRunRef.current + 1;
+    previewRunRef.current = previewRun;
+    const previewRequestKey = `${encounter.entryIndex}:${species}:${form}:${level}`;
+    previewRequestKeyRef.current = previewRequestKey;
+    const previewDrafts = { ...nextDrafts };
+    for (const dependentFieldName of dynamaxAdventurePreviewDependentFieldNames) {
+      previewDrafts[dependentFieldName] = '';
     }
-
-    const parsedSpecies = parseEditableIntegerDraft(value, field.options);
-    const levelField = adventureFields.find((candidate) => candidate.field === levelFieldName);
-    const currentLevelDraft = drafts[levelFieldName] ?? encounter.level.toString();
-    const parsedLevel = parseEditableIntegerDraft(currentLevelDraft, levelField?.options);
-    const previewLevel = parsedLevel ?? encounter.level;
-    const baseDrafts = { ...nextDrafts, [abilityFieldName]: '0', [formFieldName]: '0', [dynamaxAdventureGigantamaxStateFieldName]: '1' };
 
     setDraftFieldOptionsByEntryIndex((currentOptions) =>
       deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
     );
     setDraftsByEntryIndex((currentDrafts) =>
-      setFieldDraftRecord(currentDrafts, encounter.entryIndex, baseDrafts, adventureDraftDefaults)
+      setFieldDraftRecord(
+        currentDrafts,
+        encounter.entryIndex,
+        previewDrafts,
+        adventureDraftDefaults
+      )
     );
 
-    if (parsedSpecies === null || !Number.isInteger(previewLevel)) {
+    void onPreviewDynamaxAdventureDefaults(encounter.entryIndex, species, form, level).then(
+      (response) => {
+        if (
+          previewRunRef.current !== previewRun ||
+          previewRequestKeyRef.current !== previewRequestKey
+        ) {
+          return;
+        }
+
+        previewRequestKeyRef.current = null;
+        if (
+          !response ||
+          response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+        ) {
+          return;
+        }
+
+        setDraftFieldOptionsByEntryIndex((currentOptions) => ({
+          ...currentOptions,
+          [encounter.entryIndex.toString()]: {
+            [abilityFieldName]: response.abilityOptions,
+            [dynamaxAdventureGigantamaxStateFieldName]: response.gigantamaxOptions,
+            [staticEncounterMoveFieldNames[0]]: response.moveOptions,
+            [staticEncounterMoveFieldNames[1]]: response.moveOptions,
+            [staticEncounterMoveFieldNames[2]]: response.moveOptions,
+            [staticEncounterMoveFieldNames[3]]: response.moveOptions
+          }
+        }));
+        setDraftsByEntryIndex((currentDrafts) => {
+          const currentEncounterDrafts =
+            currentDrafts[encounter.entryIndex.toString()] ?? adventureDraftDefaults;
+          const speciesField = adventureFields.find(
+            (candidate) => candidate.field === giftSpeciesFieldName
+          );
+          const levelField = adventureFields.find(
+            (candidate) => candidate.field === levelFieldName
+          );
+          const currentSpecies = parseEditableIntegerDraft(
+            currentEncounterDrafts[giftSpeciesFieldName] ?? '',
+            speciesField?.options
+          );
+          const currentLevel = parseEditableIntegerDraft(
+            currentEncounterDrafts[levelFieldName] ?? '',
+            levelField?.options
+          );
+          if (currentSpecies !== species || currentLevel !== level) {
+            return currentDrafts;
+          }
+
+          const resolvedDrafts = { ...currentEncounterDrafts };
+          for (const change of response.changes) {
+            resolvedDrafts[change.field] = change.value;
+          }
+
+          return setFieldDraftRecord(
+            currentDrafts,
+            encounter.entryIndex,
+            resolvedDrafts,
+            adventureDraftDefaults
+          );
+        });
+      }
+    );
+  };
+
+  const parsePreviewDriverValue = (
+    value: string,
+    driverField: NumericEditableField | undefined,
+    requireListedOption: boolean
+  ) => {
+    const parsedValue = parseEditableIntegerDraft(value, driverField?.options);
+    if (
+      parsedValue === null ||
+      (driverField?.minimumValue !== null &&
+        driverField?.minimumValue !== undefined &&
+        parsedValue < driverField.minimumValue) ||
+      (driverField?.maximumValue !== null &&
+        driverField?.maximumValue !== undefined &&
+        parsedValue > driverField.maximumValue) ||
+      (requireListedOption &&
+        !driverField?.options.some((option) => option.value === parsedValue))
+    ) {
+      return null;
+    }
+
+    return parsedValue;
+  };
+
+  const handleAdventureDraftChange = (field: NumericEditableField, value: string) => {
+    if (!encounter) {
       return;
     }
 
-    void onPreviewDynamaxAdventureDefaults(encounter.entryIndex, parsedSpecies, 0, previewLevel).then((response) => {
-      if (!response || response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+    const currentDraftValue =
+      drafts[field.field] ?? adventureDraftDefaults[field.field] ?? '';
+    const parsedCurrentValue = parseEditableIntegerDraft(currentDraftValue, field.options);
+    const parsedNextValue = parseEditableIntegerDraft(value, field.options);
+    const isRepeatedNormalizedValue =
+      parsedCurrentValue !== null && parsedNextValue !== null
+        ? parsedCurrentValue === parsedNextValue
+        : currentDraftValue.trim() === value.trim();
+    const isSpeciesDriver = field.field === giftSpeciesFieldName;
+    const isLevelDriver = field.field === levelFieldName;
+    const speciesField = adventureFields.find(
+      (candidate) => candidate.field === giftSpeciesFieldName
+    );
+    const levelField = adventureFields.find(
+      (candidate) => candidate.field === levelFieldName
+    );
+    const formField = adventureFields.find(
+      (candidate) => candidate.field === formFieldName
+    );
+    const parsedSpecies = isSpeciesDriver
+      ? parsePreviewDriverValue(value, speciesField, true)
+      : parsePreviewDriverValue(
+          drafts[giftSpeciesFieldName] ?? encounter.speciesId.toString(),
+          speciesField,
+          true
+        );
+    const parsedLevel = isLevelDriver
+      ? parsePreviewDriverValue(value, levelField, false)
+      : parsePreviewDriverValue(
+          drafts[levelFieldName] ?? encounter.level.toString(),
+          levelField,
+          false
+        );
+    const draftedForm = parseEditableIntegerDraft(
+      drafts[formFieldName] ?? encounter.form.toString(),
+      formField?.options
+    );
+    const previewForm =
+      parsedSpecies === encounter.speciesId
+        ? (draftedForm ?? encounter.form)
+        : parsedSpecies === encounter.vanillaPokemon?.speciesId
+          ? encounter.vanillaPokemon.form
+          : 0;
+    const previewRequestKey =
+      parsedSpecies !== null && parsedLevel !== null
+        ? `${encounter.entryIndex}:${parsedSpecies}:${previewForm}:${parsedLevel}`
+        : null;
+    const hasMissingPreviewDependencies =
+      dynamaxAdventurePreviewDependentFieldNames.some(
+        (fieldName) => (drafts[fieldName] ?? '').trim().length === 0
+      );
+    const shouldRetryRepeatedDriver =
+      isRepeatedNormalizedValue &&
+      (isSpeciesDriver || isLevelDriver) &&
+      hasMissingPreviewDependencies &&
+      previewRequestKey !== null &&
+      previewRequestKeyRef.current !== previewRequestKey;
+    if (isRepeatedNormalizedValue && !shouldRetryRepeatedDriver) {
+      return;
+    }
+
+    onCancelDynamaxAdventurePreview();
+    const nextDrafts = { ...drafts, [field.field]: value };
+
+    if (isSpeciesDriver || isLevelDriver) {
+      if (parsedSpecies !== null && parsedLevel !== null) {
+        requestAdventureDefaultsPreview(
+          nextDrafts,
+          parsedSpecies,
+          previewForm,
+          parsedLevel
+        );
         return;
       }
 
-      setDraftFieldOptionsByEntryIndex((currentOptions) => ({
-        ...currentOptions,
-        [encounter.entryIndex.toString()]: {
-          [abilityFieldName]: response.abilityOptions,
-          [dynamaxAdventureGigantamaxStateFieldName]: response.gigantamaxOptions,
-          [staticEncounterMoveFieldNames[0]]: response.moveOptions,
-          [staticEncounterMoveFieldNames[1]]: response.moveOptions,
-          [staticEncounterMoveFieldNames[2]]: response.moveOptions,
-          [staticEncounterMoveFieldNames[3]]: response.moveOptions
-        }
-      }));
-      setDraftsByEntryIndex((currentDrafts) => {
-        const currentEncounterDrafts = currentDrafts[encounter.entryIndex.toString()] ?? adventureDraftDefaults;
-        if ((currentEncounterDrafts[giftSpeciesFieldName] ?? '') !== value) {
-          return currentDrafts;
-        }
-
-        const previewDrafts = { ...currentEncounterDrafts };
-        for (const change of response.changes) {
-          previewDrafts[change.field] = change.value;
-        }
-
-        return setFieldDraftRecord(
+      previewRunRef.current += 1;
+      previewRequestKeyRef.current = null;
+      const unresolvedDrafts = { ...nextDrafts };
+      for (const dependentFieldName of dynamaxAdventurePreviewDependentFieldNames) {
+        unresolvedDrafts[dependentFieldName] = '';
+      }
+      setDraftFieldOptionsByEntryIndex((currentOptions) =>
+        deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+      );
+      setDraftsByEntryIndex((currentDrafts) =>
+        setFieldDraftRecord(
           currentDrafts,
           encounter.entryIndex,
-          previewDrafts,
+          unresolvedDrafts,
           adventureDraftDefaults
-        );
-      });
-    });
+        )
+      );
+      return;
+    }
+
+    previewRunRef.current += 1;
+    previewRequestKeyRef.current = null;
+    setDraftsByEntryIndex((currentDrafts) =>
+      setFieldDraftRecord(
+        currentDrafts,
+        encounter.entryIndex,
+        nextDrafts,
+        adventureDraftDefaults
+      )
+    );
   };
 
   return (
@@ -21425,20 +22057,33 @@ function SelectedDynamaxAdventurePanel({
 
       {encounter ? (
         <>
-          <PokemonSummaryCard
-            name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
-            subtitle={`Adventure #${encounter.adventureIndex} | Lv. ${encounter.level}`}
-            title={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
-          />
+          <div data-localization-ignore="true">
+            <PokemonSummaryCard
+              editorFamily="swsh"
+              form={encounter.form}
+              name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+              speciesId={encounter.speciesId}
+              subtitle={`Adventure #${encounter.adventureIndex} | Lv. ${encounter.level}`}
+              title={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+            />
+          </div>
 
           <dl className="item-provenance-list">
             <div>
               <dt>Encounter</dt>
-              <dd>{encounter.label}</dd>
+              <dd data-localization-ignore="true">{encounter.label}</dd>
+            </div>
+            <div>
+              <dt>Index</dt>
+              <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
+            </div>
+            <div>
+              <dt>Adventure</dt>
+              <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
             </div>
             <div>
               <dt>Data file</dt>
-              <dd>{encounter.provenance.sourceFile}</dd>
+              <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
             </div>
             <div>
               <dt>Layer</dt>
@@ -21450,11 +22095,11 @@ function SelectedDynamaxAdventurePanel({
             </div>
             <div>
               <dt>Pokemon</dt>
-              <dd>{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
+              <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
             </div>
             <div>
               <dt>Ability</dt>
-              <dd>{encounter.abilityLabel}</dd>
+              <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
             </div>
             <div>
               <dt>Gigantamax</dt>
@@ -21462,20 +22107,91 @@ function SelectedDynamaxAdventurePanel({
             </div>
             <div>
               <dt>Moves</dt>
-              <dd>{formatDynamaxAdventureMoves(encounter)}</dd>
+              <dd data-localization-ignore="true">{formatDynamaxAdventureMoves(encounter)}</dd>
             </div>
             <div>
               <dt>IV detail</dt>
-              <dd>{formatDynamaxAdventureIvs(encounter)}</dd>
+              <dd data-localization-ignore="true">{formatDynamaxAdventureIvs(encounter)}</dd>
+            </div>
+            <div>
+              <dt>Ball item</dt>
+              <dd data-localization-ignore="true">{encounter.ballItem}</dd>
+            </div>
+            <div>
+              <dt>Game version</dt>
+              <dd>{encounter.versionLabel}</dd>
+            </div>
+            <div>
+              <dt>Shiny roll</dt>
+              <dd>{encounter.shinyRollLabel}</dd>
+            </div>
+            <div>
+              <dt>OT gender</dt>
+              <dd>{encounter.otGenderLabel}</dd>
+            </div>
+            <div>
+              <dt>Single-capture Pokemon</dt>
+              <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
+            </div>
+            <div>
+              <dt>Requires story progress</dt>
+              <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
             </div>
           </dl>
 
           <div className="trainer-edit-form">
+            {!encounter.isEditable ? (
+              <span className="status-pill">Read-only</span>
+            ) : null}
+            {hasPendingSessionChanges ? (
+              <p
+                aria-live="polite"
+                className="dynamax-adventure-pending-owner"
+                role="status"
+              >
+                {hasPendingTableRestore ? (
+                  <>
+                    {translateLiteral('Full vanilla-table restore is pending.')}{' '}
+                    {translateLiteral(
+                      'Restoring the vanilla table removes all layered Dynamax Adventures table changes.'
+                    )}
+                    {!ownsSolePendingAdventure ? (
+                      <>
+                        {' '}
+                        {translateLiteral(
+                          'Select the highlighted marker owner to review or apply.'
+                        )}
+                      </>
+                    ) : null}
+                  </>
+                ) : pendingOwnerEntryIndex !== null ? (
+                  <>
+                    {translateLiteral('Pending changes belong to Adventure index')}{' '}
+                    <span data-localization-ignore="true">{pendingOwnerEntryIndex}</span>.
+                    {!ownsSolePendingAdventure ? (
+                      <> {translateLiteral('Select that row to review or apply.')}</>
+                    ) : null}
+                  </>
+                ) : (
+                  translateLiteral(
+                    'Pending Dynamax Adventure changes do not have one safe row owner. Review and apply are disabled.'
+                  )
+                )}
+              </p>
+            ) : null}
             <div className="dynamax-adventure-integrity-notice" role="note">
               <AlertTriangle aria-hidden="true" size={16} />
               <div>
-                <p>Stage and apply one Pokemon at a time. This keeps the Dynamax Adventures table aligned with the selected row, preserves table integrity, and helps prevent save freezes or returns to lobby.</p>
-                <p>Ability choices may be limited by the selected row's table layout. Missing slots are hidden when they cannot be written safely, even if that Pokemon can normally have the ability.</p>
+                {hasPendingTableRestore ? (
+                  <p>
+                    This recovery action restores the entire verified vanilla Adventure table. Review the output plan before applying it.
+                  </p>
+                ) : (
+                  <>
+                    <p>Stage and apply one Pokemon at a time. This keeps the Dynamax Adventures table aligned with the selected row, preserves table integrity, and helps prevent save freezes or returns to lobby.</p>
+                    <p>Ability choices may be limited by the selected row's table layout. Missing slots are hidden when they cannot be written safely, even if that Pokemon can normally have the ability.</p>
+                  </>
+                )}
               </div>
             </div>
             <div className="editable-field-groups">
@@ -21489,12 +22205,13 @@ function SelectedDynamaxAdventurePanel({
                         field.field
                       );
                       const disabledReason =
+                        editDisabledReason ??
                         getPokemonInstanceIvStatDisabledReason(
                           field.field,
                           adventureFields,
                           drafts
                         ) ??
-                        getDynamaxAdventureFieldDisabledReason(field) ??
+                        getDynamaxAdventureFieldDisabledReason(field, encounter) ??
                         undefined;
                       const draftValue = drafts[field.field] ?? '';
                       const draftState = getTrainerFieldDraftState(
@@ -21524,7 +22241,7 @@ function SelectedDynamaxAdventurePanel({
                         <GiftPokemonDraftField
                           currentValue={currentValue}
                           disabled={
-                            !canEditDynamaxAdventures ||
+                            !canEditSelectedAdventure ||
                             isDynamaxAdventureUpdating
                           }
                           disabledReason={disabledReason}
@@ -21554,7 +22271,10 @@ function SelectedDynamaxAdventurePanel({
                 onClick={async () => {
                   const didSave = await onUpdateDynamaxAdventureFields(
                     encounter.entryIndex,
-                    adventureDraftSummary.changedFields.map((change) => ({ field: change.field, value: change.value }))
+                    adventureDraftSummary.changedFields.map((change) => ({
+                      field: change.field as DynamaxAdventureEditableFieldName,
+                      value: change.value
+                    }))
                   );
                   if (didSave) {
                     setDraftsByEntryIndex((currentDrafts) =>
@@ -21571,38 +22291,52 @@ function SelectedDynamaxAdventurePanel({
                   busyLabel="Staging"
                   icon={<Wrench aria-hidden="true" size={16} />}
                   isBusy={isDynamaxAdventureUpdating}
-                  label="Stage Install"
+                  label="Stage Changes"
                 />
               </button>
               <button
                 aria-busy={isDynamaxAdventureUpdating || undefined}
-                className="danger-button"
+                className="secondary-button"
                 disabled={
-                  !canEditDynamaxAdventures || isDynamaxAdventureUpdating || isChangePlanCreating || isChangePlanApplying ||
+                  !canEditSelectedAdventure ||
+                  hasPendingDifferentAdventure ||
+                  isDynamaxAdventureUpdating ||
+                  isChangePlanCreating ||
+                  isChangePlanApplying ||
                   (!canRestoreVanilla &&
                     adventureDraftSummary.changedFields.length === 0 &&
                     adventureDraftSummary.invalidFields.length === 0)
                 }
                 onClick={async () => {
-                  if (vanillaRestoreGroups.length === 0) {
-                    setDraftsByEntryIndex({});
-                    setDraftFieldOptionsByEntryIndex({});
+                  if (vanillaRestoreChanges.length === 0) {
+                    setDraftsByEntryIndex((currentDrafts) =>
+                      deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                    );
+                    setDraftFieldOptionsByEntryIndex((currentOptions) =>
+                      deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+                    );
                     return;
                   }
 
-                  const didSave = await onUpdateDynamaxAdventureEntryChanges(vanillaRestoreGroups);
+                  const didSave = await onUpdateDynamaxAdventureEntryChanges([
+                    { entryIndex: encounter.entryIndex, changes: vanillaRestoreChanges }
+                  ]);
                   if (didSave) {
-                    setDraftsByEntryIndex({});
-                    setDraftFieldOptionsByEntryIndex({});
+                    setDraftsByEntryIndex((currentDrafts) =>
+                      deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                    );
+                    setDraftFieldOptionsByEntryIndex((currentOptions) =>
+                      deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+                    );
                   }
                 }}
                 type="button"
               >
                 <BusyActionContent
                   busyLabel="Staging"
-                  icon={<Trash2 aria-hidden="true" size={16} />}
+                  icon={<RotateCcw aria-hidden="true" size={16} />}
                   isBusy={isDynamaxAdventureUpdating}
-                  label="Stage Uninstall"
+                  label="Stage Restore"
                 />
               </button>
               <button
@@ -36383,7 +37117,6 @@ function filterDynamaxAdventures(
   return encounters.filter((encounter) =>
     [
       encounter.entryIndex.toString(),
-      (encounter.entryIndex + 1).toString(),
       encounter.adventureIndex.toString(),
       encounter.label,
       encounter.species,
@@ -38683,15 +39416,15 @@ function getEditableDynamaxAdventureFieldValue(
     case dynamaxAdventureShinyRollFieldName:
       return encounter.shinyRoll;
     case staticEncounterMoveFieldNames[0]:
-      return encounter.moves[0]?.moveId ?? null;
+      return encounter.moves.find((move) => move.slot === 1)?.moveId ?? null;
     case staticEncounterMoveFieldNames[1]:
-      return encounter.moves[1]?.moveId ?? null;
+      return encounter.moves.find((move) => move.slot === 2)?.moveId ?? null;
     case staticEncounterMoveFieldNames[2]:
-      return encounter.moves[2]?.moveId ?? null;
+      return encounter.moves.find((move) => move.slot === 3)?.moveId ?? null;
     case staticEncounterMoveFieldNames[3]:
-      return encounter.moves[3]?.moveId ?? null;
+      return encounter.moves.find((move) => move.slot === 4)?.moveId ?? null;
     case dynamaxAdventureGuaranteedPerfectIvsFieldName:
-      return encounter.guaranteedPerfectIvs;
+      return encounter.ivs.hp >= 0 ? null : encounter.guaranteedPerfectIvs;
     case dynamaxAdventureIvFieldNames[0]:
       return encounter.ivs.attack;
     case dynamaxAdventureIvFieldNames[1]:
@@ -38719,7 +39452,10 @@ function getDynamaxAdventureVanillaRestoreChanges(encounter: DynamaxAdventureRec
     return [];
   }
 
-  const restoreValues: Array<{ field: string; value: number | null }> = [
+  const restoreValues: Array<{
+    field: DynamaxAdventureEditableFieldName;
+    value: number | null;
+  }> = [
     { field: giftSpeciesFieldName, value: vanilla.speciesId },
     { field: formFieldName, value: vanilla.form },
     { field: levelFieldName, value: vanilla.level },
@@ -38730,19 +39466,19 @@ function getDynamaxAdventureVanillaRestoreChanges(encounter: DynamaxAdventureRec
     },
     {
       field: staticEncounterMoveFieldNames[0],
-      value: vanilla.moves[0]?.moveId ?? 0
+      value: vanilla.moves.find((move) => move.slot === 1)?.moveId ?? 0
     },
     {
       field: staticEncounterMoveFieldNames[1],
-      value: vanilla.moves[1]?.moveId ?? 0
+      value: vanilla.moves.find((move) => move.slot === 2)?.moveId ?? 0
     },
     {
       field: staticEncounterMoveFieldNames[2],
-      value: vanilla.moves[2]?.moveId ?? 0
+      value: vanilla.moves.find((move) => move.slot === 3)?.moveId ?? 0
     },
     {
       field: staticEncounterMoveFieldNames[3],
-      value: vanilla.moves[3]?.moveId ?? 0
+      value: vanilla.moves.find((move) => move.slot === 4)?.moveId ?? 0
     },
     {
       field: dynamaxAdventureGuaranteedPerfectIvsFieldName,
@@ -38758,7 +39494,9 @@ function getDynamaxAdventureVanillaRestoreChanges(encounter: DynamaxAdventureRec
   return restoreValues
     .filter(
       ({ field, value }) =>
-        value !== null && getEditableDynamaxAdventureFieldValue(encounter, field) !== value
+        encounter.layoutWritableFields.includes(field) &&
+        value !== null &&
+        getEditableDynamaxAdventureFieldValue(encounter, field) !== value
     )
     .map(({ field, value }) => ({ field, value: value!.toString() }));
 }
@@ -40619,15 +41357,38 @@ function getPendingDynamaxAdventureIndexes(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.dynamaxAdventures')
-      .map((edit) => {
-        const recordId = edit.recordId ?? '';
-        const normalizedRecordId = recordId.startsWith('dynamaxAdventure:')
-          ? recordId.slice(17)
-          : recordId;
-        return Number.parseInt(normalizedRecordId, 10);
-      })
-      .filter(Number.isInteger)
+      .map((edit) => parseDynamaxAdventureRecordId(edit.recordId))
+      .filter((entryIndex): entryIndex is number => entryIndex !== null)
   );
+}
+
+function getPendingDynamaxAdventureOwner(editSession: EditSession | null) {
+  if (
+    !editSession?.hasPendingChanges ||
+    editSession.pendingEdits.length === 0 ||
+    editSession.pendingEdits.some(
+      (edit) => edit.domain !== 'workflow.dynamaxAdventures'
+    )
+  ) {
+    return null;
+  }
+
+  const entryIndexes = editSession.pendingEdits.map((edit) =>
+    parseDynamaxAdventureRecordId(edit.recordId)
+  );
+  if (
+    entryIndexes.some(
+      (entryIndex) =>
+        entryIndex === null ||
+        entryIndex < 0 ||
+        entryIndex >= dynamaxAdventureNormalEncounterCount
+    )
+  ) {
+    return null;
+  }
+
+  const uniqueEntryIndexes = new Set(entryIndexes as number[]);
+  return uniqueEntryIndexes.size === 1 ? [...uniqueEntryIndexes][0]! : null;
 }
 
 function getPendingShopIds(editSession: EditSession | null) {
@@ -42726,7 +43487,8 @@ function formatDynamaxAdventureIvValue(value: number) {
 }
 
 function formatDynamaxAdventureMoves(encounter: DynamaxAdventureRecord) {
-  const moves = encounter.moves
+  const moves = [...encounter.moves]
+    .sort((left, right) => left.slot - right.slot)
     .filter((move) => move.moveId > 0)
     .map((move) => move.move ?? `Move ${move.moveId}`);
 

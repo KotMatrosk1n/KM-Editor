@@ -30,6 +30,37 @@ public static class EditSessionBridgeMapper
             session.PendingEdits.Select(ToCore).ToArray());
     }
 
+    public static EditSession ToCoreAllowingMalformedPendingEdits(EditSessionDto session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var pendingEdits = session.PendingEdits is null
+            ? null!
+            : session.PendingEdits
+                .Select(edit => edit is null ? null! : ToCoreAllowingMalformedSources(edit))
+                .ToArray();
+        return new EditSession(
+            new EditSessionId(session.SessionId),
+            DateTimeOffset.UtcNow,
+            pendingEdits);
+    }
+
+    private static PendingEdit ToCoreAllowingMalformedSources(PendingEditDto edit)
+    {
+        var sources = edit.Sources is null
+            ? null!
+            : edit.Sources
+                .Select(source => source is null ? null! : ToCore(source))
+                .ToArray();
+        return new PendingEdit(
+            edit.Domain,
+            edit.Summary,
+            sources,
+            edit.RecordId,
+            edit.Field,
+            edit.NewValue);
+    }
+
     public static ChangePlanDto ToDto(ChangePlan changePlan)
     {
         ArgumentNullException.ThrowIfNull(changePlan);

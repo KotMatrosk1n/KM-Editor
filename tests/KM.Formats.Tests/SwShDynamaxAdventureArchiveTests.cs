@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Buffers.Binary;
+using System.Diagnostics;
 using KM.Formats.SwSh;
 using Xunit;
 
@@ -9,11 +10,12 @@ namespace KM.Formats.Tests;
 public sealed class SwShDynamaxAdventureArchiveTests
 {
     [Fact]
-    public void ParseRoundTripsDynamaxAdventureArchive()
+    public void ParsePreservesDynamaxAdventureArchiveAndRefusesFullRebuild()
     {
         var archive = CreateArchive();
+        var source = archive.Write();
 
-        var parsed = SwShDynamaxAdventureArchive.Parse(archive.Write());
+        var parsed = SwShDynamaxAdventureArchive.Parse(source);
 
         Assert.Equal(2, parsed.Entries.Count);
         Assert.Equal(0, parsed.Entries[0].EntryIndex);
@@ -29,12 +31,204 @@ public sealed class SwShDynamaxAdventureArchiveTests
         Assert.Equal(0x8877665544332211UL, parsed.Entries[0].UiMessageId);
         Assert.Equal(31, parsed.Entries[1].Ivs.SpecialDefense);
 
-        var reparsed = SwShDynamaxAdventureArchive.Parse(parsed.Write());
+        var exception = Assert.Throws<InvalidOperationException>(() => parsed.Write());
+        Assert.Contains("cannot be fully rebuilt", exception.Message, StringComparison.Ordinal);
+
+        var preserved = parsed.WriteEdits([]);
+        Assert.Equal(source, preserved);
+
+        var reparsed = SwShDynamaxAdventureArchive.Parse(preserved);
         Assert.Equal(parsed.Entries.Count, reparsed.Entries.Count);
         Assert.Equal(parsed.Entries[0].Species, reparsed.Entries[0].Species);
         Assert.Equal(parsed.Entries[0].Ivs, reparsed.Entries[0].Ivs);
         Assert.Equal(parsed.Entries[0].Moves, reparsed.Entries[0].Moves);
         Assert.Equal(parsed.Entries[1].UiMessageId, reparsed.Entries[1].UiMessageId);
+    }
+
+    [Fact]
+    public void GenericArchiveAllowsMoreThanCanonicalProductRowCount()
+    {
+        const int rowCount = 274;
+        var template = CreateArchive().Entries[0];
+        var archive = new SwShDynamaxAdventureArchive(
+            Enumerable.Range(0, rowCount)
+                .Select(index => template with
+                {
+                    EntryIndex = index,
+                    Ivs = template.Ivs with { },
+                    Moves = template.Moves.ToArray(),
+                })
+                .ToArray());
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(archive.Write());
+
+        Assert.Equal(rowCount, parsed.Entries.Count);
+    }
+
+    [Fact]
+    public void ParseRejectsEntryCountAboveGenericAllocationBoundBeforeVectorAllocation()
+    {
+        var data = CreateRootWithVectorLength((uint)SwShDynamaxAdventureArchive.MaximumEntryCount + 1);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("exceeds the supported", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsVectorWhoseDeclaredElementsExceedSourceCapacity()
+    {
+        var data = CreateRootWithVectorLength(1);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("invalid offset", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsAliasedEntryTables()
+    {
+        var data = CreateArchive().Write();
+        var vectorOffset = ReadEntryVectorOffset(data);
+        var firstElementOffset = vectorOffset + sizeof(uint);
+        var secondElementOffset = firstElementOffset + sizeof(uint);
+        var firstTableOffset = ReadUOffset(data, firstElementOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(secondElementOffset, sizeof(uint)),
+            checked((uint)(firstTableOffset - secondElementOffset)));
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("aliases the same table", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsOverlappingEntryTableObjects()
+    {
+        var data = CreateOverlappingEntryTablesArchive();
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("overlaps another table", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsRootTableOverlappingItsOwnVtable()
+    {
+        var data = CreateRootWithVectorLength(0);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(4, sizeof(ushort)), 10);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("root table overlaps its own vtable", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsRootVectorStorageOverlappingRootTable()
+    {
+        var data = CreateRootWithVectorLength(0);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(6, sizeof(ushort)), 12);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(16, sizeof(uint)), 4);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(20, sizeof(uint)), 0);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("vector storage overlaps root", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsEntryTableOverlappingItsOwnVtable()
+    {
+        var data = CreateEntryTablesArchive(
+            (VtableOffset: 40, VtableLength: 70, ObjectLength: 8, TableOffset: 100));
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("entry table overlaps its own vtable", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseAllowsExactSharedEntryVtable()
+    {
+        var data = CreateEntryTablesArchive(
+            (VtableOffset: 40, VtableLength: 54, ObjectLength: 8, TableOffset: 100),
+            (VtableOffset: 40, VtableLength: 54, ObjectLength: 8, TableOffset: 120));
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(data);
+
+        Assert.Equal(2, parsed.Entries.Count);
+    }
+
+    [Fact]
+    public void ParseAllowsExactForwardSharedEntryVtable()
+    {
+        var data = CreateEntryTablesArchive(
+            (VtableOffset: 160, VtableLength: 54, ObjectLength: 8, TableOffset: 100),
+            (VtableOffset: 160, VtableLength: 54, ObjectLength: 8, TableOffset: 120));
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(data);
+
+        Assert.Equal(2, parsed.Entries.Count);
+    }
+
+    [Fact]
+    public void ParseAllowsEntryToShareExactRootVtable()
+    {
+        var data = CreateEntryTablesArchive(
+            (VtableOffset: 4, VtableLength: 6, ObjectLength: 8, TableOffset: 40));
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(data);
+
+        Assert.Single(parsed.Entries);
+    }
+
+    [Fact]
+    public void ParseAllowsRootToShareExactForwardEntryVtable()
+    {
+        var data = CreateForwardRootSharedVtableArchive();
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(data);
+
+        Assert.Single(parsed.Entries);
+    }
+
+    [Fact]
+    public void ParseHandlesMaximumBoundedEntriesWithExactSharedVtablePromptly()
+    {
+        var rowCount = SwShDynamaxAdventureArchive.MaximumEntryCount;
+        const int vectorOffset = 24;
+        var vectorEnd = vectorOffset + sizeof(uint) + (rowCount * sizeof(uint));
+        var sharedVtableOffset = vectorEnd;
+        var firstTableOffset = sharedVtableOffset + (sizeof(ushort) * 2);
+        var entries = Enumerable.Range(0, rowCount)
+            .Select(index => (
+                VtableOffset: sharedVtableOffset,
+                VtableLength: sizeof(ushort) * 2,
+                ObjectLength: sizeof(int),
+                TableOffset: firstTableOffset + (index * sizeof(int))))
+            .ToArray();
+        var data = CreateEntryTablesArchive(entries);
+        var stopwatch = Stopwatch.StartNew();
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(data);
+
+        stopwatch.Stop();
+        Assert.Equal(rowCount, parsed.Entries.Count);
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(10),
+            $"Bounded shared-vtable parse took {stopwatch.Elapsed}.");
+    }
+
+    [Fact]
+    public void ParseRejectsPartiallyOverlappingEntryVtables()
+    {
+        var data = CreateEntryTablesArchive(
+            (VtableOffset: 40, VtableLength: 54, ObjectLength: 100, TableOffset: 120),
+            (VtableOffset: 60, VtableLength: 54, ObjectLength: 64, TableOffset: 240));
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShDynamaxAdventureArchive.Parse(data));
+
+        Assert.Contains("vtables partially overlap", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -250,6 +444,121 @@ public sealed class SwShDynamaxAdventureArchiveTests
         ]);
     }
 
+    private static byte[] CreateRootWithVectorLength(uint count)
+    {
+        const int rootVtableOffset = 4;
+        const int rootTableOffset = 12;
+        const int vectorOffset = 24;
+        var data = new byte[vectorOffset + sizeof(uint)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(0, sizeof(uint)), rootTableOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(rootVtableOffset, sizeof(ushort)), 6);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(rootVtableOffset + 2, sizeof(ushort)), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(rootVtableOffset + 4, sizeof(ushort)), 4);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            data.AsSpan(rootTableOffset, sizeof(int)),
+            rootTableOffset - rootVtableOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(rootTableOffset + 4, sizeof(uint)),
+            vectorOffset - (rootTableOffset + 4));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(vectorOffset, sizeof(uint)), count);
+
+        return data;
+    }
+
+    private static byte[] CreateOverlappingEntryTablesArchive()
+    {
+        return CreateEntryTablesArchive(
+            (VtableOffset: 40, VtableLength: 54, ObjectLength: 100, TableOffset: 100),
+            (VtableOffset: 40, VtableLength: 54, ObjectLength: 100, TableOffset: 180));
+    }
+
+    private static byte[] CreateForwardRootSharedVtableArchive()
+    {
+        const int rootTableOffset = 12;
+        const int vectorOffset = 24;
+        const int sharedVtableOffset = 40;
+        const int entryTableOffset = 48;
+        var data = new byte[56];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(0, sizeof(uint)), rootTableOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            data.AsSpan(rootTableOffset, sizeof(int)),
+            rootTableOffset - sharedVtableOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(rootTableOffset + sizeof(uint), sizeof(uint)),
+            vectorOffset - (rootTableOffset + sizeof(uint)));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(vectorOffset, sizeof(uint)), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(vectorOffset + sizeof(uint), sizeof(uint)),
+            entryTableOffset - (vectorOffset + sizeof(uint)));
+
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(sharedVtableOffset, sizeof(ushort)), 6);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(sharedVtableOffset + 2, sizeof(ushort)), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(sharedVtableOffset + 4, sizeof(ushort)), 4);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            data.AsSpan(entryTableOffset, sizeof(int)),
+            entryTableOffset - sharedVtableOffset);
+
+        return data;
+    }
+
+    private static byte[] CreateEntryTablesArchive(
+        params (int VtableOffset, int VtableLength, int ObjectLength, int TableOffset)[] entries)
+    {
+        const int rootVtableOffset = 4;
+        const int rootTableOffset = 12;
+        const int vectorOffset = 24;
+        var vectorEnd = vectorOffset + sizeof(uint) + (entries.Length * sizeof(uint));
+        var entryEnd = entries.Length == 0
+            ? vectorEnd
+            : entries.Max(entry => Math.Max(
+                entry.VtableOffset + entry.VtableLength,
+                entry.TableOffset + entry.ObjectLength));
+        var data = new byte[Math.Max(vectorEnd, entryEnd)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(0, sizeof(uint)), rootTableOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(rootVtableOffset, sizeof(ushort)), 6);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(rootVtableOffset + 2, sizeof(ushort)), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(rootVtableOffset + 4, sizeof(ushort)), 4);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            data.AsSpan(rootTableOffset, sizeof(int)),
+            rootTableOffset - rootVtableOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(rootTableOffset + 4, sizeof(uint)),
+            vectorOffset - (rootTableOffset + 4));
+
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(vectorOffset, sizeof(uint)),
+            checked((uint)entries.Length));
+        for (var index = 0; index < entries.Length; index++)
+        {
+            var elementOffset = vectorOffset + sizeof(uint) + (index * sizeof(uint));
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                data.AsSpan(elementOffset, sizeof(uint)),
+                checked((uint)(entries[index].TableOffset - elementOffset)));
+        }
+
+        foreach (var entry in entries)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                data.AsSpan(entry.VtableOffset, sizeof(ushort)),
+                checked((ushort)entry.VtableLength));
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                data.AsSpan(entry.VtableOffset + sizeof(ushort), sizeof(ushort)),
+                checked((ushort)entry.ObjectLength));
+        }
+
+        foreach (var entry in entries)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(
+                data.AsSpan(entry.TableOffset, sizeof(int)),
+                entry.TableOffset - entry.VtableOffset);
+        }
+
+        return data;
+    }
+
     private static void ClearTableField(byte[] data, int entryIndex, int fieldIndex)
     {
         var tableOffset = ReadEntryTableOffset(data, entryIndex);
@@ -266,12 +575,17 @@ public sealed class SwShDynamaxAdventureArchiveTests
 
     private static int ReadEntryTableOffset(ReadOnlySpan<byte> data, int entryIndex)
     {
-        var rootTableOffset = ReadUOffset(data, offset: 0);
-        var vectorFieldOffset = ReadTableFieldOffset(data, rootTableOffset, fieldIndex: 0);
-        var vectorOffset = ReadUOffset(data, rootTableOffset + vectorFieldOffset);
+        var vectorOffset = ReadEntryVectorOffset(data);
         var elementOffset = vectorOffset + sizeof(uint) + (entryIndex * sizeof(uint));
 
         return ReadUOffset(data, elementOffset);
+    }
+
+    private static int ReadEntryVectorOffset(ReadOnlySpan<byte> data)
+    {
+        var rootTableOffset = ReadUOffset(data, offset: 0);
+        var vectorFieldOffset = ReadTableFieldOffset(data, rootTableOffset, fieldIndex: 0);
+        return ReadUOffset(data, rootTableOffset + vectorFieldOffset);
     }
 
     private static int ReadTableFieldOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex)

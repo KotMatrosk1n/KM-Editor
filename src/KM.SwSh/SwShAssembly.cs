@@ -3,3 +3,4 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("KM.SwSh.Tests")]
+[assembly: InternalsVisibleTo("KM.Integration.Tests")]

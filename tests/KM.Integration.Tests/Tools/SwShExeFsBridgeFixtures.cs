@@ -3,6 +3,7 @@
 using KM.Formats.SwSh;
 using KM.Formats.Executable;
 using KM.Core.Projects;
+using KM.SwSh.DynamaxAdventures;
 using System.Buffers.Binary;
 
 namespace KM.Integration.Tests.Tools;
@@ -59,6 +60,45 @@ internal static class SwShExeFsBridgeFixtures
         var ro = new byte[DynamaxAdventureSummaryOffset + (entryCount * DynamaxAdventureSummaryEntrySize)];
         WriteInstruction(text, 0x015D615C, 0x2A1503E1);
         WriteInstruction(text, 0x015D68AC, 0x2A1403E1);
+        return CreateNso(text, ro, [0x20], Convert.FromHexString(SwordBuildId));
+    }
+
+    public static byte[] CreateDynamaxAdventureCompatibleNso(SwShDynamaxAdventureArchive archive)
+    {
+        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + sizeof(uint)];
+        var ro = new byte[SwShDynamaxAdventuresMainPatcher.SummaryOffset
+            + (archive.Entries.Count * SwShDynamaxAdventuresMainPatcher.SummaryEntrySize)];
+        foreach (var (offset, instruction) in new (int Offset, uint Instruction)[]
+        {
+            (SwShDynamaxAdventuresMainPatcher.LocalSpeciesPresentMismatchBranchOffset, 0x1400001C),
+            (SwShDynamaxAdventuresMainPatcher.LocalSpeciesMissingMismatchBranchOffset, 0x540002E1),
+            (SwShDynamaxAdventuresMainPatcher.LocalFormPresentMismatchBranchOffset, 0x1400000A),
+            (SwShDynamaxAdventuresMainPatcher.LocalFormMissingMismatchBranchOffset, 0x540000A1),
+            (SwShDynamaxAdventuresMainPatcher.LocalGigantamaxMismatchBranchOffset, 0x35000068),
+            (SwShDynamaxAdventuresMainPatcher.NestSpeciesPresentMismatchBranchOffset, 0x1400001C),
+            (SwShDynamaxAdventuresMainPatcher.NestSpeciesMissingMismatchBranchOffset, 0x540002E1),
+            (SwShDynamaxAdventuresMainPatcher.NestFormPresentMismatchBranchOffset, 0x1400000A),
+            (SwShDynamaxAdventuresMainPatcher.NestFormMissingMismatchBranchOffset, 0x540000A1),
+            (SwShDynamaxAdventuresMainPatcher.NestGigantamaxMismatchBranchOffset, 0x35000068),
+            (SwShDynamaxAdventuresMainPatcher.DaiSpeciesPresentMismatchBranchOffset, 0x1400001C),
+            (SwShDynamaxAdventuresMainPatcher.DaiSpeciesMissingMismatchBranchOffset, 0x540002E1),
+            (SwShDynamaxAdventuresMainPatcher.DaiFormPresentMismatchBranchOffset, 0x1400000A),
+            (SwShDynamaxAdventuresMainPatcher.DaiFormMissingMismatchBranchOffset, 0x540000A1),
+            (SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset, 0x35000068),
+        })
+        {
+            WriteInstruction(text, offset, instruction);
+        }
+
+        WriteInstruction(
+            text,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAVanillaInstruction);
+        WriteInstruction(
+            text,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBVanillaInstruction);
+        SwShDynamaxAdventuresMainPatcher.WriteSummary(ro, archive.Entries);
         return CreateNso(text, ro, [0x20], Convert.FromHexString(SwordBuildId));
     }
 
@@ -259,13 +299,15 @@ internal static class SwShExeFsBridgeFixtures
         var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
+        var roMemoryOffset = Align(text.Length, 0x1000);
+        var dataMemoryOffset = Align(roMemoryOffset + ro.Length, 0x1000);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
-        WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
-        WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
+        WriteSegmentHeader(output, 0x20, roOffset, roMemoryOffset, ro.Length);
+        WriteSegmentHeader(output, 0x30, dataOffset, dataMemoryOffset, data.Length);
         output.AsSpan(0x40, 0x20).Clear();
         (buildId ?? Convert.FromHexString(SwordBuildId)).CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);

@@ -2623,14 +2623,21 @@ export function createMockProjectBridge(
     id: 'dynamaxAdventures',
     label: 'Dynamax Adventures'
   };
+  const dynamaxAdventureIvOptions = [
+    { label: 'Random', value: -1 },
+    ...Array.from({ length: 32 }, (_, value) => ({ label: `${value} IV`, value }))
+  ];
   const dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000',
+    canRestoreVanillaTable: false,
+    detectedGame: 'sword',
     diagnostics: [],
     editableFields: [
       {
         field: 'species',
         label: 'Species',
-        maximumValue: 65535,
-        minimumValue: 0,
+        maximumValue: 898,
+        minimumValue: 1,
         options: [
           { label: '001 Bulbasaur', value: 1 },
           { label: '810 Grookey', value: 810 }
@@ -2648,31 +2655,20 @@ export function createMockProjectBridge(
       {
         field: 'level',
         label: 'Level',
-        maximumValue: 255,
-        minimumValue: 0,
+        maximumValue: 100,
+        minimumValue: 1,
         options: [],
-        valueKind: 'integer'
-      },
-      {
-        field: 'ballItemId',
-        label: 'Ball item',
-        maximumValue: 65535,
-        minimumValue: 0,
-        options: [
-          { label: '004 Poke Ball', value: 4 },
-          { label: '005 Great Ball', value: 5 }
-        ],
         valueKind: 'integer'
       },
       {
         field: 'ability',
         label: 'Ability roll',
-        maximumValue: 4,
+        maximumValue: 2,
         minimumValue: 0,
         options: [
           { label: 'Ability 1', value: 0 },
-          { label: 'Hidden Ability', value: 2 },
-          { label: 'Any Ability', value: 4 }
+          { label: 'Ability 2', value: 1 },
+          { label: 'Hidden Ability', value: 2 }
         ],
         valueKind: 'integer'
       },
@@ -2682,38 +2678,52 @@ export function createMockProjectBridge(
         maximumValue: 2,
         minimumValue: 0,
         options: [
+          { label: 'Unknown', value: 0 },
           { label: 'Normal', value: 1 },
           { label: 'Gigantamax', value: 2 }
         ],
         valueKind: 'integer'
       },
       {
-        field: 'version',
-        label: 'Game version',
-        maximumValue: 2,
-        minimumValue: 0,
-        options: [
-          { label: 'Both', value: 0 },
-          { label: 'Sword', value: 1 },
-          { label: 'Shield', value: 2 }
-        ],
-        valueKind: 'integer'
-      },
-      {
-        field: 'shinyRoll',
-        label: 'Shiny roll',
-        maximumValue: 2,
-        minimumValue: 0,
-        options: [
-          { label: 'Enabled', value: 1 },
-          { label: 'Disabled', value: 2 }
-        ],
-        valueKind: 'integer'
-      },
-      {
         field: 'move0Id',
         label: 'Move 1',
-        maximumValue: 65535,
+        maximumValue: 826,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'move1Id',
+        label: 'Move 2',
+        maximumValue: 826,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'move2Id',
+        label: 'Move 3',
+        maximumValue: 826,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'move3Id',
+        label: 'Move 4',
+        maximumValue: 826,
         minimumValue: 0,
         options: [
           { label: '000 None', value: 0 },
@@ -2729,6 +2739,9 @@ export function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Random IVs', value: 0 },
+          { label: '2 Guaranteed Perfect IVs', value: 2 },
+          { label: '3 Guaranteed Perfect IVs', value: 3 },
+          { label: '4 Guaranteed Perfect IVs', value: 4 },
           { label: '5 Guaranteed Perfect IVs', value: 5 },
           { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
@@ -2739,30 +2752,63 @@ export function createMockProjectBridge(
         label: 'Attack IV override',
         maximumValue: 31,
         minimumValue: -1,
-        options: [
-          { label: 'Random', value: -1 },
-          { label: '0 IV', value: 0 },
-          { label: '31 IV', value: 31 }
-        ],
+        options: dynamaxAdventureIvOptions,
         valueKind: 'integer'
       },
       {
-        field: 'isSingleCapture',
-        label: 'Single-capture Pokemon',
-        maximumValue: 1,
-        minimumValue: 0,
-        options: [
-          { label: 'No', value: 0 },
-          { label: 'Yes', value: 1 }
-        ],
+        field: 'ivDefense',
+        label: 'Defense IV override',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: dynamaxAdventureIvOptions,
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpecialAttack',
+        label: 'Sp. Atk IV override',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: dynamaxAdventureIvOptions,
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpecialDefense',
+        label: 'Sp. Def IV override',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: dynamaxAdventureIvOptions,
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpeed',
+        label: 'Speed IV override',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: dynamaxAdventureIvOptions,
         valueKind: 'integer'
       }
     ],
+    hasLegacyBossTargetPatch: false,
+    installMessage: 'Dynamax Adventures executable mirrors match the verified base table.',
+    installStatus: 'available',
+    reservedRegions: [
+      {
+        area: 'main.ro',
+        label: 'Dynamax Adventures 273-row summary mirror',
+        offset: 'ro+0x774054..0x7746B9',
+        rule: 'payload-preserve-stride-padding'
+      }
+    ],
+    restoreVanillaTableMessage: 'The verified vanilla Adventure table is already active.',
     safeNormalSpeciesOptions: [{ label: '467 Magmortar', value: 467 }],
     encounters: [
       {
         ability: 0, abilityLabel: 'Ability 1',
-        abilityOptions: [],
+        abilityOptions: [
+          { label: 'Ability 1', value: 0 },
+          { label: 'Ability 2', value: 1 },
+          { label: 'Hidden Ability', value: 2 }
+        ],
         adventureIndex: 0,
         ballItem: 'Poke Ball', ballItemId: 4,
         bossTargetSpecies: 'Grookey', bossTargetSpeciesId: 810,
@@ -2784,14 +2830,37 @@ export function createMockProjectBridge(
         },
         ivSummary: '5 guaranteed perfect / Atk Random / Def Random / SpA Random / SpD Random / Spe Random',
         label: 'Adventure 001: Grookey Lv. 65',
+        layoutWritableFields: [
+          'species',
+          'form',
+          'level',
+          'ability',
+          'gigantamaxState',
+          'move0Id',
+          'move1Id',
+          'move2Id',
+          'move3Id',
+          'guaranteedPerfectIvs',
+          'ivAttack',
+          'ivDefense',
+          'ivSpecialAttack',
+          'ivSpecialDefense',
+          'ivSpeed'
+        ],
         level: 65,
         moves: [
-          { move: 'Scratch', moveId: 1, slot: 0 },
-          { move: 'Growl', moveId: 2, slot: 1 },
-          { move: 'None', moveId: 0, slot: 2 },
-          { move: 'None', moveId: 0, slot: 3 }
+          { move: 'Scratch', moveId: 1, slot: 1 },
+          { move: 'Growl', moveId: 2, slot: 2 },
+          { move: 'None', moveId: 0, slot: 3 },
+          { move: 'None', moveId: 0, slot: 4 }
         ],
-        moveOptions: [],
+        moveOptions: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 },
+          { label: '003 Tackle', value: 3 },
+          { label: '004 Leer', value: 4 }
+        ],
         otGender: 0,
         otGenderLabel: 'Male',
         provenance: {
@@ -2815,7 +2884,7 @@ export function createMockProjectBridge(
           ivs: {
             attack: 31,
             defense: -1,
-            hp: -5,
+            hp: -6,
             specialAttack: -1,
             specialDefense: -1,
             speed: -1
@@ -2823,10 +2892,10 @@ export function createMockProjectBridge(
           ivSummary: '6 guaranteed perfect / Atk 31 / Def Random / SpA Random / SpD Random / Spe Random',
           level: 60,
           moves: [
-            { move: 'Growl', moveId: 2, slot: 0 },
-            { move: 'None', moveId: 0, slot: 1 },
+            { move: 'Growl', moveId: 2, slot: 1 },
             { move: 'None', moveId: 0, slot: 2 },
-            { move: 'None', moveId: 0, slot: 3 }
+            { move: 'None', moveId: 0, slot: 3 },
+            { move: 'None', moveId: 0, slot: 4 }
           ],
           species: 'Bulbasaur',
           speciesId: 1
@@ -2842,7 +2911,8 @@ export function createMockProjectBridge(
       storyGatedCount: 0,
       totalEncounterCount: 1
     },
-    summary: dynamaxAdventuresWorkflowSummary
+    summary: dynamaxAdventuresWorkflowSummary,
+    usesVanillaRecoveryProjection: false
   };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -5322,6 +5392,42 @@ export function createMockProjectBridge(
     });
   };
   const createDynamaxAdventurePlanWrites = (session: EditSession): ChangePlan['writes'] => {
+    const isTableRestore = session.pendingEdits.some(
+      (edit) => edit.summary === 'Restore the vanilla Dynamax Adventures table.'
+    );
+    if (isTableRestore) {
+      return [
+        {
+          reason:
+            'Remove all layered Dynamax Adventures table changes and restore the verified vanilla table.',
+          replacesExistingOutput: true,
+          sources: [
+            {
+              layer: 'base',
+              relativePath:
+                'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+            }
+          ],
+          targetRelativePath:
+            'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+        }
+      ];
+    }
+
+    const isRepair = session.pendingEdits.some(
+      (edit) => edit.summary === 'Repair Dynamax Adventures executable projection.'
+    );
+    if (isRepair) {
+      return [
+        {
+          reason: 'Repair Dynamax Adventures ExeFS projection in exefs/main.',
+          replacesExistingOutput: false,
+          sources: [{ layer: 'base', relativePath: 'exefs/main' }],
+          targetRelativePath: 'exefs/main'
+        }
+      ];
+    }
+
     const requiresMainPatch = session.pendingEdits.some((edit) =>
       ['species', 'form', 'gigantamaxState'].includes(edit.field ?? '')
     );
@@ -7154,6 +7260,99 @@ export function createMockProjectBridge(
       diagnostics: [], gigantamaxOptions: [{ label: 'Normal', value: 1 }],
       moveOptions: dynamaxAdventuresWorkflow.encounters.find((encounter) => encounter.entryIndex === request.entryIndex)?.moveOptions ?? []
     }),
+    stageDynamaxAdventureRepair: (request) => Promise.resolve({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: true,
+        pendingEdits: [
+          {
+            domain: 'workflow.dynamaxAdventures',
+            field: 'level',
+            newValue: dynamaxAdventuresWorkflow.encounters[0]!.level.toString(),
+            recordId: 'dynamaxAdventure:0',
+            sources: [
+              {
+                layer: 'base',
+                relativePath:
+                  'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+              }
+            ],
+            summary: 'Repair Dynamax Adventures executable projection.'
+          }
+        ],
+        sessionId: request.session?.sessionId ?? 'session-1'
+      },
+      workflow: dynamaxAdventuresWorkflow
+    }),
+    stageDynamaxAdventureRestore: (request) => {
+      const owner = dynamaxAdventuresWorkflow.encounters[0]!;
+      const restoreWorkflow: DynamaxAdventuresWorkflow = {
+        ...dynamaxAdventuresWorkflow,
+        canRestoreVanillaTable: true,
+        diagnostics: [
+          {
+            message:
+              'Dynamax Adventures source table byte layout differs from the vanilla table. Restore the Adventure table from a clean dump before making new Pokemon edits.',
+            severity: 'error'
+          }
+        ],
+        encounters: dynamaxAdventuresWorkflow.encounters.map((encounter) => ({
+          ...encounter,
+          isEditable: false,
+          layoutWritableFields: [],
+          provenance: {
+            ...encounter.provenance,
+            fileState: 'layeredOverride',
+            sourceLayer: 'layered'
+          },
+          vanillaPokemon: {
+            ability: encounter.ability,
+            abilityLabel: encounter.abilityLabel,
+            form: encounter.form,
+            gigantamaxLabel: encounter.gigantamaxLabel,
+            gigantamaxState: encounter.gigantamaxState,
+            guaranteedPerfectIvs: encounter.guaranteedPerfectIvs,
+            ivs: structuredClone(encounter.ivs),
+            ivSummary: encounter.ivSummary,
+            level: encounter.level,
+            moves: structuredClone(encounter.moves),
+            species: encounter.species,
+            speciesId: encounter.speciesId
+          }
+        })),
+        restoreVanillaTableMessage:
+          'Restore is available. Applying it removes all layered Adventure-table changes and restores the verified vanilla table.',
+        summary: {
+          ...dynamaxAdventuresWorkflow.summary,
+          availability: 'readOnly'
+        },
+        usesVanillaRecoveryProjection: true
+      };
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.dynamaxAdventures',
+              field: 'level',
+              newValue: owner.level.toString(),
+              recordId: `dynamaxAdventure:${owner.entryIndex}`,
+              sources: [
+                {
+                  layer: 'layered',
+                  relativePath:
+                    'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+                }
+              ],
+              summary: 'Restore the vanilla Dynamax Adventures table.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-1'
+        },
+        workflow: restoreWorkflow
+      });
+    },
     loadShopsWorkflow: () =>
       Promise.resolve({
         workflow: shopsWorkflow
@@ -7911,8 +8110,8 @@ export function createMockProjectBridge(
                     request.field === 'ability'
                       ? value === 2
                         ? 'Hidden Ability'
-                        : value === 4
-                          ? 'Any Ability'
+                        : value === 1
+                          ? 'Ability 2'
                           : 'Ability 1'
                       : encounter.abilityLabel,
                   form: request.field === 'form' ? value : encounter.form,
@@ -7926,7 +8125,7 @@ export function createMockProjectBridge(
                     request.field === 'gigantamaxState' ? value : encounter.gigantamaxState,
                   guaranteedPerfectIvs:
                     request.field === 'guaranteedPerfectIvs'
-                      ? value
+                      ? (value as typeof encounter.guaranteedPerfectIvs)
                       : encounter.guaranteedPerfectIvs,
                   ivs:
                     request.field === 'guaranteedPerfectIvs'
@@ -7971,7 +8170,7 @@ export function createMockProjectBridge(
                   level: request.field === 'level' ? value : encounter.level,
                   moves: request.field.startsWith('move')
                     ? encounter.moves.map((move) =>
-                        request.field === `move${move.slot}Id`
+                        request.field === `move${move.slot - 1}Id`
                           ? {
                               ...move,
                               move: moveName,

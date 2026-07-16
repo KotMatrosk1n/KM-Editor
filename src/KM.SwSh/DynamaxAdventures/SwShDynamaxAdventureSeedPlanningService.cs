@@ -11,10 +11,27 @@ namespace KM.SwSh.DynamaxAdventures;
 public sealed class SwShDynamaxAdventureSeedPlanningService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly bool allowSyntheticTestTables;
 
     public SwShDynamaxAdventureSeedPlanningService(ProjectWorkspaceService? projectWorkspaceService = null)
+        : this(projectWorkspaceService, allowSyntheticTestTables: false)
+    {
+    }
+
+    private SwShDynamaxAdventureSeedPlanningService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        bool allowSyntheticTestTables)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+        this.allowSyntheticTestTables = allowSyntheticTestTables;
+    }
+
+    internal static SwShDynamaxAdventureSeedPlanningService CreateForSyntheticTests(
+        ProjectWorkspaceService? projectWorkspaceService = null)
+    {
+        return new SwShDynamaxAdventureSeedPlanningService(
+            projectWorkspaceService,
+            allowSyntheticTestTables: true);
     }
 
     public SwShDynamaxAdventureSeedPlanResult Predict(
@@ -26,6 +43,27 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
         ArgumentNullException.ThrowIfNull(paths);
 
         var diagnostics = new List<ValidationDiagnostic>();
+        if (npcCount is < 0 or > 3)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures seed prediction requires an NPC count from 0 through 3.",
+                field: "npcCount",
+                expected: "0-3"));
+        }
+        if (requiredRows is { Count: > SwShDynamaxAdventureSeedPlanner.MaximumRequiredRows })
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventures seed prediction accepts at most {SwShDynamaxAdventureSeedPlanner.MaximumRequiredRows.ToString(CultureInfo.InvariantCulture)} required rows.",
+                field: "requiredRows",
+                expected: "A bounded list of Adventure row indexes"));
+        }
+        if (diagnostics.Count > 0)
+        {
+            return new SwShDynamaxAdventureSeedPlanResult(seed, npcCount, [], [], [], diagnostics);
+        }
+
         var context = LoadPlanningContext(paths, diagnostics);
         if (context is null)
         {
@@ -63,7 +101,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
                 rowPositions.Select(ToPublicRowPosition).ToArray(),
                 diagnostics);
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentOutOfRangeException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -93,6 +131,57 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
                 "Dynamax Adventures seed search requires at least one required row.",
                 field: "requiredRows",
                 expected: "One or more Adventure row indexes"));
+            return new SwShDynamaxAdventureSeedSearchPlanResult(
+                npcCount,
+                startSeed,
+                limit,
+                maxResults,
+                [],
+                diagnostics);
+        }
+
+        if (requiredRows.Count > SwShDynamaxAdventureSeedPlanner.MaximumRequiredRows)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventures seed search accepts at most {SwShDynamaxAdventureSeedPlanner.MaximumRequiredRows.ToString(CultureInfo.InvariantCulture)} required rows.",
+                field: "requiredRows",
+                expected: "A bounded list of Adventure row indexes"));
+            return new SwShDynamaxAdventureSeedSearchPlanResult(
+                npcCount,
+                startSeed,
+                limit,
+                maxResults,
+                [],
+                diagnostics);
+        }
+
+        if (npcCount is < 0 or > 3)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures seed search requires an NPC count from 0 through 3.",
+                field: "npcCount",
+                expected: "0-3"));
+        }
+        if (limit > SwShDynamaxAdventureSeedPlanner.MaximumSearchLimit)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventures seed search limit cannot exceed {SwShDynamaxAdventureSeedPlanner.MaximumSearchLimit.ToString("N0", CultureInfo.InvariantCulture)}.",
+                field: "limit",
+                expected: $"0-{SwShDynamaxAdventureSeedPlanner.MaximumSearchLimit.ToString(CultureInfo.InvariantCulture)}"));
+        }
+        if (maxResults is < 1 or > SwShDynamaxAdventureSeedPlanner.MaximumSearchResults)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventures seed search results must be between 1 and {SwShDynamaxAdventureSeedPlanner.MaximumSearchResults.ToString(CultureInfo.InvariantCulture)}.",
+                field: "maxResults",
+                expected: $"1-{SwShDynamaxAdventureSeedPlanner.MaximumSearchResults.ToString(CultureInfo.InvariantCulture)}"));
+        }
+        if (diagnostics.Count > 0)
+        {
             return new SwShDynamaxAdventureSeedSearchPlanResult(
                 npcCount,
                 startSeed,
@@ -173,7 +262,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
                 results,
                 diagnostics);
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentOutOfRangeException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -194,6 +283,15 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (!SwShDynamaxAdventuresWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures seed planning requires Pokemon Sword or Pokemon Shield to be selected explicitly.",
+                expected: "Selected Pokemon Sword or Pokemon Shield project"));
+            return null;
+        }
+
         var project = projectWorkspaceService.Open(paths);
         var adventureSource = SwShDynamaxAdventuresWorkflowService.ResolveDynamaxAdventureDataSource(project);
         if (adventureSource is null)
@@ -219,11 +317,88 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
 
         try
         {
+            var baseAdventurePath = CombineGraphPath(
+                paths.BaseRomFsPath,
+                SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]);
+            if (baseAdventurePath is null || !File.Exists(baseAdventurePath))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures seed planning could not resolve the verified base Adventure table.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    expected: "Verified canonical base Adventure table"));
+                return null;
+            }
+
+            var baseBytes = SwShDynamaxAdventuresWorkflowService.ReadBoundedDynamaxAdventureTable(baseAdventurePath);
+            var baseArchive = SwShDynamaxAdventureArchive.Parse(baseBytes);
+            if (!allowSyntheticTestTables
+                && !SwShDynamaxAdventuresWorkflowService.IsCanonicalBaseDynamaxAdventureTable(baseBytes, baseArchive))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures seed planning rejected the base Adventure table identity.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    expected: "Verified canonical base Adventure table"));
+                return null;
+            }
+
+            var effectiveBytes = SwShDynamaxAdventuresWorkflowService.ReadBoundedDynamaxAdventureTable(adventureSource.AbsolutePath);
+            var effectiveArchive = SwShDynamaxAdventureArchive.Parse(effectiveBytes);
+            if (!SwShDynamaxAdventuresWorkflowService.TryValidateRecordContractDomain(
+                effectiveArchive.Entries,
+                out var invalidEntry,
+                out var invalidField,
+                out var expected))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Dynamax Adventures seed planning rejected row {invalidEntry.ToString(CultureInfo.InvariantCulture)} because {invalidField} is outside the supported domain.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    field: invalidField,
+                    expected: expected));
+                return null;
+            }
+
+            if (!SwShDynamaxAdventuresWorkflowService.IsDynamaxAdventureTableLayoutCompatible(
+                baseArchive,
+                baseBytes,
+                effectiveArchive,
+                effectiveBytes))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures seed planning rejected an effective table that is not a supported layout-preserving projection of the base table.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    expected: "Canonical layout with supported in-place row edits"));
+                return null;
+            }
+
+            var personalRecords = SwShPersonalTable.Parse(
+                File.ReadAllBytes(personalSource.AbsolutePath)).Records;
+            if (!SwShDynamaxAdventuresWorkflowService.TryValidatePersonalRecordResolution(
+                effectiveArchive.Entries,
+                personalRecords,
+                out invalidEntry,
+                out expected))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Dynamax Adventures seed planning rejected row {invalidEntry.ToString(CultureInfo.InvariantCulture)} because its form does not exist for that species in Sword/Shield personal data.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    field: SwShDynamaxAdventuresWorkflowService.FormField,
+                    expected: expected));
+                return null;
+            }
+
             return new DynamaxAdventurePlanningContext(
-                SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(adventureSource.AbsolutePath)),
-                SwShPersonalTable.Parse(File.ReadAllBytes(personalSource.AbsolutePath)).Records);
+                effectiveArchive,
+                personalRecords);
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is
+            InvalidDataException
+            or ArgumentOutOfRangeException
+            or OverflowException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

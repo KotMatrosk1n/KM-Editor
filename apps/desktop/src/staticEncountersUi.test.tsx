@@ -174,6 +174,50 @@ describe('Static Encounters UI', () => {
       pendingEdits: [],
       sessionId: 'static-ui-session'
     };
+    const moveFieldsWorkflow = createWorkflow('swsh');
+    const move0Field = moveFieldsWorkflow.editableFields.find(
+      (field) => field.field === 'move0Id'
+    )!;
+    const moveOptions = [
+      { label: '000 None', value: 0 },
+      { label: '001 Scratch', value: 1 },
+      { label: '002 Growl', value: 2 },
+      { label: '003 Tail Whip', value: 3 },
+      { label: '004 Leer', value: 4 }
+    ];
+    moveFieldsWorkflow.editableFields = [
+      ...moveFieldsWorkflow.editableFields.filter((field) => field.field !== 'move0Id'),
+      ...(['move0Id', 'move1Id', 'move2Id', 'move3Id'] as const).map((field, index) => ({
+        ...move0Field,
+        field,
+        label: `Move ${index + 1}`,
+        options: moveOptions
+      }))
+    ];
+    moveFieldsWorkflow.encounters = moveFieldsWorkflow.encounters.map((encounter) => ({
+      ...encounter,
+      moves: [
+        { move: 'Scratch', moveId: 1, slot: 0 },
+        { move: 'Growl', moveId: 2, slot: 1 },
+        { move: 'Tail Whip', moveId: 3, slot: 2 },
+        { move: 'Leer', moveId: 4, slot: 3 }
+      ]
+    }));
+    act(() => {
+      useWorkbenchStore.setState({
+        editSession,
+        selectedStaticEncounterIndex: 0
+      });
+      useWorkbenchStore.getState().setStaticEncountersWorkflow(moveFieldsWorkflow);
+    });
+    const moveInspector = screen.getByRole('complementary', {
+      name: 'Selected static encounter provenance'
+    });
+    expect(within(moveInspector).getByLabelText('Move 1')).toHaveValue('001 Scratch');
+    expect(within(moveInspector).getByLabelText('Move 2')).toHaveValue('002 Growl');
+    expect(within(moveInspector).getByLabelText('Move 3')).toHaveValue('003 Tail Whip');
+    expect(within(moveInspector).getByLabelText('Move 4')).toHaveValue('004 Leer');
+
     const mixedIvWorkflow = createWorkflow('swsh');
     mixedIvWorkflow.encounters = mixedIvWorkflow.encounters.map((encounter) =>
       encounter.encounterIndex === 1

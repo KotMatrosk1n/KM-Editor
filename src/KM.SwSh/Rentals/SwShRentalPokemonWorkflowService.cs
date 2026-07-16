@@ -375,6 +375,7 @@ public sealed class SwShRentalPokemonWorkflowService
             new SwShMoveAvailabilityResult(
                 new HashSet<int>(),
                 new Dictionary<int, ProjectFileReference>(),
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                 HasSemanticData: false),
             SwShPokemonAbilityOptionResolver.Empty,
             SourceFileCount: 0);

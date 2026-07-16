@@ -2378,6 +2378,38 @@ h2 {
   margin-top: 6px;
 }
 
+.dynamax-adventure-table-restore {
+  margin-top: 10px;
+}
+
+.dynamax-adventure-table-restore .draft-action-row {
+  margin-top: 10px;
+}
+
+.dynamax-adventure-recovery-projection {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  color: var(--color-text);
+  background: rgb(214 168 66 / 8%);
+  border: 1px solid rgb(214 168 66 / 45%);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.dynamax-adventure-recovery-projection svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--color-gold);
+}
+
+.dynamax-adventure-recovery-projection p {
+  margin: 0;
+}
+
 .item-edit-form > .secondary-button,
 .item-edit-form > .draft-action-row,
 .text-edit-form > .secondary-button,
@@ -3130,6 +3162,23 @@ h2 {
   margin-top: 16px;
 }
 
+.dynamax-adventures-layout {
+  grid-template-columns: minmax(766px, 1.35fr) minmax(360px, 0.65fr);
+}
+
+.dynamax-adventures-table {
+  min-width: min(766px, 100%);
+}
+
+.dynamax-adventure-pending-owner {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--color-text-soft);
+  background: rgb(214 168 66 / 10%);
+  border: 1px solid rgb(214 168 66 / 34%);
+  border-radius: 6px;
+}
+
 .trainers-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -3160,6 +3209,10 @@ h2 {
 
 .static-encounters-row {
   grid-template-columns: 64px minmax(160px, 1.35fr) minmax(110px, 0.9fr) 64px minmax(112px, 0.85fr) minmax(132px, 1fr) minmax(92px, 0.7fr);
+}
+
+.dynamax-adventures-row {
+  grid-template-columns: 64px minmax(160px, 1.2fr) 64px minmax(150px, 1.15fr) minmax(160px, 1.25fr) minmax(92px, 0.7fr);
 }
 
 .static-encounters-section:not(.za-static-encounters-section) .static-encounters-row {
@@ -3199,6 +3252,10 @@ h2 {
 .trainers-row-pending:not(.trainers-row-selected) {
   background: #2b2113;
   box-shadow: inset 4px 0 0 #d6a842;
+}
+
+.trainers-row-read-only:not(.trainers-row-selected) {
+  color: #8f9bb1;
 }
 
 .trainers-row-heading {
@@ -8025,6 +8082,12 @@ input {
   .royal-candy-inspector > .item-provenance-list,
   .royal-candy-inspector > .royal-candy-edit-form {
     grid-column: 1 / -1;
+  }
+}
+
+@container workspace (max-width: 1500px) {
+  .dynamax-adventures-layout {
+    grid-template-columns: 1fr;
   }
 }
 

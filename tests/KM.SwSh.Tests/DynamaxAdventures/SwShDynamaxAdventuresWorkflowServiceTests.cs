@@ -7,6 +7,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Pokemon;
+using KM.SwSh.Workflows;
 using Xunit;
 
 namespace KM.SwSh.Tests.DynamaxAdventures;
@@ -14,18 +15,88 @@ namespace KM.SwSh.Tests.DynamaxAdventures;
 public sealed class SwShDynamaxAdventuresWorkflowServiceTests
 {
     [Fact]
+    public void ProductionServicesRejectSyntheticCanonicalShapeWhileTestFactoriesAcceptIt()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var syntheticArchive = SwShDynamaxAdventureTestFixtures.CreateRowCountArchive(
+            SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            syntheticArchive.Write());
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(syntheticArchive));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var productionWorkflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var syntheticWorkflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
+        var productionSeedPlan = new SwShDynamaxAdventureSeedPlanningService()
+            .Predict(temp.Paths, seed: 0, npcCount: 0);
+        var syntheticSeedPlan = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests()
+            .Predict(temp.Paths, seed: 0, npcCount: 0);
+
+        Assert.Equal(SwShWorkflowAvailability.ReadOnly, productionWorkflow.Summary.Availability);
+        Assert.False(productionWorkflow.CanRestoreVanillaTable);
+        Assert.Contains(productionWorkflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("canonical", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount, syntheticWorkflow.Encounters.Count);
+        Assert.Empty(productionSeedPlan.Rentals);
+        Assert.Empty(productionSeedPlan.Encounters);
+        Assert.Contains(productionSeedPlan.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("base Adventure table identity", StringComparison.OrdinalIgnoreCase));
+        Assert.NotEmpty(syntheticSeedPlan.Rentals);
+        Assert.NotEmpty(syntheticSeedPlan.Encounters);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(0, 2)]
+    public void LoadProjectsVerifiedBaseForFormsThatDoNotExistForTheSpecies(int entryIndex, int form)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().WriteEdits(
+            [
+                new(entryIndex, SwShDynamaxAdventureField.Form, form),
+            ]));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
+
+        Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
+        Assert.True(workflow.CanRestoreVanillaTable);
+        Assert.True(workflow.UsesVanillaRecoveryProjection);
+        Assert.NotEmpty(workflow.Encounters);
+        Assert.All(workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+        });
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.FormField
+            && diagnostic.Message.Contains("does not exist for its species", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadReadsDynamaxAdventureRecordsFromRealSwordShieldTable()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Equal(2, workflow.Stats.TotalEncounterCount);
         Assert.Equal(1, workflow.Stats.SingleCaptureCount);
         Assert.Equal(1, workflow.Stats.StoryGatedCount);
         Assert.Equal(1, workflow.Stats.GuaranteedPerfectIvEncounterCount);
+        Assert.Equal(16, workflow.Stats.SourceFileCount);
 
         var first = workflow.Encounters[0];
         Assert.Equal(0, first.EntryIndex);
@@ -35,7 +106,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         Assert.Equal("Eevee", first.Species);
         Assert.Equal(4, first.BallItemId);
         Assert.Equal("Poke Ball", first.BallItem);
-        Assert.Equal("Ability 2", first.AbilityLabel);
+        Assert.Equal("Ability 2 - 002 Ability 2", first.AbilityLabel);
         Assert.Equal("Normal", first.GigantamaxLabel);
         Assert.Equal("Sword", first.VersionLabel);
         Assert.Equal("Enabled", first.ShinyRollLabel);
@@ -77,6 +148,30 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadCountsDistinctBaseAndLayeredAdventureAndMainSources()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var layeredBytes = SwShDynamaxAdventureTestFixtures.CreateArchive().WriteEdits(
+        [
+            new(0, SwShDynamaxAdventureField.IvAttack, 31),
+        ]);
+        var layeredArchive = SwShDynamaxAdventureArchive.Parse(layeredBytes);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            layeredBytes);
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(sourceArchive: layeredArchive));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
+
+        Assert.Equal(ProjectFileLayer.Layered, workflow.Encounters[0].Provenance.SourceLayer);
+        Assert.Equal(18, workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
     public void LoadPrefersLayeredDynamaxAdventureDataWhenOutputOverridesBase()
     {
         using var temp = TemporarySwShProject.Create();
@@ -89,7 +184,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
             ]));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         var first = workflow.Encounters[0];
         Assert.Equal(ProjectFileLayer.Layered, first.Provenance.SourceLayer);
@@ -110,13 +205,13 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
             SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Equal(2, workflow.Encounters.Count);
         Assert.Equal(ProjectFileLayer.Layered, workflow.Encounters[0].Provenance.SourceLayer);
         Assert.NotNull(workflow.Encounters[0].VanillaPokemon);
         Assert.Contains(workflow.Diagnostics, diagnostic =>
-            diagnostic.Severity == DiagnosticSeverity.Warning
+            diagnostic.Severity == DiagnosticSeverity.Error
             && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
     }
 
@@ -132,13 +227,13 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
             table);
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Equal(2, workflow.Encounters.Count);
         Assert.Equal(0, workflow.Encounters[1].Ability);
         Assert.Equal(ReadBaseDynamaxAdventureTableLength(temp), table.Length);
         Assert.Contains(workflow.Diagnostics, diagnostic =>
-            diagnostic.Severity == DiagnosticSeverity.Warning
+            diagnostic.Severity == DiagnosticSeverity.Error
             && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
     }
 
@@ -149,7 +244,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Contains(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField);
         Assert.Contains(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.FormField);
@@ -173,7 +268,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
             table);
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Equal(new[] { 0, 1, 2 }, workflow.Encounters[0].AbilityOptions.Select(option => option.Value));
         Assert.Equal(new[] { 0 }, workflow.Encounters[1].AbilityOptions.Select(option => option.Value));
@@ -187,18 +282,22 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateSpeciesNameTable(467, (16, "Pidgey"), (25, "Pikachu"), (133, "Eevee"), (467, "Magmortar")));
-        var personalRecords = Enumerable.Range(0, 468)
+        var personalRecords = Enumerable.Range(0, 469)
             .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
             .ToArray();
         personalRecords[25] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 25);
-        personalRecords[133] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 133);
+        personalRecords[133] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+            hatchedSpecies: 133,
+            formStatsIndex: 468,
+            formCount: 2);
         personalRecords[467] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 467);
+        personalRecords[468] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 133, form: 1);
         temp.WriteBaseRomFsFile(
             "bin/pml/personal/personal_total.bin",
             SwShPokemonWorkflowServiceTests.CreatePersonalTable(personalRecords));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         var speciesOptions = workflow.EditableFields.Single(field =>
             field.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField).Options;
@@ -227,11 +326,14 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
                 (864, "Cursola"),
                 (895, "Regidrago"),
                 (901, "Internal")));
-        var personalRecords = Enumerable.Range(0, 902)
+        var personalRecords = Enumerable.Range(0, 903)
             .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
             .ToArray();
         personalRecords[25] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 25);
-        personalRecords[133] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 133);
+        personalRecords[133] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+            hatchedSpecies: 133,
+            formStatsIndex: 902,
+            formCount: 2);
         personalRecords[150] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 150);
         personalRecords[467] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 240);
         personalRecords[484] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 484);
@@ -240,12 +342,13 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         personalRecords[864] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 222, form: 1);
         personalRecords[895] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 895);
         personalRecords[901] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 901);
+        personalRecords[902] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 133, form: 1);
         temp.WriteBaseRomFsFile(
             "bin/pml/personal/personal_total.bin",
             SwShPokemonWorkflowServiceTests.CreatePersonalTable(personalRecords));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Contains(workflow.SafeNormalSpeciesOptions, option =>
             option.Value == 467 && option.Label == "467 Magmortar");
@@ -260,13 +363,13 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
     }
 
     [Fact]
-    public void LoadExposesBossTargetOptionsForUniqueSameBucketBosses()
+    public void LoadDoesNotExposeBossTargetOptionsForUniqueSameBucketBosses()
     {
         using var temp = TemporarySwShProject.Create();
         WriteBossTargetOptionArchive(temp, duplicateArticuno: false);
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         var normal = workflow.Encounters.Single(encounter => encounter.EntryIndex == 0);
         Assert.True(normal.IsEditable);
@@ -274,16 +377,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
 
         var articuno = workflow.Encounters.Single(encounter => encounter.EntryIndex == 226);
         Assert.False(articuno.IsEditable);
-        var option = Assert.Single(articuno.BossTargetOptions);
-        Assert.Equal(227, option.EntryIndex);
-        Assert.Equal(1004, option.AdventureIndex);
-        Assert.Equal(150, option.SpeciesId);
-        Assert.Equal("Mewtwo", option.Species);
-        Assert.Equal(0, option.Form);
-        Assert.Equal(0, option.Version);
-        Assert.Equal("Both", option.VersionLabel);
-        Assert.False(option.IsStoryProgressGated);
-        Assert.Equal("227 / 1004 - Mewtwo", option.Label);
+        Assert.Empty(articuno.BossTargetOptions);
     }
 
     [Fact]
@@ -293,7 +387,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         WriteBossTargetOptionArchive(temp, duplicateArticuno: true);
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         var articuno = workflow.Encounters.Single(encounter => encounter.EntryIndex == 226);
         Assert.Empty(articuno.BossTargetOptions);
@@ -320,7 +414,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
                 toSpecies: 150));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         var articuno = workflow.Encounters.Single(encounter => encounter.EntryIndex == 226);
         Assert.Equal(144, articuno.SpeciesId);
@@ -341,7 +435,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         WriteLearnsetData(temp, recordCount: 134, (25, [(85, 50), (10, 70)]));
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         var pikachu = workflow.Encounters.Single(encounter => encounter.EntryIndex == 1);
         Assert.Contains(pikachu.MoveOptions, option => option.Value == 85 && option.Label == "085 Thunderbolt");
@@ -357,14 +451,95 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         temp.WriteBaseExeFsFile("main", "main");
         var project = new ProjectWorkspaceService().Open(temp.Paths);
 
-        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
 
         Assert.Empty(workflow.Encounters);
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.dynamaxAdventures");
     }
 
+    [Fact]
+    public void LoadBecomesReadOnlyWhenSafeSpeciesOptionsCannotBeMapped()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        File.Delete(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "message",
+            "English",
+            "common",
+            "monsname.dat"));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
+
+        Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
+        Assert.Empty(workflow.SafeNormalSpeciesOptions);
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField
+            && diagnostic.Message.Contains("safe normal-route species options", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(SwShDynamaxAdventureField.Species, 899, SwShDynamaxAdventuresWorkflowService.SpeciesField, true)]
+    [InlineData(SwShDynamaxAdventureField.Level, 101, SwShDynamaxAdventuresWorkflowService.LevelField, true)]
+    [InlineData(SwShDynamaxAdventureField.Move0, 827, SwShDynamaxAdventuresWorkflowService.Move0Field, true)]
+    [InlineData(SwShDynamaxAdventureField.BallItemId, 65536, SwShDynamaxAdventuresWorkflowService.BallItemIdField, true)]
+    [InlineData(SwShDynamaxAdventureField.OtGender, 2, SwShDynamaxAdventuresWorkflowService.OtGenderField, true)]
+    public void LoadKeepsRecordsOutsideStrictApiDomainOutOfEditableProjection(
+        SwShDynamaxAdventureField archiveField,
+        int value,
+        string expectedField,
+        bool expectsRestoreProjection)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseArchive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(basePath));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            baseArchive.WriteEditsPreservingLayout([new(1, archiveField, value)]));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(project);
+
+        Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
+        Assert.Equal(expectsRestoreProjection, workflow.CanRestoreVanillaTable);
+        if (expectsRestoreProjection)
+        {
+            Assert.NotEmpty(workflow.Encounters);
+            Assert.All(workflow.Encounters, encounter =>
+            {
+                Assert.False(encounter.IsEditable);
+                Assert.Empty(encounter.LayoutWritableFields);
+            });
+        }
+        else
+        {
+            Assert.Empty(workflow.Encounters);
+        }
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == expectedField
+            && diagnostic.Message.Contains("outside the supported API domain", StringComparison.Ordinal));
+
+        var seedPlan = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests()
+            .Predict(temp.Paths, seed: 0, npcCount: 0);
+        Assert.Empty(seedPlan.Rentals);
+        Assert.Empty(seedPlan.Encounters);
+        Assert.Contains(seedPlan.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == expectedField
+            && diagnostic.Message.Contains("outside the supported domain", StringComparison.Ordinal));
+    }
+
     private static void WriteBossTargetOptionArchive(TemporarySwShProject temp, bool duplicateArticuno)
     {
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         var normalEntries = Enumerable.Range(0, 226)
             .Select(index => CreateAdventureRecord(
                 index,
@@ -425,6 +600,9 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazaname.dat",
             CreateSpeciesNameTable(4, (1, "Tackle"), (2, "Growl"), (3, "Water Gun"), (4, "Ember")));
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(sourceArchive: archive));
     }
 
     private static SwShDynamaxAdventureRecord CreateAdventureRecord(

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
+using System.Buffers.Binary;
 
 namespace KM.SwSh.Tests.Items;
 
 internal sealed class TemporarySwShProject : IDisposable
 {
+    private ProjectGame? selectedGame;
     private TemporarySwShProject(string rootPath)
     {
         RootPath = rootPath;
@@ -22,7 +24,26 @@ internal sealed class TemporarySwShProject : IDisposable
 
     public string OutputRootPath { get; }
 
-    public ProjectPaths Paths => new(BaseRomFsPath, BaseExeFsPath, OutputRootPath);
+    public ProjectGame? SelectedGame
+    {
+        get => selectedGame;
+        set
+        {
+            selectedGame = value;
+            if (value is null)
+            {
+                return;
+            }
+
+            var npdm = new byte[0x298];
+            BinaryPrimitives.WriteUInt64LittleEndian(
+                npdm.AsSpan(0x290),
+                ProjectGameMetadata.Get(value.Value).TitleId);
+            File.WriteAllBytes(Path.Combine(BaseExeFsPath, "main.npdm"), npdm);
+        }
+    }
+
+    public ProjectPaths Paths => new(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath: null, SelectedGame);
 
     public static TemporarySwShProject Create()
     {

@@ -41,6 +41,8 @@ public static class KmCommandNames
     public const string UpdateRentalPokemonFields = "rentalPokemon.fields.update";
     public const string LoadDynamaxAdventuresWorkflow = "dynamaxAdventures.load";
     public const string UpdateDynamaxAdventureField = "dynamaxAdventures.field.update";
+    public const string StageDynamaxAdventureRepair = "dynamaxAdventures.repair.stage";
+    public const string StageDynamaxAdventureRestore = "dynamaxAdventures.restore.stage";
     public const string PreviewDynamaxAdventureDefaults = "dynamaxAdventures.defaults.preview";
     public const string PlanDynamaxAdventureSeed = "dynamaxAdventures.seed.plan";
     public const string SearchDynamaxAdventureSeed = "dynamaxAdventures.seed.search";

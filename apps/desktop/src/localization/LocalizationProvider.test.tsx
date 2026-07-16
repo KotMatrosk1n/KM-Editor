@@ -1318,6 +1318,31 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('ships Dynamax Adventures legacy-remap cleanup guidance in every language', () => {
+    const resources = {
+      de: deResource,
+      en: enResource,
+      es: esResource,
+      fr: frResource,
+      ru: ruResource,
+      uk: ukResource,
+      zh: zhResource
+    };
+    const requiredLiterals = [
+      'Stage Repair',
+      'Stage Table Restore',
+      'Stage Repair or a full vanilla table restore must remove the unsupported legacy final-boss target remap before this field can be edited.',
+      'Unsupported legacy final-boss target remap detected. Ordinary row editing and default previews are disabled. Stage Repair or a full vanilla table restore removes it.'
+    ] as const;
+
+    for (const [language, resource] of Object.entries(resources)) {
+      const literals = resource.literals as Record<string, string>;
+      for (const literal of requiredLiterals) {
+        expect(literals[literal], `${language}:${literal}`).toBeTruthy();
+      }
+    }
+  });
+
   it('ships and formats Shiny Rate state in every language catalogue', () => {
     const resources = {
       de: deResource,

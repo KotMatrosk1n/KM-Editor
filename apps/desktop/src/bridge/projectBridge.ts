@@ -36,6 +36,10 @@ import {
   type LoadDynamaxAdventuresWorkflowResponse,
   type PreviewDynamaxAdventureDefaultsRequest,
   type PreviewDynamaxAdventureDefaultsResponse,
+  type StageDynamaxAdventureRepairRequest,
+  type StageDynamaxAdventureRepairResponse,
+  type StageDynamaxAdventureRestoreRequest,
+  type StageDynamaxAdventureRestoreResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadMovesWorkflowRequest,
@@ -187,8 +191,14 @@ import {
   loadTradePokemonWorkflowResponseSchema,
   loadStaticEncountersWorkflowResponseSchema,
   loadRentalPokemonWorkflowResponseSchema,
+  loadDynamaxAdventuresWorkflowRequestSchema,
   loadDynamaxAdventuresWorkflowResponseSchema,
+  previewDynamaxAdventureDefaultsRequestSchema,
   previewDynamaxAdventureDefaultsResponseSchema,
+  stageDynamaxAdventureRepairRequestSchema,
+  stageDynamaxAdventureRepairResponseSchema,
+  stageDynamaxAdventureRestoreRequestSchema,
+  stageDynamaxAdventureRestoreResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
@@ -237,6 +247,7 @@ import {
   updateTradePokemonFieldResponseSchema,
   updateStaticEncounterFieldResponseSchema,
   updateRentalPokemonFieldResponseSchema,
+  updateDynamaxAdventureFieldRequestSchema,
   updateDynamaxAdventureFieldResponseSchema,
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
@@ -374,6 +385,12 @@ export type ProjectBridge = {
   previewDynamaxAdventureDefaults: (
     request: PreviewDynamaxAdventureDefaultsRequest
   ) => Promise<PreviewDynamaxAdventureDefaultsResponse>;
+  stageDynamaxAdventureRepair: (
+    request: StageDynamaxAdventureRepairRequest
+  ) => Promise<StageDynamaxAdventureRepairResponse>;
+  stageDynamaxAdventureRestore: (
+    request: StageDynamaxAdventureRestoreRequest
+  ) => Promise<StageDynamaxAdventureRestoreResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
@@ -621,6 +638,21 @@ const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
 
   return invoke<string>('project_bridge', { requestJson });
 };
+
+function validateDynamaxAdventureResponseGame<
+  TResponse extends { workflow: { detectedGame: 'sword' | 'shield' | null } }
+>(selectedGame: string | null, response: TResponse) {
+  if (
+    response.workflow.detectedGame !== null &&
+    response.workflow.detectedGame !== selectedGame
+  ) {
+    throw new Error(
+      `Dynamax Adventures response detected ${response.workflow.detectedGame}, but the request selected ${selectedGame}.`
+    );
+  }
+
+  return response;
+}
 
 export function createProjectBridge(
   transport: ProjectBridgeTransport = tauriProjectBridgeTransport
@@ -886,20 +918,54 @@ export function createProjectBridge(
         request,
         loadRentalPokemonWorkflowResponseSchema
       ),
-    loadDynamaxAdventuresWorkflow: (request) =>
-      sendProjectBridgeRequest(
+    loadDynamaxAdventuresWorkflow: async (request) => {
+      const validatedRequest = loadDynamaxAdventuresWorkflowRequestSchema.parse(request);
+      const response = await sendProjectBridgeRequest(
         transport,
         kmCommandNames.loadDynamaxAdventuresWorkflow,
-        request,
+        validatedRequest,
         loadDynamaxAdventuresWorkflowResponseSchema
-      ),
-    previewDynamaxAdventureDefaults: (request) =>
-      sendProjectBridgeRequest(
+      );
+      return validateDynamaxAdventureResponseGame(
+        validatedRequest.paths.selectedGame,
+        response
+      );
+    },
+    previewDynamaxAdventureDefaults: async (request) => {
+      const validatedRequest = previewDynamaxAdventureDefaultsRequestSchema.parse(request);
+      return await sendProjectBridgeRequest(
         transport,
         kmCommandNames.previewDynamaxAdventureDefaults,
-        request,
+        validatedRequest,
         previewDynamaxAdventureDefaultsResponseSchema
-      ),
+      );
+    },
+    stageDynamaxAdventureRepair: async (request) => {
+      const validatedRequest = stageDynamaxAdventureRepairRequestSchema.parse(request);
+      const response = await sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageDynamaxAdventureRepair,
+        validatedRequest,
+        stageDynamaxAdventureRepairResponseSchema
+      );
+      return validateDynamaxAdventureResponseGame(
+        validatedRequest.paths.selectedGame,
+        response
+      );
+    },
+    stageDynamaxAdventureRestore: async (request) => {
+      const validatedRequest = stageDynamaxAdventureRestoreRequestSchema.parse(request);
+      const response = await sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageDynamaxAdventureRestore,
+        validatedRequest,
+        stageDynamaxAdventureRestoreResponseSchema
+      );
+      return validateDynamaxAdventureResponseGame(
+        validatedRequest.paths.selectedGame,
+        response
+      );
+    },
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
@@ -1214,13 +1280,19 @@ export function createProjectBridge(
         request,
         updateRentalPokemonFieldResponseSchema
       ),
-    updateDynamaxAdventureField: (request) =>
-      sendProjectBridgeRequest(
+    updateDynamaxAdventureField: async (request) => {
+      const validatedRequest = updateDynamaxAdventureFieldRequestSchema.parse(request);
+      const response = await sendProjectBridgeRequest(
         transport,
         kmCommandNames.updateDynamaxAdventureField,
-        request,
+        validatedRequest,
         updateDynamaxAdventureFieldResponseSchema
-      ),
+      );
+      return validateDynamaxAdventureResponseGame(
+        validatedRequest.paths.selectedGame,
+        response
+      );
+    },
     updateMoveField: (request) =>
       sendProjectBridgeRequest(
         transport,

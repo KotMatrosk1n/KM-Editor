@@ -152,18 +152,121 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
         {
             Array.Resize(ref text, trimLength);
         }
+        else
+        {
+            foreach (var (start, end) in ownedStubRanges)
+            {
+                text.AsSpan(start, end - start).Clear();
+            }
+        }
 
         return text;
     }
 
     internal static int GetCallSiteOffsetDelta(byte[] buildId)
     {
-        return string.Equals(
-            SwShDynamaxAdventuresMainPatcher.FormatBuildId(buildId),
-            SwShDynamaxAdventuresMainPatcher.ShieldBuildId,
-            StringComparison.OrdinalIgnoreCase)
-            ? ShieldCallSiteOffsetDelta
-            : 0;
+        return SwShDynamaxAdventuresMainPatcher.GetGame(buildId) switch
+        {
+            KM.Core.Projects.ProjectGame.Sword => 0,
+            KM.Core.Projects.ProjectGame.Shield => ShieldCallSiteOffsetDelta,
+            _ => throw new InvalidDataException("Dynamax Adventures boss cleanup requires a recognized Sword/Shield build identity."),
+        };
+    }
+
+    internal static bool HasRecognizableLegacyPatchState(byte[] mainBytes, int baseTextLength)
+    {
+        ArgumentNullException.ThrowIfNull(mainBytes);
+        if (baseTextLength < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(baseTextLength));
+        }
+
+        var nso = NsoFile.Parse(mainBytes);
+        var text = nso.Text.DecompressedData;
+        var callSiteOffsetDelta = GetCallSiteOffsetDelta(nso.BuildId);
+        var callSiteAOffset = CallSiteAOffset + callSiteOffsetDelta;
+        var callSiteBOffset = CallSiteBOffset + callSiteOffsetDelta;
+
+        if (HasFullyOwnedCallSite(text, callSiteAOffset, CallSiteASourceRegister, "boss target species call A")
+            || HasFullyOwnedCallSite(text, callSiteBOffset, CallSiteBSourceRegister, "boss target species call B"))
+        {
+            return true;
+        }
+
+        if (text.Length < checked(baseTextLength + StubSize)
+            || callSiteAOffset + sizeof(uint) > text.Length
+            || callSiteBOffset + sizeof(uint) > text.Length)
+        {
+            return false;
+        }
+
+        var instructionA = ReadInstruction(text, callSiteAOffset, "boss target species call A");
+        var instructionB = ReadInstruction(text, callSiteBOffset, "boss target species call B");
+        var targetA = TryDecodeBranchTarget(callSiteAOffset, instructionA);
+        var targetB = TryDecodeBranchTarget(callSiteBOffset, instructionB);
+
+        if (targetA is not null
+            && targetB is not null
+            && targetA >= baseTextLength
+            && targetB == targetA + StubSize
+            && targetB + StubSize <= text.Length)
+        {
+            return true;
+        }
+
+        return MatchesHistoricalTailBranch(text.Length, callSiteAOffset, instructionA, stubFromEnd: StubSize * 2)
+            || MatchesHistoricalTailBranch(text.Length, callSiteBOffset, instructionB, stubFromEnd: StubSize);
+    }
+
+    private static bool HasFullyOwnedCallSite(
+        ReadOnlySpan<byte> text,
+        int callSiteOffset,
+        int sourceRegister,
+        string label)
+    {
+        try
+        {
+            return TryReadOwnedCallSite(text, callSiteOffset, sourceRegister, label, out _);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static bool MatchesHistoricalTailBranch(
+        int textLength,
+        int callSiteOffset,
+        uint instruction,
+        int stubFromEnd)
+    {
+        var targetOffset = textLength - stubFromEnd;
+        var delta = (long)targetOffset - callSiteOffset;
+        if (targetOffset < 0
+            || (delta & 0x3) != 0)
+        {
+            return false;
+        }
+
+        var imm26 = delta / sizeof(uint);
+        return imm26 is >= -0x2000000 and <= 0x1FFFFFF
+            && instruction == (0x14000000u | ((uint)imm26 & 0x03FFFFFFu));
+    }
+
+    private static int? TryDecodeBranchTarget(int sourceOffset, uint instruction)
+    {
+        if ((instruction & 0xFC000000u) != 0x14000000u)
+        {
+            return null;
+        }
+
+        var imm26 = (int)(instruction & 0x03FFFFFFu);
+        if ((imm26 & 0x02000000) != 0)
+        {
+            imm26 |= unchecked((int)0xFC000000);
+        }
+
+        return checked(sourceOffset + (imm26 * sizeof(uint)));
     }
 
     private static SwShDynamaxAdventureRecord ValidateBossSpecies(SwShDynamaxAdventureArchive archive, int species, string label)
