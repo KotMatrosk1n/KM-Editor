@@ -264,8 +264,14 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerHyperTraining, "hyper-training-shield-gray-out-getter", ExeFsMainPath, "main.text", 0x00F9A360, 0x04, "Hyper Training Shield gray-out level getter call", "requires-vanilla"),
         new(OwnerHyperTraining, "hyper-training-shield-detail-getter", ExeFsMainPath, "main.text", 0x00F9E4EC, 0x04, "Hyper Training Shield detail level getter call", "requires-vanilla"),
 
+        new(OwnerShinyRate, "shiny-rate-sword-function-prelude", ExeFsMainPath, "main.text", 0x00D311C0, 0x24, "Shiny Rate Sword reroll function prelude", "requires-vanilla"),
+        new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-dependencies-before", ExeFsMainPath, "main.text", 0x00D31448, 0x40, "Shiny Rate Sword reroll setup, RNG, and result accumulator", "requires-vanilla"),
         new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D31488, 0x08, "Shiny Rate Sword reroll compare and break branch", "do-not-overwrite"),
+        new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-dependencies-after", ExeFsMainPath, "main.text", 0x00D31490, 0x20, "Shiny Rate Sword reroll continuation, result mapping, and outer-loop branch", "requires-vanilla"),
+        new(OwnerShinyRate, "shiny-rate-shield-function-prelude", ExeFsMainPath, "main.text", 0x00D311F0, 0x24, "Shiny Rate Shield reroll function prelude", "requires-vanilla"),
+        new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-dependencies-before", ExeFsMainPath, "main.text", 0x00D31478, 0x40, "Shiny Rate Shield reroll setup, RNG, and result accumulator", "requires-vanilla"),
         new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D314B8, 0x08, "Shiny Rate Shield reroll compare and break branch", "do-not-overwrite"),
+        new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-dependencies-after", ExeFsMainPath, "main.text", 0x00D314C0, 0x20, "Shiny Rate Shield reroll continuation, result mapping, and outer-loop branch", "requires-vanilla"),
 
         new(OwnerNameFilterBypass, "name-filter-bypass-sword-profanity-call", ExeFsMainPath, "main.text", 0x00EF1228, 0x04, "Profanity Filter Sword profanity-check call", "do-not-overwrite"),
         new(OwnerNameFilterBypass, "name-filter-bypass-shield-profanity-call", ExeFsMainPath, "main.text", 0x00EF1258, 0x04, "Profanity Filter Shield profanity-check call", "do-not-overwrite"),
@@ -341,7 +347,8 @@ internal static class SwShExeFsReservedRegionLedger
         ProjectGame? game)
     {
         var ownerRegions = MainTextRegionsForOwner(owner);
-        if (string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
+        if ((string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
+                || string.Equals(owner, OwnerShinyRate, StringComparison.Ordinal))
             && game is ProjectGame.Sword or ProjectGame.Shield)
         {
             var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";

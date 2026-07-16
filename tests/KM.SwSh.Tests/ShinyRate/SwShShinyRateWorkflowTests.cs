@@ -31,6 +31,42 @@ public sealed class SwShShinyRateWorkflowTests
         0xFA, 0xC6, 0x00, 0xF0,
     ];
 
+    private static readonly byte[] SwordLoopDependenciesBeforePatch =
+    [
+        0x17, 0x1D, 0x00, 0x72, 0x40, 0x05, 0x00, 0x54,
+        0xF8, 0x03, 0x1F, 0x2A, 0xF9, 0x03, 0x00, 0x32,
+        0x48, 0x03, 0x40, 0xF9, 0x08, 0x4D, 0x40, 0xF9,
+        0x09, 0x29, 0x40, 0xA9, 0x41, 0x01, 0x09, 0x0B,
+        0x4A, 0x01, 0x09, 0xCA, 0x49, 0xA1, 0xC9, 0xCA,
+        0x29, 0x41, 0x0A, 0xCA, 0x4A, 0x6D, 0xCA, 0x93,
+        0x09, 0x29, 0x00, 0xA9, 0xA0, 0xA2, 0x42, 0xB9,
+        0xB4, 0x17, 0xE9, 0x97, 0x18, 0x03, 0x00, 0x2A,
+    ];
+
+    private static readonly byte[] ShieldLoopDependenciesBeforePatch =
+    [
+        0x17, 0x1D, 0x00, 0x72, 0x40, 0x05, 0x00, 0x54,
+        0xF8, 0x03, 0x1F, 0x2A, 0xF9, 0x03, 0x00, 0x32,
+        0x48, 0x03, 0x40, 0xF9, 0x08, 0x4D, 0x40, 0xF9,
+        0x09, 0x29, 0x40, 0xA9, 0x41, 0x01, 0x09, 0x0B,
+        0x4A, 0x01, 0x09, 0xCA, 0x49, 0xA1, 0xC9, 0xCA,
+        0x29, 0x41, 0x0A, 0xCA, 0x4A, 0x6D, 0xCA, 0x93,
+        0x09, 0x29, 0x00, 0xA9, 0xA0, 0xA2, 0x42, 0xB9,
+        0xA8, 0x17, 0xE9, 0x97, 0x18, 0x03, 0x00, 0x2A,
+    ];
+
+    private static readonly byte[] LoopDependenciesAfterPatch =
+    [
+        0x39, 0x07, 0x00, 0x11,
+        0x20, 0xFE, 0x07, 0x36,
+        0x1F, 0x03, 0x00, 0x72,
+        0xE8, 0x03, 0x00, 0x32,
+        0x08, 0x15, 0x88, 0x1A,
+        0x88, 0x0A, 0x00, 0xB9,
+        0x88, 0x12, 0x40, 0xB9,
+        0x88, 0xFA, 0xFF, 0x35,
+    ];
+
     [Theory]
     [InlineData(ProjectGame.Sword, "main.text+0x00D311C0", "main.text+0x00D31488", "main.text+0x00D3148C")]
     [InlineData(ProjectGame.Shield, "main.text+0x00D311F0", "main.text+0x00D314B8", "main.text+0x00D314BC")]
@@ -49,8 +85,9 @@ public sealed class SwShShinyRateWorkflowTests
         Assert.Equal(expectedFunctionOffset, analysis.FunctionOffsetHex);
         Assert.Equal(expectedCompareOffset, analysis.CompareOffsetHex);
         Assert.Equal(expectedBreakOffset, analysis.BreakOffsetHex);
-        Assert.Equal(1, analysis.RollCount);
-        Assert.Equal(4096, analysis.OddsDenominator);
+        Assert.Null(analysis.RollCount);
+        Assert.Null(analysis.Chance);
+        Assert.Null(analysis.OddsDenominator);
     }
 
     [Fact]
@@ -63,6 +100,117 @@ public sealed class SwShShinyRateWorkflowTests
         Assert.Equal(SwShShinyRateMainKind.GameMismatch, analysis.Kind);
         Assert.Equal(ProjectGame.Sword, analysis.DetectedGame);
         Assert.Contains("will not patch this file", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnalyzeRejectsNonCanonicalBuildIdSuffix()
+    {
+        var main = CreateSyntheticShinyRateMain(ProjectGame.Sword);
+        main[0x54] = 0x7F;
+
+        var analysis = SwShShinyRateMainPatcher.Analyze(main, ProjectGame.Sword);
+
+        Assert.Equal(SwShShinyRateMainKind.UnsupportedBuild, analysis.Kind);
+    }
+
+    [Fact]
+    public void AnalyzeRejectsMismatchedRequiredTextHash()
+    {
+        var main = CreateSyntheticShinyRateMain(ProjectGame.Sword);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            main.AsSpan(0x0C),
+            (uint)NsoFlags.CheckHashText);
+        main[0xA0] ^= 0xFF;
+
+        var analysis = SwShShinyRateMainPatcher.Analyze(main, ProjectGame.Sword);
+
+        Assert.Equal(SwShShinyRateMainKind.Conflict, analysis.Kind);
+        Assert.Contains("required NSO header hash", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void AnalyzeRejectsChangedRerollLoopDependencies(ProjectGame game)
+    {
+        var shift = game == ProjectGame.Shield ? SwShShinyRateMainPatcher.ShieldOffsetDelta : 0;
+        var main = CreateSyntheticShinyRateMain(
+            game,
+            extraTextSetup: text => WriteInstruction(
+                text,
+                SwShShinyRateMainPatcher.SwordCompareOffset + shift - sizeof(uint),
+                0xD503201F));
+
+        var analysis = SwShShinyRateMainPatcher.Analyze(main, game);
+
+        Assert.Equal(SwShShinyRateMainKind.Conflict, analysis.Kind);
+        Assert.Contains("dependencies before", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void AnalyzeRejectsChangedRerollLoopDependencySuffix(ProjectGame game)
+    {
+        var shift = game == ProjectGame.Shield ? SwShShinyRateMainPatcher.ShieldOffsetDelta : 0;
+        var main = CreateSyntheticShinyRateMain(
+            game,
+            extraTextSetup: text => text[
+                SwShShinyRateMainPatcher.SwordCompareOffset
+                + shift
+                + SwShShinyRateMainPatcher.PatchLength
+                + LoopDependenciesAfterPatch.Length
+                - 1] ^= 0xFF);
+
+        var analysis = SwShShinyRateMainPatcher.Analyze(main, game);
+
+        Assert.Equal(SwShShinyRateMainKind.Conflict, analysis.Kind);
+        Assert.Contains("dependencies after", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void AnalyzeRejectsChangedExpectedFunctionPrelude(ProjectGame game)
+    {
+        var shift = game == ProjectGame.Shield ? SwShShinyRateMainPatcher.ShieldOffsetDelta : 0;
+        var main = CreateSyntheticShinyRateMain(
+            game,
+            extraTextSetup: text => text[
+                SwShShinyRateMainPatcher.SwordFunctionOffset + shift] ^= 0xFF);
+
+        var analysis = SwShShinyRateMainPatcher.Analyze(main, game);
+
+        Assert.Equal(SwShShinyRateMainKind.MissingFunction, analysis.Kind);
+        Assert.Contains("exact function prelude is missing", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnalyzeIgnoresUnrelatedDuplicateFunctionPrelude()
+    {
+        var main = CreateSyntheticShinyRateMain(
+            ProjectGame.Sword,
+            extraTextSetup: text => FunctionPrelude.CopyTo(
+                text.AsSpan(SwShShinyRateMainPatcher.SwordFunctionOffset - 0x100)));
+
+        var analysis = SwShShinyRateMainPatcher.Analyze(main, ProjectGame.Sword);
+
+        Assert.Equal(SwShShinyRateMainKind.Default, analysis.Kind);
+    }
+
+    [Fact]
+    public void ApplyRateRequiresExplicitSupportedGame()
+    {
+        var main = CreateSyntheticShinyRateMain(ProjectGame.Sword);
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            SwShShinyRateMainPatcher.ApplyRate(
+                main,
+                SwShShinyRateMode.FixedRolls,
+                8,
+                expectedGame: null));
+
+        Assert.Contains("selected explicitly", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -79,6 +227,24 @@ public sealed class SwShShinyRateWorkflowTests
         Assert.True(preset.IsEnabled);
         Assert.Equal("1/1", preset.OddsLabel);
         Assert.Equal("100.000%", preset.PercentLabel);
+    }
+
+    [Fact]
+    public void DefaultPresetRepresentsRuntimeDependentGameLogic()
+    {
+        var preset = Assert.Single(
+            SwShShinyRateWorkflowService.PresetDefinitions,
+            candidate => candidate.PresetId == "default");
+
+        Assert.Equal("default", preset.Mode);
+        Assert.Null(preset.RollCount);
+        Assert.Null(preset.TargetDenominator);
+        Assert.True(preset.IsEnabled);
+        Assert.Equal("Dynamic", preset.OddsLabel);
+        Assert.Equal("Variable", preset.PercentLabel);
+        Assert.Equal(
+            "Restores the game's runtime-dependent shiny reroll logic.",
+            preset.Description);
     }
 
     [Theory]
@@ -140,6 +306,65 @@ public sealed class SwShShinyRateWorkflowTests
         Assert.Equal(0x24, text[0xD00000]);
         AssertOnlyReservedTextBytesChanged(main, fixedRolls);
         AssertOnlyReservedTextBytesChanged(fixedRolls, restored);
+    }
+
+    [Fact]
+    public void RestoreFromBaseRestoresOnlyOwnedBytesAndPreservesOtherExeFsEdits()
+    {
+        var baseMain = CreateSyntheticShinyRateMain(
+            ProjectGame.Sword,
+            extraTextSetup: text => text[0x100] = 0x11);
+        var currentMain = SwShShinyRateMainPatcher.ApplyRate(
+            CreateSyntheticShinyRateMain(
+                ProjectGame.Sword,
+                extraTextSetup: text => text[0x100] = 0x42),
+            SwShShinyRateMode.FixedRolls,
+            6,
+            ProjectGame.Sword);
+
+        var restored = SwShShinyRateMainPatcher.RestoreFromBase(
+            currentMain,
+            baseMain,
+            ProjectGame.Sword);
+        var restoredText = NsoFile.Parse(restored).Text.DecompressedData;
+
+        Assert.Equal(SwShShinyRateMainKind.Default, SwShShinyRateMainPatcher.Analyze(
+            restored,
+            ProjectGame.Sword).Kind);
+        Assert.Equal(0x42, restoredText[0x100]);
+        AssertOnlyReservedTextBytesChanged(currentMain, restored, ProjectGame.Sword);
+    }
+
+    [Fact]
+    public void RestoreFromBaseRejectsPatchedBase()
+    {
+        var vanilla = CreateSyntheticShinyRateMain(ProjectGame.Sword);
+        var patchedBase = SwShShinyRateMainPatcher.ApplyRate(
+            vanilla,
+            SwShShinyRateMode.FixedRolls,
+            6,
+            ProjectGame.Sword);
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            SwShShinyRateMainPatcher.RestoreFromBase(
+                patchedBase,
+                patchedBase,
+                ProjectGame.Sword));
+
+        Assert.Contains("vanilla base", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnsureCompatibleExecutableIdentityRejectsStableHeaderMismatch()
+    {
+        var baseMain = CreateSyntheticShinyRateMain(ProjectGame.Sword);
+        var effectiveMain = baseMain.ToArray();
+        effectiveMain[0x08] = 0x7F;
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            SwShShinyRateMainPatcher.EnsureCompatibleExecutableIdentity(baseMain, effectiveMain));
+
+        Assert.Contains("stable header metadata", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -269,8 +494,15 @@ public sealed class SwShShinyRateWorkflowTests
         var text = new byte[textLength];
         Array.Fill(text, (byte)0xCC);
         FunctionPrelude.CopyTo(text.AsSpan(SwShShinyRateMainPatcher.SwordFunctionOffset + shift));
+        var dependenciesBefore = game == ProjectGame.Shield
+            ? ShieldLoopDependenciesBeforePatch
+            : SwordLoopDependenciesBeforePatch;
+        dependenciesBefore.CopyTo(text.AsSpan(
+            SwShShinyRateMainPatcher.SwordCompareOffset + shift - dependenciesBefore.Length));
         WriteInstruction(text, SwShShinyRateMainPatcher.SwordCompareOffset + shift, VanillaCompareInstruction);
         WriteInstruction(text, SwShShinyRateMainPatcher.SwordBreakOffset + shift, VanillaBreakInstruction);
+        LoopDependenciesAfterPatch.CopyTo(text.AsSpan(
+            SwShShinyRateMainPatcher.SwordCompareOffset + shift + SwShShinyRateMainPatcher.PatchLength));
         extraTextSetup?.Invoke(text);
 
         return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
@@ -295,7 +527,10 @@ public sealed class SwShShinyRateWorkflowTests
         };
     }
 
-    private static void AssertOnlyReservedTextBytesChanged(byte[] beforeMain, byte[] afterMain)
+    private static void AssertOnlyReservedTextBytesChanged(
+        byte[] beforeMain,
+        byte[] afterMain,
+        ProjectGame? game = null)
     {
         var before = NsoFile.Parse(beforeMain);
         var after = NsoFile.Parse(afterMain);
@@ -305,7 +540,7 @@ public sealed class SwShShinyRateWorkflowTests
         Assert.All(
             ChangedOffsets(before.Text.DecompressedData, after.Text.DecompressedData),
             changedOffset => Assert.Contains(
-                SwShShinyRateMainPatcher.ReservedMainTextRegions(),
+                SwShShinyRateMainPatcher.ReservedMainTextRegions(game),
                 region => SwShExeFsReservedRegionLedger.Overlaps(region, changedOffset, 1)));
     }
 

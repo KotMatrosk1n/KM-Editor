@@ -17,6 +17,7 @@ using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
 using KM.SwSh.NameFilter;
 using KM.SwSh.RoyalCandy;
+using KM.SwSh.ShinyRate;
 using KM.SwSh.StartingItems;
 using KM.SwSh.Tests.FpsPatch;
 using KM.SwSh.Tests.Items;
@@ -234,26 +235,44 @@ public sealed class SwShHookReservationTests
     }
 
     [Fact]
-    public void ShinyRateReservesSwordAndShieldRerollLoopControlRanges()
+    public void ShinyRateReservesExactSwordAndShieldWrittenAndDependencyRanges()
     {
         var regions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerShinyRate);
 
-        Assert.Collection(
-            regions.OrderBy(region => region.StartOffset).ToArray(),
-            region =>
-            {
-                Assert.Equal("shiny-rate-sword-reroll-loop-control", region.FeatureId);
-                Assert.Equal(0x00D31488, region.StartOffset);
-                Assert.Equal(0x08, region.Length);
-                Assert.Equal("text+0xD31488..0xD3148F", region.OffsetLabel);
-            },
-            region =>
-            {
-                Assert.Equal("shiny-rate-shield-reroll-loop-control", region.FeatureId);
-                Assert.Equal(0x00D314B8, region.StartOffset);
-                Assert.Equal(0x08, region.Length);
-                Assert.Equal("text+0xD314B8..0xD314BF", region.OffsetLabel);
-            });
+        Assert.Equal(8, regions.Count);
+        AssertRegion("shiny-rate-sword-function-prelude", 0x00D311C0, 0x24, "requires-vanilla");
+        AssertRegion("shiny-rate-sword-reroll-loop-dependencies-before", 0x00D31448, 0x40, "requires-vanilla");
+        AssertRegion("shiny-rate-sword-reroll-loop-control", 0x00D31488, 0x08, "do-not-overwrite");
+        AssertRegion("shiny-rate-sword-reroll-loop-dependencies-after", 0x00D31490, 0x20, "requires-vanilla");
+        AssertRegion("shiny-rate-shield-function-prelude", 0x00D311F0, 0x24, "requires-vanilla");
+        AssertRegion("shiny-rate-shield-reroll-loop-dependencies-before", 0x00D31478, 0x40, "requires-vanilla");
+        AssertRegion("shiny-rate-shield-reroll-loop-control", 0x00D314B8, 0x08, "do-not-overwrite");
+        AssertRegion("shiny-rate-shield-reroll-loop-dependencies-after", 0x00D314C0, 0x20, "requires-vanilla");
+
+        void AssertRegion(string featureId, int offset, int length, string rule)
+        {
+            var region = Assert.Single(regions, candidate => candidate.FeatureId == featureId);
+            Assert.Equal(offset, region.StartOffset);
+            Assert.Equal(length, region.Length);
+            Assert.Equal(rule, region.Rule);
+        }
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, 0x00D31488)]
+    [InlineData(ProjectGame.Shield, 0x00D314B8)]
+    public void ShinyRateExposesOnlySelectedGameWritableRegion(ProjectGame game, int expectedOffset)
+    {
+        var allSelectedGameRegions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerShinyRate,
+            game);
+        var writableRegions = SwShShinyRateMainPatcher.ReservedMainTextRegions(game);
+
+        Assert.Equal(4, allSelectedGameRegions.Count);
+        var writable = Assert.Single(writableRegions);
+        Assert.Equal(expectedOffset, writable.StartOffset);
+        Assert.Equal(0x08, writable.Length);
+        Assert.Equal("do-not-overwrite", writable.Rule);
     }
 
     [Fact]
@@ -295,7 +314,8 @@ public sealed class SwShHookReservationTests
                 var left = regions[leftIndex];
                 var right = regions[rightIndex];
                 if (IsSameFeatureFamily(left.Owner, right.Owner)
-                    || IsMutuallyExclusiveCatchCapLayout(left, right))
+                    || IsMutuallyExclusiveCatchCapLayout(left, right)
+                    || IsMutuallyExclusiveShinyRateLayout(left, right))
                 {
                     continue;
                 }
@@ -3458,6 +3478,18 @@ public sealed class SwShHookReservationTests
     private static bool IsSameFeatureFamily(string leftOwner, string rightOwner)
     {
         return IsRoyalCandyFamily(leftOwner) && IsRoyalCandyFamily(rightOwner);
+    }
+
+    private static bool IsMutuallyExclusiveShinyRateLayout(
+        SwShExeFsReservedRegion left,
+        SwShExeFsReservedRegion right)
+    {
+        return string.Equals(left.Owner, SwShExeFsReservedRegionLedger.OwnerShinyRate, StringComparison.Ordinal)
+            && string.Equals(right.Owner, SwShExeFsReservedRegionLedger.OwnerShinyRate, StringComparison.Ordinal)
+            && ((left.FeatureId.Contains("-sword-", StringComparison.Ordinal)
+                    && right.FeatureId.Contains("-shield-", StringComparison.Ordinal))
+                || (left.FeatureId.Contains("-shield-", StringComparison.Ordinal)
+                    && right.FeatureId.Contains("-sword-", StringComparison.Ordinal)));
     }
 
     private static bool IsMutuallyExclusiveCatchCapLayout(

@@ -4,9 +4,13 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.ShinyRate;
 
@@ -19,6 +23,8 @@ public sealed class SwShShinyRateEditSessionService
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShShinyRateWorkflowService shinyRateWorkflowService;
+    private readonly Action? beforeAcquireApplyScope;
+    private readonly Action<int, string>? beforeVerifiedPromotion;
 
     public SwShShinyRateEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -28,15 +34,36 @@ public sealed class SwShShinyRateEditSessionService
         this.shinyRateWorkflowService = shinyRateWorkflowService ?? new SwShShinyRateWorkflowService();
     }
 
+    internal SwShShinyRateEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShShinyRateWorkflowService? shinyRateWorkflowService,
+        Action beforeAcquireApplyScope)
+        : this(projectWorkspaceService, shinyRateWorkflowService)
+    {
+        this.beforeAcquireApplyScope = beforeAcquireApplyScope
+            ?? throw new ArgumentNullException(nameof(beforeAcquireApplyScope));
+    }
+
+    internal SwShShinyRateEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShShinyRateWorkflowService? shinyRateWorkflowService,
+        Action<int, string> beforeVerifiedPromotion)
+        : this(projectWorkspaceService, shinyRateWorkflowService)
+    {
+        this.beforeVerifiedPromotion = beforeVerifiedPromotion
+            ?? throw new ArgumentNullException(nameof(beforeVerifiedPromotion));
+    }
+
     public SwShShinyRateEditResult StageRate(
         ProjectPaths paths,
-        string mode,
+        string? mode,
         int? rollCount,
         EditSession? session)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = shinyRateWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -57,16 +84,15 @@ public sealed class SwShShinyRateEditSessionService
         }
 
         var payload = EncodeSelection(selection);
-        var source = SwShShinyRateWorkflowService.ResolveWorkflowFile(project, SwShShinyRateWorkflowService.ExeFsMainPath);
-        var sourceReferences = source is null
-            ? [new ProjectFileReference(ProjectFileLayer.Base, SwShShinyRateWorkflowService.ExeFsMainPath)]
-            : new[] { CreateSourceReference(source.Entry) };
+        var sources = CreateCanonicalSources(project, payload, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShShinyRateEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, ShinyRateEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit(payload, sourceReferences, selection))
-                .ToArray(),
+            PendingEdits = [CreatePendingEdit(payload, sources, selection)],
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -81,51 +107,38 @@ public sealed class SwShShinyRateEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = shinyRateWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-
-        if (session.PendingEdits.Count == 0)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Stage Shiny Rate before validating.",
-                expected: "Pending Shiny Rate selection"));
-            return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
-        }
 
         if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Shiny Rate expects exactly one staged rate edit.",
-                expected: "One pending Shiny Rate edit"));
+                session.PendingEdits.Count == 0
+                    ? "Stage Shiny Rate before validating."
+                    : "Shiny Rate expects exactly one canonical staged rate edit.",
+                expected: "Exactly one pending Shiny Rate edit"));
         }
-
-        foreach (var edit in session.PendingEdits)
+        else
         {
-            if (!string.Equals(edit.Domain, ShinyRateEditDomain, StringComparison.Ordinal))
+            var edit = session.PendingEdits[0];
+            if (!IsCanonicalIdentity(edit))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pending edit domain '{edit.Domain}' is not supported by Shiny Rate.",
-                    expected: ShinyRateEditDomain));
-                continue;
+                    "Pending edit does not target the canonical Shiny Rate field.",
+                    field: edit.Field,
+                    expected: $"{ShinyRateEditDomain}/{RecordId}/{RateField}"));
             }
-
-            if (!string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal))
+            else
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pending Shiny Rate edit '{edit.RecordId}' is not supported.",
-                    expected: "Shiny Rate selection"));
-                continue;
+                ValidateCanonicalEdit(project, edit, diagnostics);
             }
-
-            _ = DecodeSelection(edit.NewValue, diagnostics);
-            CanStage(project, workflow, diagnostics);
         }
 
+        CanStage(project, workflow, diagnostics);
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -152,29 +165,30 @@ public sealed class SwShShinyRateEditSessionService
         }
 
         var project = projectWorkspaceService.Open(paths);
-        var source = SwShShinyRateWorkflowService.ResolveWorkflowFile(project, SwShShinyRateWorkflowService.ExeFsMainPath);
+        var edit = session.PendingEdits.Single();
+        var selection = DecodeSelection(edit.NewValue, diagnostics);
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (source is null || targetPath is null)
+        var sources = CreateCanonicalSources(project, edit.NewValue ?? string.Empty, diagnostics);
+        if (selection is null
+            || targetPath is null
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Shiny Rate source or output target could not be resolved.",
-                file: SwShShinyRateWorkflowService.ExeFsMainPath,
-                expected: "Readable exefs/main source and writable LayeredFS target"));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
         var write = new PlannedFileWrite(
             SwShShinyRateWorkflowService.ExeFsMainPath,
-            [CreateSourceReference(source.Entry)],
+            sources,
             File.Exists(targetPath),
-            "Update the Sword/Shield shiny reroll count in exefs/main.");
+            CreatePlanReason(selection));
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             "Shiny Rate change plan preview contains 1 target file."));
 
-        return new ChangePlan(session.Id, [write], diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, [write], diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -183,13 +197,29 @@ public sealed class SwShShinyRateEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -197,19 +227,80 @@ public sealed class SwShShinyRateEditSessionService
                 expected: "Current reviewed Shiny Rate change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var selection = DecodeSelection(session.PendingEdits.Single().NewValue, diagnostics);
-        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        beforeAcquireApplyScope?.Invoke();
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var acquireDiagnostics))
         {
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                acquireDiagnostics);
+        }
+
+        using var verifiedScope = applyScope!;
+        var snapshotPlan = CreateChangePlan(verifiedScope.ApplyPaths, session);
+        if (!verifiedScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedPlan))
+        {
+            var staleDiagnostics = preparedPlan.Diagnostics.ToList();
+            staleDiagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Shiny Rate sources changed while preparing the verified apply snapshot.",
+                expected: "Sources matching the reviewed Shiny Rate change plan"));
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                staleDiagnostics);
+        }
+
+        var snapshotResult = ApplyPreparedPlan(
+            verifiedScope.ApplyPaths,
+            session,
+            preparedPlan,
+            applyId,
+            appliedAt);
+        return verifiedScope.Commit(snapshotResult, beforeVerifiedPromotion);
+    }
+
+    private ApplyResult ApplyPreparedPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan preparedPlan,
+        string applyId,
+        DateTimeOffset appliedAt)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        var diagnostics = preparedPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+        if (session.PendingEdits.Count != 1 || !IsCanonicalIdentity(session.PendingEdits[0]))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Shiny Rate prepared apply requires exactly one canonical pending edit.",
+                expected: $"{ShinyRateEditDomain}/{RecordId}/{RateField}"));
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        var selection = DecodeSelection(session.PendingEdits[0].NewValue, diagnostics);
+        if (selection is null || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
         }
 
         ApplyMain(paths, selection, writtenFiles, diagnostics);
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
     }
 
     private void ApplyMain(
@@ -219,55 +310,83 @@ public sealed class SwShShinyRateEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var project = projectWorkspaceService.Open(paths);
-        var source = SwShShinyRateWorkflowService.ResolveWorkflowFile(project, SwShShinyRateWorkflowService.ExeFsMainPath);
+        var source = SwShShinyRateWorkflowService.ResolveWorkflowFile(
+            project,
+            SwShShinyRateWorkflowService.ExeFsMainPath);
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (source is null || targetPath is null)
+        var basePath = SwShShinyRateWorkflowService.ResolveBaseSourcePath(
+            paths,
+            SwShShinyRateWorkflowService.ExeFsMainPath);
+        if (source is null || targetPath is null || basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Shiny Rate source or output target could not be resolved.",
+                "Shiny Rate source, vanilla base, or output target could not be resolved.",
                 file: SwShShinyRateWorkflowService.ExeFsMainPath,
-                expected: "Readable exefs/main source and writable LayeredFS target"));
+                expected: "Readable reviewed source and vanilla base with writable LayeredFS target"));
             return;
         }
 
         try
         {
-            var output = SwShShinyRateMainPatcher.ApplyRate(
-                File.ReadAllBytes(source.AbsolutePath),
-                selection.Mode,
-                selection.RollCount,
-                paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShShinyRateWorkflowService.ExeFsMainPath));
+            var baseBytes = File.ReadAllBytes(basePath);
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var baseAnalysis = SwShShinyRateMainPatcher.Analyze(baseBytes, paths.SelectedGame);
+            var sourceAnalysis = SwShShinyRateMainPatcher.Analyze(sourceBytes, paths.SelectedGame);
+            EnsureVerifiedVanillaBase(baseAnalysis, paths.SelectedGame);
+            EnsureEditableEffectiveSource(sourceAnalysis);
+            SwShShinyRateMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, sourceBytes);
+
+            var output = selection.Mode == SwShShinyRateMode.Default
+                ? SwShShinyRateMainPatcher.RestoreFromBase(sourceBytes, baseBytes, paths.SelectedGame)
+                : SwShShinyRateMainPatcher.ApplyRate(
+                    sourceBytes,
+                    selection.Mode,
+                    selection.RollCount,
+                    paths.SelectedGame);
+            VerifyOutput(baseBytes, output, selection, paths.SelectedGame);
+
+            if (selection.Mode == SwShShinyRateMode.Default
+                && SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(output, baseBytes))
+            {
+                if (File.Exists(targetPath))
+                {
+                    File.Delete(targetPath);
+                }
+
+                if (File.Exists(targetPath))
+                {
+                    throw new IOException("Shiny Rate restore target still exists after verified deletion.");
+                }
+            }
+            else
+            {
+                WriteOutputAtomically(
+                    targetPath,
+                    output,
+                    roundTrip => VerifyOutput(baseBytes, roundTrip, selection, paths.SelectedGame));
+            }
+
+            writtenFiles.Add(new ProjectFileReference(
+                ProjectFileLayer.Generated,
+                SwShShinyRateWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Applied Shiny Rate changes to exefs/main in the configured LayeredFS output root."));
+                selection.Mode == SwShShinyRateMode.Default
+                    ? "Restored Shiny Rate default logic in the configured LayeredFS output root."
+                    : "Applied Shiny Rate changes to exefs/main in the configured LayeredFS output root."));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or OverflowException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Shiny Rate could not be patched: {exception.Message}",
+                $"Shiny Rate verified output could not be prepared: {exception.Message}",
                 file: SwShShinyRateWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword/Shield 1.3.2 exefs/main with the verified shiny reroll loop"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Shiny Rate output could not be written: {exception.Message}",
-                file: SwShShinyRateWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Shiny Rate output could not be written: {exception.Message}",
-                file: SwShShinyRateWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
+                expected: "Reviewed selected-game source, exact rate payload, verified vanilla base, and writable output"));
         }
     }
 
@@ -276,18 +395,25 @@ public sealed class SwShShinyRateEditSessionService
         SwShShinyRateWorkflow workflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Shiny Rate apply requires valid base paths and a valid output root.",
-                expected: "Editable project paths"));
-            return false;
-        }
-
         foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(diagnostic);
+            if (!diagnostics.Contains(diagnostic))
+            {
+                diagnostics.Add(diagnostic);
+            }
+        }
+
+        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
+        {
+            if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Shiny Rate apply requires valid base paths, Pokemon Sword or Shield, and a valid output root.",
+                    expected: "Editable Pokemon Sword or Pokemon Shield project paths"));
+            }
+
+            return false;
         }
 
         if (workflow.InstallStatus == "blocked")
@@ -307,7 +433,7 @@ public sealed class SwShShinyRateEditSessionService
     }
 
     private static bool TryCreateSelection(
-        string mode,
+        string? mode,
         int? rollCount,
         ICollection<ValidationDiagnostic> diagnostics,
         out ShinyRateSelection selection)
@@ -317,7 +443,9 @@ public sealed class SwShShinyRateEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Shiny Rate mode '{mode}' is not supported.",
+                string.IsNullOrWhiteSpace(mode)
+                    ? "Shiny Rate mode is required."
+                    : $"Shiny Rate mode '{mode}' is not supported.",
                 field: RateField,
                 expected: "default, fixed, or always"));
             return false;
@@ -359,50 +487,44 @@ public sealed class SwShShinyRateEditSessionService
         };
     }
 
-    private static ShinyRateSelection DecodeSelection(string? value, ICollection<ValidationDiagnostic> diagnostics)
+    private static ShinyRateSelection? DecodeSelection(
+        string? value,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Shiny Rate pending edit has no rate payload.",
-                field: RateField,
-                expected: "default, always, or fixed:<roll count>"));
-            return new ShinyRateSelection(SwShShinyRateMode.Default, RollCount: null);
-        }
-
-        var trimmed = value.Trim();
-        if (string.Equals(trimmed, "default", StringComparison.Ordinal))
+        if (string.Equals(value, "default", StringComparison.Ordinal))
         {
             return new ShinyRateSelection(SwShShinyRateMode.Default, RollCount: null);
         }
 
-        if (string.Equals(trimmed, "always", StringComparison.Ordinal))
+        if (string.Equals(value, "always", StringComparison.Ordinal))
         {
             return new ShinyRateSelection(SwShShinyRateMode.AlwaysShiny, RollCount: null);
         }
 
         const string fixedPrefix = "fixed:";
-        if (trimmed.StartsWith(fixedPrefix, StringComparison.Ordinal)
-            && int.TryParse(trimmed[fixedPrefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var rollCount))
+        if (value is not null
+            && value.StartsWith(fixedPrefix, StringComparison.Ordinal)
+            && int.TryParse(value[fixedPrefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var rollCount))
         {
             if (TryCreateSelection("fixed", rollCount, diagnostics, out var selection))
             {
                 return selection;
             }
 
-            return new ShinyRateSelection(SwShShinyRateMode.Default, RollCount: null);
+            return null;
         }
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Error,
-            "Shiny Rate pending edit payload is not supported.",
+            string.IsNullOrWhiteSpace(value)
+                ? "Shiny Rate pending edit has no rate payload."
+                : "Shiny Rate pending edit payload is not supported.",
             field: RateField,
             expected: "default, always, or fixed:<roll count>"));
-        return new ShinyRateSelection(SwShShinyRateMode.Default, RollCount: null);
+        return null;
     }
 
-    private static PendingEdit CreatePendingEdit(
+    private PendingEdit CreatePendingEdit(
         string payload,
         IReadOnlyList<ProjectFileReference> sourceReferences,
         ShinyRateSelection selection)
@@ -414,6 +536,93 @@ public sealed class SwShShinyRateEditSessionService
             RecordId,
             RateField,
             payload);
+    }
+
+    private static bool IsCanonicalIdentity(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ShinyRateEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, RateField, StringComparison.Ordinal);
+    }
+
+    private void ValidateCanonicalEdit(
+        OpenedProject project,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var selection = DecodeSelection(edit.NewValue, diagnostics);
+        if (selection is null)
+        {
+            return;
+        }
+
+        var canonicalPayload = EncodeSelection(selection);
+        if (!string.Equals(edit.NewValue, canonicalPayload, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Shiny Rate selection is not in canonical payload format.",
+                field: RateField,
+                expected: canonicalPayload));
+        }
+
+        var expectedSummary = CreatePendingEditSummary(selection);
+        if (!string.Equals(edit.Summary, expectedSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Shiny Rate edit does not have the canonical staged summary.",
+                field: RateField,
+                expected: expectedSummary));
+        }
+
+        var sourceDiagnostics = new List<ValidationDiagnostic>();
+        var expectedSources = CreateCanonicalSources(project, canonicalPayload, sourceDiagnostics);
+        foreach (var diagnostic in sourceDiagnostics)
+        {
+            diagnostics.Add(diagnostic);
+        }
+
+        if (!edit.Sources.SequenceEqual(expectedSources))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Shiny Rate sources do not match the canonical base, effective, and payload references.",
+                field: RateField,
+                expected: "Canonical ordered unique Shiny Rate source references"));
+        }
+    }
+
+    private IReadOnlyList<ProjectFileReference> CreateCanonicalSources(
+        OpenedProject project,
+        string payload,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sources = shinyRateWorkflowService.GetPlanSources(project).ToList();
+        if (!sources.Any(source => source.Layer == ProjectFileLayer.Base
+            && string.Equals(source.RelativePath, SwShShinyRateWorkflowService.ExeFsMainPath, StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Shiny Rate vanilla base source could not be resolved.",
+                file: SwShShinyRateWorkflowService.ExeFsMainPath,
+                expected: "Readable selected-game base exefs/main"));
+        }
+
+        sources.Add(CreatePendingPayloadSource(payload));
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static ProjectFileReference CreatePendingPayloadSource(string payload)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/shiny-rate/rate/{hash}");
     }
 
     private static string CreatePendingEditSummary(ShinyRateSelection selection)
@@ -429,9 +638,23 @@ public sealed class SwShShinyRateEditSessionService
         };
     }
 
-    private static bool TryParseMode(string mode, out SwShShinyRateMode parsedMode)
+    private static string CreatePlanReason(ShinyRateSelection selection)
     {
-        parsedMode = mode.Trim().ToLowerInvariant() switch
+        return selection.Mode switch
+        {
+            SwShShinyRateMode.Default => "Restore the game's runtime-dependent shiny reroll logic in exefs/main.",
+            SwShShinyRateMode.AlwaysShiny => "Apply the always-shiny reroll-loop control bytes to exefs/main.",
+            SwShShinyRateMode.FixedRolls => string.Create(
+                CultureInfo.InvariantCulture,
+                $"Set the global shiny PID roll count to {selection.RollCount} in exefs/main."),
+            _ => "Update the Sword/Shield shiny reroll logic in exefs/main.",
+        };
+    }
+
+    private static bool TryParseMode(string? mode, out SwShShinyRateMode parsedMode)
+    {
+        var normalized = mode?.Trim().ToLowerInvariant();
+        parsedMode = normalized switch
         {
             "default" => SwShShinyRateMode.Default,
             "fixed" => SwShShinyRateMode.FixedRolls,
@@ -439,15 +662,91 @@ public sealed class SwShShinyRateEditSessionService
             _ => SwShShinyRateMode.Default,
         };
 
-        return mode.Trim().ToLowerInvariant() is "default" or "fixed" or "always";
+        return normalized is "default" or "fixed" or "always";
     }
 
-    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
+    private static void EnsureVerifiedVanillaBase(
+        SwShShinyRateMainAnalysis analysis,
+        ProjectGame? selectedGame)
     {
-        var layer = entry.LayeredFile is not null
-            ? ProjectFileLayer.Layered
-            : ProjectFileLayer.Base;
-        return new ProjectFileReference(layer, entry.RelativePath);
+        if (analysis.Kind != SwShShinyRateMainKind.Default
+            || analysis.DetectedGame != selectedGame
+            || analysis.DetectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+            || string.Equals(analysis.BuildId, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "Shiny Rate requires the reviewed selected-game vanilla base exefs/main before apply or restore.");
+        }
+    }
+
+    private static void EnsureEditableEffectiveSource(SwShShinyRateMainAnalysis analysis)
+    {
+        if (analysis.Kind is not (SwShShinyRateMainKind.Default
+            or SwShShinyRateMainKind.FixedRolls
+            or SwShShinyRateMainKind.AlwaysShiny))
+        {
+            throw new InvalidDataException(
+                "The reviewed effective exefs/main is no longer a verified Shiny Rate source.");
+        }
+    }
+
+    private static void VerifyOutput(
+        byte[] baseBytes,
+        byte[] output,
+        ShinyRateSelection selection,
+        ProjectGame? selectedGame)
+    {
+        var analysis = SwShShinyRateMainPatcher.Analyze(output, selectedGame);
+        var verified = selection.Mode switch
+        {
+            SwShShinyRateMode.Default => analysis.Kind == SwShShinyRateMainKind.Default,
+            SwShShinyRateMode.FixedRolls => analysis.Kind == SwShShinyRateMainKind.FixedRolls
+                && analysis.RollCount == selection.RollCount,
+            SwShShinyRateMode.AlwaysShiny => analysis.Kind == SwShShinyRateMainKind.AlwaysShiny,
+            _ => false,
+        };
+        if (!verified || analysis.DetectedGame != selectedGame)
+        {
+            throw new InvalidDataException(
+                "Shiny Rate output did not round-trip with the reviewed rate selection.");
+        }
+
+        SwShShinyRateMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, output);
+    }
+
+    private static void WriteOutputAtomically(
+        string targetPath,
+        byte[] output,
+        Action<byte[]> verifyRoundTrip)
+    {
+        var directoryPath = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Shiny Rate output directory could not be resolved.");
+        Directory.CreateDirectory(directoryPath);
+        var temporaryPath = Path.Combine(
+            directoryPath,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, output);
+            var roundTrip = File.ReadAllBytes(temporaryPath);
+            if (!roundTrip.AsSpan().SequenceEqual(output))
+            {
+                throw new IOException("Shiny Rate temporary output did not round-trip byte-for-byte.");
+            }
+
+            verifyRoundTrip(roundTrip);
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static string? ResolveOutputPath(
@@ -463,7 +762,9 @@ public sealed class SwShShinyRateEditSessionService
             return null;
         }
 
-        var targetPath = SwShShinyRateWorkflowService.ResolveOutputPath(paths, SwShShinyRateWorkflowService.ExeFsMainPath);
+        var targetPath = SwShShinyRateWorkflowService.ResolveOutputPath(
+            paths,
+            SwShShinyRateWorkflowService.ExeFsMainPath);
         if (targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -474,27 +775,6 @@ public sealed class SwShShinyRateEditSessionService
         }
 
         return targetPath;
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
     }
 
     private static ApplyResult CreateApplyResult(

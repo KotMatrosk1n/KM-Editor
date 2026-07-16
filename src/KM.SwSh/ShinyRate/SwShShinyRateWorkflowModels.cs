@@ -28,7 +28,7 @@ public sealed record SwShShinyRateRule(
     int MinimumCustomDenominator,
     int MaximumCustomDenominator,
     int? OddsDenominator,
-    double ChancePercent,
+    double? ChancePercent,
     string OddsLabel,
     string PercentLabel,
     string RuntimeSummary);
