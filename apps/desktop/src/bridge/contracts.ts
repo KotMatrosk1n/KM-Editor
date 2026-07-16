@@ -2589,16 +2589,20 @@ export const hyperTrainingSourceRecordSchema = z.strictObject({
   provenance: hyperTrainingProvenanceSchema,
   relativePath: z.string(),
   sourceId: z.string(),
-  status: z.string()
+  status: z.enum(['available', 'missing', 'optionalMissing'])
 });
 
 export const hyperTrainingLevelRuleSchema = z.strictObject({
+  dialogueMinimumLevel: z.number().int().min(1).max(100).nullable(),
   dialogueSummary: z.string(),
+  levelsMatch: z.boolean(),
   maximumAllowedLevel: z.number().int(),
   minimumAllowedLevel: z.number().int(),
-  minimumLevel: z.number().int(),
+  minimumLevel: z.number().int().min(1).max(100),
+  runtimeMinimumLevel: z.number().int().min(1).max(100),
   runtimeSummary: z.string(),
   scriptCell: z.string(),
+  scriptMinimumLevel: z.number().int().min(1).max(100),
   vanillaMinimumLevel: z.number().int()
 });
 
@@ -2608,9 +2612,11 @@ export const hyperTrainingWorkflowStatsSchema = z.strictObject({
 });
 
 export const hyperTrainingWorkflowSchema = z.strictObject({
+  buildId: z.union([z.literal('unknown'), z.string().regex(/^[A-F0-9]{40}$/)]),
+  detectedGame: z.enum(['sword', 'shield']).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
   installMessage: z.string(),
-  installStatus: z.string(),
+  installStatus: z.enum(['available', 'blocked', 'disabled', 'installed', 'readOnly']),
   levelRule: hyperTrainingLevelRuleSchema,
   sources: z.array(hyperTrainingSourceRecordSchema),
   stats: hyperTrainingWorkflowStatsSchema,

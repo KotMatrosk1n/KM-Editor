@@ -92,15 +92,58 @@ internal static class SwShAmxCellPatcher
         }
 
         WriteCells(decoded.Expanded, decoded.Header.Cod, codeCells, decoded.CellSize);
+        return WritePatchedAmx(data, decoded, originalExpanded);
+    }
+
+    public static byte[] ApplyPackedInstructionOperand(
+        byte[] data,
+        int cell,
+        int expectedOpcode,
+        int operand)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        var decoded = Decode(data);
+        var originalExpanded = decoded.Expanded.ToArray();
+        var codeCells = ReadCells(
+            decoded.Expanded,
+            decoded.Header.Cod,
+            decoded.Header.Dat - decoded.Header.Cod,
+            decoded.CellSize);
+        if ((uint)cell >= (uint)codeCells.Length)
+        {
+            throw new InvalidDataException($"AMX code cell {cell} is outside code cell count {codeCells.Length}.");
+        }
+
+        if (!TryReadPackedInstructionOperand(
+                codeCells[cell],
+                decoded.CellSize,
+                expectedOpcode,
+                out _))
+        {
+            throw new InvalidDataException(
+                $"AMX code cell {cell} is not the expected packed opcode {expectedOpcode} instruction.");
+        }
+
+        codeCells[cell] = ((ulong)unchecked((uint)operand) << 32) | unchecked((uint)expectedOpcode);
+        WriteCells(decoded.Expanded, decoded.Header.Cod, codeCells, decoded.CellSize);
+        return WritePatchedAmx(data, decoded, originalExpanded);
+    }
+
+    private static byte[] WritePatchedAmx(
+        byte[] original,
+        DecodedAmx decoded,
+        byte[] originalExpanded)
+    {
         if (!decoded.WasCompact)
         {
             return decoded.Expanded;
         }
 
         var compact = decoded.CompactCellSpans is null
-            ? BuildCompactAmx(data[..decoded.Header.Cod], decoded.Header, decoded.Expanded, decoded.CellSize)
+            ? BuildCompactAmx(original[..decoded.Header.Cod], decoded.Header, decoded.Expanded, decoded.CellSize)
             : BuildCompactAmxPreservingUnchangedCells(
-                data,
+                original,
                 decoded.Header,
                 originalExpanded,
                 decoded.Expanded,
@@ -477,6 +520,22 @@ internal static class SwShAmxCellPatcher
         return true;
     }
 
+    private static bool TryReadPackedInstructionOperand(
+        ulong cell,
+        int cellSize,
+        int expectedOpcode,
+        out int operand)
+    {
+        operand = 0;
+        if (cellSize != 8 || (uint)cell != unchecked((uint)expectedOpcode))
+        {
+            return false;
+        }
+
+        operand = unchecked((int)(uint)(cell >> 32));
+        return true;
+    }
+
     private static bool IsPackedConstantCell(ulong cell, int cellSize)
     {
         return IsPackedConstantOperandCell(cell, cellSize) && (cell >> 32) != 0;
@@ -550,6 +609,20 @@ internal static class SwShAmxCellPatcher
 
             value = unchecked((int)(uint)(raw >> 32));
             return true;
+        }
+
+        public bool TryReadPackedInstructionOperand(
+            int cell,
+            int expectedOpcode,
+            out int operand)
+        {
+            operand = 0;
+            return (uint)cell < (uint)codeCells.Count
+                && SwShAmxCellPatcher.TryReadPackedInstructionOperand(
+                    codeCells[cell],
+                    cellSize,
+                    expectedOpcode,
+                    out operand);
         }
     }
 

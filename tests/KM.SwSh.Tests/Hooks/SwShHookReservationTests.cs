@@ -3889,14 +3889,38 @@ public sealed class SwShHookReservationTests
 
     private static void WriteHyperTrainingVanillaAnchors(byte[] text, ProjectGame game)
     {
-        var shift = game == ProjectGame.Shield ? 0x30 : 0;
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordPreflightCompareOffset + shift, EncodeCmpImmediate(0, 100));
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordEligibilityCompareOffset + shift, EncodeCmpImmediate(0, 100));
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordEligibilityBranchOffset + shift, 0x54000061);
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordGrayOutCompareOffset + shift, EncodeCmpImmediate(0, 100));
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordGrayOutBranchOffset + shift, 0x540000A1);
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordDetailCompareOffset + shift, EncodeCmpImmediate(0, 100));
-        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordDetailBranchOffset + shift, 0x540002C1);
+        var offsets = game == ProjectGame.Sword
+            ? (Preflight: 0x00F98F18, Eligibility: 0x00F9A314, GrayOut: 0x00F9A334, Detail: 0x00F9E4C0,
+                PreflightCall: 0x97DF85B7u, EligibilityCall: 0x97DF80B8u, GrayOutCall: 0x97DF80B0u, DetailCall: 0x97DF704Du)
+            : (Preflight: 0x00F98F48, Eligibility: 0x00F9A344, GrayOut: 0x00F9A364, Detail: 0x00F9E4F0,
+                PreflightCall: 0x97DF85ABu, EligibilityCall: 0x97DF80ACu, GrayOutCall: 0x97DF80A4u, DetailCall: 0x97DF7041u);
+        uint[] getterWords =
+        [
+            0xF81D0FF5, 0xA9014FF4, 0xA9027BFD, 0x910083FD, 0xAA0003F3,
+            0xF9404C00, 0x97FFB4EA, 0x2A0003E8, 0xF9404E60, 0x360000A8,
+            0xA9427BFD, 0xA9414FF4, 0xF84307F5, 0x17FFB8BB, 0x97FFB9A6,
+            0x2A0003F4, 0xF9404E60, 0x97FFC34B, 0x2A0003F5, 0xF9404E60,
+            0x97FFBA90, 0x2A0003E2, 0x2A1403E0, 0x2A1503E1, 0x97FFF188,
+            0xA9427BFD, 0x12001C00, 0xA9414FF4, 0xF84307F5, 0xD65F03C0,
+        ];
+        for (var index = 0; index < getterWords.Length; index++)
+        {
+            WriteInstruction(text, 0x0077A5F0 + (index * sizeof(uint)), getterWords[index]);
+        }
+
+        WriteInstruction(text, offsets.Preflight - 4, offsets.PreflightCall);
+        WriteInstruction(text, offsets.Preflight, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, offsets.Preflight + 4, 0x1A9F27E8);
+        WriteInstruction(text, offsets.Preflight + 8, 0x54000123);
+        WriteInstruction(text, offsets.Eligibility - 4, offsets.EligibilityCall);
+        WriteInstruction(text, offsets.Eligibility, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, offsets.Eligibility + 4, 0x54000061);
+        WriteInstruction(text, offsets.GrayOut - 4, offsets.GrayOutCall);
+        WriteInstruction(text, offsets.GrayOut, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, offsets.GrayOut + 4, 0x540000A1);
+        WriteInstruction(text, offsets.Detail - 4, offsets.DetailCall);
+        WriteInstruction(text, offsets.Detail, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, offsets.Detail + 4, 0x540002C1);
     }
 
     private static void WriteRoyalCandyVanillaAnchors(byte[] text)
