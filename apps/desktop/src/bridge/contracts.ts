@@ -2774,18 +2774,31 @@ export const ivScreenWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative()
 });
 
+export const ivScreenInstallStatusSchema = z.enum([
+  'disabled',
+  'readOnly',
+  'available',
+  'installed',
+  'blocked',
+  'foreign'
+]);
+
 export const ivScreenWorkflowSchema = z.strictObject({
+  buildId: z.string(),
+  canUninstall: z.boolean(),
+  detectedGame: z.enum(['sword', 'shield']).nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
-  hookSiteOffsetHex: z.string(),
   hyperTrainingWrapperOffsetHex: z.string(),
   installMessage: z.string(),
-  installStatus: z.string(),
+  installStatus: ivScreenInstallStatusSchema,
   marker: z.string(),
+  primaryValueSourceOffsetHex: z.string(),
   provenance: ivScreenProvenanceSchema,
   rawIvGetterOffsetHex: z.string(),
   reservedRegions: z.array(ivScreenReservedRegionSchema),
   stats: ivScreenWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  summary: workflowSummarySchema,
+  xToggleRefreshOffsetHex: z.string()
 });
 
 export const loadIvScreenWorkflowResponseSchema = z.strictObject({

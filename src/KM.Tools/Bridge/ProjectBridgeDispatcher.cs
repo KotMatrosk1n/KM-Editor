@@ -2193,7 +2193,9 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadIvScreenWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadIvScreenWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadIvScreen(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("IV Screen project paths are required.");
+        var workflow = swShWorkflowService.LoadIvScreen(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -2202,11 +2204,13 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageIvScreenInstall(string requestJson)
     {
         var request = DeserializeRequest<StageIvScreenInstallRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("IV Screen install paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = ivScreenEditSessionService.StageInstall(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            ProjectBridgeMapper.ToCore(paths),
             session);
         var response = SwShBridgeMapper.ToDto(result);
 
@@ -2216,11 +2220,13 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageIvScreenUninstall(string requestJson)
     {
         var request = DeserializeRequest<StageIvScreenUninstallRequest>(requestJson);
+        var paths = request.Payload.Paths
+            ?? throw new JsonException("IV Screen uninstall paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var result = ivScreenEditSessionService.StageUninstall(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            ProjectBridgeMapper.ToCore(paths),
             session);
         var response = SwShBridgeMapper.ToIvScreenUninstallDto(result);
 

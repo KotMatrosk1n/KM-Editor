@@ -3608,26 +3608,32 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchIvScreenStageValidatePlanAndApplyWritesLayeredMain()
+    public void DispatchIvScreenInstallAndUninstallLifecycleWritesThenDeletesLayeredMain()
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
         temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
         var dispatcher = new ProjectBridgeDispatcher();
 
         var loadJson = SerializeRequest(
             KmCommandNames.LoadIvScreenWorkflow,
-            new LoadIvScreenWorkflowRequest(temp.Paths),
+            new LoadIvScreenWorkflowRequest(paths),
             requestId: "request-iv-screen-load");
         var loadResponse = DeserializeResponse<LoadIvScreenWorkflowResponse>(dispatcher.Dispatch(loadJson));
         Assert.Null(loadResponse.Error);
         Assert.NotNull(loadResponse.Payload);
         Assert.Equal("available", loadResponse.Payload.Workflow.InstallStatus);
+        Assert.Equal("A3B75BCD3311385AEED67FBEEB79CBB7BF02F471", loadResponse.Payload.Workflow.BuildId);
+        Assert.Equal(ProjectGameDto.Sword, loadResponse.Payload.Workflow.DetectedGame);
+        Assert.Equal("main.text+0x0138A2B4", loadResponse.Payload.Workflow.PrimaryValueSourceOffsetHex);
+        Assert.Equal("main.text+0x0138B3AC", loadResponse.Payload.Workflow.XToggleRefreshOffsetHex);
+        Assert.False(loadResponse.Payload.Workflow.CanUninstall);
 
         var stageJson = SerializeRequest(
             KmCommandNames.StageIvScreenInstall,
-            new StageIvScreenInstallRequest(temp.Paths, Session: null),
+            new StageIvScreenInstallRequest(paths, Session: null),
             requestId: "request-iv-screen-stage");
         var stageResponse = DeserializeResponse<StageIvScreenInstallResponse>(dispatcher.Dispatch(stageJson));
         Assert.Null(stageResponse.Error);
@@ -3640,7 +3646,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var validateJson = SerializeRequest(
             KmCommandNames.ValidateEditSession,
-            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            new ValidateEditSessionRequest(paths, stageResponse.Payload.Session),
             requestId: "request-iv-screen-validate");
         var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
         Assert.Null(validateResponse.Error);
@@ -3649,7 +3655,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var planJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            new CreateChangePlanRequest(paths, stageResponse.Payload.Session),
             requestId: "request-iv-screen-plan");
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
         Assert.Null(planResponse.Error);
@@ -3661,7 +3667,7 @@ public sealed class ProjectBridgeDispatcherTests
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(
-                temp.Paths,
+                paths,
                 stageResponse.Payload.Session,
                 planResponse.Payload.ChangePlan),
             requestId: "request-iv-screen-apply");
@@ -3678,6 +3684,8 @@ public sealed class ProjectBridgeDispatcherTests
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var outputText = NsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        Assert.Equal(0x7100143Fu, ReadInstruction(outputText, 0x00779070));
+        Assert.Equal(0xA9BE4FF4u, ReadInstruction(outputText, 0x007790D0));
         Assert.Equal(0x94001F27u, ReadInstruction(outputText, 0x0137F634));
         Assert.Equal(0x9400023Eu, ReadInstruction(outputText, 0x0138F268));
         Assert.Equal(0x97CFA48Eu, ReadInstruction(outputText, 0x0138FBE8));
@@ -3706,6 +3714,93 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(reloadResponse.Error);
         Assert.NotNull(reloadResponse.Payload);
         Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
+        Assert.True(reloadResponse.Payload.Workflow.CanUninstall);
+
+        var uninstallStageJson = SerializeRequest(
+            KmCommandNames.StageIvScreenUninstall,
+            new StageIvScreenUninstallRequest(paths, Session: null),
+            requestId: "request-iv-screen-uninstall-stage");
+        var uninstallStageResponse = DeserializeResponse<StageIvScreenUninstallResponse>(
+            dispatcher.Dispatch(uninstallStageJson));
+        Assert.Null(uninstallStageResponse.Error);
+        Assert.NotNull(uninstallStageResponse.Payload);
+        var uninstallEdit = Assert.Single(uninstallStageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.ivScreen", uninstallEdit.Domain);
+        Assert.Equal("iv-screen-v1-uninstall", uninstallEdit.RecordId);
+        Assert.DoesNotContain(
+            uninstallStageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var uninstallValidateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(paths, uninstallStageResponse.Payload.Session),
+            requestId: "request-iv-screen-uninstall-validate");
+        var uninstallValidateResponse = DeserializeResponse<ValidateEditSessionResponse>(
+            dispatcher.Dispatch(uninstallValidateJson));
+        Assert.Null(uninstallValidateResponse.Error);
+        Assert.NotNull(uninstallValidateResponse.Payload);
+        Assert.True(uninstallValidateResponse.Payload.IsValid);
+
+        var uninstallPlanJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, uninstallStageResponse.Payload.Session),
+            requestId: "request-iv-screen-uninstall-plan");
+        var uninstallPlanResponse = DeserializeResponse<CreateChangePlanResponse>(
+            dispatcher.Dispatch(uninstallPlanJson));
+        Assert.Null(uninstallPlanResponse.Error);
+        Assert.NotNull(uninstallPlanResponse.Payload);
+        Assert.True(uninstallPlanResponse.Payload.ChangePlan.CanApply);
+        var uninstallWrite = Assert.Single(uninstallPlanResponse.Payload.ChangePlan.Writes);
+        Assert.Equal(SwShIvScreenWorkflowService.ExeFsMainPath, uninstallWrite.TargetRelativePath);
+        Assert.True(uninstallWrite.ReplacesExistingOutput);
+
+        var uninstallApplyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                uninstallStageResponse.Payload.Session,
+                uninstallPlanResponse.Payload.ChangePlan),
+            requestId: "request-iv-screen-uninstall-apply");
+        var uninstallApplyResponse = DeserializeResponse<ApplyChangePlanResponse>(
+            dispatcher.Dispatch(uninstallApplyJson));
+        Assert.Null(uninstallApplyResponse.Error);
+        Assert.NotNull(uninstallApplyResponse.Payload);
+        Assert.DoesNotContain(
+            uninstallApplyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            uninstallApplyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShIvScreenWorkflowService.ExeFsMainPath);
+        Assert.False(File.Exists(outputMainPath));
+
+        var uninstalledReloadResponse = DeserializeResponse<LoadIvScreenWorkflowResponse>(
+            dispatcher.Dispatch(loadJson));
+        Assert.Null(uninstalledReloadResponse.Error);
+        Assert.NotNull(uninstalledReloadResponse.Payload);
+        Assert.Equal("available", uninstalledReloadResponse.Payload.Workflow.InstallStatus);
+        Assert.False(uninstalledReloadResponse.Payload.Workflow.CanUninstall);
+    }
+
+    [Theory]
+    [InlineData(
+        "{\"command\":\"ivScreen.load\",\"payload\":{\"paths\":null},\"requestId\":\"request-iv-screen-load-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"ivScreen.load\",\"payload\":{},\"requestId\":\"request-iv-screen-load-missing-paths\"}")]
+    [InlineData(
+        "{\"command\":\"ivScreen.install.stage\",\"payload\":{\"paths\":null,\"session\":null},\"requestId\":\"request-iv-screen-install-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"ivScreen.install.stage\",\"payload\":{\"session\":null},\"requestId\":\"request-iv-screen-install-missing-paths\"}")]
+    [InlineData(
+        "{\"command\":\"ivScreen.uninstall.stage\",\"payload\":{\"paths\":null,\"session\":null},\"requestId\":\"request-iv-screen-uninstall-null-paths\"}")]
+    [InlineData(
+        "{\"command\":\"ivScreen.uninstall.stage\",\"payload\":{\"session\":null},\"requestId\":\"request-iv-screen-uninstall-missing-paths\"}")]
+    public void DispatchIvScreenCommandsWithNullOrMissingPathsReturnInvalidJson(string requestJson)
+    {
+        var response = DeserializeResponse<object>(new ProjectBridgeDispatcher().Dispatch(requestJson));
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.invalidJson", response.Error.Code);
     }
 
     [Fact]

@@ -4272,6 +4272,15 @@ h2 {
   min-width: 474px;
 }
 
+.exefs-row.iv-screen-range-row-static:not(.exefs-row-heading) {
+  cursor: default;
+}
+
+.exefs-row.iv-screen-range-row-static:not(.exefs-row-heading):hover {
+  color: var(--color-text);
+  background: #121b2d;
+}
+
 .catch-cap-row {
   grid-template-columns: minmax(132px, 0.85fr) 92px minmax(150px, 0.95fr) minmax(96px, 0.55fr) minmax(116px, 0.65fr);
   min-width: 650px;

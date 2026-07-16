@@ -914,6 +914,266 @@ describe('LocalizationProvider', () => {
     }
   });
 
+  it('includes IV Screen UI, status, and diagnostic templates in every language', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals,
+      zh: zhResource.literals
+    };
+    const requiredLiterals = [
+      'IV Screen V1',
+      'Primary value source',
+      'X-toggle refresh',
+      'Applied IV Screen changes to the configured LayeredFS output root.',
+      'Base exefs/main is not a selected-game vanilla IV Screen source. {detail}',
+      'ExeFS main sources could not be verified for IV Screen: {error}',
+      'ExeFS main could not be read for IV Screen verification.',
+      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. Install and uninstall touch only exact IV Screen-owned bytes.',
+      "Install or refresh IV Screen's reviewed Pokemon Summary raw-IV display graph in exefs/main.",
+      'IV Screen cannot inspect the effective exefs/main.',
+      'IV Screen cannot inspect the hook because the base and effective exefs/main sources could not be verified as compatible.',
+      'IV Screen cannot inspect the hook because an exefs/main source could not be read.',
+      'IV Screen cannot load until Pokemon Sword or Pokemon Shield is selected.',
+      'IV Screen cannot stage while exefs/main has a foreign or conflicting Pokemon Summary graph.',
+      'IV Screen cannot verify the selected-game vanilla base exefs/main.',
+      'IV Screen is installed with the exact initial Sword hook layout. Reinstall migrates it, while uninstall safely restores only its historical regions.',
+      'IV Screen is not installed.',
+      'IV Screen marker bytes are present, but the complete marker reservation is damaged or contains unowned data.',
+      'IV Screen patching rejected {segment} because its required NSO header hash does not match the decompressed segment.',
+      'IV Screen prepared apply received a noncanonical pending edit.',
+      'IV Screen prepared apply requires exactly one canonical pending edit.',
+      'IV Screen requires exactly one canonical pending edit.',
+      'IV Screen requires Pokemon Sword or Pokemon Shield to be selected before it can load.',
+      'IV Screen requires valid base RomFS and base ExeFS paths before it can load.',
+      'IV Screen requires a verified selected-game vanilla base exefs/main before it can edit or restore the effective source.',
+      'IV Screen source, vanilla base, or output target could not be resolved.',
+      'IV Screen sources changed while preparing the verified apply snapshot.',
+      'IV Screen uninstall could not prepare a verified restoration: {error}',
+      'IV Screen uninstall could not resolve the reviewed generated and vanilla base exefs/main files.',
+      'IV Screen uninstall requires an exact current or exact supported legacy install.',
+      'IV Screen verified output could not be prepared: {error}',
+      'Pending edit does not target the canonical IV Screen install or uninstall record.',
+      'Pending IV Screen action payload must be exactly true.',
+      'Pending IV Screen edit does not have the canonical staged summary.',
+      'Pending IV Screen sources do not match the canonical selected-game base, effective main, and action fingerprint.',
+      'Pokemon Summary IV Screen hook sites are already modified and do not contain the IV Screen marker.',
+      'Stage IV Screen install or refresh.',
+      'Stage IV Screen install or uninstall before validating.',
+      'Uninstall the exact recognized IV Screen graph from exefs/main while preserving unrelated supported ExeFS edits.',
+      'IV Screen apply requires a configured output root.',
+      'Base ExeFS main could not be resolved from the project graph.',
+      'Effective ExeFS main could not be resolved from the project graph.',
+      'Legacy IV Screen uninstall remains available, but migration is unavailable: {error}',
+      'Exact legacy IV Screen uninstall remains available, but migration is blocked: {error}',
+      'IV Screen is installed with the exact initial Sword hook layout. Uninstall remains available, but migration is unavailable because {error}',
+      'IV Screen is not installed, but installation is blocked because {error}',
+      'IV Screen legacy migration is unavailable. {detail}',
+      'IV Screen cannot stage while exefs/main has a foreign or conflicting Pokemon Summary hook graph.',
+      'IV Screen install preflight could not resolve the effective exefs/main.',
+      'IV Screen install or legacy migration is unavailable: {error}',
+      'IV Screen install preflight could not read exefs/main: {error}',
+      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. Install and uninstall touch only IV Screen reserved bytes.',
+      "Install or refresh IV Screen's independent Pokemon Summary raw-IV hook in exefs/main.",
+      'Uninstall IV Screen from exefs/main while preserving Catch Cap and Royal Candy ExeFS bytes when present.',
+      'IV Screen can patch exefs/main.',
+      'IV Screen cannot inspect the hook because exefs/main cannot be read.',
+      'IV Screen cannot inspect the hook because exefs/main could not be read.',
+      'IV Screen cannot inspect the hook because exefs/main is missing.',
+      'IV Screen cannot load until project paths validate.',
+      'IV Screen cannot stage while exefs/main has a foreign or conflicting Pokemon Summary hook.',
+      'IV Screen install is staged for change-plan review.',
+      'IV Screen install requires valid base paths and a valid output root.',
+      'IV Screen is installed. Reinstalling refreshes the existing raw-IV summary hooks and marker instead of adding a second hook.',
+      'IV Screen is installed with an older hook layout. Reinstalling migrates it to the IV-owned summary value-source hooks.',
+      'IV Screen is not installed in the current project output.',
+      'IV Screen is not installed. Installing adds independent Pokemon Summary stats and X-mode raw-IV value hooks.',
+      'IV Screen marker is present, but the owned Pokemon Summary hook sites do not match a supported IV Screen layout.',
+      'IV Screen needs its own edit session before staging.',
+      'IV Screen needs its own edit session before staging uninstall.',
+      'IV Screen source or output target could not be resolved.',
+      'IV Screen supports Sword and Shield 1.3.2 exefs/main files. This build ID is not recognized.',
+      'IV Screen target must stay inside the configured output root.',
+      'IV Screen uninstall can only remove a generated LayeredFS exefs/main.',
+      'IV Screen uninstall is staged for change-plan review.',
+      'IV Screen uninstall requires valid base paths and a valid output root.',
+      'IV Screen uninstall target no longer exists. Review the change plan again before applying.',
+      'Pending IV Screen change is valid for change-plan review.',
+      'Reviewed IV Screen change plan is stale. Review the change plan again before applying.',
+      'Stage IV Screen install.',
+      'Stage IV Screen uninstall.',
+      'Uninstalled IV Screen from the configured LayeredFS output root.',
+      'IV Screen change plan preview contains {count} target file(s).',
+      "Pending edit domain '{domain}' is not supported by IV Screen.",
+      "Pending IV Screen edit '{recordId}' is not supported.",
+      'IV Screen reserved slot {offset} is not empty.',
+      'IV Screen expected vanilla {site} at {offset}, but found {actual}.',
+      'IV Screen expected vanilla or owned {site} at {offset}.',
+      'IV Screen expected vanilla or owned {site} at {offset}, but found {actual}.',
+      'IV Screen source file could not be patched: {error}',
+      'IV Screen output file could not be written: {error}',
+      'IV Screen uninstall could not restore exefs/main: {error}',
+      'IV Screen uninstall could not update the output file: {error}'
+    ];
+
+    const missingEntries = Object.entries(localizedResources).flatMap(([language, literals]) =>
+      requiredLiterals
+        .filter((literal) => !literals[literal])
+        .map((literal) => `${language}:literal:${literal}`)
+    );
+
+    expect(missingEntries).toEqual([]);
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        "Pending edit domain 'workflow.items' is not supported by IV Screen."
+      )
+    ).toBe("Pantalla de IV no admite el dominio de edición pendiente 'workflow.items'.");
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'IV Screen change plan preview contains 2 target file(s).'
+      )
+    ).toContain('2');
+    expect(
+      translateLiteralForLanguage(
+        'zh',
+        'IV Screen reserved slot main.text+0x1391704 is not empty.'
+      )
+    ).toBe('个体值界面保留位置main.text+0x1391704不为空。');
+    expect(
+      translateLiteralForLanguage(
+        'fr',
+        'IV Screen output file could not be written: access denied'
+      )
+    ).toContain('access denied');
+
+    const mismatch =
+      'Selected Pokemon Sword, but exefs/main build ID is Pokemon Shield 1.3.2. IV Screen will not patch this file because Sword and Shield use different Pokemon Summary hook sites.';
+    for (const language of ['en', 'de', 'es', 'fr', 'ru', 'uk', 'zh'] as const) {
+      const translated = translateLiteralForLanguage(language, mismatch);
+      expect(translated).toContain('1.3.2');
+      expect(translated).toContain(translateLiteralForLanguage(language, 'Pokemon Sword'));
+      expect(translated).toContain(translateLiteralForLanguage(language, 'Pokemon Shield'));
+      if (language !== 'en') {
+        expect(translated).not.toBe(mismatch);
+      }
+    }
+  });
+
+  it('localizes all 140 live IV Screen reserved labels and the Shield suffix', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals,
+      zh: zhResource.literals
+    };
+    const templates = [
+      'IV Screen legacy normal graph value source {index}',
+      'IV Screen legacy normal stats graph refresh hook branch site',
+      'IV Screen legacy secondary-stats setup hook branch site',
+      'IV Screen legacy summary renderer wrapper call {index}',
+      'IV Screen legacy summary renderer wrapper primary call',
+      'IV Screen legacy value-pane visibility flag',
+      'IV Screen legacy value-pane visibility mask',
+      'IV Screen legacy X-mode sparkle value source {index}',
+      'IV Screen legacy X-toggle yellow graph bypass branch',
+      'IV Screen marker/version fragment {index}',
+      'IV Screen multi-chart HP text value source {index}',
+      'IV Screen multi-chart stat source {index}',
+      'IV Screen multi-chart stat text value source {index}',
+      'IV Screen wrapper cave slot {index}',
+      'IV Screen X-mode value-pane visibility {index}',
+      'IV Screen X-toggle numeric text pane visibility {index}',
+      'IV Screen X-toggle stats refresh call',
+      'IV Screen yellow graph raw value site {index}',
+      '{label} (Shield)'
+    ];
+    const indexedLabels = (
+      prefix: string,
+      start: number,
+      count: number,
+      pad = true
+    ) => Array.from({ length: count }, (_, offset) => ({
+      index: pad ? String(start + offset).padStart(2, '0') : String(start + offset),
+      label: `${prefix} ${pad ? String(start + offset).padStart(2, '0') : start + offset}`
+    }));
+    const liveLabels: Array<{ index?: string; label: string }> = [
+      ...indexedLabels('IV Screen legacy normal graph value source', 1, 8),
+      { label: 'IV Screen legacy normal stats graph refresh hook branch site' },
+      { label: 'IV Screen legacy secondary-stats setup hook branch site' },
+      ...indexedLabels('IV Screen legacy summary renderer wrapper call', 2, 2),
+      { label: 'IV Screen legacy summary renderer wrapper primary call' },
+      { label: 'IV Screen legacy value-pane visibility flag' },
+      { label: 'IV Screen legacy value-pane visibility mask' },
+      ...indexedLabels('IV Screen legacy X-mode sparkle value source', 1, 6),
+      { label: 'IV Screen legacy X-toggle yellow graph bypass branch' },
+      ...indexedLabels('IV Screen marker/version fragment', 1, 2, false),
+      ...indexedLabels('IV Screen multi-chart HP text value source', 1, 2),
+      ...indexedLabels('IV Screen multi-chart stat source', 1, 12),
+      ...indexedLabels('IV Screen multi-chart stat text value source', 1, 5),
+      ...indexedLabels('IV Screen wrapper cave slot', 1, 76),
+      ...indexedLabels('IV Screen X-mode value-pane visibility', 1, 6),
+      ...indexedLabels('IV Screen X-toggle numeric text pane visibility', 1, 8),
+      { label: 'IV Screen X-toggle stats refresh call' },
+      ...indexedLabels('IV Screen yellow graph raw value site', 1, 6)
+    ];
+
+    expect(liveLabels).toHaveLength(140);
+    expect(new Set(liveLabels.map(({ label }) => label)).size).toBe(140);
+    for (const [language, literals] of Object.entries(localizedResources)) {
+      for (const template of templates) {
+        const translation = literals[template];
+        expect(translation, `${language}:${template}`).toBeTruthy();
+        const placeholders = template.match(/\{(?:index|label)\}/g) ?? [];
+        const translatedPlaceholders = translation?.match(/\{(?:index|label)\}/g) ?? [];
+        expect(translatedPlaceholders, `${language}:${template}:placeholders`).toEqual(placeholders);
+      }
+      expect(literals['{label} (Shield)']?.startsWith('{label}')).toBe(true);
+    }
+
+    for (const language of ['en', 'de', 'es', 'fr', 'ru', 'uk', 'zh'] as const) {
+      for (const { index, label } of liveLabels) {
+        const translated = translateLiteralForLanguage(language, label);
+        const translatedShield = translateLiteralForLanguage(language, `${label} (Shield)`);
+        if (index) {
+          expect(translated, `${language}:${label}:index`).toContain(index);
+        }
+        expect(translatedShield, `${language}:${label}:Shield-order`).toMatch(
+          new RegExp(`^${translated.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+        );
+        if (language !== 'en') {
+          expect(translated, `${language}:${label}`).not.toBe(label);
+          expect(translatedShield, `${language}:${label}:Shield`).not.toBe(`${label} (Shield)`);
+        }
+      }
+    }
+  });
+
+  it('recursively localizes IV Screen migration dependency details', () => {
+    const diagnostic =
+      'IV Screen legacy migration is unavailable. Exact legacy IV Screen uninstall remains available, but migration is blocked: IV Screen expected vanilla raw IV getter at main.text+0x779070, but found 0x00000000.';
+    const translated = translateLiteralForLanguage('es', diagnostic);
+
+    expect(translated).toContain('main.text+0x779070');
+    expect(translated).toContain('0x00000000');
+    expect(translated).toContain(esResource.literals['raw IV getter']);
+    expect(translated).not.toContain('legacy migration is unavailable');
+    expect(translated).not.toContain('raw IV getter');
+    expect(
+      translateLiteralForLanguage(
+        'fr',
+        'IV Screen install preflight could not read exefs/main: access denied'
+      )
+    ).toContain('access denied');
+  });
+
   it('localizes German static and dynamic UI phrases', () => {
     expect(translateKeyForLanguage('de', 'settings.language.title')).toBe(
       'Sprache und Lokalisierung'

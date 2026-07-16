@@ -64,7 +64,10 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var exeFs = Record(measurements, "exefsPatches.load", () => workflowService.LoadExeFsPatches(temp.Paths));
         var bagHook = Record(measurements, "bagHook.load", () => workflowService.LoadBagHook(temp.Paths));
         var catchCap = Record(measurements, "catchCap.load", () => workflowService.LoadCatchCap(temp.Paths));
-        var ivScreen = Record(measurements, "ivScreen.load", () => workflowService.LoadIvScreen(temp.Paths));
+        var ivScreen = Record(
+            measurements,
+            "ivScreen.load",
+            () => workflowService.LoadIvScreen(temp.Paths with { SelectedGame = ProjectGame.Sword }));
         var gymUniformRemoval = Record(measurements, "gymUniformRemoval.load", () => workflowService.LoadGymUniformRemoval(temp.Paths));
         var shinyRate = Record(measurements, "shinyRate.load", () => workflowService.LoadShinyRate(temp.Paths));
         var typeChart = Record(measurements, "typeChart.load", () => workflowService.LoadTypeChart(temp.Paths));

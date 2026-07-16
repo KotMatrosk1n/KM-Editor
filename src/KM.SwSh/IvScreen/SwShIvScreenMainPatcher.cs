@@ -13,6 +13,7 @@ namespace KM.SwSh.IvScreen;
 internal enum SwShIvScreenInstallKind
 {
     NotInstalled,
+    NotInstalledDependencyConflict,
     InstalledV1,
     InstalledLegacyV1,
     UnsupportedBuild,
@@ -25,25 +26,32 @@ internal sealed record SwShIvScreenAnalysis(
     SwShIvScreenInstallKind Kind,
     string Message,
     string BuildId,
-    string PatchOffsetHex,
+    string PrimaryValueSourceOffsetHex,
+    string XToggleRefreshOffsetHex,
     ProjectGame? DetectedGame);
 
 internal static class SwShIvScreenMainPatcher
 {
     public const int LegacySecondaryStatsHookSiteOffset = 0x0137F634;
     public const int LegacyNormalStatsGraphHookSiteOffset = 0x0138F268;
-    public const int ExeFsHookSiteOffset = 0x0138FBE8;
+    public const int PrimaryValueSourceOffset = 0x0138A2B4;
+    public const int XToggleRefreshOffset = 0x0138B3AC;
     public const int VanillaSecondaryStatsSetupOffset = 0x013872D0;
     public const int SelectedPokemonResolverOffset = 0x01385A70;
     public const int RawIvGetterOffset = 0x00779070;
     public const int HyperTrainingIvWrapperOffset = 0x007790D0;
-    public const int ShieldExeFsHookSiteOffset = ExeFsHookSiteOffset + ShieldOffsetDelta;
+    public const int ShieldPrimaryValueSourceOffset = PrimaryValueSourceOffset + ShieldOffsetDelta;
+    public const int ShieldXToggleRefreshOffset = XToggleRefreshOffset + ShieldOffsetDelta;
 
     private const int CalculatedStatGetterOffset = 0x00778E20;
     private const int NormalStatsGraphRendererOffset = 0x0138FB60;
     private const int ValueWrapperSlotOffset = 0x0138F324;
     private const int LegacyHpIvWrapperSlotOffset = 0x01390204;
     private const int RenderWrapperSlotOffset = 0x01390204;
+    private const int InitialRenderWrapperContinueSlotOffset = 0x01390BE4;
+    private const int InitialRenderWrapperReturnSlotOffset = 0x01391114;
+    private const int InitialMultiChartRendererOffset = 0x0138A1A0;
+    private const int InitialForceValuePaneVisibilityOffset = 0x0138B1E0;
     private const int XYellowStateRequestBranchOffset = 0x0139FB60;
     private const int SummaryMultiChartRefreshOffset = 0x0138A1A0;
     private const int SummaryTextHpCurrentGetterOffset = 0x0077AFD0;
@@ -70,6 +78,13 @@ internal static class SwShIvScreenMainPatcher
     private const uint RawIvGetterEntry = 0x7100143F;
     private const uint CalculatedStatGetterEntry = 0xA9BF7BFD;
     private const uint NormalStatsGraphRendererEntry = 0xD10243FF;
+    private const uint SummaryTextHpCurrentGetterEntry = 0xF81E0FF3;
+    private const uint SummaryTextHpMaxGetterEntry = 0xF81E0FF3;
+    private const uint SummaryTextStatGetterEntry = 0x7100143F;
+    private const uint SummaryGraphAlternateStatGetterEntry = 0xA9BF7BFD;
+    private const uint SummaryMultiChartRefreshEntry = 0xD10503FF;
+    private const uint XToggleRefreshReturnEntry = 0xA9457BFD;
+    private const uint InitialForceValuePaneVisibilityEntry = 0xD10183FF;
     private const uint VanillaValuePaneVisibilityLoadInstruction = 0x39592408;
     private const uint VanillaValuePaneVisibilityInvertInstruction = 0x52000108;
     private const uint VanillaXYellowStateRequestInstruction = 0x340000A8;
@@ -200,7 +215,22 @@ internal static class SwShIvScreenMainPatcher
         (0x0138FEA0, 0x97CFA3E0),
     ];
 
-    private static readonly int[] PayloadSlotOffsets =
+    private static readonly (int Offset, uint[] Instructions)[] InitialValueWrapperSlots =
+    [
+        (0x0138F324, [0x7100003F, 0x54007400, 0x140000F6]),
+        (0x0138F704, [0x7100043F, 0x54005500, 0x14000016]),
+        (0x0138F764, [0x7100083F, 0x54005200, 0x14000086]),
+        (0x0138F984, [0x71000C3F, 0x54003D80, 0x14000072]),
+        (0x0138FB54, [0x7100103F, 0x54003280, 0x14000126]),
+        (0x0138FFF4, [0x7100143F, 0x54000D80, 0x14000016]),
+        (0x01390054, [0x7100183F, 0x54000780, 0x14000002]),
+        (0x01390064, [0x71001C3F, 0x54000680, 0x14000032]),
+        (0x01390134, [0x17CFA33B, 0x52800001, 0x14000002]),
+        (0x01390144, [0x17CFA3CB, 0x52800061, 0x14000016]),
+        (0x013901A4, [0x17CFA3B3, 0x17CFA3B2, NopInstruction]),
+    ];
+
+    private static readonly int[] InitialPayloadSlotOffsets =
     [
         0x0138F324,
         0x0138F704,
@@ -213,18 +243,18 @@ internal static class SwShIvScreenMainPatcher
         0x01390134,
         0x01390144,
         0x013901A4,
-        0x01390204,
-        0x01390BE4,
-        0x01391114,
-        0x013912F4,
-        0x01391304,
-        0x013916F4,
-        0x01391704,
-        0x01391734,
-        0x01391744,
-        0x01392854,
-        0x01392864,
+        RenderWrapperSlotOffset,
+        InitialRenderWrapperContinueSlotOffset,
+        InitialRenderWrapperReturnSlotOffset,
     ];
+
+    private static readonly int[] PayloadSlotOffsets =
+        SwShExeFsReservedRegionLedger
+            .MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerIvScreen)
+            .Where(region => region.FeatureId.StartsWith("iv-screen-cave-", StringComparison.Ordinal))
+            .Select(region => region.StartOffset!.Value)
+            .Order()
+            .ToArray();
 
     private static readonly int[] MarkerFragmentOffsets =
     [
@@ -245,14 +275,16 @@ internal static class SwShIvScreenMainPatcher
         try
         {
             var nso = NsoFile.Parse(mainBytes);
+            ValidateRequiredSegmentHashes(nso);
             var buildId = FormatBuildId(nso.BuildId);
-            var layout = FindLayout(buildId);
+            var layout = FindLayout(nso.BuildId);
             if (layout is null)
             {
                 return new SwShIvScreenAnalysis(
                     SwShIvScreenInstallKind.UnsupportedBuild,
                     "IV Screen supports Sword and Shield 1.3.2 exefs/main files. This build ID is not recognized.",
                     buildId,
+                    "unknown",
                     "unknown",
                     DetectedGame: null);
             }
@@ -266,35 +298,66 @@ internal static class SwShIvScreenMainPatcher
             var text = nso.Text.DecompressedData;
             EnsureRequiredRanges(text, layout);
 
-            var hasMarker = HasMarker(text, layout);
-            if (hasMarker)
+            var hasMarkerPrefix = HasMarkerPrefix(text, layout);
+            if (hasMarkerPrefix)
             {
+                if (!HasExactMarker(text, layout))
+                {
+                    return CreateAnalysis(
+                        SwShIvScreenInstallKind.Conflict,
+                        "IV Screen marker bytes are present, but the complete marker reservation is damaged or contains unowned data.",
+                        buildId,
+                        layout);
+                }
+
                 if (IsInstalledV1(text, layout))
                 {
-                    return new SwShIvScreenAnalysis(
+                    var dependencyError = GetDependencyError(text, layout, initialLegacy: false);
+                    if (dependencyError is not null)
+                    {
+                        return CreateAnalysis(
+                            SwShIvScreenInstallKind.Conflict,
+                            dependencyError,
+                            buildId,
+                            layout);
+                    }
+
+                    return CreateAnalysis(
                         SwShIvScreenInstallKind.InstalledV1,
                         "IV Screen is installed. Reinstalling refreshes the existing raw-IV summary hooks and marker instead of adding a second hook.",
                         buildId,
-                        FormatTextOffset(layout.ExeFsHookSiteOffset),
-                        layout.Game);
+                        layout);
                 }
 
                 if (IsLegacyInstall(text, layout))
                 {
-                    return new SwShIvScreenAnalysis(
+                    var dependencyError = GetDependencyError(text, layout, initialLegacy: true);
+                    if (dependencyError is not null)
+                    {
+                        return CreateAnalysis(
+                            SwShIvScreenInstallKind.Conflict,
+                            dependencyError,
+                            buildId,
+                            layout);
+                    }
+
+                    var migrationDependencyError = GetDependencyError(text, layout, initialLegacy: false);
+                    var legacyMessage = migrationDependencyError is null
+                        ? "IV Screen is installed with the exact initial Sword hook layout. Reinstall migrates it, while uninstall safely restores only its historical regions."
+                        : $"IV Screen is installed with the exact initial Sword hook layout. Uninstall remains available, but migration is unavailable because {migrationDependencyError}";
+
+                    return CreateAnalysis(
                         SwShIvScreenInstallKind.InstalledLegacyV1,
-                        "IV Screen is installed with an older hook layout. Reinstalling migrates it to the IV-owned summary value-source hooks.",
+                        legacyMessage,
                         buildId,
-                        FormatTextOffset(layout.ExeFsHookSiteOffset),
-                        layout.Game);
+                        layout);
                 }
 
-                return new SwShIvScreenAnalysis(
+                return CreateAnalysis(
                     SwShIvScreenInstallKind.Conflict,
                     "IV Screen marker is present, but the owned Pokemon Summary hook sites do not match a supported IV Screen layout.",
                     buildId,
-                    FormatTextOffset(layout.ExeFsHookSiteOffset),
-                    layout.Game);
+                    layout);
             }
 
             if (AllVanilla(text, layout))
@@ -302,36 +365,44 @@ internal static class SwShIvScreenMainPatcher
                 var occupiedSlot = FindOccupiedOwnedSlot(text, layout);
                 if (occupiedSlot is not null)
                 {
-                    return new SwShIvScreenAnalysis(
+                    return CreateAnalysis(
                         SwShIvScreenInstallKind.Conflict,
                         string.Create(
                             CultureInfo.InvariantCulture,
                             $"IV Screen reserved slot main.text+0x{occupiedSlot.Value:X} is not empty."),
                         buildId,
-                        FormatTextOffset(layout.ExeFsHookSiteOffset),
-                        layout.Game);
+                        layout);
                 }
 
-                return new SwShIvScreenAnalysis(
+                var dependencyError = GetDependencyError(text, layout, initialLegacy: false);
+                if (dependencyError is not null)
+                {
+                    return CreateAnalysis(
+                        SwShIvScreenInstallKind.NotInstalledDependencyConflict,
+                        $"IV Screen is not installed, but installation is blocked because {dependencyError}",
+                        buildId,
+                        layout);
+                }
+
+                return CreateAnalysis(
                     SwShIvScreenInstallKind.NotInstalled,
                     "IV Screen is not installed. Installing adds independent Pokemon Summary stats and X-mode raw-IV value hooks.",
                     buildId,
-                    FormatTextOffset(layout.ExeFsHookSiteOffset),
-                    layout.Game);
+                    layout);
             }
 
-            return new SwShIvScreenAnalysis(
+            return CreateAnalysis(
                 AnyBranchLikeAtOwnedHookSite(text, layout) ? SwShIvScreenInstallKind.ForeignPatch : SwShIvScreenInstallKind.Conflict,
                 "Pokemon Summary IV Screen hook sites are already modified and do not contain the IV Screen marker.",
                 buildId,
-                FormatTextOffset(layout.ExeFsHookSiteOffset),
-                layout.Game);
+                layout);
         }
         catch (InvalidDataException exception)
         {
             return new SwShIvScreenAnalysis(
                 SwShIvScreenInstallKind.Conflict,
                 exception.Message,
+                "unknown",
                 "unknown",
                 "unknown",
                 DetectedGame: null);
@@ -344,6 +415,7 @@ internal static class SwShIvScreenMainPatcher
 
         var analysis = Analyze(mainBytes, expectedGame);
         if (analysis.Kind is SwShIvScreenInstallKind.UnsupportedBuild
+            or SwShIvScreenInstallKind.NotInstalledDependencyConflict
             or SwShIvScreenInstallKind.GameMismatch
             or SwShIvScreenInstallKind.ForeignPatch
             or SwShIvScreenInstallKind.Conflict)
@@ -352,7 +424,8 @@ internal static class SwShIvScreenMainPatcher
         }
 
         var nso = NsoFile.Parse(mainBytes);
-        var layout = FindLayout(FormatBuildId(nso.BuildId))
+        ValidateRequiredSegmentHashes(nso);
+        var layout = FindLayout(nso.BuildId)
             ?? throw new InvalidDataException("IV Screen supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
         EnsureRequiredRanges(text, layout);
@@ -401,7 +474,9 @@ internal static class SwShIvScreenMainPatcher
         WriteNumericTextPaneRefresh(text, layout);
         WriteXToggleRefresh(text, layout);
 
-        return nso.Write(textDecompressedData: text);
+        var output = nso.Write(textDecompressedData: text);
+        VerifyApplyOutput(mainBytes, output, layout, expectedGame);
+        return output;
     }
 
     public static byte[] RestoreFromBase(
@@ -414,43 +489,53 @@ internal static class SwShIvScreenMainPatcher
 
         var currentNso = NsoFile.Parse(currentMainBytes);
         var baseNso = NsoFile.Parse(baseMainBytes);
-        var currentBuildId = FormatBuildId(currentNso.BuildId);
-        var baseBuildId = FormatBuildId(baseNso.BuildId);
-        if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("IV Screen restore requires current and base main NSO files with the same build ID.");
-        }
+        ValidateRequiredSegmentHashes(currentNso);
+        ValidateRequiredSegmentHashes(baseNso);
+        EnsureSameBuildAndLayout(currentNso, baseNso, "IV Screen restore");
 
-        var layout = FindLayout(baseBuildId)
+        var currentBuildId = FormatBuildId(currentNso.BuildId);
+        var layout = FindLayout(baseNso.BuildId)
             ?? throw new InvalidDataException("IV Screen restore requires a supported Sword or Shield 1.3.2 base main NSO.");
-        var mismatch = CreateGameMismatchAnalysis(layout, expectedGame, baseBuildId);
+        var mismatch = CreateGameMismatchAnalysis(layout, expectedGame, currentBuildId);
         if (mismatch is not null)
         {
             throw new InvalidDataException(mismatch.Message);
         }
 
+        var currentAnalysis = Analyze(currentMainBytes, expectedGame);
+        if (currentAnalysis.Kind is not (SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1))
+        {
+            throw new InvalidDataException(
+                $"IV Screen restore requires an exact current or recognized legacy install: {currentAnalysis.Message}");
+        }
+
+        var baseAnalysis = Analyze(baseMainBytes, expectedGame);
+        if (baseAnalysis.Kind != SwShIvScreenInstallKind.NotInstalled)
+        {
+            throw new InvalidDataException(
+                $"{layout.GameName} IV Screen restore expected a verified vanilla base main NSO: {baseAnalysis.Message}");
+        }
+
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
+        var restoredRegions = currentAnalysis.Kind == SwShIvScreenInstallKind.InstalledV1
+            ? WrittenRegions(layout)
+            : LegacyOwnedRegions(layout);
+        foreach (var region in restoredRegions)
         {
-            throw new InvalidDataException("IV Screen restore requires current and base main NSO files with matching .text sizes.");
+            EnsureTextRange(currentText, region.Offset, region.Length, region.Label);
+            EnsureTextRange(baseText, region.Offset, region.Length, $"Base {region.Label}");
+            baseText.AsSpan(region.Offset, region.Length).CopyTo(currentText.AsSpan(region.Offset, region.Length));
         }
 
-        if (!AllVanilla(baseText, layout))
-        {
-            throw new InvalidDataException($"{layout.GameName} IV Screen restore expected a vanilla base main NSO.");
-        }
-
-        foreach (var region in ReservedMainTextRegions(layout.Game))
-        {
-            var offset = region.StartOffset!.Value;
-            var length = region.Length!.Value;
-            EnsureTextRange(currentText, offset, length, region.Label);
-            EnsureTextRange(baseText, offset, length, $"Base {region.Label}");
-            baseText.AsSpan(offset, length).CopyTo(currentText.AsSpan(offset, length));
-        }
-
-        return currentNso.Write(textDecompressedData: currentText);
+        var output = currentNso.Write(textDecompressedData: currentText);
+        VerifyRestoreOutput(
+            currentMainBytes,
+            baseMainBytes,
+            output,
+            restoredRegions,
+            expectedGame);
+        return output;
     }
 
     public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainTextRegions(ProjectGame? game = null)
@@ -466,9 +551,56 @@ internal static class SwShIvScreenMainPatcher
             : CreateReservedRegions(layout);
     }
 
+    internal static void EnsureCompatibleExecutableIdentity(
+        byte[] baseMainBytes,
+        byte[] effectiveMainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(effectiveMainBytes);
+
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        var effectiveNso = NsoFile.Parse(effectiveMainBytes);
+        ValidateRequiredSegmentHashes(baseNso);
+        ValidateRequiredSegmentHashes(effectiveNso);
+        EnsureSameBuildAndLayout(baseNso, effectiveNso, "IV Screen apply");
+    }
+
+    internal static string? GetApplyPreflightError(
+        byte[] mainBytes,
+        ProjectGame? expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(mainBytes);
+
+        try
+        {
+            var analysis = Analyze(mainBytes, expectedGame);
+            if (analysis.Kind is not (SwShIvScreenInstallKind.NotInstalled
+                or SwShIvScreenInstallKind.InstalledV1
+                or SwShIvScreenInstallKind.InstalledLegacyV1))
+            {
+                return analysis.Message;
+            }
+
+            var nso = NsoFile.Parse(mainBytes);
+            ValidateRequiredSegmentHashes(nso);
+            var layout = FindLayout(nso.BuildId)
+                ?? throw new InvalidDataException("IV Screen supports Sword and Shield 1.3.2 exefs/main files.");
+            var text = nso.Text.DecompressedData;
+            EnsureRequiredRanges(text, layout);
+            EnsureAnchors(text, layout);
+            EnsureSlotsAvailableOrOwned(text, layout);
+            return null;
+        }
+        catch (InvalidDataException exception)
+        {
+            return exception.Message;
+        }
+    }
+
     private static bool IsInstalledV1(ReadOnlySpan<byte> text, PatchLayout layout)
     {
-        return ReadInstruction(text, layout.LegacySecondaryStatsHookSiteOffset) == VanillaLegacySecondaryStatsHookInstruction
+        return HasExactMarker(text, layout)
+            && ReadInstruction(text, layout.LegacySecondaryStatsHookSiteOffset) == VanillaLegacySecondaryStatsHookInstruction
             && ReadInstruction(text, layout.LegacyNormalStatsGraphHookSiteOffset) == VanillaLegacyNormalStatsGraphHookInstruction
             && AllInstructionsVanilla(text, layout.NormalGraphValueCallSites)
             && AllBranchLinksToTargets(text, layout.MultiChartStatSourceCallSites)
@@ -480,31 +612,108 @@ internal static class SwShIvScreenMainPatcher
             && AreNumericTextPaneRefreshesWritten(text, layout)
             && IsXToggleRefreshWritten(text, layout)
             && UnsafeSummaryWrapperHooksAreVanilla(text, layout)
-            && AreXModeValueWrappersWritten(text, layout);
+            && AreXModeValueWrappersWritten(text, layout)
+            && InactivePayloadSlotsAreZero(text, layout);
     }
 
     private static bool IsLegacyInstall(ReadOnlySpan<byte> text, PatchLayout layout)
     {
-        return IsBranchLinkTo(ReadInstruction(text, layout.LegacySecondaryStatsHookSiteOffset), layout.LegacySecondaryStatsHookSiteOffset, layout.ValueWrapperSlotOffset)
-            || IsBranchLinkTo(ReadInstruction(text, layout.LegacyNormalStatsGraphHookSiteOffset), layout.LegacyNormalStatsGraphHookSiteOffset, layout.ValueWrapperSlotOffset)
-            || AnyBranchLinkTo(text, layout.NormalGraphValueCallSites, layout.ValueWrapperSlotOffset)
-            || AnyBranchLinkTo(text, layout.MultiChartStatSourceCallSites, RawIvGetterOffset)
-            || AnyBranchLinkToTargets(text, layout.MultiChartStatSourceCallSites)
-            || AnyBranchLinkTo(text, layout.MultiChartTextHpValueCallSites, layout.LegacyHpIvWrapperSlotOffset)
-            || AnyBranchLinkToTargets(text, layout.MultiChartTextHpValueCallSites)
-            || AnyBranchLinkTo(text, layout.MultiChartTextStatValueCallSites, RawIvGetterOffset)
-            || AnyBranchLinkToTargets(text, layout.MultiChartTextStatValueCallSites)
-            || AnyInstructionEqual(text, layout.YellowRawValueAddSites, MovW8W0Instruction)
-            || AnyInstructionEqual(text, layout.YellowRawValueAddSites, MovW8WzrInstruction)
-            || AnyInstructionEqual(text, layout.YellowGraphValueCallSites, MovW0WzrInstruction)
-            || AnyBranchLinkTo(text, layout.YellowGraphValueCallSites, RawIvGetterOffset)
-            || AnyYellowValuePaneVisibilityWritten(text, layout)
-            || AnyNumericTextPaneRefreshWritten(text, layout)
-            || IsXToggleRefreshWritten(text, layout)
-            || AnyBranchLinkTo(text, layout.RendererWrapperCallSites, layout.RenderWrapperSlotOffset)
-            || ReadInstruction(text, layout.ValuePaneVisibilityLoadOffset) == ForceVisibleMovInstruction
-            || ReadInstruction(text, layout.ValuePaneVisibilityMaskOffset) == NopInstruction
-            || ReadInstruction(text, layout.XYellowStateRequestBranchOffset) == XYellowStateBypassInstruction;
+        return layout.Game == ProjectGame.Sword
+            && HasExactMarker(text, layout)
+            && ReadInstruction(text, layout.LegacySecondaryStatsHookSiteOffset) == VanillaLegacySecondaryStatsHookInstruction
+            && ReadInstruction(text, layout.LegacyNormalStatsGraphHookSiteOffset) == VanillaLegacyNormalStatsGraphHookInstruction
+            && AllBranchLinksTo(text, layout.NormalGraphValueCallSites, layout.ValueWrapperSlotOffset)
+            && AllBranchLinksTo(text, layout.MultiChartStatSourceCallSites, RawIvGetterOffset)
+            && AllInstructionsVanilla(text, layout.MultiChartTextHpValueCallSites)
+            && AllInstructionsVanilla(text, layout.MultiChartTextStatValueCallSites)
+            && AllInstructionsEqual(text, layout.YellowRawValueAddSites, MovW8W0Instruction)
+            && AllInstructionsVanilla(text, layout.YellowGraphValueCallSites)
+            && YellowValuePaneVisibilityIsVanilla(text, layout)
+            && NumericTextPaneRefreshesAreVanilla(text, layout)
+            && XToggleRefreshIsVanilla(text, layout)
+            && ReadInstruction(text, layout.ValuePaneVisibilityLoadOffset) == ForceVisibleMovInstruction
+            && ReadInstruction(text, layout.ValuePaneVisibilityMaskOffset) == NopInstruction
+            && AllBranchLinksTo(text, layout.RendererWrapperCallSites, layout.RenderWrapperSlotOffset)
+            && ReadInstruction(text, layout.XYellowStateRequestBranchOffset) == XYellowStateBypassInstruction
+            && IsInitialValueWrapperWritten(text)
+            && IsInitialRenderWrapperWritten(text)
+            && InitialInactivePayloadSlotsAreZero(text, layout);
+    }
+
+    private static bool IsInitialValueWrapperWritten(ReadOnlySpan<byte> text)
+    {
+        foreach (var slot in InitialValueWrapperSlots)
+        {
+            if (!InstructionsEqual(text, slot.Offset, slot.Instructions))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsInitialRenderWrapperWritten(ReadOnlySpan<byte> text)
+    {
+        return ReadInstruction(text, RenderWrapperSlotOffset + 0x00) == 0xA9BF7BF3
+            && ReadInstruction(text, RenderWrapperSlotOffset + 0x04) == 0xAA0003F3
+            && IsBranchLinkTo(
+                ReadInstruction(text, RenderWrapperSlotOffset + 0x08),
+                RenderWrapperSlotOffset + 0x08,
+                InitialMultiChartRendererOffset)
+            && ReadInstruction(text, InitialRenderWrapperContinueSlotOffset + 0x00) == 0xAA1303E0
+            && IsBranchLinkTo(
+                ReadInstruction(text, InitialRenderWrapperContinueSlotOffset + 0x04),
+                InitialRenderWrapperContinueSlotOffset + 0x04,
+                InitialForceValuePaneVisibilityOffset)
+            && IsBranchTo(
+                ReadInstruction(text, InitialRenderWrapperContinueSlotOffset + 0x08),
+                InitialRenderWrapperContinueSlotOffset + 0x08,
+                InitialRenderWrapperReturnSlotOffset)
+            && ReadInstruction(text, InitialRenderWrapperReturnSlotOffset + 0x00) == 0xA8C17BF3
+            && ReadInstruction(text, InitialRenderWrapperReturnSlotOffset + 0x04) == 0xD65F03C0
+            && ReadInstruction(text, InitialRenderWrapperReturnSlotOffset + 0x08) == NopInstruction;
+    }
+
+    private static bool InitialInactivePayloadSlotsAreZero(ReadOnlySpan<byte> text, PatchLayout layout)
+    {
+        var activeOffsets = InitialPayloadSlotOffsets.ToHashSet();
+        foreach (var slotOffset in layout.PayloadSlotOffsets)
+        {
+            if (!activeOffsets.Contains(slotOffset)
+                && !IsZero(text.Slice(slotOffset, SlotLength)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool InactivePayloadSlotsAreZero(ReadOnlySpan<byte> text, PatchLayout layout)
+    {
+        var activeOffsets = new HashSet<int>
+        {
+            layout.HpCurrentTextWrapperSlotOffset,
+            layout.HpCurrentTextRawSlotOffset,
+            layout.HpMaxTextWrapperSlotOffset,
+            layout.HpMaxTextRawSlotOffset,
+            layout.SummaryStatWrapperSlotOffset,
+            layout.SummaryStatRawSlotOffset,
+            layout.SummaryGraphAlternateWrapperSlotOffset,
+            layout.SummaryGraphAlternateRawSlotOffset,
+        };
+
+        foreach (var slotOffset in layout.PayloadSlotOffsets)
+        {
+            if (!activeOffsets.Contains(slotOffset)
+                && !IsZero(text.Slice(slotOffset, SlotLength)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool AllVanilla(ReadOnlySpan<byte> text, PatchLayout layout)
@@ -1008,7 +1217,7 @@ internal static class SwShIvScreenMainPatcher
         }
     }
 
-    private static bool HasMarker(ReadOnlySpan<byte> text, PatchLayout layout)
+    private static bool HasMarkerPrefix(ReadOnlySpan<byte> text, PatchLayout layout)
     {
         Span<byte> markerBytes = stackalloc byte[Marker.Length];
         var markerIndex = 0;
@@ -1028,6 +1237,45 @@ internal static class SwShIvScreenMainPatcher
         return markerBytes.SequenceEqual(Marker);
     }
 
+    private static bool HasExactMarker(ReadOnlySpan<byte> text, PatchLayout layout)
+    {
+        if (!HasMarkerPrefix(text, layout))
+        {
+            return false;
+        }
+
+        var markerIndex = 0;
+        foreach (var markerOffset in layout.MarkerFragmentOffsets)
+        {
+            var fragmentLength = Math.Min(SlotLength, Marker.Length - markerIndex);
+            if (fragmentLength < SlotLength
+                && !IsZero(text.Slice(markerOffset + fragmentLength, SlotLength - fragmentLength)))
+            {
+                return false;
+            }
+
+            markerIndex += Math.Max(fragmentLength, 0);
+        }
+
+        return true;
+    }
+
+    private static bool AllBranchLinksTo(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction, int WrapperOffset)[] sites,
+        int targetOffset)
+    {
+        foreach (var site in sites)
+        {
+            if (!IsBranchLinkTo(ReadInstruction(text, site.Offset), site.Offset, targetOffset))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static int? FindOccupiedOwnedSlot(ReadOnlySpan<byte> text, PatchLayout layout)
     {
         foreach (var slotOffset in layout.PayloadSlotOffsets.Concat(layout.MarkerFragmentOffsets))
@@ -1044,7 +1292,7 @@ internal static class SwShIvScreenMainPatcher
 
     private static void EnsureSlotsAvailableOrOwned(ReadOnlySpan<byte> text, PatchLayout layout)
     {
-        if (HasMarker(text, layout))
+        if (HasExactMarker(text, layout))
         {
             return;
         }
@@ -1084,11 +1332,17 @@ internal static class SwShIvScreenMainPatcher
                      .Append(layout.LegacySecondaryStatsHookSiteOffset)
                      .Append(layout.LegacyNormalStatsGraphHookSiteOffset)
                      .Append(layout.XToggleRefreshSlot.Offset)
+                     .Append(layout.XToggleRefreshReturnOffset)
                      .Append(layout.XYellowStateRequestBranchOffset)
                      .Append(RawIvGetterOffset)
                      .Append(CalculatedStatGetterOffset)
                      .Append(layout.NormalStatsGraphRendererOffset)
+                     .Append(SummaryTextHpCurrentGetterOffset)
+                     .Append(SummaryTextHpMaxGetterOffset)
+                     .Append(SummaryTextStatGetterOffset)
+                     .Append(SummaryGraphAlternateStatGetterOffset)
                      .Append(layout.SummaryMultiChartRefreshOffset)
+                     .Append(InitialForceValuePaneVisibilityOffset)
                      .Append(layout.ValuePaneVisibilityLoadOffset)
                      .Append(layout.ValuePaneVisibilityMaskOffset))
         {
@@ -1098,9 +1352,7 @@ internal static class SwShIvScreenMainPatcher
 
     private static void EnsureAnchors(ReadOnlySpan<byte> text, PatchLayout layout)
     {
-        EnsureAnchor(text, RawIvGetterOffset, RawIvGetterEntry, "raw IV getter");
-        EnsureAnchor(text, CalculatedStatGetterOffset, CalculatedStatGetterEntry, "calculated stat getter");
-        EnsureAnchor(text, layout.NormalStatsGraphRendererOffset, NormalStatsGraphRendererEntry, "normal stats graph renderer");
+        EnsureActiveDependencyAnchors(text, layout);
 
         if (ReadInstruction(text, layout.LegacySecondaryStatsHookSiteOffset) != VanillaLegacySecondaryStatsHookInstruction
             && !IsBranchLinkTo(ReadInstruction(text, layout.LegacySecondaryStatsHookSiteOffset), layout.LegacySecondaryStatsHookSiteOffset, layout.ValueWrapperSlotOffset))
@@ -1221,6 +1473,66 @@ internal static class SwShIvScreenMainPatcher
                     CultureInfo.InvariantCulture,
                     $"IV Screen expected vanilla or owned X-toggle refresh instructions at main.text+0x{layout.XToggleRefreshSlot.Offset:X}."));
         }
+
+        var valuePaneLoad = ReadInstruction(text, layout.ValuePaneVisibilityLoadOffset);
+        var valuePaneMask = ReadInstruction(text, layout.ValuePaneVisibilityMaskOffset);
+        var xYellowRequest = ReadInstruction(text, layout.XYellowStateRequestBranchOffset);
+        if (valuePaneLoad is not (VanillaValuePaneVisibilityLoadInstruction or ForceVisibleMovInstruction)
+            || valuePaneMask is not (VanillaValuePaneVisibilityInvertInstruction or NopInstruction)
+            || xYellowRequest is not (VanillaXYellowStateRequestInstruction or XYellowStateBypassInstruction))
+        {
+            throw new InvalidDataException("IV Screen expected vanilla or recognized legacy Pokemon Summary visibility controls.");
+        }
+    }
+
+    private static void EnsureActiveDependencyAnchors(ReadOnlySpan<byte> text, PatchLayout layout)
+    {
+        EnsureAnchor(text, RawIvGetterOffset, RawIvGetterEntry, "raw IV getter");
+        EnsureAnchor(text, CalculatedStatGetterOffset, CalculatedStatGetterEntry, "calculated stat getter");
+        EnsureAnchor(text, layout.NormalStatsGraphRendererOffset, NormalStatsGraphRendererEntry, "normal stats graph renderer");
+        EnsureAnchor(text, SummaryTextHpCurrentGetterOffset, SummaryTextHpCurrentGetterEntry, "summary current-HP getter");
+        EnsureAnchor(text, SummaryTextHpMaxGetterOffset, SummaryTextHpMaxGetterEntry, "summary max-HP getter");
+        EnsureAnchor(text, SummaryTextStatGetterOffset, SummaryTextStatGetterEntry, "summary stat getter");
+        EnsureAnchor(text, SummaryGraphAlternateStatGetterOffset, SummaryGraphAlternateStatGetterEntry, "summary alternate-stat getter");
+        EnsureAnchor(text, layout.SummaryMultiChartRefreshOffset, SummaryMultiChartRefreshEntry, "summary multi-chart refresh entry");
+        EnsureAnchor(text, layout.XToggleRefreshReturnOffset, XToggleRefreshReturnEntry, "X-toggle refresh return");
+    }
+
+    private static void EnsureInitialLegacyDependencyAnchors(ReadOnlySpan<byte> text)
+    {
+        EnsureAnchor(text, CalculatedStatGetterOffset, CalculatedStatGetterEntry, "calculated stat getter");
+        EnsureAnchor(text, RawIvGetterOffset, RawIvGetterEntry, "raw IV getter");
+        EnsureAnchor(text, InitialMultiChartRendererOffset, SummaryMultiChartRefreshEntry, "initial multi-chart renderer entry");
+        EnsureAnchor(
+            text,
+            InitialForceValuePaneVisibilityOffset,
+            InitialForceValuePaneVisibilityEntry,
+            "initial value-pane visibility helper");
+        EnsureAnchor(text, NormalStatsGraphRendererOffset, NormalStatsGraphRendererEntry, "normal stats graph renderer");
+    }
+
+    private static string? GetDependencyError(
+        ReadOnlySpan<byte> text,
+        PatchLayout layout,
+        bool initialLegacy)
+    {
+        try
+        {
+            if (initialLegacy)
+            {
+                EnsureInitialLegacyDependencyAnchors(text);
+            }
+            else
+            {
+                EnsureActiveDependencyAnchors(text, layout);
+            }
+
+            return null;
+        }
+        catch (InvalidDataException exception)
+        {
+            return exception.Message;
+        }
     }
 
     private static void EnsureVanillaOrOwnedCall(
@@ -1250,6 +1562,267 @@ internal static class SwShIvScreenMainPatcher
                 $"IV Screen expected vanilla or owned {label} at main.text+0x{offset:X}, but found 0x{actual:X8}."));
     }
 
+    private static void VerifyApplyOutput(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        PatchLayout layout,
+        ProjectGame? expectedGame)
+    {
+        VerifyOutputPreservation(
+            sourceMainBytes,
+            outputMainBytes,
+            WrittenRegions(layout),
+            "IV Screen apply");
+
+        var analysis = Analyze(outputMainBytes, expectedGame);
+        if (analysis.Kind != SwShIvScreenInstallKind.InstalledV1
+            || analysis.DetectedGame != layout.Game)
+        {
+            throw new InvalidDataException(
+                $"IV Screen apply verification did not find the exact current install graph: {analysis.Message}");
+        }
+    }
+
+    private static void VerifyRestoreOutput(
+        byte[] currentMainBytes,
+        byte[] baseMainBytes,
+        byte[] outputMainBytes,
+        IReadOnlyList<PatchRegion> restoredRegions,
+        ProjectGame? expectedGame)
+    {
+        VerifyOutputPreservation(
+            currentMainBytes,
+            outputMainBytes,
+            restoredRegions,
+            "IV Screen restore");
+
+        var analysis = Analyze(outputMainBytes, expectedGame);
+        if (analysis.Kind is not (SwShIvScreenInstallKind.NotInstalled
+            or SwShIvScreenInstallKind.NotInstalledDependencyConflict))
+        {
+            throw new InvalidDataException(
+                $"IV Screen restore verification did not return the exact vanilla install surface: {analysis.Message}");
+        }
+
+        var baseText = NsoFile.Parse(baseMainBytes).Text.DecompressedData;
+        var outputText = NsoFile.Parse(outputMainBytes).Text.DecompressedData;
+        foreach (var region in restoredRegions)
+        {
+            if (!baseText.AsSpan(region.Offset, region.Length)
+                .SequenceEqual(outputText.AsSpan(region.Offset, region.Length)))
+            {
+                throw new InvalidDataException(
+                    $"IV Screen restore verification found a mismatched {region.Label}.");
+            }
+        }
+    }
+
+    private static void VerifyOutputPreservation(
+        byte[] sourceMainBytes,
+        byte[] outputMainBytes,
+        IReadOnlyList<PatchRegion> writtenRegions,
+        string operation)
+    {
+        var source = NsoFile.Parse(sourceMainBytes);
+        var output = NsoFile.Parse(outputMainBytes);
+        ValidateRequiredSegmentHashes(source);
+        ValidateRequiredSegmentHashes(output);
+        EnsureSameBuildAndLayout(source, output, operation);
+        VerifyPreservedSegment(source.Ro, output.Ro, ".ro", operation);
+        VerifyPreservedSegment(source.Data, output.Data, ".data", operation);
+        VerifyTextOutsideRegions(
+            source.Text.DecompressedData,
+            output.Text.DecompressedData,
+            writtenRegions,
+            operation);
+    }
+
+    private static void EnsureSameBuildAndLayout(NsoFile left, NsoFile right, string operation)
+    {
+        if (left.Version != right.Version
+            || left.Flags != right.Flags
+            || !left.BuildId.SequenceEqual(right.BuildId))
+        {
+            throw new InvalidDataException(
+                $"{operation} requires matching NSO version, flags, and full 32-byte build identity.");
+        }
+
+        if (!SwShExeFsMainComparison.StableHeaderBytesMatch(left.RawHeader, right.RawHeader))
+        {
+            throw new InvalidDataException($"{operation} requires matching stable NSO header metadata.");
+        }
+
+        for (var index = 0; index < left.Segments.Count; index++)
+        {
+            var leftSegment = left.Segments[index];
+            var rightSegment = right.Segments[index];
+            if (leftSegment.Header.MemoryOffset != rightSegment.Header.MemoryOffset
+                || leftSegment.Header.DecompressedSize != rightSegment.Header.DecompressedSize
+                || leftSegment.DecompressedData.Length != rightSegment.DecompressedData.Length)
+            {
+                throw new InvalidDataException(
+                    $"{operation} requires matching {leftSegment.Name} memory offsets and decompressed sizes.");
+            }
+        }
+    }
+
+    private static void VerifyPreservedSegment(
+        NsoSegment source,
+        NsoSegment output,
+        string segmentName,
+        string operation)
+    {
+        if (source.Header.MemoryOffset != output.Header.MemoryOffset
+            || source.Header.DecompressedSize != output.Header.DecompressedSize
+            || source.CompressedSize != output.CompressedSize
+            || !source.Hash.SequenceEqual(output.Hash)
+            || !source.CompressedData.SequenceEqual(output.CompressedData)
+            || !source.DecompressedData.SequenceEqual(output.DecompressedData))
+        {
+            throw new InvalidDataException($"{operation} verification found a changed {segmentName} segment.");
+        }
+    }
+
+    private static void VerifyTextOutsideRegions(
+        ReadOnlySpan<byte> sourceText,
+        ReadOnlySpan<byte> outputText,
+        IReadOnlyList<PatchRegion> writtenRegions,
+        string operation)
+    {
+        if (sourceText.Length != outputText.Length)
+        {
+            throw new InvalidDataException($"{operation} verification found a changed .text size.");
+        }
+
+        var cursor = 0;
+        foreach (var region in writtenRegions.OrderBy(region => region.Offset))
+        {
+            EnsureTextRange(sourceText, region.Offset, region.Length, region.Label);
+            if (region.Offset < cursor)
+            {
+                throw new InvalidDataException($"{operation} has overlapping written-region definitions.");
+            }
+
+            if (!sourceText.Slice(cursor, region.Offset - cursor)
+                .SequenceEqual(outputText.Slice(cursor, region.Offset - cursor)))
+            {
+                throw new InvalidDataException(
+                    $"{operation} verification found a change outside IV Screen written ranges before {region.Label}.");
+            }
+
+            cursor = region.Offset + region.Length;
+        }
+
+        if (!sourceText[cursor..].SequenceEqual(outputText[cursor..]))
+        {
+            throw new InvalidDataException(
+                $"{operation} verification found a change outside IV Screen written ranges after the final region.");
+        }
+    }
+
+    private static void ValidateRequiredSegmentHashes(NsoFile nso)
+    {
+        ValidateRequiredSegmentHash(nso.Text, nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        ValidateRequiredSegmentHash(nso.Ro, nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        ValidateRequiredSegmentHash(nso.Data, nso.Flags.HasFlag(NsoFlags.CheckHashData));
+    }
+
+    private static void ValidateRequiredSegmentHash(NsoSegment segment, bool required)
+    {
+        if (required && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
+        {
+            throw new InvalidDataException(
+                $"IV Screen patching rejected {segment.Name} because its required NSO header hash does not match the decompressed segment.");
+        }
+    }
+
+    private static IReadOnlyList<PatchRegion> WrittenRegions(PatchLayout layout)
+    {
+        var regions = new List<PatchRegion>();
+        regions.AddRange(layout.PayloadSlotOffsets.Select(offset =>
+            new PatchRegion(offset, SlotLength, $"IV Screen payload slot main.text+0x{offset:X}")));
+        regions.AddRange(layout.MarkerFragmentOffsets.Select(offset =>
+            new PatchRegion(offset, SlotLength, $"IV Screen marker slot main.text+0x{offset:X}")));
+        regions.Add(new PatchRegion(layout.LegacySecondaryStatsHookSiteOffset, sizeof(uint), "IV Screen legacy secondary hook site"));
+        regions.Add(new PatchRegion(layout.LegacyNormalStatsGraphHookSiteOffset, sizeof(uint), "IV Screen legacy normal graph hook site"));
+        AddInstructionSites(regions, layout.NormalGraphValueCallSites.Select(site => site.Offset), "normal graph value source");
+        AddInstructionSites(regions, layout.MultiChartStatSourceCallSites.Select(site => site.Offset), "multi-chart stat source");
+        AddInstructionSites(regions, layout.MultiChartTextHpValueCallSites.Select(site => site.Offset), "multi-chart HP text source");
+        AddInstructionSites(regions, layout.MultiChartTextStatValueCallSites.Select(site => site.Offset), "multi-chart stat text source");
+        AddInstructionSites(regions, layout.YellowRawValueAddSites.Select(site => site.Offset), "X-mode raw value");
+        AddInstructionSites(regions, layout.YellowGraphValueCallSites.Select(site => site.Offset), "X-mode graph value");
+        regions.AddRange(layout.YellowValuePaneVisibilitySlots.Select(slot =>
+            new PatchRegion(slot.Offset, slot.PatchedInstructions.Length * sizeof(uint), "X-mode pane visibility")));
+        AddInstructionSites(regions, layout.NumericTextPaneRefreshSites.Select(site => site.Offset), "numeric pane refresh");
+        regions.Add(new PatchRegion(layout.XToggleRefreshSlot.Offset, 3 * sizeof(uint), "X-toggle refresh"));
+        AddInstructionSites(regions, layout.RendererWrapperCallSites.Select(site => site.Offset), "legacy renderer wrapper call");
+        regions.Add(new PatchRegion(layout.ValuePaneVisibilityLoadOffset, sizeof(uint), "legacy pane visibility load"));
+        regions.Add(new PatchRegion(layout.ValuePaneVisibilityMaskOffset, sizeof(uint), "legacy pane visibility mask"));
+        regions.Add(new PatchRegion(layout.XYellowStateRequestBranchOffset, sizeof(uint), "legacy X-mode yellow bypass"));
+        return NormalizeRegions(regions);
+    }
+
+    private static IReadOnlyList<PatchRegion> LegacyOwnedRegions(PatchLayout layout)
+    {
+        var regions = new List<PatchRegion>();
+        regions.AddRange(InitialPayloadSlotOffsets.Select(offset =>
+            new PatchRegion(offset, SlotLength, $"Initial IV Screen payload slot main.text+0x{offset:X}")));
+        regions.AddRange(layout.MarkerFragmentOffsets.Select(offset =>
+            new PatchRegion(offset, SlotLength, $"Initial IV Screen marker slot main.text+0x{offset:X}")));
+        regions.Add(new PatchRegion(layout.LegacySecondaryStatsHookSiteOffset, sizeof(uint), "Initial IV Screen secondary hook site"));
+        regions.Add(new PatchRegion(layout.LegacyNormalStatsGraphHookSiteOffset, sizeof(uint), "Initial IV Screen normal graph hook site"));
+        AddInstructionSites(regions, layout.NormalGraphValueCallSites.Select(site => site.Offset), "initial normal graph source");
+        AddInstructionSites(regions, layout.MultiChartStatSourceCallSites.Select(site => site.Offset), "initial multi-chart stat source");
+        AddInstructionSites(regions, layout.YellowRawValueAddSites.Select(site => site.Offset), "initial X-mode raw value");
+        AddInstructionSites(regions, layout.RendererWrapperCallSites.Select(site => site.Offset), "initial renderer wrapper call");
+        regions.Add(new PatchRegion(layout.ValuePaneVisibilityLoadOffset, sizeof(uint), "initial pane visibility load"));
+        regions.Add(new PatchRegion(layout.ValuePaneVisibilityMaskOffset, sizeof(uint), "initial pane visibility mask"));
+        regions.Add(new PatchRegion(layout.XYellowStateRequestBranchOffset, sizeof(uint), "initial X-mode yellow bypass"));
+        return NormalizeRegions(regions);
+    }
+
+    private static void AddInstructionSites(
+        ICollection<PatchRegion> regions,
+        IEnumerable<int> offsets,
+        string label)
+    {
+        foreach (var offset in offsets)
+        {
+            regions.Add(new PatchRegion(offset, sizeof(uint), $"IV Screen {label} main.text+0x{offset:X}"));
+        }
+    }
+
+    private static IReadOnlyList<PatchRegion> NormalizeRegions(IEnumerable<PatchRegion> regions)
+    {
+        var ordered = regions.OrderBy(region => region.Offset).ToArray();
+        if (ordered.Length == 0)
+        {
+            return Array.Empty<PatchRegion>();
+        }
+
+        var normalized = new List<PatchRegion>(ordered.Length);
+        var current = ordered[0];
+        foreach (var next in ordered.Skip(1))
+        {
+            var currentEnd = current.Offset + current.Length;
+            if (next.Offset <= currentEnd)
+            {
+                current = current with
+                {
+                    Length = Math.Max(currentEnd, next.Offset + next.Length) - current.Offset,
+                    Label = "IV Screen merged owned region",
+                };
+                continue;
+            }
+
+            normalized.Add(current);
+            current = next;
+        }
+
+        normalized.Add(current);
+        return normalized;
+    }
+
     private static SwShIvScreenAnalysis? CreateGameMismatchAnalysis(
         PatchLayout layout,
         ProjectGame? expectedGame,
@@ -1266,14 +1839,52 @@ internal static class SwShIvScreenMainPatcher
                 CultureInfo.InvariantCulture,
                 $"Selected {FormatGame(expectedGame.Value)}, but exefs/main build ID is {layout.GameName}. IV Screen will not patch this file because Sword and Shield use different Pokemon Summary hook sites."),
             buildId,
-            FormatTextOffset(layout.ExeFsHookSiteOffset),
+            FormatTextOffset(layout.PrimaryValueSourceOffset),
+            FormatTextOffset(layout.XToggleRefreshSlot.Offset),
             layout.Game);
     }
 
-    private static PatchLayout? FindLayout(string buildId)
+    private static SwShIvScreenAnalysis CreateAnalysis(
+        SwShIvScreenInstallKind kind,
+        string message,
+        string buildId,
+        PatchLayout layout)
     {
-        return Layouts.FirstOrDefault(layout =>
-            string.Equals(layout.BuildId, buildId, StringComparison.OrdinalIgnoreCase));
+        return new SwShIvScreenAnalysis(
+            kind,
+            message,
+            buildId,
+            FormatTextOffset(layout.PrimaryValueSourceOffset),
+            FormatTextOffset(layout.XToggleRefreshSlot.Offset),
+            layout.Game);
+    }
+
+    private static PatchLayout? FindLayout(ReadOnlySpan<byte> buildId)
+    {
+        foreach (var layout in Layouts)
+        {
+            if (IsCanonicalBuildId(buildId, layout.BuildId))
+            {
+                return layout;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsCanonicalBuildId(ReadOnlySpan<byte> buildId, string expectedPrefixHex)
+    {
+        const int nsoBuildIdLength = 0x20;
+        const int knownBuildIdLength = 0x14;
+        if (buildId.Length != nsoBuildIdLength)
+        {
+            return false;
+        }
+
+        var expectedPrefix = Convert.FromHexString(expectedPrefixHex);
+        return expectedPrefix.Length == knownBuildIdLength
+            && buildId[..knownBuildIdLength].SequenceEqual(expectedPrefix)
+            && IsZero(buildId[knownBuildIdLength..]);
     }
 
     private static string FormatBuildId(byte[] buildId)
@@ -1297,20 +1908,10 @@ internal static class SwShIvScreenMainPatcher
         };
     }
 
-    private static IReadOnlyList<SwShExeFsReservedRegion> CreateReservedRegions(PatchLayout layout)
-    {
-        return SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerIvScreen)
-            .Select(region => new SwShExeFsReservedRegion(
-                region.Owner,
-                region.FeatureId,
-                region.RelativePath,
-                region.Area,
-                region.StartOffset is null ? null : region.StartOffset.Value + layout.Shift,
-                region.Length,
-                region.Label,
-                region.Rule))
-            .ToArray();
-    }
+    private static IReadOnlyList<SwShExeFsReservedRegion> CreateReservedRegions(PatchLayout layout) =>
+        SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerIvScreen,
+            layout.Game);
 
     private static void EnsureAnchor(ReadOnlySpan<byte> text, int offset, uint expectedInstruction, string label)
     {
@@ -1380,6 +1981,12 @@ internal static class SwShIvScreenMainPatcher
         return DecodeBranchTarget(instruction, sourceOffset) == targetOffset;
     }
 
+    private static bool IsBranchTo(uint instruction, int sourceOffset, int targetOffset)
+    {
+        return (instruction & 0xFC000000) == 0x14000000
+            && DecodeBranchTarget(instruction, sourceOffset) == targetOffset;
+    }
+
     private static int DecodeBranchTarget(uint instruction, int sourceOffset)
     {
         var imm26 = (int)(instruction & 0x03FFFFFF);
@@ -1447,6 +2054,8 @@ internal static class SwShIvScreenMainPatcher
         return opcode | (uint)(imm26 & 0x03FFFFFF);
     }
 
+    private sealed record PatchRegion(int Offset, int Length, string Label);
+
     private sealed record PatchLayout(
         ProjectGame Game,
         string GameName,
@@ -1455,7 +2064,7 @@ internal static class SwShIvScreenMainPatcher
     {
         public int LegacySecondaryStatsHookSiteOffset => ShiftOffset(SwShIvScreenMainPatcher.LegacySecondaryStatsHookSiteOffset);
         public int LegacyNormalStatsGraphHookSiteOffset => ShiftOffset(SwShIvScreenMainPatcher.LegacyNormalStatsGraphHookSiteOffset);
-        public int ExeFsHookSiteOffset => ShiftOffset(SwShIvScreenMainPatcher.ExeFsHookSiteOffset);
+        public int PrimaryValueSourceOffset => ShiftOffset(SwShIvScreenMainPatcher.PrimaryValueSourceOffset);
         public int VanillaSecondaryStatsSetupOffset => ShiftOffset(SwShIvScreenMainPatcher.VanillaSecondaryStatsSetupOffset);
         public int SelectedPokemonResolverOffset => ShiftOffset(SwShIvScreenMainPatcher.SelectedPokemonResolverOffset);
         public int NormalStatsGraphRendererOffset => ShiftOffset(SwShIvScreenMainPatcher.NormalStatsGraphRendererOffset);

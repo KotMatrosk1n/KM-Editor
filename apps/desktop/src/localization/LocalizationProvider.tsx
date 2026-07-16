@@ -107,6 +107,81 @@ const pokemonTypeLiteralKeys = new Set([
   'Fairy'
 ]);
 
+const ivScreenReservedRegionPatterns = [
+  {
+    pattern: /^IV Screen legacy secondary-stats setup hook branch site$/,
+    template: 'IV Screen legacy secondary-stats setup hook branch site'
+  },
+  {
+    pattern: /^IV Screen legacy normal stats graph refresh hook branch site$/,
+    template: 'IV Screen legacy normal stats graph refresh hook branch site'
+  },
+  {
+    pattern: /^IV Screen legacy normal graph value source (\d{2})$/,
+    template: 'IV Screen legacy normal graph value source {index}'
+  },
+  {
+    pattern: /^IV Screen multi-chart HP text value source (\d{2})$/,
+    template: 'IV Screen multi-chart HP text value source {index}'
+  },
+  {
+    pattern: /^IV Screen multi-chart stat text value source (\d{2})$/,
+    template: 'IV Screen multi-chart stat text value source {index}'
+  },
+  {
+    pattern: /^IV Screen multi-chart stat source (\d{2})$/,
+    template: 'IV Screen multi-chart stat source {index}'
+  },
+  {
+    pattern: /^IV Screen yellow graph raw value site (\d{2})$/,
+    template: 'IV Screen yellow graph raw value site {index}'
+  },
+  {
+    pattern: /^IV Screen legacy X-mode sparkle value source (\d{2})$/,
+    template: 'IV Screen legacy X-mode sparkle value source {index}'
+  },
+  {
+    pattern: /^IV Screen X-mode value-pane visibility (\d{2})$/,
+    template: 'IV Screen X-mode value-pane visibility {index}'
+  },
+  {
+    pattern: /^IV Screen X-toggle numeric text pane visibility (\d{2})$/,
+    template: 'IV Screen X-toggle numeric text pane visibility {index}'
+  },
+  {
+    pattern: /^IV Screen X-toggle stats refresh call$/,
+    template: 'IV Screen X-toggle stats refresh call'
+  },
+  {
+    pattern: /^IV Screen legacy value-pane visibility flag$/,
+    template: 'IV Screen legacy value-pane visibility flag'
+  },
+  {
+    pattern: /^IV Screen legacy value-pane visibility mask$/,
+    template: 'IV Screen legacy value-pane visibility mask'
+  },
+  {
+    pattern: /^IV Screen legacy summary renderer wrapper primary call$/,
+    template: 'IV Screen legacy summary renderer wrapper primary call'
+  },
+  {
+    pattern: /^IV Screen legacy summary renderer wrapper call (\d{2})$/,
+    template: 'IV Screen legacy summary renderer wrapper call {index}'
+  },
+  {
+    pattern: /^IV Screen legacy X-toggle yellow graph bypass branch$/,
+    template: 'IV Screen legacy X-toggle yellow graph bypass branch'
+  },
+  {
+    pattern: /^IV Screen wrapper cave slot (\d{2})$/,
+    template: 'IV Screen wrapper cave slot {index}'
+  },
+  {
+    pattern: /^IV Screen marker\/version fragment (\d+)$/,
+    template: 'IV Screen marker/version fragment {index}'
+  }
+] as const;
+
 const defaultLocalizationContext: LocalizationContextValue = {
   language: 'en',
   setLanguage: () => undefined,
@@ -892,6 +967,177 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
   if (catchCapFailureMatch) {
     return formatLiteralTemplate(language, `${catchCapFailureMatch[1]}: {error}`, {
       error: translateLiteralBodyForLanguage(language, catchCapFailureMatch[2])
+    });
+  }
+
+  const ivScreenGameMismatchMatch =
+    /^Selected (Pokemon Sword|Pokemon Shield), but exefs\/main build ID is (Pokemon Sword|Pokemon Shield) (1\.3\.2)\. IV Screen will not patch this file because Sword and Shield use different Pokemon Summary hook sites\.$/.exec(
+      literal
+    );
+  if (ivScreenGameMismatchMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Selected {selectedGame}, but exefs/main build ID is {detectedGame}. IV Screen will not patch this file because Sword and Shield use different Pokemon Summary hook sites.',
+      {
+        detectedGame: `${translateLiteralBodyForLanguage(
+          language,
+          ivScreenGameMismatchMatch[2]
+        )} ${ivScreenGameMismatchMatch[3]}`,
+        selectedGame: translateLiteralBodyForLanguage(language, ivScreenGameMismatchMatch[1])
+      }
+    );
+  }
+
+  const ivScreenInvalidBaseMatch =
+    /^Base exefs\/main is not a selected-game vanilla IV Screen source\. (.+)$/.exec(literal);
+  if (ivScreenInvalidBaseMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Base exefs/main is not a selected-game vanilla IV Screen source. {detail}',
+      { detail: translateLiteralBodyForLanguage(language, ivScreenInvalidBaseMatch[1]) }
+    );
+  }
+
+  const ivScreenSegmentHashMatch =
+    /^IV Screen patching rejected (.+) because its required NSO header hash does not match the decompressed segment\.$/.exec(
+      literal
+    );
+  if (ivScreenSegmentHashMatch) {
+    return formatLiteralTemplate(
+      language,
+      'IV Screen patching rejected {segment} because its required NSO header hash does not match the decompressed segment.',
+      { segment: ivScreenSegmentHashMatch[1] }
+    );
+  }
+
+  const ivScreenReservedRegionMatch = /^(.*?)( \(Shield\))?$/.exec(literal);
+  if (ivScreenReservedRegionMatch) {
+    for (const { pattern, template } of ivScreenReservedRegionPatterns) {
+      const labelMatch = pattern.exec(ivScreenReservedRegionMatch[1]);
+      if (!labelMatch) {
+        continue;
+      }
+
+      const translatedLabel = formatLiteralTemplate(
+        language,
+        template,
+        labelMatch[1] === undefined ? undefined : { index: labelMatch[1] }
+      );
+      return ivScreenReservedRegionMatch[2]
+        ? formatLiteralTemplate(language, '{label} (Shield)', { label: translatedLabel })
+        : translatedLabel;
+    }
+  }
+
+  const ivScreenPendingDomainMatch =
+    /^Pending edit domain '(.+)' is not supported by IV Screen\.$/.exec(literal);
+  if (ivScreenPendingDomainMatch) {
+    return formatLiteralTemplate(
+      language,
+      "Pending edit domain '{domain}' is not supported by IV Screen.",
+      { domain: ivScreenPendingDomainMatch[1] }
+    );
+  }
+
+  const ivScreenPendingEditMatch =
+    /^Pending IV Screen edit '(.+)' is not supported\.$/.exec(literal);
+  if (ivScreenPendingEditMatch) {
+    return formatLiteralTemplate(
+      language,
+      "Pending IV Screen edit '{recordId}' is not supported.",
+      { recordId: ivScreenPendingEditMatch[1] }
+    );
+  }
+
+  const ivScreenPlanCountMatch =
+    /^IV Screen change plan preview contains ([\d,]+) target file\(s\)\.$/.exec(literal);
+  if (ivScreenPlanCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      'IV Screen change plan preview contains {count} target file(s).',
+      { count: ivScreenPlanCountMatch[1] }
+    );
+  }
+
+  const ivScreenReservedSlotMatch =
+    /^IV Screen reserved slot (main\.text\+0x[\dA-F]+) is not empty\.$/.exec(literal);
+  if (ivScreenReservedSlotMatch) {
+    return formatLiteralTemplate(language, 'IV Screen reserved slot {offset} is not empty.', {
+      offset: ivScreenReservedSlotMatch[1]
+    });
+  }
+
+  const ivScreenExpectedValueMatch =
+    /^IV Screen expected (vanilla or owned|vanilla) (.+) at (main\.text\+0x[\dA-F]+), but found (0x[\dA-F]+)\.$/.exec(
+      literal
+    );
+  if (ivScreenExpectedValueMatch) {
+    const template = ivScreenExpectedValueMatch[1] === 'vanilla'
+      ? 'IV Screen expected vanilla {site} at {offset}, but found {actual}.'
+      : 'IV Screen expected vanilla or owned {site} at {offset}, but found {actual}.';
+    return formatLiteralTemplate(language, template, {
+      actual: ivScreenExpectedValueMatch[4],
+      offset: ivScreenExpectedValueMatch[3],
+      site: translateLiteralBodyForLanguage(language, ivScreenExpectedValueMatch[2])
+    });
+  }
+
+  const ivScreenExpectedSiteMatch =
+    /^IV Screen expected vanilla or owned (.+) at (main\.text\+0x[\dA-F]+)\.$/.exec(literal);
+  if (ivScreenExpectedSiteMatch) {
+    return formatLiteralTemplate(
+      language,
+      'IV Screen expected vanilla or owned {site} at {offset}.',
+      {
+        offset: ivScreenExpectedSiteMatch[2],
+        site: translateLiteralBodyForLanguage(language, ivScreenExpectedSiteMatch[1])
+      }
+    );
+  }
+
+  const ivScreenNestedErrorPatterns = [
+    {
+      pattern: /^Legacy IV Screen uninstall remains available, but migration is unavailable: (.+)$/,
+      template: 'Legacy IV Screen uninstall remains available, but migration is unavailable: {error}'
+    },
+    {
+      pattern: /^Exact legacy IV Screen uninstall remains available, but migration is blocked: (.+)$/,
+      template: 'Exact legacy IV Screen uninstall remains available, but migration is blocked: {error}'
+    },
+    {
+      pattern: /^IV Screen is installed with the exact initial Sword hook layout\. Uninstall remains available, but migration is unavailable because (.+)$/,
+      template: 'IV Screen is installed with the exact initial Sword hook layout. Uninstall remains available, but migration is unavailable because {error}'
+    },
+    {
+      pattern: /^IV Screen is not installed, but installation is blocked because (.+)$/,
+      template: 'IV Screen is not installed, but installation is blocked because {error}'
+    },
+    {
+      pattern: /^IV Screen legacy migration is unavailable\. (.+)$/,
+      template: 'IV Screen legacy migration is unavailable. {detail}'
+    },
+    {
+      pattern: /^IV Screen install or legacy migration is unavailable: (.+)$/,
+      template: 'IV Screen install or legacy migration is unavailable: {error}'
+    }
+  ] as const;
+  for (const { pattern, template } of ivScreenNestedErrorPatterns) {
+    const match = pattern.exec(literal);
+    if (match) {
+      return formatLiteralTemplate(language, template, {
+        [template.endsWith('{detail}') ? 'detail' : 'error']:
+          translateLiteralBodyForLanguage(language, match[1])
+      });
+    }
+  }
+
+  const ivScreenFailureMatch =
+    /^(ExeFS main sources could not be verified for IV Screen|IV Screen install preflight could not read exefs\/main|IV Screen source file could not be patched|IV Screen output file could not be written|IV Screen uninstall could not restore exefs\/main|IV Screen uninstall could not update the output file|IV Screen verified output could not be prepared|IV Screen uninstall could not prepare a verified restoration): (.+)$/.exec(
+      literal
+    );
+  if (ivScreenFailureMatch) {
+    return formatLiteralTemplate(language, `${ivScreenFailureMatch[1]}: {error}`, {
+      error: translateLiteralBodyForLanguage(language, ivScreenFailureMatch[2])
     });
   }
 
