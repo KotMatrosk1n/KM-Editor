@@ -11,6 +11,7 @@ namespace KM.SwSh.FashionUnlock;
 public sealed class SwShFashionUnlockWorkflowService
 {
     public const string ExeFsMainPath = SwShExeFsPatchWorkflowService.ExeFsMainPath;
+    public const int OwnedByteCount = SwShFashionUnlockMainPatcher.PatchLength * 2;
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -24,6 +25,16 @@ public sealed class SwShFashionUnlockWorkflowService
                     DiagnosticSeverity.Error,
                     "Fashion Unlock requires valid base RomFS and base ExeFS paths before it can load.",
                     expected: "Readable project paths"));
+        }
+
+        if (!IsSupportedGame(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Fashion Unlock requires Pokemon Sword or Pokemon Shield to be selected before it can load.",
+                    expected: "Selected Pokemon Sword or Pokemon Shield project"));
         }
 
         return CreateSummary(project.Health.CanOpenEditableWorkflows
@@ -41,15 +52,16 @@ public sealed class SwShFashionUnlockWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
+            var message = project.Health.CanOpenReadOnlyWorkflows
+                && !IsSupportedGame(project.Paths.SelectedGame)
+                    ? "Fashion Unlock cannot load until Pokemon Sword or Pokemon Shield is selected."
+                    : "Fashion Unlock cannot load until project paths validate.";
             return CreateWorkflow(
                 summary,
                 "disabled",
-                "Fashion Unlock cannot load until project paths validate.",
-                buildId: "unknown",
-                directGetterOffsetHex: "unknown",
-                mappedGetterOffsetHex: "unknown",
-                stubKind: "not inspected",
-                detectedGame: null,
+                message,
+                CreateDefaultAnalysis(),
+                project.Paths.SelectedGame,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
@@ -67,121 +79,171 @@ public sealed class SwShFashionUnlockWorkflowService
                 summary,
                 "blocked",
                 "Fashion Unlock cannot inspect ownership checks because exefs/main is missing.",
-                buildId: "unknown",
-                directGetterOffsetHex: "unknown",
-                mappedGetterOffsetHex: "unknown",
-                stubKind: "not inspected",
-                detectedGame: null,
+                CreateDefaultAnalysis(),
+                project.Paths.SelectedGame,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
         }
 
         provenance = CreateProvenance(entry);
-        var sourcePath = ResolveSourcePath(project.Paths, entry);
-        if (sourcePath is null || !File.Exists(sourcePath))
+        var basePath = ResolveBaseSourcePath(project.Paths, ExeFsMainPath);
+        var effectivePath = ResolveSourcePath(project.Paths, entry);
+        if (basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "ExeFS main could not be resolved from the project graph.",
+                "Base ExeFS main could not be resolved from the project graph.",
                 file: entry.RelativePath,
-                expected: "Readable Sword or Shield 1.3.2 exefs/main NSO"));
+                expected: "Readable selected-game vanilla Sword/Shield exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
-                "Fashion Unlock cannot inspect ownership checks because exefs/main cannot be read.",
-                buildId: "unknown",
-                directGetterOffsetHex: "unknown",
-                mappedGetterOffsetHex: "unknown",
-                stubKind: "not inspected",
-                detectedGame: null,
+                "Fashion Unlock cannot verify the selected-game vanilla base exefs/main.",
+                CreateDefaultAnalysis(),
+                project.Paths.SelectedGame,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
         }
 
+        if (effectivePath is null || !File.Exists(effectivePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Effective ExeFS main could not be resolved from the project graph.",
+                file: entry.RelativePath,
+                expected: "Readable base or LayeredFS exefs/main NSO"));
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Fashion Unlock cannot inspect the effective exefs/main.",
+                CreateDefaultAnalysis(),
+                project.Paths.SelectedGame,
+                provenance,
+                sourceFileCount: 0,
+                diagnostics);
+        }
+
+        SwShFashionUnlockAnalysis baseAnalysis;
+        SwShFashionUnlockAnalysis effectiveAnalysis;
         try
         {
-            var analysis = SwShFashionUnlockMainPatcher.Analyze(
-                File.ReadAllBytes(sourcePath),
-                project.Paths.SelectedGame);
-            if (analysis.Kind is SwShFashionUnlockInstallKind.UnsupportedBuild
-                or SwShFashionUnlockInstallKind.GameMismatch
-                or SwShFashionUnlockInstallKind.Conflict)
+            var baseBytes = File.ReadAllBytes(basePath);
+            baseAnalysis = SwShFashionUnlockMainPatcher.Analyze(baseBytes, project.Paths.SelectedGame);
+            if (PathsReferToSameFile(basePath, effectivePath))
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    analysis.Message,
-                    file: entry.RelativePath,
-                    expected: "Supported Sword or Shield 1.3.2 fashion ownership getter bytes"));
-                return CreateWorkflow(
-                    summary,
-                    "blocked",
-                    analysis.Message,
-                    analysis.BuildId,
-                    analysis.DirectGetterOffsetHex,
-                    analysis.MappedGetterOffsetHex,
-                    analysis.StubKind,
-                    analysis.DetectedGame,
-                    provenance,
-                    sourceFileCount: 1,
-                    diagnostics);
+                effectiveAnalysis = baseAnalysis;
             }
-
-            var installStatus = analysis.Kind == SwShFashionUnlockInstallKind.Installed
-                ? "installed"
-                : summary.Availability == SwShWorkflowAvailability.Available
-                    ? "available"
-                    : "readOnly";
-
-            return CreateWorkflow(
-                summary,
-                installStatus,
-                analysis.Message,
-                analysis.BuildId,
-                analysis.DirectGetterOffsetHex,
-                analysis.MappedGetterOffsetHex,
-                analysis.StubKind,
-                analysis.DetectedGame,
-                provenance,
-                sourceFileCount: 1,
-                diagnostics);
+            else
+            {
+                var effectiveBytes = File.ReadAllBytes(effectivePath);
+                effectiveAnalysis = SwShFashionUnlockMainPatcher.Analyze(
+                    effectiveBytes,
+                    project.Paths.SelectedGame);
+                SwShFashionUnlockMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, effectiveBytes);
+            }
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or OverflowException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"ExeFS main could not be inspected: {exception.Message}",
+                $"ExeFS main sources could not be verified for Fashion Unlock: {exception.Message}",
                 file: entry.RelativePath,
-                expected: "Readable Sword or Shield 1.3.2 exefs/main NSO"));
+                expected: "Readable selected-game base and effective Sword/Shield exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
-                "Fashion Unlock cannot inspect ownership checks because exefs/main could not be read.",
-                buildId: "unknown",
-                directGetterOffsetHex: "unknown",
-                mappedGetterOffsetHex: "unknown",
-                stubKind: "not inspected",
-                detectedGame: null,
+                "Fashion Unlock cannot inspect ownership checks because the base and effective exefs/main sources are not verified as compatible.",
+                CreateDefaultAnalysis(),
+                project.Paths.SelectedGame,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
         }
-    }
 
-    internal static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
-    {
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
-        if (graphEntry is null)
+        var sourcesAreSameFile = PathsReferToSameFile(basePath, effectivePath);
+        var baseIsVerified = baseAnalysis.Kind == SwShFashionUnlockInstallKind.NotInstalled;
+        var effectiveIsVerified = effectiveAnalysis.Kind is SwShFashionUnlockInstallKind.NotInstalled
+            or SwShFashionUnlockInstallKind.Installed;
+        var sourceFileCount = (baseIsVerified ? 1 : 0)
+            + (!sourcesAreSameFile && effectiveIsVerified ? 1 : 0);
+        if (baseAnalysis.Kind != SwShFashionUnlockInstallKind.NotInstalled)
         {
-            return null;
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base exefs/main is not a selected-game vanilla Fashion Unlock source. {baseAnalysis.Message}",
+                file: entry.RelativePath,
+                expected: "Selected-game Sword/Shield 1.3.2 base exefs/main with vanilla Fashion Unlock getter entries"));
+            AddEffectiveAnalysisDiagnostic(effectiveAnalysis, entry.RelativePath, diagnostics);
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Fashion Unlock requires a verified selected-game vanilla base exefs/main before it can install or restore the effective source.",
+                effectiveAnalysis,
+                project.Paths.SelectedGame,
+                provenance,
+                sourceFileCount,
+                diagnostics);
         }
 
-        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
-        return sourcePath is not null && File.Exists(sourcePath)
-            ? new WorkflowFileSource(graphEntry, sourcePath)
-            : null;
+        AddEffectiveAnalysisDiagnostic(effectiveAnalysis, entry.RelativePath, diagnostics);
+        var installStatus = effectiveAnalysis.Kind switch
+        {
+            SwShFashionUnlockInstallKind.Installed => "installed",
+            SwShFashionUnlockInstallKind.NotInstalled => summary.Availability == SwShWorkflowAvailability.Available
+                ? "available"
+                : "readOnly",
+            _ => "blocked",
+        };
+        var canUninstall = summary.Availability == SwShWorkflowAvailability.Available
+            && effectiveAnalysis.Kind == SwShFashionUnlockInstallKind.Installed
+            && entry.LayeredFile is not null
+            && ResolveOutputPath(project.Paths, ExeFsMainPath) is { } outputPath
+            && File.Exists(outputPath);
+
+        return CreateWorkflow(
+            summary,
+            installStatus,
+            effectiveAnalysis.Message,
+            effectiveAnalysis,
+            project.Paths.SelectedGame,
+            provenance,
+            sourceFileCount,
+            diagnostics,
+            canUninstall);
+    }
+
+    internal IReadOnlyList<ProjectFileReference> GetPlanSources(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var entry = FindEntry(project, ExeFsMainPath);
+        if (entry is null)
+        {
+            return Array.Empty<ProjectFileReference>();
+        }
+
+        var sources = new List<ProjectFileReference>(2);
+        if (entry.BaseFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, ExeFsMainPath));
+        }
+
+        if (entry.LayeredFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     internal static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -199,47 +261,75 @@ public sealed class SwShFashionUnlockWorkflowService
         return null;
     }
 
+    internal static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
+    {
+        return targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+            ? CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..])
+            : null;
+    }
+
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
     {
         return SwShExeFsPatchWorkflowService.ResolveOutputPath(paths, targetRelativePath);
+    }
+
+    internal static bool IsSupportedGame(ProjectGame? game)
+    {
+        return game is ProjectGame.Sword or ProjectGame.Shield;
     }
 
     private static SwShFashionUnlockWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         string installStatus,
         string installMessage,
-        string buildId,
-        string directGetterOffsetHex,
-        string mappedGetterOffsetHex,
-        string stubKind,
-        ProjectGame? detectedGame,
+        SwShFashionUnlockAnalysis analysis,
+        ProjectGame? activeGame,
         SwShFashionUnlockProvenance provenance,
         int sourceFileCount,
-        IReadOnlyList<ValidationDiagnostic> diagnostics)
+        IReadOnlyList<ValidationDiagnostic> diagnostics,
+        bool canUninstall = false)
     {
-        var reservedRegions = SwShFashionUnlockMainPatcher.ReservedMainTextRegions()
-            .Select(region => new SwShFashionUnlockReservedRegion(
-                region.FeatureId,
-                region.Label,
-                region.OffsetLabel,
-                region.StartOffset,
-                region.Length,
-                region.Rule))
-            .ToArray();
+        var reservedRegions = !IsSupportedGame(activeGame)
+            ? Array.Empty<SwShFashionUnlockReservedRegion>()
+            : SwShFashionUnlockMainPatcher.ReservedMainTextRegions(activeGame!.Value)
+                .Select(region => new SwShFashionUnlockReservedRegion(
+                    region.FeatureId,
+                    region.Label,
+                    region.OffsetLabel,
+                    region.StartOffset,
+                    region.Length,
+                    region.Rule))
+                .ToArray();
 
         return new SwShFashionUnlockWorkflow(
             summary,
             installStatus,
             installMessage,
-            buildId,
-            directGetterOffsetHex,
-            mappedGetterOffsetHex,
-            stubKind,
-            detectedGame,
+            canUninstall,
+            analysis.BuildId,
+            analysis.DirectGetterOffsetHex,
+            analysis.MappedGetterOffsetHex,
+            analysis.StubKind,
+            analysis.DetectedGame,
             reservedRegions,
             provenance,
-            new SwShFashionUnlockWorkflowStats(reservedRegions.Length, sourceFileCount),
+            new SwShFashionUnlockWorkflowStats(
+                reservedRegions.Length,
+                sourceFileCount,
+                reservedRegions.Sum(region => region.Length ?? 0)),
             diagnostics);
+    }
+
+    private static SwShFashionUnlockAnalysis CreateDefaultAnalysis()
+    {
+        return new SwShFashionUnlockAnalysis(
+            SwShFashionUnlockInstallKind.NotInstalled,
+            "Fashion Unlock is not installed.",
+            BuildId: "unknown",
+            DirectGetterOffsetHex: "unknown",
+            MappedGetterOffsetHex: "unknown",
+            StubKind: "not inspected",
+            DetectedGame: null);
     }
 
     private static ProjectFileGraphEntry? FindEntry(OpenedProject project, string relativePath)
@@ -260,11 +350,10 @@ public sealed class SwShFashionUnlockWorkflowService
 
     private static SwShFashionUnlockProvenance CreateProvenance(ProjectFileGraphEntry entry)
     {
-        var sourceLayer = entry.LayeredFile is not null
-            ? ProjectFileLayer.Layered
-            : ProjectFileLayer.Base;
-
-        return new SwShFashionUnlockProvenance(entry.RelativePath, sourceLayer, entry.State);
+        return new SwShFashionUnlockProvenance(
+            entry.RelativePath,
+            entry.LayeredFile is not null ? ProjectFileLayer.Layered : ProjectFileLayer.Base,
+            entry.State);
     }
 
     private static SwShFashionUnlockProvenance CreateMissingProvenance(string relativePath)
@@ -273,6 +362,33 @@ public sealed class SwShFashionUnlockWorkflowService
             relativePath,
             ProjectFileLayer.Generated,
             ProjectFileGraphEntryState.BaseOnly);
+    }
+
+    private static void AddEffectiveAnalysisDiagnostic(
+        SwShFashionUnlockAnalysis analysis,
+        string relativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (analysis.Kind is not (SwShFashionUnlockInstallKind.UnsupportedBuild
+            or SwShFashionUnlockInstallKind.GameMismatch
+            or SwShFashionUnlockInstallKind.Conflict))
+        {
+            return;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            analysis.Message,
+            file: relativePath,
+            expected: "Selected-game Sword/Shield 1.3.2 effective exefs/main with vanilla Fashion Unlock getter entries or an exact KM install"));
+    }
+
+    private static bool PathsReferToSameFile(string left, string right)
+    {
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
     private static SwShWorkflowSummary CreateSummary(
@@ -301,7 +417,3 @@ public sealed class SwShFashionUnlockWorkflowService
             Expected: expected);
     }
 }
-
-internal sealed record WorkflowFileSource(
-    ProjectFileGraphEntry Entry,
-    string AbsolutePath);

@@ -118,7 +118,6 @@ import {
   type ExeFsPatchRecord,
   type ExeFsPatchWorkflow,
   type ExeFsSegmentRecord,
-  type FashionUnlockWorkflow,
   type FlagRecord,
   type FlagworkSaveWorkflow,
   type CatchCapRecord,
@@ -306,6 +305,10 @@ import {
   type FairyGymBoostSelection,
   type FairyGymBoostsWorkflow
 } from './bridge/fairyGymBoostsContracts';
+import {
+  type FashionUnlockAction,
+  type FashionUnlockWorkflow
+} from './bridge/fashionUnlockContracts';
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import {
@@ -313,6 +316,7 @@ import {
   getCanonicalFairyGymBoostPendingSelections
 } from './features/fairy-gym-boosts/fairyGymBoostsPending';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
+import { getCanonicalFashionUnlockPendingAction } from './features/fashion-unlock/fashionUnlockPending';
 import {
   createCanonicalCatchCapSelections,
   getOwnedCatchCapPendingEdit,
@@ -2125,7 +2129,8 @@ export function App({
   const [isFairyGymBoostsLoading, setIsFairyGymBoostsLoading] = useState(false);
   const [isFairyGymBoostsStaging, setIsFairyGymBoostsStaging] = useState(false);
   const [isFashionUnlockLoading, setIsFashionUnlockLoading] = useState(false);
-  const [isFashionUnlockStaging, setIsFashionUnlockStaging] = useState(false);
+  const [fashionUnlockStagingAction, setFashionUnlockStagingAction] =
+    useState<FashionUnlockAction | null>(null);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
   const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
   const [isHyperspaceBypassLoading, setIsHyperspaceBypassLoading] = useState(false);
@@ -4866,47 +4871,95 @@ export function App({
     );
   };
 
-  const handleStageFashionUnlockInstall = async () => {
-    setIsFashionUnlockStaging(true);
-    prepareScopedEditorPanelAction('fashionUnlock');
+  const handleStageFashionUnlock = async (action: FashionUnlockAction) => {
+    if (
+      fashionUnlockStagingAction !== null ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
+      return;
+    }
+
+    setFashionUnlockStagingAction(action);
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageFashionUnlockInstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setFashionUnlockWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('fashionUnlock', response.diagnostics);
-      registerEditorDraftDirty('fashionUnlock', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const request = {
+            paths: createProjectPaths(draftPaths),
+            session
+          };
+          const response = action === 'install'
+            ? await bridge.stageFashionUnlockInstall(request)
+            : await bridge.stageFashionUnlockUninstall(request);
+          const diagnostics = response.diagnostics.slice();
+          const expectedFamily = isScarletVioletGame(draftPaths.selectedGame)
+            ? 'sv'
+            : draftPaths.selectedGame === 'sword' || draftPaths.selectedGame === 'shield'
+              ? 'swsh'
+              : null;
+          const returnedAction = getCanonicalFashionUnlockPendingAction(
+            response.session,
+            response.workflow
+          );
+          const matchesRequestedState =
+            returnedAction === action &&
+            expectedFamily !== null &&
+            response.workflow.editorFamily === expectedFamily &&
+            response.workflow.detectedGame === draftPaths.selectedGame &&
+            response.workflow.summary.availability === 'available' &&
+            (action === 'install'
+              ? response.workflow.installStatus === 'available' ||
+                response.workflow.installStatus === 'installed'
+              : response.workflow.installStatus === 'installed' &&
+                response.workflow.canUninstall) &&
+            (session === null || response.session.sessionId === session.sessionId);
+
+          if (
+            !diagnostics.some((diagnostic) => diagnostic.severity === 'error') &&
+            !matchesRequestedState
+          ) {
+            diagnostics.push({
+              domain: 'workflow.fashionUnlock',
+              message:
+                'Fashion Unlock staging did not match the requested action, game, session, and source state.',
+              severity: 'error'
+            });
+          }
+
+          const didSucceed =
+            matchesRequestedState &&
+            !diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+          return {
+            ...response,
+            diagnostics,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : fashionUnlockWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('fashionUnlock');
+          setFashionUnlockWorkflow(response.workflow);
+          setEditSessionSection('fashionUnlock');
+          setScopedEditorPanelDiagnostics('fashionUnlock', response.diagnostics);
+          registerEditorDraftDirty('fashionUnlock', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
-      setIsFashionUnlockStaging(false);
+      setFashionUnlockStagingAction(null);
     }
   };
 
-  const handleStageFashionUnlockUninstall = async () => {
-    setIsFashionUnlockStaging(true);
-    prepareScopedEditorPanelAction('fashionUnlock');
-
-    try {
-      const response = await bridge.stageFashionUnlockUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setFashionUnlockWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('fashionUnlock', response.diagnostics);
-      registerEditorDraftDirty('fashionUnlock', false);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsFashionUnlockStaging(false);
-    }
-  };
+  const handleStageFashionUnlockInstall = () => handleStageFashionUnlock('install');
+  const handleStageFashionUnlockUninstall = () => handleStageFashionUnlock('uninstall');
 
   const handleOpenGymUniformRemovalWorkflow = async () => {
     await runRetainedWorkflowLoad(
@@ -10505,12 +10558,13 @@ export function App({
                 editSession={getEditSessionForSection('fashionUnlock')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
-                isStaging={isFashionUnlockStaging}
                 onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('fashionUnlock')}
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('fashionUnlock')}
                 onStageInstall={handleStageFashionUnlockInstall}
                 onStageUninstall={handleStageFashionUnlockUninstall}
                 panelOutput={getScopedEditorPanelOutput('fashionUnlock')}
+                selectedGame={selectedGame}
+                stagingAction={fashionUnlockStagingAction}
                 workflow={fashionUnlockWorkflow}
               />
             )

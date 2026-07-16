@@ -23,12 +23,14 @@ public sealed record SwShFashionUnlockReservedRegion(
 
 public sealed record SwShFashionUnlockWorkflowStats(
     int ReservedMainTextRegionCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    int OwnedByteCount);
 
 public sealed record SwShFashionUnlockWorkflow(
     SwShWorkflowSummary Summary,
     string InstallStatus,
     string InstallMessage,
+    bool CanUninstall,
     string BuildId,
     string DirectGetterOffsetHex,
     string MappedGetterOffsetHex,

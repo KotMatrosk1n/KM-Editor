@@ -2,6 +2,7 @@
 
 using KM.Formats.SwSh;
 using KM.Formats.Executable;
+using KM.Core.Projects;
 using System.Buffers.Binary;
 
 namespace KM.Integration.Tests.Tools;
@@ -9,6 +10,7 @@ namespace KM.Integration.Tests.Tools;
 internal static class SwShExeFsBridgeFixtures
 {
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
     private const int DynamaxAdventureSummaryOffset = 0x00774054;
     private const int DynamaxAdventureSummaryEntrySize = 0x06;
     private static readonly byte[] TypeChartDependenciesBefore = Convert.FromHexString(
@@ -29,7 +31,16 @@ internal static class SwShExeFsBridgeFixtures
 
     public static byte[] CreateCompatibleNso()
     {
-        return CreateNso(CreateCompatibleText(), [0x10], [0x20], Convert.FromHexString(SwordBuildId));
+        return CreateCompatibleNso(ProjectGame.Sword);
+    }
+
+    public static byte[] CreateCompatibleNso(ProjectGame game)
+    {
+        return CreateNso(
+            CreateCompatibleText(game),
+            [0x10],
+            [0x20],
+            Convert.FromHexString(game == ProjectGame.Shield ? ShieldBuildId : SwordBuildId));
     }
 
     public static byte[] CreateTypeChartCompatibleNso()
@@ -51,7 +62,8 @@ internal static class SwShExeFsBridgeFixtures
         return CreateNso(text, ro, [0x20], Convert.FromHexString(SwordBuildId));
     }
 
-    private static byte[] CreateCompatibleText()
+    private static byte[] CreateCompatibleText(
+        ProjectGame game = ProjectGame.Sword)
     {
         var text = new byte[0x0157D000];
         foreach (var check in UiRouteChecks)
@@ -104,7 +116,7 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
         WriteIvScreenCallSiteAnchors(text);
         WriteGymUniformRemovalVanillaAnchors(text);
-        WriteFashionUnlockVanillaAnchors(text);
+        WriteFashionUnlockVanillaAnchors(text, game);
         return text;
     }
 
@@ -116,12 +128,15 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x01472634, 0xB9400833);
     }
 
-    private static void WriteFashionUnlockVanillaAnchors(byte[] text)
+    private static void WriteFashionUnlockVanillaAnchors(
+        byte[] text,
+        ProjectGame game)
     {
-        WriteInstruction(text, 0x0143A2B0, 0xAA0003E8);
-        WriteInstruction(text, 0x0143A2B4, 0x2A1F03E0);
-        WriteInstruction(text, 0x0143A300, 0xD10603FF);
-        WriteInstruction(text, 0x0143A304, 0xA9145FFC);
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+        WriteInstruction(text, 0x0143A2B0 + shift, 0xAA0003E8);
+        WriteInstruction(text, 0x0143A2B4 + shift, 0x2A1F03E0);
+        WriteInstruction(text, 0x0143A300 + shift, 0xD10603FF);
+        WriteInstruction(text, 0x0143A304 + shift, 0xA9145FFC);
     }
 
     private static void WriteIvScreenCallSiteAnchors(byte[] text)

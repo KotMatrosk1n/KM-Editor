@@ -72,7 +72,10 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var shinyRate = Record(measurements, "shinyRate.load", () => workflowService.LoadShinyRate(temp.Paths));
         var typeChart = Record(measurements, "typeChart.load", () => workflowService.LoadTypeChart(temp.Paths));
         var fairyGymBoosts = Record(measurements, "fairyGymBoosts.load", () => workflowService.LoadFairyGymBoosts(temp.Paths));
-        var fashionUnlock = Record(measurements, "fashionUnlock.load", () => workflowService.LoadFashionUnlock(temp.Paths));
+        var fashionUnlock = Record(
+            measurements,
+            "fashionUnlock.load",
+            () => workflowService.LoadFashionUnlock(temp.Paths with { SelectedGame = ProjectGame.Sword }));
         var royalCandy = Record(measurements, "royalCandy.load", () => workflowService.LoadRoyalCandy(temp.Paths));
         var startingItems = Record(measurements, "startingItems.load", () => workflowService.LoadStartingItems(temp.Paths));
         var npcItemGift = Record(

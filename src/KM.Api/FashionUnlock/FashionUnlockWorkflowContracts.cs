@@ -32,12 +32,14 @@ public sealed record FashionUnlockReservedRegionDto(
 
 public sealed record FashionUnlockWorkflowStatsDto(
     int ReservedMainTextRegionCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    int OwnedByteCount);
 
 public sealed record FashionUnlockWorkflowDto(
     WorkflowSummaryDto Summary,
     string InstallStatus,
     string InstallMessage,
+    bool CanUninstall,
     string EditorFamily,
     string BuildId,
     string DirectGetterOffsetHex,

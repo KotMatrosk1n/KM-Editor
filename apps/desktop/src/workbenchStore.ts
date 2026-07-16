@@ -12,7 +12,6 @@ import {
   type EncounterTableRecord,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
-  type FashionUnlockWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
@@ -41,6 +40,7 @@ import {
   type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
+import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';

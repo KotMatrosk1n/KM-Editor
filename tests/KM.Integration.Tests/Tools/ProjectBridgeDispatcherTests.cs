@@ -3805,29 +3805,44 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("bridge.invalidJson", response.Error.Code);
     }
 
-    [Fact]
-    public void DispatchFashionUnlockStageValidatePlanAndApplyWritesLayeredMain()
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void DispatchFashionUnlockInstallAndUninstallRoundTripBySelectedGame(ProjectGame game)
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
-        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
-        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso(game));
+        temp.WriteBaseExeFsFile(
+            "main.npdm",
+            CreateNpdm(game == ProjectGame.Shield ? 0x01008DB008C2C000UL : 0x0100ABF008968000UL));
+        var paths = temp.Paths with
+        {
+            SelectedGame = game == ProjectGame.Shield ? ProjectGameDto.Shield : ProjectGameDto.Sword,
+        };
         var dispatcher = new ProjectBridgeDispatcher();
 
         var loadJson = SerializeRequest(
             KmCommandNames.LoadFashionUnlockWorkflow,
-            new LoadFashionUnlockWorkflowRequest(temp.Paths),
+            new LoadFashionUnlockWorkflowRequest(paths),
             requestId: "request-fashion-unlock-load");
         var loadResponse = DeserializeResponse<LoadFashionUnlockWorkflowResponse>(dispatcher.Dispatch(loadJson));
         Assert.Null(loadResponse.Error);
         Assert.NotNull(loadResponse.Payload);
         Assert.Equal("available", loadResponse.Payload.Workflow.InstallStatus);
-        Assert.Equal("main.text+0x0143A2B0", loadResponse.Payload.Workflow.DirectGetterOffsetHex);
-        Assert.Equal("main.text+0x0143A300", loadResponse.Payload.Workflow.MappedGetterOffsetHex);
+        Assert.False(loadResponse.Payload.Workflow.CanUninstall);
+        Assert.Equal(16, loadResponse.Payload.Workflow.Stats.OwnedByteCount);
+        Assert.Equal(2, loadResponse.Payload.Workflow.Stats.ReservedMainTextRegionCount);
+        Assert.Equal(
+            game == ProjectGame.Shield ? "main.text+0x0143A2E0" : "main.text+0x0143A2B0",
+            loadResponse.Payload.Workflow.DirectGetterOffsetHex);
+        Assert.Equal(
+            game == ProjectGame.Shield ? "main.text+0x0143A330" : "main.text+0x0143A300",
+            loadResponse.Payload.Workflow.MappedGetterOffsetHex);
 
         var stageJson = SerializeRequest(
             KmCommandNames.StageFashionUnlockInstall,
-            new StageFashionUnlockInstallRequest(temp.Paths, Session: null),
+            new StageFashionUnlockInstallRequest(paths, Session: null),
             requestId: "request-fashion-unlock-stage");
         var stageResponse = DeserializeResponse<StageFashionUnlockInstallResponse>(dispatcher.Dispatch(stageJson));
         Assert.Null(stageResponse.Error);
@@ -3840,7 +3855,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var validateJson = SerializeRequest(
             KmCommandNames.ValidateEditSession,
-            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            new ValidateEditSessionRequest(paths, stageResponse.Payload.Session),
             requestId: "request-fashion-unlock-validate");
         var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
         Assert.Null(validateResponse.Error);
@@ -3849,7 +3864,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var planJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            new CreateChangePlanRequest(paths, stageResponse.Payload.Session),
             requestId: "request-fashion-unlock-plan");
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
         Assert.Null(planResponse.Error);
@@ -3861,7 +3876,7 @@ public sealed class ProjectBridgeDispatcherTests
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(
-                temp.Paths,
+                paths,
                 stageResponse.Payload.Session,
                 planResponse.Payload.ChangePlan),
             requestId: "request-fashion-unlock-apply");
@@ -3878,15 +3893,59 @@ public sealed class ProjectBridgeDispatcherTests
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var outputText = NsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
-        Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A2B0));
-        Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A2B4));
-        Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A300));
-        Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A304));
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+        Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A2B0 + shift));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A2B4 + shift));
+        Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A300 + shift));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A304 + shift));
 
         var reloadResponse = DeserializeResponse<LoadFashionUnlockWorkflowResponse>(dispatcher.Dispatch(loadJson));
         Assert.Null(reloadResponse.Error);
         Assert.NotNull(reloadResponse.Payload);
         Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
+        Assert.True(reloadResponse.Payload.Workflow.CanUninstall);
+
+        var uninstallStageResponse = DeserializeResponse<StageFashionUnlockUninstallResponse>(
+            dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.StageFashionUnlockUninstall,
+                new StageFashionUnlockUninstallRequest(paths, Session: null),
+                requestId: "request-fashion-unlock-uninstall-stage")));
+        Assert.Null(uninstallStageResponse.Error);
+        Assert.NotNull(uninstallStageResponse.Payload);
+        Assert.DoesNotContain(
+            uninstallStageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var uninstallPlanResponse = DeserializeResponse<CreateChangePlanResponse>(
+            dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, uninstallStageResponse.Payload.Session),
+                requestId: "request-fashion-unlock-uninstall-plan")));
+        Assert.Null(uninstallPlanResponse.Error);
+        Assert.NotNull(uninstallPlanResponse.Payload);
+        Assert.True(uninstallPlanResponse.Payload.ChangePlan.CanApply);
+
+        var uninstallApplyResponse = DeserializeResponse<ApplyChangePlanResponse>(
+            dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.ApplyChangePlan,
+                new ApplyChangePlanRequest(
+                    paths,
+                    uninstallStageResponse.Payload.Session,
+                    uninstallPlanResponse.Payload.ChangePlan),
+                requestId: "request-fashion-unlock-uninstall-apply")));
+        Assert.Null(uninstallApplyResponse.Error);
+        Assert.NotNull(uninstallApplyResponse.Payload);
+        Assert.DoesNotContain(
+            uninstallApplyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.False(File.Exists(outputMainPath));
+
+        var uninstalledReload = DeserializeResponse<LoadFashionUnlockWorkflowResponse>(
+            dispatcher.Dispatch(loadJson));
+        Assert.Null(uninstalledReload.Error);
+        Assert.NotNull(uninstalledReload.Payload);
+        Assert.Equal("available", uninstalledReload.Payload.Workflow.InstallStatus);
+        Assert.False(uninstalledReload.Payload.Workflow.CanUninstall);
     }
 
     [Fact]

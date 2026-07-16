@@ -1098,6 +1098,8 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("main.text+0x00EAE95C", load.Payload.Workflow.OwnershipCheckOffsetHex);
         Assert.Equal(string.Empty, load.Payload.Workflow.DirectGetterOffsetHex);
         Assert.Equal(string.Empty, load.Payload.Workflow.MappedGetterOffsetHex);
+        Assert.False(load.Payload.Workflow.CanUninstall);
+        Assert.Equal(8, load.Payload.Workflow.Stats.OwnedByteCount);
         Assert.Contains(load.Payload.Workflow.ReservedRegions, region => region.RegionId == "fashion-unlock-sv-dressup-ownership-check");
 
         var stage = Dispatch<StageFashionUnlockInstallResponse>(
@@ -1176,6 +1178,7 @@ public sealed class ScarletVioletBridgeTests
             "request-sv-fashion-installed-load");
         AssertSuccess(installed);
         Assert.Equal("installed", installed.Payload!.Workflow.InstallStatus);
+        Assert.True(installed.Payload.Workflow.CanUninstall);
         Assert.Equal(ProjectFileLayerDto.Layered, installed.Payload.Workflow.Provenance.SourceLayer);
 
         var uninstallStage = Dispatch<StageFashionUnlockUninstallResponse>(
@@ -1203,6 +1206,32 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(uninstallApply);
         Assert.DoesNotContain(uninstallApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
         Assert.False(File.Exists(outputMainPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletBuilds))]
+    public void ScarletVioletFashionUnlockLayeredOnlyInstallCannotUninstall(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        temp.WriteOutputFile(
+            Path.Combine("exefs", "main"),
+            SvFashionUnlockBridgeFixtures.CreateInstalledMain(game));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var load = Dispatch<LoadFashionUnlockWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadFashionUnlockWorkflow,
+            new LoadFashionUnlockWorkflowRequest(paths),
+            "request-sv-fashion-layered-only-load");
+
+        AssertSuccess(load);
+        Assert.Equal("installed", load.Payload!.Workflow.InstallStatus);
+        Assert.Equal(ProjectFileLayerDto.Layered, load.Payload.Workflow.Provenance.SourceLayer);
+        Assert.Equal(ProjectFileGraphEntryStateDto.LayeredOnly, load.Payload.Workflow.Provenance.FileState);
+        Assert.False(load.Payload.Workflow.CanUninstall);
     }
 
     [Theory]

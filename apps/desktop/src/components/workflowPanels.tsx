@@ -11,13 +11,26 @@ export type WorkflowPanelOutput = {
   changePlan: ChangePlan | null;
 };
 
-export function Metric({ label, value }: { label: string; value: string }) {
+export function Metric({
+  label,
+  value,
+  valueIsRaw = false
+}: {
+  label: string;
+  value: string;
+  valueIsRaw?: boolean;
+}) {
   const { translateLiteral } = useLocalization();
 
   return (
     <div className="metric">
       <span className="metric-label">{translateLiteral(label)}</span>
-      <span className="metric-value metric-value-small">{translateLiteral(value)}</span>
+      <span
+        className="metric-value metric-value-small"
+        data-localization-ignore={valueIsRaw ? 'true' : undefined}
+      >
+        {valueIsRaw ? value : translateLiteral(value)}
+      </span>
     </div>
   );
 }
