@@ -126,7 +126,6 @@ import {
   type GiftPokemonEditableField,
   type GiftPokemonRecord,
   type GiftPokemonWorkflow,
-  type GymUniformRemovalWorkflow,
   type HyperTrainingSourceRecord,
   type HyperTrainingWorkflow,
   type ItemEditableField,
@@ -309,6 +308,9 @@ import {
   type FashionUnlockAction,
   type FashionUnlockWorkflow
 } from './bridge/fashionUnlockContracts';
+import {
+  type GymUniformRemovalAction
+} from './bridge/gymUniformRemovalContracts';
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import {
@@ -317,6 +319,8 @@ import {
 } from './features/fairy-gym-boosts/fairyGymBoostsPending';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
 import { getCanonicalFashionUnlockPendingAction } from './features/fashion-unlock/fashionUnlockPending';
+import { GymUniformRemovalSection } from './features/gym-uniform-removal/GymUniformRemovalSection';
+import { getCanonicalGymUniformRemovalPendingAction } from './features/gym-uniform-removal/gymUniformRemovalPending';
 import {
   createCanonicalCatchCapSelections,
   getOwnedCatchCapPendingEdit,
@@ -2132,7 +2136,8 @@ export function App({
   const [fashionUnlockStagingAction, setFashionUnlockStagingAction] =
     useState<FashionUnlockAction | null>(null);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
-  const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
+  const [gymUniformRemovalStagingAction, setGymUniformRemovalStagingAction] =
+    useState<GymUniformRemovalAction | null>(null);
   const [isHyperspaceBypassLoading, setIsHyperspaceBypassLoading] = useState(false);
   const [isHyperspaceBypassStaging, setIsHyperspaceBypassStaging] = useState(false);
   const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
@@ -4972,47 +4977,95 @@ export function App({
     );
   };
 
-  const handleStageGymUniformRemovalInstall = async () => {
-    setIsGymUniformRemovalStaging(true);
-    prepareScopedEditorPanelAction('gymUniformRemoval');
+  const handleStageGymUniformRemoval = async (action: GymUniformRemovalAction) => {
+    if (
+      gymUniformRemovalStagingAction !== null ||
+      pendingEditSessionMutationTokensRef.current.size > 0
+    ) {
+      return;
+    }
+
+    setGymUniformRemovalStagingAction(action);
+    setBridgeDiagnostics([]);
+    const mutationGeneration = editSessionMutationGenerationRef.current;
 
     try {
-      const response = await bridge.stageGymUniformRemovalInstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setGymUniformRemovalWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('gymUniformRemoval', response.diagnostics);
-      registerEditorDraftDirty('gymUniformRemoval', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const request = {
+            paths: createProjectPaths(draftPaths),
+            session
+          };
+          const response = action === 'install'
+            ? await bridge.stageGymUniformRemovalInstall(request)
+            : await bridge.stageGymUniformRemovalUninstall(request);
+          const diagnostics = response.diagnostics.slice();
+          const returnedAction = getCanonicalGymUniformRemovalPendingAction(
+            response.session,
+            response.workflow
+          );
+          const matchesRequestedState =
+            returnedAction === action &&
+            (draftPaths.selectedGame === 'sword' || draftPaths.selectedGame === 'shield') &&
+            response.workflow.detectedGame === draftPaths.selectedGame &&
+            response.workflow.summary.availability === 'available' &&
+            (action === 'install'
+              ? response.workflow.installStatus === 'available' ||
+                response.workflow.installStatus === 'installed'
+              : (response.workflow.installStatus === 'installed' ||
+                  response.workflow.installStatus === 'blocked') &&
+                response.workflow.canUninstall) &&
+            (session === null || response.session.sessionId === session.sessionId);
+
+          if (
+            !diagnostics.some((diagnostic) => diagnostic.severity === 'error') &&
+            !matchesRequestedState
+          ) {
+            diagnostics.push({
+              domain: 'workflow.gymUniformRemoval',
+              message:
+                'Gym Uniform Removal staging did not match the requested action, game, session, source, and IPS artifact state.',
+              severity: 'error'
+            });
+          }
+
+          const didSucceed =
+            matchesRequestedState &&
+            !diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+          return {
+            ...response,
+            diagnostics,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : gymUniformRemovalWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('gymUniformRemoval');
+          setGymUniformRemovalWorkflow(response.workflow);
+          setEditSessionSection('gymUniformRemoval');
+          setScopedEditorPanelDiagnostics('gymUniformRemoval', response.diagnostics);
+          registerEditorDraftDirty('gymUniformRemoval', false);
+        }
+      );
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      if (editSessionMutationGenerationRef.current === mutationGeneration) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
     } finally {
-      setIsGymUniformRemovalStaging(false);
+      setGymUniformRemovalStagingAction(null);
     }
   };
 
-  const handleStageGymUniformRemovalUninstall = async () => {
-    setIsGymUniformRemovalStaging(true);
-    prepareScopedEditorPanelAction('gymUniformRemoval');
-
-    try {
-      const response = await bridge.stageGymUniformRemovalUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setGymUniformRemovalWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('gymUniformRemoval', response.diagnostics);
-      registerEditorDraftDirty('gymUniformRemoval', false);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsGymUniformRemovalStaging(false);
-    }
-  };
+  const handleStageGymUniformRemovalInstall = () =>
+    handleStageGymUniformRemoval('install');
+  const handleStageGymUniformRemovalUninstall = () =>
+    handleStageGymUniformRemoval('uninstall');
 
   const handleOpenHyperspaceBypassWorkflow = async () => {
     await runRetainedWorkflowLoad(
@@ -10577,12 +10630,13 @@ export function App({
                 editSession={getEditSessionForSection('gymUniformRemoval')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
-                isStaging={isGymUniformRemovalStaging}
                 onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('gymUniformRemoval')}
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('gymUniformRemoval')}
                 onStageInstall={handleStageGymUniformRemovalInstall}
                 onStageUninstall={handleStageGymUniformRemovalUninstall}
                 panelOutput={getScopedEditorPanelOutput('gymUniformRemoval')}
+                selectedGame={selectedGame}
+                stagingAction={gymUniformRemovalStagingAction}
                 workflow={gymUniformRemovalWorkflow}
               />
             )
@@ -17683,7 +17737,7 @@ function getPendingEditDisplayDetails(
         newValueLabel:
           edit.recordId === 'gym-uniform-removal-v1-install'
             ? 'Skip gym uniform changes'
-            : 'Restore base bytes',
+            : 'Delete generated IPS',
         recordLabel: 'Gym Uniform Removal'
       });
     case 'workflow.hyperspaceBypass':
@@ -30203,273 +30257,6 @@ function formatHyperTrainingSyncState(workflow: HyperTrainingWorkflow) {
   }
 
   return workflow.levelRule.levelsMatch ? 'Synchronized' : 'Out of sync';
-}
-
-function GymUniformRemovalSection({
-  editSession,
-  isChangePlanApplying,
-  isChangePlanCreating,
-  isStaging,
-  onApplyChangePlan,
-  onCreateChangePlan,
-  onStageInstall,
-  onStageUninstall,
-  panelOutput,
-  workflow
-}: {
-  editSession: EditSession | null;
-  isChangePlanApplying: boolean;
-  isChangePlanCreating: boolean;
-  isStaging: boolean;
-  onApplyChangePlan: () => void;
-  onCreateChangePlan: () => void;
-  onStageInstall: () => void;
-  onStageUninstall: () => void;
-  panelOutput: WorkflowPanelOutput;
-  workflow: GymUniformRemovalWorkflow | null;
-}) {
-  const stagedGymUniformRemovalEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.gymUniformRemoval'
-  );
-  const isInstallStaged =
-    stagedGymUniformRemovalEdit?.recordId === 'gym-uniform-removal-v1-install';
-  const isUninstallStaged =
-    stagedGymUniformRemovalEdit?.recordId === 'gym-uniform-removal-v1-uninstall';
-  const hasStagedChange = isInstallStaged || isUninstallStaged;
-  const canStageInstall = canStageAdvancedEditorAction({
-    isAllowed:
-      workflow?.summary.availability === 'available' &&
-      workflow.installStatus !== 'blocked' &&
-      workflow.installStatus !== 'foreign',
-    isChangePlanApplying,
-    isChangePlanCreating,
-    isCurrent: isInstallStaged,
-    isStaging
-  });
-  const canStageUninstall = canStageAdvancedEditorAction({
-    isAllowed:
-      workflow?.summary.availability === 'available' && workflow.installStatus === 'installed',
-    isChangePlanApplying,
-    isChangePlanCreating,
-    isCurrent: isUninstallStaged,
-    isStaging
-  });
-  const canReviewPlan =
-    hasStagedChange && !isChangePlanCreating && !isChangePlanApplying && !isStaging;
-  const canApplyPlan =
-    hasStagedChange &&
-    panelOutput.changePlan !== null &&
-    panelOutput.changePlan.canApply &&
-    panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying &&
-    !isChangePlanCreating &&
-    !isStaging;
-  const installLabel =
-    workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
-
-  return (
-    <>
-      <section aria-labelledby="gym-uniform-removal-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <Shirt aria-hidden="true" size={18} />
-          <h2 id="gym-uniform-removal-heading">Gym Uniform Removal</h2>
-        </div>
-        <p className="workflow-description">
-          Gym Uniform Removal keeps gym challenge and gym leader battle scripts from
-          switching the player into the gym uniform.
-        </p>
-        <p className="workflow-description">
-          KM writes a build-ID IPS patch in exefs, so Eden/Yuzu applies the handler
-          override at load time while the current outfit stays on.
-        </p>
-
-        <div className="items-toolbar exefs-toolbar">
-          <Metric
-            label="Install"
-            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
-          />
-          <Metric label="Patch site" value={workflow?.patchOffsetHex ?? 'Not loaded'} />
-          <Metric
-            label="Reserved regions"
-            value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
-          />
-        </div>
-
-        {workflow ? (
-          <div className="flagwork-layout">
-            <div className="flagwork-stack">
-              <div
-                className="exefs-table iv-screen-range-table"
-                role="table"
-                aria-label="Gym Uniform Removal behavior summary"
-              >
-                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
-                  <span role="columnheader">Mode</span>
-                  <span role="columnheader">What happens</span>
-                </div>
-                <div className="exefs-row iv-screen-range-row" role="row">
-                  <span role="cell">Not installed</span>
-                  <span role="cell">Gym scripts call the normal uniform-change handler.</span>
-                </div>
-                <div className="exefs-row iv-screen-range-row" role="row">
-                  <span role="cell">Installed</span>
-                  <span role="cell">
-                    The IPS patch makes the handler return success, and the outfit does not change.
-                  </span>
-                </div>
-              </div>
-
-              <div
-                className="exefs-table iv-screen-range-table"
-                role="table"
-                aria-label="Gym Uniform Removal reserved ranges"
-              >
-                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
-                  <span role="columnheader">Region</span>
-                  <span role="columnheader">Range</span>
-                </div>
-                {workflow.reservedRegions.map((region) => (
-                  <div className="exefs-row iv-screen-range-row" key={region.regionId} role="row">
-                    <span role="cell">{region.label}</span>
-                    <span role="cell">{region.offsetLabel}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <aside aria-label="Gym Uniform Removal install details" className="encounter-inspector">
-              <div className="panel-heading">
-                <Shirt aria-hidden="true" size={18} />
-                <h3>Install Details</h3>
-              </div>
-
-              <dl className="item-provenance-list">
-                <div>
-                  <dt>Install status</dt>
-                  <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
-                </div>
-                <div>
-                  <dt>Build ID</dt>
-                  <dd>{workflow.buildId}</dd>
-                </div>
-                <div>
-                  <dt>Patch site</dt>
-                  <dd>{workflow.patchOffsetHex}</dd>
-                </div>
-                <div>
-                  <dt>Stub</dt>
-                  <dd>{workflow.stubKind}</dd>
-                </div>
-                <div>
-                  <dt>Source file</dt>
-                  <dd>{workflow.provenance.sourceFile}</dd>
-                </div>
-                <div>
-                  <dt>Layer</dt>
-                  <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
-                </div>
-                <div>
-                  <dt>File state</dt>
-                  <dd>{formatFileState(workflow.provenance.fileState)}</dd>
-                </div>
-              </dl>
-
-              <div className="encounter-edit-form">
-                <div className="form-actions">
-                  <button
-                    aria-busy={isStaging || undefined}
-                    className="primary-button"
-                    disabled={!canStageInstall}
-                    onClick={onStageInstall}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Staging"
-                      icon={<Wrench aria-hidden="true" size={16} />}
-                      isBusy={isStaging}
-                      label={installLabel}
-                    />
-                  </button>
-                  <button
-                    aria-busy={isStaging || undefined}
-                    className="danger-button"
-                    disabled={!canStageUninstall}
-                    onClick={onStageUninstall}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Staging"
-                      icon={<Trash2 aria-hidden="true" size={16} />}
-                      isBusy={isStaging}
-                      label="Stage Uninstall"
-                    />
-                  </button>
-                  <button
-                    aria-busy={isChangePlanCreating || undefined}
-                    className="secondary-button"
-                    disabled={!canReviewPlan}
-                    onClick={onCreateChangePlan}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Reviewing"
-                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
-                      isBusy={isChangePlanCreating}
-                      label="Review"
-                    />
-                  </button>
-                  <button
-                    aria-busy={isChangePlanApplying || undefined}
-                    className="primary-button"
-                    disabled={!canApplyPlan}
-                    onClick={onApplyChangePlan}
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Applying"
-                      icon={<Save aria-hidden="true" size={16} />}
-                      isBusy={isChangePlanApplying}
-                      label="Apply"
-                    />
-                  </button>
-                </div>
-
-                <dl className="encounter-slot-detail">
-                  <div>
-                    <dt>Install message</dt>
-                    <dd>{workflow.installMessage}</dd>
-                  </div>
-                  <div>
-                    <dt>Staged change</dt>
-                    <dd>
-                      {isInstallStaged
-                        ? 'Install or refresh'
-                        : isUninstallStaged
-                          ? 'Uninstall'
-                          : 'None'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Uninstall</dt>
-                    <dd>Removes the generated build-ID IPS file.</dd>
-                  </div>
-                </dl>
-              </div>
-            </aside>
-          </div>
-        ) : (
-          <p className="empty-copy">
-            Open Gym Uniform Removal from Advanced Editors to inspect the patch site.
-          </p>
-        )}
-      </section>
-
-      <WorkflowPanelOutputSections
-        output={panelOutput}
-        workflowDiagnostics={workflow?.diagnostics ?? []}
-      />
-    </>
-  );
 }
 
 function CatchCapSection({

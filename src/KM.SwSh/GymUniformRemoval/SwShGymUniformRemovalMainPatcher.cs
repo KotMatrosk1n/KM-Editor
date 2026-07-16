@@ -26,8 +26,25 @@ internal sealed record SwShGymUniformRemovalAnalysis(
     string Message,
     string BuildId,
     string PatchOffsetHex,
-    string StubKind,
+    string MainHandlerState,
     ProjectGame? DetectedGame);
+
+internal enum SwShGymUniformRemovalIpsArtifactKind
+{
+    NotPresent,
+    Current,
+    Legacy,
+    Foreign,
+    Invalid,
+}
+
+internal sealed record SwShGymUniformRemovalIpsAnalysis(
+    SwShGymUniformRemovalIpsArtifactKind Kind,
+    string Message,
+    string BuildId,
+    string PatchOffsetHex,
+    string ArtifactState,
+    ProjectGame DetectedGame);
 
 internal static class SwShGymUniformRemovalMainPatcher
 {
@@ -37,8 +54,8 @@ internal static class SwShGymUniformRemovalMainPatcher
     public const string SwordIpsFileName = SwordBuildId + ".ips";
     public const string ShieldIpsFileName = ShieldBuildId + ".ips";
 
-    private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
-    private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
+    internal const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    internal const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
 
     private const uint VanillaUniformHandlerInstruction1 = 0xD0008CE8;
     private const uint VanillaUniformHandlerInstruction2 = 0xB9400833;
@@ -59,11 +76,14 @@ internal static class SwShGymUniformRemovalMainPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
+        var buildId = "unknown";
+        PatchDefinition? detectedDefinition = null;
         try
         {
             var nso = NsoFile.Parse(mainBytes);
-            var buildId = FormatBuildId(nso.BuildId);
-            var definition = FindDefinition(buildId);
+            ValidateRequiredSegmentHashes(nso);
+            buildId = FormatBuildId(nso.BuildId);
+            var definition = FindDefinition(nso.BuildId);
             if (definition is null)
             {
                 return new SwShGymUniformRemovalAnalysis(
@@ -75,6 +95,7 @@ internal static class SwShGymUniformRemovalMainPatcher
                     DetectedGame: null);
             }
 
+            detectedDefinition = definition;
             var mismatch = CreateGameMismatchAnalysis(definition, expectedGame, buildId);
             if (mismatch is not null)
             {
@@ -138,10 +159,10 @@ internal static class SwShGymUniformRemovalMainPatcher
             return new SwShGymUniformRemovalAnalysis(
                 SwShGymUniformRemovalInstallKind.Conflict,
                 exception.Message,
-                "unknown",
-                "unknown",
+                buildId,
+                detectedDefinition is null ? "unknown" : FormatTextOffset(detectedDefinition.PatchOffset),
                 "unreadable",
-                DetectedGame: null);
+                detectedDefinition?.Game);
         }
     }
 
@@ -159,7 +180,8 @@ internal static class SwShGymUniformRemovalMainPatcher
         }
 
         var nso = NsoFile.Parse(mainBytes);
-        var definition = FindDefinition(FormatBuildId(nso.BuildId))
+        ValidateRequiredSegmentHashes(nso);
+        var definition = FindDefinition(nso.BuildId)
             ?? throw new InvalidDataException("Gym Uniform Removal supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
         EnsurePatchRange(text, definition);
@@ -167,7 +189,9 @@ internal static class SwShGymUniformRemovalMainPatcher
         WriteInstruction(text, definition.PatchOffset, KmReturnTrueInstruction);
         WriteInstruction(text, definition.PatchOffset + sizeof(uint), RetInstruction);
 
-        return nso.Write(textDecompressedData: text);
+        var output = nso.Write(textDecompressedData: text);
+        ValidateOutput(mainBytes, output, definition, expectedGame);
+        return output;
     }
 
     public static byte[] CreateIpsPatch(byte[] mainBytes, ProjectGame? expectedGame = null)
@@ -183,42 +207,77 @@ internal static class SwShGymUniformRemovalMainPatcher
             throw new InvalidDataException(analysis.Message);
         }
 
-        var definition = FindDefinition(analysis.BuildId)
+        var nso = NsoFile.Parse(mainBytes);
+        var definition = FindDefinition(nso.BuildId)
             ?? throw new InvalidDataException("Gym Uniform Removal supports Sword and Shield 1.3.2 exefs/main files.");
         return CreateKmIpsPatch(definition);
     }
 
     public static SwShGymUniformRemovalAnalysis AnalyzeIpsPatch(
         byte[] ipsBytes,
-        byte[] mainBytes,
+        byte[] baseMainBytes,
         ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(ipsBytes);
-        ArgumentNullException.ThrowIfNull(mainBytes);
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
 
-        var mainAnalysis = Analyze(mainBytes, expectedGame);
-        if (mainAnalysis.Kind is SwShGymUniformRemovalInstallKind.UnsupportedBuild
-            or SwShGymUniformRemovalInstallKind.GameMismatch
-            or SwShGymUniformRemovalInstallKind.ForeignPatch
-            or SwShGymUniformRemovalInstallKind.Conflict)
+        try
         {
-            return mainAnalysis;
+            var artifact = AnalyzeIpsArtifact(ipsBytes, baseMainBytes, expectedGame);
+            return new SwShGymUniformRemovalAnalysis(
+                artifact.Kind switch
+                {
+                    SwShGymUniformRemovalIpsArtifactKind.Current => SwShGymUniformRemovalInstallKind.InstalledV1,
+                    SwShGymUniformRemovalIpsArtifactKind.Legacy => SwShGymUniformRemovalInstallKind.InstalledCompatible,
+                    SwShGymUniformRemovalIpsArtifactKind.Foreign => SwShGymUniformRemovalInstallKind.ForeignPatch,
+                    _ => SwShGymUniformRemovalInstallKind.Conflict,
+                },
+                artifact.Message,
+                artifact.BuildId,
+                artifact.PatchOffsetHex,
+                MainHandlerState: "vanilla",
+                DetectedGame: artifact.DetectedGame);
+        }
+        catch (InvalidDataException)
+        {
+            return Analyze(baseMainBytes, expectedGame);
+        }
+    }
+
+    public static SwShGymUniformRemovalIpsAnalysis AnalyzeIpsArtifact(
+        byte[] ipsBytes,
+        byte[] baseMainBytes,
+        ProjectGame? expectedGame = null)
+    {
+        ArgumentNullException.ThrowIfNull(ipsBytes);
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+
+        var baseAnalysis = Analyze(baseMainBytes, expectedGame);
+        if (baseAnalysis.Kind != SwShGymUniformRemovalInstallKind.NotInstalled
+            || baseAnalysis.DetectedGame is not (ProjectGame.Sword or ProjectGame.Shield))
+        {
+            throw new InvalidDataException(
+                baseAnalysis.Kind is SwShGymUniformRemovalInstallKind.UnsupportedBuild
+                    or SwShGymUniformRemovalInstallKind.GameMismatch
+                    or SwShGymUniformRemovalInstallKind.ForeignPatch
+                    or SwShGymUniformRemovalInstallKind.Conflict
+                    ? baseAnalysis.Message
+                    : "Gym Uniform Removal IPS inspection requires a selected-game vanilla base exefs/main.");
         }
 
-        var definition = FindDefinition(mainAnalysis.BuildId);
-        if (definition is null)
-        {
-            return mainAnalysis;
-        }
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        ValidateRequiredSegmentHashes(baseNso);
+        var definition = FindDefinition(baseNso.BuildId)
+            ?? throw new InvalidDataException("Gym Uniform Removal supports Sword and Shield 1.3.2 exefs/main files.");
 
         if (ipsBytes.SequenceEqual(CreateKmIpsPatch(definition)))
         {
-            return new SwShGymUniformRemovalAnalysis(
-                SwShGymUniformRemovalInstallKind.InstalledV1,
+            return new SwShGymUniformRemovalIpsAnalysis(
+                SwShGymUniformRemovalIpsArtifactKind.Current,
                 "Gym Uniform Removal IPS is installed. Eden/Yuzu will patch the uniform-change handler at load time.",
-                mainAnalysis.BuildId,
-                mainAnalysis.PatchOffsetHex,
-                "KM single-record IPS patch",
+                baseAnalysis.BuildId,
+                baseAnalysis.PatchOffsetHex,
+                "current",
                 definition.Game);
         }
 
@@ -226,25 +285,27 @@ internal static class SwShGymUniformRemovalMainPatcher
             || ipsBytes.SequenceEqual(CreateSplitRecordIpsPatch(definition, Ips32Eof))
             || ipsBytes.SequenceEqual(CreateSplitRecordIpsPatch(definition, LegacyIpsEof)))
         {
-            return new SwShGymUniformRemovalAnalysis(
-                SwShGymUniformRemovalInstallKind.InstalledCompatible,
-                "A stale Gym Uniform Removal IPS is installed. Reinstalling refreshes it to the IPS32 EEOF format Eden accepts.",
-                mainAnalysis.BuildId,
-                mainAnalysis.PatchOffsetHex,
-                "stale Gym Uniform Removal IPS patch",
+            return new SwShGymUniformRemovalIpsAnalysis(
+                SwShGymUniformRemovalIpsArtifactKind.Legacy,
+                "A recognized legacy Gym Uniform Removal IPS is installed. Reinstalling refreshes it to the IPS32 EEOF format Eden accepts.",
+                baseAnalysis.BuildId,
+                baseAnalysis.PatchOffsetHex,
+                "legacy",
                 definition.Game);
         }
 
         var looksLikeIps = ipsBytes.Length >= Ips32Magic.Length + LegacyIpsEof.Length
             && ipsBytes.AsSpan(0, Ips32Magic.Length).SequenceEqual(Ips32Magic);
-        return new SwShGymUniformRemovalAnalysis(
-            looksLikeIps ? SwShGymUniformRemovalInstallKind.ForeignPatch : SwShGymUniformRemovalInstallKind.Conflict,
+        return new SwShGymUniformRemovalIpsAnalysis(
+            looksLikeIps
+                ? SwShGymUniformRemovalIpsArtifactKind.Foreign
+                : SwShGymUniformRemovalIpsArtifactKind.Invalid,
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"Gym Uniform Removal found an existing IPS file at {IpsRelativePath(definition.Game)}, but it is not a KM-owned patch."),
-            mainAnalysis.BuildId,
-            mainAnalysis.PatchOffsetHex,
-            looksLikeIps ? "foreign IPS patch" : "invalid IPS patch",
+            baseAnalysis.BuildId,
+            baseAnalysis.PatchOffsetHex,
+            looksLikeIps ? "foreign" : "invalid",
             definition.Game);
     }
 
@@ -270,14 +331,11 @@ internal static class SwShGymUniformRemovalMainPatcher
 
         var currentNso = NsoFile.Parse(currentMainBytes);
         var baseNso = NsoFile.Parse(baseMainBytes);
-        var currentBuildId = FormatBuildId(currentNso.BuildId);
+        ValidateRequiredSegmentHashes(currentNso);
+        ValidateRequiredSegmentHashes(baseNso);
+        EnsureSameBuildAndLayout(baseNso, currentNso, "Gym Uniform Removal restore");
         var baseBuildId = FormatBuildId(baseNso.BuildId);
-        if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("Gym Uniform Removal restore requires current and base main NSO files with the same build ID.");
-        }
-
-        var definition = FindDefinition(baseBuildId)
+        var definition = FindDefinition(baseNso.BuildId)
             ?? throw new InvalidDataException("Gym Uniform Removal restore requires a supported Sword or Shield 1.3.2 base main NSO.");
         var baseMismatch = CreateGameMismatchAnalysis(definition, expectedGame, baseBuildId);
         if (baseMismatch is not null)
@@ -297,7 +355,29 @@ internal static class SwShGymUniformRemovalMainPatcher
         EnsureVanillaBase(baseText, definition);
 
         baseText.AsSpan(definition.PatchOffset, PatchLength).CopyTo(currentText.AsSpan(definition.PatchOffset, PatchLength));
-        return currentNso.Write(textDecompressedData: currentText);
+        var output = currentNso.Write(textDecompressedData: currentText);
+        ValidateOutput(
+            currentMainBytes,
+            output,
+            definition,
+            expectedGame,
+            SwShGymUniformRemovalInstallKind.NotInstalled,
+            "Gym Uniform Removal restore");
+        return output;
+    }
+
+    internal static void EnsureCompatibleExecutableIdentity(
+        byte[] baseMainBytes,
+        byte[] effectiveMainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(effectiveMainBytes);
+
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        var effectiveNso = NsoFile.Parse(effectiveMainBytes);
+        ValidateRequiredSegmentHashes(baseNso);
+        ValidateRequiredSegmentHashes(effectiveNso);
+        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Gym Uniform Removal verification");
     }
 
     public static bool HasInstalledHook(byte[] mainBytes)
@@ -310,6 +390,19 @@ internal static class SwShGymUniformRemovalMainPatcher
     public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainTextRegions()
     {
         return SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerGymUniformRemoval);
+    }
+
+    public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainTextRegions(ProjectGame game)
+    {
+        if (game is not (ProjectGame.Sword or ProjectGame.Shield))
+        {
+            return [];
+        }
+
+        var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
+        return ReservedMainTextRegions()
+            .Where(region => !region.FeatureId.Contains(inactiveGameToken, StringComparison.Ordinal))
+            .ToArray();
     }
 
     public static string IpsRelativePath(ProjectGame game)
@@ -329,8 +422,107 @@ internal static class SwShGymUniformRemovalMainPatcher
 
     public static string? TryGetIpsRelativePath(string buildId)
     {
-        var definition = FindDefinition(buildId);
+        var definition = FindDefinitionByPrefix(buildId);
         return definition is null ? null : IpsRelativePath(definition.Game);
+    }
+
+    private static void ValidateOutput(
+        byte[] input,
+        byte[] output,
+        PatchDefinition definition,
+        ProjectGame? expectedGame,
+        SwShGymUniformRemovalInstallKind expectedKind = SwShGymUniformRemovalInstallKind.InstalledV1,
+        string operation = "Gym Uniform Removal apply")
+    {
+        var before = NsoFile.Parse(input);
+        var after = NsoFile.Parse(output);
+        ValidateRequiredSegmentHashes(before);
+        ValidateRequiredSegmentHashes(after);
+        EnsureSameBuildAndLayout(before, after, operation);
+        VerifyPreservedSegment(before.Ro, after.Ro, ".ro", operation);
+        VerifyPreservedSegment(before.Data, after.Data, ".data", operation);
+
+        var beforeText = before.Text.DecompressedData;
+        var afterText = after.Text.DecompressedData;
+        if (beforeText.Length != afterText.Length)
+        {
+            throw new InvalidDataException("Gym Uniform Removal patch changed the decompressed .text segment size.");
+        }
+
+        for (var offset = 0; offset < beforeText.Length; offset++)
+        {
+            if (beforeText[offset] != afterText[offset]
+                && (offset < definition.PatchOffset || offset >= definition.PatchOffset + PatchLength))
+            {
+                throw new InvalidDataException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{operation} unexpectedly changed .text byte 0x{offset:X}."));
+            }
+        }
+
+        if (Analyze(output, expectedGame).Kind != expectedKind)
+        {
+            throw new InvalidDataException($"{operation} verification failed after writing exefs/main.");
+        }
+    }
+
+    private static void EnsureSameBuildAndLayout(NsoFile left, NsoFile right, string operation)
+    {
+        if (left.Version != right.Version
+            || left.Flags != right.Flags
+            || !left.BuildId.SequenceEqual(right.BuildId)
+            || !SwShExeFsMainComparison.StableHeaderBytesMatch(left.RawHeader, right.RawHeader))
+        {
+            throw new InvalidDataException(
+                $"{operation} requires matching NSO version, flags, stable header metadata, and full 32-byte build identity.");
+        }
+
+        for (var index = 0; index < left.Segments.Count; index++)
+        {
+            var leftSegment = left.Segments[index];
+            var rightSegment = right.Segments[index];
+            if (leftSegment.Header.MemoryOffset != rightSegment.Header.MemoryOffset
+                || leftSegment.Header.DecompressedSize != rightSegment.Header.DecompressedSize
+                || leftSegment.DecompressedData.Length != rightSegment.DecompressedData.Length)
+            {
+                throw new InvalidDataException(
+                    $"{operation} requires matching {leftSegment.Name} memory offsets and decompressed sizes.");
+            }
+        }
+    }
+
+    private static void VerifyPreservedSegment(
+        NsoSegment source,
+        NsoSegment output,
+        string segmentName,
+        string operation)
+    {
+        if (source.Header.MemoryOffset != output.Header.MemoryOffset
+            || source.Header.DecompressedSize != output.Header.DecompressedSize
+            || source.CompressedSize != output.CompressedSize
+            || !source.Hash.SequenceEqual(output.Hash)
+            || !source.CompressedData.SequenceEqual(output.CompressedData)
+            || !source.DecompressedData.SequenceEqual(output.DecompressedData))
+        {
+            throw new InvalidDataException($"{operation} verification found a changed {segmentName} segment.");
+        }
+    }
+
+    private static void ValidateRequiredSegmentHashes(NsoFile nso)
+    {
+        ValidateRequiredSegmentHash(nso.Text, nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        ValidateRequiredSegmentHash(nso.Ro, nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        ValidateRequiredSegmentHash(nso.Data, nso.Flags.HasFlag(NsoFlags.CheckHashData));
+    }
+
+    private static void ValidateRequiredSegmentHash(NsoSegment segment, bool required)
+    {
+        if (required && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
+        {
+            throw new InvalidDataException(
+                $"Gym Uniform Removal rejected {segment.Name} because its required NSO header hash does not match the decompressed segment.");
+        }
     }
 
     private static void EnsureVanillaBase(ReadOnlySpan<byte> text, PatchDefinition definition)
@@ -346,10 +538,51 @@ internal static class SwShGymUniformRemovalMainPatcher
         }
     }
 
-    private static PatchDefinition? FindDefinition(string buildId)
+    private static PatchDefinition? FindDefinition(ReadOnlySpan<byte> buildId)
+    {
+        foreach (var definition in Definitions)
+        {
+            if (IsCanonicalBuildId(buildId, definition.BuildId))
+            {
+                return definition;
+            }
+        }
+
+        return null;
+    }
+
+    private static PatchDefinition? FindDefinitionByPrefix(string buildId)
     {
         return Definitions.FirstOrDefault(definition =>
             string.Equals(definition.BuildId, buildId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsCanonicalBuildId(ReadOnlySpan<byte> buildId, string expectedPrefixHex)
+    {
+        const int nsoBuildIdLength = 0x20;
+        const int knownBuildIdLength = 0x14;
+        if (buildId.Length != nsoBuildIdLength)
+        {
+            return false;
+        }
+
+        var expectedPrefix = Convert.FromHexString(expectedPrefixHex);
+        return expectedPrefix.Length == knownBuildIdLength
+            && buildId[..knownBuildIdLength].SequenceEqual(expectedPrefix)
+            && IsZero(buildId[knownBuildIdLength..]);
+    }
+
+    private static bool IsZero(ReadOnlySpan<byte> data)
+    {
+        foreach (var value in data)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static SwShGymUniformRemovalAnalysis? CreateGameMismatchAnalysis(

@@ -3955,34 +3955,63 @@ public sealed class ProjectBridgeDispatcherTests
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
         temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
         var dispatcher = new ProjectBridgeDispatcher();
 
         var loadJson = SerializeRequest(
             KmCommandNames.LoadGymUniformRemovalWorkflow,
-            new LoadGymUniformRemovalWorkflowRequest(temp.Paths),
+            new LoadGymUniformRemovalWorkflowRequest(paths),
             requestId: "request-gym-uniform-load");
         var loadResponse = DeserializeResponse<LoadGymUniformRemovalWorkflowResponse>(dispatcher.Dispatch(loadJson));
         Assert.Null(loadResponse.Error);
         Assert.NotNull(loadResponse.Payload);
         Assert.Equal("available", loadResponse.Payload.Workflow.InstallStatus);
+        Assert.False(loadResponse.Payload.Workflow.CanUninstall);
+        Assert.Equal(ProjectGameDto.Sword, loadResponse.Payload.Workflow.DetectedGame);
         Assert.Equal("main.text+0x01472600", loadResponse.Payload.Workflow.PatchOffsetHex);
+        Assert.Equal("vanilla", loadResponse.Payload.Workflow.MainHandlerState);
+        Assert.Equal("notPresent", loadResponse.Payload.Workflow.IpsArtifactState);
+        Assert.Equal(1, loadResponse.Payload.Workflow.Stats.SourceFileCount);
+        Assert.Equal(1, loadResponse.Payload.Workflow.Stats.ReservedMainTextRegionCount);
+        Assert.Equal(8, loadResponse.Payload.Workflow.Stats.OwnedByteCount);
 
         var stageJson = SerializeRequest(
             KmCommandNames.StageGymUniformRemovalInstall,
-            new StageGymUniformRemovalInstallRequest(temp.Paths, Session: null),
+            new StageGymUniformRemovalInstallRequest(paths, Session: null),
             requestId: "request-gym-uniform-stage");
         var stageResponse = DeserializeResponse<StageGymUniformRemovalInstallResponse>(dispatcher.Dispatch(stageJson));
         Assert.Null(stageResponse.Error);
         Assert.NotNull(stageResponse.Payload);
         Assert.Single(stageResponse.Payload.Session.PendingEdits);
-        Assert.Equal("workflow.gymUniformRemoval", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        var installEdit = stageResponse.Payload.Session.PendingEdits[0];
+        Assert.Equal("workflow.gymUniformRemoval", installEdit.Domain);
+        Assert.Equal("gym-uniform-removal-v1-install", installEdit.RecordId);
+        Assert.Equal("install", installEdit.Field);
+        Assert.Equal("true", installEdit.NewValue);
+        Assert.Collection(
+            installEdit.Sources,
+            source =>
+            {
+                Assert.Equal(FileLayerDto.Base, source.Layer);
+                Assert.Equal("exefs/main", source.RelativePath);
+            },
+            source =>
+            {
+                Assert.Equal(FileLayerDto.Pending, source.Layer);
+                Assert.StartsWith("pending/gym-uniform-removal/install/", source.RelativePath, StringComparison.Ordinal);
+            },
+            source =>
+            {
+                Assert.Equal(FileLayerDto.Generated, source.Layer);
+                Assert.Equal(GymUniformRemovalSwordIpsPath, source.RelativePath);
+            });
         Assert.DoesNotContain(
             stageResponse.Payload.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
 
         var validateJson = SerializeRequest(
             KmCommandNames.ValidateEditSession,
-            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            new ValidateEditSessionRequest(paths, stageResponse.Payload.Session),
             requestId: "request-gym-uniform-validate");
         var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
         Assert.Null(validateResponse.Error);
@@ -3991,7 +4020,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var planJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            new CreateChangePlanRequest(paths, stageResponse.Payload.Session),
             requestId: "request-gym-uniform-plan");
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
         Assert.Null(planResponse.Error);
@@ -4003,7 +4032,7 @@ public sealed class ProjectBridgeDispatcherTests
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(
-                temp.Paths,
+                paths,
                 stageResponse.Payload.Session,
                 planResponse.Payload.ChangePlan),
             requestId: "request-gym-uniform-apply");
@@ -4027,6 +4056,47 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(reloadResponse.Error);
         Assert.NotNull(reloadResponse.Payload);
         Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
+        Assert.True(reloadResponse.Payload.Workflow.CanUninstall);
+        Assert.Equal("current", reloadResponse.Payload.Workflow.IpsArtifactState);
+        Assert.Equal(2, reloadResponse.Payload.Workflow.Stats.SourceFileCount);
+
+        var uninstallStageJson = SerializeRequest(
+            KmCommandNames.StageGymUniformRemovalUninstall,
+            new StageGymUniformRemovalUninstallRequest(paths, Session: null),
+            requestId: "request-gym-uniform-uninstall-stage");
+        var uninstallStageResponse = DeserializeResponse<StageGymUniformRemovalUninstallResponse>(
+            dispatcher.Dispatch(uninstallStageJson));
+        Assert.Null(uninstallStageResponse.Error);
+        Assert.NotNull(uninstallStageResponse.Payload);
+        var uninstallEdit = Assert.Single(uninstallStageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("gym-uniform-removal-v1-uninstall", uninstallEdit.RecordId);
+        Assert.Equal("uninstall", uninstallEdit.Field);
+
+        var uninstallPlanJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, uninstallStageResponse.Payload.Session),
+            requestId: "request-gym-uniform-uninstall-plan");
+        var uninstallPlanResponse = DeserializeResponse<CreateChangePlanResponse>(
+            dispatcher.Dispatch(uninstallPlanJson));
+        Assert.Null(uninstallPlanResponse.Error);
+        Assert.NotNull(uninstallPlanResponse.Payload);
+        Assert.True(uninstallPlanResponse.Payload.ChangePlan.CanApply);
+
+        var uninstallApplyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                paths,
+                uninstallStageResponse.Payload.Session,
+                uninstallPlanResponse.Payload.ChangePlan),
+            requestId: "request-gym-uniform-uninstall-apply");
+        var uninstallApplyResponse = DeserializeResponse<ApplyChangePlanResponse>(
+            dispatcher.Dispatch(uninstallApplyJson));
+        Assert.Null(uninstallApplyResponse.Error);
+        Assert.NotNull(uninstallApplyResponse.Payload);
+        Assert.DoesNotContain(
+            uninstallApplyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.False(File.Exists(outputIpsPath));
     }
 
     [Fact]

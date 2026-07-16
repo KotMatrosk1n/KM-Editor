@@ -18,8 +18,6 @@ import {
   type LoadHyperTrainingWorkflowResponse,
   type LoadTypeChartWorkflowRequest,
   type LoadTypeChartWorkflowResponse,
-  type LoadGymUniformRemovalWorkflowRequest,
-  type LoadGymUniformRemovalWorkflowResponse,
   type LoadIvScreenWorkflowRequest,
   type LoadIvScreenWorkflowResponse,
   type LoadExeFsPatchWorkflowRequest,
@@ -78,10 +76,6 @@ import {
   type StageHyperTrainingResponse,
   type StageTypeChartRequest, type StageTypeChartResponse,
   type StageTypeChartUninstallRequest, type StageTypeChartUninstallResponse,
-  type StageGymUniformRemovalInstallRequest,
-  type StageGymUniformRemovalInstallResponse,
-  type StageGymUniformRemovalUninstallRequest,
-  type StageGymUniformRemovalUninstallResponse,
   type StageIvScreenInstallRequest,
   type StageIvScreenInstallResponse,
   type StageIvScreenUninstallRequest,
@@ -186,7 +180,6 @@ import {
   loadCatchCapWorkflowResponseSchema,
   loadHyperTrainingWorkflowResponseSchema,
   loadTypeChartWorkflowResponseSchema,
-  loadGymUniformRemovalWorkflowResponseSchema,
   loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowResponseSchema,
@@ -214,8 +207,6 @@ import {
   stageHyperTrainingResponseSchema,
   stageTypeChartResponseSchema,
   stageTypeChartUninstallResponseSchema,
-  stageGymUniformRemovalInstallResponseSchema,
-  stageGymUniformRemovalUninstallResponseSchema,
   stageIvScreenInstallResponseSchema,
   stageIvScreenUninstallResponseSchema,
   stageExeFsPatchResponseSchema,
@@ -278,6 +269,17 @@ import {
   stageFashionUnlockInstallResponseSchema,
   stageFashionUnlockUninstallResponseSchema
 } from './fashionUnlockContracts';
+import {
+  type LoadGymUniformRemovalWorkflowRequest,
+  type LoadGymUniformRemovalWorkflowResponse,
+  type StageGymUniformRemovalInstallRequest,
+  type StageGymUniformRemovalInstallResponse,
+  type StageGymUniformRemovalUninstallRequest,
+  type StageGymUniformRemovalUninstallResponse,
+  loadGymUniformRemovalWorkflowResponseSchema,
+  stageGymUniformRemovalInstallResponseSchema,
+  stageGymUniformRemovalUninstallResponseSchema
+} from './gymUniformRemovalContracts';
 import {
   type ApplyFpsPatchRequest,
   type ApplyFpsPatchResponse,

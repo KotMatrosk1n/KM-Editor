@@ -68,7 +68,10 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             measurements,
             "ivScreen.load",
             () => workflowService.LoadIvScreen(temp.Paths with { SelectedGame = ProjectGame.Sword }));
-        var gymUniformRemoval = Record(measurements, "gymUniformRemoval.load", () => workflowService.LoadGymUniformRemoval(temp.Paths));
+        var gymUniformRemoval = Record(
+            measurements,
+            "gymUniformRemoval.load",
+            () => workflowService.LoadGymUniformRemoval(temp.Paths with { SelectedGame = ProjectGame.Sword }));
         var shinyRate = Record(measurements, "shinyRate.load", () => workflowService.LoadShinyRate(temp.Paths));
         var typeChart = Record(measurements, "typeChart.load", () => workflowService.LoadTypeChart(temp.Paths));
         var fairyGymBoosts = Record(measurements, "fairyGymBoosts.load", () => workflowService.LoadFairyGymBoosts(temp.Paths));

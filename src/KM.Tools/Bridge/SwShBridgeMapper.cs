@@ -1772,14 +1772,18 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.InstallStatus,
             workflow.InstallMessage,
+            workflow.CanUninstall,
             workflow.BuildId,
             workflow.PatchOffsetHex,
-            workflow.StubKind,
+            workflow.MainHandlerState,
+            workflow.IpsArtifactState,
+            ToProjectGameDto(workflow.DetectedGame),
             workflow.ReservedRegions.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance),
             new GymUniformRemovalWorkflowStatsDto(
                 workflow.Stats.ReservedMainTextRegionCount,
-                workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OwnedByteCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 

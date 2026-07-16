@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Security.Cryptography;
+using System.Text;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
-using System.Globalization;
 
 namespace KM.SwSh.GymUniformRemoval;
 
@@ -18,9 +20,15 @@ public sealed class SwShGymUniformRemovalEditSessionService
     private const string UninstallRecordId = "gym-uniform-removal-v1-uninstall";
     private const string InstallField = "install";
     private const string UninstallField = "uninstall";
+    private const string StageInstallSummary = "Stage Gym Uniform Removal install.";
+    private const string StageUninstallSummary = "Stage Gym Uniform Removal uninstall.";
+    private const string InstallReason = "Install or refresh Gym Uniform Removal's selected build-ID IPS patch in exefs.";
+    private const string UninstallReason = "Remove Gym Uniform Removal's exact selected build-ID IPS patch from exefs.";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShGymUniformRemovalWorkflowService gymUniformRemovalWorkflowService;
+    private readonly Action? beforeAcquireApplyScope;
+    private readonly Action<int, string>? beforeVerifiedPromotion;
 
     public SwShGymUniformRemovalEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -30,16 +38,51 @@ public sealed class SwShGymUniformRemovalEditSessionService
         this.gymUniformRemovalWorkflowService = gymUniformRemovalWorkflowService ?? new SwShGymUniformRemovalWorkflowService();
     }
 
+    internal SwShGymUniformRemovalEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShGymUniformRemovalWorkflowService? gymUniformRemovalWorkflowService,
+        Action beforeAcquireApplyScope)
+        : this(projectWorkspaceService, gymUniformRemovalWorkflowService)
+    {
+        this.beforeAcquireApplyScope = beforeAcquireApplyScope
+            ?? throw new ArgumentNullException(nameof(beforeAcquireApplyScope));
+    }
+
+    internal SwShGymUniformRemovalEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShGymUniformRemovalWorkflowService? gymUniformRemovalWorkflowService,
+        Action<int, string> beforeVerifiedPromotion)
+        : this(projectWorkspaceService, gymUniformRemovalWorkflowService)
+    {
+        this.beforeVerifiedPromotion = beforeVerifiedPromotion
+            ?? throw new ArgumentNullException(nameof(beforeVerifiedPromotion));
+    }
+
+    public static bool IsCanonicalUninstallSession(EditSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return session.PendingEdits.Count == 1
+            && IsCanonicalUninstallIdentity(session.PendingEdits[0]);
+    }
+
     public SwShGymUniformRemovalEditResult StageInstall(ProjectPaths paths, EditSession? session)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = gymUniformRemovalWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (currentSession.PendingEdits.Any(edit => !string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal)))
+        if (!SwShGymUniformRemovalWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.AddRange(workflow.Summary.Diagnostics);
+            return new SwShGymUniformRemovalEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (currentSession.PendingEdits.Any(edit =>
+                !string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -55,16 +98,11 @@ public sealed class SwShGymUniformRemovalEditSessionService
 
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingInstallEdit(ResolveIpsRelativePath(workflow)))
-                .ToArray(),
+            PendingEdits = [CreatePendingInstallEdit(CreatePendingSources(project, isUninstall: false))],
         };
-
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             "Gym Uniform Removal install is staged for change-plan review."));
-
         return new SwShGymUniformRemovalEditResult(workflow, updatedSession, diagnostics);
     }
 
@@ -73,11 +111,19 @@ public sealed class SwShGymUniformRemovalEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = gymUniformRemovalWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (currentSession.PendingEdits.Any(edit => !string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal)))
+        if (!SwShGymUniformRemovalWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.AddRange(workflow.Summary.Diagnostics);
+            return new SwShGymUniformRemovalEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (currentSession.PendingEdits.Any(edit =>
+                !string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -93,16 +139,11 @@ public sealed class SwShGymUniformRemovalEditSessionService
 
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingUninstallEdit(ResolveIpsRelativePath(workflow)))
-                .ToArray(),
+            PendingEdits = [CreatePendingUninstallEdit(CreatePendingSources(project, isUninstall: true))],
         };
-
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             "Gym Uniform Removal uninstall is staged for change-plan review."));
-
         return new SwShGymUniformRemovalEditResult(workflow, updatedSession, diagnostics);
     }
 
@@ -111,46 +152,54 @@ public sealed class SwShGymUniformRemovalEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = gymUniformRemovalWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (session.PendingEdits.Count == 0)
+        if (!SwShGymUniformRemovalWorkflowService.IsSupportedGame(paths.SelectedGame))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Stage Gym Uniform Removal install or uninstall before validating.",
-                expected: "Pending Gym Uniform Removal install or uninstall"));
+            diagnostics.AddRange(workflow.Summary.Diagnostics);
             return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
         }
 
-        foreach (var edit in session.PendingEdits)
+        if (session.PendingEdits.Count != 1)
         {
-            if (!string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal))
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                session.PendingEdits.Count == 0
+                    ? "Stage Gym Uniform Removal install or uninstall before validating."
+                    : "Gym Uniform Removal requires exactly one canonical pending edit.",
+                expected: "Exactly one pending Gym Uniform Removal install or uninstall edit"));
+        }
+        else
+        {
+            var edit = session.PendingEdits[0];
+            if (IsCanonicalInstallIdentity(edit))
+            {
+                ValidateCanonicalEdit(project, edit, isUninstall: false, diagnostics);
+            }
+            else if (IsCanonicalUninstallIdentity(edit))
+            {
+                ValidateCanonicalEdit(project, edit, isUninstall: true, diagnostics);
+            }
+            else
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pending edit domain '{edit.Domain}' is not supported by Gym Uniform Removal.",
-                    expected: GymUniformRemovalEditDomain));
-                continue;
+                    "Pending edit does not target the canonical Gym Uniform Removal install or uninstall record.",
+                    field: edit.Field,
+                    expected: $"{GymUniformRemovalEditDomain}/{InstallRecordId}/{InstallField} or {GymUniformRemovalEditDomain}/{UninstallRecordId}/{UninstallField}"));
             }
+        }
 
-            if (IsUninstallEdit(edit))
-            {
-                CanStageUninstall(project, workflow, paths, diagnostics);
-                continue;
-            }
-
-            if (IsInstallEdit(edit))
-            {
-                CanStageInstall(project, workflow, diagnostics);
-                continue;
-            }
-
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Pending Gym Uniform Removal edit '{edit.RecordId}' is not supported.",
-                expected: "Gym Uniform Removal install or uninstall"));
+        if (session.PendingEdits.Count == 1 && IsCanonicalUninstallIdentity(session.PendingEdits[0]))
+        {
+            CanStageUninstall(project, workflow, paths, diagnostics);
+        }
+        else
+        {
+            CanStageInstall(project, workflow, diagnostics);
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -178,34 +227,29 @@ public sealed class SwShGymUniformRemovalEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var project = projectWorkspaceService.Open(paths);
-        var targetRelativePath = ResolveIpsRelativePath(project, diagnostics);
-        var targetPath = targetRelativePath is null ? null : ResolveOutputPath(paths, targetRelativePath, diagnostics);
+        var targetRelativePath = ResolveIpsRelativePath(paths);
+        var targetPath = ResolveOutputPath(paths, targetRelativePath, diagnostics);
         if (targetPath is null)
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var isUninstall = IsUninstallSession(session);
-        var writes = new[]
-        {
-            new PlannedFileWrite(
-                targetRelativePath!,
-                [
-                    new ProjectFileReference(ProjectFileLayer.Generated, targetRelativePath!),
-                    new ProjectFileReference(ProjectFileLayer.Base, SwShGymUniformRemovalWorkflowService.ExeFsMainPath),
-                ],
-                File.Exists(targetPath),
-                isUninstall
-                    ? "Remove Gym Uniform Removal's build-ID IPS patch from exefs."
-                    : "Install or refresh Gym Uniform Removal's build-ID IPS patch in exefs."),
-        };
-
+        var project = projectWorkspaceService.Open(paths);
+        var edit = session.PendingEdits[0];
+        var isUninstall = IsCanonicalUninstallIdentity(edit);
+        var write = new PlannedFileWrite(
+            targetRelativePath,
+            CreatePendingSources(project, isUninstall),
+            File.Exists(targetPath),
+            isUninstall ? UninstallReason : InstallReason);
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
-            string.Create(CultureInfo.InvariantCulture, $"Gym Uniform Removal change plan preview contains {writes.Length:N0} target file(s).")));
+            "Gym Uniform Removal change plan preview contains 1 target file."));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, [write], diagnostics),
+            preserveExplicitSourceLayers: isUninstall);
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -214,13 +258,29 @@ public sealed class SwShGymUniformRemovalEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -228,141 +288,211 @@ public sealed class SwShGymUniformRemovalEditSessionService
                 expected: "Current reviewed Gym Uniform Removal change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var pendingEdit = session.PendingEdits.Single();
-        if (IsUninstallEdit(pendingEdit))
+        beforeAcquireApplyScope?.Invoke();
+        var preserveExplicitSourceLayers = IsCanonicalUninstallSession(session);
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var acquireDiagnostics,
+                preserveExplicitSourceLayers))
         {
-            ApplyUninstall(projectWorkspaceService.Open(paths), writtenFiles, diagnostics);
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, acquireDiagnostics);
         }
 
-        var project = projectWorkspaceService.Open(paths);
-        var source = ResolveWorkflowFile(project, SwShGymUniformRemovalWorkflowService.ExeFsMainPath);
-        var targetRelativePath = ResolveIpsRelativePath(project, diagnostics);
-        var targetPath = targetRelativePath is null ? null : ResolveOutputPath(paths, targetRelativePath, diagnostics);
-        if (source is null || targetRelativePath is null || targetPath is null)
+        using var verifiedScope = applyScope!;
+        var snapshotPlan = CreateChangePlan(verifiedScope.ApplyPaths, session);
+        if (!verifiedScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedPlan))
+        {
+            var staleDiagnostics = preparedPlan.Diagnostics.ToList();
+            staleDiagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Gym Uniform Removal sources changed while preparing the verified apply snapshot.",
+                expected: "Sources matching the reviewed Gym Uniform Removal change plan"));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, staleDiagnostics);
+        }
+
+        var snapshotResult = ApplyPreparedPlan(
+            verifiedScope.ApplyPaths,
+            session,
+            preparedPlan,
+            applyId,
+            appliedAt);
+        return verifiedScope.Commit(snapshotResult, beforeVerifiedPromotion);
+    }
+
+    private ApplyResult ApplyPreparedPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan preparedPlan,
+        string applyId,
+        DateTimeOffset appliedAt)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        var diagnostics = preparedPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+        if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Gym Uniform Removal source or IPS output target could not be resolved.",
+                "Gym Uniform Removal prepared apply requires exactly one canonical pending edit.",
+                expected: "Exactly one pending Gym Uniform Removal install or uninstall edit"));
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        var project = projectWorkspaceService.Open(paths);
+        var edit = session.PendingEdits[0];
+        var isUninstall = IsCanonicalUninstallIdentity(edit);
+        if (!isUninstall && !IsCanonicalInstallIdentity(edit))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Gym Uniform Removal prepared apply received a noncanonical pending edit.",
+                expected: "Canonical Gym Uniform Removal install or uninstall edit"));
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        ValidateCanonicalEdit(project, edit, isUninstall, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        if (isUninstall)
+        {
+            ApplyPreparedUninstall(paths, writtenFiles, diagnostics);
+        }
+        else
+        {
+            ApplyPreparedInstall(paths, writtenFiles, diagnostics);
+        }
+
+        return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+    }
+
+    private void ApplyPreparedInstall(
+        ProjectPaths paths,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var project = projectWorkspaceService.Open(paths);
+        var effectiveSource = ResolveWorkflowFile(project, SwShGymUniformRemovalWorkflowService.ExeFsMainPath);
+        var basePath = SwShGymUniformRemovalWorkflowService.ResolveBaseSourcePath(
+            paths,
+            SwShGymUniformRemovalWorkflowService.ExeFsMainPath);
+        var targetRelativePath = ResolveIpsRelativePath(paths);
+        var targetPath = ResolveOutputPath(paths, targetRelativePath, diagnostics);
+        if (effectiveSource is null || basePath is null || !File.Exists(basePath) || targetPath is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Gym Uniform Removal base, effective main, or IPS output target could not be resolved.",
                 file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Readable source and writable build-ID IPS target"));
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+                expected: "Readable reviewed base and effective main with writable build-ID IPS target"));
+            return;
         }
 
         try
         {
+            var baseBytes = File.ReadAllBytes(basePath);
+            EnsureVerifiedVanillaBase(
+                SwShGymUniformRemovalMainPatcher.Analyze(baseBytes, paths.SelectedGame));
+            var effectiveBytes = File.ReadAllBytes(effectiveSource.AbsolutePath);
+            EnsureEditableEffectiveSource(
+                SwShGymUniformRemovalMainPatcher.Analyze(effectiveBytes, paths.SelectedGame));
+            SwShGymUniformRemovalMainPatcher.EnsureCompatibleExecutableIdentity(
+                baseBytes,
+                effectiveBytes);
+
             var output = SwShGymUniformRemovalMainPatcher.CreateIpsPatch(
-                File.ReadAllBytes(source.AbsolutePath),
+                baseBytes,
                 paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            WriteOutputAtomically(
+                targetPath,
+                output,
+                roundTrip => VerifyInstalledIps(baseBytes, roundTrip, paths.SelectedGame));
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, targetRelativePath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 "Applied Gym Uniform Removal IPS changes to the configured LayeredFS output root."));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or OverflowException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Gym Uniform Removal IPS file could not be created: {exception.Message}",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword or Shield 1.3.2 exefs/main NSO"));
+                $"Gym Uniform Removal verified IPS output could not be prepared: {exception.Message}",
+                file: targetRelativePath,
+                expected: "Reviewed selected-game sources, exact install action, and writable IPS target"));
         }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gym Uniform Removal output file could not be written: {exception.Message}",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gym Uniform Removal output file could not be written: {exception.Message}",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
-    private static void ApplyUninstall(
-        OpenedProject project,
+    private static void ApplyPreparedUninstall(
+        ProjectPaths paths,
         ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var source = ResolveWorkflowFile(project, SwShGymUniformRemovalWorkflowService.ExeFsMainPath);
-        var targetRelativePath = ResolveIpsRelativePath(project, diagnostics);
-        var targetPath = targetRelativePath is null ? null : ResolveOutputPath(project.Paths, targetRelativePath, diagnostics);
-        if (source is null || targetRelativePath is null || targetPath is null)
+        var basePath = SwShGymUniformRemovalWorkflowService.ResolveBaseSourcePath(
+            paths,
+            SwShGymUniformRemovalWorkflowService.ExeFsMainPath);
+        var targetRelativePath = ResolveIpsRelativePath(paths);
+        var targetPath = ResolveOutputPath(paths, targetRelativePath, diagnostics);
+        if (basePath is null || !File.Exists(basePath) || targetPath is null || !File.Exists(targetPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Gym Uniform Removal uninstall could not resolve source main or IPS target.",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Readable source main and existing build-ID IPS target"));
-            return;
-        }
-
-        if (!File.Exists(targetPath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Gym Uniform Removal uninstall target no longer exists. Review the change plan again before applying.",
+                "Gym Uniform Removal uninstall could not resolve the reviewed vanilla base and generated IPS files.",
                 file: targetRelativePath,
-                expected: "Existing reviewed Gym Uniform Removal IPS patch"));
+                expected: "Readable vanilla base and existing exact or recognized legacy Gym Uniform Removal IPS"));
             return;
         }
 
         try
         {
-            var ipsAnalysis = SwShGymUniformRemovalMainPatcher.AnalyzeIpsPatch(
+            var baseBytes = File.ReadAllBytes(basePath);
+            EnsureVerifiedVanillaBase(
+                SwShGymUniformRemovalMainPatcher.Analyze(baseBytes, paths.SelectedGame));
+            var ipsAnalysis = SwShGymUniformRemovalMainPatcher.AnalyzeIpsArtifact(
                 File.ReadAllBytes(targetPath),
-                File.ReadAllBytes(source.AbsolutePath),
-                project.Paths.SelectedGame);
-            if (ipsAnalysis.Kind is not (SwShGymUniformRemovalInstallKind.InstalledV1
-                or SwShGymUniformRemovalInstallKind.InstalledCompatible))
+                baseBytes,
+                paths.SelectedGame);
+            if (ipsAnalysis.Kind is not (SwShGymUniformRemovalIpsArtifactKind.Current
+                or SwShGymUniformRemovalIpsArtifactKind.Legacy))
             {
                 throw new InvalidDataException(ipsAnalysis.Message);
             }
 
             File.Delete(targetPath);
+            if (File.Exists(targetPath))
+            {
+                throw new IOException("Gym Uniform Removal IPS target still exists after verified deletion.");
+            }
+
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, targetRelativePath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 "Uninstalled Gym Uniform Removal IPS from the configured LayeredFS output root."));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or OverflowException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Gym Uniform Removal uninstall could not remove IPS patch: {exception.Message}",
+                $"Gym Uniform Removal uninstall could not remove the verified IPS patch: {exception.Message}",
                 file: targetRelativePath,
-                expected: "KM Gym Uniform Removal IPS patch"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gym Uniform Removal uninstall could not update the output file: {exception.Message}",
-                file: targetRelativePath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gym Uniform Removal uninstall could not update the output file: {exception.Message}",
-                file: targetRelativePath,
-                expected: "Writable output root"));
+                expected: "Exact current or recognized legacy Gym Uniform Removal IPS"));
         }
     }
 
@@ -371,7 +501,8 @@ public sealed class SwShGymUniformRemovalEditSessionService
         SwShGymUniformRemovalWorkflow workflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
+        if (!project.Health.CanOpenEditableWorkflows
+            || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -380,19 +511,15 @@ public sealed class SwShGymUniformRemovalEditSessionService
             return false;
         }
 
-        foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-        {
-            diagnostics.Add(diagnostic);
-        }
-
+        AddWorkflowErrors(workflow, diagnostics);
         if (workflow.InstallStatus is "blocked" or "foreign")
         {
-            if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    "Gym Uniform Removal cannot stage while exefs/main has an unsupported build or conflicting gym uniform handler bytes.",
-                    expected: "Supported Sword or Shield 1.3.2 handler bytes"));
+                    "Gym Uniform Removal cannot stage while a main source or IPS artifact conflicts with the selected-game mapping.",
+                    expected: "Verified vanilla or recognized Gym Uniform Removal handler and IPS bytes"));
             }
 
             return false;
@@ -407,7 +534,8 @@ public sealed class SwShGymUniformRemovalEditSessionService
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
+        if (!project.Health.CanOpenEditableWorkflows
+            || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -416,32 +544,23 @@ public sealed class SwShGymUniformRemovalEditSessionService
             return false;
         }
 
-        foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        if (!workflow.CanUninstall)
         {
-            diagnostics.Add(diagnostic);
-        }
-
-        if (!string.Equals(workflow.InstallStatus, "installed", StringComparison.Ordinal))
-        {
-            if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Gym Uniform Removal is not installed in the current project output.",
-                    expected: "Installed Gym Uniform Removal stub"));
-            }
-
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Gym Uniform Removal uninstall requires an exact current or recognized legacy build-ID IPS patch.",
+                expected: "Owned Gym Uniform Removal IPS in the configured output root"));
             return false;
         }
 
-        var targetRelativePath = ResolveIpsRelativePath(project, diagnostics);
-        var targetPath = targetRelativePath is null ? null : ResolveOutputPath(paths, targetRelativePath, diagnostics);
+        var targetRelativePath = ResolveIpsRelativePath(paths);
+        var targetPath = ResolveOutputPath(paths, targetRelativePath, diagnostics);
         if (targetPath is null || !File.Exists(targetPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Gym Uniform Removal uninstall can only remove a generated build-ID IPS patch.",
-                file: targetRelativePath ?? SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
+                file: targetRelativePath,
                 expected: "Gym Uniform Removal IPS installed in the configured output root"));
             return false;
         }
@@ -449,47 +568,210 @@ public sealed class SwShGymUniformRemovalEditSessionService
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
     }
 
-    private static PendingEdit CreatePendingInstallEdit(string patchRelativePath)
+    private static void AddWorkflowErrors(
+        SwShGymUniformRemovalWorkflow workflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic =>
+                     diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(diagnostic);
+        }
+    }
+
+    private static PendingEdit CreatePendingInstallEdit(IReadOnlyList<ProjectFileReference> sources)
     {
         return new PendingEdit(
             GymUniformRemovalEditDomain,
-            "Stage Gym Uniform Removal install.",
-            [
-                new ProjectFileReference(ProjectFileLayer.Generated, patchRelativePath),
-                new ProjectFileReference(ProjectFileLayer.Base, SwShGymUniformRemovalWorkflowService.ExeFsMainPath),
-            ],
+            StageInstallSummary,
+            sources,
             InstallRecordId,
             InstallField,
             "true");
     }
 
-    private static PendingEdit CreatePendingUninstallEdit(string patchRelativePath)
+    private static PendingEdit CreatePendingUninstallEdit(IReadOnlyList<ProjectFileReference> sources)
     {
         return new PendingEdit(
             GymUniformRemovalEditDomain,
-            "Stage Gym Uniform Removal uninstall.",
-            [
-                new ProjectFileReference(ProjectFileLayer.Generated, patchRelativePath),
-                new ProjectFileReference(ProjectFileLayer.Base, SwShGymUniformRemovalWorkflowService.ExeFsMainPath),
-            ],
+            StageUninstallSummary,
+            sources,
             UninstallRecordId,
             UninstallField,
             "true");
     }
 
-    private static bool IsInstallEdit(PendingEdit edit)
+    private static bool IsCanonicalInstallIdentity(PendingEdit edit)
     {
-        return string.Equals(edit.RecordId, InstallRecordId, StringComparison.Ordinal);
+        return string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, InstallRecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, InstallField, StringComparison.Ordinal);
     }
 
-    private static bool IsUninstallSession(EditSession session)
+    private static bool IsCanonicalUninstallIdentity(PendingEdit edit)
     {
-        return session.PendingEdits.Count == 1 && IsUninstallEdit(session.PendingEdits[0]);
+        return string.Equals(edit.Domain, GymUniformRemovalEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, UninstallField, StringComparison.Ordinal);
     }
 
-    private static bool IsUninstallEdit(PendingEdit edit)
+    private void ValidateCanonicalEdit(
+        OpenedProject project,
+        PendingEdit edit,
+        bool isUninstall,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal);
+        var expectedSummary = isUninstall ? StageUninstallSummary : StageInstallSummary;
+        var expectedField = isUninstall ? UninstallField : InstallField;
+        if (!string.Equals(edit.Summary, expectedSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Gym Uniform Removal edit does not have the canonical staged summary.",
+                field: expectedField,
+                expected: expectedSummary));
+        }
+
+        if (!string.Equals(edit.NewValue, "true", StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Gym Uniform Removal action payload must be exactly true.",
+                field: expectedField,
+                expected: "true"));
+        }
+
+        ValidateCanonicalSources(
+            edit.Sources,
+            CreatePendingSources(project, isUninstall),
+            expectedField,
+            diagnostics);
+    }
+
+    private IReadOnlyList<ProjectFileReference> CreatePendingSources(
+        OpenedProject project,
+        bool isUninstall)
+    {
+        var ipsRelativePath = ResolveIpsRelativePath(project.Paths);
+        return gymUniformRemovalWorkflowService
+            .GetPlanSources(project, ipsRelativePath, isUninstall)
+            .Append(CreatePendingPayloadSource(isUninstall))
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static ProjectFileReference CreatePendingPayloadSource(bool isUninstall)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("true")));
+        var action = isUninstall ? "uninstall" : "install";
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/gym-uniform-removal/{action}/{hash}");
+    }
+
+    private static void ValidateCanonicalSources(
+        IReadOnlyList<ProjectFileReference> actual,
+        IReadOnlyList<ProjectFileReference> expected,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (actual.Count == expected.Count && actual.SequenceEqual(expected))
+        {
+            return;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Pending Gym Uniform Removal sources do not match the canonical action-specific base, effective main, IPS artifact, and action fingerprint.",
+            field: field,
+            expected: "Canonical ordered unique Gym Uniform Removal source references"));
+    }
+
+    private static void EnsureVerifiedVanillaBase(SwShGymUniformRemovalAnalysis analysis)
+    {
+        if (analysis.Kind != SwShGymUniformRemovalInstallKind.NotInstalled
+            || analysis.DetectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+            || string.Equals(analysis.BuildId, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "Gym Uniform Removal requires the reviewed selected-game vanilla base exefs/main before apply or uninstall.");
+        }
+    }
+
+    private static void EnsureEditableEffectiveSource(SwShGymUniformRemovalAnalysis analysis)
+    {
+        if (analysis.Kind is not (SwShGymUniformRemovalInstallKind.NotInstalled
+            or SwShGymUniformRemovalInstallKind.InstalledV1
+            or SwShGymUniformRemovalInstallKind.InstalledCompatible))
+        {
+            throw new InvalidDataException(
+                "The reviewed effective exefs/main no longer has vanilla or recognized Gym Uniform Removal handler bytes.");
+        }
+    }
+
+    private static void VerifyInstalledIps(
+        byte[] baseBytes,
+        byte[] output,
+        ProjectGame? selectedGame)
+    {
+        var analysis = SwShGymUniformRemovalMainPatcher.AnalyzeIpsArtifact(
+            output,
+            baseBytes,
+            selectedGame);
+        if (analysis.Kind != SwShGymUniformRemovalIpsArtifactKind.Current
+            || analysis.DetectedGame != selectedGame)
+        {
+            throw new InvalidDataException(
+                "Generated IPS did not round-trip as the exact selected-game Gym Uniform Removal patch.");
+        }
+    }
+
+    private static void WriteOutputAtomically(
+        string targetPath,
+        byte[] output,
+        Action<byte[]> verifyRoundTrip)
+    {
+        var directoryPath = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Gym Uniform Removal output directory could not be resolved.");
+        Directory.CreateDirectory(directoryPath);
+        var temporaryPath = Path.Combine(
+            directoryPath,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, output);
+            var roundTrip = File.ReadAllBytes(temporaryPath);
+            if (!roundTrip.AsSpan().SequenceEqual(output))
+            {
+                throw new IOException("Gym Uniform Removal temporary IPS did not round-trip byte-for-byte.");
+            }
+
+            verifyRoundTrip(roundTrip);
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static string ResolveIpsRelativePath(ProjectPaths paths)
+    {
+        if (!SwShGymUniformRemovalWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            throw new InvalidDataException(
+                "Gym Uniform Removal requires Pokemon Sword or Pokemon Shield to choose the IPS filename.");
+        }
+
+        return SwShGymUniformRemovalMainPatcher.IpsRelativePath(paths.SelectedGame!.Value);
     }
 
     private static string? ResolveOutputPath(
@@ -518,85 +800,6 @@ public sealed class SwShGymUniformRemovalEditSessionService
         return targetPath;
     }
 
-    private static string ResolveIpsRelativePath(SwShGymUniformRemovalWorkflow workflow)
-    {
-        var relativePath = SwShGymUniformRemovalMainPatcher.TryGetIpsRelativePath(workflow.BuildId);
-        return relativePath ?? SwShGymUniformRemovalWorkflowService.ExeFsMainPath;
-    }
-
-    private static string? ResolveIpsRelativePath(
-        OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var source = ResolveWorkflowFile(project, SwShGymUniformRemovalWorkflowService.ExeFsMainPath);
-        if (source is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Gym Uniform Removal could not resolve exefs/main to choose the IPS filename.",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Readable Sword or Shield 1.3.2 exefs/main NSO"));
-            return null;
-        }
-
-        try
-        {
-            var analysis = SwShGymUniformRemovalMainPatcher.Analyze(
-                File.ReadAllBytes(source.AbsolutePath),
-                project.Paths.SelectedGame);
-            if (analysis.DetectedGame is null)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    analysis.Message,
-                    file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                    expected: "Supported Sword or Shield 1.3.2 exefs/main NSO"));
-                return null;
-            }
-
-            return SwShGymUniformRemovalMainPatcher.IpsRelativePath(analysis.DetectedGame.Value);
-        }
-        catch (InvalidDataException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gym Uniform Removal could not choose an IPS filename: {exception.Message}",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword or Shield 1.3.2 exefs/main NSO"));
-            return null;
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gym Uniform Removal could not read exefs/main to choose the IPS filename: {exception.Message}",
-                file: SwShGymUniformRemovalWorkflowService.ExeFsMainPath,
-                expected: "Readable source main"));
-            return null;
-        }
-    }
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
-    }
-
     private static ApplyResult CreateApplyResult(
         string applyId,
         DateTimeOffset appliedAt,
@@ -614,16 +817,16 @@ public sealed class SwShGymUniformRemovalEditSessionService
 
     private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
     {
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
-        if (graphEntry is null)
+        var entry = project.FileGraph.Entries.FirstOrDefault(candidate =>
+            string.Equals(candidate.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
         {
             return null;
         }
 
-        var sourcePath = SwShGymUniformRemovalWorkflowService.ResolveSourcePath(project.Paths, graphEntry);
+        var sourcePath = SwShGymUniformRemovalWorkflowService.ResolveSourcePath(project.Paths, entry);
         return sourcePath is not null && File.Exists(sourcePath)
-            ? new WorkflowFileSource(graphEntry, sourcePath)
+            ? new WorkflowFileSource(sourcePath)
             : null;
     }
 
@@ -643,7 +846,5 @@ public sealed class SwShGymUniformRemovalEditSessionService
             Expected: expected);
     }
 
-    private sealed record WorkflowFileSource(
-        ProjectFileGraphEntry GraphEntry,
-        string AbsolutePath);
+    private sealed record WorkflowFileSource(string AbsolutePath);
 }

@@ -1771,6 +1771,52 @@ describe('LocalizationProvider', () => {
     }
   });
 
+  it('includes Gym Uniform Removal identity, artifact, and staged-state literals in every language', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals,
+      zh: zhResource.literals
+    };
+    const requiredLiterals = [
+      'Compatible return-true handler',
+      'Conflicting handler bytes',
+      'Current KM IPS',
+      'Delete generated IPS',
+      'Deletes only the exact recognized generated build-ID IPS file.',
+      'Foreign handler bytes',
+      'Foreign IPS',
+      'Gym Uniform Removal Shield uniform-change handler',
+      'Gym Uniform Removal Sword uniform-change handler',
+      'Gym Uniform Removal staging did not match the requested action, game, session, source, and IPS artifact state.',
+      'IPS artifact',
+      'IPS file',
+      'Invalid IPS',
+      'KM return-true handler',
+      'Main handler',
+      'Not inspected',
+      'Not present',
+      'Owned bytes',
+      'Recognized legacy IPS',
+      'Uninstall available',
+      'Unsupported build',
+      'Vanilla handler',
+      'Verified sources'
+    ];
+
+    for (const [language, literals] of Object.entries(localizedResources)) {
+      for (const literal of requiredLiterals) {
+        expect(literals[literal], `${language}: ${literal}`).toBeTruthy();
+        if (language !== 'en') {
+          expect(literals[literal], `${language}: ${literal}`).not.toBe(literal);
+        }
+      }
+    }
+  });
+
   it('switches language immediately and persists the choice', async () => {
     const user = userEvent.setup();
 
