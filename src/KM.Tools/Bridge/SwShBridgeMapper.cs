@@ -1743,9 +1743,15 @@ public static class SwShBridgeMapper
             workflow.InstallStatus,
             workflow.InstallMessage,
             workflow.Marker,
-            workflow.HookSiteOffsetHex,
+            workflow.BuildId,
+            workflow.DetectedGame is null
+                ? null
+                : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+            workflow.PrimaryValueSourceOffsetHex,
+            workflow.XToggleRefreshOffsetHex,
             workflow.RawIvGetterOffsetHex,
             workflow.HyperTrainingWrapperOffsetHex,
+            workflow.CanUninstall,
             workflow.ReservedRegions.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance),
             new IvScreenWorkflowStatsDto(

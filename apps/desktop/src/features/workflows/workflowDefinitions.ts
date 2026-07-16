@@ -196,7 +196,7 @@ export const workflowDefinitions: Array<{
     id: 'ivScreen',
     label: 'IV Screen',
     description:
-      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. It uses its own reserved hook and cave slots.',
+      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. Install and uninstall touch only exact IV Screen-owned bytes.',
     icon: ScanLine
   },
   {

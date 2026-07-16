@@ -4310,12 +4310,15 @@ export function createMockProjectBridge(
     label: 'IV Screen'
   };
   const ivScreenWorkflow: IvScreenWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    canUninstall: false,
+    detectedGame: 'sword',
     diagnostics: [],
-    hookSiteOffsetHex: 'main.text+0x0138F268',
     hyperTrainingWrapperOffsetHex: 'main.text+0x007790D0',
     installMessage: 'IV Screen can patch exefs/main.',
     installStatus: canEdit ? 'available' : 'readOnly',
     marker: 'SWSH_IV_DISPLAY_V1',
+    primaryValueSourceOffsetHex: 'main.text+0x0138A2B4',
     provenance: {
       fileState: 'baseOnly',
       sourceFile: 'exefs/main',
@@ -4324,19 +4327,20 @@ export function createMockProjectBridge(
     rawIvGetterOffsetHex: 'main.text+0x00779070',
     reservedRegions: [
       {
-        label: 'IV Screen normal stats graph refresh hook branch site',
+        label: 'IV Screen multi-chart HP text value source 01',
         length: 4,
-        offsetLabel: 'text+0x138F268..0x138F26B',
-        regionId: 'iv-screen-hook-site',
+        offsetLabel: 'text+0x138A2B4..0x138A2B7',
+        regionId: 'iv-screen-multichart-text-hp-value-01',
         rule: 'do-not-overwrite',
-        startOffset: 0x0138f268
+        startOffset: 0x0138a2b4
       }
     ],
     stats: {
       reservedMainTextRegionCount: 1,
       sourceFileCount: 1
     },
-    summary: ivScreenWorkflowSummary
+    summary: ivScreenWorkflowSummary,
+    xToggleRefreshOffsetHex: 'main.text+0x0138B3AC'
   };
   const startingItemsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -5831,14 +5835,15 @@ export function createMockProjectBridge(
                         : request.session.pendingEdits[0]?.domain === 'workflow.ivScreen'
                         ? [
                             {
-                              reason: 'Install or refresh IV Screen raw-IV hook in exefs/main.',
-                              replacesExistingOutput: false,
-                              sources: [
-                                {
-                                  layer: 'base',
-                                  relativePath: 'exefs/main'
-                                }
-                              ],
+                              reason:
+                                request.session.pendingEdits[0]?.recordId ===
+                                'iv-screen-v1-uninstall'
+                                  ? 'Uninstall the exact recognized IV Screen graph from exefs/main while preserving unrelated supported ExeFS edits.'
+                                  : "Install or refresh IV Screen's reviewed Pokemon Summary raw-IV display graph in exefs/main.",
+                              replacesExistingOutput:
+                                request.session.pendingEdits[0]?.recordId ===
+                                'iv-screen-v1-uninstall',
+                              sources: request.session.pendingEdits[0]?.sources ?? [],
                               targetRelativePath: 'exefs/main'
                             }
                           ]
@@ -6394,15 +6399,16 @@ export function createMockProjectBridge(
               recordId: 'iv-screen-v1-install',
               sources: [
                 {
-                  layer: 'layered',
+                  layer: 'base',
                   relativePath: 'exefs/main'
                 },
                 {
-                  layer: 'base',
-                  relativePath: 'exefs/main'
+                  layer: 'pending',
+                  relativePath:
+                    'pending/iv-screen/install/B5BEA41B6C623F7C09F1BF24DCAE58EBAB3C0CDD90AD966BC43A45B44867E12B'
                 }
               ],
-              summary: 'Stage IV Screen install.'
+              summary: 'Stage IV Screen install or refresh.'
             }
           ],
           sessionId: request.session?.sessionId ?? 'session-iv-screen-install'
@@ -6427,12 +6433,17 @@ export function createMockProjectBridge(
               recordId: 'iv-screen-v1-uninstall',
               sources: [
                 {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                },
+                {
                   layer: 'layered',
                   relativePath: 'exefs/main'
                 },
                 {
-                  layer: 'base',
-                  relativePath: 'exefs/main'
+                  layer: 'pending',
+                  relativePath:
+                    'pending/iv-screen/uninstall/B5BEA41B6C623F7C09F1BF24DCAE58EBAB3C0CDD90AD966BC43A45B44867E12B'
                 }
               ],
               summary: 'Stage IV Screen uninstall.'
@@ -6442,6 +6453,7 @@ export function createMockProjectBridge(
         },
         workflow: {
           ...ivScreenWorkflow,
+          canUninstall: true,
           installMessage: 'IV Screen is installed.',
           installStatus: 'installed',
           provenance: {

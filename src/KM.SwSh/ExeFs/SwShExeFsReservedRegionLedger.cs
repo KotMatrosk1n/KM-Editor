@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Globalization;
+using KM.Core.Projects;
 
 namespace KM.SwSh.ExeFs;
 
@@ -227,6 +228,18 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerIvScreen, "iv-screen-marker-2", ExeFsMainPath, "main.text", 0x01397934, 0x0C, "IV Screen marker/version fragment 2", "do-not-overwrite"),
         new(OwnerPokemonSummaryRuntime, "pokemon-summary-raw-iv-getter", ExeFsMainPath, "main.text", 0x00779070, 0x04, "Raw IV getter used by IV Screen", "do-not-overwrite"),
         new(OwnerPokemonSummaryRuntime, "pokemon-summary-hyper-training-iv-wrapper", ExeFsMainPath, "main.text", 0x007790D0, 0x04, "Hyper Training-adjusted IV wrapper not used by IV Screen", "do-not-overwrite"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-current-hp-getter", ExeFsMainPath, "main.text", 0x0077AFD0, 0x04, "Current-HP getter required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-max-hp-getter", ExeFsMainPath, "main.text", 0x0077AC70, 0x04, "Maximum-HP getter required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-stat-getter", ExeFsMainPath, "main.text", 0x0077AC30, 0x04, "Summary stat getter required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-alternate-stat-getter", ExeFsMainPath, "main.text", 0x00779F50, 0x04, "Alternate summary stat getter required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-calculated-stat-getter", ExeFsMainPath, "main.text", 0x00778E20, 0x04, "Calculated stat getter required by IV Screen's vanilla normal graph path", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-sword-multichart-refresh", ExeFsMainPath, "main.text", 0x0138A1A0, 0x04, "Sword multi-chart refresh entry required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-shield-multichart-refresh", ExeFsMainPath, "main.text", 0x0138A1D0, 0x04, "Shield multi-chart refresh entry required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-sword-x-toggle-return", ExeFsMainPath, "main.text", 0x0138B550, 0x04, "Sword X-toggle refresh return required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-shield-x-toggle-return", ExeFsMainPath, "main.text", 0x0138B580, 0x04, "Shield X-toggle refresh return required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-initial-sword-value-pane-helper", ExeFsMainPath, "main.text", 0x0138B1E0, 0x04, "Initial Sword IV Screen value-pane visibility helper", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-sword-normal-graph-renderer", ExeFsMainPath, "main.text", 0x0138FB60, 0x04, "Sword normal stats graph renderer required by IV Screen", "requires-vanilla"),
+        new(OwnerPokemonSummaryRuntime, "pokemon-summary-shield-normal-graph-renderer", ExeFsMainPath, "main.text", 0x0138FB90, 0x04, "Shield normal stats graph renderer required by IV Screen", "requires-vanilla"),
 
         new(OwnerGymUniformRemoval, "gym-uniform-removal-sword-handler", ExeFsMainPath, "main.text", 0x01472600, 0x08, "Gym Uniform Removal Sword uniform-change handler", "do-not-overwrite"),
         new(OwnerGymUniformRemoval, "gym-uniform-removal-shield-handler", ExeFsMainPath, "main.text", 0x01472630, 0x08, "Gym Uniform Removal Shield uniform-change handler", "do-not-overwrite"),
@@ -312,6 +325,20 @@ internal static class SwShExeFsReservedRegionLedger
             .ToArray();
     }
 
+    public static IReadOnlyList<SwShExeFsReservedRegion> MainTextRegionsForOwner(
+        string owner,
+        ProjectGame? game)
+    {
+        var ownerRegions = MainTextRegionsForOwner(owner);
+        if (!string.Equals(owner, OwnerIvScreen, StringComparison.Ordinal)
+            || game != ProjectGame.Shield)
+        {
+            return ownerRegions;
+        }
+
+        return ownerRegions.Select(ShiftIvScreenRegionForShield).ToArray();
+    }
+
     public static IReadOnlyList<SwShExeFsReservedRegion> MainRoRegionsForOwner(string owner)
     {
         return regions
@@ -337,6 +364,17 @@ internal static class SwShExeFsReservedRegionLedger
 
     public static IReadOnlyList<SwShExeFsReservedRegion> MainTextReservationsForOtherOwners(params string[] allowedOwners)
     {
+        var canonical = CanonicalMainTextReservationsForOtherOwners(allowedOwners);
+        var shieldIvScreen = canonical
+            .Where(region => string.Equals(region.Owner, OwnerIvScreen, StringComparison.Ordinal))
+            .Select(ShiftIvScreenRegionForShield);
+
+        return canonical.Concat(shieldIvScreen).Distinct().ToArray();
+    }
+
+    private static IReadOnlyList<SwShExeFsReservedRegion> CanonicalMainTextReservationsForOtherOwners(
+        params string[] allowedOwners)
+    {
         var allowedOwnerSet = allowedOwners.ToHashSet(StringComparer.Ordinal);
         return regions
             .Where(region => string.Equals(region.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
@@ -346,8 +384,38 @@ internal static class SwShExeFsReservedRegionLedger
                 && region.Length is not null
                 && (string.Equals(region.Rule, "do-not-overwrite", StringComparison.Ordinal)
                     || string.Equals(region.Rule, "do-not-allocate", StringComparison.Ordinal)
-                    || string.Equals(region.Rule, "payload-only", StringComparison.Ordinal)))
+                    || string.Equals(region.Rule, "payload-only", StringComparison.Ordinal)
+                    || string.Equals(region.Rule, "requires-vanilla", StringComparison.Ordinal)))
             .ToArray();
+    }
+
+    public static IReadOnlyList<SwShExeFsReservedRegion> MainTextReservationsForOtherOwners(
+        ProjectGame? game,
+        params string[] allowedOwners)
+    {
+        var reservations = CanonicalMainTextReservationsForOtherOwners(allowedOwners);
+        if (game != ProjectGame.Shield)
+        {
+            return reservations;
+        }
+
+        return reservations
+            .Select(region => string.Equals(region.Owner, OwnerIvScreen, StringComparison.Ordinal)
+                ? ShiftIvScreenRegionForShield(region)
+                : region)
+            .ToArray();
+    }
+
+    private static SwShExeFsReservedRegion ShiftIvScreenRegionForShield(SwShExeFsReservedRegion region)
+    {
+        const int shieldOffsetDelta = 0x30;
+        return region with
+        {
+            StartOffset = region.StartOffset is null
+                ? null
+                : region.StartOffset.Value + shieldOffsetDelta,
+            Label = $"{region.Label} (Shield)",
+        };
     }
 
     public static bool Overlaps(SwShExeFsReservedRegion region, int startOffset, int length)

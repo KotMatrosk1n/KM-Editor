@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Projects;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.IvScreen;
@@ -28,9 +29,13 @@ public sealed record SwShIvScreenWorkflow(
     string InstallStatus,
     string InstallMessage,
     string Marker,
-    string HookSiteOffsetHex,
+    string BuildId,
+    ProjectGame? DetectedGame,
+    string PrimaryValueSourceOffsetHex,
+    string XToggleRefreshOffsetHex,
     string RawIvGetterOffsetHex,
     string HyperTrainingWrapperOffsetHex,
+    bool CanUninstall,
     IReadOnlyList<SwShIvScreenReservedRegion> ReservedRegions,
     SwShIvScreenProvenance Provenance,
     SwShIvScreenWorkflowStats Stats,

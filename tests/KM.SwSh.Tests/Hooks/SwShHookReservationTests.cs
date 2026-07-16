@@ -120,6 +120,13 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShWorkflowAvailability.Available, ivScreen.Summary.Availability);
         Assert.Equal("available", ivScreen.InstallStatus);
         Assert.Equal("SWSH_IV_DISPLAY_V1", ivScreen.Marker);
+        Assert.Equal(ShieldBuildId, ivScreen.BuildId);
+        Assert.Equal(ProjectGame.Shield, ivScreen.DetectedGame);
+        Assert.Equal("main.text+0x0138A2E4", ivScreen.PrimaryValueSourceOffsetHex);
+        Assert.Equal("main.text+0x0138B3DC", ivScreen.XToggleRefreshOffsetHex);
+        Assert.Equal("main.text+0x00779070", ivScreen.RawIvGetterOffsetHex);
+        Assert.Equal("main.text+0x007790D0", ivScreen.HyperTrainingWrapperOffsetHex);
+        Assert.False(ivScreen.CanUninstall);
         Assert.Contains(ivScreen.ReservedRegions, region => region.RegionId == "iv-screen-hook-site");
 
         Assert.Equal(SwShWorkflowAvailability.Available, royalCandy.Summary.Availability);
@@ -148,6 +155,49 @@ public sealed class SwShHookReservationTests
         Assert.Equal(0x00743600, region.StartOffset);
         Assert.Equal(0x144, region.Length);
         Assert.Equal("ro+0x743600..0x743743", region.OffsetLabel);
+    }
+
+    [Fact]
+    public void IvScreenRuntimeDependenciesAreProtectedButNotIvOwnedRestoreRegions()
+    {
+        var runtimeRegions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerPokemonSummaryRuntime);
+        var requiredOffsets = runtimeRegions
+            .Where(region => region.Rule == "requires-vanilla")
+            .Select(region => region.StartOffset!.Value)
+            .Order()
+            .ToArray();
+        int[] expectedOffsets =
+        [
+            0x00778E20,
+            0x00779F50,
+            0x0077AC30,
+            0x0077AC70,
+            0x0077AFD0,
+            0x0138A1A0,
+            0x0138A1D0,
+            0x0138B1E0,
+            0x0138B550,
+            0x0138B580,
+            0x0138FB60,
+            0x0138FB90,
+        ];
+
+        Assert.Equal(expectedOffsets, requiredOffsets);
+        var allocatorReservations = SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits);
+        Assert.All(expectedOffsets, offset => Assert.Contains(
+            allocatorReservations,
+            region => region.Owner == SwShExeFsReservedRegionLedger.OwnerPokemonSummaryRuntime
+                && region.StartOffset == offset));
+
+        foreach (var game in new[] { ProjectGame.Sword, ProjectGame.Shield })
+        {
+            var ivOwned = SwShIvScreenMainPatcher.ReservedMainTextRegions(game);
+            Assert.DoesNotContain(ivOwned, region =>
+                region.StartOffset is not null && expectedOffsets.Contains(region.StartOffset.Value));
+        }
     }
 
     [Fact]
@@ -2680,6 +2730,558 @@ public sealed class SwShHookReservationTests
     [Theory]
     [InlineData(ProjectGame.Sword)]
     [InlineData(ProjectGame.Shield)]
+    public void IvScreenRejectsNonCanonicalFullBuildIdentity(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patched = SwShIvScreenMainPatcher.Apply(baseMain, game);
+        var nonCanonicalMain = baseMain.ToArray();
+        nonCanonicalMain[0x40 + 0x1F] = 0x01;
+
+        var analysis = SwShIvScreenMainPatcher.Analyze(nonCanonicalMain, game);
+
+        Assert.Equal(SwShIvScreenInstallKind.UnsupportedBuild, analysis.Kind);
+        Assert.Equal(game == ProjectGame.Shield ? ShieldBuildId : SwordBuildId, analysis.BuildId);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.Apply(nonCanonicalMain, game));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.RestoreFromBase(patched, nonCanonicalMain, game));
+    }
+
+    [Fact]
+    public void IvScreenRejectsRequiredNsoSegmentHashMismatch()
+    {
+        var corrupt = CreateSharedHookNso(ProjectGame.Sword);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            corrupt.AsSpan(0x0C, sizeof(uint)),
+            (uint)NsoFlags.CheckHashText);
+        corrupt[0xA0] ^= 0xFF;
+
+        var analysis = SwShIvScreenMainPatcher.Analyze(corrupt, ProjectGame.Sword);
+
+        Assert.Equal(SwShIvScreenInstallKind.Conflict, analysis.Kind);
+        Assert.Contains("required NSO header hash", analysis.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.Apply(corrupt, ProjectGame.Sword));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void IvScreenRejectsDamagedCurrentGraphAndClaimedCave(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patched = SwShIvScreenMainPatcher.Apply(baseMain, game);
+        var nso = NsoFile.Parse(patched);
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+
+        var damagedText = nso.Text.DecompressedData.ToArray();
+        WriteInstruction(damagedText, 0x0138B3AC + shift + 4, EncodeNop());
+        var damagedGraph = nso.Write(textDecompressedData: damagedText);
+        Assert.Equal(
+            SwShIvScreenInstallKind.Conflict,
+            SwShIvScreenMainPatcher.Analyze(damagedGraph, game).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.RestoreFromBase(damagedGraph, baseMain, game));
+
+        var occupiedText = nso.Text.DecompressedData.ToArray();
+        occupiedText[0x01392334 + shift] = 0x01;
+        var occupiedCave = nso.Write(textDecompressedData: occupiedText);
+        Assert.Equal(
+            SwShIvScreenInstallKind.Conflict,
+            SwShIvScreenMainPatcher.Analyze(occupiedCave, game).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.RestoreFromBase(occupiedCave, baseMain, game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void IvScreenBlocksFreshInstallWhenAnyClaimedCaveIsOccupied(ProjectGame game)
+    {
+        var nso = NsoFile.Parse(CreateSharedHookNso(game));
+        var text = nso.Text.DecompressedData.ToArray();
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+        text[0x01392334 + shift] = 0x01;
+        var occupied = nso.Write(textDecompressedData: text);
+
+        Assert.Equal(
+            SwShIvScreenInstallKind.Conflict,
+            SwShIvScreenMainPatcher.Analyze(occupied, game).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.Apply(occupied, game));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void IvScreenValidatesEveryActiveDependency(ProjectGame game)
+    {
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+        var dependencyOffsets = new[]
+        {
+            0x00779070,
+            0x00778E20,
+            0x0077AFD0,
+            0x0077AC70,
+            0x0077AC30,
+            0x00779F50,
+            0x0138A1A0 + shift,
+            0x0138B550 + shift,
+            0x0138FB60 + shift,
+        };
+
+        foreach (var dependencyOffset in dependencyOffsets)
+        {
+            var nso = NsoFile.Parse(CreateSharedHookNso(game));
+            var text = nso.Text.DecompressedData.ToArray();
+            WriteInstruction(text, dependencyOffset, EncodeNop());
+            var damaged = nso.Write(textDecompressedData: text);
+
+            Assert.Equal(
+                SwShIvScreenInstallKind.NotInstalledDependencyConflict,
+                SwShIvScreenMainPatcher.Analyze(damaged, game).Kind);
+            Assert.Throws<InvalidDataException>(() =>
+                SwShIvScreenMainPatcher.Apply(damaged, game));
+        }
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void IvScreenApplyAndRestorePreserveOutsideOwnedTextAndOtherSegments(ProjectGame game)
+    {
+        const int outsideOffset = 0x1000;
+        var initialNso = NsoFile.Parse(CreateSharedHookNso(game));
+        var baseText = initialNso.Text.DecompressedData.ToArray();
+        var baseRo = initialNso.Ro.DecompressedData.ToArray();
+        var baseData = initialNso.Data.DecompressedData.ToArray();
+        baseText[outsideOffset] = 0x5A;
+        baseRo[0] = 0x66;
+        baseData[0] = 0x77;
+        var baseMain = initialNso.Write(
+            textDecompressedData: baseText,
+            roDecompressedData: baseRo,
+            dataDecompressedData: baseData);
+
+        var patched = SwShIvScreenMainPatcher.Apply(baseMain, game);
+        var patchedNso = NsoFile.Parse(patched);
+        Assert.Equal(0x5A, patchedNso.Text.DecompressedData[outsideOffset]);
+        Assert.Equal(0x66, patchedNso.Ro.DecompressedData[0]);
+        Assert.Equal(0x77, patchedNso.Data.DecompressedData[0]);
+        Assert.Equal(
+            baseText.AsSpan(SwShIvScreenMainPatcher.RawIvGetterOffset, 4).ToArray(),
+            patchedNso.Text.DecompressedData.AsSpan(SwShIvScreenMainPatcher.RawIvGetterOffset, 4).ToArray());
+        Assert.Equal(
+            baseText.AsSpan(SwShIvScreenMainPatcher.HyperTrainingIvWrapperOffset, 4).ToArray(),
+            patchedNso.Text.DecompressedData.AsSpan(SwShIvScreenMainPatcher.HyperTrainingIvWrapperOffset, 4).ToArray());
+
+        var currentText = patchedNso.Text.DecompressedData.ToArray();
+        var currentRo = patchedNso.Ro.DecompressedData.ToArray();
+        var currentData = patchedNso.Data.DecompressedData.ToArray();
+        currentText[outsideOffset + 1] = 0xA5;
+        currentRo[0] = 0x88;
+        currentData[0] = 0x99;
+        var currentMain = patchedNso.Write(
+            textDecompressedData: currentText,
+            roDecompressedData: currentRo,
+            dataDecompressedData: currentData);
+
+        var restored = SwShIvScreenMainPatcher.RestoreFromBase(currentMain, baseMain, game);
+        var restoredNso = NsoFile.Parse(restored);
+        Assert.Equal(0x5A, restoredNso.Text.DecompressedData[outsideOffset]);
+        Assert.Equal(0xA5, restoredNso.Text.DecompressedData[outsideOffset + 1]);
+        Assert.Equal(0x88, restoredNso.Ro.DecompressedData[0]);
+        Assert.Equal(0x99, restoredNso.Data.DecompressedData[0]);
+        Assert.Equal(
+            SwShIvScreenInstallKind.NotInstalled,
+            SwShIvScreenMainPatcher.Analyze(restored, game).Kind);
+    }
+
+    [Fact]
+    public void IvScreenRecognizesMigratesAndRestoresExactInitialSwordLayout()
+    {
+        var baseMain = CreateSharedHookNso(ProjectGame.Sword);
+        var legacy = CreateInitialIvScreenLegacyNso(baseMain);
+
+        Assert.Equal(
+            SwShIvScreenInstallKind.InstalledLegacyV1,
+            SwShIvScreenMainPatcher.Analyze(legacy, ProjectGame.Sword).Kind);
+
+        var migrated = SwShIvScreenMainPatcher.Apply(legacy, ProjectGame.Sword);
+        Assert.Equal(
+            SwShIvScreenInstallKind.InstalledV1,
+            SwShIvScreenMainPatcher.Analyze(migrated, ProjectGame.Sword).Kind);
+
+        var legacyNso = NsoFile.Parse(legacy);
+        var legacyText = legacyNso.Text.DecompressedData.ToArray();
+        var legacyRo = legacyNso.Ro.DecompressedData.ToArray();
+        var legacyData = legacyNso.Data.DecompressedData.ToArray();
+        legacyText[0x1000] = 0x5A;
+        WriteInstruction(legacyText, 0x0077AFD0, EncodeNop());
+        legacyRo[0] = 0x66;
+        legacyData[0] = 0x77;
+        var legacyWithOtherEdits = legacyNso.Write(
+            textDecompressedData: legacyText,
+            roDecompressedData: legacyRo,
+            dataDecompressedData: legacyData);
+        Assert.Equal(
+            SwShIvScreenInstallKind.InstalledLegacyV1,
+            SwShIvScreenMainPatcher.Analyze(legacyWithOtherEdits, ProjectGame.Sword).Kind);
+        var restored = SwShIvScreenMainPatcher.RestoreFromBase(
+            legacyWithOtherEdits,
+            baseMain,
+            ProjectGame.Sword);
+        var restoredNso = NsoFile.Parse(restored);
+        Assert.Equal(0x5A, restoredNso.Text.DecompressedData[0x1000]);
+        Assert.Equal(EncodeNop(), ReadInstruction(restoredNso.Text.DecompressedData, 0x0077AFD0));
+        Assert.Equal(0x66, restoredNso.Ro.DecompressedData[0]);
+        Assert.Equal(0x77, restoredNso.Data.DecompressedData[0]);
+        Assert.Equal(
+            SwShIvScreenInstallKind.NotInstalledDependencyConflict,
+            SwShIvScreenMainPatcher.Analyze(restored, ProjectGame.Sword).Kind);
+    }
+
+    [Fact]
+    public void IvScreenRejectsDamagedOrForeignAugmentedInitialSwordLayout()
+    {
+        var baseMain = CreateSharedHookNso(ProjectGame.Sword);
+        var legacy = CreateInitialIvScreenLegacyNso(baseMain);
+        var legacyNso = NsoFile.Parse(legacy);
+
+        var damagedText = legacyNso.Text.DecompressedData.ToArray();
+        damagedText[0x0138F324] ^= 0x01;
+        var damaged = legacyNso.Write(textDecompressedData: damagedText);
+        Assert.Equal(
+            SwShIvScreenInstallKind.Conflict,
+            SwShIvScreenMainPatcher.Analyze(damaged, ProjectGame.Sword).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.RestoreFromBase(damaged, baseMain, ProjectGame.Sword));
+
+        var foreignCaveText = legacyNso.Text.DecompressedData.ToArray();
+        foreignCaveText[0x01392334] = 0x01;
+        var foreignCave = legacyNso.Write(textDecompressedData: foreignCaveText);
+        Assert.Equal(
+            SwShIvScreenInstallKind.Conflict,
+            SwShIvScreenMainPatcher.Analyze(foreignCave, ProjectGame.Sword).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.Apply(foreignCave, ProjectGame.Sword));
+    }
+
+    [Theory]
+    [InlineData(0x00778E20)]
+    [InlineData(0x00779070)]
+    [InlineData(0x0138A1A0)]
+    [InlineData(0x0138B1E0)]
+    [InlineData(0x0138FB60)]
+    public void IvScreenRejectsDamagedInitialSwordDependency(int dependencyOffset)
+    {
+        var baseMain = CreateSharedHookNso(ProjectGame.Sword);
+        var legacyNso = NsoFile.Parse(CreateInitialIvScreenLegacyNso(baseMain));
+        var damagedText = legacyNso.Text.DecompressedData.ToArray();
+        WriteInstruction(damagedText, dependencyOffset, EncodeNop());
+        var damaged = legacyNso.Write(textDecompressedData: damagedText);
+
+        Assert.Equal(
+            SwShIvScreenInstallKind.Conflict,
+            SwShIvScreenMainPatcher.Analyze(damaged, ProjectGame.Sword).Kind);
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.RestoreFromBase(damaged, baseMain, ProjectGame.Sword));
+    }
+
+    [Fact]
+    public void IvScreenLegacyDependencySplitBlocksMigrationButAllowsUninstall()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        var baseMain = CreateSharedHookNso(ProjectGame.Sword);
+        var legacyNso = NsoFile.Parse(CreateInitialIvScreenLegacyNso(baseMain));
+        var legacyText = legacyNso.Text.DecompressedData.ToArray();
+        WriteInstruction(legacyText, 0x0077AFD0, EncodeNop());
+        var legacy = legacyNso.Write(textDecompressedData: legacyText);
+        temp.WriteOutputFile(SwShIvScreenWorkflowService.ExeFsMainPath, legacy);
+
+        var service = new SwShIvScreenEditSessionService();
+        var workflow = new SwShIvScreenWorkflowService().Load(
+            new ProjectWorkspaceService().Open(paths));
+        var installStage = service.StageInstall(paths, session: null);
+        var uninstallStage = service.StageUninstall(paths, session: null);
+        var uninstallPlan = service.CreateChangePlan(paths, uninstallStage.Session);
+        var uninstallApply = service.ApplyChangePlan(paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.True(workflow.CanUninstall);
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Warning
+            && diagnostic.Message.Contains("migration is unavailable", StringComparison.OrdinalIgnoreCase));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShIvScreenMainPatcher.Apply(legacy, ProjectGame.Sword));
+        Assert.Empty(installStage.Session.PendingEdits);
+        Assert.Contains(installStage.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("migration is unavailable", StringComparison.OrdinalIgnoreCase));
+        Assert.Single(uninstallStage.Session.PendingEdits);
+        Assert.True(uninstallPlan.CanApply);
+        Assert.DoesNotContain(uninstallApply.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var outputPath = OutputPath(paths, SwShIvScreenWorkflowService.ExeFsMainPath);
+        Assert.True(File.Exists(outputPath));
+        var restored = File.ReadAllBytes(outputPath);
+        Assert.Equal(
+            SwShIvScreenInstallKind.NotInstalledDependencyConflict,
+            SwShIvScreenMainPatcher.Analyze(restored, ProjectGame.Sword).Kind);
+        Assert.Equal(
+            EncodeNop(),
+            ReadInstruction(NsoFile.Parse(restored).Text.DecompressedData, 0x0077AFD0));
+    }
+
+    [Fact]
+    public void RoyalCandyAllocatorRejectsSwordAndShieldIvScreenCaves()
+    {
+        var sword = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+                SwShExeFsReservedRegionLedger.OwnerIvScreen,
+                ProjectGame.Sword)
+            .Single(region => region.FeatureId == "iv-screen-cave-21");
+        var shield = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+                SwShExeFsReservedRegionLedger.OwnerIvScreen,
+                ProjectGame.Shield)
+            .Single(region => region.FeatureId == "iv-screen-cave-21");
+        var allocatorReservations = SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits);
+
+        Assert.Equal(sword.StartOffset + 0x30, shield.StartOffset);
+        Assert.Contains(allocatorReservations, region =>
+            region.Owner == SwShExeFsReservedRegionLedger.OwnerIvScreen
+            && region.StartOffset == sword.StartOffset);
+        Assert.Contains(allocatorReservations, region =>
+            region.Owner == SwShExeFsReservedRegionLedger.OwnerIvScreen
+            && region.StartOffset == shield.StartOffset);
+
+        var availability = typeof(SwShExeFsRoyalCandyMainPatcher).GetMethod(
+            "IsAvailableCodeCave",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(availability);
+        Assert.False((bool)availability.Invoke(null, [sword.StartOffset!.Value, 0x0C])!);
+        Assert.False((bool)availability.Invoke(null, [shield.StartOffset!.Value, 0x0C])!);
+    }
+
+    [Fact]
+    public void IvScreenWorkflowDoesNotExposeGameSpecificReservationsWithoutDetectedGame()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = null };
+
+        var workflow = new SwShIvScreenWorkflowService().Load(
+            new ProjectWorkspaceService().Open(paths));
+
+        Assert.Equal(SwShWorkflowAvailability.Disabled, workflow.Summary.Availability);
+        Assert.Null(workflow.DetectedGame);
+        Assert.Equal("unknown", workflow.BuildId);
+        Assert.Empty(workflow.ReservedRegions);
+    }
+
+    [Fact]
+    public void IvScreenCanUninstallRequiresVerifiedBaseAndGeneratedExactInstall()
+    {
+        var vanilla = CreateSharedHookNso(ProjectGame.Sword);
+        var current = SwShIvScreenMainPatcher.Apply(vanilla, ProjectGame.Sword);
+        var legacy = CreateInitialIvScreenLegacyNso(vanilla);
+
+        using (var baseOnly = CreateHookProject(ProjectGame.Sword))
+        {
+            baseOnly.WriteBaseExeFsFile("main", current);
+            var paths = baseOnly.Paths with { SelectedGame = ProjectGame.Sword };
+            var workflow = new SwShIvScreenWorkflowService().Load(
+                new ProjectWorkspaceService().Open(paths));
+            Assert.Equal("blocked", workflow.InstallStatus);
+            Assert.False(workflow.CanUninstall);
+        }
+
+        using (var invalidBase = CreateHookProject(ProjectGame.Sword))
+        {
+            var invalidBaseNso = NsoFile.Parse(vanilla);
+            var invalidBaseText = invalidBaseNso.Text.DecompressedData.ToArray();
+            WriteInstruction(invalidBaseText, SwShIvScreenMainPatcher.PrimaryValueSourceOffset, EncodeNop());
+            invalidBase.WriteBaseExeFsFile(
+                "main",
+                invalidBaseNso.Write(textDecompressedData: invalidBaseText));
+            invalidBase.WriteOutputFile(SwShIvScreenWorkflowService.ExeFsMainPath, current);
+            var paths = invalidBase.Paths with { SelectedGame = ProjectGame.Sword };
+            var workflow = new SwShIvScreenWorkflowService().Load(
+                new ProjectWorkspaceService().Open(paths));
+            Assert.Equal("blocked", workflow.InstallStatus);
+            Assert.False(workflow.CanUninstall);
+        }
+
+        foreach (var exactInstall in new[] { current, legacy })
+        {
+            using var generated = CreateHookProject(ProjectGame.Sword);
+            generated.WriteOutputFile(SwShIvScreenWorkflowService.ExeFsMainPath, exactInstall);
+            var paths = generated.Paths with { SelectedGame = ProjectGame.Sword };
+            var workflow = new SwShIvScreenWorkflowService().Load(
+                new ProjectWorkspaceService().Open(paths));
+            Assert.Equal("installed", workflow.InstallStatus);
+            Assert.True(workflow.CanUninstall);
+        }
+    }
+
+    [Fact]
+    public void IvScreenWorkflowBlocksIncompatibleBaseAndEffectiveNsoIdentity()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var baseMain = CreateSharedHookNso(ProjectGame.Sword);
+        var incompatible = baseMain.ToArray();
+        incompatible[0x70] ^= 0xFF;
+        temp.WriteBaseExeFsFile("main", baseMain);
+        temp.WriteOutputFile("exefs/main", incompatible);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+
+        var workflow = new SwShIvScreenWorkflowService().Load(
+            new ProjectWorkspaceService().Open(paths));
+        var stage = new SwShIvScreenEditSessionService().StageInstall(paths, session: null);
+
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("stable NSO header metadata", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(stage.Session.PendingEdits);
+    }
+
+    [Fact]
+    public void IvScreenRequiresOneCanonicalPendingEditAndSourceFingerprint()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        var service = new SwShIvScreenEditSessionService();
+        var stage = service.StageInstall(paths, session: null);
+        var stagedEdit = Assert.Single(stage.Session.PendingEdits);
+
+        Assert.Contains(stagedEdit.Sources, source => source.Layer == ProjectFileLayer.Base);
+        Assert.Contains(stagedEdit.Sources, source => source.Layer == ProjectFileLayer.Pending);
+        Assert.DoesNotContain(stagedEdit.Sources, source => source.Layer == ProjectFileLayer.Generated);
+
+        var duplicateSession = stage.Session with
+        {
+            PendingEdits = [stagedEdit, stagedEdit],
+        };
+        Assert.False(service.Validate(paths, duplicateSession).IsValid);
+
+        var tamperedSession = stage.Session with
+        {
+            PendingEdits =
+            [
+                stagedEdit with
+                {
+                    Sources = [new ProjectFileReference(ProjectFileLayer.Base, SwShIvScreenWorkflowService.ExeFsMainPath)],
+                },
+            ],
+        };
+        Assert.False(service.Validate(paths, tamperedSession).IsValid);
+
+        foreach (var tamperedEdit in new[]
+        {
+            stagedEdit with { Summary = "tampered" },
+            stagedEdit with { NewValue = "TRUE" },
+            stagedEdit with { RecordId = "iv-screen-other" },
+            stagedEdit with { Field = "other" },
+        })
+        {
+            var session = stage.Session with { PendingEdits = [tamperedEdit] };
+            Assert.False(service.Validate(paths, session).IsValid);
+        }
+
+        var outputPath = OutputPath(paths, SwShIvScreenWorkflowService.ExeFsMainPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        File.WriteAllBytes(
+            outputPath,
+            SwShIvScreenMainPatcher.Apply(CreateSharedHookNso(ProjectGame.Sword), ProjectGame.Sword));
+        var layeredStage = new SwShIvScreenEditSessionService().StageInstall(paths, session: null);
+        var layeredSources = Assert.Single(layeredStage.Session.PendingEdits).Sources;
+        Assert.Equal(
+            [ProjectFileLayer.Base, ProjectFileLayer.Layered, ProjectFileLayer.Pending],
+            layeredSources.Select(source => source.Layer).ToArray());
+    }
+
+    [Fact]
+    public void IvScreenApplyRejectsSourcesChangedAfterPlanReview()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        var service = new SwShIvScreenEditSessionService();
+        var stage = service.StageInstall(paths, session: null);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var nso = NsoFile.Parse(CreateSharedHookNso(ProjectGame.Sword));
+        var text = nso.Text.DecompressedData.ToArray();
+        text[0x1000] = 0x7A;
+        temp.WriteBaseExeFsFile("main", nso.Write(textDecompressedData: text));
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(OutputPath(paths, SwShIvScreenWorkflowService.ExeFsMainPath)));
+    }
+
+    [Fact]
+    public void IvScreenLatePromotionCollisionPreservesConcurrentOutput()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        byte[] concurrentOutput = [0x43, 0x4F, 0x4E, 0x43, 0x55, 0x52, 0x52, 0x45, 0x4E, 0x54];
+        var service = new SwShIvScreenEditSessionService(
+            projectWorkspaceService: null,
+            ivScreenWorkflowService: null,
+            beforeVerifiedPromotion: (_, _) =>
+            {
+                var outputPath = OutputPath(paths, SwShIvScreenWorkflowService.ExeFsMainPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+                File.WriteAllBytes(outputPath, concurrentOutput);
+            });
+        var stage = service.StageInstall(paths, session: null);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+
+        Assert.Contains(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("changed before verified promotion", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Equal(
+            concurrentOutput,
+            File.ReadAllBytes(OutputPath(paths, SwShIvScreenWorkflowService.ExeFsMainPath)));
+    }
+
+    [Fact]
+    public void IvScreenRejectsMissingSelectedGameAcrossEditLifecycle()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var validPaths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        var missingGamePaths = validPaths with { SelectedGame = null };
+        var service = new SwShIvScreenEditSessionService();
+        var staged = service.StageInstall(validPaths, session: null);
+        var reviewedPlan = service.CreateChangePlan(validPaths, staged.Session);
+
+        var missingGameStage = service.StageInstall(missingGamePaths, session: null);
+        var validation = service.Validate(missingGamePaths, staged.Session);
+        var apply = service.ApplyChangePlan(missingGamePaths, staged.Session, reviewedPlan);
+
+        Assert.Empty(missingGameStage.Session.PendingEdits);
+        Assert.Contains(missingGameStage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(OutputPath(validPaths, SwShIvScreenWorkflowService.ExeFsMainPath)));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
     public void CatchCapRestoreRejectsDamagedProtectedEpilogue(ProjectGame game)
     {
         int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
@@ -3418,6 +4020,7 @@ public sealed class SwShHookReservationTests
         WriteInstruction(text, ShiftIvOffset(0x0138F990, shift), 0xA9BC5FF8);
         WriteInstruction(text, ShiftIvOffset(0x0138FB60, shift), 0xD10243FF);
         WriteInstruction(text, ShiftIvOffset(0x0138A1A0, shift), 0xD10503FF);
+        WriteInstruction(text, ShiftIvOffset(0x0138B550, shift), 0xA9457BFD);
         WriteInstruction(text, ShiftIvOffset(0x0138B1E0, shift), 0xD10183FF);
         WriteInstruction(text, ShiftIvOffset(0x0138B1FC, shift), 0x39592408);
         WriteInstruction(text, ShiftIvOffset(0x0138B200, shift), 0x52000108);
@@ -3427,7 +4030,103 @@ public sealed class SwShHookReservationTests
         WriteInstruction(text, 0x00779070, 0x7100143F);
         WriteInstruction(text, 0x00778E20, 0xA9BF7BFD);
         WriteInstruction(text, 0x007790D0, 0xA9BE4FF4);
+        WriteInstruction(text, 0x0077AFD0, 0xF81E0FF3);
+        WriteInstruction(text, 0x0077AC70, 0xF81E0FF3);
+        WriteInstruction(text, 0x0077AC30, 0x7100143F);
+        WriteInstruction(text, 0x00779F50, 0xA9BF7BFD);
         WriteIvScreenCallSiteAnchors(text, game);
+    }
+
+    private static byte[] CreateInitialIvScreenLegacyNso(byte[] baseMain)
+    {
+        var nso = NsoFile.Parse(baseMain);
+        var text = nso.Text.DecompressedData.ToArray();
+        const int valueWrapperOffset = 0x0138F324;
+        const int rawIvGetterOffset = 0x00779070;
+        const int renderWrapperOffset = 0x01390204;
+        const int renderContinueOffset = 0x01390BE4;
+        const int renderReturnOffset = 0x01391114;
+
+        foreach (var offset in new[]
+        {
+            0x0138FBE8, 0x0138FC38, 0x0138FC74, 0x0138FC9C,
+            0x0138FD2C, 0x0138FD5C, 0x0138FD84, 0x0138FEA0,
+        })
+        {
+            WriteInstruction(text, offset, EncodeBranchLink(offset, valueWrapperOffset));
+        }
+
+        foreach (var offset in new[]
+        {
+            0x0138AA50, 0x0138AA60, 0x0138AA90, 0x0138AAA0,
+            0x0138AAD0, 0x0138AAE0, 0x0138AB10, 0x0138AB20,
+            0x0138AB50, 0x0138AB60, 0x0138AB90, 0x0138ABA0,
+        })
+        {
+            WriteInstruction(text, offset, EncodeBranchLink(offset, rawIvGetterOffset));
+        }
+
+        foreach (var offset in new[]
+        {
+            0x0138AC88, 0x0138ACAC, 0x0138ACD0,
+            0x0138ACF8, 0x0138AD1C, 0x0138AD40,
+        })
+        {
+            WriteInstruction(text, offset, 0x2A0003E8);
+        }
+
+        WriteInstruction(text, 0x0138B1FC, 0x52800028);
+        WriteInstruction(text, 0x0138B200, EncodeNop());
+        foreach (var offset in new[] { 0x01392EA8, 0x01393310, 0x0139EF4C })
+        {
+            WriteInstruction(text, offset, EncodeBranchLink(offset, renderWrapperOffset));
+        }
+
+        WriteInstruction(text, 0x0139FB60, 0x14000005);
+
+        (int Offset, uint[] Instructions)[] valueWrappers =
+        [
+            (0x0138F324, [0x7100003F, 0x54007400, 0x140000F6]),
+            (0x0138F704, [0x7100043F, 0x54005500, 0x14000016]),
+            (0x0138F764, [0x7100083F, 0x54005200, 0x14000086]),
+            (0x0138F984, [0x71000C3F, 0x54003D80, 0x14000072]),
+            (0x0138FB54, [0x7100103F, 0x54003280, 0x14000126]),
+            (0x0138FFF4, [0x7100143F, 0x54000D80, 0x14000016]),
+            (0x01390054, [0x7100183F, 0x54000780, 0x14000002]),
+            (0x01390064, [0x71001C3F, 0x54000680, 0x14000032]),
+            (0x01390134, [0x17CFA33B, 0x52800001, 0x14000002]),
+            (0x01390144, [0x17CFA3CB, 0x52800061, 0x14000016]),
+            (0x013901A4, [0x17CFA3B3, 0x17CFA3B2, 0xD503201F]),
+        ];
+        foreach (var slot in valueWrappers)
+        {
+            for (var index = 0; index < slot.Instructions.Length; index++)
+            {
+                WriteInstruction(text, slot.Offset + (index * sizeof(uint)), slot.Instructions[index]);
+            }
+        }
+
+        WriteInstruction(text, renderWrapperOffset + 0x00, 0xA9BF7BF3);
+        WriteInstruction(text, renderWrapperOffset + 0x04, 0xAA0003F3);
+        WriteInstruction(text, renderWrapperOffset + 0x08, EncodeBranchLink(renderWrapperOffset + 0x08, 0x0138A1A0));
+        WriteInstruction(text, renderContinueOffset + 0x00, 0xAA1303E0);
+        WriteInstruction(text, renderContinueOffset + 0x04, EncodeBranchLink(renderContinueOffset + 0x04, 0x0138B1E0));
+        WriteInstruction(text, renderContinueOffset + 0x08, EncodeBranch(renderContinueOffset + 0x08, renderReturnOffset));
+        WriteInstruction(text, renderReturnOffset + 0x00, 0xA8C17BF3);
+        WriteInstruction(text, renderReturnOffset + 0x04, 0xD65F03C0);
+        WriteInstruction(text, renderReturnOffset + 0x08, EncodeNop());
+
+        var marker = System.Text.Encoding.ASCII.GetBytes("SWSH_IV_DISPLAY_V1");
+        var markerIndex = 0;
+        foreach (var markerOffset in new[] { 0x013975B4, 0x01397934 })
+        {
+            text.AsSpan(markerOffset, 0x0C).Clear();
+            var length = Math.Min(0x0C, marker.Length - markerIndex);
+            marker.AsSpan(markerIndex, length).CopyTo(text.AsSpan(markerOffset, length));
+            markerIndex += length;
+        }
+
+        return nso.Write(textDecompressedData: text);
     }
 
     private static void WriteGymUniformRemovalVanillaAnchors(byte[] text)

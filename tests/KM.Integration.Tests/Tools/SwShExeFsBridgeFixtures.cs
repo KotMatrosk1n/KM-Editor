@@ -71,9 +71,14 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x00779070, 0x7100143F);
         WriteInstruction(text, 0x00778E20, 0xA9BF7BFD);
         WriteInstruction(text, 0x007790D0, 0xA9BE4FF4);
+        WriteInstruction(text, 0x00779F50, 0xA9BF7BFD);
+        WriteInstruction(text, 0x0077AC30, 0x7100143F);
+        WriteInstruction(text, 0x0077AC70, 0xF81E0FF3);
+        WriteInstruction(text, 0x0077AFD0, 0xF81E0FF3);
         WriteInstruction(text, 0x0138F990, 0xA9BC5FF8);
         WriteInstruction(text, 0x0138FB60, 0xD10243FF);
         WriteInstruction(text, 0x0138A1A0, 0xD10503FF);
+        WriteInstruction(text, 0x0138B550, 0xA9457BFD);
         WriteInstruction(text, 0x0138B1E0, 0xD10183FF);
         WriteInstruction(text, 0x0138B1FC, 0x39592408);
         WriteInstruction(text, 0x0138B200, 0x52000108);
@@ -229,7 +234,7 @@ internal static class SwShExeFsBridgeFixtures
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
-        output.AsSpan(0x40, 0x20).Fill(0xAB);
+        output.AsSpan(0x40, 0x20).Clear();
         (buildId ?? Convert.FromHexString(SwordBuildId)).CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);

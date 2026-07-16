@@ -315,6 +315,7 @@ import {
   isCatchCapUninstallPending,
   parseCatchCapPendingCaps
 } from './features/catch-cap/catchCapPending';
+import { getIvScreenPendingOperation } from './features/iv-screen/ivScreenPending';
 import { canStageAdvancedEditorAction } from './features/advanced-editors/stageActionGuard';
 import { GameDumpSection } from './features/game-dump/GameDumpSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
@@ -4896,18 +4897,39 @@ export function App({
 
   const handleStageIvScreenInstall = async () => {
     setIsIvScreenStaging(true);
-    prepareScopedEditorPanelAction('ivScreen');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageIvScreenInstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setIvScreenWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('ivScreen', response.diagnostics);
-      registerEditorDraftDirty('ivScreen', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageIvScreenInstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : ivScreenWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('ivScreen');
+          setIvScreenWorkflow(response.workflow);
+          setEditSessionSection('ivScreen');
+          setScopedEditorPanelDiagnostics('ivScreen', response.diagnostics);
+          registerEditorDraftDirty('ivScreen', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -4917,18 +4939,39 @@ export function App({
 
   const handleStageIvScreenUninstall = async () => {
     setIsIvScreenStaging(true);
-    prepareScopedEditorPanelAction('ivScreen');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageIvScreenUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setIvScreenWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('ivScreen', response.diagnostics);
-      registerEditorDraftDirty('ivScreen', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageIvScreenUninstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : ivScreenWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('ivScreen');
+          setIvScreenWorkflow(response.workflow);
+          setEditSessionSection('ivScreen');
+          setScopedEditorPanelDiagnostics('ivScreen', response.diagnostics);
+          registerEditorDraftDirty('ivScreen', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -29214,11 +29257,10 @@ function IvScreenSection({
   panelOutput: WorkflowPanelOutput;
   workflow: IvScreenWorkflow | null;
 }) {
-  const stagedIvScreenEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.ivScreen'
-  );
-  const isInstallStaged = stagedIvScreenEdit?.recordId === 'iv-screen-v1-install';
-  const isUninstallStaged = stagedIvScreenEdit?.recordId === 'iv-screen-v1-uninstall';
+  const { translateLiteral } = useLocalization();
+  const stagedOperation = getIvScreenPendingOperation(editSession);
+  const isInstallStaged = stagedOperation === 'install';
+  const isUninstallStaged = stagedOperation === 'uninstall';
   const hasStagedChange = isInstallStaged || isUninstallStaged;
   const canStageInstall = canStageAdvancedEditorAction({
     isAllowed:
@@ -29231,8 +29273,7 @@ function IvScreenSection({
     isStaging
   });
   const canStageUninstall = canStageAdvancedEditorAction({
-    isAllowed:
-      workflow?.summary.availability === 'available' && workflow.installStatus === 'installed',
+    isAllowed: workflow?.summary.availability === 'available' && workflow.canUninstall,
     isChangePlanApplying,
     isChangePlanCreating,
     isCurrent: isUninstallStaged,
@@ -29248,7 +29289,7 @@ function IvScreenSection({
     !isChangePlanApplying &&
     !isChangePlanCreating &&
     !isStaging;
-  const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
+  const installLabel = workflow?.canUninstall ? 'Stage Reinstall' : 'Stage Install';
 
   return (
     <>
@@ -29258,8 +29299,8 @@ function IvScreenSection({
           <h2 id="iv-screen-heading">IV Screen</h2>
         </div>
         <p className="workflow-description">
-          IV Screen installs an independent Pokemon Summary hook for the stats graph and
-          uses only its reserved exefs/main bytes.
+          Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph.
+          Install and uninstall touch only exact IV Screen-owned bytes.
         </p>
         <p className="workflow-description">
           In game, open a Pokemon Summary, move to the stats graph page, then press X to
@@ -29272,7 +29313,15 @@ function IvScreenSection({
             label="Install"
             value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
           />
-          <Metric label="Marker" value={workflow?.marker ?? 'Not loaded'} />
+          <Metric
+            label="Game"
+            value={
+              workflow
+                ? formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)
+                : 'Not loaded'
+            }
+          />
+          <Metric label="Build ID" value={workflow?.buildId ?? 'Not loaded'} />
           <Metric
             label="Reserved regions"
             value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
@@ -29288,8 +29337,12 @@ function IvScreenSection({
                   <span role="columnheader">Range</span>
                 </div>
                 {workflow.reservedRegions.map((region) => (
-                  <div className="exefs-row iv-screen-range-row" key={region.regionId} role="row">
-                    <span role="cell">{region.label}</span>
+                  <div
+                    className="exefs-row iv-screen-range-row iv-screen-range-row-static"
+                    key={region.regionId}
+                    role="row"
+                  >
+                    <span role="cell">{translateLiteral(region.label)}</span>
                     <span role="cell">{region.offsetLabel}</span>
                   </div>
                 ))}
@@ -29308,8 +29361,20 @@ function IvScreenSection({
                   <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
                 </div>
                 <div>
-                  <dt>Hook site</dt>
-                  <dd>{workflow.hookSiteOffsetHex}</dd>
+                  <dt>Game</dt>
+                  <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                </div>
+                <div>
+                  <dt>Build ID</dt>
+                  <dd>{workflow.buildId}</dd>
+                </div>
+                <div>
+                  <dt>Primary value source</dt>
+                  <dd>{workflow.primaryValueSourceOffsetHex}</dd>
+                </div>
+                <div>
+                  <dt>X-toggle refresh</dt>
+                  <dd>{workflow.xToggleRefreshOffsetHex}</dd>
                 </div>
                 <div>
                   <dt>Raw IV getter</dt>
@@ -29318,6 +29383,10 @@ function IvScreenSection({
                 <div>
                   <dt>Hyper Training wrapper</dt>
                   <dd>{workflow.hyperTrainingWrapperOffsetHex}</dd>
+                </div>
+                <div>
+                  <dt>Marker</dt>
+                  <dd>{workflow.marker}</dd>
                 </div>
                 <div>
                   <dt>Source file</dt>
@@ -42902,7 +42971,11 @@ function getEditSessionSignature(editSession: EditSession | null) {
       field: edit.field,
       newValue: edit.newValue,
       recordId: edit.recordId,
-      sources: edit.sources.map((source) => source.relativePath)
+      summary: edit.summary,
+      sources: edit.sources.map((source) => ({
+        layer: source.layer,
+        relativePath: source.relativePath
+      }))
     })),
     sessionId: editSession.sessionId
   });
