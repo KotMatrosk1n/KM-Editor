@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ClipboardCheck, RotateCcw, Save, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type FairyGymBoostRecord,
@@ -14,7 +14,12 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { useLocalization } from '../../localization';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
+import {
+  getCanonicalFairyGymBoostPendingSelections,
+  isSupportedFairyGymBoostOutcome
+} from './fairyGymBoostsPending';
 
 type FairyGymOutcomeOption = {
   effectId: number;
@@ -63,6 +68,7 @@ export function FairyGymBoostsSection({
   panelOutput: WorkflowPanelOutput;
   workflow: FairyGymBoostsWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const sortedTrainers = useMemo(
     () =>
       workflow?.trainers
@@ -74,12 +80,12 @@ export function FairyGymBoostsSection({
     () => getFairyGymBoostWorkflowSelections(workflow),
     [workflow]
   );
-  const stagedFairyGymBoostsEdit = editSession?.pendingEdits.find(
+  const fairyGymBoostsPendingEdits = editSession?.pendingEdits.filter(
     (edit) => edit.domain === 'workflow.fairyGymBoosts'
-  );
+  ) ?? [];
   const stagedSelections = useMemo(
-    () => decodeFairyGymBoostPendingSelections(stagedFairyGymBoostsEdit?.newValue),
-    [stagedFairyGymBoostsEdit?.newValue]
+    () => getCanonicalFairyGymBoostPendingSelections(editSession, workflow),
+    [editSession, workflow]
   );
   const cleanSelections = useMemo(
     () => mergeSelections(workflowSelections, stagedSelections),
@@ -90,13 +96,24 @@ export function FairyGymBoostsSection({
     [workflow]
   );
   const cleanSelectionsKey = encodeSelectionsKey(cleanSelections);
+  const cleanIdentityKey = [
+    workflow?.detectedGame ?? 'unknown',
+    workflow?.sources
+      .map(
+        (source) =>
+          `${source.sourceId}:${source.status}:${source.provenance.sourceLayer}:${source.payloadOffsetHex}`
+      )
+      .join(',') ?? 'none',
+    editSession?.sessionId ?? 'none',
+    fairyGymBoostsPendingEdits[0]?.newValue ?? 'none'
+  ].join('|');
 
   const [selectedTrainerId, setSelectedTrainerId] = useState<number | null>(null);
   const [drafts, setDrafts] = useState<FairyGymDrafts>(() => createDrafts(cleanSelections));
 
   useEffect(() => {
     setDrafts(createDrafts(cleanSelections));
-  }, [cleanSelectionsKey]);
+  }, [cleanIdentityKey, cleanSelectionsKey]);
 
   useEffect(() => {
     if (sortedTrainers.length === 0) {
@@ -121,20 +138,39 @@ export function FairyGymBoostsSection({
   );
   const isDirty = !areSelectionsEqual(draftSelections, cleanSelections);
   const hasStagedChange = stagedSelections !== null;
+  const hasInvalidPendingEdit = fairyGymBoostsPendingEdits.length > 0 && !hasStagedChange;
+  const hasConflictingPendingEdit =
+    editSession?.pendingEdits.some(
+      (edit) => edit.domain !== 'workflow.fairyGymBoosts'
+    ) ?? false;
   const canEdit =
     workflow?.summary.availability === 'available' &&
+    (workflow.detectedGame === 'sword' || workflow.detectedGame === 'shield') &&
     workflow.sources.every((source) => source.status === 'available') &&
+    workflow.trainers.every((trainer) =>
+      trainer.boosts.every((boost) => boost.isAvailable)
+    ) &&
+    !hasInvalidPendingEdit &&
+    !hasConflictingPendingEdit &&
     !isStaging &&
+    !isChangePlanCreating &&
     !isChangePlanApplying;
   const canStage = canEdit && isDirty;
   const canRestoreVanilla = canEdit && !areSelectionsEqual(draftSelections, vanillaSelections);
-  const canReviewPlan = hasStagedChange && !isDirty && !isChangePlanCreating;
+  const canReviewPlan =
+    hasStagedChange &&
+    !isDirty &&
+    !isStaging &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying;
   const canApplyPlan =
     hasStagedChange &&
     !isDirty &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
+    !isStaging &&
+    !isChangePlanCreating &&
     !isChangePlanApplying;
 
   useEffect(() => {
@@ -153,6 +189,38 @@ export function FairyGymBoostsSection({
     }));
   };
 
+  const handleTrainerTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentIndex: number
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % sortedTrainers.length;
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + sortedTrainers.length) % sortedTrainers.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = sortedTrainers.length - 1;
+    }
+
+    if (nextIndex === null || sortedTrainers.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const trainer = sortedTrainers[nextIndex];
+    if (!trainer) {
+      return;
+    }
+
+    setSelectedTrainerId(trainer.trainerId);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+      .item(nextIndex)
+      .focus();
+  };
+
   return (
     <>
       <section aria-labelledby="fairy-gym-boosts-heading" className="panel wide-panel">
@@ -162,22 +230,35 @@ export function FairyGymBoostsSection({
         </div>
 
         <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Game"
+            value={formatFairyGymGame(workflow?.detectedGame ?? null)}
+          />
           <Metric label="Trainers" value={workflow?.stats.trainerCount.toString() ?? '0'} />
           <Metric label="Answer outcomes" value={workflow?.stats.boostCount.toString() ?? '0'} />
           <Metric
             label="Sources"
             value={workflow?.stats.sourceFileCount.toString() ?? '0'}
           />
-          <Metric label="Staged" value={hasStagedChange ? 'Yes' : 'No'} />
+          <Metric label="Mapped bytes" value={workflow?.stats.ownedByteCount.toString() ?? '0'} />
+          <Metric
+            label="Staged"
+            value={hasStagedChange ? 'Yes' : hasInvalidPendingEdit ? 'Invalid' : 'No'}
+          />
         </div>
 
         {workflow ? (
           <div className="fairy-gym-editor">
-            <div className="fairy-gym-trainer-tabs" role="tablist">
-              {sortedTrainers.map((trainer) => {
+            <div
+              aria-labelledby="fairy-gym-boosts-heading"
+              className="fairy-gym-trainer-tabs"
+              role="tablist"
+            >
+              {sortedTrainers.map((trainer, trainerIndex) => {
                 const isSelected = selectedTrainer?.trainerId === trainer.trainerId;
                 return (
                   <button
+                    aria-controls="fairy-gym-boost-panel"
                     aria-selected={isSelected}
                     className={
                       isSelected
@@ -185,9 +266,15 @@ export function FairyGymBoostsSection({
                         : 'fairy-gym-trainer-tab'
                     }
                     key={trainer.trainerId}
+                    id={`fairy-gym-tab-${trainer.trainerId}`}
                     onClick={() => setSelectedTrainerId(trainer.trainerId)}
+                    onKeyDown={(event) =>
+                      handleTrainerTabKeyDown(event, trainerIndex)
+                    }
                     role="tab"
+                    tabIndex={isSelected ? 0 : -1}
                     type="button"
+                    data-localization-ignore="true"
                   >
                     {trainer.npcName}
                   </button>
@@ -196,7 +283,13 @@ export function FairyGymBoostsSection({
             </div>
 
             {selectedTrainer ? (
-              <div className="fairy-gym-boost-stack">
+              <div
+                aria-labelledby={`fairy-gym-tab-${selectedTrainer.trainerId}`}
+                className="fairy-gym-boost-stack"
+                id="fairy-gym-boost-panel"
+                role="tabpanel"
+                tabIndex={0}
+              >
                 {selectedTrainer.boosts.map((boost) => (
                   <FairyGymBoostCard
                     boost={boost}
@@ -204,6 +297,7 @@ export function FairyGymBoostsSection({
                     key={boost.boostId}
                     onChange={updateBoostOutcome}
                     selection={drafts[boost.boostId] ?? boostToSelection(boost)}
+                    translateLiteral={translateLiteral}
                   />
                 ))}
               </div>
@@ -223,6 +317,7 @@ export function FairyGymBoostsSection({
               </button>
               <button
                 className="primary-button"
+                aria-busy={isStaging || undefined}
                 disabled={!canStage}
                 onClick={() => onStageBoosts(draftSelections)}
                 type="button"
@@ -232,6 +327,7 @@ export function FairyGymBoostsSection({
               </button>
               <button
                 className="secondary-button"
+                aria-busy={isChangePlanCreating || undefined}
                 disabled={!canReviewPlan}
                 onClick={onCreateChangePlan}
                 type="button"
@@ -241,6 +337,7 @@ export function FairyGymBoostsSection({
               </button>
               <button
                 className="primary-button"
+                aria-busy={isChangePlanApplying || undefined}
                 disabled={!canApplyPlan}
                 onClick={onApplyChangePlan}
                 type="button"
@@ -250,7 +347,10 @@ export function FairyGymBoostsSection({
               </button>
             </div>
 
-            <FairyGymSourceSummary sources={workflow.sources} />
+            <FairyGymSourceSummary
+              sources={workflow.sources}
+              translateLiteral={translateLiteral}
+            />
           </div>
         ) : (
           <p className="empty-copy">Open Fairy Gym Boosts from Advanced Editors.</p>
@@ -269,12 +369,14 @@ function FairyGymBoostCard({
   boost,
   disabled,
   onChange,
-  selection
+  selection,
+  translateLiteral
 }: {
   boost: FairyGymBoostRecord;
   disabled: boolean;
   onChange: (boostId: string, value: string) => void;
   selection: FairyGymBoostSelection;
+  translateLiteral: (literal: string) => string;
 }) {
   return (
     <article className="fairy-gym-boost-card">
@@ -282,14 +384,18 @@ function FairyGymBoostCard({
         <div>
           <div className="fairy-gym-answer-row">
             <span className={`fairy-gym-answer-role is-${boost.defaultResultKind}`}>
-              {formatAnswerRole(boost.defaultResultKind)}
+              {translateLiteral(formatAnswerRole(boost.defaultResultKind))}
             </span>
             <span className="fairy-gym-answer-choice">Answer {boost.answerChoice}</span>
           </div>
-          <h3>{boost.questionText}</h3>
-          <p>{boost.answerText}</p>
+          <h3 data-localization-ignore="true">{boost.questionText}</h3>
+          <p data-localization-ignore="true">{boost.answerText}</p>
         </div>
-        <span className="fairy-gym-effect-pill">{formatOutcomeLabel(boostToSelection(boost))}</span>
+        <span className="fairy-gym-effect-pill">
+          {boost.isAvailable
+            ? translateLiteral(formatOutcomeLabel(boostToSelection(boost)))
+            : translateLiteral('Unavailable')}
+        </span>
       </div>
 
       <label className="fairy-gym-outcome-control">
@@ -302,7 +408,7 @@ function FairyGymBoostCard({
         >
           {outcomeOptions.map((option) => (
             <option key={selectionToValue(option)} value={selectionToValue(option)}>
-              {option.label}
+              {translateLiteral(option.label)}
             </option>
           ))}
         </select>
@@ -312,9 +418,11 @@ function FairyGymBoostCard({
 }
 
 function FairyGymSourceSummary({
-  sources
+  sources,
+  translateLiteral
 }: {
   sources: FairyGymBoostsWorkflow['sources'];
+  translateLiteral: (literal: string) => string;
 }) {
   return (
     <div className="fairy-gym-source-grid">
@@ -322,7 +430,11 @@ function FairyGymSourceSummary({
         <dl className="fairy-gym-source-summary" key={source.sourceId}>
           <div>
             <dt>{source.label}</dt>
-            <dd>{source.relativePath}</dd>
+            <dd data-localization-ignore="true">{source.relativePath}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{translateLiteral(formatFairyGymSourceStatus(source.status))}</dd>
           </div>
           <div>
             <dt>Layer</dt>
@@ -332,39 +444,18 @@ function FairyGymSourceSummary({
             <dt>File state</dt>
             <dd>{formatFileState(source.provenance.fileState)}</dd>
           </div>
+          <div>
+            <dt>Payload offset</dt>
+            <dd data-localization-ignore="true">{formatMappedOffset(source.payloadOffsetHex)}</dd>
+          </div>
+          <div>
+            <dt>Owned range</dt>
+            <dd data-localization-ignore="true">{formatMappedOffset(source.ownedRangeHex)}</dd>
+          </div>
         </dl>
       ))}
     </div>
   );
-}
-
-export function decodeFairyGymBoostPendingSelections(
-  value: string | null | undefined
-): FairyGymBoostSelection[] | null {
-  if (!value) {
-    return null;
-  }
-
-  const selections: FairyGymBoostSelection[] = [];
-  for (const entry of value.split(';')) {
-    const [boostId, effectIdText, resultKind] = entry.split(':');
-    const effectId = Number.parseInt(effectIdText ?? '', 10);
-    if (
-      !boostId ||
-      !Number.isInteger(effectId) ||
-      !isSupportedOutcome(effectId, resultKind)
-    ) {
-      return null;
-    }
-
-    selections.push({
-      boostId,
-      effectId,
-      resultKind
-    });
-  }
-
-  return selections.length > 0 ? selections : null;
 }
 
 function getFairyGymBoostWorkflowSelections(
@@ -386,8 +477,8 @@ function getFairyGymBoostVanillaSelections(
 function boostToSelection(boost: FairyGymBoostRecord): FairyGymBoostSelection {
   return {
     boostId: boost.boostId,
-    effectId: isSupportedOutcome(boost.effectId, boost.resultKind) ? boost.effectId : 0,
-    resultKind: isSupportedOutcome(boost.effectId, boost.resultKind)
+    effectId: isSupportedFairyGymBoostOutcome(boost.effectId, boost.resultKind) ? boost.effectId : 0,
+    resultKind: isSupportedFairyGymBoostOutcome(boost.effectId, boost.resultKind)
       ? boost.resultKind
       : 'none'
   };
@@ -396,10 +487,10 @@ function boostToSelection(boost: FairyGymBoostRecord): FairyGymBoostSelection {
 function boostToVanillaSelection(boost: FairyGymBoostRecord): FairyGymBoostSelection {
   return {
     boostId: boost.boostId,
-    effectId: isSupportedOutcome(boost.defaultEffectId, boost.defaultResultKind)
+    effectId: isSupportedFairyGymBoostOutcome(boost.defaultEffectId, boost.defaultResultKind)
       ? boost.defaultEffectId
       : 0,
-    resultKind: isSupportedOutcome(boost.defaultEffectId, boost.defaultResultKind)
+    resultKind: isSupportedFairyGymBoostOutcome(boost.defaultEffectId, boost.defaultResultKind)
       ? boost.defaultResultKind
       : 'none'
   };
@@ -443,7 +534,7 @@ function getOrderedDraftSelections(
 function parseOutcomeValue(value: string): Pick<FairyGymBoostSelection, 'effectId' | 'resultKind'> {
   const [effectIdText, resultKind] = value.split(':');
   const effectId = Number.parseInt(effectIdText ?? '', 10);
-  return isSupportedOutcome(effectId, resultKind)
+  return isSupportedFairyGymBoostOutcome(effectId, resultKind)
     ? { effectId, resultKind }
     : { effectId: 0, resultKind: 'none' };
 }
@@ -452,18 +543,9 @@ function selectionToValue({
   effectId,
   resultKind
 }: Pick<FairyGymBoostSelection, 'effectId' | 'resultKind'>) {
-  return isSupportedOutcome(effectId, resultKind) ? `${effectId}:${resultKind}` : '0:none';
-}
-
-function isSupportedOutcome(
-  effectId: number,
-  resultKind: string | undefined
-): resultKind is FairyGymBoostResultKind {
-  if (effectId === 0) {
-    return resultKind === 'none';
-  }
-
-  return effectId >= 1 && effectId <= 6 && (resultKind === 'increase' || resultKind === 'decrease');
+  return isSupportedFairyGymBoostOutcome(effectId, resultKind)
+    ? `${effectId}:${resultKind}`
+    : '0:none';
 }
 
 function formatAnswerRole(resultKind: FairyGymBoostResultKind) {
@@ -510,4 +592,34 @@ function encodeSelectionsKey(selections: readonly FairyGymBoostSelection[]) {
   return selections
     .map((selection) => `${selection.boostId}:${selection.effectId}:${selection.resultKind}`)
     .join(';');
+}
+
+function formatFairyGymGame(game: FairyGymBoostsWorkflow['detectedGame']) {
+  if (game === 'sword') {
+    return 'Pokemon Sword';
+  }
+
+  if (game === 'shield') {
+    return 'Pokemon Shield';
+  }
+
+  return 'Unknown';
+}
+
+function formatFairyGymSourceStatus(
+  status: FairyGymBoostsWorkflow['sources'][number]['status']
+) {
+  if (status === 'available') {
+    return 'Available';
+  }
+
+  if (status === 'missing') {
+    return 'Missing';
+  }
+
+  return 'Blocked';
+}
+
+function formatMappedOffset(value: string) {
+  return value === 'unknown' ? 'Unknown' : value;
 }

@@ -1708,12 +1708,14 @@ public static class SwShBridgeMapper
     {
         return new FairyGymBoostsWorkflowDto(
             ToDto(workflow.Summary),
+            ToProjectGameDto(workflow.DetectedGame),
             workflow.Trainers.Select(ToDto).ToArray(),
             workflow.Sources.Select(ToDto).ToArray(),
             new FairyGymBoostsWorkflowStatsDto(
                 workflow.Stats.TrainerCount,
                 workflow.Stats.BoostCount,
-                workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OwnedByteCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -3020,6 +3022,8 @@ public static class SwShBridgeMapper
             source.Label,
             source.RelativePath,
             source.Status,
+            source.PayloadOffsetHex,
+            source.OwnedRangeHex,
             ToDto(source.Provenance));
     }
 
@@ -3054,7 +3058,8 @@ public static class SwShBridgeMapper
             boost.EffectId,
             boost.EffectLabel,
             boost.StageAmount,
-            boost.AffectedStats);
+            boost.AffectedStats,
+            boost.IsAvailable);
     }
 
     private static IvScreenReservedRegionDto ToDto(SwShIvScreenReservedRegion region)

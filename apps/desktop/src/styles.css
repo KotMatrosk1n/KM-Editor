@@ -4785,9 +4785,14 @@ h2 {
 
 .fairy-gym-boost-card-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.fairy-gym-boost-card-heading > div {
+  min-width: 0;
 }
 
 .fairy-gym-boost-card-heading h3 {
@@ -4855,7 +4860,9 @@ h2 {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 900;
-  white-space: nowrap;
+  max-width: 100%;
+  text-align: center;
+  white-space: normal;
 }
 
 .fairy-gym-outcome-control {

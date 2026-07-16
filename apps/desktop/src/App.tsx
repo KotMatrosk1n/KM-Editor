@@ -308,6 +308,10 @@ import {
 } from './bridge/fairyGymBoostsContracts';
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
+import {
+  encodeFairyGymBoostPendingSelections,
+  getCanonicalFairyGymBoostPendingSelections
+} from './features/fairy-gym-boosts/fairyGymBoostsPending';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
 import {
   createCanonicalCatchCapSelections,
@@ -4786,19 +4790,64 @@ export function App({
 
   const handleStageFairyGymBoosts = async (selections: FairyGymBoostSelection[]) => {
     setIsFairyGymBoostsStaging(true);
-    prepareScopedEditorPanelAction('fairyGymBoosts');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageFairyGymBoosts({
-        paths: createProjectPaths(draftPaths),
-        selections,
-        session: editSession
-      });
-      setFairyGymBoostsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('fairyGymBoosts', response.diagnostics);
-      registerEditorDraftDirty('fairyGymBoosts', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageFairyGymBoosts({
+            paths: createProjectPaths(draftPaths),
+            selections,
+            session
+          });
+          const diagnostics = response.diagnostics.slice();
+          const returnedSelections = getCanonicalFairyGymBoostPendingSelections(
+            response.session,
+            response.workflow
+          );
+          const hasCanonicalPendingEdit =
+            returnedSelections !== null &&
+            encodeFairyGymBoostPendingSelections(returnedSelections) ===
+              encodeFairyGymBoostPendingSelections(selections) &&
+            response.workflow.detectedGame === draftPaths.selectedGame &&
+            response.session.hasPendingChanges &&
+            (session === null || response.session.sessionId === session.sessionId);
+          if (
+            !diagnostics.some((diagnostic) => diagnostic.severity === 'error') &&
+            !hasCanonicalPendingEdit
+          ) {
+            diagnostics.push({
+              domain: 'workflow.fairyGymBoosts',
+              message:
+                'Fairy Gym Boosts staging did not match the requested game, session, and selections.',
+              severity: 'error'
+            });
+          }
+
+          const didSucceed =
+            hasCanonicalPendingEdit &&
+            !diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+          return {
+            ...response,
+            diagnostics,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : fairyGymBoostsWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('fairyGymBoosts');
+          setFairyGymBoostsWorkflow(response.workflow);
+          setEditSessionSection('fairyGymBoosts');
+          setScopedEditorPanelDiagnostics('fairyGymBoosts', response.diagnostics);
+          registerEditorDraftDirty('fairyGymBoosts', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {

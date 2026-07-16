@@ -91,6 +91,16 @@ public sealed class SwShFairyGymBoostsWorkflowService
     {
         ArgumentNullException.ThrowIfNull(project);
 
+        if (!IsSupportedGame(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Fairy Gym Boosts requires Pokemon Sword or Pokemon Shield to be selected before it can load.",
+                    expected: "Selected Pokemon Sword or Pokemon Shield project"));
+        }
+
         if (!project.Health.CanOpenReadOnlyWorkflows)
         {
             return CreateSummary(
@@ -117,17 +127,48 @@ public sealed class SwShFairyGymBoostsWorkflowService
         {
             return CreateWorkflow(
                 summary,
+                IsSupportedGame(project.Paths.SelectedGame) ? project.Paths.SelectedGame : null,
                 sources: [],
                 currentSelections: new Dictionary<string, SwShFairyGymBoostSelection>(StringComparer.Ordinal),
+                availableSourcePaths: new HashSet<string>(StringComparer.Ordinal),
                 diagnostics);
         }
 
-        var sources = SourceDefinitions
-            .Select(source => CreateSource(project, source, diagnostics))
-            .ToArray();
-        var currentSelections = ReadCurrentSelections(project, diagnostics);
+        var sources = new List<SwShFairyGymBoostsSourceRecord>(SourceDefinitions.Length);
+        var currentSelections = new Dictionary<string, SwShFairyGymBoostSelection>(StringComparer.Ordinal);
+        var availableSourcePaths = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var sourceDefinition in SourceDefinitions)
+        {
+            var inspection = InspectSource(project, sourceDefinition, diagnostics);
+            sources.Add(inspection.Source);
+            if (inspection.Slots is null)
+            {
+                continue;
+            }
 
-        return CreateWorkflow(summary, sources, currentSelections, diagnostics);
+            availableSourcePaths.Add(sourceDefinition.RelativePath);
+            foreach (var boost in BoostDefinitions.Where(boost => string.Equals(
+                boost.SequenceFile,
+                sourceDefinition.RelativePath,
+                StringComparison.Ordinal)))
+            {
+                var slot = inspection.Slots[boost.AnswerChoice - 1];
+                currentSelections.Add(
+                    boost.BoostId,
+                    new SwShFairyGymBoostSelection(
+                        boost.BoostId,
+                        slot.EffectId,
+                        ToResultKind(slot.ResultValue)));
+            }
+        }
+
+        return CreateWorkflow(
+            summary,
+            project.Paths.SelectedGame,
+            sources,
+            currentSelections,
+            availableSourcePaths,
+            diagnostics);
     }
 
     internal static SwShFairyGymBoostSelection CreateDefaultSelection(
@@ -204,30 +245,89 @@ public sealed class SwShFairyGymBoostsWorkflowService
         return SwShTypeChartWorkflowService.ResolveOutputPath(paths, targetRelativePath);
     }
 
+    internal static string? ResolveBaseSourcePath(ProjectPaths paths, string relativePath)
+    {
+        return SwShTypeChartWorkflowService.ResolveBaseSourcePath(paths, relativePath);
+    }
+
+    internal IReadOnlyList<ProjectFileReference> GetPlanSources(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var sources = new List<ProjectFileReference>(SourceDefinitions.Length * 2);
+        foreach (var definition in SourceDefinitions)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, definition.RelativePath));
+            var workflowFile = ResolveWorkflowFile(project, definition.RelativePath);
+            if (workflowFile?.Entry.LayeredFile is not null)
+            {
+                sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, definition.RelativePath));
+            }
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    internal static IReadOnlyList<SwShFairyGymBoostAnswerSlot> GetVanillaSlots(string relativePath)
+    {
+        var boosts = BoostDefinitions
+            .Where(boost => string.Equals(boost.SequenceFile, relativePath, StringComparison.Ordinal))
+            .OrderBy(boost => boost.AnswerChoice)
+            .ToArray();
+        if (boosts.Length != SwShFairyGymBoostsBseqPatcher.OwnedSlotCount
+            || boosts.Select(boost => boost.AnswerChoice).Distinct().Count() != boosts.Length
+            || boosts[0].AnswerChoice != 1
+            || boosts[1].AnswerChoice != 2)
+        {
+            throw new InvalidOperationException(
+                $"Fairy Gym boost mapping for '{relativePath}' must define answer choices 1 and 2 exactly once.");
+        }
+
+        return boosts
+            .Select(boost => new SwShFairyGymBoostAnswerSlot(
+                boost.EffectId,
+                ToResultValue(boost.ResultKind)))
+            .ToArray();
+    }
+
+    internal static bool IsSupportedGame(ProjectGame? game)
+    {
+        return game is ProjectGame.Sword or ProjectGame.Shield;
+    }
+
     private static SwShFairyGymBoostsWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
+        ProjectGame? detectedGame,
         IReadOnlyList<SwShFairyGymBoostsSourceRecord> sources,
         IReadOnlyDictionary<string, SwShFairyGymBoostSelection> currentSelections,
+        IReadOnlySet<string> availableSourcePaths,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         var trainers = TrainerDefinitions
-            .Select(trainer => ToTrainer(trainer, currentSelections))
+            .Select(trainer => ToTrainer(trainer, currentSelections, availableSourcePaths))
             .ToArray();
         var boostCount = trainers.Sum(trainer => trainer.Boosts.Count);
         return new SwShFairyGymBoostsWorkflow(
             summary,
+            detectedGame,
             trainers,
             sources,
             new SwShFairyGymBoostsWorkflowStats(
                 trainers.Length,
                 boostCount,
-                sources.Count(source => source.Status == "available")),
+                sources.Count(source => source.Status == "available"),
+                SourceDefinitions.Length * SwShFairyGymBoostsBseqPatcher.OwnedByteCount),
             diagnostics);
     }
 
     private static SwShFairyGymBoostTrainer ToTrainer(
         SwShFairyGymBoostTrainerDefinition trainer,
-        IReadOnlyDictionary<string, SwShFairyGymBoostSelection> currentSelections)
+        IReadOnlyDictionary<string, SwShFairyGymBoostSelection> currentSelections,
+        IReadOnlySet<string> availableSourcePaths)
     {
         return new SwShFairyGymBoostTrainer(
             trainer.TrainerId,
@@ -238,13 +338,15 @@ public sealed class SwShFairyGymBoostsWorkflowService
                     boost,
                     currentSelections.TryGetValue(boost.BoostId, out var selection)
                         ? selection
-                        : CreateDefaultSelection(boost)))
+                        : CreateDefaultSelection(boost),
+                    availableSourcePaths.Contains(boost.SequenceFile)))
                 .ToArray());
     }
 
     private static SwShFairyGymBoostRecord ToBoostRecord(
         SwShFairyGymBoostDefinition boost,
-        SwShFairyGymBoostSelection selection)
+        SwShFairyGymBoostSelection selection,
+        bool isAvailable)
     {
         var effect = ResolveEffect(selection.EffectId);
         return new SwShFairyGymBoostRecord(
@@ -259,78 +361,11 @@ public sealed class SwShFairyGymBoostsWorkflowService
             selection.EffectId,
             effect.Label,
             effect.StageAmount,
-            effect.AffectedStats);
+            effect.AffectedStats,
+            isAvailable);
     }
 
-    private static IReadOnlyDictionary<string, SwShFairyGymBoostSelection> ReadCurrentSelections(
-        OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var selections = new Dictionary<string, SwShFairyGymBoostSelection>(StringComparer.Ordinal);
-
-        foreach (var sourceDefinition in SourceDefinitions)
-        {
-            var source = ResolveWorkflowFile(project, sourceDefinition.RelativePath);
-            if (source is null)
-            {
-                continue;
-            }
-
-            IReadOnlyList<SwShFairyGymBoostAnswerSlot> slots;
-            try
-            {
-                slots = SwShFairyGymBoostsBseqPatcher.ReadAnswerSlots(File.ReadAllBytes(source.AbsolutePath));
-            }
-            catch (InvalidDataException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"{sourceDefinition.Label} could not be inspected: {exception.Message}. Known vanilla values will be shown for that sequence.",
-                    file: sourceDefinition.RelativePath,
-                    expected: "Fairy Gym quiz BSEQ command payload"));
-                continue;
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"{sourceDefinition.Label} could not be read: {exception.Message}. Known vanilla values will be shown for that sequence.",
-                    file: sourceDefinition.RelativePath,
-                    expected: "Readable Fairy Gym quiz BSEQ file"));
-                continue;
-            }
-
-            foreach (var boost in BoostDefinitions.Where(boost => string.Equals(boost.SequenceFile, sourceDefinition.RelativePath, StringComparison.Ordinal)))
-            {
-                var slotIndex = boost.AnswerChoice - 1;
-                if (slotIndex < 0 || slotIndex >= slots.Count)
-                {
-                    continue;
-                }
-
-                var slot = slots[slotIndex];
-                var resultKind = ToResultKind(slot.ResultValue);
-                if (!IsSupportedSelection(slot.EffectId, resultKind))
-                {
-                    diagnostics.Add(CreateDiagnostic(
-                        DiagnosticSeverity.Warning,
-                        $"{sourceDefinition.Label} has an unsupported boost payload for {boost.AnswerText}. Known vanilla values will be shown for that answer.",
-                        file: sourceDefinition.RelativePath,
-                        expected: "Effect 0 with no effect, or effect 1-6 with boost/drop"));
-                    continue;
-                }
-
-                selections[boost.BoostId] = new SwShFairyGymBoostSelection(
-                    boost.BoostId,
-                    slot.EffectId,
-                    resultKind);
-            }
-        }
-
-        return selections;
-    }
-
-    private static SwShFairyGymBoostsSourceRecord CreateSource(
+    private static FairyGymBoostSourceInspection InspectSource(
         OpenedProject project,
         SwShFairyGymBoostSourceDefinition source,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -344,23 +379,93 @@ public sealed class SwShFairyGymBoostsWorkflowService
                 file: source.RelativePath,
                 expected: "Sword/Shield Fairy Gym battle sequence file"));
 
-            return new SwShFairyGymBoostsSourceRecord(
-                source.SourceId,
-                source.Label,
-                source.RelativePath,
-                "missing",
-                new SwShFairyGymBoostsProvenance(
-                    source.RelativePath,
-                    ProjectFileLayer.Generated,
-                    ProjectFileGraphEntryState.BaseOnly));
+            return new FairyGymBoostSourceInspection(CreateMissingSource(source), Slots: null);
         }
 
+        var basePath = ResolveBaseSourcePath(project.Paths, source.RelativePath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{source.Label} has no canonical base file. The effective sequence cannot be verified safely.",
+                file: source.RelativePath,
+                expected: "Readable vanilla Sword/Shield Fairy Gym BSEQ base file"));
+            return new FairyGymBoostSourceInspection(
+                CreateBlockedSource(source, workflowFile.Entry),
+                Slots: null);
+        }
+
+        try
+        {
+            var baseBytes = File.ReadAllBytes(basePath);
+            var effectiveBytes = File.ReadAllBytes(workflowFile.AbsolutePath);
+            var vanillaSlots = GetVanillaSlots(source.RelativePath);
+            SwShFairyGymBoostsBseqPatcher.ValidateVanillaBase(baseBytes, vanillaSlots);
+            SwShFairyGymBoostsBseqPatcher.ValidateEffective(effectiveBytes);
+            SwShFairyGymBoostsBseqPatcher.EnsureCompatible(baseBytes, effectiveBytes);
+            var slots = SwShFairyGymBoostsBseqPatcher.ReadAnswerSlots(effectiveBytes);
+
+            return new FairyGymBoostSourceInspection(
+                new SwShFairyGymBoostsSourceRecord(
+                    source.SourceId,
+                    source.Label,
+                    workflowFile.Entry.RelativePath,
+                    "available",
+                    SwShFairyGymBoostsBseqPatcher.PayloadOffsetHex,
+                    SwShFairyGymBoostsBseqPatcher.OwnedRangeHex,
+                    CreateProvenance(workflowFile.Entry)),
+                slots);
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{source.Label} is blocked because its verified Fairy Gym mapping is invalid: {exception.Message}",
+                file: source.RelativePath,
+                expected: "Length 0x4A10, one SpecialQuizResult payload at 0x1550, canonical base slots, and supported effective owned slots"));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{source.Label} is blocked because its base or effective source could not be read: {exception.Message}",
+                file: source.RelativePath,
+                expected: "Readable vanilla base and compatible effective Fairy Gym BSEQ files"));
+        }
+
+        return new FairyGymBoostSourceInspection(
+            CreateBlockedSource(source, workflowFile.Entry),
+            Slots: null);
+    }
+
+    private static SwShFairyGymBoostsSourceRecord CreateMissingSource(
+        SwShFairyGymBoostSourceDefinition source)
+    {
         return new SwShFairyGymBoostsSourceRecord(
             source.SourceId,
             source.Label,
-            workflowFile.Entry.RelativePath,
-            "available",
-            CreateProvenance(workflowFile.Entry));
+            source.RelativePath,
+            "missing",
+            "unknown",
+            "unknown",
+            new SwShFairyGymBoostsProvenance(
+                source.RelativePath,
+                ProjectFileLayer.Generated,
+                ProjectFileGraphEntryState.BaseOnly));
+    }
+
+    private static SwShFairyGymBoostsSourceRecord CreateBlockedSource(
+        SwShFairyGymBoostSourceDefinition source,
+        ProjectFileGraphEntry entry)
+    {
+        return new SwShFairyGymBoostsSourceRecord(
+            source.SourceId,
+            source.Label,
+            entry.RelativePath,
+            "blocked",
+            "unknown",
+            "unknown",
+            CreateProvenance(entry));
     }
 
     private static SwShFairyGymBoostsProvenance CreateProvenance(ProjectFileGraphEntry entry)
@@ -397,4 +502,8 @@ public sealed class SwShFairyGymBoostsWorkflowService
             Domain: FairyGymBoostsEditDomain,
             Expected: expected);
     }
+
+    private sealed record FairyGymBoostSourceInspection(
+        SwShFairyGymBoostsSourceRecord Source,
+        IReadOnlyList<SwShFairyGymBoostAnswerSlot>? Slots);
 }

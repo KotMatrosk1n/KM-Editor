@@ -29,6 +29,8 @@ public sealed record FairyGymBoostsSourceRecordDto(
     string Label,
     string RelativePath,
     string Status,
+    string PayloadOffsetHex,
+    string OwnedRangeHex,
     FairyGymBoostsProvenanceDto Provenance);
 
 public sealed record FairyGymBoostRecordDto(
@@ -43,7 +45,8 @@ public sealed record FairyGymBoostRecordDto(
     int EffectId,
     string EffectLabel,
     int StageAmount,
-    IReadOnlyList<string> AffectedStats);
+    IReadOnlyList<string> AffectedStats,
+    bool IsAvailable);
 
 public sealed record FairyGymBoostTrainerDto(
     int TrainerId,
@@ -54,10 +57,12 @@ public sealed record FairyGymBoostTrainerDto(
 public sealed record FairyGymBoostsWorkflowStatsDto(
     int TrainerCount,
     int BoostCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    int OwnedByteCount);
 
 public sealed record FairyGymBoostsWorkflowDto(
     WorkflowSummaryDto Summary,
+    ProjectGameDto? DetectedGame,
     IReadOnlyList<FairyGymBoostTrainerDto> Trainers,
     IReadOnlyList<FairyGymBoostsSourceRecordDto> Sources,
     FairyGymBoostsWorkflowStatsDto Stats,

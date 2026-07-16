@@ -12,16 +12,25 @@ export function createFairyGymBoostsWorkflowFixture(canEdit: boolean): {
 } {
   const fairyGymBoostsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description:
-      'Preliminary advanced editor that maps Fairy Gym quiz stat boosts to NPC trainers and answer choices.',
+    description: 'Edit the verified Fairy Gym quiz boost and drop outcomes for every answer.',
     diagnostics: [],
     id: 'fairyGymBoosts',
     label: 'Fairy Gym Boosts'
   };
   const fairyGymBoostsWorkflow: FairyGymBoostsWorkflow = {
+    detectedGame: 'sword',
     diagnostics: [],
-    sources: ['bk143', 'bk144', 'bk145', 'bk171', 'bk173', 'bk174'].map((sourceId) => ({
-      label: `${sourceId} quiz sequence`,
+    sources: ([
+      ['bk143', 'Annette quiz sequence'],
+      ['bk144', 'Teresa quiz sequence'],
+      ['bk145', 'Theodora quiz sequence'],
+      ['bk171', 'Opal nickname quiz sequence'],
+      ['bk173', 'Opal color quiz sequence'],
+      ['bk174', 'Opal age quiz sequence']
+    ] as const).map(([sourceId, label]) => ({
+      label,
+      ownedRangeHex: '0x00001550-0x0000155F',
+      payloadOffsetHex: '0x00001550',
       provenance: {
         fileState: 'baseOnly',
         sourceFile: `romfs/bin/battle/waza/sequence/${sourceId}.bseq`,
@@ -33,6 +42,7 @@ export function createFairyGymBoostsWorkflowFixture(canEdit: boolean): {
     })),
     stats: {
       boostCount: 12,
+      ownedByteCount: 96,
       sourceFileCount: 6,
       trainerCount: 4
     },
@@ -105,6 +115,7 @@ function createBoost(
     defaultResultKind: resultKind,
     effectId,
     effectLabel,
+    isAvailable: true,
     questionText,
     resultKind,
     sequenceFile: `romfs/bin/battle/waza/sequence/${sequenceId}.bseq`,

@@ -70,6 +70,24 @@ test('Starting Items sources run both workflow and bridge integration coverage',
   );
 });
 
+test('Fairy Gym bridge contracts run their specialized desktop test', () => {
+  const output = runChangedPrint([
+    'apps/desktop/src/bridge/fairyGymBoostsContracts.ts',
+  ]);
+
+  assert.match(output, /Run nearby desktop bridge test/);
+  assert.match(output, /src\/bridge\/fairyGymBoostsContracts\.test\.ts/);
+  assert.match(output, /Run desktop bridge tests/);
+});
+
+test('fast validation retains Fairy Gym and Type Chart pending coverage', () => {
+  const output = runPrint(['fast', '--print']);
+
+  assert.match(output, /src\/fairyGymBoostsUi\.test\.tsx/);
+  assert.match(output, /src\/features\/fairy-gym-boosts\/fairyGymBoostsPending\.test\.ts/);
+  assert.match(output, /src\/features\/type-chart\/typeChartPending\.test\.ts/);
+});
+
 test('routine full validation still excludes Royal Candy hook shards', () => {
   const output = runPrint(['full', '--print']);
 
