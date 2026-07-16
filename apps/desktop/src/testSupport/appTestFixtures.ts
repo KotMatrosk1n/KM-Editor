@@ -6161,7 +6161,7 @@ export function createMockProjectBridge(
       };
     },
     loadShinyRateWorkflow: () => Promise.resolve({ workflow: shinyRateWorkflow }),
-    stageShinyRate: (request) => Promise.resolve(createStageShinyRateFixtureResponse(request, shinyRateWorkflow)),
+    stageShinyRate: (request) => createStageShinyRateFixtureResponse(request, shinyRateWorkflow),
     loadTypeChartWorkflow: () => Promise.resolve({ workflow: typeChartWorkflow }),
     stageTypeChart: (request) =>
       Promise.resolve({

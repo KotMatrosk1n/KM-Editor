@@ -84,6 +84,29 @@ describe('LocalizationProvider', () => {
     expect(translateLiteralForLanguage('es', 'Writes 8 PID rolls.')).toBe(
       'Escribe 8 tiradas PID.'
     );
+    expect(translateLiteralForLanguage('es', '8 rolls')).toBe('8 tiradas');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Closest input is 1/4,096. 8 rolls gives about 1/512 (0.195%).'
+      )
+    ).toBe(
+      'La entrada más cercana es 1/4,096. 8 tiradas dan aproximadamente 1/512 (0.195%).'
+    );
+    expect(
+      translateLiteralForLanguage('es', 'Shiny Rate is fixed at 8 PID rolls.')
+    ).toBe('Probabilidad shiny está fijada en 8 tiradas PID.');
+    expect(
+      translateLiteralForLanguage('es', 'Stage Shiny Rate fixed 8 rolls.')
+    ).toBe('Preparar Probabilidad shiny fija de 8 tiradas.');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        "Default restores the game's original runtime-dependent reroll count calculation."
+      )
+    ).toBe(
+      'Predeterminado restaura el cálculo original de rerolls dependiente de la ejecución del juego.'
+    );
     expect(translateLiteralForLanguage('es', 'Pending changes: 12')).toBe(
       'Cambios pendientes: 12'
     );
@@ -1293,6 +1316,69 @@ describe('LocalizationProvider', () => {
     });
 
     expect(missingEntries).toEqual([]);
+  });
+
+  it('ships and formats Shiny Rate state in every language catalogue', () => {
+    const resources = {
+      de: deResource,
+      en: enResource,
+      es: esResource,
+      fr: frResource,
+      ru: ruResource,
+      uk: ukResource,
+      zh: zhResource
+    };
+    const requiredLiterals = [
+      'Always Shiny NOPs the loop break branch.',
+      'Break offset',
+      'Closest input is 1/{denominator}.',
+      'Compare offset',
+      "Default restores the game's original runtime-dependent reroll count calculation.",
+      'Dynamic',
+      'Enter odds from 1/2 to 1/4096.',
+      'Fixed rolls',
+      'Function offset',
+      'Gen 3',
+      'Masuda + Shiny Charm',
+      "Restores the game's runtime-dependent shiny reroll logic.",
+      'Shiny Charm',
+      'Shiny Rate cannot inspect the reroll loop because an exefs/main source could not be read.',
+      'Shiny Rate is fixed at {count} PID rolls.',
+      'Shiny Rate is staged for change-plan review.',
+      'Staged rate',
+      'Variable',
+      '{count} rolls',
+      '{count} rolls gives about 1/{denominator} ({percent}).'
+    ] as const;
+
+    for (const language of Object.keys(resources) as Array<keyof typeof resources>) {
+      const literals = resources[language].literals as Record<string, string>;
+      for (const literal of requiredLiterals) {
+        expect(literals[literal], `${language}:${literal}`).toBeTruthy();
+      }
+
+      expect(
+        literals['Shiny Rate cannot inspect the reroll loop because exefs/main could not be read.']
+      ).toBeUndefined();
+
+      expect(
+        translateLiteralForLanguage(language, 'Shiny Rate is fixed at 8 PID rolls.')
+      ).toBe(literals['Shiny Rate is fixed at {count} PID rolls.']!.replace('{count}', '8'));
+      expect(translateLiteralForLanguage(language, '8 rolls')).toBe(
+        literals['{count} rolls']!.replace('{count}', '8')
+      );
+      expect(
+        translateLiteralForLanguage(
+          language,
+          'Closest input is 1/4,096. 8 rolls gives about 1/512 (0.195%).'
+        )
+      ).toBe(
+        `${literals['Closest input is 1/{denominator}.']!.replace('{denominator}', '4,096')} ${literals['{count} rolls gives about 1/{denominator} ({percent}).']!
+          .replace('{count}', '8')
+          .replace('{denominator}', '512')
+          .replace('{percent}', '0.195%')}`
+      );
+    }
   });
 
   it('ships exact Hyper Training validation and optional-source literals in every catalogue', () => {

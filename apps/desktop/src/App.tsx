@@ -4635,20 +4635,41 @@ export function App({
 
   const handleStageShinyRate = async (mode: ShinyRateMode, rollCount: number | null) => {
     setIsShinyRateStaging(true);
-    prepareScopedEditorPanelAction('shinyRate');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageShinyRate({
-        mode,
-        paths: createProjectPaths(draftPaths),
-        rollCount,
-        session: editSession
-      });
-      setShinyRateWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('shinyRate', response.diagnostics);
-      registerEditorDraftDirty('shinyRate', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageShinyRate({
+            mode,
+            paths: createProjectPaths(draftPaths),
+            rollCount,
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : shinyRateWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('shinyRate');
+          setShinyRateWorkflow(response.workflow);
+          setEditSessionSection('shinyRate');
+          setScopedEditorPanelDiagnostics('shinyRate', response.diagnostics);
+          registerEditorDraftDirty('shinyRate', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {

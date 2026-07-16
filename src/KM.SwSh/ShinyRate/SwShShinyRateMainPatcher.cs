@@ -36,7 +36,7 @@ internal sealed record SwShShinyRateMainAnalysis(
     string CompareOffsetHex,
     string BreakOffsetHex,
     int? RollCount,
-    double Chance,
+    double? Chance,
     int? OddsDenominator,
     ProjectGame? DetectedGame);
 
@@ -54,7 +54,6 @@ internal static class SwShShinyRateMainPatcher
     public const int ShieldOffsetDelta = 0x30;
     public const int PatchLength = 0x08;
 
-    private const int FunctionSearchStartOffset = 0x00700000;
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
 
@@ -72,21 +71,71 @@ internal static class SwShShinyRateMainPatcher
         0xFA, 0xC6, 0x00, 0xF0,
     ];
 
+    private static readonly byte[] SwordLoopDependenciesBeforePatch =
+    [
+        0x17, 0x1D, 0x00, 0x72, 0x40, 0x05, 0x00, 0x54,
+        0xF8, 0x03, 0x1F, 0x2A, 0xF9, 0x03, 0x00, 0x32,
+        0x48, 0x03, 0x40, 0xF9, 0x08, 0x4D, 0x40, 0xF9,
+        0x09, 0x29, 0x40, 0xA9, 0x41, 0x01, 0x09, 0x0B,
+        0x4A, 0x01, 0x09, 0xCA, 0x49, 0xA1, 0xC9, 0xCA,
+        0x29, 0x41, 0x0A, 0xCA, 0x4A, 0x6D, 0xCA, 0x93,
+        0x09, 0x29, 0x00, 0xA9, 0xA0, 0xA2, 0x42, 0xB9,
+        0xB4, 0x17, 0xE9, 0x97, 0x18, 0x03, 0x00, 0x2A,
+    ];
+
+    private static readonly byte[] ShieldLoopDependenciesBeforePatch =
+    [
+        0x17, 0x1D, 0x00, 0x72, 0x40, 0x05, 0x00, 0x54,
+        0xF8, 0x03, 0x1F, 0x2A, 0xF9, 0x03, 0x00, 0x32,
+        0x48, 0x03, 0x40, 0xF9, 0x08, 0x4D, 0x40, 0xF9,
+        0x09, 0x29, 0x40, 0xA9, 0x41, 0x01, 0x09, 0x0B,
+        0x4A, 0x01, 0x09, 0xCA, 0x49, 0xA1, 0xC9, 0xCA,
+        0x29, 0x41, 0x0A, 0xCA, 0x4A, 0x6D, 0xCA, 0x93,
+        0x09, 0x29, 0x00, 0xA9, 0xA0, 0xA2, 0x42, 0xB9,
+        0xA8, 0x17, 0xE9, 0x97, 0x18, 0x03, 0x00, 0x2A,
+    ];
+
+    private static readonly byte[] LoopDependenciesAfterPatch =
+    [
+        0x39, 0x07, 0x00, 0x11,
+        0x20, 0xFE, 0x07, 0x36,
+        0x1F, 0x03, 0x00, 0x72,
+        0xE8, 0x03, 0x00, 0x32,
+        0x08, 0x15, 0x88, 0x1A,
+        0x88, 0x0A, 0x00, 0xB9,
+        0x88, 0x12, 0x40, 0xB9,
+        0x88, 0xFA, 0xFF, 0x35,
+    ];
+
     private static readonly PatchLayout[] Layouts =
     [
-        new(ProjectGame.Sword, "Pokemon Sword 1.3.2", SwordBuildId, 0),
-        new(ProjectGame.Shield, "Pokemon Shield 1.3.2", ShieldBuildId, ShieldOffsetDelta),
+        new(
+            ProjectGame.Sword,
+            "Pokemon Sword 1.3.2",
+            SwordBuildId,
+            0,
+            SwordLoopDependenciesBeforePatch),
+        new(
+            ProjectGame.Shield,
+            "Pokemon Shield 1.3.2",
+            ShieldBuildId,
+            ShieldOffsetDelta,
+            ShieldLoopDependenciesBeforePatch),
     ];
 
     public static SwShShinyRateMainAnalysis Analyze(byte[] mainBytes, ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
+        var buildId = "unknown";
+        ProjectGame? detectedGame = null;
+        PatchLayout? detectedLayout = null;
         try
         {
             var nso = NsoFile.Parse(mainBytes);
-            var buildId = FormatBuildId(nso.BuildId);
-            var layout = FindLayout(buildId);
+            ValidateRequiredSegmentHashes(nso);
+            buildId = FormatBuildId(nso.BuildId);
+            var layout = FindLayout(nso.BuildId);
             if (layout is null)
             {
                 return CreateAnalysis(
@@ -95,10 +144,13 @@ internal static class SwShShinyRateMainPatcher
                     buildId,
                     layout: null,
                     rollCount: null,
-                    chance: 0,
+                    chance: null,
                     oddsDenominator: null,
                     detectedGame: null);
             }
+
+            detectedLayout = layout;
+            detectedGame = layout.Game;
 
             var mismatch = CreateGameMismatchAnalysis(layout, expectedGame, buildId);
             if (mismatch is not null)
@@ -108,6 +160,7 @@ internal static class SwShShinyRateMainPatcher
 
             var text = nso.Text.DecompressedData;
             EnsurePatchRange(text, layout);
+            ValidateDependencies(text, layout);
 
             var preludeMatch = FindVerifiedFunctionOffset(text, layout, buildId);
             if (preludeMatch is not null)
@@ -124,12 +177,14 @@ internal static class SwShShinyRateMainPatcher
 
             if (isVanillaCompare && isVanillaBreak)
             {
-                return CreateRateAnalysis(
+                return CreateAnalysis(
                     SwShShinyRateMainKind.Default,
                     "Shiny Rate is using the game's original shiny reroll logic.",
                     buildId,
                     layout,
-                    rollCount: MinimumFixedRollCount,
+                    rollCount: null,
+                    chance: null,
+                    oddsDenominator: null,
                     layout.Game);
             }
 
@@ -168,7 +223,7 @@ internal static class SwShShinyRateMainPatcher
                 buildId,
                 layout,
                 rollCount: null,
-                chance: 0,
+                chance: null,
                 oddsDenominator: null,
                 layout.Game);
         }
@@ -177,12 +232,12 @@ internal static class SwShShinyRateMainPatcher
             return CreateAnalysis(
                 SwShShinyRateMainKind.Conflict,
                 exception.Message,
-                buildId: "unknown",
-                layout: null,
+                buildId,
+                detectedLayout,
                 rollCount: null,
-                chance: 0,
+                chance: null,
                 oddsDenominator: null,
-                detectedGame: null);
+                detectedGame);
         }
     }
 
@@ -193,6 +248,7 @@ internal static class SwShShinyRateMainPatcher
         ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
+        EnsureSupportedExpectedGame(expectedGame);
         if (mode == SwShShinyRateMode.FixedRolls)
         {
             ValidateRollCount(rollCount);
@@ -209,10 +265,12 @@ internal static class SwShShinyRateMainPatcher
         }
 
         var nso = NsoFile.Parse(mainBytes);
-        var layout = FindLayout(FormatBuildId(nso.BuildId))
+        ValidateRequiredSegmentHashes(nso);
+        var layout = FindLayout(nso.BuildId)
             ?? throw new InvalidDataException("Shiny Rate supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
         EnsurePatchRange(text, layout);
+        ValidateDependencies(text, layout);
 
         WriteInstruction(text, layout.CompareOffset, VanillaCompareInstruction);
         WriteInstruction(text, layout.BreakOffset, VanillaBreakInstruction);
@@ -265,9 +323,71 @@ internal static class SwShShinyRateMainPatcher
         return Math.Clamp(rolls, MinimumFixedRollCount, MaximumFixedRollCount);
     }
 
-    public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainTextRegions()
+    public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainTextRegions(ProjectGame? game = null)
     {
-        return SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerShinyRate);
+        return SwShExeFsReservedRegionLedger
+            .MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerShinyRate, game)
+            .Where(region => !string.Equals(region.Rule, "requires-vanilla", StringComparison.Ordinal))
+            .ToArray();
+    }
+
+    public static byte[] RestoreFromBase(
+        byte[] currentMainBytes,
+        byte[] baseMainBytes,
+        ProjectGame? expectedGame)
+    {
+        ArgumentNullException.ThrowIfNull(currentMainBytes);
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        EnsureSupportedExpectedGame(expectedGame);
+
+        var currentAnalysis = Analyze(currentMainBytes, expectedGame);
+        if (IsBlocked(currentAnalysis.Kind))
+        {
+            throw new InvalidDataException(currentAnalysis.Message);
+        }
+
+        var baseAnalysis = Analyze(baseMainBytes, expectedGame);
+        if (baseAnalysis.Kind != SwShShinyRateMainKind.Default)
+        {
+            throw new InvalidDataException(
+                "Shiny Rate restore requires a verified selected-game vanilla base exefs/main.");
+        }
+
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        ValidateRequiredSegmentHashes(currentNso);
+        ValidateRequiredSegmentHashes(baseNso);
+        EnsureSameBuildAndLayout(baseNso, currentNso, "Shiny Rate restore");
+        var layout = FindLayout(baseNso.BuildId)
+            ?? throw new InvalidDataException("Shiny Rate restore requires a supported Sword/Shield 1.3.2 base main.");
+        var text = currentNso.Text.DecompressedData.ToArray();
+        baseNso.Text.DecompressedData.AsSpan(layout.CompareOffset, PatchLength)
+            .CopyTo(text.AsSpan(layout.CompareOffset, PatchLength));
+
+        var output = currentNso.Write(textDecompressedData: text);
+        ValidateOutput(
+            currentMainBytes,
+            output,
+            SwShShinyRateMode.Default,
+            rollCount: null,
+            expectedGame,
+            layout,
+            operation: "Shiny Rate restore");
+        return output;
+    }
+
+    internal static void EnsureCompatibleExecutableIdentity(
+        byte[] baseMainBytes,
+        byte[] effectiveMainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(effectiveMainBytes);
+
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        var effectiveNso = NsoFile.Parse(effectiveMainBytes);
+        ValidateRequiredSegmentHashes(baseNso);
+        ValidateRequiredSegmentHashes(effectiveNso);
+        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Shiny Rate apply");
     }
 
     public static string FormatTextOffset(int offset)
@@ -331,7 +451,7 @@ internal static class SwShShinyRateMainPatcher
         string buildId,
         PatchLayout? layout,
         int? rollCount,
-        double chance,
+        double? chance,
         int? oddsDenominator,
         ProjectGame? detectedGame)
     {
@@ -353,61 +473,20 @@ internal static class SwShShinyRateMainPatcher
         PatchLayout layout,
         string buildId)
     {
-        var matches = FindPreludeMatches(text).ToArray();
-        if (matches.Length == 0)
+        if (text.AsSpan(layout.FunctionOffset, FunctionPrelude.Length).SequenceEqual(FunctionPrelude))
         {
-            return CreateAnalysis(
-                SwShShinyRateMainKind.MissingFunction,
-                "Shiny Rate could not find the verified shiny reroll loop in exefs/main.",
-                buildId,
-                layout,
-                rollCount: null,
-                chance: 0,
-                oddsDenominator: null,
-                layout.Game);
+            return null;
         }
 
-        if (matches.Length > 1)
-        {
-            return CreateAnalysis(
-                SwShShinyRateMainKind.AmbiguousFunction,
-                "Shiny Rate found multiple possible shiny reroll loops in exefs/main and will not guess which one to patch.",
-                buildId,
-                layout,
-                rollCount: null,
-                chance: 0,
-                oddsDenominator: null,
-                layout.Game);
-        }
-
-        if (matches[0] != layout.FunctionOffset)
-        {
-            return CreateAnalysis(
-                SwShShinyRateMainKind.Conflict,
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Shiny Rate found the reroll loop at {FormatTextOffset(matches[0])}, but {layout.GameName} expects it at {FormatTextOffset(layout.FunctionOffset)}."),
-                buildId,
-                layout,
-                rollCount: null,
-                chance: 0,
-                oddsDenominator: null,
-                layout.Game);
-        }
-
-        return null;
-    }
-
-    private static IEnumerable<int> FindPreludeMatches(byte[] text)
-    {
-        var searchStart = Math.Min(FunctionSearchStartOffset, text.Length);
-        for (var offset = searchStart; offset <= text.Length - FunctionPrelude.Length; offset++)
-        {
-            if (text.AsSpan(offset, FunctionPrelude.Length).SequenceEqual(FunctionPrelude))
-            {
-                yield return offset;
-            }
-        }
+        return CreateAnalysis(
+            SwShShinyRateMainKind.MissingFunction,
+            $"Shiny Rate expected the verified {layout.GameName} reroll loop at {FormatTextOffset(layout.FunctionOffset)}, but that exact function prelude is missing.",
+            buildId,
+            layout,
+            rollCount: null,
+            chance: null,
+            oddsDenominator: null,
+            layout.Game);
     }
 
     private static SwShShinyRateMainAnalysis? CreateGameMismatchAnalysis(
@@ -428,9 +507,18 @@ internal static class SwShShinyRateMainPatcher
             buildId,
             layout,
             rollCount: null,
-            chance: 0,
+            chance: null,
             oddsDenominator: null,
             layout.Game);
+    }
+
+    private static bool IsBlocked(SwShShinyRateMainKind kind)
+    {
+        return kind is SwShShinyRateMainKind.UnsupportedBuild
+            or SwShShinyRateMainKind.GameMismatch
+            or SwShShinyRateMainKind.MissingFunction
+            or SwShShinyRateMainKind.AmbiguousFunction
+            or SwShShinyRateMainKind.Conflict;
     }
 
     private static void ValidateOutput(
@@ -439,44 +527,21 @@ internal static class SwShShinyRateMainPatcher
         SwShShinyRateMode mode,
         int? rollCount,
         ProjectGame? expectedGame,
-        PatchLayout layout)
+        PatchLayout layout,
+        string operation = "Shiny Rate apply")
     {
         var before = NsoFile.Parse(input);
         var after = NsoFile.Parse(output);
-        if (!before.BuildId.SequenceEqual(after.BuildId))
-        {
-            throw new InvalidDataException("Shiny Rate patch changed the NSO build ID.");
-        }
-
-        if (!before.Ro.DecompressedData.SequenceEqual(after.Ro.DecompressedData))
-        {
-            throw new InvalidDataException("Shiny Rate patch unexpectedly changed the .ro segment.");
-        }
-
-        if (!before.Data.DecompressedData.SequenceEqual(after.Data.DecompressedData))
-        {
-            throw new InvalidDataException("Shiny Rate patch unexpectedly changed the .data segment.");
-        }
-
-        var textBefore = before.Text.DecompressedData;
-        var textAfter = after.Text.DecompressedData;
-        if (textBefore.Length != textAfter.Length)
-        {
-            throw new InvalidDataException("Shiny Rate patch changed the decompressed .text segment size.");
-        }
-
-        for (var offset = 0; offset < textBefore.Length; offset++)
-        {
-            var changed = textBefore[offset] != textAfter[offset];
-            var insidePatch = offset >= layout.CompareOffset && offset < layout.CompareOffset + PatchLength;
-            if (changed && !insidePatch)
-            {
-                throw new InvalidDataException(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Shiny Rate patch unexpectedly changed .text byte 0x{offset:X}."));
-            }
-        }
+        ValidateRequiredSegmentHashes(before);
+        ValidateRequiredSegmentHashes(after);
+        EnsureSameBuildAndLayout(before, after, operation);
+        VerifyPreservedSegment(before.Ro, after.Ro, ".ro", operation);
+        VerifyPreservedSegment(before.Data, after.Data, ".data", operation);
+        VerifyTextOutsideWrittenRegion(
+            before.Text.DecompressedData,
+            after.Text.DecompressedData,
+            layout,
+            operation);
 
         var analysis = Analyze(output, expectedGame);
         var verified = mode switch
@@ -490,15 +555,132 @@ internal static class SwShShinyRateMainPatcher
 
         if (!verified)
         {
-            throw new InvalidDataException("Shiny Rate patch verification failed after writing exefs/main.");
+            throw new InvalidDataException($"{operation} verification failed after writing exefs/main.");
+        }
+    }
+
+    private static void EnsureSameBuildAndLayout(NsoFile left, NsoFile right, string operation)
+    {
+        if (left.Version != right.Version
+            || left.Flags != right.Flags
+            || !left.BuildId.SequenceEqual(right.BuildId)
+            || !SwShExeFsMainComparison.StableHeaderBytesMatch(left.RawHeader, right.RawHeader))
+        {
+            throw new InvalidDataException(
+                $"{operation} requires matching NSO version, flags, stable header metadata, and full 32-byte build identity.");
+        }
+
+        for (var index = 0; index < left.Segments.Count; index++)
+        {
+            var leftSegment = left.Segments[index];
+            var rightSegment = right.Segments[index];
+            if (leftSegment.Header.MemoryOffset != rightSegment.Header.MemoryOffset
+                || leftSegment.Header.DecompressedSize != rightSegment.Header.DecompressedSize
+                || leftSegment.DecompressedData.Length != rightSegment.DecompressedData.Length)
+            {
+                throw new InvalidDataException(
+                    $"{operation} requires matching {leftSegment.Name} memory offsets and decompressed sizes.");
+            }
+        }
+    }
+
+    private static void VerifyPreservedSegment(
+        NsoSegment source,
+        NsoSegment output,
+        string segmentName,
+        string operation)
+    {
+        if (source.Header.MemoryOffset != output.Header.MemoryOffset
+            || source.Header.DecompressedSize != output.Header.DecompressedSize
+            || source.CompressedSize != output.CompressedSize
+            || !source.Hash.SequenceEqual(output.Hash)
+            || !source.CompressedData.SequenceEqual(output.CompressedData)
+            || !source.DecompressedData.SequenceEqual(output.DecompressedData))
+        {
+            throw new InvalidDataException($"{operation} verification found a changed {segmentName} segment.");
+        }
+    }
+
+    private static void VerifyTextOutsideWrittenRegion(
+        ReadOnlySpan<byte> sourceText,
+        ReadOnlySpan<byte> outputText,
+        PatchLayout layout,
+        string operation)
+    {
+        if (sourceText.Length != outputText.Length)
+        {
+            throw new InvalidDataException($"{operation} verification found a changed .text size.");
+        }
+
+        if (!sourceText[..layout.CompareOffset].SequenceEqual(outputText[..layout.CompareOffset])
+            || !sourceText[(layout.CompareOffset + PatchLength)..]
+                .SequenceEqual(outputText[(layout.CompareOffset + PatchLength)..]))
+        {
+            throw new InvalidDataException(
+                $"{operation} verification found a change outside the Shiny Rate written range.");
+        }
+    }
+
+    private static void ValidateRequiredSegmentHashes(NsoFile nso)
+    {
+        ValidateRequiredSegmentHash(nso.Text, nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        ValidateRequiredSegmentHash(nso.Ro, nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        ValidateRequiredSegmentHash(nso.Data, nso.Flags.HasFlag(NsoFlags.CheckHashData));
+    }
+
+    private static void ValidateRequiredSegmentHash(NsoSegment segment, bool required)
+    {
+        if (required && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
+        {
+            throw new InvalidDataException(
+                $"Shiny Rate patching rejected {segment.Name} because its required NSO header hash does not match the decompressed segment.");
+        }
+    }
+
+    private static void ValidateDependencies(ReadOnlySpan<byte> text, PatchLayout layout)
+    {
+        var dependencyBeforeOffset = layout.CompareOffset - layout.DependenciesBeforePatch.Length;
+        EnsureTextRange(
+            text,
+            dependencyBeforeOffset,
+            layout.DependenciesBeforePatch.Length,
+            "Shiny Rate reroll loop dependencies before the patch site");
+        if (!text.Slice(dependencyBeforeOffset, layout.DependenciesBeforePatch.Length)
+            .SequenceEqual(layout.DependenciesBeforePatch))
+        {
+            throw new InvalidDataException(
+                $"Shiny Rate reroll loop dependencies before {FormatTextOffset(layout.CompareOffset)} do not match the supported {layout.GameName} function.");
+        }
+
+        var dependencyAfterOffset = layout.CompareOffset + PatchLength;
+        EnsureTextRange(
+            text,
+            dependencyAfterOffset,
+            LoopDependenciesAfterPatch.Length,
+            "Shiny Rate reroll loop dependencies after the patch site");
+        if (!text.Slice(dependencyAfterOffset, LoopDependenciesAfterPatch.Length)
+            .SequenceEqual(LoopDependenciesAfterPatch))
+        {
+            throw new InvalidDataException(
+                $"Shiny Rate reroll loop dependencies after {FormatTextOffset(layout.BreakOffset)} do not match the supported {layout.GameName} function.");
         }
     }
 
     private static void EnsurePatchRange(ReadOnlySpan<byte> text, PatchLayout layout)
     {
         EnsureTextRange(text, layout.FunctionOffset, FunctionPrelude.Length, "Shiny Rate reroll loop function");
+        EnsureTextRange(
+            text,
+            layout.CompareOffset - layout.DependenciesBeforePatch.Length,
+            layout.DependenciesBeforePatch.Length,
+            "Shiny Rate reroll loop dependencies before the patch site");
         EnsureTextRange(text, layout.CompareOffset, sizeof(uint), "Shiny Rate reroll compare");
         EnsureTextRange(text, layout.BreakOffset, sizeof(uint), "Shiny Rate reroll break branch");
+        EnsureTextRange(
+            text,
+            layout.CompareOffset + PatchLength,
+            LoopDependenciesAfterPatch.Length,
+            "Shiny Rate reroll loop dependencies after the patch site");
     }
 
     private static void EnsureTextRange(ReadOnlySpan<byte> text, int offset, int length, string label)
@@ -521,16 +703,60 @@ internal static class SwShShinyRateMainPatcher
         BinaryPrimitives.WriteUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)), instruction);
     }
 
-    private static PatchLayout? FindLayout(string buildId)
+    private static PatchLayout? FindLayout(ReadOnlySpan<byte> buildId)
     {
-        return Layouts.FirstOrDefault(layout =>
-            string.Equals(layout.BuildId, buildId, StringComparison.OrdinalIgnoreCase));
+        foreach (var layout in Layouts)
+        {
+            if (IsCanonicalBuildId(buildId, layout.BuildId))
+            {
+                return layout;
+            }
+        }
+
+        return null;
+    }
+
+    private static void EnsureSupportedExpectedGame(ProjectGame? expectedGame)
+    {
+        if (expectedGame is not (ProjectGame.Sword or ProjectGame.Shield))
+        {
+            throw new InvalidDataException(
+                "Shiny Rate patching requires Pokemon Sword or Pokemon Shield to be selected explicitly.");
+        }
     }
 
     private static string FormatBuildId(byte[] buildId)
     {
         var buildIdLength = Math.Min(20, buildId.Length);
         return Convert.ToHexString(buildId.AsSpan(0, buildIdLength));
+    }
+
+    private static bool IsCanonicalBuildId(ReadOnlySpan<byte> buildId, string expectedPrefixHex)
+    {
+        const int nsoBuildIdLength = 0x20;
+        const int knownBuildIdLength = 0x14;
+        if (buildId.Length != nsoBuildIdLength)
+        {
+            return false;
+        }
+
+        var expectedPrefix = Convert.FromHexString(expectedPrefixHex);
+        return expectedPrefix.Length == knownBuildIdLength
+            && buildId[..knownBuildIdLength].SequenceEqual(expectedPrefix)
+            && IsZero(buildId[knownBuildIdLength..]);
+    }
+
+    private static bool IsZero(ReadOnlySpan<byte> data)
+    {
+        foreach (var value in data)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static string FormatGame(ProjectGame game)
@@ -547,7 +773,8 @@ internal static class SwShShinyRateMainPatcher
         ProjectGame Game,
         string GameName,
         string BuildId,
-        int Shift)
+        int Shift,
+        byte[] DependenciesBeforePatch)
     {
         public int FunctionOffset => SwordFunctionOffset + Shift;
         public int CompareOffset => SwordCompareOffset + Shift;

@@ -12,7 +12,7 @@ public sealed record LoadShinyRateWorkflowRequest(ProjectPathsDto Paths);
 public sealed record StageShinyRateRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
-    string Mode,
+    string? Mode,
     int? RollCount);
 
 public sealed record ShinyRateProvenanceDto(
@@ -35,7 +35,7 @@ public sealed record ShinyRateRuleDto(
     int MinimumCustomDenominator,
     int MaximumCustomDenominator,
     int? OddsDenominator,
-    double ChancePercent,
+    double? ChancePercent,
     string OddsLabel,
     string PercentLabel,
     string RuntimeSummary);

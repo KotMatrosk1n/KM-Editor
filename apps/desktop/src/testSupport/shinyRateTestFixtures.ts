@@ -28,55 +28,86 @@ export function createShinyRateWorkflowFixture(canEdit: boolean): {
     installMessage: "Shiny Rate is using the game's original shiny reroll logic.",
     installStatus: canEdit ? 'available' : 'readOnly',
     presets: [
-      preset(
-        'gen3',
-        'Gen 3',
-        'unsupported',
-        null,
-        8192,
-        false,
-        '1/8,192',
-        '0.012%',
-        'Not available yet. The current patch can make odds more common, but 1/8192 needs a separate shiny-threshold patch.'
-      ),
-      preset(
-        'default',
-        'Default',
-        'default',
-        null,
-        4096,
-        true,
-        '1/4,096',
-        '0.024%',
-        "Restores the game's original shiny reroll logic."
-      ),
-      preset('shinyCharm', 'Shiny Charm', 'fixed', 3, 1366, true, '1/1,366', '0.073%', 'Writes 3 PID rolls.'),
-      preset('masuda', 'Masuda', 'fixed', 6, 683, true, '1/683', '0.146%', 'Writes 6 PID rolls.'),
-      preset('masudaCharm', 'Masuda + Shiny Charm', 'fixed', 8, 512, true, '1/512', '0.195%', 'Writes 8 PID rolls.'),
-      preset(
-        'always',
-        'Always Shiny',
-        'always',
-        null,
-        1,
-        true,
-        '1/1',
-        '100.000%',
-        'Forces random shiny checks to resolve as shiny.'
-      )
+      {
+        description:
+          'Not available yet. The current patch can make odds more common, but 1/8192 needs a separate shiny-threshold patch.',
+        isEnabled: false,
+        label: 'Gen 3',
+        mode: 'unsupported',
+        oddsLabel: '1/8,192',
+        percentLabel: '0.012%',
+        presetId: 'gen3',
+        rollCount: null,
+        targetDenominator: 8192
+      },
+      {
+        description: "Restores the game's runtime-dependent shiny reroll logic.",
+        isEnabled: true,
+        label: 'Default',
+        mode: 'default',
+        oddsLabel: 'Dynamic',
+        percentLabel: 'Variable',
+        presetId: 'default',
+        rollCount: null,
+        targetDenominator: null
+      },
+      {
+        description: 'Writes 3 PID rolls.',
+        isEnabled: true,
+        label: 'Shiny Charm',
+        mode: 'fixed',
+        oddsLabel: '1/1,366',
+        percentLabel: '0.073%',
+        presetId: 'shinyCharm',
+        rollCount: 3,
+        targetDenominator: 1366
+      },
+      {
+        description: 'Writes 6 PID rolls.',
+        isEnabled: true,
+        label: 'Masuda',
+        mode: 'fixed',
+        oddsLabel: '1/683',
+        percentLabel: '0.146%',
+        presetId: 'masuda',
+        rollCount: 6,
+        targetDenominator: 683
+      },
+      {
+        description: 'Writes 8 PID rolls.',
+        isEnabled: true,
+        label: 'Masuda + Shiny Charm',
+        mode: 'fixed',
+        oddsLabel: '1/512',
+        percentLabel: '0.195%',
+        presetId: 'masudaCharm',
+        rollCount: 8,
+        targetDenominator: 512
+      },
+      {
+        description: 'Forces random shiny checks to resolve as shiny.',
+        isEnabled: true,
+        label: 'Always Shiny',
+        mode: 'always',
+        oddsLabel: '1/1',
+        percentLabel: '100.000%',
+        presetId: 'always',
+        rollCount: null,
+        targetDenominator: 1
+      }
     ],
     rateRule: {
-      chancePercent: 0.024,
+      chancePercent: null,
       maximumCustomDenominator: 4096,
       maximumRollCount: 4091,
       minimumCustomDenominator: 2,
       minimumRollCount: 1,
       mode: 'default',
-      oddsDenominator: 4096,
-      oddsLabel: '1/4,096',
-      percentLabel: '0.024%',
-      rollCount: 1,
-      runtimeSummary: "Default restores the game's original reroll count calculation."
+      oddsDenominator: null,
+      oddsLabel: 'Dynamic',
+      percentLabel: 'Variable',
+      rollCount: null,
+      runtimeSummary: "Default restores the game's original runtime-dependent reroll count calculation."
     },
     source: {
       label: 'ExeFS main',
@@ -90,7 +121,7 @@ export function createShinyRateWorkflowFixture(canEdit: boolean): {
       status: 'available'
     },
     stats: {
-      outputFileCount: 1,
+      outputFileCount: 0,
       presetCount: 6,
       sourceFileCount: 1
     },
@@ -100,37 +131,24 @@ export function createShinyRateWorkflowFixture(canEdit: boolean): {
   return { shinyRateWorkflow, shinyRateWorkflowSummary };
 }
 
-export function createStageShinyRateFixtureResponse(
+export async function createStageShinyRateFixtureResponse(
   request: StageShinyRateRequest,
   shinyRateWorkflow: ShinyRateWorkflow
-): StageShinyRateResponse {
-  const nextRule =
-    request.mode === 'fixed' && request.rollCount !== null
-      ? {
-          ...shinyRateWorkflow.rateRule,
-          mode: 'fixed',
-          oddsDenominator: calculateFixedOddsDenominator(request.rollCount),
-          oddsLabel: formatFixedOddsLabel(request.rollCount),
-          percentLabel: formatFixedPercentLabel(request.rollCount),
-          rollCount: request.rollCount,
-          runtimeSummary: 'Fixed writes a global PID roll count for random shiny checks.'
-        }
-      : request.mode === 'always'
-        ? {
-            ...shinyRateWorkflow.rateRule,
-            chancePercent: 100,
-            mode: 'always',
-            oddsDenominator: 1,
-            oddsLabel: '1/1',
-            percentLabel: '100.000%',
-            rollCount: null,
-            runtimeSummary: 'Always Shiny NOPs the loop break branch.'
-          }
-        : shinyRateWorkflow.rateRule;
+): Promise<StageShinyRateResponse> {
   const pendingValue =
     request.mode === 'fixed' && request.rollCount !== null
       ? `fixed:${request.rollCount}`
       : request.mode;
+  const sourceReferences = [
+    { layer: 'base' as const, relativePath: 'exefs/main' },
+    ...(shinyRateWorkflow.source?.provenance.sourceLayer === 'layered'
+      ? [{ layer: 'layered' as const, relativePath: 'exefs/main' }]
+      : []),
+    {
+      layer: 'pending' as const,
+      relativePath: `pending/shiny-rate/rate/${await calculateSha256(pendingValue)}`
+    }
+  ];
 
   return {
     diagnostics: [
@@ -147,79 +165,36 @@ export function createStageShinyRateFixtureResponse(
           field: 'rate',
           newValue: pendingValue,
           recordId: 'shiny-rate',
-          sources: [{ layer: 'base', relativePath: 'exefs/main' }],
-          summary: 'Stage Shiny Rate reroll settings.'
+          sources: sourceReferences,
+          summary: formatPendingSummary(request)
         }
       ],
       sessionId: request.session?.sessionId ?? 'session-shiny-rate'
     },
-    workflow: {
-      ...shinyRateWorkflow,
-      installMessage: formatInstallMessage(request),
-      installStatus:
-        request.mode === 'fixed'
-          ? 'fixed'
-          : request.mode === 'always'
-            ? 'always'
-            : shinyRateWorkflow.installStatus,
-      rateRule: nextRule
-    }
+    workflow: shinyRateWorkflow
   };
 }
 
-function preset(
-  presetId: string,
-  label: string,
-  mode: string,
-  rollCount: number | null,
-  targetDenominator: number | null,
-  isEnabled: boolean,
-  oddsLabel: string,
-  percentLabel: string,
-  description: string
-): ShinyRateWorkflow['presets'][number] {
-  return {
-    description,
-    isEnabled,
-    label,
-    mode,
-    oddsLabel,
-    percentLabel,
-    presetId,
-    rollCount,
-    targetDenominator
-  };
+async function calculateSha256(value: string) {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(value)
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  )
+    .join('')
+    .toUpperCase();
 }
 
-function calculateFixedOddsDenominator(rollCount: number) {
-  const chance = 1 - Math.pow((4096 - 1) / 4096, rollCount);
-  return Math.max(1, Math.round(1 / chance));
-}
-
-function formatFixedOddsLabel(rollCount: number) {
-  return {
-    3: '1/1,366',
-    6: '1/683',
-    8: '1/512'
-  }[rollCount] ?? `${rollCount} rolls`;
-}
-
-function formatFixedPercentLabel(rollCount: number) {
-  return {
-    3: '0.073%',
-    6: '0.146%',
-    8: '0.195%'
-  }[rollCount] ?? '0.024%';
-}
-
-function formatInstallMessage(request: StageShinyRateRequest) {
+function formatPendingSummary(request: StageShinyRateRequest) {
   if (request.mode === 'fixed' && request.rollCount !== null) {
-    return `Shiny Rate is fixed at ${request.rollCount} PID rolls.`;
+    return `Stage Shiny Rate fixed ${request.rollCount} roll${request.rollCount === 1 ? '' : 's'}.`;
   }
 
   if (request.mode === 'always') {
-    return 'Shiny Rate is patched to always resolve random shiny checks as shiny.';
+    return 'Stage Shiny Rate always-shiny patch.';
   }
 
-  return "Shiny Rate is using the game's original shiny reroll logic.";
+  return 'Stage Shiny Rate default reroll logic.';
 }

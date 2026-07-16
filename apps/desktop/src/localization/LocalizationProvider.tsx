@@ -1867,6 +1867,62 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     });
   }
 
+  const shinyRateSelectionMatch = /^(\d+) (roll|rolls)$/.exec(literal);
+  if (shinyRateSelectionMatch) {
+    return formatLiteralTemplate(
+      language,
+      shinyRateSelectionMatch[2] === 'roll' ? '{count} roll' : '{count} rolls',
+      { count: shinyRateSelectionMatch[1] }
+    );
+  }
+
+  const shinyRateFixedInstallMatch =
+    /^Shiny Rate is fixed at (\d+) PID (roll|rolls)\.$/.exec(literal);
+  if (shinyRateFixedInstallMatch) {
+    return formatLiteralTemplate(
+      language,
+      shinyRateFixedInstallMatch[2] === 'roll'
+        ? 'Shiny Rate is fixed at {count} PID roll.'
+        : 'Shiny Rate is fixed at {count} PID rolls.',
+      { count: shinyRateFixedInstallMatch[1] }
+    );
+  }
+
+  const shinyRateFixedStageMatch =
+    /^Stage Shiny Rate fixed (\d+) (roll|rolls)\.$/.exec(literal);
+  if (shinyRateFixedStageMatch) {
+    return formatLiteralTemplate(
+      language,
+      shinyRateFixedStageMatch[2] === 'roll'
+        ? 'Stage Shiny Rate fixed {count} roll.'
+        : 'Stage Shiny Rate fixed {count} rolls.',
+      { count: shinyRateFixedStageMatch[1] }
+    );
+  }
+
+  const shinyRateCustomSummaryMatch =
+    /^(?:Closest input is 1\/(.+?)\. )?(\d+) (roll|rolls) gives about 1\/(.+?) \(([^)]+)\)\.$/.exec(
+      literal
+    );
+  if (shinyRateCustomSummaryMatch) {
+    const result = formatLiteralTemplate(
+      language,
+      shinyRateCustomSummaryMatch[3] === 'roll'
+        ? '{count} roll gives about 1/{denominator} ({percent}).'
+        : '{count} rolls gives about 1/{denominator} ({percent}).',
+      {
+        count: shinyRateCustomSummaryMatch[2],
+        denominator: shinyRateCustomSummaryMatch[4],
+        percent: shinyRateCustomSummaryMatch[5]
+      }
+    );
+    return shinyRateCustomSummaryMatch[1]
+      ? `${formatLiteralTemplate(language, 'Closest input is 1/{denominator}.', {
+          denominator: shinyRateCustomSummaryMatch[1]
+        })} ${result}`
+      : result;
+  }
+
   const searchMatch = /^Search (.+)$/.exec(literal);
   if (searchMatch) {
     return formatLiteralTemplate(language, 'Search {target}', {

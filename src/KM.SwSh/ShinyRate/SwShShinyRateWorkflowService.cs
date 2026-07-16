@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.ExeFs;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -41,6 +42,16 @@ public sealed class SwShShinyRateWorkflowService
                     expected: "Readable project paths"));
         }
 
+        if (!IsSupportedGame(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Shiny Rate requires Pokemon Sword or Pokemon Shield to be selected before it can load.",
+                    expected: "Selected Pokemon Sword or Pokemon Shield project"));
+        }
+
         return CreateSummary(project.Health.CanOpenEditableWorkflows
             ? SwShWorkflowAvailability.Available
             : SwShWorkflowAvailability.ReadOnly);
@@ -55,12 +66,18 @@ public sealed class SwShShinyRateWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
+            var installMessage = project.Health.CanOpenReadOnlyWorkflows
+                && !IsSupportedGame(project.Paths.SelectedGame)
+                    ? "Shiny Rate cannot load until Pokemon Sword or Pokemon Shield is selected."
+                    : "Shiny Rate cannot load until project paths validate.";
             return CreateWorkflow(
                 summary,
                 "disabled",
-                "Shiny Rate cannot load until project paths validate.",
-                CreateDefaultAnalysis(),
+                installMessage,
+                CreateUnavailableAnalysis(),
                 source: null,
+                sourceFileCount: 0,
+                outputFileCount: 0,
                 diagnostics);
         }
 
@@ -76,65 +93,137 @@ public sealed class SwShShinyRateWorkflowService
                 summary,
                 "blocked",
                 "Shiny Rate cannot inspect the reroll loop because exefs/main is missing.",
-                CreateDefaultAnalysis(),
+                CreateUnavailableAnalysis(),
                 CreateMissingSource(),
+                sourceFileCount: 0,
+                outputFileCount: 0,
                 diagnostics);
         }
 
         var source = CreateSource(mainSource.Entry, "available");
-        try
-        {
-            var analysis = SwShShinyRateMainPatcher.Analyze(
-                File.ReadAllBytes(mainSource.AbsolutePath),
-                project.Paths.SelectedGame);
-
-            if (analysis.Kind is SwShShinyRateMainKind.UnsupportedBuild
-                or SwShShinyRateMainKind.GameMismatch
-                or SwShShinyRateMainKind.MissingFunction
-                or SwShShinyRateMainKind.AmbiguousFunction
-                or SwShShinyRateMainKind.Conflict)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    analysis.Message,
-                    file: ExeFsMainPath,
-                    expected: "Selected-game Sword/Shield 1.3.2 exefs/main with the verified shiny reroll loop"));
-            }
-
-            var isBlocked = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-                || analysis.Kind is SwShShinyRateMainKind.UnsupportedBuild
-                    or SwShShinyRateMainKind.GameMismatch
-                    or SwShShinyRateMainKind.MissingFunction
-                    or SwShShinyRateMainKind.AmbiguousFunction
-                    or SwShShinyRateMainKind.Conflict;
-            var installStatus = isBlocked
-                ? "blocked"
-                : analysis.Kind switch
-                {
-                    SwShShinyRateMainKind.FixedRolls => "fixed",
-                    SwShShinyRateMainKind.AlwaysShiny => "always",
-                    _ => summary.Availability == SwShWorkflowAvailability.Available
-                        ? "available"
-                        : "readOnly",
-                };
-
-            return CreateWorkflow(summary, installStatus, analysis.Message, analysis, source, diagnostics);
-        }
-        catch (IOException exception)
+        var outputFileCount = mainSource.Entry.LayeredFile is null ? 0 : 1;
+        var basePath = ResolveBaseSourcePath(project.Paths, ExeFsMainPath);
+        if (basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Shiny Rate could not inspect exefs/main: {exception.Message}",
+                "Base ExeFS main could not be resolved from the project graph.",
                 file: ExeFsMainPath,
-                expected: "Readable Sword/Shield exefs/main"));
+                expected: "Readable selected-game vanilla Sword/Shield exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
-                "Shiny Rate cannot inspect the reroll loop because exefs/main could not be read.",
-                CreateDefaultAnalysis(),
+                "Shiny Rate cannot verify the selected-game vanilla base exefs/main.",
+                CreateUnavailableAnalysis(),
                 source,
+                sourceFileCount: 1,
+                outputFileCount,
                 diagnostics);
         }
+
+        SwShShinyRateMainAnalysis baseAnalysis;
+        SwShShinyRateMainAnalysis effectiveAnalysis;
+        byte[] baseBytes;
+        byte[] effectiveBytes;
+        try
+        {
+            baseBytes = File.ReadAllBytes(basePath);
+            effectiveBytes = PathsReferToSameFile(basePath, mainSource.AbsolutePath)
+                ? baseBytes
+                : File.ReadAllBytes(mainSource.AbsolutePath);
+            baseAnalysis = SwShShinyRateMainPatcher.Analyze(
+                baseBytes,
+                project.Paths.SelectedGame);
+            effectiveAnalysis = PathsReferToSameFile(basePath, mainSource.AbsolutePath)
+                ? baseAnalysis
+                : SwShShinyRateMainPatcher.Analyze(
+                    effectiveBytes,
+                    project.Paths.SelectedGame);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "ExeFS main could not be read for Shiny Rate verification.",
+                file: ExeFsMainPath,
+                expected: "Readable selected-game base and effective Sword/Shield exefs/main NSO"));
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Shiny Rate cannot inspect the reroll loop because an exefs/main source could not be read.",
+                CreateUnavailableAnalysis(),
+                source,
+                sourceFileCount: 1,
+                outputFileCount,
+                diagnostics);
+        }
+
+        const int sourceFileCount = 1;
+        if (baseAnalysis.Kind != SwShShinyRateMainKind.Default)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base exefs/main is not a selected-game vanilla Shiny Rate source. {baseAnalysis.Message}",
+                file: ExeFsMainPath,
+                expected: "Selected-game Sword/Shield 1.3.2 base exefs/main with vanilla shiny reroll logic"));
+        }
+
+        AddEffectiveAnalysisDiagnostic(effectiveAnalysis, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                baseAnalysis.Kind != SwShShinyRateMainKind.Default
+                    ? "Shiny Rate requires a verified selected-game vanilla base exefs/main before it can edit or restore the effective source."
+                    : effectiveAnalysis.Message,
+                effectiveAnalysis,
+                source,
+                sourceFileCount,
+                outputFileCount,
+                diagnostics);
+        }
+
+        try
+        {
+            SwShShinyRateMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, effectiveBytes);
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                exception.Message,
+                file: ExeFsMainPath,
+                expected: "Compatible selected-game base and effective Sword/Shield exefs/main NSOs"));
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Shiny Rate cannot edit because the base and effective exefs/main identities do not match.",
+                effectiveAnalysis,
+                source,
+                sourceFileCount,
+                outputFileCount,
+                diagnostics);
+        }
+
+        var installStatus = effectiveAnalysis.Kind switch
+        {
+            SwShShinyRateMainKind.FixedRolls => "fixed",
+            SwShShinyRateMainKind.AlwaysShiny => "always",
+            _ => summary.Availability == SwShWorkflowAvailability.Available
+                ? "available"
+                : "readOnly",
+        };
+
+        return CreateWorkflow(
+            summary,
+            installStatus,
+            effectiveAnalysis.Message,
+            effectiveAnalysis,
+            source,
+            sourceFileCount,
+            outputFileCount,
+            diagnostics);
     }
 
     internal static SwShHyperTrainingWorkflowService.WorkflowFileSource? ResolveWorkflowFile(
@@ -149,6 +238,39 @@ public sealed class SwShShinyRateWorkflowService
         return SwShHyperTrainingWorkflowService.ResolveOutputPath(paths, targetRelativePath);
     }
 
+    internal static string? ResolveBaseSourcePath(ProjectPaths paths, string relativePath)
+    {
+        return SwShHyperTrainingWorkflowService.ResolveBaseSourcePath(paths, relativePath);
+    }
+
+    internal IReadOnlyList<ProjectFileReference> GetPlanSources(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var source = ResolveWorkflowFile(project, ExeFsMainPath);
+        if (source is null)
+        {
+            return Array.Empty<ProjectFileReference>();
+        }
+
+        var sources = new List<ProjectFileReference>(2);
+        if (source.Entry.BaseFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, ExeFsMainPath));
+        }
+
+        if (source.Entry.LayeredFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(candidate => candidate.Layer)
+            .ThenBy(candidate => candidate.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     public static IReadOnlyList<SwShShinyRatePreset> PresetDefinitions => Presets;
 
     private static SwShShinyRateWorkflow CreateWorkflow(
@@ -157,6 +279,8 @@ public sealed class SwShShinyRateWorkflowService
         string installMessage,
         SwShShinyRateMainAnalysis analysis,
         SwShShinyRateSourceRecord? source,
+        int sourceFileCount,
+        int outputFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShShinyRateWorkflow(
@@ -171,7 +295,7 @@ public sealed class SwShShinyRateWorkflowService
             source,
             CreateRule(analysis),
             Presets,
-            new SwShShinyRateWorkflowStats(source?.Status == "available" ? 1 : 0, 1, Presets.Length),
+            new SwShShinyRateWorkflowStats(sourceFileCount, outputFileCount, Presets.Length),
             diagnostics);
     }
 
@@ -184,11 +308,7 @@ public sealed class SwShShinyRateWorkflowService
             SwShShinyRateMainKind.Default => "default",
             _ => "blocked",
         };
-        var chance = analysis.Kind == SwShShinyRateMainKind.AlwaysShiny
-            ? 1
-            : analysis.RollCount is null
-                ? 0
-                : SwShShinyRateMainPatcher.CalculateChance(analysis.RollCount.Value);
+        var chance = analysis.Chance;
         var oddsDenominator = analysis.Kind == SwShShinyRateMainKind.AlwaysShiny
             ? 1
             : analysis.OddsDenominator;
@@ -201,11 +321,11 @@ public sealed class SwShShinyRateWorkflowService
             SwShShinyRateMainPatcher.MinimumCustomDenominator,
             SwShShinyRateMainPatcher.MaximumCustomDenominator,
             oddsDenominator,
-            chance * 100,
-            FormatOdds(oddsDenominator),
-            FormatPercent(chance),
+            chance is null ? null : chance.Value * 100,
+            analysis.Kind == SwShShinyRateMainKind.Default ? "Dynamic" : FormatOdds(oddsDenominator),
+            analysis.Kind == SwShShinyRateMainKind.Default ? "Variable" : FormatPercent(chance),
             analysis.Kind == SwShShinyRateMainKind.Default
-                ? "Default restores the game's original reroll count calculation."
+                ? "Default restores the game's original runtime-dependent reroll count calculation."
                 : analysis.Kind == SwShShinyRateMainKind.FixedRolls
                     ? "Fixed writes a global PID roll count for random shiny checks."
                     : analysis.Kind == SwShShinyRateMainKind.AlwaysShiny
@@ -213,19 +333,18 @@ public sealed class SwShShinyRateWorkflowService
                         : "Runtime shiny rate is unavailable until exefs/main can be inspected.");
     }
 
-    private static SwShShinyRateMainAnalysis CreateDefaultAnalysis()
+    private static SwShShinyRateMainAnalysis CreateUnavailableAnalysis()
     {
-        var chance = SwShShinyRateMainPatcher.CalculateChance(1);
         return new SwShShinyRateMainAnalysis(
-            SwShShinyRateMainKind.Default,
+            SwShShinyRateMainKind.Conflict,
             "Shiny Rate is unavailable until exefs/main can be inspected.",
             "unknown",
             "unknown",
             "unknown",
             "unknown",
-            RollCount: 1,
-            chance,
-            SwShShinyRateMainPatcher.CalculateOddsDenominator(chance),
+            RollCount: null,
+            Chance: null,
+            OddsDenominator: null,
             DetectedGame: null);
     }
 
@@ -270,17 +389,16 @@ public sealed class SwShShinyRateWorkflowService
 
     private static SwShShinyRatePreset CreateDefaultPreset()
     {
-        var chance = SwShShinyRateMainPatcher.CalculateChance(1);
         return new SwShShinyRatePreset(
             "default",
             "Default",
             "default",
             RollCount: null,
-            TargetDenominator: 4096,
+            TargetDenominator: null,
             IsEnabled: true,
-            FormatOdds(SwShShinyRateMainPatcher.CalculateOddsDenominator(chance)),
-            FormatPercent(chance),
-            "Restores the game's original shiny reroll logic.");
+            "Dynamic",
+            "Variable",
+            "Restores the game's runtime-dependent shiny reroll logic.");
     }
 
     private static SwShShinyRatePreset CreateFixedPreset(
@@ -342,9 +460,44 @@ public sealed class SwShShinyRateWorkflowService
             : string.Create(CultureInfo.InvariantCulture, $"1/{denominator.Value:N0}");
     }
 
-    internal static string FormatPercent(double chance)
+    internal static string FormatPercent(double? chance)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{chance * 100:0.000}%");
+        return chance is null
+            ? "Unknown"
+            : string.Create(CultureInfo.InvariantCulture, $"{chance.Value * 100:0.000}%");
+    }
+
+    private static void AddEffectiveAnalysisDiagnostic(
+        SwShShinyRateMainAnalysis analysis,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (analysis.Kind is not (SwShShinyRateMainKind.UnsupportedBuild
+            or SwShShinyRateMainKind.GameMismatch
+            or SwShShinyRateMainKind.MissingFunction
+            or SwShShinyRateMainKind.AmbiguousFunction
+            or SwShShinyRateMainKind.Conflict))
+        {
+            return;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            analysis.Message,
+            file: ExeFsMainPath,
+            expected: "Selected-game Sword/Shield 1.3.2 effective exefs/main with the verified shiny reroll loop"));
+    }
+
+    private static bool PathsReferToSameFile(string left, string right)
+    {
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    }
+
+    internal static bool IsSupportedGame(ProjectGame? game)
+    {
+        return game is ProjectGame.Sword or ProjectGame.Shield;
     }
 
     private static ValidationDiagnostic CreateDiagnostic(
