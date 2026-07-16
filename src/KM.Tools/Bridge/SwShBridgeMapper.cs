@@ -1653,11 +1653,13 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.InstallStatus,
             workflow.InstallMessage,
+            workflow.BuildId,
+            ToProjectGameDto(workflow.DetectedGame),
             ToDto(workflow.LevelRule),
             workflow.Sources.Select(ToDto).ToArray(),
             new HyperTrainingWorkflowStatsDto(
                 workflow.Stats.SourceFileCount,
-            workflow.Stats.OutputFileCount),
+                workflow.Stats.OutputFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2897,6 +2899,10 @@ public static class SwShBridgeMapper
     {
         return new HyperTrainingLevelRuleDto(
             rule.MinimumLevel,
+            rule.ScriptMinimumLevel,
+            rule.RuntimeMinimumLevel,
+            rule.DialogueMinimumLevel,
+            rule.LevelsMatch,
             rule.VanillaMinimumLevel,
             rule.MinimumAllowedLevel,
             rule.MaximumAllowedLevel,

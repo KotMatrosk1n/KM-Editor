@@ -1295,6 +1295,222 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('ships exact Hyper Training validation and optional-source literals in every catalogue', () => {
+    const resources = {
+      de: deResource,
+      en: enResource,
+      es: esResource,
+      fr: frResource,
+      ru: ruResource,
+      uk: ukResource,
+      zh: zhResource
+    };
+    const expected = {
+      de: ['Gib eine ganze Zahl ein.', 'Optional fehlt'],
+      en: ['Enter a whole number.', 'Optional missing'],
+      es: ['Introduce un número entero.', 'Opcional ausente'],
+      fr: ['Saisissez un nombre entier.', 'Facultatif manquant'],
+      ru: ['Введите целое число.', 'Необязательный файл отсутствует'],
+      uk: ['Введіть ціле число.', 'Необов’язковий файл відсутній'],
+      zh: ['请输入整数。', '可选文件缺失']
+    } as const;
+
+    for (const language of Object.keys(resources) as Array<keyof typeof resources>) {
+      expect(resources[language].literals['Enter a whole number.']).toBe(
+        expected[language][0]
+      );
+      expect(resources[language].literals['Optional missing']).toBe(expected[language][1]);
+    }
+  });
+
+  it('ships exact Hyper Training identity and synchronization labels in every catalogue', () => {
+    const resources = {
+      de: deResource,
+      en: enResource,
+      es: esResource,
+      fr: frResource,
+      ru: ruResource,
+      uk: ukResource,
+      zh: zhResource
+    };
+    const expected = {
+      de: {
+        'Cutoff sync': 'Grenzenabgleich',
+        'Detected game': 'Erkanntes Spiel',
+        'English dialogue cutoff': 'Grenze des englischen Dialogs',
+        'NPC script cutoff': 'NPC-Skript-Grenze',
+        'Not verified': 'Nicht verifiziert',
+        'Out of sync': 'Nicht synchron',
+        'Picker runtime cutoff': 'Auswahl-Laufzeitgrenze',
+        Synchronized: 'Synchronisiert'
+      },
+      en: {
+        'Cutoff sync': 'Cutoff sync',
+        'Detected game': 'Detected game',
+        'English dialogue cutoff': 'English dialogue cutoff',
+        'NPC script cutoff': 'NPC script cutoff',
+        'Not verified': 'Not verified',
+        'Out of sync': 'Out of sync',
+        'Picker runtime cutoff': 'Picker runtime cutoff',
+        Synchronized: 'Synchronized'
+      },
+      es: {
+        'Cutoff sync': 'Sincronización de límites',
+        'Detected game': 'Juego detectado',
+        'English dialogue cutoff': 'Límite del diálogo en inglés',
+        'NPC script cutoff': 'Límite del script del NPC',
+        'Not verified': 'No verificado',
+        'Out of sync': 'Desincronizado',
+        'Picker runtime cutoff': 'Límite del selector',
+        Synchronized: 'Sincronizado'
+      },
+      fr: {
+        'Cutoff sync': 'Synchronisation des seuils',
+        'Detected game': 'Jeu détecté',
+        'English dialogue cutoff': 'Seuil du dialogue anglais',
+        'NPC script cutoff': 'Seuil du script du PNJ',
+        'Not verified': 'Non vérifié',
+        'Out of sync': 'Désynchronisé',
+        'Picker runtime cutoff': 'Seuil du sélecteur',
+        Synchronized: 'Synchronisé'
+      },
+      ru: {
+        'Cutoff sync': 'Синхронизация порогов',
+        'Detected game': 'Обнаруженная игра',
+        'English dialogue cutoff': 'Порог английского диалога',
+        'NPC script cutoff': 'Порог скрипта NPC',
+        'Not verified': 'Не проверено',
+        'Out of sync': 'Не синхронизировано',
+        'Picker runtime cutoff': 'Порог выбора',
+        Synchronized: 'Синхронизировано'
+      },
+      uk: {
+        'Cutoff sync': 'Синхронізація порогів',
+        'Detected game': 'Виявлена гра',
+        'English dialogue cutoff': 'Поріг англійського діалогу',
+        'NPC script cutoff': 'Поріг скрипту NPC',
+        'Not verified': 'Не перевірено',
+        'Out of sync': 'Не синхронізовано',
+        'Picker runtime cutoff': 'Поріг вибору',
+        Synchronized: 'Синхронізовано'
+      },
+      zh: {
+        'Cutoff sync': '等级限制同步',
+        'Detected game': '检测到的游戏',
+        'English dialogue cutoff': '英文对话等级限制',
+        'NPC script cutoff': 'NPC脚本等级限制',
+        'Not verified': '未验证',
+        'Out of sync': '不同步',
+        'Picker runtime cutoff': '选择器运行时等级限制',
+        Synchronized: '已同步'
+      }
+    } as const;
+
+    for (const language of Object.keys(resources) as Array<keyof typeof resources>) {
+      for (const [literal, translation] of Object.entries(expected[language])) {
+        expect((resources[language].literals as Record<string, string>)[literal]).toBe(
+          translation
+        );
+      }
+    }
+  });
+
+  it('localizes Hyper Training dynamic levels and summaries without changing technical IDs', () => {
+    const buildId = 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471';
+    const offset = 'main.text+0x00F9A314';
+    const expected = {
+      de: [
+        'Lv. 42',
+        'Wähle Lv. 1-100.',
+        'Hypertraining akzeptiert derzeit Pokémon ab Lv.42.',
+        'Hypertraining ist nicht synchron: NPC-Skript Lv.41, Auswahl Lv.42, englischer Dialog Lv.43. Wende diesen Editor erneut an, um alle verfügbaren Grenzwerte zu synchronisieren.',
+        'Die englischen Dialogzeilen 0 und 3 verwenden Lv.43.',
+        `Die Auswahlgrenze befindet sich bei ${offset} sowie in den zugehörigen Listen- und Detailprüfungen des Hypertrainings.`
+      ],
+      en: [
+        'Lv. 42',
+        'Choose Lv. 1-100.',
+        'Hyper Training currently accepts Pokemon at Lv.42 or higher.',
+        'Hyper Training is out of sync: NPC script Lv.41, picker Lv.42, English dialogue Lv.43. Apply this editor again to synchronize every available cutoff.',
+        'English dialogue lines 0 and 3 use Lv.43.',
+        `Picker cutoff lives at ${offset} and related Hyper Training list/detail checks.`
+      ],
+      es: [
+        'Nv. 42',
+        'Elige Nv. 1-100.',
+        'Entrenamiento extremo acepta actualmente Pokémon de Nv.42 o superior.',
+        'Entrenamiento extremo está desincronizado: script del NPC Nv.41, selector Nv.42, diálogo en inglés Nv.43. Vuelve a aplicar este editor para sincronizar todos los límites disponibles.',
+        'Las líneas 0 y 3 del diálogo en inglés usan Nv.43.',
+        `El límite del selector se encuentra en ${offset} y en las comprobaciones de lista y detalle relacionadas de Entrenamiento extremo.`
+      ],
+      fr: [
+        'Niv. 42',
+        'Choisissez Niv. 1-100.',
+        'L’Hyper-entraînement accepte actuellement les Pokémon de Niv.42 ou plus.',
+        'L’Hyper-entraînement est désynchronisé : script du PNJ Niv.41, sélecteur Niv.42, dialogue anglais Niv.43. Appliquez de nouveau cet éditeur pour synchroniser tous les seuils disponibles.',
+        'Les lignes 0 et 3 du dialogue anglais utilisent le Niv.43.',
+        `Le seuil du sélecteur se trouve à ${offset} et dans les vérifications de liste et de détail associées à l’Hyper-entraînement.`
+      ],
+      ru: [
+        'Ур. 42',
+        'Выберите уровень 1-100.',
+        'Гипертренинг сейчас принимает покемонов уровня 42 и выше.',
+        'Гипертренинг не синхронизирован: скрипт NPC: уровень 41, выбор: уровень 42, английский диалог: уровень 43. Примените этот редактор ещё раз, чтобы синхронизировать все доступные пороги.',
+        'Строки 0 и 3 английского диалога используют уровень 43.',
+        `Порог выбора находится по адресу ${offset} и в связанных проверках списка и подробностей гипертренинга.`
+      ],
+      uk: [
+        'Рів. 42',
+        'Виберіть рівень 1-100.',
+        'Гіпертренінг зараз приймає покемонів рівня 42 і вище.',
+        'Гіпертренінг не синхронізовано: скрипт NPC: рівень 41, вибір: рівень 42, англійський діалог: рівень 43. Застосуйте цей редактор ще раз, щоб синхронізувати всі доступні пороги.',
+        'Рядки 0 і 3 англійського діалогу використовують рівень 43.',
+        `Поріг вибору розташований за адресою ${offset} і в пов’язаних перевірках списку та подробиць гіпертренінгу.`
+      ],
+      zh: [
+        '等级 42',
+        '请选择等级 1-100。',
+        '极限训练当前接受等级 42 及以上的宝可梦。',
+        '极限训练不同步：NPC脚本等级 41，选择器等级 42，英文对话等级 43。 请再次应用此编辑器，以同步所有可用的等级限制。',
+        '英文对话第 0 行和第 3 行使用等级 43。',
+        `选择器等级限制位于 ${offset} 以及相关的极限训练列表和详情检查中。`
+      ]
+    } as const;
+    const literals = [
+      'Lv. 42',
+      'Choose Lv. 1-100.',
+      'Hyper Training currently accepts Pokemon at Lv.42 or higher.',
+      'Hyper Training is out of sync: NPC script Lv.41, picker Lv.42, English dialogue Lv.43. Apply this editor again to synchronize every available cutoff.',
+      'English dialogue lines 0 and 3 use Lv.43.',
+      `Picker cutoff lives at ${offset} and related Hyper Training list/detail checks.`
+    ] as const;
+
+    for (const language of Object.keys(expected) as Array<keyof typeof expected>) {
+      expect(literals.map((literal) => translateLiteralForLanguage(language, literal))).toEqual(
+        expected[language]
+      );
+      expect(translateLiteralForLanguage(language, buildId)).toBe(buildId);
+      expect(translateLiteralForLanguage(language, literals[5])).toContain(offset);
+    }
+
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Hyper Training is out of sync: NPC script Lv.41, picker Lv.42, English dialogue unavailable.'
+      )
+    ).toBe(
+      'Entrenamiento extremo está desincronizado: script del NPC Nv.41, selector Nv.42, diálogo en inglés no disponible.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Hyper Training is out of sync: NPC script Lv.41, picker Lv.42, English dialogue unverified.'
+      )
+    ).toBe(
+      'Hypertraining ist nicht synchron: NPC-Skript Lv.41, Auswahl Lv.42, englischer Dialog nicht verifiziert.'
+    );
+  });
+
   it('ships Starting Items backend diagnostic templates in every language resource', () => {
     const resources = { deResource, enResource, esResource, frResource, ruResource, ukResource, zhResource };
     const diagnosticLiterals = [

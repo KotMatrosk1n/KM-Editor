@@ -28,6 +28,16 @@ public sealed class SwShHyperTrainingWorkflowService
                     expected: "Readable project paths"));
         }
 
+        if (!IsSupportedGame(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Hyper Training requires Pokemon Sword or Pokemon Shield to be selected.",
+                    expected: "Pokemon Sword or Pokemon Shield"));
+        }
+
         return CreateSummary(project.Health.CanOpenEditableWorkflows
             ? SwShWorkflowAvailability.Available
             : SwShWorkflowAvailability.ReadOnly);
@@ -43,19 +53,24 @@ public sealed class SwShHyperTrainingWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
+            var installMessage = project.Health.CanOpenReadOnlyWorkflows
+                && !IsSupportedGame(project.Paths.SelectedGame)
+                    ? "Hyper Training cannot load until Pokemon Sword or Pokemon Shield is selected."
+                    : "Hyper Training cannot load until project paths validate.";
             return CreateWorkflow(
                 summary,
                 "disabled",
-                "Hyper Training cannot load until project paths validate.",
+                installMessage,
                 CreateDefaultAnalysis(),
                 mainAnalysis: null,
+                dialogueAnalysis: null,
                 sources,
                 outputFileCount: 0,
                 diagnostics);
         }
 
         var scriptSource = AddScriptSource(project, sources, diagnostics);
-        var hasDialogueSource = AddDialogueSource(project, sources, diagnostics);
+        var dialogueSource = AddDialogueSource(project, sources, diagnostics);
         var mainSource = AddMainSource(project, sources, diagnostics);
 
         if (scriptSource is null || mainSource is null)
@@ -68,6 +83,7 @@ public sealed class SwShHyperTrainingWorkflowService
                     : "Hyper Training cannot inspect the picker cutoff because exefs/main is missing.",
                 CreateDefaultAnalysis(),
                 mainAnalysis: null,
+                dialogueAnalysis: null,
                 sources,
                 outputFileCount: 0,
                 diagnostics);
@@ -75,10 +91,95 @@ public sealed class SwShHyperTrainingWorkflowService
 
         try
         {
+            var baseScriptPath = ResolveBaseSourcePath(project.Paths, ScriptPath);
+            var baseMainPath = ResolveBaseSourcePath(project.Paths, ExeFsMainPath);
+            if (baseScriptPath is null || baseMainPath is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Hyper Training requires readable vanilla base script and executable sources.",
+                    file: baseScriptPath is null ? ScriptPath : ExeFsMainPath,
+                    expected: "Selected-game vanilla base source"));
+                return CreateWorkflow(
+                    summary,
+                    "blocked",
+                    "Hyper Training cannot edit because a required vanilla base source is missing.",
+                    CreateDefaultAnalysis(),
+                    mainAnalysis: null,
+                    dialogueAnalysis: null,
+                    sources,
+                    outputFileCount: 0,
+                    diagnostics);
+            }
+
+            var baseScriptAnalysis = SwShHyperTrainingAmxPatcher.Analyze(File.ReadAllBytes(baseScriptPath));
             var analysis = SwShHyperTrainingAmxPatcher.Analyze(File.ReadAllBytes(scriptSource.AbsolutePath));
-            var mainAnalysis = SwShHyperTrainingMainPatcher.Analyze(
-                File.ReadAllBytes(mainSource.AbsolutePath),
+            var baseMainBytes = File.ReadAllBytes(baseMainPath);
+            var mainBytes = File.ReadAllBytes(mainSource.AbsolutePath);
+            var baseMainAnalysis = SwShHyperTrainingMainPatcher.Analyze(
+                baseMainBytes,
                 project.Paths.SelectedGame);
+            var mainAnalysis = SwShHyperTrainingMainPatcher.Analyze(
+                mainBytes,
+                project.Paths.SelectedGame);
+            SwShHyperTrainingDialogueAnalysis? dialogueAnalysis = null;
+            if (dialogueSource is not null)
+            {
+                dialogueAnalysis = SwShHyperTrainingDialoguePatcher.Analyze(
+                    File.ReadAllBytes(dialogueSource.AbsolutePath));
+            }
+
+            var baseIsValid = true;
+            if (baseScriptAnalysis.Kind != SwShHyperTrainingScriptKind.NotInstalled)
+            {
+                baseIsValid = false;
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Hyper Training base AMX is not the verified vanilla Lv.100 script.",
+                    file: ScriptPath,
+                    expected: "Vanilla Hyper Training AMX at Lv.100"));
+            }
+
+            if (baseMainAnalysis.Kind != SwShHyperTrainingMainKind.NotInstalled)
+            {
+                baseIsValid = false;
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Hyper Training base exefs/main is not a verified selected-game vanilla source: {baseMainAnalysis.Message}",
+                    file: ExeFsMainPath,
+                    expected: "Vanilla selected-game Sword/Shield 1.3.2 exefs/main"));
+            }
+
+            var baseDialoguePath = ResolveBaseSourcePath(project.Paths, EnglishDialoguePath);
+            if (baseDialoguePath is not null
+                && SwShHyperTrainingDialoguePatcher.Analyze(File.ReadAllBytes(baseDialoguePath)).Kind
+                    != SwShHyperTrainingDialogueKind.NotInstalled)
+            {
+                baseIsValid = false;
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "English Hyper Training dialogue base is not the verified vanilla Lv.100 table.",
+                    file: EnglishDialoguePath,
+                    expected: "Vanilla English Hyper Training dialogue"));
+            }
+
+            if (baseIsValid)
+            {
+                try
+                {
+                    SwShHyperTrainingMainPatcher.EnsureCompatibleExecutableIdentity(baseMainBytes, mainBytes);
+                }
+                catch (InvalidDataException exception)
+                {
+                    baseIsValid = false;
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        exception.Message,
+                        file: ExeFsMainPath,
+                        expected: "Effective exefs/main matching the vanilla base build and layout"));
+                }
+            }
+
             if (analysis.Kind == SwShHyperTrainingScriptKind.Conflict)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -99,21 +200,32 @@ public sealed class SwShHyperTrainingWorkflowService
                     expected: "Selected-game Sword/Shield 1.3.2 exefs/main with known Hyper Training picker level checks"));
             }
 
+            if (dialogueAnalysis?.Kind == SwShHyperTrainingDialogueKind.Conflict)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    dialogueAnalysis.Message,
+                    file: dialogueSource!.Entry.RelativePath,
+                    expected: "English Hyper Training dialogue with one matching Lv. token in lines 0 and 3"));
+            }
+
             var hasBlockingAnalysis =
-                analysis.Kind == SwShHyperTrainingScriptKind.Conflict
+                !baseIsValid
+                || analysis.Kind == SwShHyperTrainingScriptKind.Conflict
                 || mainAnalysis.Kind is SwShHyperTrainingMainKind.UnsupportedBuild
                     or SwShHyperTrainingMainKind.GameMismatch
-                    or SwShHyperTrainingMainKind.Conflict;
-            var levelsMatch = analysis.MinimumLevel == mainAnalysis.MinimumLevel;
+                    or SwShHyperTrainingMainKind.Conflict
+                || dialogueAnalysis?.Kind == SwShHyperTrainingDialogueKind.Conflict;
+            var levelsMatch = analysis.MinimumLevel == mainAnalysis.MinimumLevel
+                && (dialogueAnalysis is null
+                    || dialogueAnalysis.MinimumLevel == analysis.MinimumLevel);
             if (!hasBlockingAnalysis && !levelsMatch)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Hyper Training is out of sync: the NPC script uses Lv.{analysis.MinimumLevel}, but the picker in exefs/main uses Lv.{mainAnalysis.MinimumLevel}. Apply this editor again to sync both cutoffs."),
+                    $"Hyper Training is out of sync: {FormatCutoffState(analysis, mainAnalysis, dialogueAnalysis)} Apply this editor again to synchronize every available cutoff.",
                     file: ExeFsMainPath,
-                    expected: "Script and picker cutoff levels match"));
+                    expected: "Script, picker, and available English dialogue cutoff levels match"));
             }
 
             var effectiveMinimumLevel = SelectEffectiveMinimumLevel(analysis, mainAnalysis);
@@ -122,10 +234,10 @@ public sealed class SwShHyperTrainingWorkflowService
                 : effectiveMinimumLevel == SwShHyperTrainingAmxPatcher.VanillaMinimumLevel && levelsMatch
                     ? summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly"
                     : "installed";
-            var installMessage = !hasBlockingAnalysis && !levelsMatch
-                ? string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Hyper Training is out of sync: NPC script Lv.{analysis.MinimumLevel}, picker Lv.{mainAnalysis.MinimumLevel}.")
+            var installMessage = hasBlockingAnalysis
+                ? "Hyper Training cannot edit because one or more required source mappings are unsupported or conflicting."
+                : !levelsMatch
+                    ? $"Hyper Training is out of sync: {FormatCutoffState(analysis, mainAnalysis, dialogueAnalysis)}"
                 : effectiveMinimumLevel == SwShHyperTrainingAmxPatcher.VanillaMinimumLevel
                     ? "Hyper Training is using the vanilla Lv.100 minimum."
                     : string.Create(
@@ -136,13 +248,14 @@ public sealed class SwShHyperTrainingWorkflowService
                 summary,
                 installStatus,
                 installMessage,
-                analysis with { MinimumLevel = effectiveMinimumLevel },
+                analysis,
                 mainAnalysis,
+                dialogueAnalysis,
                 sources,
-                outputFileCount: hasDialogueSource ? 3 : 2,
+                outputFileCount: dialogueSource is not null ? 3 : 2,
                 diagnostics);
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -155,6 +268,7 @@ public sealed class SwShHyperTrainingWorkflowService
                 "Hyper Training cannot inspect the level check because a required source file could not be read.",
                 CreateDefaultAnalysis(),
                 mainAnalysis: null,
+                dialogueAnalysis: null,
                 sources,
                 outputFileCount: 0,
                 diagnostics);
@@ -224,23 +338,43 @@ public sealed class SwShHyperTrainingWorkflowService
         string installMessage,
         SwShHyperTrainingScriptAnalysis analysis,
         SwShHyperTrainingMainAnalysis? mainAnalysis,
+        SwShHyperTrainingDialogueAnalysis? dialogueAnalysis,
         IReadOnlyList<SwShHyperTrainingSourceRecord> sources,
         int outputFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
+        var effectiveMinimumLevel = mainAnalysis is null
+            ? analysis.MinimumLevel
+            : SelectEffectiveMinimumLevel(analysis, mainAnalysis);
         return new SwShHyperTrainingWorkflow(
             summary,
             installStatus,
             installMessage,
+            mainAnalysis?.BuildId ?? "unknown",
+            mainAnalysis?.DetectedGame,
             new SwShHyperTrainingLevelRule(
+                effectiveMinimumLevel,
                 analysis.MinimumLevel,
+                mainAnalysis?.MinimumLevel ?? SwShHyperTrainingAmxPatcher.VanillaMinimumLevel,
+                dialogueAnalysis?.Kind == SwShHyperTrainingDialogueKind.Conflict
+                    ? null
+                    : dialogueAnalysis?.MinimumLevel,
+                mainAnalysis is not null
+                    && analysis.MinimumLevel == mainAnalysis.MinimumLevel
+                    && (dialogueAnalysis is null
+                        || (dialogueAnalysis.Kind != SwShHyperTrainingDialogueKind.Conflict
+                            && dialogueAnalysis.MinimumLevel == analysis.MinimumLevel)),
                 SwShHyperTrainingAmxPatcher.VanillaMinimumLevel,
                 SwShHyperTrainingAmxPatcher.MinimumAllowedLevel,
                 SwShHyperTrainingAmxPatcher.MaximumAllowedLevel,
                 analysis.ScriptCell,
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"English dialogue lines {SwShHyperTrainingDialoguePatcher.IntroLineIndex} and {SwShHyperTrainingDialoguePatcher.LevelFailureLineIndex} mention the cutoff."),
+                dialogueAnalysis is null
+                    ? "English dialogue is unavailable, so no dialogue output will be staged."
+                    : dialogueAnalysis.Kind == SwShHyperTrainingDialogueKind.Conflict
+                        ? "English dialogue exists but its cutoff mapping could not be verified."
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"English dialogue lines {SwShHyperTrainingDialoguePatcher.IntroLineIndex} and {SwShHyperTrainingDialoguePatcher.LevelFailureLineIndex} use Lv.{dialogueAnalysis.MinimumLevel}."),
                 mainAnalysis is null
                     ? "Runtime picker cutoff is unavailable until exefs/main can be inspected."
                     : string.Create(
@@ -281,7 +415,7 @@ public sealed class SwShHyperTrainingWorkflowService
         return scriptSource;
     }
 
-    private static bool AddDialogueSource(
+    private static WorkflowFileSource? AddDialogueSource(
         OpenedProject project,
         ICollection<SwShHyperTrainingSourceRecord> sources,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -295,11 +429,41 @@ public sealed class SwShHyperTrainingWorkflowService
                 file: EnglishDialoguePath,
                 expected: "romfs/bin/message/English/script/sub_event_007.dat"));
             sources.Add(CreateMissingSource("dialogue", "English Hyper Training dialogue", EnglishDialoguePath, required: false));
-            return false;
+            return null;
         }
 
         sources.Add(CreateSource("dialogue", "English Hyper Training dialogue", dialogueSource.Entry, "available"));
-        return true;
+        return dialogueSource;
+    }
+
+    internal static string? ResolveBaseSourcePath(ProjectPaths paths, string relativePath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+
+        var rootPath = relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+            ? paths.BaseRomFsPath
+            : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                ? paths.BaseExeFsPath
+                : null;
+        var pathWithinRoot = relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+            ? relativePath["romfs/".Length..]
+            : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                ? relativePath["exefs/".Length..]
+                : null;
+        if (string.IsNullOrWhiteSpace(rootPath) || pathWithinRoot is null)
+        {
+            return null;
+        }
+
+        var fullRoot = Path.GetFullPath(rootPath);
+        var candidate = Path.GetFullPath(Path.Combine(
+            fullRoot,
+            pathWithinRoot.Replace('/', Path.DirectorySeparatorChar)));
+        return PathContainment.IsWithinRoot(Path.GetRelativePath(fullRoot, candidate))
+            && File.Exists(candidate)
+                ? candidate
+                : null;
     }
 
     private static WorkflowFileSource? AddMainSource(
@@ -338,6 +502,23 @@ public sealed class SwShHyperTrainingWorkflowService
         }
 
         return scriptAnalysis.MinimumLevel;
+    }
+
+    private static string FormatCutoffState(
+        SwShHyperTrainingScriptAnalysis scriptAnalysis,
+        SwShHyperTrainingMainAnalysis mainAnalysis,
+        SwShHyperTrainingDialogueAnalysis? dialogueAnalysis)
+    {
+        var dialogue = dialogueAnalysis is null
+            ? "English dialogue unavailable."
+            : dialogueAnalysis.Kind == SwShHyperTrainingDialogueKind.Conflict
+                ? "English dialogue unverified."
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"English dialogue Lv.{dialogueAnalysis.MinimumLevel}.");
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"NPC script Lv.{scriptAnalysis.MinimumLevel}, picker Lv.{mainAnalysis.MinimumLevel}, {dialogue}");
     }
 
     private static ProjectFileGraphEntry? FindEntry(OpenedProject project, string relativePath)
@@ -401,6 +582,11 @@ public sealed class SwShHyperTrainingWorkflowService
             "Advanced editor for the Battle Tower Hyper Training NPC minimum level cutoff, matching English dialogue, and picker cutoff checks.",
             availability,
             diagnostics);
+    }
+
+    internal static bool IsSupportedGame(ProjectGame? game)
+    {
+        return game is ProjectGame.Sword or ProjectGame.Shield;
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

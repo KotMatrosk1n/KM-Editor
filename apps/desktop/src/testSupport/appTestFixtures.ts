@@ -226,6 +226,16 @@ function findFirstAvailablePokemonEvolutionSlot(evolutions: Array<{ slot: number
   return slot;
 }
 
+async function createHyperTrainingPendingPayloadHash(minimumLevel: number) {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(minimumLevel.toString())
+  );
+  return Array.from(new Uint8Array(digest), (value) =>
+    value.toString(16).padStart(2, '0')
+  ).join('').toUpperCase();
+}
+
 export function createMockProjectBridge(
   overrides: Partial<ProjectBridge> = {},
   canEdit = true
@@ -4125,17 +4135,23 @@ export function createMockProjectBridge(
     label: 'Hyper Training'
   };
   const hyperTrainingWorkflow: HyperTrainingWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    detectedGame: 'sword',
     diagnostics: [],
     installMessage: 'Hyper Training is using the vanilla Lv.100 minimum.',
     installStatus: canEdit ? 'available' : 'readOnly',
     levelRule: {
+      dialogueMinimumLevel: 100,
       dialogueSummary: 'English dialogue lines 0 and 3 mention the cutoff.',
+      levelsMatch: true,
       maximumAllowedLevel: 100,
       minimumAllowedLevel: 1,
       minimumLevel: 100,
+      runtimeMinimumLevel: 100,
       runtimeSummary:
         'Picker cutoff lives at main.text+0x00F9A314 and related Hyper Training list/detail checks.',
       scriptCell: 'AMX code cell 2294 (RND_TO_FLOOR operand)',
+      scriptMinimumLevel: 100,
       vanillaMinimumLevel: 100
     },
     sources: [
@@ -6100,10 +6116,12 @@ export function createMockProjectBridge(
       Promise.resolve({
         workflow: hyperTrainingWorkflow
       }),
-    stageHyperTraining: (request) =>
-      Promise.resolve({
+    stageHyperTraining: async (request) => {
+      const payloadHash = await createHyperTrainingPendingPayloadHash(request.minimumLevel);
+      return {
         diagnostics: [
           {
+            domain: 'workflow.hyperTraining',
             message: `Hyper Training minimum level Lv.${request.minimumLevel} is staged for change-plan review.`,
             severity: 'info'
           }
@@ -6119,7 +6137,7 @@ export function createMockProjectBridge(
               sources: [
                 {
                   layer: 'base',
-                  relativePath: 'romfs/bin/script/amx/hyper_training.amx'
+                  relativePath: 'exefs/main'
                 },
                 {
                   layer: 'base',
@@ -6127,7 +6145,11 @@ export function createMockProjectBridge(
                 },
                 {
                   layer: 'base',
-                  relativePath: 'exefs/main'
+                  relativePath: 'romfs/bin/script/amx/hyper_training.amx'
+                },
+                {
+                  layer: 'pending',
+                  relativePath: `pending/hyper-training/minimum-level/${payloadHash}`
                 }
               ],
               summary: `Stage Hyper Training minimum level Lv.${request.minimumLevel}.`
@@ -6135,19 +6157,9 @@ export function createMockProjectBridge(
           ],
           sessionId: request.session?.sessionId ?? 'session-hyper-training'
         },
-        workflow: {
-          ...hyperTrainingWorkflow,
-          installMessage: `Hyper Training currently accepts Pokemon at Lv.${request.minimumLevel} or higher.`,
-          installStatus:
-            request.minimumLevel === 100
-              ? hyperTrainingWorkflow.installStatus
-              : 'installed',
-          levelRule: {
-            ...hyperTrainingWorkflow.levelRule,
-            minimumLevel: request.minimumLevel
-          }
-        }
-      }),
+        workflow: hyperTrainingWorkflow
+      };
+    },
     loadShinyRateWorkflow: () => Promise.resolve({ workflow: shinyRateWorkflow }),
     stageShinyRate: (request) => Promise.resolve(createStageShinyRateFixtureResponse(request, shinyRateWorkflow)),
     loadTypeChartWorkflow: () => Promise.resolve({ workflow: typeChartWorkflow }),

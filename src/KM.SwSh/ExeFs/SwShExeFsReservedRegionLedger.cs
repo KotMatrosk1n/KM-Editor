@@ -252,6 +252,17 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerHyperTraining, "hyper-training-shield-eligibility-check", ExeFsMainPath, "main.text", 0x00F9A344, 0x08, "Hyper Training Shield picker eligibility compare and branch", "do-not-overwrite"),
         new(OwnerHyperTraining, "hyper-training-shield-gray-out-check", ExeFsMainPath, "main.text", 0x00F9A364, 0x08, "Hyper Training Shield picker gray-out compare and branch", "do-not-overwrite"),
         new(OwnerHyperTraining, "hyper-training-shield-detail-check", ExeFsMainPath, "main.text", 0x00F9E4F0, 0x08, "Hyper Training Shield selected-detail compare and branch", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-level-getter", ExeFsMainPath, "main.text", 0x0077A5F0, 0x78, "Hyper Training shared Pokemon level getter", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-sword-preflight-getter", ExeFsMainPath, "main.text", 0x00F98F14, 0x04, "Hyper Training Sword preflight level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-sword-preflight-result", ExeFsMainPath, "main.text", 0x00F98F1C, 0x08, "Hyper Training Sword preflight result and lower-than branch", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-sword-eligibility-getter", ExeFsMainPath, "main.text", 0x00F9A310, 0x04, "Hyper Training Sword eligibility level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-sword-gray-out-getter", ExeFsMainPath, "main.text", 0x00F9A330, 0x04, "Hyper Training Sword gray-out level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-sword-detail-getter", ExeFsMainPath, "main.text", 0x00F9E4BC, 0x04, "Hyper Training Sword detail level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-shield-preflight-getter", ExeFsMainPath, "main.text", 0x00F98F44, 0x04, "Hyper Training Shield preflight level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-shield-preflight-result", ExeFsMainPath, "main.text", 0x00F98F4C, 0x08, "Hyper Training Shield preflight result and lower-than branch", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-shield-eligibility-getter", ExeFsMainPath, "main.text", 0x00F9A340, 0x04, "Hyper Training Shield eligibility level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-shield-gray-out-getter", ExeFsMainPath, "main.text", 0x00F9A360, 0x04, "Hyper Training Shield gray-out level getter call", "requires-vanilla"),
+        new(OwnerHyperTraining, "hyper-training-shield-detail-getter", ExeFsMainPath, "main.text", 0x00F9E4EC, 0x04, "Hyper Training Shield detail level getter call", "requires-vanilla"),
 
         new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D31488, 0x08, "Shiny Rate Sword reroll compare and break branch", "do-not-overwrite"),
         new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D314B8, 0x08, "Shiny Rate Shield reroll compare and break branch", "do-not-overwrite"),
@@ -330,6 +341,15 @@ internal static class SwShExeFsReservedRegionLedger
         ProjectGame? game)
     {
         var ownerRegions = MainTextRegionsForOwner(owner);
+        if (string.Equals(owner, OwnerHyperTraining, StringComparison.Ordinal)
+            && game is ProjectGame.Sword or ProjectGame.Shield)
+        {
+            var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
+            return ownerRegions
+                .Where(region => !region.FeatureId.Contains(inactiveGameToken, StringComparison.Ordinal))
+                .ToArray();
+        }
+
         if (!string.Equals(owner, OwnerIvScreen, StringComparison.Ordinal)
             || game != ProjectGame.Shield)
         {

@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Projects;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.HyperTraining;
@@ -20,6 +21,10 @@ public sealed record SwShHyperTrainingSourceRecord(
 
 public sealed record SwShHyperTrainingLevelRule(
     int MinimumLevel,
+    int ScriptMinimumLevel,
+    int RuntimeMinimumLevel,
+    int? DialogueMinimumLevel,
+    bool LevelsMatch,
     int VanillaMinimumLevel,
     int MinimumAllowedLevel,
     int MaximumAllowedLevel,
@@ -35,6 +40,8 @@ public sealed record SwShHyperTrainingWorkflow(
     SwShWorkflowSummary Summary,
     string InstallStatus,
     string InstallMessage,
+    string BuildId,
+    ProjectGame? DetectedGame,
     SwShHyperTrainingLevelRule LevelRule,
     IReadOnlyList<SwShHyperTrainingSourceRecord> Sources,
     SwShHyperTrainingWorkflowStats Stats,

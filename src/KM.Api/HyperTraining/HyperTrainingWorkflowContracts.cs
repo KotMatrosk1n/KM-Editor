@@ -28,6 +28,10 @@ public sealed record HyperTrainingSourceRecordDto(
 
 public sealed record HyperTrainingLevelRuleDto(
     int MinimumLevel,
+    int ScriptMinimumLevel,
+    int RuntimeMinimumLevel,
+    int? DialogueMinimumLevel,
+    bool LevelsMatch,
     int VanillaMinimumLevel,
     int MinimumAllowedLevel,
     int MaximumAllowedLevel,
@@ -43,6 +47,8 @@ public sealed record HyperTrainingWorkflowDto(
     WorkflowSummaryDto Summary,
     string InstallStatus,
     string InstallMessage,
+    string BuildId,
+    ProjectGameDto? DetectedGame,
     HyperTrainingLevelRuleDto LevelRule,
     IReadOnlyList<HyperTrainingSourceRecordDto> Sources,
     HyperTrainingWorkflowStatsDto Stats,

@@ -4581,19 +4581,40 @@ export function App({
 
   const handleStageHyperTraining = async (minimumLevel: number) => {
     setIsHyperTrainingStaging(true);
-    prepareScopedEditorPanelAction('hyperTraining');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageHyperTraining({
-        minimumLevel,
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setHyperTrainingWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('hyperTraining', response.diagnostics);
-      registerEditorDraftDirty('hyperTraining', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageHyperTraining({
+            minimumLevel,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : hyperTrainingWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('hyperTraining');
+          setHyperTrainingWorkflow(response.workflow);
+          setEditSessionSection('hyperTraining');
+          setScopedEditorPanelDiagnostics('hyperTraining', response.diagnostics);
+          registerEditorDraftDirty('hyperTraining', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -17614,8 +17635,106 @@ function formatHyperTrainingPendingValue(value: string | null | undefined) {
     return undefined;
   }
 
-  const minimumLevel = Number.parseInt(value, 10);
-  return Number.isInteger(minimumLevel) ? `Lv. ${minimumLevel}` : value;
+  const minimumLevel = parseHyperTrainingLevelInput(value);
+  return minimumLevel !== null && minimumLevel >= 1 && minimumLevel <= 100
+    ? `Lv. ${minimumLevel}`
+    : value;
+}
+
+const hyperTrainingScriptPath = 'romfs/bin/script/amx/hyper_training.amx';
+const hyperTrainingDialoguePath = 'romfs/bin/message/English/script/sub_event_007.dat';
+const hyperTrainingMainPath = 'exefs/main';
+const hyperTrainingPendingPayloadPattern =
+  /^pending\/hyper-training\/minimum-level\/[A-F0-9]{64}$/;
+
+function getCanonicalHyperTrainingPendingMinimumLevel(editSession: EditSession | null) {
+  if (editSession?.pendingEdits.length !== 1) {
+    return null;
+  }
+
+  const edit = editSession.pendingEdits[0];
+  if (
+    edit?.domain !== 'workflow.hyperTraining' ||
+    edit.recordId !== 'hyper-training-minimum-level' ||
+    edit.field !== 'minimumLevel'
+  ) {
+    return null;
+  }
+
+  const minimumLevel = parseHyperTrainingLevelInput(edit.newValue ?? '');
+  if (
+    minimumLevel === null ||
+    minimumLevel < 1 ||
+    minimumLevel > 100 ||
+    edit.newValue !== minimumLevel.toString() ||
+    edit.summary !== `Stage Hyper Training minimum level Lv.${minimumLevel}.` ||
+    !hasCanonicalHyperTrainingPendingSources(edit.sources)
+  ) {
+    return null;
+  }
+
+  return minimumLevel;
+}
+
+function hasCanonicalHyperTrainingPendingSources(
+  sources: EditSession['pendingEdits'][number]['sources']
+) {
+  const sourceKeys = sources.map((source) => `${source.layer}:${source.relativePath}`);
+  if (sources.length < 3 || new Set(sourceKeys).size !== sources.length) {
+    return false;
+  }
+
+  if (
+    !sourceKeys.includes(`base:${hyperTrainingScriptPath}`) ||
+    !sourceKeys.includes(`base:${hyperTrainingMainPath}`)
+  ) {
+    return false;
+  }
+
+  let pendingPayloadCount = 0;
+  for (const source of sources) {
+    if (source.layer === 'pending') {
+      if (!hyperTrainingPendingPayloadPattern.test(source.relativePath)) {
+        return false;
+      }
+      pendingPayloadCount += 1;
+      continue;
+    }
+
+    if (
+      (source.layer !== 'base' && source.layer !== 'layered') ||
+      ![
+        hyperTrainingScriptPath,
+        hyperTrainingDialoguePath,
+        hyperTrainingMainPath
+      ].includes(source.relativePath)
+    ) {
+      return false;
+    }
+  }
+
+  if (pendingPayloadCount !== 1) {
+    return false;
+  }
+
+  const layerOrder: Record<(typeof sources)[number]['layer'], number> = {
+    base: 0,
+    layered: 1,
+    pending: 2,
+    generated: 3
+  };
+  return sources.every((source, index) => {
+    if (index === 0) {
+      return true;
+    }
+
+    const previous = sources[index - 1]!;
+    const layerDifference = layerOrder[previous.layer] - layerOrder[source.layer];
+    return (
+      layerDifference < 0 ||
+      (layerDifference === 0 && previous.relativePath < source.relativePath)
+    );
+  });
 }
 
 function formatTypeChartPendingValue(
@@ -29517,15 +29636,14 @@ function HyperTrainingSection({
   panelOutput: WorkflowPanelOutput;
   workflow: HyperTrainingWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const minimumAllowed = workflow?.levelRule.minimumAllowedLevel ?? 1;
   const maximumAllowed = workflow?.levelRule.maximumAllowedLevel ?? 100;
   const vanillaMinimumLevel = workflow?.levelRule.vanillaMinimumLevel ?? 100;
   const currentMinimumLevel = workflow?.levelRule.minimumLevel ?? vanillaMinimumLevel;
-  const [levelInput, setLevelInput] = useState(currentMinimumLevel.toString());
-
-  useEffect(() => {
-    setLevelInput(currentMinimumLevel.toString());
-  }, [currentMinimumLevel]);
+  const stagedMinimumLevel = getCanonicalHyperTrainingPendingMinimumLevel(editSession);
+  const inputBaselineMinimumLevel = stagedMinimumLevel ?? currentMinimumLevel;
+  const [levelInput, setLevelInput] = useState(inputBaselineMinimumLevel.toString());
 
   const parsedMinimumLevel = parseHyperTrainingLevelInput(levelInput);
   const levelError =
@@ -29535,15 +29653,20 @@ function HyperTrainingSection({
         ? `Choose Lv. ${minimumAllowed}-${maximumAllowed}.`
         : null;
   const normalizedMinimumLevel = levelError === null ? parsedMinimumLevel : null;
-  const stagedHyperTrainingEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.hyperTraining'
-  );
-  const stagedMinimumLevel = parseHyperTrainingLevelInput(
-    stagedHyperTrainingEdit?.newValue ?? ''
-  );
-  const hasStagedChange =
-    stagedHyperTrainingEdit?.recordId === 'hyper-training-minimum-level' &&
-    stagedMinimumLevel !== null;
+  const hasStagedChange = stagedMinimumLevel !== null;
+  const hasLocalDraft =
+    levelError !== null ||
+    (normalizedMinimumLevel !== null &&
+      normalizedMinimumLevel !== inputBaselineMinimumLevel);
+  const areCutoffInputsLocked =
+    isStaging || isChangePlanCreating || isChangePlanApplying;
+  const installedCutoffsNeedVanillaRestore =
+    workflow !== null &&
+    (!workflow.levelRule.levelsMatch ||
+      workflow.levelRule.scriptMinimumLevel !== vanillaMinimumLevel ||
+      workflow.levelRule.runtimeMinimumLevel !== vanillaMinimumLevel ||
+      (workflow.levelRule.dialogueMinimumLevel !== null &&
+        workflow.levelRule.dialogueMinimumLevel !== vanillaMinimumLevel));
   const canStage = canStageAdvancedEditorAction({
     isAllowed:
       workflow?.summary.availability === 'available' &&
@@ -29551,7 +29674,8 @@ function HyperTrainingSection({
       normalizedMinimumLevel !== null,
     isChangePlanApplying,
     isChangePlanCreating,
-    isCurrent: normalizedMinimumLevel === stagedMinimumLevel,
+    isCurrent:
+      stagedMinimumLevel !== null && normalizedMinimumLevel === stagedMinimumLevel,
     isStaging
   });
   const canRestore =
@@ -29561,11 +29685,17 @@ function HyperTrainingSection({
     !isChangePlanCreating &&
     !isChangePlanApplying &&
     stagedMinimumLevel !== vanillaMinimumLevel &&
-    currentMinimumLevel !== vanillaMinimumLevel;
+    (inputBaselineMinimumLevel !== vanillaMinimumLevel ||
+      installedCutoffsNeedVanillaRestore);
   const canReviewPlan =
-    hasStagedChange && !isChangePlanCreating && !isChangePlanApplying && !isStaging;
+    hasStagedChange &&
+    !hasLocalDraft &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    !isStaging;
   const canApplyPlan =
     hasStagedChange &&
+    !hasLocalDraft &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
@@ -29573,14 +29703,16 @@ function HyperTrainingSection({
     !isChangePlanCreating &&
     !isStaging;
   const sliderValue =
-    normalizedMinimumLevel ?? clampHyperTrainingLevel(currentMinimumLevel, minimumAllowed, maximumAllowed);
+    normalizedMinimumLevel ??
+    clampHyperTrainingLevel(inputBaselineMinimumLevel, minimumAllowed, maximumAllowed);
 
   useEffect(() => {
-    const hasLocalDraft =
-      levelError !== null ||
-      (normalizedMinimumLevel !== null && normalizedMinimumLevel !== currentMinimumLevel);
+    setLevelInput(inputBaselineMinimumLevel.toString());
+  }, [inputBaselineMinimumLevel]);
+
+  useEffect(() => {
     onDirtyChange(hasLocalDraft);
-  }, [currentMinimumLevel, levelError, normalizedMinimumLevel, onDirtyChange]);
+  }, [hasLocalDraft, onDirtyChange]);
 
   const handleLevelInputChange = (value: string) => {
     if (value.trim() === '') {
@@ -29616,7 +29748,39 @@ function HyperTrainingSection({
             label="Status"
             value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
           />
-          <Metric label="Current cutoff" value={`Lv. ${currentMinimumLevel}`} />
+          <Metric
+            label="Game"
+            value={
+              workflow
+                ? formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)
+                : 'Not loaded'
+            }
+          />
+          <Metric
+            label="Build ID"
+            value={workflow ? formatHyperTrainingBuildId(workflow.buildId) : 'Not loaded'}
+          />
+          <Metric
+            label="NPC script cutoff"
+            value={workflow ? `Lv. ${workflow.levelRule.scriptMinimumLevel}` : 'Not loaded'}
+          />
+          <Metric
+            label="Picker runtime cutoff"
+            value={workflow ? `Lv. ${workflow.levelRule.runtimeMinimumLevel}` : 'Not loaded'}
+          />
+          <Metric
+            label="English dialogue cutoff"
+            value={
+              workflow?.levelRule.dialogueMinimumLevel !== null &&
+              workflow?.levelRule.dialogueMinimumLevel !== undefined
+                ? `Lv. ${workflow.levelRule.dialogueMinimumLevel}`
+                : 'Unavailable'
+            }
+          />
+          <Metric
+            label="Cutoff sync"
+            value={workflow ? formatHyperTrainingSyncState(workflow) : 'Not loaded'}
+          />
           <Metric label="Vanilla cutoff" value={`Lv. ${vanillaMinimumLevel}`} />
           <Metric
             label="Outputs"
@@ -29635,6 +29799,7 @@ function HyperTrainingSection({
                 <input
                   aria-label="Hyper Training minimum level"
                   className="hyper-training-slider"
+                  disabled={areCutoffInputsLocked}
                   max={maximumAllowed}
                   min={minimumAllowed}
                   onChange={(event) => setLevelInput(event.target.value)}
@@ -29647,11 +29812,12 @@ function HyperTrainingSection({
                     <span>Cutoff</span>
                     <input
                       aria-invalid={levelError ? 'true' : undefined}
+                      disabled={areCutoffInputsLocked}
                       max={maximumAllowed}
                       min={minimumAllowed}
                       onBlur={() => {
                         if (normalizedMinimumLevel === null) {
-                          setLevelInput(currentMinimumLevel.toString());
+                          setLevelInput(inputBaselineMinimumLevel.toString());
                         }
                       }}
                       onChange={(event) => handleLevelInputChange(event.target.value)}
@@ -29722,6 +29888,34 @@ function HyperTrainingSection({
                   <dd>{workflow.levelRule.scriptCell}</dd>
                 </div>
                 <div>
+                  <dt>Detected game</dt>
+                  <dd>{formatCatchCapProjectGame(workflow.detectedGame, translateLiteral)}</dd>
+                </div>
+                <div>
+                  <dt>Build ID</dt>
+                  <dd>{formatHyperTrainingBuildId(workflow.buildId)}</dd>
+                </div>
+                <div>
+                  <dt>NPC script cutoff</dt>
+                  <dd>Lv. {workflow.levelRule.scriptMinimumLevel}</dd>
+                </div>
+                <div>
+                  <dt>Picker runtime cutoff</dt>
+                  <dd>Lv. {workflow.levelRule.runtimeMinimumLevel}</dd>
+                </div>
+                <div>
+                  <dt>English dialogue cutoff</dt>
+                  <dd>
+                    {workflow.levelRule.dialogueMinimumLevel === null
+                      ? 'Unavailable'
+                      : `Lv. ${workflow.levelRule.dialogueMinimumLevel}`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Cutoff sync</dt>
+                  <dd>{formatHyperTrainingSyncState(workflow)}</dd>
+                </div>
+                <div>
                   <dt>Dialogue</dt>
                   <dd>{workflow.levelRule.dialogueSummary}</dd>
                 </div>
@@ -29787,6 +29981,12 @@ function HyperTrainingSection({
 }
 
 function HyperTrainingSourceRow({ source }: { source: HyperTrainingSourceRecord }) {
+  const { translateLiteral } = useLocalization();
+  const layerLabel =
+    source.status === 'available'
+      ? translateLiteral(formatSourceLayer(source.provenance.sourceLayer))
+      : translateLiteral('Unavailable');
+
   return (
     <div className="exefs-row hyper-training-source-row" role="row">
       <span role="cell">{source.label}</span>
@@ -29795,7 +29995,7 @@ function HyperTrainingSourceRow({ source }: { source: HyperTrainingSourceRecord 
           {formatHyperTrainingSourceStatus(source.status)}
         </span>
       </span>
-      <span role="cell">{formatSourceLayer(source.provenance.sourceLayer)}</span>
+      <span role="cell">{layerLabel}</span>
     </div>
   );
 }
@@ -29825,6 +30025,18 @@ function formatHyperTrainingSourceStatus(status: string) {
     default:
       return status;
   }
+}
+
+function formatHyperTrainingBuildId(buildId: string) {
+  return buildId === 'unknown' ? 'Unknown' : buildId;
+}
+
+function formatHyperTrainingSyncState(workflow: HyperTrainingWorkflow) {
+  if (workflow.detectedGame === null || workflow.installStatus === 'blocked') {
+    return 'Not verified';
+  }
+
+  return workflow.levelRule.levelsMatch ? 'Synchronized' : 'Out of sync';
 }
 
 function GymUniformRemovalSection({

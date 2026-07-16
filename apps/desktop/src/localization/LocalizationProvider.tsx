@@ -342,6 +342,87 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     return direct;
   }
 
+  const hyperTrainingLevelMatch = /^Lv\. (\d+)$/.exec(literal);
+  if (hyperTrainingLevelMatch) {
+    return formatLiteralTemplate(language, 'Lv. {level}', {
+      level: hyperTrainingLevelMatch[1]
+    });
+  }
+
+  const hyperTrainingRangeMatch = /^Choose Lv\. (\d+)-(\d+)\.$/.exec(literal);
+  if (hyperTrainingRangeMatch) {
+    return formatLiteralTemplate(language, 'Choose Lv. {minimum}-{maximum}.', {
+      maximum: hyperTrainingRangeMatch[2],
+      minimum: hyperTrainingRangeMatch[1]
+    });
+  }
+
+  const hyperTrainingRestoreMatch = /^Restore Lv\. (\d+)$/.exec(literal);
+  if (hyperTrainingRestoreMatch) {
+    return formatLiteralTemplate(language, 'Restore Lv. {level}', {
+      level: hyperTrainingRestoreMatch[1]
+    });
+  }
+
+  const hyperTrainingInstalledMatch =
+    /^Hyper Training currently accepts Pokemon at Lv\.(\d+) or higher\.$/.exec(literal);
+  if (hyperTrainingInstalledMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Hyper Training currently accepts Pokemon at Lv.{level} or higher.',
+      { level: hyperTrainingInstalledMatch[1] }
+    );
+  }
+
+  const hyperTrainingOutOfSyncMatch =
+    /^Hyper Training is out of sync: NPC script Lv\.(\d+), picker Lv\.(\d+), English dialogue (?:Lv\.(\d+)|(unavailable|unverified))\.(?: (Apply this editor again to synchronize every available cutoff\.))?$/.exec(
+      literal
+    );
+  if (hyperTrainingOutOfSyncMatch) {
+    const template = hyperTrainingOutOfSyncMatch[3]
+      ? 'Hyper Training is out of sync: NPC script Lv.{scriptLevel}, picker Lv.{runtimeLevel}, English dialogue Lv.{dialogueLevel}.'
+      : hyperTrainingOutOfSyncMatch[4] === 'unavailable'
+        ? 'Hyper Training is out of sync: NPC script Lv.{scriptLevel}, picker Lv.{runtimeLevel}, English dialogue unavailable.'
+        : 'Hyper Training is out of sync: NPC script Lv.{scriptLevel}, picker Lv.{runtimeLevel}, English dialogue unverified.';
+    const translatedState = formatLiteralTemplate(language, template, {
+      dialogueLevel: hyperTrainingOutOfSyncMatch[3] ?? '',
+      runtimeLevel: hyperTrainingOutOfSyncMatch[2],
+      scriptLevel: hyperTrainingOutOfSyncMatch[1]
+    });
+    return hyperTrainingOutOfSyncMatch[5]
+      ? `${translatedState} ${formatLiteralTemplate(
+          language,
+          'Apply this editor again to synchronize every available cutoff.'
+        )}`
+      : translatedState;
+  }
+
+  const hyperTrainingDialogueSummaryMatch =
+    /^English dialogue lines (\d+) and (\d+) use Lv\.(\d+)\.$/.exec(literal);
+  if (hyperTrainingDialogueSummaryMatch) {
+    return formatLiteralTemplate(
+      language,
+      'English dialogue lines {introLine} and {failureLine} use Lv.{level}.',
+      {
+        failureLine: hyperTrainingDialogueSummaryMatch[2],
+        introLine: hyperTrainingDialogueSummaryMatch[1],
+        level: hyperTrainingDialogueSummaryMatch[3]
+      }
+    );
+  }
+
+  const hyperTrainingRuntimeSummaryMatch =
+    /^Picker cutoff lives at (main\.text\+0x[0-9A-F]+) and related Hyper Training list\/detail checks\.$/.exec(
+      literal
+    );
+  if (hyperTrainingRuntimeSummaryMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Picker cutoff lives at {offset} and related Hyper Training list/detail checks.',
+      { offset: hyperTrainingRuntimeSummaryMatch[1] }
+    );
+  }
+
   const npcItemGiftPendingCountMatch = /^(\d+) gift (group|groups) staged$/.exec(literal);
   if (npcItemGiftPendingCountMatch) {
     return formatLiteralTemplate(

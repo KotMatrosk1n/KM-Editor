@@ -16,9 +16,13 @@ import {
   giftPokemonMoveSchema,
   giftPokemonRecordSchema,
   giftPokemonWorkflowSchema,
+  hyperTrainingLevelRuleSchema,
+  hyperTrainingSourceRecordSchema,
+  hyperTrainingWorkflowSchema,
   kmCommandNames,
   listWorkflowsRequestSchema,
   listWorkflowsResponseSchema,
+  loadHyperTrainingWorkflowResponseSchema,
   loadEncountersWorkflowRequestSchema,
   loadEncountersWorkflowResponseSchema,
   loadExeFsPatchWorkflowRequestSchema,
@@ -74,6 +78,7 @@ import {
   shopRecordSchema,
   shopsWorkflowSchema,
   stageExeFsPatchRequestSchema,
+  stageHyperTrainingRequestSchema,
   stageRoyalCandyWorkflowRequestSchema,
   stageStartingItemsRequestSchema,
   startingItemGrantRecordSchema,
@@ -310,6 +315,104 @@ describe('bridge contracts', () => {
     expect(catchCapWorkflowSchema.shape.runtimeHookOffsetHex.parse('raw/runtime/path')).toBe(
       'raw/runtime/path'
     );
+  });
+
+  it('keeps Hyper Training identity and per-source cutoff state strict', () => {
+    const levelRule = {
+      dialogueMinimumLevel: 43,
+      dialogueSummary: 'English dialogue lines 0 and 3 use Lv.43.',
+      levelsMatch: false,
+      maximumAllowedLevel: 100,
+      minimumAllowedLevel: 1,
+      minimumLevel: 42,
+      runtimeMinimumLevel: 42,
+      runtimeSummary: 'Picker cutoff uses Lv.42.',
+      scriptCell: 'AMX code cell 2294',
+      scriptMinimumLevel: 41,
+      vanillaMinimumLevel: 100
+    };
+    const source = {
+      label: 'English Hyper Training dialogue',
+      provenance: {
+        fileState: 'baseOnly' as const,
+        sourceFile: 'romfs/bin/message/English/script/sub_event_007.dat',
+        sourceLayer: 'generated' as const
+      },
+      relativePath: 'romfs/bin/message/English/script/sub_event_007.dat',
+      sourceId: 'dialogue',
+      status: 'optionalMissing' as const
+    };
+    const workflow = {
+      buildId: 'A16802625E7826BF83B6F9708E475B912A9AB7DF',
+      detectedGame: 'shield' as const,
+      diagnostics: [],
+      installMessage: 'Hyper Training is out of sync.',
+      installStatus: 'installed' as const,
+      levelRule,
+      sources: [source],
+      stats: {
+        outputFileCount: 2,
+        sourceFileCount: 2
+      },
+      summary: {
+        availability: 'available' as const,
+        description: 'Hyper Training fixture.',
+        diagnostics: [],
+        id: 'hyperTraining',
+        label: 'Hyper Training'
+      }
+    };
+
+    expect(loadHyperTrainingWorkflowResponseSchema.parse({ workflow }).workflow).toMatchObject({
+      buildId: workflow.buildId,
+      detectedGame: 'shield',
+      levelRule: {
+        dialogueMinimumLevel: 43,
+        levelsMatch: false,
+        runtimeMinimumLevel: 42,
+        scriptMinimumLevel: 41
+      }
+    });
+    expect(hyperTrainingLevelRuleSchema.parse(levelRule)).toEqual(levelRule);
+    expect(hyperTrainingSourceRecordSchema.parse(source).status).toBe('optionalMissing');
+    expect(hyperTrainingWorkflowSchema.safeParse({ ...workflow, futureField: true }).success).toBe(
+      false
+    );
+    expect(
+      hyperTrainingLevelRuleSchema.safeParse({ ...levelRule, futureField: true }).success
+    ).toBe(false);
+    expect(
+      hyperTrainingSourceRecordSchema.safeParse({ ...source, status: 'optional' }).success
+    ).toBe(false);
+    expect(
+      hyperTrainingSourceRecordSchema.safeParse({ ...source, futureField: true }).success
+    ).toBe(false);
+    expect(
+      loadHyperTrainingWorkflowResponseSchema.safeParse({ workflow, futureField: true }).success
+    ).toBe(false);
+    expect(hyperTrainingWorkflowSchema.shape.buildId.safeParse('unknown').success).toBe(true);
+    expect(hyperTrainingWorkflowSchema.shape.buildId.safeParse(workflow.buildId).success).toBe(true);
+    expect(
+      hyperTrainingWorkflowSchema.shape.buildId.safeParse(workflow.buildId.toLowerCase()).success
+    ).toBe(false);
+    expect(hyperTrainingWorkflowSchema.shape.buildId.safeParse('BUILDID').success).toBe(false);
+    expect(hyperTrainingWorkflowSchema.shape.detectedGame.safeParse('sword').success).toBe(true);
+    expect(hyperTrainingWorkflowSchema.shape.detectedGame.safeParse('shield').success).toBe(true);
+    expect(hyperTrainingWorkflowSchema.shape.detectedGame.safeParse(null).success).toBe(true);
+    expect(hyperTrainingWorkflowSchema.shape.detectedGame.safeParse('scarlet').success).toBe(false);
+    expect(hyperTrainingWorkflowSchema.shape.installStatus.safeParse('readOnly').success).toBe(true);
+    expect(hyperTrainingWorkflowSchema.shape.installStatus.safeParse('future').success).toBe(false);
+    expect(hyperTrainingLevelRuleSchema.shape.dialogueMinimumLevel.safeParse(null).success).toBe(
+      true
+    );
+    expect(hyperTrainingLevelRuleSchema.shape.scriptMinimumLevel.safeParse(0).success).toBe(false);
+    expect(hyperTrainingLevelRuleSchema.shape.runtimeMinimumLevel.safeParse(101).success).toBe(
+      false
+    );
+    expect(stageHyperTrainingRequestSchema.shape.minimumLevel.safeParse(42).success).toBe(true);
+    expect(stageHyperTrainingRequestSchema.shape.minimumLevel.safeParse(42.5).success).toBe(false);
+    expect(stageHyperTrainingRequestSchema.shape.minimumLevel.safeParse(0).success).toBe(false);
+    expect(stageHyperTrainingRequestSchema.shape.minimumLevel.safeParse(101).success).toBe(false);
   });
 
   it('accepts the nullable Z-A Wild Zone completion role on encounter slots', () => {
