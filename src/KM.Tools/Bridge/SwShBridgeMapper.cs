@@ -1725,6 +1725,7 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.InstallStatus,
             workflow.InstallMessage,
+            workflow.CanUninstall,
             "swsh",
             workflow.BuildId,
             workflow.DirectGetterOffsetHex,
@@ -1736,7 +1737,8 @@ public static class SwShBridgeMapper
             ToDto(workflow.Provenance),
             new FashionUnlockWorkflowStatsDto(
                 workflow.Stats.ReservedMainTextRegionCount,
-                workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OwnedByteCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 

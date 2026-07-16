@@ -27,6 +27,19 @@ internal static class SvFashionUnlockBridgeFixtures
         };
     }
 
+    public static byte[] CreateInstalledMain(ProjectGameDto game)
+    {
+        var nso = NsoFile.Parse(CreateCompatibleMain(game));
+        var text = nso.Text.DecompressedData.ToArray();
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            text.AsSpan(PatchOffset, sizeof(uint)),
+            ReturnTrueFirst);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            text.AsSpan(PatchOffset + sizeof(uint), sizeof(uint)),
+            ReturnTrueSecond);
+        return nso.Write(textDecompressedData: text);
+    }
+
     public static (uint First, uint Second) ReadPatchInstructions(byte[] mainBytes)
     {
         var nso = NsoFile.Parse(mainBytes);

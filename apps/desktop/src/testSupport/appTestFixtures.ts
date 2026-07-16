@@ -8,7 +8,6 @@ import {
   type EditSession,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
-  type FashionUnlockWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
@@ -43,6 +42,7 @@ import {
   type ZaModMergerSource,
   type ZaModMergerWorkflow
 } from '../bridge/contracts';
+import { type FashionUnlockWorkflow } from '../bridge/fashionUnlockContracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
 import { parseShopInventoryUpdateItemIds } from '../features/shops/shopInventoryUpdate';
@@ -4271,6 +4271,7 @@ export function createMockProjectBridge(
   const fashionUnlockWorkflowSummary: WorkflowSummary = { availability: canEdit ? 'available' : 'readOnly', description: 'Unlocks fashion ownership checks without editing the save file.', diagnostics: [], id: 'fashionUnlock', label: 'Fashion Unlock' };
   const fashionUnlockWorkflow: FashionUnlockWorkflow = {
     buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    canUninstall: false,
     detectedGame: 'sword',
     diagnostics: [],
     directGetterOffsetHex: 'main.text+0x0143A2B0',
@@ -4284,7 +4285,7 @@ export function createMockProjectBridge(
       { label: 'Fashion Unlock Sword direct ownership getter', length: 8, offsetLabel: 'text+0x143A2B0..0x143A2B7', regionId: 'fashion-unlock-sword-direct-owned-getter', rule: 'do-not-overwrite', startOffset: 0x0143a2b0 },
       { label: 'Fashion Unlock Sword mapped ownership getter', length: 8, offsetLabel: 'text+0x143A300..0x143A307', regionId: 'fashion-unlock-sword-mapped-owned-getter', rule: 'do-not-overwrite', startOffset: 0x0143a300 }
     ],
-    stats: { reservedMainTextRegionCount: 2, sourceFileCount: 1 },
+    stats: { ownedByteCount: 16, reservedMainTextRegionCount: 2, sourceFileCount: 1 },
     stubKind: 'vanilla ownership getters',
     summary: fashionUnlockWorkflowSummary
   };
@@ -6303,7 +6304,13 @@ export function createMockProjectBridge(
               field: 'install',
               newValue: 'true',
               recordId: 'fashion-unlock-v1-install',
-              sources: [{ layer: 'base', relativePath: 'exefs/main' }],
+              sources: [
+                { layer: 'base', relativePath: 'exefs/main' },
+                {
+                  layer: 'pending',
+                  relativePath: `pending/fashion-unlock/install/${calculatePendingPayloadSha256('true')}`
+                }
+              ],
               summary: 'Stage Fashion Unlock install.'
             }
           ],
@@ -6323,8 +6330,12 @@ export function createMockProjectBridge(
               newValue: 'true',
               recordId: 'fashion-unlock-v1-uninstall',
               sources: [
-                { layer: 'generated', relativePath: 'exefs/main' },
-                { layer: 'base', relativePath: 'exefs/main' }
+                { layer: 'base', relativePath: 'exefs/main' },
+                { layer: 'layered', relativePath: 'exefs/main' },
+                {
+                  layer: 'pending',
+                  relativePath: `pending/fashion-unlock/uninstall/${calculatePendingPayloadSha256('true')}`
+                }
               ],
               summary: 'Stage Fashion Unlock uninstall.'
             }
@@ -6333,6 +6344,7 @@ export function createMockProjectBridge(
         },
         workflow: {
           ...fashionUnlockWorkflow,
+          canUninstall: true,
           installMessage:
             'Fashion Unlock is installed. Fashion ownership checks return unlocked while the ExeFS patch is active.',
           installStatus: 'installed',
@@ -6340,6 +6352,10 @@ export function createMockProjectBridge(
             fileState: 'layeredOverride',
             sourceFile: 'exefs/main',
             sourceLayer: 'layered'
+          },
+          stats: {
+            ...fashionUnlockWorkflow.stats,
+            sourceFileCount: 2
           },
           stubKind: 'return-true ownership stubs'
         }

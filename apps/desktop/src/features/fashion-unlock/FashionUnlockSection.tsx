@@ -8,50 +8,75 @@ import {
 } from '../../components/workflowPanels';
 import {
   type EditSession,
-  type FashionUnlockWorkflow,
   type ProjectGame
 } from '../../bridge/contracts';
+import { type FashionUnlockAction, type FashionUnlockWorkflow } from '../../bridge/fashionUnlockContracts';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
+import { getCanonicalFashionUnlockPendingAction } from './fashionUnlockPending';
 
 export function FashionUnlockSection({
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
-  isStaging,
   onApplyChangePlan,
   onCreateChangePlan,
   onStageInstall,
   onStageUninstall,
   panelOutput,
+  selectedGame,
+  stagingAction,
   workflow
 }: {
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
-  isStaging: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
   onStageInstall: () => void;
   onStageUninstall: () => void;
   panelOutput: WorkflowPanelOutput;
+  selectedGame: ProjectGame | null;
+  stagingAction: FashionUnlockAction | null;
   workflow: FashionUnlockWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
-  const stagedEdit = editSession?.pendingEdits.find((edit) => edit.domain === 'workflow.fashionUnlock');
-  const isInstallStaged = stagedEdit?.recordId === 'fashion-unlock-v1-install';
-  const isUninstallStaged = stagedEdit?.recordId === 'fashion-unlock-v1-uninstall';
+  const pendingAction = getCanonicalFashionUnlockPendingAction(editSession, workflow);
+  const isInstallStaged = pendingAction === 'install';
+  const isUninstallStaged = pendingAction === 'uninstall';
   const isScarletViolet = workflow?.editorFamily === 'sv';
-  const hasStagedChange = isInstallStaged || isUninstallStaged;
-  const canStageInstall = workflow?.summary.availability === 'available' && workflow.installStatus !== 'blocked';
-  const canStageUninstall = workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
-  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const expectedFamily = selectedGame === 'scarlet' || selectedGame === 'violet'
+    ? 'sv'
+    : selectedGame === 'sword' || selectedGame === 'shield'
+      ? 'swsh'
+      : null;
+  const isMatchingGame =
+    workflow !== null &&
+    expectedFamily !== null &&
+    workflow.editorFamily === expectedFamily &&
+    workflow.detectedGame === selectedGame;
+  const hasConflictingPendingState = editSession !== null && pendingAction === null;
+  const isBusy =
+    stagingAction !== null || isChangePlanCreating || isChangePlanApplying;
+  const hasStagedChange = pendingAction !== null;
+  const canStageInstall =
+    isMatchingGame &&
+    !hasConflictingPendingState &&
+    workflow?.summary.availability === 'available' &&
+    (workflow.installStatus === 'available' || workflow.installStatus === 'installed');
+  const canStageUninstall =
+    isMatchingGame &&
+    !hasConflictingPendingState &&
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus === 'installed' &&
+    workflow.canUninstall;
+  const canReviewPlan = hasStagedChange && !isBusy;
   const canApplyPlan =
     hasStagedChange &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
+    !isBusy;
   const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
   const primaryOffsetLabel = isScarletViolet ? 'Ownership check' : 'Direct getter';
   const primaryOffsetValue = isScarletViolet
@@ -78,7 +103,11 @@ export function FashionUnlockSection({
 
         <div className="items-toolbar exefs-toolbar">
           <Metric label="Install" value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'} />
-          <Metric label={primaryOffsetLabel} value={primaryOffsetValue ?? 'Not loaded'} />
+          <Metric
+            label={primaryOffsetLabel}
+            value={primaryOffsetValue ?? 'Not loaded'}
+            valueIsRaw={primaryOffsetValue !== undefined}
+          />
           <Metric label="Reserved regions" value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'} />
         </div>
 
@@ -90,11 +119,11 @@ export function FashionUnlockSection({
                   <span role="columnheader">Mode</span>
                   <span role="columnheader">What happens</span>
                 </div>
-                <div className="exefs-row iv-screen-range-row" role="row">
+                <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" role="row">
                   <span role="cell">Not installed</span>
                   <span role="cell">{isScarletViolet ? 'Dress-up ownership comes from the player save.' : 'Fashion ownership comes from the player save.'}</span>
                 </div>
-                <div className="exefs-row iv-screen-range-row" role="row">
+                <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" role="row">
                   <span role="cell">Installed</span>
                   <span role="cell">
                     {isScarletViolet
@@ -110,9 +139,9 @@ export function FashionUnlockSection({
                   <span role="columnheader">Range</span>
                 </div>
                 {workflow.reservedRegions.map((region) => (
-                  <div className="exefs-row iv-screen-range-row" key={region.regionId} role="row">
+                  <div className="exefs-row iv-screen-range-row iv-screen-range-row-static" key={region.regionId} role="row">
                     <span role="cell">{region.label}</span>
-                    <span role="cell">{region.offsetLabel}</span>
+                    <span data-localization-ignore="true" role="cell">{region.offsetLabel}</span>
                   </div>
                 ))}
               </div>
@@ -127,17 +156,17 @@ export function FashionUnlockSection({
               <dl className="item-provenance-list">
                 <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
                 <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd></div>
-                <div><dt>Build ID</dt><dd>{workflow.buildId}</dd></div>
+                <div><dt>Build ID</dt><dd data-localization-ignore="true">{workflow.buildId}</dd></div>
                 {isScarletViolet ? (
-                  <div><dt>Ownership check</dt><dd>{workflow.ownershipCheckOffsetHex}</dd></div>
+                  <div><dt>Ownership check</dt><dd data-localization-ignore="true">{workflow.ownershipCheckOffsetHex}</dd></div>
                 ) : (
                   <>
-                    <div><dt>Direct getter</dt><dd>{workflow.directGetterOffsetHex}</dd></div>
-                    <div><dt>Mapped getter</dt><dd>{workflow.mappedGetterOffsetHex}</dd></div>
+                    <div><dt>Direct getter</dt><dd data-localization-ignore="true">{workflow.directGetterOffsetHex}</dd></div>
+                    <div><dt>Mapped getter</dt><dd data-localization-ignore="true">{workflow.mappedGetterOffsetHex}</dd></div>
                   </>
                 )}
                 <div><dt>Stub</dt><dd>{workflow.stubKind}</dd></div>
-                <div><dt>Source file</dt><dd>{workflow.provenance.sourceFile}</dd></div>
+                <div><dt>Source file</dt><dd data-localization-ignore="true">{workflow.provenance.sourceFile}</dd></div>
                 <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
                 <div><dt>File state</dt><dd>{formatFileState(workflow.provenance.fileState)}</dd></div>
               </dl>
@@ -146,21 +175,23 @@ export function FashionUnlockSection({
                 <div className="form-actions">
                   <button
                     className="primary-button"
-                    disabled={!canStageInstall || isStaging || isInstallStaged || isChangePlanApplying}
+                    aria-busy={stagingAction === 'install'}
+                    disabled={!canStageInstall || isBusy || isInstallStaged}
                     onClick={onStageInstall}
                     type="button"
                   >
                     <Wrench aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : installLabel}</span>
+                    <span>{stagingAction === 'install' ? 'Staging install' : installLabel}</span>
                   </button>
                   <button
                     className="danger-button"
-                    disabled={!canStageUninstall || isStaging || isUninstallStaged || isChangePlanApplying}
+                    aria-busy={stagingAction === 'uninstall'}
+                    disabled={!canStageUninstall || isBusy || isUninstallStaged}
                     onClick={onStageUninstall}
                     type="button"
                   >
                     <Trash2 aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                    <span>{stagingAction === 'uninstall' ? 'Staging uninstall' : 'Stage Uninstall'}</span>
                   </button>
                   <button className="secondary-button" disabled={!canReviewPlan} onClick={onCreateChangePlan} type="button">
                     <ClipboardCheck aria-hidden="true" size={16} />

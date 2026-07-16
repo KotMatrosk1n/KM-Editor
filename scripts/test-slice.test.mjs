@@ -80,11 +80,42 @@ test('Fairy Gym bridge contracts run their specialized desktop test', () => {
   assert.match(output, /Run desktop bridge tests/);
 });
 
-test('fast validation retains Fairy Gym and Type Chart pending coverage', () => {
+test('Fashion Unlock bridge contracts run their specialized desktop test', () => {
+  const output = runChangedPrint([
+    'apps/desktop/src/bridge/fashionUnlockContracts.ts',
+  ]);
+
+  assert.match(output, /Run nearby desktop bridge test/);
+  assert.match(output, /src\/bridge\/fashionUnlockContracts\.test\.ts/);
+  assert.match(output, /Run desktop bridge tests/);
+});
+
+test('Fashion Unlock App changes run focused App staging regressions', () => {
+  const output = runChangedPrint(['apps/desktop/src/App.tsx']);
+
+  assert.match(output, /Run App regression tests after shell or shared fixture changes/);
+  assert.match(output, /Run Fashion Unlock App regressions/);
+  assert.match(output, /src\/fashionUnlockUi\.test\.tsx/);
+});
+
+test('Fashion Unlock backend sources run workflow and bridge integration coverage', () => {
+  const output = runChangedPrint([
+    'src/KM.SwSh/FashionUnlock/SwShFashionUnlockEditSessionService.cs',
+  ]);
+
+  assert.match(output, /Run Sword and Shield FashionUnlock tests/);
+  assert.match(output, /Run FashionUnlock bridge integration tests/);
+});
+
+test('fast validation retains Fairy Gym, Fashion Unlock, and Type Chart pending coverage', () => {
   const output = runPrint(['fast', '--print']);
 
   assert.match(output, /src\/fairyGymBoostsUi\.test\.tsx/);
   assert.match(output, /src\/features\/fairy-gym-boosts\/fairyGymBoostsPending\.test\.ts/);
+  assert.match(output, /src\/bridge\/fashionUnlockContracts\.test\.ts/);
+  assert.match(output, /src\/fashionUnlockUi\.test\.tsx/);
+  assert.match(output, /src\/features\/fashion-unlock\/FashionUnlockSection\.test\.tsx/);
+  assert.match(output, /src\/features\/fashion-unlock\/fashionUnlockPending\.test\.ts/);
   assert.match(output, /src\/features\/type-chart\/typeChartPending\.test\.ts/);
 });
 

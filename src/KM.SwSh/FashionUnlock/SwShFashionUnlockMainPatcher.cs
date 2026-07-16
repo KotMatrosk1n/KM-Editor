@@ -67,11 +67,14 @@ internal static class SwShFashionUnlockMainPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
+        var buildId = "unknown";
+        PatchLayout? detectedLayout = null;
         try
         {
             var nso = NsoFile.Parse(mainBytes);
-            var buildId = FormatBuildId(nso.BuildId);
-            var layout = FindLayout(buildId);
+            ValidateRequiredSegmentHashes(nso);
+            buildId = FormatBuildId(nso.BuildId);
+            var layout = FindLayout(nso.BuildId);
             if (layout is null)
             {
                 return CreateAnalysis(
@@ -84,6 +87,7 @@ internal static class SwShFashionUnlockMainPatcher
                     detectedGame: null);
             }
 
+            detectedLayout = layout;
             var mismatch = CreateGameMismatchAnalysis(layout, expectedGame, buildId);
             if (mismatch is not null)
             {
@@ -140,17 +144,18 @@ internal static class SwShFashionUnlockMainPatcher
             return CreateAnalysis(
                 SwShFashionUnlockInstallKind.Conflict,
                 exception.Message,
-                "unknown",
-                "unknown",
-                "unknown",
+                buildId,
+                detectedLayout is null ? "unknown" : FormatTextOffset(detectedLayout.DirectGetterOffset),
+                detectedLayout is null ? "unknown" : FormatTextOffset(detectedLayout.MappedGetterOffset),
                 "unreadable",
-                detectedGame: null);
+                detectedLayout?.Game);
         }
     }
 
     public static byte[] Apply(byte[] mainBytes, ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
+        EnsureSupportedExpectedGame(expectedGame);
 
         var analysis = Analyze(mainBytes, expectedGame);
         if (analysis.Kind is SwShFashionUnlockInstallKind.UnsupportedBuild
@@ -161,7 +166,8 @@ internal static class SwShFashionUnlockMainPatcher
         }
 
         var nso = NsoFile.Parse(mainBytes);
-        var layout = FindLayout(FormatBuildId(nso.BuildId))
+        ValidateRequiredSegmentHashes(nso);
+        var layout = FindLayout(nso.BuildId)
             ?? throw new InvalidDataException("Fashion Unlock supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
         EnsurePatchRanges(text, layout);
@@ -181,42 +187,36 @@ internal static class SwShFashionUnlockMainPatcher
     {
         ArgumentNullException.ThrowIfNull(currentMainBytes);
         ArgumentNullException.ThrowIfNull(baseMainBytes);
+        EnsureSupportedExpectedGame(expectedGame);
 
         var currentAnalysis = Analyze(currentMainBytes, expectedGame);
-        if (currentAnalysis.Kind == SwShFashionUnlockInstallKind.GameMismatch)
-        {
-            throw new InvalidDataException(currentAnalysis.Message);
-        }
-
         if (currentAnalysis.Kind != SwShFashionUnlockInstallKind.Installed)
         {
-            throw new InvalidDataException("Fashion Unlock restore requires installed Fashion Unlock stubs.");
+            throw new InvalidDataException(
+                currentAnalysis.Kind is SwShFashionUnlockInstallKind.UnsupportedBuild
+                    or SwShFashionUnlockInstallKind.GameMismatch
+                    or SwShFashionUnlockInstallKind.Conflict
+                    ? currentAnalysis.Message
+                    : "Fashion Unlock restore requires installed Fashion Unlock stubs.");
+        }
+
+        var baseAnalysis = Analyze(baseMainBytes, expectedGame);
+        if (baseAnalysis.Kind != SwShFashionUnlockInstallKind.NotInstalled)
+        {
+            throw new InvalidDataException(
+                "Fashion Unlock restore requires a verified selected-game vanilla base exefs/main.");
         }
 
         var currentNso = NsoFile.Parse(currentMainBytes);
         var baseNso = NsoFile.Parse(baseMainBytes);
-        var currentBuildId = FormatBuildId(currentNso.BuildId);
-        var baseBuildId = FormatBuildId(baseNso.BuildId);
-        if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException("Fashion Unlock restore requires current and base main NSO files with the same build ID.");
-        }
-
-        var layout = FindLayout(baseBuildId)
+        ValidateRequiredSegmentHashes(currentNso);
+        ValidateRequiredSegmentHashes(baseNso);
+        EnsureSameBuildAndLayout(baseNso, currentNso, "Fashion Unlock restore");
+        var layout = FindLayout(baseNso.BuildId)
             ?? throw new InvalidDataException("Fashion Unlock restore requires a supported Sword or Shield 1.3.2 base main NSO.");
-        var mismatch = CreateGameMismatchAnalysis(layout, expectedGame, baseBuildId);
-        if (mismatch is not null)
-        {
-            throw new InvalidDataException(mismatch.Message);
-        }
 
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
-        if (currentText.Length != baseText.Length)
-        {
-            throw new InvalidDataException("Fashion Unlock restore requires current and base main NSO files with matching .text sizes.");
-        }
-
         EnsurePatchRanges(currentText, layout);
         EnsurePatchRanges(baseText, layout);
         EnsureVanillaBase(baseText, layout);
@@ -226,7 +226,29 @@ internal static class SwShFashionUnlockMainPatcher
             baseText.AsSpan(offset, PatchLength).CopyTo(currentText.AsSpan(offset, PatchLength));
         }
 
-        return currentNso.Write(textDecompressedData: currentText);
+        var output = currentNso.Write(textDecompressedData: currentText);
+        ValidateOutput(
+            currentMainBytes,
+            output,
+            layout,
+            expectedGame,
+            SwShFashionUnlockInstallKind.NotInstalled,
+            "Fashion Unlock restore");
+        return output;
+    }
+
+    internal static void EnsureCompatibleExecutableIdentity(
+        byte[] baseMainBytes,
+        byte[] effectiveMainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+        ArgumentNullException.ThrowIfNull(effectiveMainBytes);
+
+        var baseNso = NsoFile.Parse(baseMainBytes);
+        var effectiveNso = NsoFile.Parse(effectiveMainBytes);
+        ValidateRequiredSegmentHashes(baseNso);
+        ValidateRequiredSegmentHashes(effectiveNso);
+        EnsureSameBuildAndLayout(baseNso, effectiveNso, "Fashion Unlock apply");
     }
 
     public static bool HasInstalledHook(byte[] mainBytes)
@@ -239,28 +261,34 @@ internal static class SwShFashionUnlockMainPatcher
         return SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerFashionUnlock);
     }
 
+    public static IReadOnlyList<SwShExeFsReservedRegion> ReservedMainTextRegions(ProjectGame game)
+    {
+        if (game is not (ProjectGame.Sword or ProjectGame.Shield))
+        {
+            return [];
+        }
+
+        var inactiveGameToken = game == ProjectGame.Sword ? "-shield-" : "-sword-";
+        return ReservedMainTextRegions()
+            .Where(region => !region.FeatureId.Contains(inactiveGameToken, StringComparison.Ordinal))
+            .ToArray();
+    }
+
     private static void ValidateOutput(
         byte[] input,
         byte[] output,
         PatchLayout layout,
-        ProjectGame? expectedGame)
+        ProjectGame? expectedGame,
+        SwShFashionUnlockInstallKind expectedKind = SwShFashionUnlockInstallKind.Installed,
+        string operation = "Fashion Unlock apply")
     {
         var before = NsoFile.Parse(input);
         var after = NsoFile.Parse(output);
-        if (!before.BuildId.SequenceEqual(after.BuildId))
-        {
-            throw new InvalidDataException("Fashion Unlock patch changed the NSO build ID.");
-        }
-
-        if (!before.Ro.DecompressedData.SequenceEqual(after.Ro.DecompressedData))
-        {
-            throw new InvalidDataException("Fashion Unlock patch unexpectedly changed the .ro segment.");
-        }
-
-        if (!before.Data.DecompressedData.SequenceEqual(after.Data.DecompressedData))
-        {
-            throw new InvalidDataException("Fashion Unlock patch unexpectedly changed the .data segment.");
-        }
+        ValidateRequiredSegmentHashes(before);
+        ValidateRequiredSegmentHashes(after);
+        EnsureSameBuildAndLayout(before, after, operation);
+        VerifyPreservedSegment(before.Ro, after.Ro, ".ro", operation);
+        VerifyPreservedSegment(before.Data, after.Data, ".data", operation);
 
         var beforeText = before.Text.DecompressedData;
         var afterText = after.Text.DecompressedData;
@@ -278,13 +306,71 @@ internal static class SwShFashionUnlockMainPatcher
                 throw new InvalidDataException(
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"Fashion Unlock patch unexpectedly changed .text byte 0x{offset:X}."));
+                        $"{operation} unexpectedly changed .text byte 0x{offset:X}."));
             }
         }
 
-        if (Analyze(output, expectedGame).Kind != SwShFashionUnlockInstallKind.Installed)
+        if (Analyze(output, expectedGame).Kind != expectedKind)
         {
-            throw new InvalidDataException("Fashion Unlock patch verification failed after writing exefs/main.");
+            throw new InvalidDataException($"{operation} verification failed after writing exefs/main.");
+        }
+    }
+
+    private static void EnsureSameBuildAndLayout(NsoFile left, NsoFile right, string operation)
+    {
+        if (left.Version != right.Version
+            || left.Flags != right.Flags
+            || !left.BuildId.SequenceEqual(right.BuildId)
+            || !SwShExeFsMainComparison.StableHeaderBytesMatch(left.RawHeader, right.RawHeader))
+        {
+            throw new InvalidDataException(
+                $"{operation} requires matching NSO version, flags, stable header metadata, and full 32-byte build identity.");
+        }
+
+        for (var index = 0; index < left.Segments.Count; index++)
+        {
+            var leftSegment = left.Segments[index];
+            var rightSegment = right.Segments[index];
+            if (leftSegment.Header.MemoryOffset != rightSegment.Header.MemoryOffset
+                || leftSegment.Header.DecompressedSize != rightSegment.Header.DecompressedSize
+                || leftSegment.DecompressedData.Length != rightSegment.DecompressedData.Length)
+            {
+                throw new InvalidDataException(
+                    $"{operation} requires matching {leftSegment.Name} memory offsets and decompressed sizes.");
+            }
+        }
+    }
+
+    private static void VerifyPreservedSegment(
+        NsoSegment source,
+        NsoSegment output,
+        string segmentName,
+        string operation)
+    {
+        if (source.Header.MemoryOffset != output.Header.MemoryOffset
+            || source.Header.DecompressedSize != output.Header.DecompressedSize
+            || source.CompressedSize != output.CompressedSize
+            || !source.Hash.SequenceEqual(output.Hash)
+            || !source.CompressedData.SequenceEqual(output.CompressedData)
+            || !source.DecompressedData.SequenceEqual(output.DecompressedData))
+        {
+            throw new InvalidDataException($"{operation} verification found a changed {segmentName} segment.");
+        }
+    }
+
+    private static void ValidateRequiredSegmentHashes(NsoFile nso)
+    {
+        ValidateRequiredSegmentHash(nso.Text, nso.Flags.HasFlag(NsoFlags.CheckHashText));
+        ValidateRequiredSegmentHash(nso.Ro, nso.Flags.HasFlag(NsoFlags.CheckHashRo));
+        ValidateRequiredSegmentHash(nso.Data, nso.Flags.HasFlag(NsoFlags.CheckHashData));
+    }
+
+    private static void ValidateRequiredSegmentHash(NsoSegment segment, bool required)
+    {
+        if (required && !NsoFile.ComputeHash(segment.DecompressedData).SequenceEqual(segment.Hash))
+        {
+            throw new InvalidDataException(
+                $"Fashion Unlock rejected {segment.Name} because its required NSO header hash does not match the decompressed segment.");
         }
     }
 
@@ -325,10 +411,26 @@ internal static class SwShFashionUnlockMainPatcher
             detectedGame);
     }
 
-    private static PatchLayout? FindLayout(string buildId)
+    private static PatchLayout? FindLayout(ReadOnlySpan<byte> buildId)
     {
-        return Layouts.FirstOrDefault(layout =>
-            string.Equals(layout.BuildId, buildId, StringComparison.OrdinalIgnoreCase));
+        foreach (var layout in Layouts)
+        {
+            if (IsCanonicalBuildId(buildId, layout.BuildId))
+            {
+                return layout;
+            }
+        }
+
+        return null;
+    }
+
+    private static void EnsureSupportedExpectedGame(ProjectGame? expectedGame)
+    {
+        if (expectedGame is not (ProjectGame.Sword or ProjectGame.Shield))
+        {
+            throw new InvalidDataException(
+                "Fashion Unlock patching requires Pokemon Sword or Pokemon Shield to be selected explicitly.");
+        }
     }
 
     private static SwShFashionUnlockAnalysis? CreateGameMismatchAnalysis(
@@ -371,6 +473,34 @@ internal static class SwShFashionUnlockMainPatcher
     {
         var buildIdLength = Math.Min(20, buildId.Length);
         return Convert.ToHexString(buildId.AsSpan(0, buildIdLength));
+    }
+
+    private static bool IsCanonicalBuildId(ReadOnlySpan<byte> buildId, string expectedPrefixHex)
+    {
+        const int nsoBuildIdLength = 0x20;
+        const int knownBuildIdLength = 0x14;
+        if (buildId.Length != nsoBuildIdLength)
+        {
+            return false;
+        }
+
+        var expectedPrefix = Convert.FromHexString(expectedPrefixHex);
+        return expectedPrefix.Length == knownBuildIdLength
+            && buildId[..knownBuildIdLength].SequenceEqual(expectedPrefix)
+            && IsZero(buildId[knownBuildIdLength..]);
+    }
+
+    private static bool IsZero(ReadOnlySpan<byte> data)
+    {
+        foreach (var value in data)
+        {
+            if (value != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static string FormatTextOffset(int offset)

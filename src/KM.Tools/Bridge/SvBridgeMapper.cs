@@ -21,6 +21,7 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SV.DumpImport;
 using KM.SV.Encounters;
@@ -744,6 +745,10 @@ public static class SvBridgeMapper
             ToDto(workflow.Summary),
             workflow.InstallStatus,
             workflow.InstallMessage,
+            workflow.Summary.Availability == SvWorkflowAvailability.Available
+                && string.Equals(workflow.InstallStatus, "installed", StringComparison.Ordinal)
+                && workflow.Provenance.SourceLayer == ProjectFileLayer.Layered
+                && workflow.Provenance.FileState == ProjectFileGraphEntryState.LayeredOverride,
             "sv",
             workflow.BuildId,
             string.Empty,
@@ -755,7 +760,8 @@ public static class SvBridgeMapper
             ToDto(workflow.Provenance),
             new FashionUnlockWorkflowStatsDto(
                 workflow.Stats.ReservedMainTextRegionCount,
-                workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount,
+                8),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 

@@ -1736,6 +1736,41 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('includes Fashion Unlock staged-state and Sword/Shield ownership literals in every language', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals,
+      zh: zhResource.literals
+    };
+    const requiredLiterals = [
+      'Fashion Unlock Shield direct ownership getter',
+      'Fashion Unlock Shield mapped ownership getter',
+      'Fashion Unlock staging did not match the requested action, game, session, and source state.',
+      'Staging install',
+      'Staging uninstall',
+      'game mismatch',
+      'not inspected',
+      'return-true ownership stubs',
+      'unknown bytes',
+      'unreadable',
+      'unsupported',
+      'vanilla ownership getters'
+    ];
+
+    for (const [language, literals] of Object.entries(localizedResources)) {
+      for (const literal of requiredLiterals) {
+        expect(literals[literal], `${language}: ${literal}`).toBeTruthy();
+        if (language !== 'en') {
+          expect(literals[literal], `${language}: ${literal}`).not.toBe(literal);
+        }
+      }
+    }
+  });
+
   it('switches language immediately and persists the choice', async () => {
     const user = userEvent.setup();
 

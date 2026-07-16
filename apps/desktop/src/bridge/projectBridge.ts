@@ -18,8 +18,6 @@ import {
   type LoadHyperTrainingWorkflowResponse,
   type LoadTypeChartWorkflowRequest,
   type LoadTypeChartWorkflowResponse,
-  type LoadFashionUnlockWorkflowRequest,
-  type LoadFashionUnlockWorkflowResponse,
   type LoadGymUniformRemovalWorkflowRequest,
   type LoadGymUniformRemovalWorkflowResponse,
   type LoadIvScreenWorkflowRequest,
@@ -80,10 +78,6 @@ import {
   type StageHyperTrainingResponse,
   type StageTypeChartRequest, type StageTypeChartResponse,
   type StageTypeChartUninstallRequest, type StageTypeChartUninstallResponse,
-  type StageFashionUnlockInstallRequest,
-  type StageFashionUnlockInstallResponse,
-  type StageFashionUnlockUninstallRequest,
-  type StageFashionUnlockUninstallResponse,
   type StageGymUniformRemovalInstallRequest,
   type StageGymUniformRemovalInstallResponse,
   type StageGymUniformRemovalUninstallRequest,
@@ -192,7 +186,6 @@ import {
   loadCatchCapWorkflowResponseSchema,
   loadHyperTrainingWorkflowResponseSchema,
   loadTypeChartWorkflowResponseSchema,
-  loadFashionUnlockWorkflowResponseSchema,
   loadGymUniformRemovalWorkflowResponseSchema,
   loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
@@ -221,8 +214,6 @@ import {
   stageHyperTrainingResponseSchema,
   stageTypeChartResponseSchema,
   stageTypeChartUninstallResponseSchema,
-  stageFashionUnlockInstallResponseSchema,
-  stageFashionUnlockUninstallResponseSchema,
   stageGymUniformRemovalInstallResponseSchema,
   stageGymUniformRemovalUninstallResponseSchema,
   stageIvScreenInstallResponseSchema,
@@ -276,6 +267,17 @@ import {
   validateEditSessionResponseSchema,
   validateProjectResponseSchema
 } from './contracts';
+import {
+  type LoadFashionUnlockWorkflowRequest,
+  type LoadFashionUnlockWorkflowResponse,
+  type StageFashionUnlockInstallRequest,
+  type StageFashionUnlockInstallResponse,
+  type StageFashionUnlockUninstallRequest,
+  type StageFashionUnlockUninstallResponse,
+  loadFashionUnlockWorkflowResponseSchema,
+  stageFashionUnlockInstallResponseSchema,
+  stageFashionUnlockUninstallResponseSchema
+} from './fashionUnlockContracts';
 import {
   type ApplyFpsPatchRequest,
   type ApplyFpsPatchResponse,
