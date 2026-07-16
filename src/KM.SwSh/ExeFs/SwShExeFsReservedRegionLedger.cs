@@ -292,7 +292,9 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerFpsPatch, "60fps-actor-direct-speed-seed-c", ExeFsMainPath, "main.text", 0x009D0838, 0x04, "60FPS actor direct speed seed C", "do-not-overwrite"),
         new(OwnerFpsPatch, "60fps-actor-direct-speed-seed-d", ExeFsMainPath, "main.text", 0x009D0848, 0x04, "60FPS actor direct speed seed D", "do-not-overwrite"),
 
+        new(OwnerTypeChart, "type-chart-swsh-dependencies-before", ExeFsMainPath, "main.ro", 0x007435C0, 0x40, "Sword/Shield type-effectiveness table dependencies before the payload", "requires-vanilla"),
         new(OwnerTypeChart, "type-chart-swsh", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword/Shield type-effectiveness table", "payload-only"),
+        new(OwnerTypeChart, "type-chart-swsh-dependencies-after", ExeFsMainPath, "main.ro", 0x00743744, 0x40, "Sword/Shield type-effectiveness table dependencies after the payload", "requires-vanilla"),
 
         new(OwnerFashionUnlock, "fashion-unlock-sword-direct-owned-getter", ExeFsMainPath, "main.text", 0x0143A2B0, 0x08, "Fashion Unlock Sword direct ownership getter", "do-not-overwrite"),
         new(OwnerFashionUnlock, "fashion-unlock-sword-mapped-owned-getter", ExeFsMainPath, "main.text", 0x0143A300, 0x08, "Fashion Unlock Sword mapped ownership getter", "do-not-overwrite"),

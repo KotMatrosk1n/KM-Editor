@@ -3537,10 +3537,12 @@ public sealed class ProjectBridgeDispatcherTests
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
         temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateTypeChartCompatibleNso());
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
         var dispatcher = new ProjectBridgeDispatcher();
         var loadJson = SerializeRequest(
             KmCommandNames.LoadTypeChartWorkflow,
-            new LoadTypeChartWorkflowRequest(temp.Paths),
+            new LoadTypeChartWorkflowRequest(paths),
             requestId: "request-type-chart-load");
         var loadResponse = DeserializeResponse<LoadTypeChartWorkflowResponse>(dispatcher.Dispatch(loadJson));
         Assert.Null(loadResponse.Error);
@@ -3553,20 +3555,20 @@ public sealed class ProjectBridgeDispatcherTests
         values[(1 * 18) + 4] = 2;
         var stageJson = SerializeRequest(
             KmCommandNames.StageTypeChart,
-            new StageTypeChartRequest(temp.Paths, Session: null, Values: values),
+            new StageTypeChartRequest(paths, Session: null, Values: values),
             requestId: "request-type-chart-stage");
         var stageResponse = DeserializeResponse<StageTypeChartResponse>(dispatcher.Dispatch(stageJson));
         Assert.Null(stageResponse.Error);
         Assert.NotNull(stageResponse.Payload);
-        Assert.Single(stageResponse.Payload.Session.PendingEdits);
-        Assert.Equal("workflow.typeChart", stageResponse.Payload.Session.PendingEdits[0].Domain);
         Assert.DoesNotContain(
             stageResponse.Payload.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.typeChart", stageResponse.Payload.Session.PendingEdits[0].Domain);
 
         var validateJson = SerializeRequest(
             KmCommandNames.ValidateEditSession,
-            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            new ValidateEditSessionRequest(paths, stageResponse.Payload.Session),
             requestId: "request-type-chart-validate");
         var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
         Assert.Null(validateResponse.Error);
@@ -3575,7 +3577,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var planJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            new CreateChangePlanRequest(paths, stageResponse.Payload.Session),
             requestId: "request-type-chart-plan");
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
         Assert.Null(planResponse.Error);
@@ -3587,7 +3589,7 @@ public sealed class ProjectBridgeDispatcherTests
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
             new ApplyChangePlanRequest(
-                temp.Paths,
+                paths,
                 stageResponse.Payload.Session,
                 planResponse.Payload.ChangePlan),
             requestId: "request-type-chart-apply");

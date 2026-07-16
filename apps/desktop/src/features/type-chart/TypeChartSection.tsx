@@ -4,6 +4,7 @@ import { ClipboardCheck, RotateCcw, Save, Swords, Trash2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   type EditSession,
+  type ProjectGame,
   type TypeChartSourceRecord,
   type TypeChartWorkflow
 } from '../../bridge/contracts';
@@ -14,8 +15,12 @@ import {
 } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
+import {
+  getCanonicalTypeChartPendingState,
+  type TypeChartEffectivenessValue
+} from './typeChartPending';
 
-type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
+export { decodeTypeChartPendingValues } from './typeChartPending';
 
 const typeChartEffectivenessOptions: Array<{
   value: TypeChartEffectivenessValue;
@@ -57,24 +62,29 @@ export function TypeChartSection({
   const { translateLiteral } = useLocalization();
   const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
   const vanillaValues = useMemo(() => getTypeChartVanillaValues(workflow), [workflow]);
-  const stagedTypeChartEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.typeChart'
+  const stagedState = useMemo(
+    () => getCanonicalTypeChartPendingState(editSession, workflow?.detectedGame),
+    [editSession, workflow?.detectedGame]
   );
-  const stagedValues = useMemo(
-    () => decodeTypeChartPendingValues(stagedTypeChartEdit?.newValue),
-    [stagedTypeChartEdit?.newValue]
-  );
-  const isUninstallStaged =
-    stagedTypeChartEdit?.recordId === 'sv-type-chart-v1-uninstall' ||
-    stagedTypeChartEdit?.recordId === 'za-type-chart-v1-uninstall';
+  const stagedValues = stagedState?.kind === 'chart' ? stagedState.values : null;
+  const isUninstallStaged = stagedState?.kind === 'uninstall';
   const cleanValues = stagedValues ?? workflowValues ?? createDefaultTypeChartValues();
   const cleanValuesKey = cleanValues.join(',');
+  const cleanIdentityKey = [
+    workflow?.detectedGame ?? 'unknown',
+    workflow?.buildId ?? 'unknown',
+    workflow?.chartOffsetHex ?? 'unknown',
+    workflow?.source?.relativePath ?? 'none',
+    workflow?.source?.provenance.sourceLayer ?? 'none',
+    stagedState?.kind ?? 'none',
+    editSession?.sessionId ?? 'none'
+  ].join('|');
   const [draftValues, setDraftValues] =
     useState<TypeChartEffectivenessValue[]>(cleanValues);
 
   useEffect(() => {
     setDraftValues(cleanValues);
-  }, [cleanValuesKey]);
+  }, [cleanIdentityKey, cleanValuesKey]);
 
   const isDirty = !areTypeChartValuesEqual(draftValues, cleanValues);
   const hasStagedChange = stagedValues !== null || isUninstallStaged;
@@ -85,8 +95,11 @@ export function TypeChartSection({
   const canEdit =
     workflow?.summary.availability === 'available' &&
     workflow.installStatus !== 'blocked' &&
+    workflow.source?.status === 'available' &&
+    isSupportedTypeChartGame(workflow.detectedGame) &&
     !isUninstallStaged &&
     !isStaging &&
+    !isChangePlanCreating &&
     !isChangePlanApplying;
   const canStage = canEdit && isDirty;
   const canStageUninstall =
@@ -94,21 +107,31 @@ export function TypeChartSection({
     !isUninstallStaged &&
     workflow?.summary.availability === 'available' &&
     workflow.installStatus === 'modified' &&
+    workflow.source?.status === 'available' &&
     !isDirty &&
     !isStaging &&
+    !isChangePlanCreating &&
     !isChangePlanApplying;
   const canResetToVanilla =
     canEdit &&
     vanillaValues !== null &&
     !areTypeChartValuesEqual(draftValues, vanillaValues);
-  const canReviewPlan = hasStagedChange && !isDirty && !isChangePlanCreating;
+  const canReviewPlan =
+    hasStagedChange &&
+    !isDirty &&
+    !isStaging &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying;
   const canApplyPlan =
     hasStagedChange &&
     !isDirty &&
     panelOutput.changePlan !== null &&
     panelOutput.changePlan.canApply &&
     panelOutput.changePlan.writes.length > 0 &&
+    !isStaging &&
+    !isChangePlanCreating &&
     !isChangePlanApplying;
+  const canDisplayChart = isDisplayableTypeChartWorkflow(workflow);
 
   useEffect(() => {
     onDirtyChange(isDirty);
@@ -137,6 +160,10 @@ export function TypeChartSection({
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
+            label="Game"
+            value={formatTypeChartGame(workflow?.detectedGame ?? null)}
+          />
+          <Metric
             label="Status"
             value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
           />
@@ -145,14 +172,14 @@ export function TypeChartSection({
             label="Build"
             value={
               workflow?.buildId && workflow.buildId !== 'unknown'
-                ? workflow.buildId.slice(0, 12)
+                ? workflow.buildId
                 : 'Unknown'
             }
           />
           <Metric label="Staged" value={hasStagedChange ? 'Yes' : 'No'} />
         </div>
 
-        {workflow ? (
+        {workflow && canDisplayChart ? (
           <div className="type-chart-editor">
             <div className="type-chart-scroll" aria-label="Type effectiveness chart">
               <div className="type-chart-grid">
@@ -215,7 +242,8 @@ export function TypeChartSection({
               <button
                 className="primary-button"
                 disabled={!canStage}
-                onClick={() => onStageChart(draftValues)}
+                aria-busy={isStaging || undefined}
+                onClick={() => onStageChart(draftValues.slice())}
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
@@ -223,6 +251,7 @@ export function TypeChartSection({
               </button>
               {supportsUninstall ? (
                 <button
+                  aria-busy={isStaging || undefined}
                   className="danger-button"
                   disabled={!canStageUninstall}
                   onClick={onStageUninstall}
@@ -234,6 +263,7 @@ export function TypeChartSection({
                 </button>
               ) : null}
               <button
+                aria-busy={isChangePlanCreating || undefined}
                 className="secondary-button"
                 disabled={!canReviewPlan}
                 onClick={onCreateChangePlan}
@@ -243,6 +273,7 @@ export function TypeChartSection({
                 <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
               </button>
               <button
+                aria-busy={isChangePlanApplying || undefined}
                 className="primary-button"
                 disabled={!canApplyPlan}
                 onClick={onApplyChangePlan}
@@ -253,8 +284,47 @@ export function TypeChartSection({
               </button>
             </div>
 
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Detected game</dt>
+                <dd>{formatTypeChartGame(workflow.detectedGame)}</dd>
+              </div>
+              <div>
+                <dt>Build ID</dt>
+                <dd data-localization-ignore="true">{formatTypeChartBuildId(workflow.buildId)}</dd>
+              </div>
+              <div>
+                <dt>Offset</dt>
+                <dd data-localization-ignore="true">{formatTypeChartOffset(workflow.chartOffsetHex)}</dd>
+              </div>
+              <div>
+                <dt>Install message</dt>
+                <dd>{workflow.installMessage}</dd>
+              </div>
+              <div>
+                <dt>Staged</dt>
+                <dd>
+                  {stagedState?.kind === 'chart'
+                    ? 'Type Chart'
+                    : stagedState?.kind === 'uninstall'
+                      ? 'Stage Uninstall'
+                      : 'None'}
+                </dd>
+              </div>
+              <div>
+                <dt>Output files</dt>
+                <dd>{workflow.stats.outputFileCount.toLocaleString()}</dd>
+              </div>
+            </dl>
+
             <TypeChartSourceSummary source={workflow.source} />
           </div>
+        ) : workflow ? (
+          <p className="empty-copy">
+            <strong>{translateLiteral('Unavailable')}</strong>
+            <br />
+            <span>{workflow.installMessage}</span>
+          </p>
         ) : (
           <p className="empty-copy">
             Open Type Chart from Advanced Editors to inspect the type-effectiveness table.
@@ -354,12 +424,24 @@ function TypeChartSourceSummary({ source }: { source: TypeChartSourceRecord | nu
         <dd data-localization-ignore="true">{source.relativePath}</dd>
       </div>
       <div>
+        <dt>Status</dt>
+        <dd>{formatTypeChartSourceStatus(source.status)}</dd>
+      </div>
+      <div>
         <dt>Layer</dt>
-        <dd>{formatSourceLayer(source.provenance.sourceLayer)}</dd>
+        <dd>
+          {source.status === 'available'
+            ? formatSourceLayer(source.provenance.sourceLayer)
+            : 'Unavailable'}
+        </dd>
       </div>
       <div>
         <dt>File state</dt>
-        <dd>{formatFileState(source.provenance.fileState)}</dd>
+        <dd>
+          {source.status === 'available'
+            ? formatFileState(source.provenance.fileState)
+            : 'Unavailable'}
+        </dd>
       </div>
     </dl>
   );
@@ -381,6 +463,62 @@ function isTypeChartEffectivenessValue(
   value: number
 ): value is TypeChartEffectivenessValue {
   return value === 0 || value === 2 || value === 4 || value === 8;
+}
+
+function isSupportedTypeChartGame(game: ProjectGame | null) {
+  return (
+    game === 'sword' ||
+    game === 'shield' ||
+    game === 'scarlet' ||
+    game === 'violet' ||
+    game === 'za'
+  );
+}
+
+function isDisplayableTypeChartWorkflow(workflow: TypeChartWorkflow | null) {
+  return Boolean(
+    workflow &&
+      workflow.source?.status === 'available' &&
+      isSupportedTypeChartGame(workflow.detectedGame) &&
+      workflow.buildId !== 'unknown' &&
+      workflow.chartOffsetHex !== 'unknown' &&
+      workflow.installStatus !== 'blocked' &&
+      workflow.installStatus !== 'disabled'
+  );
+}
+
+function formatTypeChartGame(game: ProjectGame | null) {
+  switch (game) {
+    case 'sword':
+      return 'Pokemon Sword';
+    case 'shield':
+      return 'Pokemon Shield';
+    case 'scarlet':
+      return 'Pokemon Scarlet';
+    case 'violet':
+      return 'Pokemon Violet';
+    case 'za':
+      return 'Pokemon Legends Z-A';
+    case null:
+      return 'Unknown';
+  }
+}
+
+function formatTypeChartBuildId(buildId: string) {
+  return buildId !== 'unknown' ? buildId : 'Unknown';
+}
+
+function formatTypeChartOffset(offset: string) {
+  return offset !== 'unknown' ? offset : 'Unknown';
+}
+
+function formatTypeChartSourceStatus(status: TypeChartSourceRecord['status']) {
+  switch (status) {
+    case 'available':
+      return 'Available';
+    case 'missing':
+      return 'Missing';
+  }
 }
 
 function createDefaultTypeChartValues(): TypeChartEffectivenessValue[] {
@@ -425,26 +563,6 @@ export function getTypeChartVanillaValues(
   }
 
   return values;
-}
-
-export function decodeTypeChartPendingValues(
-  value: string | null | undefined
-): TypeChartEffectivenessValue[] | null {
-  if (!value || value.length !== 18 * 18 * 2 || value.length % 2 !== 0) {
-    return null;
-  }
-
-  const values: TypeChartEffectivenessValue[] = [];
-  for (let index = 0; index < value.length; index += 2) {
-    const parsed = Number.parseInt(value.slice(index, index + 2), 16);
-    if (!isTypeChartEffectivenessValue(parsed)) {
-      return null;
-    }
-
-    values.push(parsed);
-  }
-
-  return values.length === 18 * 18 ? values : null;
 }
 
 function areTypeChartValuesEqual(

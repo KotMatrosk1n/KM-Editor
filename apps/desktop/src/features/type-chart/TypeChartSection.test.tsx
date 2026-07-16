@@ -48,6 +48,36 @@ describe('TypeChartSection', () => {
       expect(screen.getByRole('button', { name: 'Review' })).toBeEnabled();
     }
   );
+
+  it('does not present synthetic vanilla cells when the executable source is blocked', () => {
+    const workflow = createWorkflow('sword');
+    render(
+      <TypeChartSection
+        {...createProps('sword', vi.fn())}
+        workflow={{
+          ...workflow,
+          chartOffsetHex: 'unknown',
+          installMessage: 'Type Chart could not verify exefs/main.',
+          installStatus: 'blocked',
+          source: workflow.source
+            ? {
+                ...workflow.source,
+                provenance: {
+                  ...workflow.source.provenance,
+                  sourceLayer: 'generated'
+                },
+                status: 'missing'
+              }
+            : null
+        }}
+      />
+    );
+
+    expect(screen.getByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Type Chart could not verify exefs/main.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Type effectiveness chart')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stage Type Chart' })).not.toBeInTheDocument();
+  });
 });
 
 function createProps(detectedGame: ProjectGame, onStageUninstall: () => void) {
@@ -75,7 +105,17 @@ function createWorkflow(detectedGame: ProjectGame): TypeChartWorkflow {
     diagnostics: [],
     installMessage: 'Type Chart contains custom effectiveness values.',
     installStatus: 'modified',
-    source: null,
+    source: {
+      label: 'ExeFS main',
+      provenance: {
+        fileState: 'layeredOverride',
+        sourceFile: 'exefs/main',
+        sourceLayer: 'layered'
+      },
+      relativePath: 'exefs/main',
+      sourceId: 'exefs-main',
+      status: 'available'
+    },
     stats: {
       chartCellCount: 18 * 18,
       outputFileCount: 1,
@@ -101,7 +141,10 @@ function createUninstallSession(recordId: string): EditSession {
         field: 'uninstall',
         newValue: 'true',
         recordId,
-        sources: [],
+        sources: [
+          { layer: 'generated', relativePath: 'exefs/main' },
+          { layer: 'base', relativePath: 'exefs/main' }
+        ],
         summary: 'Stage Type Chart uninstall.'
       }
     ],

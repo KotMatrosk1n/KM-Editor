@@ -70,6 +70,16 @@ public sealed class SwShTypeChartWorkflowService
                     expected: "Readable project paths"));
         }
 
+        if (!IsSupportedGame(project.Paths.SelectedGame))
+        {
+            return CreateSummary(
+                SwShWorkflowAvailability.Disabled,
+                CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Type Chart requires Pokemon Sword or Pokemon Shield to be selected before it can load.",
+                    expected: "Selected Pokemon Sword or Pokemon Shield project"));
+        }
+
         return CreateSummary(project.Health.CanOpenEditableWorkflows
             ? SwShWorkflowAvailability.Available
             : SwShWorkflowAvailability.ReadOnly);
@@ -84,10 +94,14 @@ public sealed class SwShTypeChartWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
+            var installMessage = project.Health.CanOpenReadOnlyWorkflows
+                && !IsSupportedGame(project.Paths.SelectedGame)
+                    ? "Type Chart cannot load until Pokemon Sword or Pokemon Shield is selected."
+                    : "Type Chart cannot load until project paths validate.";
             return CreateWorkflow(
                 summary,
                 "disabled",
-                "Type Chart cannot load until project paths validate.",
+                installMessage,
                 CreateDefaultAnalysis(),
                 source: null,
                 diagnostics);
@@ -111,11 +125,47 @@ public sealed class SwShTypeChartWorkflowService
         }
 
         var source = CreateSource(mainSource.Entry, "available");
+        var basePath = ResolveBaseSourcePath(project.Paths, ExeFsMainPath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Base ExeFS main could not be resolved from the project graph.",
+                file: ExeFsMainPath,
+                expected: "Readable selected-game vanilla Sword/Shield exefs/main NSO"));
+            return CreateWorkflow(
+                summary,
+                "blocked",
+                "Type Chart cannot verify the selected-game vanilla base exefs/main.",
+                CreateDefaultAnalysis(),
+                source,
+                diagnostics);
+        }
+
         try
         {
-            var analysis = SwShTypeChartMainPatcher.Analyze(
-                File.ReadAllBytes(mainSource.AbsolutePath),
+            var baseBytes = File.ReadAllBytes(basePath);
+            var sameSource = PathsReferToSameFile(basePath, mainSource.AbsolutePath);
+            var effectiveBytes = sameSource
+                ? baseBytes
+                : File.ReadAllBytes(mainSource.AbsolutePath);
+            var baseAnalysis = SwShTypeChartMainPatcher.Analyze(
+                baseBytes,
                 project.Paths.SelectedGame);
+            var analysis = sameSource
+                ? baseAnalysis
+                : SwShTypeChartMainPatcher.Analyze(
+                    effectiveBytes,
+                    project.Paths.SelectedGame);
+
+            if (baseAnalysis.Kind != SwShTypeChartMainKind.Vanilla)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Base exefs/main is not a selected-game vanilla Type Chart source. {baseAnalysis.Message}",
+                    file: ExeFsMainPath,
+                    expected: "Selected-game Sword/Shield 1.3.2 base exefs/main with the vanilla 18x18 type chart"));
+            }
 
             if (analysis.Kind is SwShTypeChartMainKind.UnsupportedBuild
                 or SwShTypeChartMainKind.GameMismatch
@@ -127,15 +177,26 @@ public sealed class SwShTypeChartWorkflowService
                     DiagnosticSeverity.Error,
                     analysis.Message,
                     file: ExeFsMainPath,
-                    expected: "Selected-game Sword/Shield 1.3.2 exefs/main with one legal 18x18 type chart table"));
+                    expected: "Selected-game Sword/Shield 1.3.2 effective exefs/main with one legal 18x18 type chart table"));
             }
 
-            var isBlocked = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
-                || analysis.Kind is SwShTypeChartMainKind.UnsupportedBuild
-                    or SwShTypeChartMainKind.GameMismatch
-                    or SwShTypeChartMainKind.MissingChart
-                    or SwShTypeChartMainKind.AmbiguousChart
-                    or SwShTypeChartMainKind.Conflict;
+            if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                try
+                {
+                    SwShTypeChartMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, effectiveBytes);
+                }
+                catch (InvalidDataException exception)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        exception.Message,
+                        file: ExeFsMainPath,
+                        expected: "Compatible selected-game base and effective Sword/Shield exefs/main NSOs"));
+                }
+            }
+
+            var isBlocked = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             var installStatus = isBlocked
                 ? "blocked"
                 : analysis.Kind == SwShTypeChartMainKind.Modified
@@ -143,26 +204,29 @@ public sealed class SwShTypeChartWorkflowService
                     : summary.Availability == SwShWorkflowAvailability.Available
                         ? "available"
                         : "readOnly";
+            var installMessage = isBlocked && baseAnalysis.Kind != SwShTypeChartMainKind.Vanilla
+                ? "Type Chart requires a verified selected-game vanilla base exefs/main before it can edit or restore the effective source."
+                : analysis.Message;
 
             return CreateWorkflow(
                 summary,
                 installStatus,
-                analysis.Message,
+                installMessage,
                 analysis,
                 source,
                 diagnostics);
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Type Chart could not inspect exefs/main: {exception.Message}",
+                "ExeFS main could not be read for Type Chart verification.",
                 file: ExeFsMainPath,
-                expected: "Readable Sword/Shield exefs/main"));
+                expected: "Readable selected-game base and effective Sword/Shield exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
-                "Type Chart cannot inspect effectiveness values because exefs/main could not be read.",
+                "Type Chart cannot inspect effectiveness values because an exefs/main source could not be read.",
                 CreateDefaultAnalysis(),
                 source,
                 diagnostics);
@@ -179,6 +243,52 @@ public sealed class SwShTypeChartWorkflowService
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
     {
         return SwShHyperTrainingWorkflowService.ResolveOutputPath(paths, targetRelativePath);
+    }
+
+    internal static string? ResolveBaseSourcePath(ProjectPaths paths, string relativePath)
+    {
+        return SwShHyperTrainingWorkflowService.ResolveBaseSourcePath(paths, relativePath);
+    }
+
+    internal IReadOnlyList<ProjectFileReference> GetPlanSources(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var source = ResolveWorkflowFile(project, ExeFsMainPath);
+        if (source is null)
+        {
+            return Array.Empty<ProjectFileReference>();
+        }
+
+        var sources = new List<ProjectFileReference>(2);
+        if (source.Entry.BaseFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, ExeFsMainPath));
+        }
+
+        if (source.Entry.LayeredFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExeFsMainPath));
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(candidate => candidate.Layer)
+            .ThenBy(candidate => candidate.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    internal static bool IsSupportedGame(ProjectGame? game)
+    {
+        return game is ProjectGame.Sword or ProjectGame.Shield;
+    }
+
+    private static bool PathsReferToSameFile(string left, string right)
+    {
+        return string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
     public static IReadOnlyList<SwShTypeChartTypeDefinition> Types => TypeDefinitions;
@@ -201,7 +311,10 @@ public sealed class SwShTypeChartWorkflowService
             source,
             TypeDefinitions,
             CreateCells(analysis.EffectivenessValues),
-            new SwShTypeChartWorkflowStats(source?.Status == "available" ? 1 : 0, 1, SwShTypeChartMainPatcher.ChartLength),
+            new SwShTypeChartWorkflowStats(
+                source?.Status == "available" ? 1 : 0,
+                source?.Provenance.SourceLayer == ProjectFileLayer.Layered ? 1 : 0,
+                SwShTypeChartMainPatcher.ChartLength),
             diagnostics);
     }
 
