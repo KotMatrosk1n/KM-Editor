@@ -90,12 +90,24 @@ test('Fashion Unlock bridge contracts run their specialized desktop test', () =>
   assert.match(output, /Run desktop bridge tests/);
 });
 
+test('Gym Uniform Removal bridge contracts run their specialized desktop test', () => {
+  const output = runChangedPrint([
+    'apps/desktop/src/bridge/gymUniformRemovalContracts.ts',
+  ]);
+
+  assert.match(output, /Run nearby desktop bridge test/);
+  assert.match(output, /src\/bridge\/gymUniformRemovalContracts\.test\.ts/);
+  assert.match(output, /Run desktop bridge tests/);
+});
+
 test('Fashion Unlock App changes run focused App staging regressions', () => {
   const output = runChangedPrint(['apps/desktop/src/App.tsx']);
 
   assert.match(output, /Run App regression tests after shell or shared fixture changes/);
   assert.match(output, /Run Fashion Unlock App regressions/);
   assert.match(output, /src\/fashionUnlockUi\.test\.tsx/);
+  assert.match(output, /Run Gym Uniform Removal App regressions/);
+  assert.match(output, /src\/gymUniformRemovalUi\.test\.tsx/);
 });
 
 test('Fashion Unlock backend sources run workflow and bridge integration coverage', () => {
@@ -107,7 +119,16 @@ test('Fashion Unlock backend sources run workflow and bridge integration coverag
   assert.match(output, /Run FashionUnlock bridge integration tests/);
 });
 
-test('fast validation retains Fairy Gym, Fashion Unlock, and Type Chart pending coverage', () => {
+test('Gym Uniform Removal backend sources run workflow and bridge integration coverage', () => {
+  const output = runChangedPrint([
+    'src/KM.SwSh/GymUniformRemoval/SwShGymUniformRemovalEditSessionService.cs',
+  ]);
+
+  assert.match(output, /Run Sword and Shield GymUniformRemoval tests/);
+  assert.match(output, /Run GymUniformRemoval bridge integration tests/);
+});
+
+test('fast validation retains Fairy Gym, Fashion Unlock, Gym Uniform, and Type Chart pending coverage', () => {
   const output = runPrint(['fast', '--print']);
 
   assert.match(output, /src\/fairyGymBoostsUi\.test\.tsx/);
@@ -116,6 +137,10 @@ test('fast validation retains Fairy Gym, Fashion Unlock, and Type Chart pending 
   assert.match(output, /src\/fashionUnlockUi\.test\.tsx/);
   assert.match(output, /src\/features\/fashion-unlock\/FashionUnlockSection\.test\.tsx/);
   assert.match(output, /src\/features\/fashion-unlock\/fashionUnlockPending\.test\.ts/);
+  assert.match(output, /src\/bridge\/gymUniformRemovalContracts\.test\.ts/);
+  assert.match(output, /src\/gymUniformRemovalUi\.test\.tsx/);
+  assert.match(output, /src\/features\/gym-uniform-removal\/GymUniformRemovalSection\.test\.tsx/);
+  assert.match(output, /src\/features\/gym-uniform-removal\/gymUniformRemovalPending\.test\.ts/);
   assert.match(output, /src\/features\/type-chart\/typeChartPending\.test\.ts/);
 });
 

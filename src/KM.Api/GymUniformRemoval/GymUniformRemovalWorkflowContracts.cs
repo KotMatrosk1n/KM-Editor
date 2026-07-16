@@ -32,15 +32,19 @@ public sealed record GymUniformRemovalReservedRegionDto(
 
 public sealed record GymUniformRemovalWorkflowStatsDto(
     int ReservedMainTextRegionCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    int OwnedByteCount);
 
 public sealed record GymUniformRemovalWorkflowDto(
     WorkflowSummaryDto Summary,
     string InstallStatus,
     string InstallMessage,
+    bool CanUninstall,
     string BuildId,
     string PatchOffsetHex,
-    string StubKind,
+    string MainHandlerState,
+    string IpsArtifactState,
+    ProjectGameDto? DetectedGame,
     IReadOnlyList<GymUniformRemovalReservedRegionDto> ReservedRegions,
     GymUniformRemovalProvenanceDto Provenance,
     GymUniformRemovalWorkflowStatsDto Stats,

@@ -15,12 +15,24 @@ public static class SwShChangePlanSourceGuard
 
     public static ChangePlan Capture(ProjectPaths paths, ChangePlan plan)
     {
+        return Capture(paths, plan, preserveExplicitSourceLayers: false);
+    }
+
+    public static ChangePlan Capture(
+        ProjectPaths paths,
+        ChangePlan plan,
+        bool preserveExplicitSourceLayers)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(plan);
 
         var diagnostics = plan.Diagnostics.ToList();
         var writes = plan.Writes
-            .Select(write => CaptureWrite(paths, write, diagnostics))
+            .Select(write => CaptureWrite(
+                paths,
+                write,
+                diagnostics,
+                preserveExplicitSourceLayers))
             .ToArray();
 
         return plan with
@@ -68,6 +80,21 @@ public static class SwShChangePlanSourceGuard
         out VerifiedApplyScope? scope,
         out IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
+        return TryAcquireApplyScope(
+            paths,
+            currentPlan,
+            out scope,
+            out diagnostics,
+            preserveExplicitSourceLayers: false);
+    }
+
+    public static bool TryAcquireApplyScope(
+        ProjectPaths paths,
+        ChangePlan currentPlan,
+        out VerifiedApplyScope? scope,
+        out IReadOnlyList<ValidationDiagnostic> diagnostics,
+        bool preserveExplicitSourceLayers)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(currentPlan);
 
@@ -88,7 +115,10 @@ public static class SwShChangePlanSourceGuard
                 OutputRootPath = ResolveStableConfiguredRoot(paths.OutputRootPath),
             };
             var normalizedWrites = currentPlan.Writes
-                .Select(write => NormalizeWrite(stablePaths, write))
+                .Select(write => NormalizeWrite(
+                    stablePaths,
+                    write,
+                    preserveExplicitSourceLayers))
                 .ToArray();
 
             foreach (var write in normalizedWrites)
@@ -200,7 +230,8 @@ public static class SwShChangePlanSourceGuard
                 snapshotRootPath,
                 snapshotOutputRootPath,
                 sourceStreams,
-                snapshotFileStates);
+                snapshotFileStates,
+                preserveExplicitSourceLayers);
             diagnostics = scopeDiagnostics;
             return true;
         }
@@ -220,15 +251,30 @@ public static class SwShChangePlanSourceGuard
     private static PlannedFileWrite CaptureWrite(
         ProjectPaths paths,
         PlannedFileWrite write,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool preserveExplicitSourceLayers)
     {
-        return CaptureWriteFingerprint(paths, NormalizeWrite(paths, write), null, diagnostics);
+        return CaptureWriteFingerprint(
+            paths,
+            NormalizeWrite(paths, write, preserveExplicitSourceLayers),
+            null,
+            diagnostics);
     }
 
-    private static PlannedFileWrite NormalizeWrite(ProjectPaths paths, PlannedFileWrite write)
+    private static PlannedFileWrite NormalizeWrite(
+        ProjectPaths paths,
+        PlannedFileWrite write,
+        bool preserveExplicitSourceLayers)
     {
-        var normalizedSources = NormalizeSources(paths, write.Sources).ToList();
-        AddAuthoritativeTargetSource(paths, write.TargetRelativePath, normalizedSources);
+        var normalizedSources = NormalizeSources(
+            paths,
+            write.Sources,
+            preserveExplicitSourceLayers).ToList();
+        AddAuthoritativeTargetSource(
+            paths,
+            write.TargetRelativePath,
+            normalizedSources,
+            preserveExplicitSourceLayers);
         return write with { Sources = normalizedSources };
     }
 
@@ -254,9 +300,20 @@ public static class SwShChangePlanSourceGuard
     private static void AddAuthoritativeTargetSource(
         ProjectPaths paths,
         string targetRelativePath,
-        ICollection<ProjectFileReference> sources)
+        ICollection<ProjectFileReference> sources,
+        bool preserveExplicitSourceLayers)
     {
         var normalizedTarget = NormalizeRelativePath(targetRelativePath);
+        if (preserveExplicitSourceLayers
+            && sources.Any(source => source.Layer == ProjectFileLayer.Generated
+                && string.Equals(
+                    NormalizeRelativePath(source.RelativePath),
+                    normalizedTarget,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
         var effectiveLayer = ResolveEffectiveLayer(paths, normalizedTarget)
             ?? ProjectFileLayer.Generated;
         if (sources.Any(source => source.Layer == effectiveLayer
@@ -273,7 +330,8 @@ public static class SwShChangePlanSourceGuard
 
     private static IReadOnlyList<ProjectFileReference> NormalizeSources(
         ProjectPaths paths,
-        IReadOnlyList<ProjectFileReference> sources)
+        IReadOnlyList<ProjectFileReference> sources,
+        bool preserveExplicitSourceLayers)
     {
         var normalizedSources = new List<ProjectFileReference>(sources.Count);
         foreach (var group in sources.GroupBy(
@@ -281,7 +339,8 @@ public static class SwShChangePlanSourceGuard
             StringComparer.OrdinalIgnoreCase))
         {
             var groupedSources = group.ToArray();
-            if (groupedSources.Length == 1
+            if (!preserveExplicitSourceLayers
+                && groupedSources.Length == 1
                 && groupedSources[0].Layer is ProjectFileLayer.Base or ProjectFileLayer.Layered)
             {
                 var effectiveLayer = ResolveEffectiveLayer(paths, groupedSources[0].RelativePath);
@@ -685,6 +744,7 @@ public static class SwShChangePlanSourceGuard
         private readonly string snapshotOutputRootPath;
         private readonly Dictionary<SourceIdentity, FileStream> sourceStreams;
         private readonly IReadOnlyDictionary<string, SnapshotFileState> initialSnapshotFileStates;
+        private readonly bool preserveExplicitSourceLayers;
         private bool commitAttempted;
         private bool disposed;
 
@@ -695,7 +755,8 @@ public static class SwShChangePlanSourceGuard
             string snapshotRootPath,
             string snapshotOutputRootPath,
             Dictionary<SourceIdentity, FileStream> sourceStreams,
-            IReadOnlyDictionary<string, SnapshotFileState> initialSnapshotFileStates)
+            IReadOnlyDictionary<string, SnapshotFileState> initialSnapshotFileStates,
+            bool preserveExplicitSourceLayers)
         {
             SourcePaths = sourcePaths;
             CurrentPlan = currentPlan;
@@ -704,6 +765,7 @@ public static class SwShChangePlanSourceGuard
             this.snapshotOutputRootPath = snapshotOutputRootPath;
             this.sourceStreams = sourceStreams;
             this.initialSnapshotFileStates = initialSnapshotFileStates;
+            this.preserveExplicitSourceLayers = preserveExplicitSourceLayers;
         }
 
         public ProjectPaths SourcePaths { get; }
@@ -717,7 +779,10 @@ public static class SwShChangePlanSourceGuard
             ArgumentNullException.ThrowIfNull(snapshotPlan);
             ThrowIfDisposed();
 
-            preparedPlan = Capture(ApplyPaths, snapshotPlan);
+            preparedPlan = Capture(
+                ApplyPaths,
+                snapshotPlan,
+                preserveExplicitSourceLayers);
             preparedPlan = preparedPlan with
             {
                 Diagnostics = preparedPlan.Diagnostics

@@ -2853,7 +2853,8 @@ public sealed class ProjectBridgeDispatcher
                 ClearCriticalSwShApplyCaches();
                 changePlan = SwShChangePlanSourceGuard.Capture(
                     paths,
-                    CreateSwShChangePlan(paths, session));
+                    CreateSwShChangePlan(paths, session),
+                    SwShGymUniformRemovalEditSessionService.IsCanonicalUninstallSession(session));
             }
         }
 
@@ -2889,11 +2890,14 @@ public sealed class ProjectBridgeDispatcher
         {
             ClearCriticalSwShApplyCaches();
             var currentPlan = CreateSwShChangePlan(paths, session);
+            var preserveExplicitSourceLayers =
+                SwShGymUniformRemovalEditSessionService.IsCanonicalUninstallSession(session);
             if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
                 paths,
                 currentPlan,
                 out var verifiedScope,
-                out var sourceDiagnostics))
+                out var sourceDiagnostics,
+                preserveExplicitSourceLayers))
             {
                 return CreateStaleSourceApplyResult(
                     reviewedPlan,

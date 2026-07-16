@@ -8,7 +8,6 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
-  type GymUniformRemovalWorkflow,
   type HyperTrainingWorkflow,
   type ItemsWorkflow,
   type IvScreenWorkflow,
@@ -35,6 +34,7 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
+import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';

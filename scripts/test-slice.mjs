@@ -220,7 +220,7 @@ function addFastCommands() {
     { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
     {
       label: 'Run focused desktop unit and bridge tests',
-      command: `pnpm --dir apps/desktop test:run src/AppErrorBoundary.test.tsx src/diagnostics.test.ts src/errorReporting.test.ts src/pokemonSprites.test.ts src/workbenchStore.test.ts src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts src/bridge/fairyGymBoostsContracts.test.ts src/bridge/fashionUnlockContracts.test.ts src/fairyGymBoostsUi.test.tsx src/fashionUnlockUi.test.tsx src/features/fairy-gym-boosts/FairyGymBoostsSection.test.tsx src/features/fairy-gym-boosts/fairyGymBoostsPending.test.ts src/features/fashion-unlock/FashionUnlockSection.test.tsx src/features/fashion-unlock/fashionUnlockPending.test.ts src/features/type-chart/typeChartPending.test.ts ${appTimeout}`,
+      command: `pnpm --dir apps/desktop test:run src/AppErrorBoundary.test.tsx src/diagnostics.test.ts src/errorReporting.test.ts src/pokemonSprites.test.ts src/workbenchStore.test.ts src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts src/bridge/fairyGymBoostsContracts.test.ts src/bridge/fashionUnlockContracts.test.ts src/bridge/gymUniformRemovalContracts.test.ts src/fairyGymBoostsUi.test.tsx src/fashionUnlockUi.test.tsx src/gymUniformRemovalUi.test.tsx src/features/fairy-gym-boosts/FairyGymBoostsSection.test.tsx src/features/fairy-gym-boosts/fairyGymBoostsPending.test.ts src/features/fashion-unlock/FashionUnlockSection.test.tsx src/features/fashion-unlock/fashionUnlockPending.test.ts src/features/gym-uniform-removal/GymUniformRemovalSection.test.tsx src/features/gym-uniform-removal/gymUniformRemovalPending.test.ts src/features/type-chart/typeChartPending.test.ts ${appTimeout}`,
     },
     {
       label: 'Run App shell and advanced editor smoke tests',
@@ -602,6 +602,7 @@ function mapDesktopChange(file) {
   if (file === 'apps/desktop/src/App.tsx' || file.startsWith('apps/desktop/src/testSupport/')) {
     add('desktop-app-tests', 'Run App regression tests after shell or shared fixture changes', `pnpm --dir apps/desktop test:run src/App.test.tsx ${appTimeout}`);
     add('desktop-fashion-unlock-ui', 'Run Fashion Unlock App regressions', `pnpm --dir apps/desktop test:run src/fashionUnlockUi.test.tsx ${appTimeout}`);
+    add('desktop-gym-uniform-removal-ui', 'Run Gym Uniform Removal App regressions', `pnpm --dir apps/desktop test:run src/gymUniformRemovalUi.test.tsx ${appTimeout}`);
     return;
   }
 
@@ -638,7 +639,7 @@ function mapSwShChange(file) {
 
   if (filterText) {
     add(`swsh-feature:${feature}`, `Run Sword and Shield ${feature} tests`, dotnetProject('tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj', expandFilter(filterText)));
-    if (['DynamaxAdventures', 'FairyGymBoosts', 'FashionUnlock', 'RoyalCandy', 'StartingItems', 'TypeChart'].includes(feature)) {
+    if (['DynamaxAdventures', 'FairyGymBoosts', 'FashionUnlock', 'GymUniformRemoval', 'RoyalCandy', 'StartingItems', 'TypeChart'].includes(feature)) {
       add(
         `integration-feature:${feature}`,
         `Run ${feature} bridge integration tests`,

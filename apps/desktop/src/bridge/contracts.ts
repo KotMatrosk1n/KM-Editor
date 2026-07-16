@@ -354,10 +354,6 @@ export const loadTypeChartWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
-export const loadGymUniformRemovalWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
-});
-
 export const loadIvScreenWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
@@ -2823,65 +2819,6 @@ export const stageTypeChartUninstallRequestSchema = z.strictObject({ paths: proj
 
 export const stageTypeChartUninstallResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: typeChartWorkflowSchema });
 
-export const gymUniformRemovalProvenanceSchema = z.strictObject({
-  fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
-});
-
-export const gymUniformRemovalReservedRegionSchema = z.strictObject({
-  label: z.string(),
-  length: z.number().int().nullable(),
-  offsetLabel: z.string(),
-  regionId: z.string(),
-  rule: z.string(),
-  startOffset: z.number().int().nullable()
-});
-
-export const gymUniformRemovalWorkflowStatsSchema = z.strictObject({
-  reservedMainTextRegionCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
-});
-
-export const gymUniformRemovalWorkflowSchema = z.strictObject({
-  buildId: z.string(),
-  diagnostics: z.array(apiDiagnosticSchema),
-  installMessage: z.string(),
-  installStatus: z.string(),
-  patchOffsetHex: z.string(),
-  provenance: gymUniformRemovalProvenanceSchema,
-  reservedRegions: z.array(gymUniformRemovalReservedRegionSchema),
-  stats: gymUniformRemovalWorkflowStatsSchema,
-  stubKind: z.string(),
-  summary: workflowSummarySchema
-});
-
-export const loadGymUniformRemovalWorkflowResponseSchema = z.strictObject({
-  workflow: gymUniformRemovalWorkflowSchema
-});
-
-export const stageGymUniformRemovalInstallRequestSchema = z.strictObject({
-  paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
-});
-
-export const stageGymUniformRemovalInstallResponseSchema = z.strictObject({
-  diagnostics: z.array(apiDiagnosticSchema),
-  session: editSessionSchema,
-  workflow: gymUniformRemovalWorkflowSchema
-});
-
-export const stageGymUniformRemovalUninstallRequestSchema = z.strictObject({
-  paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
-});
-
-export const stageGymUniformRemovalUninstallResponseSchema = z.strictObject({
-  diagnostics: z.array(apiDiagnosticSchema),
-  session: editSessionSchema,
-  workflow: gymUniformRemovalWorkflowSchema
-});
-
 export const ivScreenProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -3935,10 +3872,6 @@ export type TypeChartCell = z.infer<typeof typeChartCellSchema>;
 export type TypeChartSourceRecord = z.infer<typeof typeChartSourceRecordSchema>;
 export type TypeChartTypeDefinition = z.infer<typeof typeChartTypeDefinitionSchema>;
 export type TypeChartWorkflow = z.infer<typeof typeChartWorkflowSchema>;
-export type GymUniformRemovalReservedRegion = z.infer<
-  typeof gymUniformRemovalReservedRegionSchema
->;
-export type GymUniformRemovalWorkflow = z.infer<typeof gymUniformRemovalWorkflowSchema>;
 export type IvScreenReservedRegion = z.infer<typeof ivScreenReservedRegionSchema>;
 export type IvScreenWorkflow = z.infer<typeof ivScreenWorkflowSchema>;
 export type RoyalCandyOutputRecord = z.infer<typeof royalCandyOutputRecordSchema>;
@@ -4145,24 +4078,6 @@ export type StageTypeChartRequest = z.infer<typeof stageTypeChartRequestSchema>;
 export type StageTypeChartResponse = z.infer<typeof stageTypeChartResponseSchema>;
 export type StageTypeChartUninstallRequest = z.infer<typeof stageTypeChartUninstallRequestSchema>;
 export type StageTypeChartUninstallResponse = z.infer<typeof stageTypeChartUninstallResponseSchema>;
-export type LoadGymUniformRemovalWorkflowRequest = z.infer<
-  typeof loadGymUniformRemovalWorkflowRequestSchema
->;
-export type LoadGymUniformRemovalWorkflowResponse = z.infer<
-  typeof loadGymUniformRemovalWorkflowResponseSchema
->;
-export type StageGymUniformRemovalInstallRequest = z.infer<
-  typeof stageGymUniformRemovalInstallRequestSchema
->;
-export type StageGymUniformRemovalInstallResponse = z.infer<
-  typeof stageGymUniformRemovalInstallResponseSchema
->;
-export type StageGymUniformRemovalUninstallRequest = z.infer<
-  typeof stageGymUniformRemovalUninstallRequestSchema
->;
-export type StageGymUniformRemovalUninstallResponse = z.infer<
-  typeof stageGymUniformRemovalUninstallResponseSchema
->;
 export type LoadIvScreenWorkflowRequest = z.infer<typeof loadIvScreenWorkflowRequestSchema>;
 export type LoadIvScreenWorkflowResponse = z.infer<typeof loadIvScreenWorkflowResponseSchema>;
 export type StageIvScreenInstallRequest = z.infer<typeof stageIvScreenInstallRequestSchema>;

@@ -10,7 +10,6 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
-  type GymUniformRemovalWorkflow,
   type HyperTrainingWorkflow,
   type IvScreenWorkflow,
   type ItemRecord,
@@ -43,6 +42,7 @@ import {
   type ZaModMergerWorkflow
 } from '../bridge/contracts';
 import { type FashionUnlockWorkflow } from '../bridge/fashionUnlockContracts';
+import { type GymUniformRemovalWorkflow } from '../bridge/gymUniformRemovalContracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
 import { parseShopInventoryUpdateItemIds } from '../features/shops/shopInventoryUpdate';
@@ -4298,9 +4298,13 @@ export function createMockProjectBridge(
   };
   const gymUniformRemovalWorkflow: GymUniformRemovalWorkflow = {
     buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    canUninstall: false,
+    detectedGame: 'sword',
     diagnostics: [],
     installMessage: 'Gym Uniform Removal can create a build-ID IPS patch in exefs.',
     installStatus: canEdit ? 'available' : 'readOnly',
+    ipsArtifactState: 'notPresent',
+    mainHandlerState: 'vanilla',
     patchOffsetHex: 'main.text+0x01472600',
     provenance: {
       fileState: 'baseOnly',
@@ -4309,7 +4313,7 @@ export function createMockProjectBridge(
     },
     reservedRegions: [
       {
-        label: 'Gym Uniform Removal gym outfit handler override',
+        label: 'Gym Uniform Removal Sword uniform-change handler',
         length: 8,
         offsetLabel: 'text+0x1472600..0x1472607',
         regionId: 'gym-uniform-removal-sword-handler',
@@ -4318,10 +4322,10 @@ export function createMockProjectBridge(
       }
     ],
     stats: {
+      ownedByteCount: 8,
       reservedMainTextRegionCount: 1,
       sourceFileCount: 1
     },
-    stubKind: 'vanilla handler',
     summary: gymUniformRemovalWorkflowSummary
   };
   const hyperspaceBypassBridgeFixture = createHyperspaceBypassBridgeFixture(canEdit);
@@ -6382,12 +6386,16 @@ export function createMockProjectBridge(
               recordId: 'gym-uniform-removal-v1-install',
               sources: [
                 {
-                  layer: 'generated',
-                  relativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
-                },
-                {
                   layer: 'base',
                   relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'pending',
+                  relativePath: `pending/gym-uniform-removal/install/${calculatePendingPayloadSha256('true')}`
+                },
+                {
+                  layer: 'generated',
+                  relativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
                 }
               ],
               summary: 'Stage Gym Uniform Removal install.'
@@ -6415,12 +6423,16 @@ export function createMockProjectBridge(
               recordId: 'gym-uniform-removal-v1-uninstall',
               sources: [
                 {
-                  layer: 'generated',
-                  relativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
-                },
-                {
                   layer: 'base',
                   relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'pending',
+                  relativePath: `pending/gym-uniform-removal/uninstall/${calculatePendingPayloadSha256('true')}`
+                },
+                {
+                  layer: 'generated',
+                  relativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
                 }
               ],
               summary: 'Stage Gym Uniform Removal uninstall.'
@@ -6430,12 +6442,13 @@ export function createMockProjectBridge(
         },
         workflow: {
           ...gymUniformRemovalWorkflow,
+          canUninstall: true,
           installMessage: 'Gym Uniform Removal is installed.',
           installStatus: 'installed',
-          provenance: {
-            fileState: 'layeredOverride',
-            sourceFile: 'exefs/main',
-            sourceLayer: 'layered'
+          ipsArtifactState: 'current',
+          stats: {
+            ...gymUniformRemovalWorkflow.stats,
+            sourceFileCount: 2
           }
         }
       }),
