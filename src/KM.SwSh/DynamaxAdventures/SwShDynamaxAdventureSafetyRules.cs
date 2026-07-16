@@ -110,21 +110,26 @@ internal static class SwShDynamaxAdventureSafetyRules
         int form,
         IReadOnlyList<SwShPersonalRecord> personalRecords)
     {
-        if ((uint)species >= (uint)personalRecords.Count)
+        if ((uint)species >= (uint)personalRecords.Count || form < 0)
         {
             return null;
         }
 
         var record = personalRecords[species];
-        if (form <= 0 || record.FormStatsIndex <= 0)
+        if (form == 0)
         {
             return record;
         }
 
-        var formPersonalId = record.FormStatsIndex + form - 1;
+        if (record.FormCount <= form || record.FormStatsIndex <= 0)
+        {
+            return null;
+        }
+
+        var formPersonalId = checked(record.FormStatsIndex + form - 1);
         return (uint)formPersonalId < (uint)personalRecords.Count
             ? personalRecords[formPersonalId]
-            : record;
+            : null;
     }
 
     public static bool CanLearnMove(

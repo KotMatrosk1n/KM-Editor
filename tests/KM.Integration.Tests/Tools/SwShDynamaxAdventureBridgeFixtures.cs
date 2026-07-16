@@ -1,13 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using KM.Core.Projects;
 using KM.SwSh.DynamaxAdventures;
+using KM.SwSh.Workflows;
+using KM.Tools.Bridge;
+using System.Buffers.Binary;
 
 namespace KM.Integration.Tests.Tools;
 
 internal static class SwShDynamaxAdventureBridgeFixtures
 {
     private const int BossStartRow = 226;
+
+    public static ProjectBridgeDispatcher CreateSyntheticDispatcher()
+    {
+        var workspace = new ProjectWorkspaceService();
+        var dynamaxWorkflow = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests();
+        return new ProjectBridgeDispatcher(
+            projectWorkspaceService: workspace,
+            dynamaxAdventuresEditSessionService: new SwShDynamaxAdventuresEditSessionService(
+                workspace,
+                dynamaxWorkflow),
+            dynamaxAdventureSeedPlanningService: SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests(
+                workspace),
+            swShWorkflowService: new SwShWorkflowService(
+                workspace,
+                dynamaxAdventuresWorkflowService: dynamaxWorkflow));
+    }
 
     public static void WriteBaseDynamaxAdventures(TemporaryBridgeProject temp)
     {
@@ -120,12 +140,24 @@ internal static class SwShDynamaxAdventureBridgeFixtures
 
     public static void WriteBasePersonalData(TemporaryBridgeProject temp, int count = 200)
     {
+        var includesEeveeFormRecord = count > 133;
+        var recordCount = includesEeveeFormRecord ? count + 1 : count;
         temp.WriteBaseRomFsFile(
             SwShPersonalTable.PersonalDataRelativePath["romfs/".Length..],
-            CreatePersonalTable(Enumerable.Range(0, count).Select(_ =>
+            CreatePersonalTable(Enumerable.Range(0, recordCount).Select(index =>
             {
                 var record = CreatePersonalRecord(type1: 0, type2: 0);
                 record[0x21] |= 0x40;
+                if (includesEeveeFormRecord && index == 133)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1E), checked((ushort)count));
+                    record[0x20] = 2;
+                }
+                else if (includesEeveeFormRecord && index == count)
+                {
+                    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), 133);
+                    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5E), 1);
+                }
                 return record;
             })));
     }
@@ -134,6 +166,11 @@ internal static class SwShDynamaxAdventureBridgeFixtures
     {
         WriteMoveData(temp, (10, true), (85, true));
         WriteLearnsetData(temp, recordCount: 200, (25, [(85, 50), (10, 70)]));
+    }
+
+    public static void WriteBaseUsableMoves(TemporaryBridgeProject temp, params int[] moveIds)
+    {
+        WriteMoveData(temp, moveIds.Select(moveId => (moveId, true)).ToArray());
     }
 
     private static SwShDynamaxAdventureRecord CreateRecord(

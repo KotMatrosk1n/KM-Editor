@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
+using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
@@ -32,7 +33,8 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
     public void FullWorkflowLoadingHasSyntheticPerformanceBaseline()
     {
         using var temp = SwShPerformanceFixtureProject.Create();
-        var workflowService = new SwShWorkflowService();
+        var workflowService = new SwShWorkflowService(
+            dynamaxAdventuresWorkflowService: SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests());
         var measurements = new List<Measurement>();
 
         var openedProject = Record(measurements, "project.open", () => new ProjectWorkspaceService().Open(temp.Paths));
@@ -52,7 +54,11 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var tradePokemon = Record(measurements, "tradePokemon.load", () => workflowService.LoadTradePokemon(temp.Paths));
         var staticEncounters = Record(measurements, "staticEncounters.load", () => workflowService.LoadStaticEncounters(temp.Paths));
         var rentalPokemon = Record(measurements, "rentalPokemon.load", () => workflowService.LoadRentalPokemon(temp.Paths));
-        var dynamaxAdventures = Record(measurements, "dynamaxAdventures.load", () => workflowService.LoadDynamaxAdventures(temp.Paths));
+        var dynamaxAdventures = Record(
+            measurements,
+            "dynamaxAdventures.load",
+            () => workflowService.LoadDynamaxAdventures(
+                temp.Paths with { SelectedGame = ProjectGame.Sword }));
         var shops = Record(measurements, "shops.load", () => workflowService.LoadShops(temp.Paths));
         var encounters = Record(measurements, "encounters.load", () => workflowService.LoadEncounters(temp.Paths));
         var raidBattles = Record(measurements, "raidBattles.load", () => workflowService.LoadRaidBattles(temp.Paths));

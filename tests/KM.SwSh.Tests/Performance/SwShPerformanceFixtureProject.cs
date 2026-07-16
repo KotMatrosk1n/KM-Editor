@@ -256,7 +256,7 @@ internal static class SwShPerformanceFixtureProject
                         IsSingleCapture: index % 5 == 0,
                         SingleCaptureFlagBlock: 0x5500000000000000UL + (ulong)index,
                         Field02: 0,
-                        Form: index % 3,
+                        Form: 0,
                         GigantamaxState: index % 3,
                         BallItemId: 4,
                         AdventureIndex: 1000 + index,

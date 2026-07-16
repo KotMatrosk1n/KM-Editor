@@ -21,23 +21,40 @@ public sealed class SwShPokemonAbilityOptionResolver
     private readonly IReadOnlyList<SwShPersonalRecord> records;
     private readonly IReadOnlyList<string> abilityNames;
 
-    public static SwShPokemonAbilityOptionResolver Empty { get; } = new([], []);
+    public static SwShPokemonAbilityOptionResolver Empty { get; } = new(
+        [],
+        [],
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+    internal IReadOnlySet<string> ParsedSourcePaths { get; }
 
     private SwShPokemonAbilityOptionResolver(
         IReadOnlyList<SwShPersonalRecord> records,
-        IReadOnlyList<string> abilityNames)
+        IReadOnlyList<string> abilityNames,
+        IReadOnlySet<string> parsedSourcePaths)
     {
         this.records = records;
         this.abilityNames = abilityNames;
+        ParsedSourcePaths = parsedSourcePaths;
     }
 
     public static SwShPokemonAbilityOptionResolver Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        return new SwShPokemonAbilityOptionResolver(
-            LoadPersonalRecords(project),
-            LoadAbilityNames(project));
+        var records = LoadPersonalRecords(project, out var personalSourcePath);
+        var abilityNames = LoadAbilityNames(project, out var abilitySourcePath);
+        var parsedSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (personalSourcePath is not null)
+        {
+            parsedSourcePaths.Add(personalSourcePath);
+        }
+        if (abilitySourcePath is not null)
+        {
+            parsedSourcePaths.Add(abilitySourcePath);
+        }
+
+        return new SwShPokemonAbilityOptionResolver(records, abilityNames, parsedSourcePaths);
     }
 
     public IReadOnlyList<SwShAbilitySlotOption> CreateOptions(
@@ -138,8 +155,11 @@ public sealed class SwShPokemonAbilityOptionResolver
             : $"{slot} - {string.Join(" / ", knownAbilities)}";
     }
 
-    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(OpenedProject project)
+    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(
+        OpenedProject project,
+        out string? parsedSourcePath)
     {
+        parsedSourcePath = null;
         var source = ResolveWorkflowFile(project, SwShPersonalTable.PersonalDataRelativePath);
         if (source is null)
         {
@@ -148,7 +168,9 @@ public sealed class SwShPokemonAbilityOptionResolver
 
         try
         {
-            return SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+            var records = SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+            parsedSourcePath = Path.GetFullPath(source.AbsolutePath);
+            return records;
         }
         catch (InvalidDataException)
         {
@@ -164,8 +186,11 @@ public sealed class SwShPokemonAbilityOptionResolver
         }
     }
 
-    private static IReadOnlyList<string> LoadAbilityNames(OpenedProject project)
+    private static IReadOnlyList<string> LoadAbilityNames(
+        OpenedProject project,
+        out string? parsedSourcePath)
     {
+        parsedSourcePath = null;
         var source = ResolveWorkflowFile(project, ResolveCommonTextPath(project, "tokusei.dat"));
         if (source is null)
         {
@@ -174,10 +199,12 @@ public sealed class SwShPokemonAbilityOptionResolver
 
         try
         {
-            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+            var names = SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
                 .Lines
                 .Select(line => line.Text)
                 .ToArray();
+            parsedSourcePath = Path.GetFullPath(source.AbsolutePath);
+            return names;
         }
         catch (InvalidDataException)
         {

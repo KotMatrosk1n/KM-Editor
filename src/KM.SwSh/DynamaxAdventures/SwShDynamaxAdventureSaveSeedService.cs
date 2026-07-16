@@ -4,18 +4,56 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using PKHeX.Core;
 using System.Globalization;
+using System.Security.Cryptography;
 
 namespace KM.SwSh.DynamaxAdventures;
 
 public sealed class SwShDynamaxAdventureSaveSeedService
 {
     public const uint MaxLairRentalChoiceSeedKey = 0x0D74AA40;
+    private const int MaximumSaveByteLength = 64 * 1024 * 1024;
+
+    private readonly Action<string, string>? afterReplacement;
+    private readonly Action<string>? beforeRollbackReplacement;
+    private readonly Action<string>? afterRollbackSwap;
+    private readonly Action<string>? beforeExternalTargetRestoreReplacement;
+    private readonly Action<string>? afterExternalTargetRestoreSwap;
+    private readonly Action<string>? afterRollbackVerificationBeforeCleanup;
+
+    public SwShDynamaxAdventureSaveSeedService()
+    {
+    }
+
+    internal SwShDynamaxAdventureSaveSeedService(
+        Action<string, string> afterReplacement,
+        Action<string>? beforeRollbackReplacement = null,
+        Action<string>? afterRollbackSwap = null,
+        Action<string>? beforeExternalTargetRestoreReplacement = null,
+        Action<string>? afterExternalTargetRestoreSwap = null,
+        Action<string>? afterRollbackVerificationBeforeCleanup = null)
+    {
+        this.afterReplacement = afterReplacement ?? throw new ArgumentNullException(nameof(afterReplacement));
+        this.beforeRollbackReplacement = beforeRollbackReplacement;
+        this.afterRollbackSwap = afterRollbackSwap;
+        this.beforeExternalTargetRestoreReplacement = beforeExternalTargetRestoreReplacement;
+        this.afterExternalTargetRestoreSwap = afterExternalTargetRestoreSwap;
+        this.afterRollbackVerificationBeforeCleanup = afterRollbackVerificationBeforeCleanup;
+    }
 
     public SwShDynamaxAdventureSaveSeedResult SetSeed(ProjectPaths paths, ulong seed)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         var diagnostics = new List<ValidationDiagnostic>();
+        if (!SwShDynamaxAdventuresWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Writing a Max Lair seed requires Pokemon Sword or Pokemon Shield to be selected explicitly.",
+                expected: "Selected Pokemon Sword or Pokemon Shield project"));
+            return SwShDynamaxAdventureSaveSeedResult.NotWritten(seed, diagnostics);
+        }
+
         if (!TryResolveSavePath(paths, diagnostics, out var savePath))
         {
             return SwShDynamaxAdventureSaveSeedResult.NotWritten(
@@ -24,9 +62,22 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 diagnostics);
         }
 
+        string? tempPath = null;
         try
         {
-            var save = ReadSwordShieldSave(savePath);
+            var sourceBytes = ReadBoundedFile(savePath);
+            var sourceSnapshot = CaptureSnapshot(sourceBytes);
+            var save = ReadSwordShieldSave(sourceBytes, savePath);
+            if (!SaveMatchesSelectedGame(save, paths.SelectedGame!.Value))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The configured save belongs to the other Sword/Shield version. The Max Lair seed was not changed.",
+                    file: savePath,
+                    expected: $"A {paths.SelectedGame.Value} save file"));
+                return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
+            }
+
             if (!save.ChecksumsValid)
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -53,51 +104,85 @@ public sealed class SwShDynamaxAdventureSaveSeedService
 
             block.SetValue(seed);
             save.State.Edited = true;
-            var tempPath = savePath + ".km-editor.tmp";
-            File.WriteAllBytes(tempPath, save.Write().ToArray());
+            tempPath = WriteUniqueSiblingFile(savePath, "tmp", save.Write().ToArray());
 
-            try
+            var tempBytes = ReadBoundedFile(tempPath);
+            var tempSave = ReadSwordShieldSave(tempBytes, tempPath);
+            var tempSeed = (ulong)tempSave.Accessor.GetBlockSafe(MaxLairRentalChoiceSeedKey).GetValue();
+            if (!SaveMatchesSelectedGame(tempSave, paths.SelectedGame.Value)
+                || !tempSave.ChecksumsValid
+                || tempSeed != seed)
             {
-                var tempSave = ReadSwordShieldSave(tempPath);
-                var tempSeed = (ulong)tempSave.Accessor.GetBlockSafe(MaxLairRentalChoiceSeedKey).GetValue();
-                if (!tempSave.ChecksumsValid || tempSeed != seed)
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Rewritten save verification failed. The original save was not changed.",
+                    file: savePath,
+                    expected: "Verified checksum, selected game, and requested Max Lair seed"));
+                return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
+            }
+
+            if (CaptureFileSnapshot(savePath) != sourceSnapshot)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The save changed after it was read. The Max Lair seed was not written.",
+                    file: savePath,
+                    expected: "Unchanged source save during verified replacement"));
+                return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
+            }
+
+            var replacement = ReplaceWithVerifiedRollback(
+                savePath,
+                tempPath,
+                sourceSnapshot,
+                CaptureSnapshot(tempBytes),
+                () =>
+                {
+                    var finalBytes = ReadBoundedFile(savePath);
+                    var finalSave = ReadSwordShieldSave(finalBytes, savePath);
+                    var finalSeed = (ulong)finalSave.Accessor.GetBlockSafe(MaxLairRentalChoiceSeedKey).GetValue();
+                    return SaveMatchesSelectedGame(finalSave, paths.SelectedGame.Value)
+                        && finalSave.ChecksumsValid
+                        && finalSeed == seed;
+                });
+            tempPath = null;
+
+            if (!replacement.Succeeded)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    CreateReplacementFailureMessage(replacement),
+                    file: savePath,
+                    expected: "Atomic verified save replacement"));
+                if (replacement.Exception is not null)
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        "Rewritten save verification failed. The original save was not changed.",
+                        $"Post-replacement verification failed: {replacement.Exception.Message}",
                         file: savePath,
-                        expected: "Verified checksum and requested Max Lair seed"));
-                    return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
-                }
-
-                var backupPath = CreateBackupPath(savePath);
-                File.Replace(tempPath, savePath, backupPath, ignoreMetadataErrors: true);
-
-                var finalSave = ReadSwordShieldSave(savePath);
-                var finalSeed = (ulong)finalSave.Accessor.GetBlockSafe(MaxLairRentalChoiceSeedKey).GetValue();
-                var verified = finalSave.ChecksumsValid && finalSeed == seed;
-                if (!verified)
-                {
-                    diagnostics.Add(CreateDiagnostic(
-                        DiagnosticSeverity.Error,
-                        "Save write completed but final verification failed. Restore the backup before testing.",
-                        file: savePath,
-                        expected: "Verified checksum and requested Max Lair seed"));
+                        expected: "Readable verified replacement"));
                 }
 
                 return new SwShDynamaxAdventureSaveSeedResult(
                     savePath,
-                    backupPath,
+                    replacement.RecoveryFilePath,
                     FormatSeed(oldSeed),
                     FormatSeed(seed),
-                    WasChanged: true,
-                    ChecksumsValid: verified,
+                    WasChanged: false,
+                    ChecksumsValid: replacement.RollbackVerified
+                        && !replacement.SourceChanged
+                        && !replacement.TargetDiverged,
                     diagnostics);
             }
-            finally
-            {
-                DeleteTempFile(tempPath);
-            }
+
+            return new SwShDynamaxAdventureSaveSeedResult(
+                savePath,
+                replacement.BackupFilePath,
+                FormatSeed(oldSeed),
+                FormatSeed(seed),
+                WasChanged: true,
+                ChecksumsValid: true,
+                diagnostics);
         }
         catch (Exception exception) when (
             exception is InvalidDataException
@@ -112,6 +197,13 @@ public sealed class SwShDynamaxAdventureSaveSeedService
                 expected: "Writable Sword/Shield save file"));
             return SwShDynamaxAdventureSaveSeedResult.NotWritten(savePath, seed, diagnostics);
         }
+        finally
+        {
+            if (tempPath is not null)
+            {
+                DeleteTempFile(tempPath);
+            }
+        }
     }
 
     public SwShDynamaxAdventureSaveSeedInspectResult Inspect(ProjectPaths paths)
@@ -119,6 +211,15 @@ public sealed class SwShDynamaxAdventureSaveSeedService
         ArgumentNullException.ThrowIfNull(paths);
 
         var diagnostics = new List<ValidationDiagnostic>();
+        if (!SwShDynamaxAdventuresWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Reading a Max Lair seed requires Pokemon Sword or Pokemon Shield to be selected explicitly.",
+                expected: "Selected Pokemon Sword or Pokemon Shield project"));
+            return new SwShDynamaxAdventureSaveSeedInspectResult(null, null, false, diagnostics);
+        }
+
         if (!TryResolveSavePath(paths, diagnostics, out var savePath))
         {
             return new SwShDynamaxAdventureSaveSeedInspectResult(null, null, false, diagnostics);
@@ -126,7 +227,17 @@ public sealed class SwShDynamaxAdventureSaveSeedService
 
         try
         {
-            var save = ReadSwordShieldSave(savePath);
+            var save = ReadSwordShieldSave(ReadBoundedFile(savePath), savePath);
+            if (!SaveMatchesSelectedGame(save, paths.SelectedGame!.Value))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The configured save belongs to the other Sword/Shield version.",
+                    file: savePath,
+                    expected: $"A {paths.SelectedGame.Value} save file"));
+                return new SwShDynamaxAdventureSaveSeedInspectResult(savePath, null, false, diagnostics);
+            }
+
             var seed = (ulong)save.Accessor.GetBlockSafe(MaxLairRentalChoiceSeedKey).GetValue();
             return new SwShDynamaxAdventureSaveSeedInspectResult(
                 savePath,
@@ -187,28 +298,406 @@ public sealed class SwShDynamaxAdventureSaveSeedService
         return true;
     }
 
-    private static SAV8SWSH ReadSwordShieldSave(string path)
+    private static SAV8SWSH ReadSwordShieldSave(byte[] data, string path)
     {
-        var save = SaveUtil.GetSaveFile(path);
+        var save = SaveUtil.GetSaveFile(data, path);
         return save as SAV8SWSH
             ?? throw new InvalidDataException($"Not a Sword/Shield save: {save?.GetType().FullName ?? "<unknown>"}.");
     }
 
-    private static string CreateBackupPath(string savePath)
+    private static bool SaveMatchesSelectedGame(SAV8SWSH save, ProjectGame selectedGame)
+    {
+        return selectedGame switch
+        {
+            ProjectGame.Sword => save.Version == GameVersion.SW,
+            ProjectGame.Shield => save.Version == GameVersion.SH,
+            _ => false,
+        };
+    }
+
+    internal static string CreateReplacementFailureMessage(ReplacementResult replacement)
+    {
+        if (replacement.TargetDiverged)
+        {
+            return replacement.RecoveryFilePath is null
+                ? "The save changed again during replacement or recovery. KM could not verify which version is currently live, and no verified recovery copy could be retained."
+                : $"The save changed again during replacement or recovery. KM could not verify which version is currently live. A recovery copy was retained at '{replacement.RecoveryFilePath}'.";
+        }
+
+        if (!replacement.RollbackVerified)
+        {
+            return replacement.RecoveryFilePath is null
+                ? "Save write verification failed. KM attempted recovery, but the restored save could not be verified. Inspect the save before continuing."
+                : $"Save write verification failed. KM attempted recovery, but the restored save could not be verified. A recovery copy was retained at '{replacement.RecoveryFilePath}'.";
+        }
+
+        if (replacement.SourceChanged)
+        {
+            return replacement.RecoveryFilePath is null
+                ? "The save changed during replacement. KM verified the version that was present immediately before replacement during recovery. Verify the live save before continuing."
+                : $"The save changed during replacement. KM verified the version that was present immediately before replacement during recovery. A recovery copy was retained at '{replacement.RecoveryFilePath}'.";
+        }
+
+        return replacement.RecoveryFilePath is null
+            ? "Save write verification failed. KM verified the prior save during recovery. Verify the live save before continuing."
+            : $"Save write verification failed. KM verified the prior save during recovery. A recovery copy was retained at '{replacement.RecoveryFilePath}'.";
+    }
+
+    private ReplacementResult ReplaceWithVerifiedRollback(
+        string savePath,
+        string replacementPath,
+        FileSnapshot expectedSource,
+        FileSnapshot expectedReplacement,
+        Func<bool> verifyReplacement)
+    {
+        var backupPath = CreateUniqueSiblingPath(savePath, "bak");
+        var replacementCompleted = false;
+        try
+        {
+            File.Replace(replacementPath, savePath, backupPath, ignoreMetadataErrors: true);
+            replacementCompleted = true;
+            afterReplacement?.Invoke(savePath, backupPath);
+
+            var backupSnapshot = CaptureFileSnapshot(backupPath);
+            if (backupSnapshot != expectedSource)
+            {
+                var rollback = RestoreOnlyIfTargetStillMatchesReplacement(
+                    savePath,
+                    backupPath,
+                    backupSnapshot,
+                    expectedReplacement);
+                return new ReplacementResult(
+                    Succeeded: false,
+                    SourceChanged: true,
+                    TargetDiverged: !rollback.RestoreWasSafe,
+                    RollbackVerified: rollback.Verified,
+                    BackupFilePath: null,
+                    RecoveryFilePath: rollback.RecoveryFilePath,
+                    Exception: null);
+            }
+
+            if (CaptureFileSnapshot(savePath) != expectedReplacement)
+            {
+                return new ReplacementResult(
+                    Succeeded: false,
+                    SourceChanged: false,
+                    TargetDiverged: true,
+                    RollbackVerified: false,
+                    BackupFilePath: null,
+                    RecoveryFilePath: backupPath,
+                    Exception: null);
+            }
+
+            if (!verifyReplacement())
+            {
+                var rollback = RestoreOnlyIfTargetStillMatchesReplacement(
+                    savePath,
+                    backupPath,
+                    backupSnapshot,
+                    expectedReplacement);
+                return new ReplacementResult(
+                    Succeeded: false,
+                    SourceChanged: false,
+                    TargetDiverged: !rollback.RestoreWasSafe,
+                    RollbackVerified: rollback.Verified,
+                    BackupFilePath: null,
+                    RecoveryFilePath: rollback.RecoveryFilePath,
+                    Exception: null);
+            }
+
+            if (CaptureFileSnapshot(savePath) != expectedReplacement)
+            {
+                return new ReplacementResult(
+                    Succeeded: false,
+                    SourceChanged: false,
+                    TargetDiverged: true,
+                    RollbackVerified: false,
+                    BackupFilePath: null,
+                    RecoveryFilePath: backupPath,
+                    Exception: null);
+            }
+
+            return new ReplacementResult(
+                Succeeded: true,
+                SourceChanged: false,
+                TargetDiverged: false,
+                RollbackVerified: false,
+                BackupFilePath: backupPath,
+                RecoveryFilePath: null,
+                Exception: null);
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+            || exception is InvalidOperationException
+            || exception is IOException
+            || exception is UnauthorizedAccessException)
+        {
+            if (!replacementCompleted)
+            {
+                throw;
+            }
+
+            FileSnapshot? backupSnapshot = null;
+            try
+            {
+                backupSnapshot = CaptureFileSnapshot(backupPath);
+            }
+            catch (Exception snapshotException) when (
+                snapshotException is IOException || snapshotException is UnauthorizedAccessException)
+            {
+            }
+
+            var sourceChanged = backupSnapshot is null || backupSnapshot.Value != expectedSource;
+            var rollback = backupSnapshot is null
+                ? new RollbackResult(false, false, File.Exists(backupPath) ? backupPath : null)
+                : RestoreOnlyIfTargetStillMatchesReplacement(
+                    savePath,
+                    backupPath,
+                    backupSnapshot.Value,
+                    expectedReplacement);
+            return new ReplacementResult(
+                Succeeded: false,
+                SourceChanged: sourceChanged,
+                TargetDiverged: !rollback.RestoreWasSafe,
+                RollbackVerified: rollback.Verified,
+                BackupFilePath: null,
+                RecoveryFilePath: rollback.RecoveryFilePath,
+                Exception: exception);
+        }
+    }
+
+    private RollbackResult RestoreOnlyIfTargetStillMatchesReplacement(
+        string savePath,
+        string backupPath,
+        FileSnapshot backupSnapshot,
+        FileSnapshot expectedReplacement)
+    {
+        try
+        {
+            if (CaptureFileSnapshot(savePath) != expectedReplacement)
+            {
+                return new RollbackResult(
+                    RestoreWasSafe: false,
+                    Verified: false,
+                    RecoveryFilePath: File.Exists(backupPath) ? backupPath : null);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new RollbackResult(
+                RestoreWasSafe: false,
+                Verified: false,
+                RecoveryFilePath: File.Exists(backupPath) ? backupPath : null);
+        }
+
+        return RestoreReplacementBackup(
+            savePath,
+            backupPath,
+            backupSnapshot,
+            expectedReplacement);
+    }
+
+    private RollbackResult RestoreReplacementBackup(
+        string savePath,
+        string backupPath,
+        FileSnapshot backupSnapshot,
+        FileSnapshot expectedReplacement)
+    {
+        string? recoveryPath = null;
+        string? failedWritePath = null;
+        string? newerTargetRecoveryPath = null;
+        string? displacedBackupPath = null;
+        var rollbackSwapCompleted = false;
+        try
+        {
+            recoveryPath = CopyToUniqueSiblingFile(savePath, "recovery", backupPath);
+            failedWritePath = CreateUniqueSiblingPath(savePath, "failed");
+            beforeRollbackReplacement?.Invoke(savePath);
+            File.Replace(backupPath, savePath, failedWritePath, ignoreMetadataErrors: true);
+            rollbackSwapCompleted = true;
+            afterRollbackSwap?.Invoke(savePath);
+            var displacedTargetSnapshot = CaptureFileSnapshot(failedWritePath);
+            if (displacedTargetSnapshot != expectedReplacement)
+            {
+                newerTargetRecoveryPath = CopyToUniqueSiblingFile(
+                    savePath,
+                    "external-recovery",
+                    failedWritePath);
+                if (CaptureFileSnapshot(savePath) != backupSnapshot)
+                {
+                    return new RollbackResult(false, false, recoveryPath);
+                }
+
+                displacedBackupPath = CreateUniqueSiblingPath(savePath, "rollback-displaced");
+                beforeExternalTargetRestoreReplacement?.Invoke(savePath);
+                File.Replace(
+                    failedWritePath,
+                    savePath,
+                    displacedBackupPath,
+                    ignoreMetadataErrors: true);
+                afterExternalTargetRestoreSwap?.Invoke(savePath);
+                var displacedLiveSnapshot = CaptureFileSnapshot(displacedBackupPath);
+                if (displacedLiveSnapshot != backupSnapshot)
+                {
+                    // Another writer landed after the pre-swap snapshot. The atomic replace
+                    // retained those bytes in displacedBackupPath; keep that file and report
+                    // the live target as unverified instead of deleting the newer version.
+                    return new RollbackResult(false, false, displacedBackupPath);
+                }
+
+                if (CaptureFileSnapshot(savePath) != displacedTargetSnapshot)
+                {
+                    return new RollbackResult(false, false, newerTargetRecoveryPath);
+                }
+
+                DeleteTempFile(displacedBackupPath);
+                DeleteTempFile(newerTargetRecoveryPath);
+                return new RollbackResult(false, false, recoveryPath);
+            }
+
+            if (CaptureFileSnapshot(savePath) != backupSnapshot)
+            {
+                return new RollbackResult(true, false, recoveryPath);
+            }
+
+            afterRollbackVerificationBeforeCleanup?.Invoke(savePath);
+            if (CaptureFileSnapshot(savePath) != backupSnapshot)
+            {
+                return new RollbackResult(true, false, recoveryPath);
+            }
+
+            DeleteTempFile(failedWritePath);
+            return new RollbackResult(true, true, recoveryPath);
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+            || exception is IOException
+            || exception is UnauthorizedAccessException)
+        {
+            return new RollbackResult(
+                false,
+                false,
+                (displacedBackupPath is not null && File.Exists(displacedBackupPath)
+                    ? displacedBackupPath
+                    : null)
+                    ?? newerTargetRecoveryPath
+                    ?? (rollbackSwapCompleted && File.Exists(failedWritePath) ? failedWritePath : null)
+                    ?? recoveryPath
+                    ?? (File.Exists(backupPath) ? backupPath : null));
+        }
+    }
+
+    internal ReplacementResult ReplaceWithVerifiedRollbackForTests(
+        string savePath,
+        byte[] replacementBytes,
+        Func<bool> verifyReplacement,
+        Action? beforeReplacement = null)
+    {
+        var sourceSnapshot = CaptureFileSnapshot(savePath);
+        var replacementPath = WriteUniqueSiblingFile(savePath, "tmp", replacementBytes);
+        var replacementSnapshot = CaptureSnapshot(replacementBytes);
+        try
+        {
+            beforeReplacement?.Invoke();
+            return ReplaceWithVerifiedRollback(
+                savePath,
+                replacementPath,
+                sourceSnapshot,
+                replacementSnapshot,
+                verifyReplacement);
+        }
+        finally
+        {
+            DeleteTempFile(replacementPath);
+        }
+    }
+
+    private static string CreateUniqueSiblingPath(string savePath, string purpose)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(savePath)) ?? string.Empty;
         var name = Path.GetFileName(savePath);
-        for (var index = 0; index < 1000; index++)
+        for (var index = 0; index < 32; index++)
         {
-            var suffix = index == 0 ? string.Empty : $".{index}";
-            var candidate = Path.Combine(directory, $"{name}.km-editor.bak{suffix}");
+            var candidate = Path.Combine(
+                directory,
+                $".{name}.km-editor.{purpose}.{Guid.NewGuid():N}");
             if (!File.Exists(candidate))
             {
                 return candidate;
             }
         }
 
-        throw new IOException("Could not allocate a save backup file name.");
+        throw new IOException($"Could not allocate a unique same-directory save {purpose} path.");
+    }
+
+    private static string WriteUniqueSiblingFile(string savePath, string purpose, ReadOnlySpan<byte> data)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(savePath)) ?? string.Empty;
+        var name = Path.GetFileName(savePath);
+        for (var index = 0; index < 32; index++)
+        {
+            var candidate = Path.Combine(directory, $".{name}.km-editor.{purpose}.{Guid.NewGuid():N}");
+            try
+            {
+                using var stream = new FileStream(
+                    candidate,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 64 * 1024,
+                    FileOptions.SequentialScan);
+                stream.Write(data);
+                stream.Flush(flushToDisk: true);
+                return candidate;
+            }
+            catch (IOException) when (File.Exists(candidate))
+            {
+            }
+        }
+
+        throw new IOException($"Could not create a unique same-directory save {purpose} file.");
+    }
+
+    private static string CopyToUniqueSiblingFile(string savePath, string purpose, string sourcePath)
+    {
+        return WriteUniqueSiblingFile(savePath, purpose, ReadBoundedFile(sourcePath));
+    }
+
+    private static byte[] ReadBoundedFile(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+        if (stream.Length < 1 || stream.Length > MaximumSaveByteLength)
+        {
+            throw new InvalidDataException(
+                $"Save length {stream.Length.ToString(CultureInfo.InvariantCulture)} is outside the supported allocation bound.");
+        }
+
+        var data = new byte[checked((int)stream.Length)];
+        stream.ReadExactly(data);
+        return data;
+    }
+
+    private static FileSnapshot CaptureFileSnapshot(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+        return new FileSnapshot(stream.Length, Convert.ToHexString(SHA256.HashData(stream)));
+    }
+
+    private static FileSnapshot CaptureSnapshot(ReadOnlySpan<byte> data)
+    {
+        return new FileSnapshot(data.Length, Convert.ToHexString(SHA256.HashData(data)));
     }
 
     private static void DeleteTempFile(string path)
@@ -246,6 +735,22 @@ public sealed class SwShDynamaxAdventureSaveSeedService
             Domain: "workflow.dynamaxAdventures.seed",
             Expected: expected);
     }
+
+    private readonly record struct FileSnapshot(long Length, string Sha256);
+
+    internal sealed record ReplacementResult(
+        bool Succeeded,
+        bool SourceChanged,
+        bool TargetDiverged,
+        bool RollbackVerified,
+        string? BackupFilePath,
+        string? RecoveryFilePath,
+        Exception? Exception);
+
+    private readonly record struct RollbackResult(
+        bool RestoreWasSafe,
+        bool Verified,
+        string? RecoveryFilePath);
 }
 
 public sealed record SwShDynamaxAdventureSaveSeedInspectResult(

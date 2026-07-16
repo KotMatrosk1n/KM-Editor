@@ -313,6 +313,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRentalPokemonFields => DispatchUpdateRentalPokemonFields(requestJson),
                 KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
                 KmCommandNames.UpdateDynamaxAdventureField => DispatchUpdateDynamaxAdventureField(requestJson),
+                KmCommandNames.StageDynamaxAdventureRepair => DispatchStageDynamaxAdventureRepair(requestJson),
+                KmCommandNames.StageDynamaxAdventureRestore => DispatchStageDynamaxAdventureRestore(requestJson),
                 KmCommandNames.PreviewDynamaxAdventureDefaults => DispatchPreviewDynamaxAdventureDefaults(requestJson),
                 KmCommandNames.PlanDynamaxAdventureSeed => DispatchPlanDynamaxAdventureSeed(requestJson),
                 KmCommandNames.SearchDynamaxAdventureSeed => DispatchSearchDynamaxAdventureSeed(requestJson),
@@ -1226,7 +1228,7 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<UpdateDynamaxAdventureFieldRequest>(requestJson);
         var session = request.Payload.Session is null
             ? null
-            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            : EditSessionBridgeMapper.ToCoreAllowingMalformedPendingEdits(request.Payload.Session);
         var result = dynamaxAdventuresEditSessionService.UpdateField(
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             session,
@@ -1238,12 +1240,40 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchStageDynamaxAdventureRepair(string requestJson)
+    {
+        var request = DeserializeRequest<StageDynamaxAdventureRepairRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCoreAllowingMalformedPendingEdits(request.Payload.Session);
+        var result = dynamaxAdventuresEditSessionService.StageRepair(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageDynamaxAdventureRestore(string requestJson)
+    {
+        var request = DeserializeRequest<StageDynamaxAdventureRestoreRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCoreAllowingMalformedPendingEdits(request.Payload.Session);
+        var result = dynamaxAdventuresEditSessionService.StageVanillaTableRestore(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchPreviewDynamaxAdventureDefaults(string requestJson)
     {
         var request = DeserializeRequest<PreviewDynamaxAdventureDefaultsRequest>(requestJson);
         var session = request.Payload.Session is null
             ? null
-            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+            : EditSessionBridgeMapper.ToCoreAllowingMalformedPendingEdits(request.Payload.Session);
         var preview = dynamaxAdventuresEditSessionService.PreviewDefaults(
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             session,
@@ -3694,6 +3724,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateRentalPokemonFields or
             KmCommandNames.LoadDynamaxAdventuresWorkflow or
             KmCommandNames.UpdateDynamaxAdventureField or
+            KmCommandNames.StageDynamaxAdventureRepair or
+            KmCommandNames.StageDynamaxAdventureRestore or
             KmCommandNames.PreviewDynamaxAdventureDefaults or
             KmCommandNames.PlanDynamaxAdventureSeed or
             KmCommandNames.SearchDynamaxAdventureSeed or

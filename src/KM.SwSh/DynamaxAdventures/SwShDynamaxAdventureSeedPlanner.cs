@@ -8,6 +8,14 @@ namespace KM.SwSh.DynamaxAdventures;
 internal static class SwShDynamaxAdventureSeedPlanner
 {
     public const int DefaultBossStartRow = 226;
+    // Seed prediction performs the game's full 16-pick shuffle for each candidate. Keep the
+    // synchronous bridge request bounded to a practical interactive workload.
+    public const ulong MaximumSearchLimit = 10_000;
+    public const int MaximumSearchResults = 1_000;
+    public const int MaximumRequiredRows = SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount;
+    private const int RentalTemplateCount = 6;
+    private const int EncounterTemplateCount = 10;
+    private const int PredictionTemplateCount = RentalTemplateCount + EncounterTemplateCount;
 
     public static SwShDynamaxAdventureSeedPrediction Predict(
         ulong seed,
@@ -19,14 +27,46 @@ internal static class SwShDynamaxAdventureSeedPlanner
         ArgumentNullException.ThrowIfNull(entries);
         ArgumentNullException.ThrowIfNull(personalRecords);
 
+        ValidateNpcCount(npcCount);
+        ValidateEntryCount(entries.Count);
+
         var templates = CreateTemplates(entries, personalRecords, bossStartRow);
         if (templates.Count == 0)
         {
             throw new InvalidDataException("Dynamax Adventure seed prediction requires at least one template row.");
         }
 
+        var resultScratch = new SwShDynamaxAdventureSeedTemplate[PredictionTemplateCount];
+        FillPredictionTemplates(
+            seed,
+            npcCount,
+            templates,
+            new int[templates.Count],
+            new uint[624],
+            resultScratch);
+        return new SwShDynamaxAdventureSeedPrediction(
+            seed,
+            npcCount,
+            resultScratch[..RentalTemplateCount],
+            resultScratch[RentalTemplateCount..]);
+    }
+
+    private static void FillPredictionTemplates(
+        ulong seed,
+        int npcCount,
+        IReadOnlyList<SwShDynamaxAdventureSeedTemplate> templates,
+        int[] poolScratch,
+        uint[] mersenneTwisterScratch,
+        SwShDynamaxAdventureSeedTemplate[] resultScratch)
+    {
+        ValidateNpcCount(npcCount);
+        if (resultScratch.Length < PredictionTemplateCount)
+        {
+            throw new ArgumentException("Dynamax Adventure prediction result scratch is too small.", nameof(resultScratch));
+        }
+
         var rng = new Xoroshiro(seed);
-        var results = new List<SwShDynamaxAdventureSeedTemplate>(capacity: 16);
+        var resultCount = 0;
 
         if (npcCount > 2)
         {
@@ -35,7 +75,7 @@ internal static class SwShDynamaxAdventureSeedPlanner
 
         for (var index = 0; index < 4; index++)
         {
-            SetTemplate(rng, templates, results);
+            SetTemplate(ref rng, templates, resultScratch, ref resultCount, poolScratch, mersenneTwisterScratch);
         }
 
         if (npcCount > 2)
@@ -43,14 +83,14 @@ internal static class SwShDynamaxAdventureSeedPlanner
             rng.NextBound(2);
         }
 
-        SetTemplate(rng, templates, results);
+        SetTemplate(ref rng, templates, resultScratch, ref resultCount, poolScratch, mersenneTwisterScratch);
 
         if (npcCount > 1)
         {
             rng.NextBound(2);
         }
 
-        SetTemplate(rng, templates, results);
+        SetTemplate(ref rng, templates, resultScratch, ref resultCount, poolScratch, mersenneTwisterScratch);
 
         if (npcCount > 0)
         {
@@ -60,16 +100,10 @@ internal static class SwShDynamaxAdventureSeedPlanner
         rng.NextBound(2);
         rng.NextBound(9);
 
-        for (var index = 0; index < 10; index++)
+        for (var index = 0; index < EncounterTemplateCount; index++)
         {
-            SetEncounterTemplate(rng, templates, results);
+            SetEncounterTemplate(ref rng, templates, resultScratch, ref resultCount, poolScratch, mersenneTwisterScratch);
         }
-
-        return new SwShDynamaxAdventureSeedPrediction(
-            seed,
-            npcCount,
-            results.Take(6).ToArray(),
-            results.Skip(6).ToArray());
     }
 
     public static IReadOnlyList<SwShDynamaxAdventureSeedSearchResult> SearchRows(
@@ -86,19 +120,58 @@ internal static class SwShDynamaxAdventureSeedPlanner
         ArgumentNullException.ThrowIfNull(personalRecords);
         ArgumentNullException.ThrowIfNull(requiredRows);
 
-        if (maxResults <= 0 || limit == 0)
+        ValidateNpcCount(npcCount);
+        ValidateEntryCount(entries.Count);
+        if (requiredRows.Count == 0)
+        {
+            throw new ArgumentException(
+                "Dynamax Adventure seed search requires at least one required row.",
+                nameof(requiredRows));
+        }
+
+        if (requiredRows.Count > MaximumRequiredRows)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(requiredRows),
+                $"Dynamax Adventure seed search cannot accept more than {MaximumRequiredRows} required rows.");
+        }
+
+        if (limit > MaximumSearchLimit)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(limit),
+                $"Dynamax Adventure seed search limit cannot exceed {MaximumSearchLimit}." );
+        }
+
+        if (maxResults is < 1 or > MaximumSearchResults)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxResults),
+                $"Dynamax Adventure seed search results must be between 1 and {MaximumSearchResults}." );
+        }
+
+        if (limit == 0)
         {
             return [];
         }
 
-        var distinctRequiredRowCount = requiredRows.Distinct().Count();
+        var canonicalRequiredRows = requiredRows.Distinct().ToArray();
+        var templates = CreateTemplates(entries, personalRecords, bossStartRow);
+        var poolScratch = new int[templates.Count];
+        var mersenneTwisterScratch = new uint[624];
+        var predictionScratch = new SwShDynamaxAdventureSeedTemplate[PredictionTemplateCount];
         var results = new List<SwShDynamaxAdventureSeedSearchResult>(maxResults);
         for (ulong offset = 0; offset < limit && results.Count < maxResults; offset++)
         {
             var seed = unchecked(startSeed + offset);
-            var prediction = Predict(seed, npcCount, entries, personalRecords, bossStartRow);
-            var positions = GetRowPositions(prediction, requiredRows);
-            if (positions.Count == distinctRequiredRowCount)
+            FillPredictionTemplates(
+                seed,
+                npcCount,
+                templates,
+                poolScratch,
+                mersenneTwisterScratch,
+                predictionScratch);
+            if (TryGetCanonicalRowPositions(predictionScratch, canonicalRequiredRows, out var positions))
             {
                 results.Add(new SwShDynamaxAdventureSeedSearchResult(seed, positions));
             }
@@ -140,6 +213,41 @@ internal static class SwShDynamaxAdventureSeedPlanner
         return positions;
     }
 
+    private static bool TryGetCanonicalRowPositions(
+        IReadOnlyList<SwShDynamaxAdventureSeedTemplate> predictionTemplates,
+        IReadOnlyList<int> canonicalRows,
+        out IReadOnlyList<SwShDynamaxAdventureSeedRowPosition> positions)
+    {
+        Span<int> indexes = stackalloc int[canonicalRows.Count];
+        for (var rowIndex = 0; rowIndex < canonicalRows.Count; rowIndex++)
+        {
+            indexes[rowIndex] = IndexOfRow(predictionTemplates, canonicalRows[rowIndex]);
+            if (indexes[rowIndex] < 0)
+            {
+                positions = [];
+                return false;
+            }
+        }
+
+        var matched = new SwShDynamaxAdventureSeedRowPosition[canonicalRows.Count];
+        for (var rowIndex = 0; rowIndex < canonicalRows.Count; rowIndex++)
+        {
+            var predictionIndex = indexes[rowIndex];
+            matched[rowIndex] = predictionIndex < RentalTemplateCount
+                ? new SwShDynamaxAdventureSeedRowPosition(
+                    canonicalRows[rowIndex],
+                    SwShDynamaxAdventureSeedSlotKind.Rental,
+                    predictionIndex)
+                : new SwShDynamaxAdventureSeedRowPosition(
+                    canonicalRows[rowIndex],
+                    SwShDynamaxAdventureSeedSlotKind.Encounter,
+                    predictionIndex - RentalTemplateCount);
+        }
+
+        positions = matched;
+        return true;
+    }
+
     private static int IndexOfRow(
         IReadOnlyList<SwShDynamaxAdventureSeedTemplate> templates,
         int row)
@@ -160,71 +268,69 @@ internal static class SwShDynamaxAdventureSeedPlanner
         IReadOnlyList<SwShPersonalRecord> personalRecords,
         int bossStartRow)
     {
-        return entries
-            .Select(entry => new SwShDynamaxAdventureSeedTemplate(
+        var templates = new SwShDynamaxAdventureSeedTemplate[entries.Count];
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            if (entry.EntryIndex != index)
+            {
+                throw new InvalidDataException("Dynamax Adventure seed planning requires stable ordered table rows.");
+            }
+
+            var personal = SwShDynamaxAdventureSafetyRules.ResolvePersonalRecord(
+                entry.Species,
+                entry.Form,
+                personalRecords)
+                ?? throw new InvalidDataException(
+                    $"Dynamax Adventure seed planning could not resolve personal data for row {entry.EntryIndex}, species {entry.Species}, form {entry.Form}.");
+            templates[index] = new SwShDynamaxAdventureSeedTemplate(
                 entry.EntryIndex,
                 entry.Species,
                 entry.Form,
                 entry.EntryIndex >= bossStartRow,
-                HasTwoTypes(entry, personalRecords)))
-            .ToArray();
-    }
-
-    private static bool HasTwoTypes(
-        SwShDynamaxAdventureRecord entry,
-        IReadOnlyList<SwShPersonalRecord> personalRecords)
-    {
-        var personal = ResolvePersonalRecord(entry.Species, entry.Form, personalRecords);
-        return personal is not null && personal.Type1 != personal.Type2;
-    }
-
-    private static SwShPersonalRecord? ResolvePersonalRecord(
-        int species,
-        int form,
-        IReadOnlyList<SwShPersonalRecord> personalRecords)
-    {
-        if ((uint)species >= (uint)personalRecords.Count)
-        {
-            return null;
+                personal.Type1 != personal.Type2);
         }
 
-        var record = personalRecords[species];
-        if (form <= 0 || record.FormStatsIndex <= 0)
-        {
-            return record;
-        }
-
-        var formPersonalId = record.FormStatsIndex + form - 1;
-        return (uint)formPersonalId < (uint)personalRecords.Count
-            ? personalRecords[formPersonalId]
-            : record;
+        return templates;
     }
 
     private static void SetEncounterTemplate(
-        Xoroshiro rng,
+        ref Xoroshiro rng,
         IReadOnlyList<SwShDynamaxAdventureSeedTemplate> templates,
-        List<SwShDynamaxAdventureSeedTemplate> results)
+        SwShDynamaxAdventureSeedTemplate[] results,
+        ref int resultCount,
+        int[] poolScratch,
+        uint[] mersenneTwisterScratch)
     {
-        SetTemplate(rng, templates, results);
-        if (results[^1].HasTwoTypes)
+        SetTemplate(ref rng, templates, results, ref resultCount, poolScratch, mersenneTwisterScratch);
+        if (results[resultCount - 1].HasTwoTypes)
         {
             rng.Next();
         }
     }
 
     private static void SetTemplate(
-        Xoroshiro rng,
+        ref Xoroshiro rng,
         IReadOnlyList<SwShDynamaxAdventureSeedTemplate> templates,
-        List<SwShDynamaxAdventureSeedTemplate> results)
+        SwShDynamaxAdventureSeedTemplate[] results,
+        ref int resultCount,
+        int[] poolScratch,
+        uint[] mersenneTwisterScratch)
     {
-        var pool = CreatePokemonPool(rng.Next(), templates.Count);
-        results.Add(GetTemplateFromPool(templates, pool, results));
+        FillPokemonPool(rng.Next(), poolScratch, mersenneTwisterScratch);
+        results[resultCount] = GetTemplateFromPool(templates, poolScratch, results, resultCount);
+        resultCount++;
     }
 
-    private static int[] CreatePokemonPool(uint seed, int count)
+    private static void FillPokemonPool(uint seed, int[] pool, uint[] mersenneTwisterScratch)
     {
-        var pool = Enumerable.Range(0, count).ToArray();
-        var mt = new MersenneTwister(seed);
+        ValidateEntryCount(pool.Length);
+        for (var index = 0; index < pool.Length; index++)
+        {
+            pool[index] = index;
+        }
+
+        var mt = new MersenneTwister(seed, mersenneTwisterScratch);
         var maxRand = pool.Length;
 
         for (var index = 0; index < pool.Length; index++)
@@ -237,19 +343,48 @@ internal static class SwShDynamaxAdventureSeedPlanner
             }
         }
 
-        return pool;
+    }
+
+    private static void ValidateNpcCount(int npcCount)
+    {
+        if (npcCount is < 0 or > 3)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(npcCount),
+                npcCount,
+                "Dynamax Adventure NPC count must be between 0 and 3.");
+        }
+    }
+
+    private static void ValidateEntryCount(int count)
+    {
+        if (count is <= 0 or > SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount)
+        {
+            throw new InvalidDataException(
+                $"Dynamax Adventure seed planning requires 1-{SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount} bounded rows.");
+        }
     }
 
     private static SwShDynamaxAdventureSeedTemplate GetTemplateFromPool(
         IReadOnlyList<SwShDynamaxAdventureSeedTemplate> templates,
         IReadOnlyList<int> pool,
-        IReadOnlyList<SwShDynamaxAdventureSeedTemplate> previous)
+        IReadOnlyList<SwShDynamaxAdventureSeedTemplate> previous,
+        int previousCount)
     {
-        foreach (var index in pool)
+        for (var poolIndex = 0; poolIndex < pool.Count; poolIndex++)
         {
+            var index = pool[poolIndex];
             var result = templates[index];
-            var duplicate = previous.Any(candidate =>
-                candidate.Species == result.Species && candidate.Form == result.Form);
+            var duplicate = false;
+            for (var previousIndex = 0; previousIndex < previousCount; previousIndex++)
+            {
+                var candidate = previous[previousIndex];
+                if (candidate.Species == result.Species && candidate.Form == result.Form)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
             if (!result.IsBoss && !duplicate)
             {
                 return result;
@@ -259,14 +394,20 @@ internal static class SwShDynamaxAdventureSeedPlanner
         return templates[0];
     }
 
-    private sealed class MersenneTwister
+    private ref struct MersenneTwister
     {
         private const int StateSize = 624;
-        private readonly uint[] state = new uint[StateSize];
+        private readonly Span<uint> state;
         private int index;
 
-        public MersenneTwister(uint seed)
+        public MersenneTwister(uint seed, Span<uint> state)
         {
+            if (state.Length < StateSize)
+            {
+                throw new ArgumentException("Mersenne Twister scratch state is too small.", nameof(state));
+            }
+
+            this.state = state[..StateSize];
             state[0] = seed;
             index = 1;
             var current = seed;
@@ -353,7 +494,7 @@ internal static class SwShDynamaxAdventureSeedPlanner
         }
     }
 
-    private sealed class Xoroshiro
+    private struct Xoroshiro
     {
         private const ulong State1Seed = 0x82A2B175229D6A5B;
         private ulong state0;

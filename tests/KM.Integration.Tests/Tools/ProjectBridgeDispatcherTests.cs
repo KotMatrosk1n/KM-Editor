@@ -1320,12 +1320,18 @@ public sealed class ProjectBridgeDispatcherTests
         SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
         SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         var requestJson = SerializeRequest(
             KmCommandNames.LoadDynamaxAdventuresWorkflow,
-            new LoadDynamaxAdventuresWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            new LoadDynamaxAdventuresWorkflowRequest(temp.Paths with
+            {
+                OutputRootPath = null,
+                SelectedGame = ProjectGameDto.Sword,
+            }),
             requestId: "request-dynamax-adventures");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var dispatcher = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher();
+        var responseJson = dispatcher.Dispatch(requestJson);
         var response = DeserializeResponse<LoadDynamaxAdventuresWorkflowResponse>(responseJson);
 
         Assert.Null(response.Error);
@@ -1353,13 +1359,27 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteBossTargetDynamaxAdventures(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 900);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
+        var archivePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShExeFsBridgeFixtures.CreateDynamaxAdventureCompatibleNso(
+                SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(archivePath))));
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         var requestJson = SerializeRequest(
             KmCommandNames.LoadDynamaxAdventuresWorkflow,
-            new LoadDynamaxAdventuresWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            new LoadDynamaxAdventuresWorkflowRequest(temp.Paths with
+            {
+                OutputRootPath = null,
+                SelectedGame = ProjectGameDto.Sword,
+            }),
             requestId: "request-dynamax-boss-targets");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var responseJson = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher().Dispatch(requestJson);
         var response = DeserializeResponse<LoadDynamaxAdventuresWorkflowResponse>(responseJson);
 
         Assert.Null(response.Error);
@@ -1373,11 +1393,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.False(articuno.IsEditable);
         Assert.Equal(144, articuno.BossTargetSpeciesId);
         Assert.Equal("Articuno", articuno.BossTargetSpecies);
-        var option = Assert.Single(articuno.BossTargetOptions);
-        Assert.Equal(227, option.EntryIndex);
-        Assert.Equal(1004, option.AdventureIndex);
-        Assert.Equal(150, option.SpeciesId);
-        Assert.Equal("Mewtwo", option.Species);
+        Assert.Empty(articuno.BossTargetOptions);
         Assert.Equal("Mewtwo", response.Payload.Workflow.Encounters.Single(row => row.EntryIndex == 227).Species);
     }
 
@@ -1386,13 +1402,23 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteBossTargetDynamaxAdventures(temp);
-        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateDynamaxAdventureBossTargetCompatibleNso(entryCount: 230));
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 900);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
+        var archivePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShExeFsBridgeFixtures.CreateDynamaxAdventureCompatibleNso(
+                SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(archivePath))));
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
-        var dispatcher = new ProjectBridgeDispatcher();
+        var dispatcher = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher();
         var updateJson = SerializeRequest(
             KmCommandNames.UpdateDynamaxAdventureField,
             new UpdateDynamaxAdventureFieldRequest(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
                 Session: null,
                 EntryIndex: 226,
                 Field: "bossTargetSpecies",
@@ -1411,11 +1437,203 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchDynamaxAdventureSeedPlanUsesActiveAdventureRows()
+    public void DispatchStageDynamaxAdventureRepairReturnsCanonicalSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBossTargetDynamaxAdventures(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 900);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
+        var tablePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var archive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(tablePath));
+        var baseMain = SwShExeFsBridgeFixtures.CreateDynamaxAdventureCompatibleNso(archive);
+        temp.WriteBaseExeFsFile("main", baseMain);
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+                baseMain,
+                archive,
+                fromSpecies: 144,
+                toSpecies: 150));
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
+        var requestJson = SerializeRequest(
+            KmCommandNames.StageDynamaxAdventureRepair,
+            new StageDynamaxAdventureRepairRequest(paths, Session: null),
+            requestId: "request-dynamax-repair-stage");
+
+        var responseJson = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-repair-stage", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.DoesNotContain(response.Payload.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.DoesNotContain(response.Payload.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal("repairable", response.Payload.Workflow.InstallStatus);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        var repair = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.dynamaxAdventures", repair.Domain);
+        Assert.Equal("Repair Dynamax Adventures executable projection.", repair.Summary);
+        Assert.StartsWith("dynamaxAdventure:", repair.RecordId, StringComparison.Ordinal);
+        Assert.Equal("level", repair.Field);
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureUpdateSanitizesMalformedSessionCollections()
     {
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
         SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShExeFsBridgeFixtures.CreateDynamaxAdventureCompatibleNso(
+                SwShDynamaxAdventureBridgeFixtures.CreateArchive()));
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
+        var pendingWithNullSources = new PendingEditDto(
+            "workflow.dynamaxAdventures",
+            "Set Dynamax Adventure row 0 Level to 66.",
+            Sources: null!,
+            RecordId: "dynamaxAdventure:0",
+            Field: "level",
+            NewValue: "66");
+        var pendingWithNullSource = pendingWithNullSources with
+        {
+            Sources = [null!],
+        };
+        EditSessionDto[] malformedSessions =
+        [
+            new("malformed-null-list", HasPendingChanges: true, PendingEdits: null!),
+            new("malformed-null-action", HasPendingChanges: true, PendingEdits: [null!]),
+            new("malformed-null-sources", HasPendingChanges: true, PendingEdits: [pendingWithNullSources]),
+            new("malformed-null-source", HasPendingChanges: true, PendingEdits: [pendingWithNullSource]),
+        ];
+        var dispatcher = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher();
+
+        foreach (var malformedSession in malformedSessions)
+        {
+            var requestJson = SerializeRequest(
+                KmCommandNames.UpdateDynamaxAdventureField,
+                new UpdateDynamaxAdventureFieldRequest(
+                    temp.Paths with { SelectedGame = ProjectGameDto.Sword },
+                    malformedSession,
+                    EntryIndex: 0,
+                    Field: "level",
+                    Value: "66"),
+                requestId: malformedSession.SessionId);
+            var response = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(dispatcher.Dispatch(requestJson));
+
+            Assert.Null(response.Error);
+            Assert.NotNull(response.Payload);
+            Assert.False(response.Payload.Session.HasPendingChanges);
+            Assert.Empty(response.Payload.Session.PendingEdits);
+            Assert.Contains(response.Payload.Diagnostics, diagnostic =>
+                diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        }
+    }
+
+    [Fact]
+    public void DispatchStageDynamaxAdventureRestoreReturnsCanonicalSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
+        var archive = SwShDynamaxAdventureBridgeFixtures.CreateArchive();
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateDynamaxAdventureCompatibleNso(archive));
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            archive.WriteEdits([new(1, SwShDynamaxAdventureField.Species, 999)])
+                .Concat(new byte[] { 0 })
+                .ToArray());
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
+        var requestJson = SerializeRequest(
+            KmCommandNames.StageDynamaxAdventureRestore,
+            new StageDynamaxAdventureRestoreRequest(paths, Session: null),
+            requestId: "request-dynamax-restore-stage");
+
+        var dispatcher = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher();
+        var responseJson = dispatcher.Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-restore-stage", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.True(
+            response.Payload.Workflow.CanRestoreVanillaTable,
+            string.Join(Environment.NewLine, response.Payload.Workflow.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.True(response.Payload.Workflow.UsesVanillaRecoveryProjection);
+        Assert.All(response.Payload.Workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+            Assert.InRange(encounter.SpeciesId, 1, 898);
+            Assert.InRange(encounter.Level, 1, 100);
+            Assert.All(encounter.Moves, move => Assert.InRange(move.MoveId, 0, 826));
+        });
+        Assert.Equal(25, response.Payload.Workflow.Encounters.Single(encounter => encounter.EntryIndex == 1).SpeciesId);
+        Assert.DoesNotContain(response.Payload.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        var restore = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.dynamaxAdventures", restore.Domain);
+        Assert.Equal("Restore the vanilla Dynamax Adventures table.", restore.Summary);
+        Assert.Equal("dynamaxAdventure:0", restore.RecordId);
+        Assert.Equal("level", restore.Field);
+        Assert.Equal("65", restore.NewValue);
+        var source = Assert.Single(restore.Sources);
+        Assert.Equal(FileLayerDto.Layered, source.Layer);
+        Assert.Equal(SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath, source.RelativePath);
+
+        var mixedSession = response.Payload.Session with
+        {
+            PendingEdits =
+            [
+                restore,
+                restore with
+                {
+                    Summary = "Set Dynamax Adventure 1 Level to 61.",
+                    RecordId = "dynamaxAdventure:1",
+                    Field = "level",
+                    NewValue = "61",
+                },
+            ],
+        };
+        var rejectedJson = SerializeRequest(
+            KmCommandNames.UpdateDynamaxAdventureField,
+            new UpdateDynamaxAdventureFieldRequest(
+                paths,
+                mixedSession,
+                EntryIndex: 1,
+                Field: "level",
+                Value: "61"),
+            requestId: "request-dynamax-restore-mixed-update");
+        var rejected = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(dispatcher.Dispatch(rejectedJson));
+
+        Assert.Null(rejected.Error);
+        Assert.NotNull(rejected.Payload);
+        Assert.False(rejected.Payload.Session.HasPendingChanges);
+        Assert.Empty(rejected.Payload.Session.PendingEdits);
+        Assert.Contains(
+            rejected.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("cannot be combined", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureSeedPlanUsesActiveAdventureRows()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 900);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         temp.WriteOutputFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
             SwShDynamaxAdventureBridgeFixtures.CreateArchive().WriteEdits(
@@ -1424,10 +1642,14 @@ public sealed class ProjectBridgeDispatcherTests
             ]));
         var requestJson = SerializeRequest(
             KmCommandNames.PlanDynamaxAdventureSeed,
-            new PlanDynamaxAdventureSeedRequest(temp.Paths, "0x0", NpcCount: 0, RequiredRows: [1]),
+            new PlanDynamaxAdventureSeedRequest(
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
+                "0x0",
+                NpcCount: 0,
+                RequiredRows: [1]),
             requestId: "request-dynamax-seed-plan");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var responseJson = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher().Dispatch(requestJson);
         var response = DeserializeResponse<PlanDynamaxAdventureSeedResponse>(responseJson);
 
         Assert.Null(response.Error);
@@ -1446,10 +1668,12 @@ public sealed class ProjectBridgeDispatcherTests
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
         SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         var requestJson = SerializeRequest(
             KmCommandNames.SearchDynamaxAdventureSeed,
             new SearchDynamaxAdventureSeedRequest(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
                 RequiredRows: [0],
                 NpcCount: 0,
                 StartSeed: "0",
@@ -1457,7 +1681,7 @@ public sealed class ProjectBridgeDispatcherTests
                 MaxResults: 1),
             requestId: "request-dynamax-seed-search");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var responseJson = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher().Dispatch(requestJson);
         var response = DeserializeResponse<SearchDynamaxAdventureSeedResponse>(responseJson);
 
         Assert.Null(response.Error);
@@ -1474,16 +1698,18 @@ public sealed class ProjectBridgeDispatcherTests
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteSeedPlanningDynamaxAdventures(temp, rowCount: 230);
         SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 400);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         var requestJson = SerializeRequest(
             KmCommandNames.PlanDynamaxAdventureSeed,
             new PlanDynamaxAdventureSeedRequest(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
                 Seed: "0",
                 NpcCount: 0,
                 RequiredRows: [226]),
             requestId: "request-dynamax-seed-plan-boss-row");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var responseJson = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher().Dispatch(requestJson);
         var response = DeserializeResponse<PlanDynamaxAdventureSeedResponse>(responseJson);
 
         Assert.Null(response.Error);
@@ -1500,10 +1726,12 @@ public sealed class ProjectBridgeDispatcherTests
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteSeedPlanningDynamaxAdventures(temp, rowCount: 230);
         SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 400);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
         var requestJson = SerializeRequest(
             KmCommandNames.SearchDynamaxAdventureSeed,
             new SearchDynamaxAdventureSeedRequest(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
                 RequiredRows: [226],
                 NpcCount: 0,
                 StartSeed: "0",
@@ -1511,7 +1739,7 @@ public sealed class ProjectBridgeDispatcherTests
                 MaxResults: 1),
             requestId: "request-dynamax-seed-search-boss-row");
 
-        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var responseJson = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher().Dispatch(requestJson);
         var response = DeserializeResponse<SearchDynamaxAdventureSeedResponse>(responseJson);
 
         Assert.Null(response.Error);
@@ -1545,7 +1773,9 @@ public sealed class ProjectBridgeDispatcherTests
         using var temp = TemporaryBridgeProject.Create();
         var requestJson = SerializeRequest(
             KmCommandNames.SetDynamaxAdventureSaveSeed,
-            new SetDynamaxAdventureSaveSeedRequest(temp.Paths, Seed: "0x1234"),
+            new SetDynamaxAdventureSaveSeedRequest(
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
+                Seed: "0x1234"),
             requestId: "request-dynamax-save-seed-missing");
 
         var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
@@ -1565,31 +1795,51 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var dispatcher = new ProjectBridgeDispatcher();
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseUsableMoves(temp, 1, 2, 3, 4, 5, 6, 10, 20, 85);
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShExeFsBridgeFixtures.CreateDynamaxAdventureCompatibleNso(
+                SwShDynamaxAdventureBridgeFixtures.CreateArchive()));
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000UL));
+        var dispatcher = SwShDynamaxAdventureBridgeFixtures.CreateSyntheticDispatcher();
         var updateJson = SerializeRequest(
             KmCommandNames.UpdateDynamaxAdventureField,
             new UpdateDynamaxAdventureFieldRequest(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
                 Session: null,
                 EntryIndex: 0,
                 Field: "guaranteedPerfectIvs",
                 Value: "6"),
             requestId: "request-dynamax-adventure-update");
         var update = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(dispatcher.Dispatch(updateJson)).Payload!;
+        Assert.True(
+            update.Session.HasPendingChanges,
+            string.Join(Environment.NewLine, update.Diagnostics.Select(diagnostic => diagnostic.Message)));
         var planJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, update.Session),
+            new CreateChangePlanRequest(
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
+                update.Session),
             requestId: "request-dynamax-adventure-plan");
         var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+        Assert.True(
+            plan.CanApply,
+            string.Join(Environment.NewLine, plan.Diagnostics.Select(diagnostic => diagnostic.Message)));
 
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            new ApplyChangePlanRequest(
+                temp.Paths with { SelectedGame = ProjectGameDto.Sword },
+                update.Session,
+                plan),
             requestId: "request-dynamax-adventure-apply");
         var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
 
-        Assert.Contains("romfs/bin/appli/chika/data_table/underground_exploration_poke.bin", apply.WrittenFiles);
+        Assert.True(
+            apply.WrittenFiles.Contains("romfs/bin/appli/chika/data_table/underground_exploration_poke.bin"),
+            string.Join(Environment.NewLine, apply.Diagnostics.Select(diagnostic => diagnostic.Message)));
         var outputPath = Path.Combine(
             temp.OutputRootPath,
             "romfs/bin/appli/chika/data_table/underground_exploration_poke.bin".Replace('/', Path.DirectorySeparatorChar));

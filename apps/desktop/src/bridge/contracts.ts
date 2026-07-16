@@ -29,6 +29,8 @@ export const kmCommandNameValues = [
   'rentalPokemon.fields.update',
   'dynamaxAdventures.load',
   'dynamaxAdventures.field.update', 'dynamaxAdventures.defaults.preview',
+  'dynamaxAdventures.repair.stage',
+  'dynamaxAdventures.restore.stage',
   'shops.load',
   'shops.inventory.update',
   'encounters.load',
@@ -144,6 +146,8 @@ export const kmCommandNames = {
   updateRentalPokemonFields: 'rentalPokemon.fields.update',
   loadDynamaxAdventuresWorkflow: 'dynamaxAdventures.load',
   updateDynamaxAdventureField: 'dynamaxAdventures.field.update', previewDynamaxAdventureDefaults: 'dynamaxAdventures.defaults.preview',
+  stageDynamaxAdventureRepair: 'dynamaxAdventures.repair.stage',
+  stageDynamaxAdventureRestore: 'dynamaxAdventures.restore.stage',
   loadShopsWorkflow: 'shops.load',
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
@@ -298,9 +302,67 @@ export const loadRentalPokemonWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
-export const loadDynamaxAdventuresWorkflowRequestSchema = z.strictObject({
-  paths: projectPathsSchema
-});
+export const dynamaxAdventureEditableFieldNameSchema = z.enum([
+  'species',
+  'form',
+  'level',
+  'ability',
+  'gigantamaxState',
+  'move0Id',
+  'move1Id',
+  'move2Id',
+  'move3Id',
+  'guaranteedPerfectIvs',
+  'ivAttack',
+  'ivDefense',
+  'ivSpecialAttack',
+  'ivSpecialDefense',
+  'ivSpeed'
+]);
+
+const dynamaxAdventureEncounterCount = 273;
+const dynamaxAdventureNormalEncounterCount = 226;
+const dynamaxAdventureFieldRanges = {
+  ability: [0, 2],
+  form: [0, 255],
+  gigantamaxState: [0, 2],
+  guaranteedPerfectIvs: [0, 6],
+  ivAttack: [-1, 31],
+  ivDefense: [-1, 31],
+  ivSpecialAttack: [-1, 31],
+  ivSpecialDefense: [-1, 31],
+  ivSpeed: [-1, 31],
+  level: [1, 100],
+  move0Id: [0, 826],
+  move1Id: [0, 826],
+  move2Id: [0, 826],
+  move3Id: [0, 826],
+  species: [1, 898]
+} as const satisfies Record<
+  z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
+  readonly [number, number]
+>;
+const dynamaxAdventureIvOptionValues = [
+  -1,
+  ...Array.from({ length: 32 }, (_, value) => value)
+];
+const dynamaxAdventureExactFieldOptionValues: Partial<Record<
+  z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
+  readonly number[]
+>> = {
+  ability: [0, 1, 2],
+  gigantamaxState: [0, 1, 2],
+  guaranteedPerfectIvs: [0, 2, 3, 4, 5, 6],
+  ivAttack: dynamaxAdventureIvOptionValues,
+  ivDefense: dynamaxAdventureIvOptionValues,
+  ivSpecialAttack: dynamaxAdventureIvOptionValues,
+  ivSpecialDefense: dynamaxAdventureIvOptionValues,
+  ivSpeed: dynamaxAdventureIvOptionValues
+};
+
+export const loadDynamaxAdventuresWorkflowRequestSchema = z
+  .strictObject({ paths: projectPathsSchema })
+  .superRefine(validateDynamaxAdventureRequestGame);
 
 export const loadShopsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
@@ -455,7 +517,82 @@ export const applyChangePlanRequestSchema = z.strictObject({
   session: editSessionSchema
 });
 
-export const previewDynamaxAdventureDefaultsRequestSchema = z.strictObject({ entryIndex: z.number().int().nonnegative(), form: z.number().int().nonnegative(), level: z.number().int().positive(), paths: projectPathsSchema, session: editSessionSchema.nullable(), species: z.number().int().nonnegative() });
+export const previewDynamaxAdventureDefaultsRequestSchema = z
+  .strictObject({
+    entryIndex: z.number().int().min(0).max(dynamaxAdventureNormalEncounterCount - 1),
+    form: z.number().int().min(0).max(255),
+    level: z.number().int().min(1).max(100),
+    paths: projectPathsSchema,
+    session: editSessionSchema.nullable(),
+    species: z.number().int().min(1).max(898)
+  })
+  .superRefine(validateDynamaxAdventureRequestGame);
+
+export const stageDynamaxAdventureRepairRequestSchema = z
+  .strictObject({
+    paths: projectPathsSchema,
+    session: editSessionSchema.nullable()
+  })
+  .superRefine(validateDynamaxAdventureRequestGame)
+  .superRefine((request, context) => {
+    if (
+      request.session?.hasPendingChanges ||
+      (request.session?.pendingEdits.length ?? 0) > 0
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session'],
+        'Dynamax Adventures repair requires an empty edit session.'
+      );
+    }
+  });
+
+function isCanonicalDynamaxAdventureRestoreRetryEdit(edit: {
+  domain: string;
+  field?: string | null;
+  newValue?: string | null;
+  recordId?: string | null;
+  sources: Array<{ layer: string; relativePath: string }>;
+  summary: string;
+}) {
+  return (
+    edit.domain === 'workflow.dynamaxAdventures' &&
+    edit.recordId === 'dynamaxAdventure:0' &&
+    edit.field === 'level' &&
+    typeof edit.newValue === 'string' &&
+    /^(?:[1-9]|[1-9]\d|100)$/.test(edit.newValue) &&
+    edit.summary === 'Restore the vanilla Dynamax Adventures table.' &&
+    edit.sources.length === 1 &&
+    edit.sources[0]?.layer === 'layered' &&
+    edit.sources[0]?.relativePath ===
+      'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+  );
+}
+
+export const stageDynamaxAdventureRestoreRequestSchema = z
+  .strictObject({
+    paths: projectPathsSchema,
+    session: editSessionSchema.nullable()
+  })
+  .superRefine(validateDynamaxAdventureRequestGame)
+  .superRefine((request, context) => {
+    const pendingEdits = request.session?.pendingEdits ?? [];
+    const retryEdit = pendingEdits[0];
+    const isCanonicalRestoreRetry =
+      request.session?.hasPendingChanges === true &&
+      pendingEdits.length === 1 &&
+      retryEdit !== undefined &&
+      isCanonicalDynamaxAdventureRestoreRetryEdit(retryEdit);
+    const claimsPendingSession =
+      request.session?.hasPendingChanges === true || pendingEdits.length > 0;
+    if (claimsPendingSession && !isCanonicalRestoreRetry) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session'],
+        'Dynamax Adventures table restore requires an empty edit session or its exact staged restore marker.'
+      );
+    }
+  });
 
 export const previewSpreadsheetImportRequestSchema = z.strictObject({
   paths: projectPathsSchema,
@@ -1616,102 +1753,120 @@ export const loadRentalPokemonWorkflowResponseSchema = z.strictObject({
 
 export const dynamaxAdventureProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.string(),
+  sourceFile: z.literal(
+    'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+  ),
   sourceLayer: projectFileLayerSchema
 });
 
 export const dynamaxAdventureMoveSchema = z.strictObject({
-  move: z.string(),
-  moveId: z.number().int().nonnegative(),
-  slot: z.number().int().nonnegative()
+  move: z.string().min(1),
+  moveId: z.number().int().min(0).max(826),
+  slot: z.number().int().min(1).max(4)
 });
 
 export const dynamaxAdventureIvsSchema = z.strictObject({
-  attack: z.number().int(),
-  defense: z.number().int(),
-  hp: z.number().int(),
-  specialAttack: z.number().int(),
-  specialDefense: z.number().int(),
-  speed: z.number().int()
+  attack: z.number().int().min(-1).max(31),
+  defense: z.number().int().min(-1).max(31),
+  hp: z.number().int().min(-6).max(31),
+  specialAttack: z.number().int().min(-1).max(31),
+  specialDefense: z.number().int().min(-1).max(31),
+  speed: z.number().int().min(-1).max(31)
 });
 
 export const dynamaxAdventureEditableFieldOptionSchema = z.strictObject({
-  label: z.string(),
+  label: z.string().min(1),
   value: z.number().int()
 });
 
-export const dynamaxAdventureDefaultFieldSchema = z.strictObject({ field: z.string(), value: z.string() });
+const dynamaxAdventureGuaranteedPerfectIvsSchema = z.union([
+  z.literal(0),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6)
+]);
+
+export const dynamaxAdventureDefaultFieldSchema = z.strictObject({
+  field: dynamaxAdventureEditableFieldNameSchema,
+  value: z.string().regex(/^-?\d+$/)
+});
 
 export const dynamaxAdventureEditableFieldSchema = z.strictObject({
-  field: z.string(),
-  label: z.string(),
+  field: dynamaxAdventureEditableFieldNameSchema,
+  label: z.string().min(1),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
   options: z.array(dynamaxAdventureEditableFieldOptionSchema),
-  valueKind: z.string()
+  valueKind: z.literal('integer')
 });
 
 export const dynamaxAdventurePokemonSnapshotSchema = z.strictObject({
-  ability: z.number().int().nonnegative(),
-  abilityLabel: z.string(),
-  form: z.number().int().nonnegative(),
-  gigantamaxLabel: z.string(),
-  gigantamaxState: z.number().int().nonnegative(),
-  guaranteedPerfectIvs: z.number().int().nonnegative(),
+  ability: z.number().int().min(0).max(2),
+  abilityLabel: z.string().min(1),
+  form: z.number().int().min(0).max(255),
+  gigantamaxLabel: z.string().min(1),
+  gigantamaxState: z.number().int().min(0).max(2),
+  guaranteedPerfectIvs: dynamaxAdventureGuaranteedPerfectIvsSchema,
   ivs: dynamaxAdventureIvsSchema,
-  ivSummary: z.string(),
-  level: z.number().int().nonnegative(),
-  moves: z.array(dynamaxAdventureMoveSchema),
-  species: z.string(),
-  speciesId: z.number().int().nonnegative()
+  ivSummary: z.string().min(1),
+  level: z.number().int().min(1).max(100),
+  moves: z.array(dynamaxAdventureMoveSchema).length(4),
+  species: z.string().min(1),
+  speciesId: z.number().int().min(1).max(898)
 });
 
 export const dynamaxAdventureBossTargetOptionSchema = z.strictObject({
   adventureIndex: z.number().int().nonnegative(),
   entryIndex: z.number().int().nonnegative(),
-  form: z.number().int().nonnegative(),
+  form: z.number().int().min(0).max(255),
   isStoryProgressGated: z.boolean(),
-  label: z.string(),
-  species: z.string(),
-  speciesId: z.number().int().nonnegative(),
-  version: z.number().int().nonnegative(),
-  versionLabel: z.string()
+  label: z.string().min(1),
+  species: z.string().min(1),
+  speciesId: z.number().int().min(1).max(898),
+  version: z.number().int().min(0).max(2),
+  versionLabel: z.string().min(1)
 });
 
 export const dynamaxAdventureRecordSchema = z.strictObject({
-  ability: z.number().int().nonnegative(),
-  abilityLabel: z.string(),
-  abilityOptions: z.array(dynamaxAdventureEditableFieldOptionSchema).default([]),
+  ability: z.number().int().min(0).max(2),
+  abilityLabel: z.string().min(1),
+  abilityOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
   adventureIndex: z.number().int().nonnegative(),
-  ballItem: z.string(), ballItemId: z.number().int().nonnegative(),
-  bossTargetSpecies: z.string(), bossTargetSpeciesId: z.number().int().nonnegative(),
-  bossTargetOptions: z.array(dynamaxAdventureBossTargetOptionSchema).default([]),
+  ballItem: z.string().min(1),
+  ballItemId: z.number().int().min(0).max(65535),
+  bossTargetSpecies: z.string().min(1),
+  bossTargetSpeciesId: z.number().int().min(1).max(898),
+  bossTargetOptions: z.array(dynamaxAdventureBossTargetOptionSchema).length(0),
   entryIndex: z.number().int().nonnegative(),
-  form: z.number().int().nonnegative(),
-  gigantamaxLabel: z.string(),
-  gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema).default([]),
-  gigantamaxState: z.number().int().nonnegative(),
-  guaranteedPerfectIvs: z.number().int().nonnegative(), isEditable: z.boolean().default(true),
+  form: z.number().int().min(0).max(255),
+  gigantamaxLabel: z.string().min(1),
+  gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
+  gigantamaxState: z.number().int().min(0).max(2),
+  guaranteedPerfectIvs: dynamaxAdventureGuaranteedPerfectIvsSchema,
+  isEditable: z.boolean(),
   isSingleCapture: z.boolean(),
   isStoryProgressGated: z.boolean(),
   ivs: dynamaxAdventureIvsSchema,
-  ivSummary: z.string(),
-  label: z.string(),
-  level: z.number().int().nonnegative(),
-  moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema).default([]),
-  moves: z.array(dynamaxAdventureMoveSchema),
-  otGender: z.number().int().nonnegative(),
-  otGenderLabel: z.string(),
+  ivSummary: z.string().min(1),
+  label: z.string().min(1),
+  layoutWritableFields: z.array(dynamaxAdventureEditableFieldNameSchema),
+  level: z.number().int().min(1).max(100),
+  moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
+  moves: z.array(dynamaxAdventureMoveSchema).length(4),
+  otGender: z.number().int().min(0).max(1),
+  otGenderLabel: z.string().min(1),
   provenance: dynamaxAdventureProvenanceSchema,
-  shinyRoll: z.number().int().nonnegative(),
-  shinyRollLabel: z.string(),
-  singleCaptureFlagBlock: z.string(),
-  species: z.string(),
-  speciesId: z.number().int().nonnegative(),
-  uiMessageId: z.string(),
-  vanillaPokemon: dynamaxAdventurePokemonSnapshotSchema.nullable().default(null),
-  version: z.number().int().nonnegative(),
-  versionLabel: z.string()
+  shinyRoll: z.number().int().min(0).max(2),
+  shinyRollLabel: z.string().min(1),
+  singleCaptureFlagBlock: z.string().regex(/^0x[0-9A-F]{16}$/),
+  species: z.string().min(1),
+  speciesId: z.number().int().min(1).max(898),
+  uiMessageId: z.string().regex(/^0x[0-9A-F]{16}$/),
+  vanillaPokemon: dynamaxAdventurePokemonSnapshotSchema.nullable(),
+  version: z.number().int().min(0).max(2),
+  versionLabel: z.string().min(1)
 });
 
 export const dynamaxAdventuresWorkflowStatsSchema = z.strictObject({
@@ -1722,13 +1877,767 @@ export const dynamaxAdventuresWorkflowStatsSchema = z.strictObject({
   totalEncounterCount: z.number().int().nonnegative()
 });
 
-export const dynamaxAdventuresWorkflowSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), editableFields: z.array(dynamaxAdventureEditableFieldSchema), encounters: z.array(dynamaxAdventureRecordSchema), safeNormalSpeciesOptions: z.array(dynamaxAdventureEditableFieldOptionSchema).default([]), stats: dynamaxAdventuresWorkflowStatsSchema, summary: workflowSummarySchema });
+export const dynamaxAdventureInstallStatusSchema = z.enum([
+  'unknown',
+  'blocked',
+  'available',
+  'repairable',
+  'modified'
+]);
+
+export const dynamaxAdventureReservedRegionSchema = z.strictObject({
+  area: z.enum(['main.ro', 'main.text']),
+  label: z.string().min(1),
+  offset: z.string().regex(/^(?:ro|text)\+0x[0-9A-F]+\.\.0x[0-9A-F]+$/),
+  rule: z.enum(['do-not-overwrite', 'payload-preserve-stride-padding'])
+});
+
+const dynamaxAdventuresWorkflowShapeSchema = z.strictObject({
+  buildId: z.union([z.literal('unknown'), z.string().regex(/^[A-F0-9]{64}$/)]),
+  canRestoreVanillaTable: z.boolean(),
+  detectedGame: z.enum(['sword', 'shield']).nullable(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(dynamaxAdventureEditableFieldSchema),
+  encounters: z.array(dynamaxAdventureRecordSchema),
+  hasLegacyBossTargetPatch: z.boolean(),
+  installMessage: z.string().min(1),
+  installStatus: dynamaxAdventureInstallStatusSchema,
+  reservedRegions: z.array(dynamaxAdventureReservedRegionSchema),
+  restoreVanillaTableMessage: z.string().min(1),
+  safeNormalSpeciesOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
+  stats: dynamaxAdventuresWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  usesVanillaRecoveryProjection: z.boolean()
+});
+
+export const dynamaxAdventuresWorkflowSchema =
+  dynamaxAdventuresWorkflowShapeSchema.superRefine(validateDynamaxAdventuresWorkflow);
 
 export const loadDynamaxAdventuresWorkflowResponseSchema = z.strictObject({
   workflow: dynamaxAdventuresWorkflowSchema
 });
 
-export const previewDynamaxAdventureDefaultsResponseSchema = z.strictObject({ abilityOptions: z.array(dynamaxAdventureEditableFieldOptionSchema), changes: z.array(dynamaxAdventureDefaultFieldSchema), diagnostics: z.array(apiDiagnosticSchema), gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema), moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema) });
+const previewDynamaxAdventureDefaultsResponseShapeSchema = z.strictObject({
+  abilityOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
+  changes: z.array(dynamaxAdventureDefaultFieldSchema),
+  diagnostics: z.array(apiDiagnosticSchema),
+  gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema),
+  moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema)
+});
+
+export const previewDynamaxAdventureDefaultsResponseSchema =
+  previewDynamaxAdventureDefaultsResponseShapeSchema.superRefine(
+    validateDynamaxAdventureDefaultsPreview
+  );
+
+function validateDynamaxAdventureDefaultsPreview(
+  preview: z.infer<typeof previewDynamaxAdventureDefaultsResponseShapeSchema>,
+  context: z.RefinementCtx
+) {
+  if (preview.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+    return;
+  }
+
+  const requiredFields = [
+    'form',
+    'ability',
+    'gigantamaxState',
+    'move0Id',
+    'move1Id',
+    'move2Id',
+    'move3Id'
+  ] as const;
+  const changesByField = new Map(preview.changes.map((change) => [change.field, change.value]));
+  if (
+    preview.changes.length !== requiredFields.length ||
+    changesByField.size !== requiredFields.length ||
+    requiredFields.some((field) => !changesByField.has(field))
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['changes'],
+      'Successful Dynamax Adventures defaults must return the exact dependent field set.'
+    );
+    return;
+  }
+
+  validateDynamaxAdventureOptions(preview.abilityOptions, context, ['abilityOptions'], 0, 2);
+  validateDynamaxAdventureOptions(
+    preview.gigantamaxOptions,
+    context,
+    ['gigantamaxOptions'],
+    0,
+    2
+  );
+  validateDynamaxAdventureOptions(preview.moveOptions, context, ['moveOptions'], 0, 826);
+  if (
+    preview.abilityOptions.length === 0 ||
+    preview.gigantamaxOptions.length === 0 ||
+    preview.moveOptions.length === 0
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['abilityOptions'],
+      'Successful Dynamax Adventures defaults require exact dependency options.'
+    );
+  }
+
+  const form = Number(changesByField.get('form'));
+  const ability = Number(changesByField.get('ability'));
+  const gigantamaxState = Number(changesByField.get('gigantamaxState'));
+  if (!Number.isInteger(form) || form < 0 || form > 255) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['changes'],
+      'Dynamax Adventures default form is outside the supported range.'
+    );
+  }
+  if (!preview.abilityOptions.some((option) => option.value === ability)) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['changes'],
+      'Dynamax Adventures default ability is not in the returned options.'
+    );
+  }
+  if (!preview.gigantamaxOptions.some((option) => option.value === gigantamaxState)) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['changes'],
+      'Dynamax Adventures default Gigantamax state is not in the returned options.'
+    );
+  }
+  for (const field of requiredFields.slice(3)) {
+    const move = Number(changesByField.get(field));
+    if (!preview.moveOptions.some((option) => option.value === move)) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['changes'],
+        'Dynamax Adventures default move is not in the returned options.'
+      );
+    }
+  }
+}
+
+function validateDynamaxAdventureRequestGame(
+  request: { paths: z.infer<typeof projectPathsSchema> },
+  context: z.RefinementCtx
+) {
+  if (request.paths.selectedGame !== 'sword' && request.paths.selectedGame !== 'shield') {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['paths', 'selectedGame'],
+      'Dynamax Adventures requires Sword or Shield.'
+    );
+  }
+}
+
+function validateDynamaxAdventuresWorkflow(
+  workflow: z.infer<typeof dynamaxAdventuresWorkflowShapeSchema>,
+  context: z.RefinementCtx
+) {
+  const buildIds = {
+    shield: 'A16802625E7826BF83B6F9708E475B912A9AB7DF000000000000000000000000',
+    sword: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471000000000000000000000000'
+  } as const;
+  if (
+    workflow.summary.id !== 'dynamaxAdventures' ||
+    workflow.summary.label !== 'Dynamax Adventures'
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['summary'],
+      'Dynamax Adventures workflow identity is not canonical.'
+    );
+  }
+
+  if (workflow.canRestoreVanillaTable && !workflow.usesVanillaRecoveryProjection) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['canRestoreVanillaTable'],
+      'Dynamax Adventures vanilla table restore requires the verified vanilla recovery projection.'
+    );
+  }
+
+  if (workflow.canRestoreVanillaTable && workflow.summary.availability !== 'readOnly') {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['canRestoreVanillaTable'],
+      'Dynamax Adventures vanilla table restore is only available in read-only recovery mode.'
+    );
+  }
+
+  if (workflow.usesVanillaRecoveryProjection) {
+    if (workflow.summary.availability !== 'readOnly') {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['usesVanillaRecoveryProjection'],
+        'Dynamax Adventures recovery projection must remain read-only.'
+      );
+    }
+    if (workflow.encounters.length !== dynamaxAdventureEncounterCount) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters'],
+        'Dynamax Adventures recovery projection requires the canonical 273 verified vanilla rows.'
+      );
+    }
+    workflow.encounters.forEach((encounter, encounterIndex) => {
+      if (
+        encounter.isEditable ||
+        encounter.layoutWritableFields.length > 0 ||
+        encounter.provenance.fileState !== 'layeredOverride' ||
+        encounter.provenance.sourceLayer !== 'layered' ||
+        encounter.vanillaPokemon === null ||
+        (encounter.vanillaPokemon !== null &&
+          !doesDynamaxAdventureRecordMatchSnapshot(
+            encounter,
+            encounter.vanillaPokemon
+          ))
+      ) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['encounters', encounterIndex],
+          'Dynamax Adventures recovery projection rows must be read-only verified vanilla targets.'
+        );
+      }
+    });
+  }
+
+  if (workflow.canRestoreVanillaTable) {
+    const workflowDiagnostics = [
+      ...workflow.diagnostics,
+      ...workflow.summary.diagnostics
+    ];
+    if (workflow.encounters.length !== dynamaxAdventureEncounterCount) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters'],
+        'Dynamax Adventures vanilla table restore requires the canonical 273-row table.'
+      );
+    }
+    if (
+      workflow.encounters.some(
+        (encounter) =>
+          encounter.provenance.fileState !== 'layeredOverride' ||
+          encounter.provenance.sourceLayer !== 'layered'
+      )
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters'],
+        'Dynamax Adventures vanilla table restore requires a layered table source.'
+      );
+    }
+    const hasRecoverableTableDiagnostic = workflowDiagnostics.some(
+      (diagnostic) =>
+        diagnostic.severity === 'error' &&
+        (diagnostic.message.includes(
+          'source table byte layout differs from the vanilla table'
+        ) ||
+          diagnostic.message.startsWith('Dynamax Adventures row ') ||
+          diagnostic.message.includes(
+            'contains changes on a hidden normal or boss row'
+          ))
+    );
+    if (!hasRecoverableTableDiagnostic) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['diagnostics'],
+        'Dynamax Adventures vanilla table restore requires a recoverable layered-table diagnostic.'
+      );
+    }
+    if (!['available', 'repairable', 'modified'].includes(workflow.installStatus)) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['installStatus'],
+        'Dynamax Adventures vanilla table restore requires a verified non-conflicting executable.'
+      );
+    }
+  }
+
+  if (
+    workflow.detectedGame !== null &&
+    workflow.buildId !== buildIds[workflow.detectedGame]
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['buildId'],
+      'Dynamax Adventures build identity does not match the detected game.'
+    );
+  }
+
+  if (
+    workflow.detectedGame === null &&
+    workflow.reservedRegions.length > 0
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['reservedRegions'],
+      'Dynamax Adventures cannot claim owned regions without a detected game.'
+    );
+  }
+
+  const reservedRegionIdentities = workflow.reservedRegions.map(
+    (region) => `${region.area}:${region.offset}`
+  );
+  if (new Set(reservedRegionIdentities).size !== reservedRegionIdentities.length) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['reservedRegions'],
+      'Dynamax Adventures reserved regions must be unique.'
+    );
+  }
+
+  if (
+    workflow.installStatus === 'unknown' &&
+    (workflow.buildId !== 'unknown' ||
+      workflow.detectedGame !== null ||
+      workflow.reservedRegions.length > 0)
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['installStatus'],
+      'Unknown Dynamax Adventures executable state cannot claim inspected identity.'
+    );
+  }
+
+  if (
+    ['available', 'repairable', 'modified'].includes(workflow.installStatus) &&
+    (workflow.buildId === 'unknown' ||
+      workflow.detectedGame === null ||
+      workflow.reservedRegions.length === 0)
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['installStatus'],
+      'Writable Dynamax Adventures executable state requires exact identity and ownership.'
+    );
+  }
+
+  if (
+    workflow.hasLegacyBossTargetPatch &&
+    workflow.installStatus !== 'repairable'
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['hasLegacyBossTargetPatch'],
+      'A Dynamax Adventures legacy final-boss target remap must expose a repairable executable state.'
+    );
+  }
+
+  const requiredFieldNames = new Set([
+    'species',
+    'form',
+    'level',
+    'ability',
+    'gigantamaxState',
+    'move0Id',
+    'move1Id',
+    'move2Id',
+    'move3Id',
+    'guaranteedPerfectIvs',
+    'ivAttack',
+    'ivDefense',
+    'ivSpecialAttack',
+    'ivSpecialDefense',
+    'ivSpeed'
+  ]);
+  const fieldNames = workflow.editableFields.map((field) => field.field);
+  const actualFieldNames = new Set<string>(fieldNames);
+  if (
+    actualFieldNames.size !== fieldNames.length ||
+    actualFieldNames.size !== requiredFieldNames.size ||
+    [...requiredFieldNames].some((field) => !actualFieldNames.has(field))
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['editableFields'],
+      'Dynamax Adventures editable fields are not the exact safe field set.'
+    );
+  }
+
+  workflow.editableFields.forEach((field, fieldIndex) => {
+    const [minimumValue, maximumValue] = dynamaxAdventureFieldRanges[field.field];
+    if (
+      field.minimumValue !== minimumValue ||
+      field.maximumValue !== maximumValue
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['editableFields', fieldIndex],
+        'Dynamax Adventures editable field range is not canonical.'
+      );
+    }
+    validateDynamaxAdventureOptions(
+      field.options,
+      context,
+      ['editableFields', fieldIndex, 'options'],
+      minimumValue,
+      maximumValue
+    );
+    const expectedOptionValues = dynamaxAdventureExactFieldOptionValues[field.field];
+    if (
+      expectedOptionValues !== undefined &&
+      (field.options.length !== expectedOptionValues.length ||
+        field.options.some(
+          (option, optionIndex) => option.value !== expectedOptionValues[optionIndex]
+        ))
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['editableFields', fieldIndex, 'options'],
+        'Dynamax Adventures editable field options are not canonical.'
+      );
+    }
+  });
+
+  const entryIndexes = workflow.encounters.map((encounter) => encounter.entryIndex);
+  if (
+    (workflow.encounters.length > 0 || workflow.summary.availability === 'available') &&
+    workflow.encounters.length !== dynamaxAdventureEncounterCount
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['encounters'],
+      'Dynamax Adventures must expose the canonical 273-row table.'
+    );
+  }
+
+  if (new Set(entryIndexes).size !== entryIndexes.length) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['encounters'],
+      'Dynamax Adventures entry indexes must be unique.'
+    );
+  }
+
+  if (entryIndexes.some((entryIndex, index) => entryIndex !== index)) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['encounters'],
+      'Dynamax Adventures entry indexes must match stable table order.'
+    );
+  }
+
+  workflow.encounters.forEach((encounter, encounterIndex) => {
+    if (
+      new Set(encounter.layoutWritableFields).size !==
+      encounter.layoutWritableFields.length
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters', encounterIndex, 'layoutWritableFields'],
+        'Dynamax Adventures layout-writable fields must be unique.'
+      );
+    }
+    if (
+      encounter.bossTargetSpeciesId !== encounter.speciesId ||
+      encounter.bossTargetSpecies !== encounter.species
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters', encounterIndex, 'bossTargetSpeciesId'],
+        'Dynamax Adventures boss metadata must remain informational row identity.'
+      );
+    }
+    if (
+      encounterIndex >= dynamaxAdventureNormalEncounterCount &&
+      encounter.isEditable
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters', encounterIndex, 'isEditable'],
+        'Dynamax Adventures boss rows 226 through 272 must remain read-only.'
+      );
+    }
+    if (!encounter.isEditable && encounter.layoutWritableFields.length > 0) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters', encounterIndex, 'layoutWritableFields'],
+        'Read-only Dynamax Adventures rows cannot claim writable layout fields.'
+      );
+    }
+    validateDynamaxAdventureMoveSlots(
+      encounter.moves,
+      context,
+      ['encounters', encounterIndex, 'moves']
+    );
+    validateDynamaxAdventureOptions(
+      encounter.abilityOptions,
+      context,
+      ['encounters', encounterIndex, 'abilityOptions'],
+      0,
+      2
+    );
+    validateDynamaxAdventureOptions(
+      encounter.gigantamaxOptions,
+      context,
+      ['encounters', encounterIndex, 'gigantamaxOptions'],
+      0,
+      2
+    );
+    validateDynamaxAdventureOptions(
+      encounter.moveOptions,
+      context,
+      ['encounters', encounterIndex, 'moveOptions'],
+      0,
+      826
+    );
+    const expectedSourceLayer =
+      encounter.provenance.fileState === 'baseOnly' ? 'base' : 'layered';
+    if (encounter.provenance.sourceLayer !== expectedSourceLayer) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['encounters', encounterIndex, 'provenance'],
+        'Dynamax Adventures provenance layer does not match its file state.'
+      );
+    }
+
+    const writableOptionValues: Array<{
+      field: z.infer<typeof dynamaxAdventureEditableFieldNameSchema>;
+      options: Array<{ value: number }>;
+      path: string;
+      value: number;
+    }> = [
+      {
+        field: 'ability',
+        options: encounter.abilityOptions,
+        path: 'abilityOptions',
+        value: encounter.ability
+      },
+      {
+        field: 'gigantamaxState',
+        options: encounter.gigantamaxOptions,
+        path: 'gigantamaxOptions',
+        value: encounter.gigantamaxState
+      },
+      ...encounter.moves.map((move, moveIndex) => ({
+        field: `move${moveIndex}Id` as z.infer<
+          typeof dynamaxAdventureEditableFieldNameSchema
+        >,
+        options: encounter.moveOptions,
+        path: 'moveOptions',
+        value: move.moveId
+      }))
+    ];
+    for (const optionValue of writableOptionValues) {
+      if (
+        workflow.summary.availability === 'available' &&
+        encounter.layoutWritableFields.includes(optionValue.field) &&
+        !optionValue.options.some((option) => option.value === optionValue.value)
+      ) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['encounters', encounterIndex, optionValue.path],
+          'A layout-writable Dynamax Adventures value is missing from its verified options.'
+        );
+      }
+    }
+    validateDynamaxAdventureGuaranteedIvs(
+      encounter.guaranteedPerfectIvs,
+      encounter.ivs.hp,
+      context,
+      ['encounters', encounterIndex, 'ivs', 'hp']
+    );
+
+    if (encounter.vanillaPokemon) {
+      validateDynamaxAdventureMoveSlots(
+        encounter.vanillaPokemon.moves,
+        context,
+        ['encounters', encounterIndex, 'vanillaPokemon', 'moves']
+      );
+      validateDynamaxAdventureGuaranteedIvs(
+        encounter.vanillaPokemon.guaranteedPerfectIvs,
+        encounter.vanillaPokemon.ivs.hp,
+        context,
+        ['encounters', encounterIndex, 'vanillaPokemon', 'ivs', 'hp']
+      );
+    }
+  });
+
+  validateDynamaxAdventureOptions(
+    workflow.safeNormalSpeciesOptions,
+    context,
+    ['safeNormalSpeciesOptions'],
+    1,
+    898
+  );
+
+  if (workflow.summary.availability === 'available') {
+    if (
+      workflow.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+      workflow.summary.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['diagnostics'],
+        'Available Dynamax Adventures cannot contain error diagnostics.'
+      );
+    }
+
+    if (workflow.safeNormalSpeciesOptions.length === 0) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['safeNormalSpeciesOptions'],
+        'Available Dynamax Adventures requires safe species dependency data.'
+      );
+    }
+
+    if (
+      workflow.installStatus === 'unknown' ||
+      workflow.installStatus === 'blocked'
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['installStatus'],
+        'Available Dynamax Adventures requires a writable executable state.'
+      );
+    }
+
+    workflow.encounters.forEach((encounter, encounterIndex) => {
+      if (encounter.vanillaPokemon === null) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['encounters', encounterIndex, 'vanillaPokemon'],
+          'Available Dynamax Adventures rows require a verified vanilla snapshot.'
+        );
+      }
+      if (
+        encounter.isEditable &&
+        (encounter.vanillaPokemon === null ||
+          encounter.abilityOptions.length === 0 ||
+          encounter.gigantamaxOptions.length === 0 ||
+          encounter.moveOptions.length === 0)
+      ) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['encounters', encounterIndex],
+          'Editable Dynamax Adventures rows require restore and exact option metadata.'
+        );
+      }
+      if (
+        !encounter.isEditable &&
+        encounter.vanillaPokemon !== null &&
+        !doesDynamaxAdventureRecordMatchSnapshot(encounter, encounter.vanillaPokemon)
+      ) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['encounters', encounterIndex, 'vanillaPokemon'],
+          'Available read-only Dynamax Adventures rows must match verified vanilla Pokemon data.'
+        );
+      }
+    });
+  }
+
+  const expectedStats = {
+    guaranteedPerfectIvEncounterCount: workflow.encounters.filter(
+      (encounter) => encounter.guaranteedPerfectIvs > 0
+    ).length,
+    singleCaptureCount: workflow.encounters.filter(
+      (encounter) => encounter.isSingleCapture
+    ).length,
+    storyGatedCount: workflow.encounters.filter(
+      (encounter) => encounter.isStoryProgressGated
+    ).length,
+    totalEncounterCount: workflow.encounters.length
+  };
+  for (const [field, value] of Object.entries(expectedStats)) {
+    if (workflow.stats[field as keyof typeof expectedStats] !== value) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['stats', field],
+        'Dynamax Adventures statistics do not match the returned records.'
+      );
+    }
+  }
+
+  if (workflow.encounters.length > 0 && workflow.stats.sourceFileCount < 1) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['stats', 'sourceFileCount'],
+      'Dynamax Adventures records require at least one reported source file.'
+    );
+  }
+}
+
+function validateDynamaxAdventureMoveSlots(
+  moves: Array<{ slot: number }>,
+  context: z.RefinementCtx,
+  path: Array<string | number>
+) {
+  if (moves.some((move, index) => move.slot !== index + 1)) {
+    addDynamaxAdventureContractIssue(
+      context,
+      path,
+      'Dynamax Adventures moves must be ordered in exact slots 1 through 4.'
+    );
+  }
+}
+
+function doesDynamaxAdventureRecordMatchSnapshot(
+  encounter: z.infer<typeof dynamaxAdventureRecordSchema>,
+  snapshot: z.infer<typeof dynamaxAdventurePokemonSnapshotSchema>
+) {
+  return (
+    encounter.ability === snapshot.ability &&
+    encounter.abilityLabel === snapshot.abilityLabel &&
+    encounter.form === snapshot.form &&
+    encounter.gigantamaxLabel === snapshot.gigantamaxLabel &&
+    encounter.gigantamaxState === snapshot.gigantamaxState &&
+    encounter.guaranteedPerfectIvs === snapshot.guaranteedPerfectIvs &&
+    encounter.ivSummary === snapshot.ivSummary &&
+    encounter.level === snapshot.level &&
+    encounter.species === snapshot.species &&
+    encounter.speciesId === snapshot.speciesId &&
+    JSON.stringify(encounter.ivs) === JSON.stringify(snapshot.ivs) &&
+    JSON.stringify(encounter.moves) === JSON.stringify(snapshot.moves)
+  );
+}
+
+function validateDynamaxAdventureOptions(
+  options: Array<{ value: number }>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+  minimum: number,
+  maximum: number
+) {
+  const values = options.map((option) => option.value);
+  if (
+    new Set(values).size !== values.length ||
+    values.some((value) => value < minimum || value > maximum)
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      path,
+      'Dynamax Adventures options must be unique and within the field range.'
+    );
+  }
+}
+
+function validateDynamaxAdventureGuaranteedIvs(
+  guaranteedPerfectIvs: number,
+  hp: number,
+  context: z.RefinementCtx,
+  path: Array<string | number>
+) {
+  const hasMatchingGuaranteedEncoding =
+    guaranteedPerfectIvs > 0 ? hp === -guaranteedPerfectIvs : hp >= -1;
+  if (!hasMatchingGuaranteedEncoding) {
+    addDynamaxAdventureContractIssue(
+      context,
+      path,
+      'Dynamax Adventures HP IV metadata does not match the guaranteed IV count.'
+    );
+  }
+}
+
+function addDynamaxAdventureContractIssue(
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+  message: string
+) {
+  context.addIssue({ code: 'custom', message, path });
+}
 
 export const shopProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
@@ -3485,9 +4394,286 @@ export const updateRentalPokemonFieldResponseSchema = z.strictObject({
   workflow: rentalPokemonWorkflowSchema
 });
 
-export const updateDynamaxAdventureFieldRequestSchema = z.strictObject({ entryIndex: z.number().int().nonnegative(), field: z.string(), paths: projectPathsSchema, session: editSessionSchema.nullable(), value: z.string() });
+export const updateDynamaxAdventureFieldRequestSchema = z
+  .strictObject({
+    entryIndex: z.number().int().min(0).max(dynamaxAdventureNormalEncounterCount - 1),
+    field: dynamaxAdventureEditableFieldNameSchema,
+    paths: projectPathsSchema,
+    session: editSessionSchema.nullable(),
+    value: z.string().regex(/^-?\d+$/)
+  })
+  .superRefine(validateDynamaxAdventureRequestGame)
+  .superRefine(validateDynamaxAdventureUpdateRequest);
 
-export const updateDynamaxAdventureFieldResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: dynamaxAdventuresWorkflowSchema });
+const dynamaxAdventureFieldResponseShapeSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: dynamaxAdventuresWorkflowSchema
+});
+
+export const updateDynamaxAdventureFieldResponseSchema =
+  dynamaxAdventureFieldResponseShapeSchema.superRefine(
+    validateDynamaxAdventureUpdateResponse
+  );
+
+export const stageDynamaxAdventureRepairResponseSchema =
+  updateDynamaxAdventureFieldResponseSchema.superRefine(
+    validateDynamaxAdventureRepairResponse
+  );
+
+export const stageDynamaxAdventureRestoreResponseSchema =
+  dynamaxAdventureFieldResponseShapeSchema.superRefine(
+    validateDynamaxAdventureRestoreResponse
+  );
+
+function validateDynamaxAdventureRestoreResponse(
+  response: z.infer<typeof dynamaxAdventureFieldResponseShapeSchema>,
+  context: z.RefinementCtx
+) {
+  if (
+    response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  ) {
+    if (
+      response.session.hasPendingChanges ||
+      response.session.pendingEdits.length > 0
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session'],
+        'Failed Dynamax Adventures table restore staging must return a sanitized empty session.'
+      );
+    }
+    return;
+  }
+
+  const pendingEdits = response.session.pendingEdits;
+  if (
+    !response.session.hasPendingChanges ||
+    pendingEdits.length !== 1 ||
+    !response.workflow.canRestoreVanillaTable
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'pendingEdits'],
+      'Dynamax Adventures table restore must stage exactly one canonical recovery marker.'
+    );
+    return;
+  }
+
+  const owner = response.workflow.encounters[0];
+  const edit = pendingEdits[0]!;
+  if (
+    !owner ||
+    owner.provenance.fileState !== 'layeredOverride' ||
+    owner.provenance.sourceLayer !== 'layered' ||
+    edit.domain !== 'workflow.dynamaxAdventures' ||
+    edit.recordId !== `dynamaxAdventure:${owner.entryIndex}` ||
+    edit.field !== 'level' ||
+    edit.newValue !== owner.level.toString() ||
+    edit.summary !== 'Restore the vanilla Dynamax Adventures table.' ||
+    edit.sources.length !== 1 ||
+    edit.sources[0]?.layer !== owner.provenance.sourceLayer ||
+    edit.sources[0]?.relativePath !== owner.provenance.sourceFile
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'pendingEdits', 0],
+      'Dynamax Adventures table restore marker does not match the first loaded layered row.'
+    );
+  }
+}
+
+function validateDynamaxAdventureRepairResponse(
+  response: z.infer<typeof updateDynamaxAdventureFieldResponseSchema>,
+  context: z.RefinementCtx
+) {
+  if (
+    [
+      ...response.diagnostics,
+      ...response.workflow.diagnostics,
+      ...response.workflow.summary.diagnostics
+    ].some((diagnostic) => diagnostic.severity === 'error')
+  ) {
+    return;
+  }
+
+  const pendingEdits = response.session.pendingEdits;
+  if (pendingEdits.length !== 1) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'pendingEdits'],
+      'Dynamax Adventures repair must stage exactly one canonical owner marker.'
+    );
+    return;
+  }
+
+  const edit = pendingEdits[0]!;
+  const ownerMatch = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(edit.recordId ?? '');
+  const ownerIndex = ownerMatch ? Number(ownerMatch[1]) : Number.NaN;
+  const owner = Number.isSafeInteger(ownerIndex)
+    ? response.workflow.encounters[ownerIndex]
+    : undefined;
+  if (
+    edit.domain !== 'workflow.dynamaxAdventures' ||
+    edit.field !== 'level' ||
+    edit.summary !== 'Repair Dynamax Adventures executable projection.' ||
+    !owner?.isEditable ||
+    edit.newValue !== owner.level.toString()
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'pendingEdits', 0],
+      'Dynamax Adventures repair marker does not match its safe normal-row owner.'
+    );
+  }
+
+  if (
+    !owner ||
+    edit.sources.length !== 1 ||
+    edit.sources[0]?.layer !== owner.provenance.sourceLayer ||
+    edit.sources[0]?.relativePath !== owner.provenance.sourceFile
+  ) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'pendingEdits', 0, 'sources'],
+      'Dynamax Adventures repair marker source must exactly match its owner provenance.'
+    );
+  }
+}
+
+function validateDynamaxAdventureUpdateRequest(
+  request: {
+    field: z.infer<typeof dynamaxAdventureEditableFieldNameSchema>;
+    value: string;
+  },
+  context: z.RefinementCtx
+) {
+  if (!isValidDynamaxAdventureFieldValue(request.field, request.value)) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['value'],
+      `Dynamax Adventures ${request.field} is outside its supported range.`
+    );
+  }
+}
+
+function validateDynamaxAdventureUpdateResponse(
+  response: {
+    session: z.infer<typeof editSessionSchema>;
+    workflow: z.infer<typeof dynamaxAdventuresWorkflowSchema>;
+  },
+  context: z.RefinementCtx
+) {
+  const { pendingEdits } = response.session;
+  if (response.session.hasPendingChanges !== (pendingEdits.length > 0)) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'hasPendingChanges'],
+      'Dynamax Adventures session pending state does not match its edits.'
+    );
+  }
+
+  const ownerIndexes = new Set<number>();
+  pendingEdits.forEach((edit, editIndex) => {
+    if (edit.summary === 'Restore the vanilla Dynamax Adventures table.') {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session', 'pendingEdits', editIndex, 'summary'],
+        'Ordinary Dynamax Adventures field updates cannot stage a full-table restore marker.'
+      );
+    }
+
+    if (edit.domain !== 'workflow.dynamaxAdventures') {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session', 'pendingEdits', editIndex, 'domain'],
+        'Dynamax Adventures update responses cannot contain another workflow domain.'
+      );
+      return;
+    }
+
+    const ownerMatch = /^dynamaxAdventure:(0|[1-9]\d*)$/.exec(edit.recordId ?? '');
+    const ownerIndex = ownerMatch ? Number(ownerMatch[1]) : Number.NaN;
+    if (
+      !Number.isSafeInteger(ownerIndex) ||
+      ownerIndex < 0 ||
+      ownerIndex >= dynamaxAdventureNormalEncounterCount
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session', 'pendingEdits', editIndex, 'recordId'],
+        'Dynamax Adventures pending edits require one canonical normal-row owner.'
+      );
+    } else {
+      ownerIndexes.add(ownerIndex);
+      const owner = response.workflow.encounters[ownerIndex];
+      if (owner?.isEditable !== true) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['session', 'pendingEdits', editIndex, 'recordId'],
+          'Dynamax Adventures pending edits must target an editable normal row.'
+        );
+      }
+      if (
+        !owner ||
+        edit.sources.length !== 1 ||
+        edit.sources[0]?.layer !== owner.provenance.sourceLayer ||
+        edit.sources[0]?.relativePath !== owner.provenance.sourceFile
+      ) {
+        addDynamaxAdventureContractIssue(
+          context,
+          ['session', 'pendingEdits', editIndex, 'sources'],
+          'Dynamax Adventures pending edit source must exactly match its owner provenance.'
+        );
+      }
+    }
+
+    const fieldResult = dynamaxAdventureEditableFieldNameSchema.safeParse(edit.field);
+    if (
+      !fieldResult.success ||
+      typeof edit.newValue !== 'string' ||
+      !isValidDynamaxAdventureFieldValue(fieldResult.data, edit.newValue)
+    ) {
+      addDynamaxAdventureContractIssue(
+        context,
+        ['session', 'pendingEdits', editIndex],
+        'Dynamax Adventures pending edit field or value is outside the safe contract.'
+      );
+    }
+  });
+
+  if (ownerIndexes.size > 1) {
+    addDynamaxAdventureContractIssue(
+      context,
+      ['session', 'pendingEdits'],
+      'Dynamax Adventures pending edits must belong to one normal row.'
+    );
+  }
+}
+
+function isValidDynamaxAdventureFieldValue(
+  field: z.infer<typeof dynamaxAdventureEditableFieldNameSchema>,
+  value: string
+) {
+  if (!/^-?\d+$/.test(value)) {
+    return false;
+  }
+
+  const parsedValue = Number(value);
+  if (!Number.isSafeInteger(parsedValue)) {
+    return false;
+  }
+
+  const [minimumValue, maximumValue] = dynamaxAdventureFieldRanges[field];
+  if (parsedValue < minimumValue || parsedValue > maximumValue) {
+    return false;
+  }
+
+  return (
+    field !== 'guaranteedPerfectIvs' ||
+    [0, 2, 3, 4, 5, 6].includes(parsedValue)
+  );
+}
 
 export const updateShopInventoryItemRequestSchema = z.strictObject({
   field: z.string(),
@@ -3963,6 +5149,18 @@ export type LoadDynamaxAdventuresWorkflowRequest = z.infer<typeof loadDynamaxAdv
 export type LoadDynamaxAdventuresWorkflowResponse = z.infer<typeof loadDynamaxAdventuresWorkflowResponseSchema>;
 export type PreviewDynamaxAdventureDefaultsRequest = z.infer<typeof previewDynamaxAdventureDefaultsRequestSchema>;
 export type PreviewDynamaxAdventureDefaultsResponse = z.infer<typeof previewDynamaxAdventureDefaultsResponseSchema>;
+export type StageDynamaxAdventureRepairRequest = z.infer<
+  typeof stageDynamaxAdventureRepairRequestSchema
+>;
+export type StageDynamaxAdventureRepairResponse = z.infer<
+  typeof stageDynamaxAdventureRepairResponseSchema
+>;
+export type StageDynamaxAdventureRestoreRequest = z.infer<
+  typeof stageDynamaxAdventureRestoreRequestSchema
+>;
+export type StageDynamaxAdventureRestoreResponse = z.infer<
+  typeof stageDynamaxAdventureRestoreResponseSchema
+>;
 export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSchema>;
 export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
 export type LoadEncountersWorkflowRequest = z.infer<typeof loadEncountersWorkflowRequestSchema>;

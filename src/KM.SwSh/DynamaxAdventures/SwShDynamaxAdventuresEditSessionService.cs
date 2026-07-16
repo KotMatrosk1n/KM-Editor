@@ -6,16 +6,22 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.ExeFs;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.DynamaxAdventures;
 
 public sealed class SwShDynamaxAdventuresEditSessionService
 {
+    internal const string RepairExecutableProjectionSummary = "Repair Dynamax Adventures executable projection.";
+    internal const string RestoreVanillaTableSummary = "Restore the vanilla Dynamax Adventures table.";
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShDynamaxAdventuresWorkflowService dynamaxAdventuresWorkflowService;
 
@@ -25,6 +31,12 @@ public sealed class SwShDynamaxAdventuresEditSessionService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresWorkflowService = dynamaxAdventuresWorkflowService ?? new SwShDynamaxAdventuresWorkflowService();
+    }
+
+    internal static SwShDynamaxAdventuresEditSessionService CreateForSyntheticTests()
+    {
+        return new SwShDynamaxAdventuresEditSessionService(
+            dynamaxAdventuresWorkflowService: SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests());
     }
 
     public EditSession StartSession()
@@ -48,8 +60,35 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var workflow = dynamaxAdventuresWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
+        if (!ValidatePendingSessionStructure(workflow, currentSession, diagnostics))
+        {
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                currentSession with { PendingEdits = [] },
+                diagnostics);
+        }
+
         if (!CanEditDynamaxAdventures(project, workflow, diagnostics))
         {
+            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var existingRecordIds = currentSession.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Domain,
+                SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
+                StringComparison.Ordinal))
+            .Select(edit => edit.RecordId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var requestedRecordId = SwShDynamaxAdventuresWorkflowService.CreateEncounterRecordId(entryIndex);
+        if (existingRecordIds.Any(recordId => !string.Equals(recordId, requestedRecordId, StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "A Dynamax Adventures edit session can contain changes for only one Pokemon row. Apply or discard the current row before editing another row.",
+                field: "entryIndex",
+                expected: "The row already selected by this edit session"));
             return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
         }
 
@@ -79,8 +118,12 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return new SwShDynamaxAdventuresEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ReplacePendingEncounterEdits(
+        var sessionForUpdate = RemoveAutoDependentEditsForVanillaSpeciesRestore(
             currentSession,
+            encounter,
+            pendingEdit);
+        var updatedSession = ReplacePendingEncounterEdits(
+            sessionForUpdate,
             CreateRelatedPendingEdits(encounter, pendingEdit));
 
         return new SwShDynamaxAdventuresEditResult(
@@ -89,6 +132,221 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 OverlayPendingEdits(workflow, updatedSession.PendingEdits)),
             updatedSession,
             diagnostics);
+    }
+
+    public SwShDynamaxAdventuresEditResult StageRepair(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var workflow = dynamaxAdventuresWorkflowService.Load(project);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!ValidatePendingSessionStructure(workflow, currentSession, diagnostics))
+        {
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                currentSession with { PendingEdits = [] },
+                diagnostics);
+        }
+
+        if (!CanEditDynamaxAdventures(
+                project,
+                workflow,
+                diagnostics,
+                allowLegacyBossTargetCleanup: true))
+        {
+            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (currentSession.PendingEdits.Count != 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures executable repair must be staged in an empty edit session.",
+                expected: "Apply or discard the current Dynamax Adventures row edits first"));
+            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (!string.Equals(workflow.InstallStatus, "repairable", StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures executable repair is available only when legacy owned state is detected as repairable.",
+                file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
+                expected: "Repairable Dynamax Adventures executable state"));
+            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var encounter = workflow.Encounters.FirstOrDefault(candidate =>
+            candidate.IsEditable
+            && candidate.LayoutWritableFields.Contains(
+                SwShDynamaxAdventuresWorkflowService.LevelField,
+                StringComparer.Ordinal));
+        if (encounter is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures executable repair could not find a safe layout-preserving row anchor.",
+                field: SwShDynamaxAdventuresWorkflowService.LevelField,
+                expected: "At least one editable row with stored level metadata"));
+            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var repairEdit = new PendingEdit(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
+            RepairExecutableProjectionSummary,
+            [new ProjectFileReference(encounter.Provenance.SourceLayer, encounter.Provenance.SourceFile)],
+            RecordId: SwShDynamaxAdventuresWorkflowService.CreateEncounterRecordId(encounter.EntryIndex),
+            Field: SwShDynamaxAdventuresWorkflowService.LevelField,
+            NewValue: encounter.Level.ToString(CultureInfo.InvariantCulture));
+        var updatedSession = currentSession with { PendingEdits = [repairEdit] };
+
+        diagnostics.Add(CreateDiagnostic(
+            workflow.HasLegacyBossTargetPatch
+                ? DiagnosticSeverity.Warning
+                : DiagnosticSeverity.Info,
+            workflow.HasLegacyBossTargetPatch
+                ? "Staged destructive cleanup of unsupported legacy final-boss target remap code. The Adventure table values remain unchanged."
+                : "Staged Dynamax Adventures executable repair without changing Adventure table values."));
+        return new SwShDynamaxAdventuresEditResult(workflow, updatedSession, diagnostics);
+    }
+
+    public SwShDynamaxAdventuresEditResult StageVanillaTableRestore(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var workflow = dynamaxAdventuresWorkflowService.Load(project);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!ValidatePendingSessionRuntimeShape(currentSession, diagnostics))
+        {
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                diagnostics);
+        }
+
+        if (!project.Health.CanOpenEditableWorkflows)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures vanilla-table restore requires valid base paths and a valid output root.",
+                expected: "Editable project paths"));
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                diagnostics);
+        }
+
+        if (currentSession.PendingEdits.Count != 0)
+        {
+            if (IsVanillaTableRestoreSession(project, workflow, currentSession))
+            {
+                var validation = Validate(paths, currentSession);
+                if (validation.IsValid)
+                {
+                    diagnostics.AddRange(validation.Diagnostics);
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Info,
+                        "Dynamax Adventures vanilla-table restore is already staged in this edit session."));
+                    return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+                }
+
+                diagnostics.AddRange(validation.Diagnostics);
+                return new SwShDynamaxAdventuresEditResult(
+                    workflow,
+                    SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                    diagnostics);
+            }
+
+            if (currentSession.PendingEdits.Count != 1
+                && currentSession.PendingEdits.Any(edit =>
+                    edit.Summary is RepairExecutableProjectionSummary or RestoreVanillaTableSummary))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures recovery actions cannot be combined with Pokemon row edits.",
+                    expected: "One canonical repair or vanilla-table restore action"));
+                return new SwShDynamaxAdventuresEditResult(
+                    workflow,
+                    SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                    diagnostics);
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures vanilla-table restore must be staged in an empty edit session.",
+                expected: "Apply or discard the current Dynamax Adventures row edits first"));
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                diagnostics);
+        }
+
+        if (!ValidatePendingSessionStructure(workflow, currentSession, diagnostics))
+        {
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                diagnostics);
+        }
+
+        if (!workflow.CanRestoreVanillaTable)
+        {
+            foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(diagnostic);
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures vanilla-table restore is not available for this source state.",
+                file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                expected: "A recoverable layered Adventure table with a verified base and non-conflicting executable"));
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                diagnostics);
+        }
+
+        var encounter = workflow.Encounters.FirstOrDefault(candidate =>
+            candidate.Provenance.SourceLayer == ProjectFileLayer.Layered);
+        if (encounter is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures vanilla-table restore could not find a canonical layered table-row anchor.",
+                field: SwShDynamaxAdventuresWorkflowService.LevelField,
+                expected: "First row from the layered Adventure table"));
+            return new SwShDynamaxAdventuresEditResult(
+                workflow,
+                SanitizeFailedVanillaTableRestoreRetry(currentSession),
+                diagnostics);
+        }
+
+        var restoreEdit = new PendingEdit(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
+            RestoreVanillaTableSummary,
+            [new ProjectFileReference(encounter.Provenance.SourceLayer, encounter.Provenance.SourceFile)],
+            RecordId: SwShDynamaxAdventuresWorkflowService.CreateEncounterRecordId(encounter.EntryIndex),
+            Field: SwShDynamaxAdventuresWorkflowService.LevelField,
+            NewValue: encounter.Level.ToString(CultureInfo.InvariantCulture));
+        var updatedSession = currentSession with { PendingEdits = [restoreEdit] };
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Warning,
+            workflow.HasLegacyBossTargetPatch
+                ? "Staged removal of all layered Dynamax Adventures table changes and destructive cleanup of unsupported legacy final-boss target remap code. Review the plan before restoring the verified vanilla state."
+                : "Staged removal of all layered Dynamax Adventures table changes. Review the plan before restoring the verified vanilla table."));
+        return new SwShDynamaxAdventuresEditResult(workflow, updatedSession, diagnostics);
     }
 
     public SwShDynamaxAdventureDefaultPreview PreviewDefaults(
@@ -104,6 +362,11 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var workflow = dynamaxAdventuresWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
+
+        if (session is not null && !ValidatePendingSessionStructure(workflow, session, diagnostics))
+        {
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
 
         if (!CanEditDynamaxAdventures(project, workflow, diagnostics))
         {
@@ -146,18 +409,66 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
         }
 
+
+        if (form != encounter.Form
+            && !encounter.LayoutWritableFields.Contains(
+                SwShDynamaxAdventuresWorkflowService.FormField,
+                StringComparer.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures defaults cannot change this row's omitted form field without rebuilding the FlatBuffer layout.",
+                field: SwShDynamaxAdventuresWorkflowService.FormField,
+                expected: "A source row with stored form metadata"));
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
+
+        var moveFields = Enumerable.Range(0, 4).Select(GetMoveField).ToArray();
+        var omittedMoveField = moveFields.FirstOrDefault(field =>
+            !encounter.LayoutWritableFields.Contains(field, StringComparer.Ordinal));
+        if (omittedMoveField is not null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures defaults cannot populate a move slot stored as an omitted FlatBuffer default.",
+                field: omittedMoveField,
+                expected: "Four source-table move fields that can be updated in place"));
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
+
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
         var personalRecords = LoadPersonalRecords(project);
         var learnsetRecords = LoadLearnsetRecords(project);
-        var abilityOptions = SwShDynamaxAdventuresWorkflowService.FilterAbilityOptionsForLayout(
-            CreateAbilityOptions(
-                SwShPokemonAbilityOptionResolver.Load(project),
-                species,
-                form),
-            encounter.AbilityOptions);
-        var gigantamaxOptions = SwShDynamaxAdventuresWorkflowService.CreateGigantamaxOptions(
+        var allAbilityOptions = CreateAbilityOptions(
+            SwShPokemonAbilityOptionResolver.Load(project),
+            species,
+            form);
+        var abilityOptions = encounter.LayoutWritableFields.Contains(
+            SwShDynamaxAdventuresWorkflowService.AbilityField,
+            StringComparer.Ordinal)
+                ? allAbilityOptions
+                : allAbilityOptions.Where(option => option.Value == encounter.Ability).ToArray();
+        var allGigantamaxOptions = SwShDynamaxAdventuresWorkflowService.CreateGigantamaxOptions(
             species,
             currentState: 1);
+        var gigantamaxOptions = encounter.LayoutWritableFields.Contains(
+            SwShDynamaxAdventuresWorkflowService.GigantamaxStateField,
+            StringComparer.Ordinal)
+                ? allGigantamaxOptions
+                : encounter.GigantamaxState == 0
+                    ? [new SwShDynamaxAdventureEditableFieldOption(0, "Unknown")]
+                    : [];
+        var defaultGigantamax = gigantamaxOptions.Any(option => option.Value == 1)
+            ? 1
+            : gigantamaxOptions.FirstOrDefault(option => option.Value == encounter.GigantamaxState)?.Value;
+        if (!abilityOptions.Any(option => option.Value == 0) || defaultGigantamax is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures defaults could not map layout-writable ability and Gigantamax values for this row.",
+                expected: "Stored or default values that are valid for the selected species and form"));
+            return new SwShDynamaxAdventureDefaultPreview([], abilityOptions, gigantamaxOptions, [], diagnostics);
+        }
         var targetPersonal = SwShDynamaxAdventureSafetyRules.ResolvePersonalRecord(
             species,
             form,
@@ -183,7 +494,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             Form = form,
             Level = level,
             Ability = 0,
-            GigantamaxState = 1,
+            GigantamaxState = defaultGigantamax.Value,
             Moves = [],
         };
         var moveOptions = CreateMoveOptions(
@@ -214,7 +525,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         {
             new(SwShDynamaxAdventuresWorkflowService.FormField, form.ToString(CultureInfo.InvariantCulture)),
             new(SwShDynamaxAdventuresWorkflowService.AbilityField, "0"),
-            new(SwShDynamaxAdventuresWorkflowService.GigantamaxStateField, "1"),
+            new(SwShDynamaxAdventuresWorkflowService.GigantamaxStateField, defaultGigantamax.Value.ToString(CultureInfo.InvariantCulture)),
         };
         for (var slot = 0; slot < 4; slot++)
         {
@@ -235,18 +546,68 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var workflow = dynamaxAdventuresWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        CanEditDynamaxAdventures(project, workflow, diagnostics);
-
-        foreach (var edit in session.PendingEdits)
+        var hasValidSessionStructure = ValidatePendingSessionStructure(workflow, session, diagnostics);
+        if (!hasValidSessionStructure)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            return new SwShEditSessionValidation(
+                session with { PendingEdits = [] },
+                IsValid: false,
+                diagnostics);
+        }
+
+        var isVanillaTableRestore = IsVanillaTableRestoreSession(project, workflow, session);
+        var isExecutableRepair = IsExecutableRepairSession(workflow, session);
+        var canUseWorkflow = isVanillaTableRestore
+            || CanEditDynamaxAdventures(
+                project,
+                workflow,
+                diagnostics,
+                allowLegacyBossTargetCleanup: isExecutableRepair);
+        if (!canUseWorkflow)
+        {
+            return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
+        }
+
+        if (isVanillaTableRestore)
+        {
+            var source = SwShDynamaxAdventuresWorkflowService.ResolveDynamaxAdventureDataSource(project);
+            var state = source is null
+                ? null
+                : CreateApplyState(paths, project, source, session, diagnostics);
+            if (source is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures vanilla-table restore could not resolve the layered source table.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    expected: "Layered Adventure table and verified base table"));
+            }
+            else if (state is not null
+                && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    "Pending Dynamax Adventures vanilla-table restore is valid and will discard all layered table changes."));
+            }
+
+            return new SwShEditSessionValidation(
+                session,
+                state is not null && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
+                diagnostics);
         }
 
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
         var personalRecords = LoadPersonalRecords(project);
         var learnsetRecords = LoadLearnsetRecords(project);
+        var effectiveWorkflow = RefreshDynamicEncounterOptions(
+            project,
+            OverlayPendingEdits(workflow, session.PendingEdits));
+        foreach (var edit in session.PendingEdits)
+        {
+            ValidateDynamicPendingOption(effectiveWorkflow, edit, diagnostics);
+        }
         ValidateDynamaxAdventureCompatibility(
-            OverlayPendingEdits(workflow, session.PendingEdits),
+            effectiveWorkflow,
             usableMoveIds,
             personalRecords,
             learnsetRecords,
@@ -270,8 +631,15 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
+
+        if (!validation.IsValid
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, [], diagnostics);
+        }
 
         if (session.PendingEdits.Count == 0)
         {
@@ -286,6 +654,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var source = SwShDynamaxAdventuresWorkflowService.ResolveDynamaxAdventureDataSource(project);
         if (source is null)
@@ -309,13 +678,13 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         }
 
         var writes = new List<PlannedFileWrite>();
-        var applyState = CreateApplyState(paths, source, session, diagnostics);
+        var applyState = CreateApplyState(paths, project, source, session, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) || applyState is null)
         {
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
-        var tableRestoresVanilla = applyState.HasTableEdits && applyState.MatchesBaseArchive;
+        var tableRestoresVanilla = applyState.HasTableEdits && applyState.MatchesBaseBytes;
         if (applyState.HasTableEdits && !tableRestoresVanilla && !applyState.SourceLayoutMatchesBase)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -328,11 +697,16 @@ public sealed class SwShDynamaxAdventuresEditSessionService
 
         if (applyState.HasTableEdits)
         {
+            var planSources = IsRecoveryAction(session)
+                ? CreateRecoveryPlanSources(project, session)
+                : CreateCanonicalPlanSources(project, session, includeMain: true);
             var tableWrite = new PlannedFileWrite(
                 source.GraphEntry.RelativePath,
-                [new ProjectFileReference(GetSourceLayer(source.GraphEntry), source.GraphEntry.RelativePath)],
+                planSources,
                 File.Exists(targetPath),
-                tableRestoresVanilla
+                tableRestoresVanilla && IsVanillaTableRestoreAction(session)
+                    ? "Remove all layered Dynamax Adventures table changes and restore the verified vanilla table."
+                    : tableRestoresVanilla
                     ? "Restore vanilla Dynamax Adventures Pokemon by removing the generated Adventure table."
                     : session.PendingEdits.Count == 1
                     ? $"Apply pending Dynamax Adventures edit: {session.PendingEdits[0].Summary}"
@@ -343,55 +717,34 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var mainTargetPath = SwShDynamaxAdventuresWorkflowService.ResolveOutputPath(
             paths,
             SwShExeFsPatchWorkflowService.ExeFsMainPath);
-        var bossTargetRemap = applyState.BossTargetRemap;
-        var shouldCleanupMain = (tableRestoresVanilla || bossTargetRemap?.IsRestore == true)
-            && mainTargetPath is not null
-            && File.Exists(mainTargetPath);
-        var shouldPatchMain = RequiresMainPatch(session.PendingEdits) && !tableRestoresVanilla && bossTargetRemap?.IsRestore != true;
-        if (shouldPatchMain || shouldCleanupMain)
+        var removeRedundantGeneratedMain = tableRestoresVanilla
+            && ShouldRemoveRedundantGeneratedMain(paths, project);
+        var shouldReconcileMain = applyState.MainAnalysis.Kind == SwShDynamaxAdventuresMainKind.Stale
+            || removeRedundantGeneratedMain;
+        if (shouldReconcileMain)
         {
-            var mainSource = ResolveWorkflowFile(project, SwShExeFsPatchWorkflowService.ExeFsMainPath);
-            if (shouldPatchMain && mainSource is null)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Dynamax Adventures identity edits require exefs/main so the game's hardcoded Adventure mirrors can be updated.",
-                    file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
-                    expected: "Readable Sword/Shield exefs/main NSO"));
-                return new ChangePlan(session.Id, [], diagnostics);
-            }
-
             mainTargetPath = ResolveOutputPath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath, diagnostics);
             if (mainTargetPath is null)
             {
                 return new ChangePlan(session.Id, [], diagnostics);
             }
 
-            if (shouldCleanupMain && !BaseSourceExists(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    "Dynamax Adventures restore could not resolve base exefs/main for safe cleanup.",
-                    file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
-                    expected: "Readable base ExeFS main"));
-                return new ChangePlan(session.Id, [], diagnostics);
-            }
-
-            IReadOnlyList<ProjectFileReference> sources = shouldCleanupMain
-                ? [
-                    new ProjectFileReference(ProjectFileLayer.Generated, SwShExeFsPatchWorkflowService.ExeFsMainPath),
-                    new ProjectFileReference(ProjectFileLayer.Base, SwShExeFsPatchWorkflowService.ExeFsMainPath),
-                ]
-                : [new ProjectFileReference(GetSourceLayer(mainSource!.GraphEntry), mainSource.GraphEntry.RelativePath)];
             writes.Add(new PlannedFileWrite(
                 SwShExeFsPatchWorkflowService.ExeFsMainPath,
-                sources,
+                IsRecoveryAction(session)
+                    ? CreateRecoveryPlanSources(project, session)
+                    : CreateCanonicalPlanSources(project, session, includeMain: true),
                 File.Exists(mainTargetPath),
-                shouldCleanupMain
-                    ? "Restore or remove Dynamax Adventures ExeFS mirrors because Adventure Pokemon match vanilla."
-                    : bossTargetRemap is not null
-                    ? $"Patch Dynamax Adventures final boss target species from {bossTargetRemap.FromSpecies.ToString(CultureInfo.InvariantCulture)} to {bossTargetRemap.ToSpecies.ToString(CultureInfo.InvariantCulture)}."
-                    : "Patch Dynamax Adventures ExeFS mirrors for edited Adventure identity data."));
+                IsRecoveryAction(session) && applyState.MainAnalysis.HasLegacyBossTargetPatch
+                    ? IsVanillaTableRestoreAction(session)
+                        ? "Remove unsupported legacy final-boss target remap code while restoring the verified vanilla Dynamax Adventures state."
+                        : "Remove unsupported legacy final-boss target remap code and restore the owned executable projection."
+                    : removeRedundantGeneratedMain
+                    ? "Remove redundant generated Dynamax Adventures exefs/main after restoring the vanilla table."
+                    : applyState.MainAnalysis.RequiresSummaryMirror
+                    || applyState.MainAnalysis.RequiresCommandValidatorPatch
+                    ? "Synchronize Dynamax Adventures ExeFS mirrors with the final effective Adventure table."
+                    : "Restore stale Dynamax Adventures-owned ExeFS mirror state while preserving other executable patches."));
         }
 
         diagnostics.Add(CreateDiagnostic(
@@ -400,7 +753,10 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 CultureInfo.InvariantCulture,
                 $"Change plan preview contains {writes.Count:N0} target file(s).")));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics),
+            preserveExplicitSourceLayers: true);
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -409,178 +765,274 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Reviewed change plan is stale. Review the change plan again before applying.",
+                "Reviewed Dynamax Adventures change plan is stale. Review the change plan again before applying.",
                 expected: "Current reviewed Dynamax Adventures change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var acquireDiagnostics,
+                preserveExplicitSourceLayers: true))
+        {
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                acquireDiagnostics);
+        }
+
+        using var verifiedScope = applyScope!;
+        var snapshotPlan = CreateChangePlan(verifiedScope.ApplyPaths, session);
+        if (!verifiedScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedPlan))
+        {
+            var staleDiagnostics = preparedPlan.Diagnostics.ToList();
+            staleDiagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures sources changed while preparing the verified apply snapshot.",
+                expected: "Sources matching the reviewed Dynamax Adventures change plan"));
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                staleDiagnostics);
+        }
+
+        var snapshotResult = ApplyPreparedPlan(
+            verifiedScope.ApplyPaths,
+            session,
+            preparedPlan,
+            applyId,
+            appliedAt);
+        return verifiedScope.Commit(snapshotResult);
+    }
+
+    private ApplyResult ApplyPreparedPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan preparedPlan,
+        string applyId,
+        DateTimeOffset appliedAt)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        var diagnostics = preparedPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
         var project = projectWorkspaceService.Open(paths);
         var source = SwShDynamaxAdventuresWorkflowService.ResolveDynamaxAdventureDataSource(project);
         if (source is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Dynamax Adventures apply could not resolve the source table.",
+                "Dynamax Adventures verified apply could not resolve the source table.",
                 expected: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath));
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
         }
 
-        var targetPath = ResolveOutputPath(paths, source.GraphEntry.RelativePath, diagnostics);
-        if (targetPath is null)
+        var state = CreateApplyState(paths, project, source, session, diagnostics);
+        var tableTargetPath = ResolveOutputPath(paths, source.GraphEntry.RelativePath, diagnostics);
+        if (state is null
+            || tableTargetPath is null
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
         }
 
         try
         {
-            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
-            var archive = SwShDynamaxAdventureArchive.Parse(sourceBytes);
-            var edits = session.PendingEdits
-                .Select(edit => ToDynamaxAdventureEdit(edit, diagnostics))
-                .Where(edit => edit is not null)
-                .Select(edit => edit!)
-                .ToArray();
-
-            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            if (state.HasTableEdits)
             {
-                return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+                if (state.MatchesBaseBytes)
+                {
+                    if (File.Exists(tableTargetPath))
+                    {
+                        File.Delete(tableTargetPath);
+                        writtenFiles.Add(new ProjectFileReference(
+                            ProjectFileLayer.Generated,
+                            source.GraphEntry.RelativePath));
+                    }
+
+                    if (File.Exists(tableTargetPath))
+                    {
+                        throw new IOException("Dynamax Adventures table cleanup verification found the generated file still present.");
+                    }
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(tableTargetPath)!);
+                    File.WriteAllBytes(tableTargetPath, state.OutputBytes);
+                    writtenFiles.Add(new ProjectFileReference(
+                        ProjectFileLayer.Generated,
+                        source.GraphEntry.RelativePath));
+                    var writtenTable = SwShDynamaxAdventuresWorkflowService.ReadBoundedDynamaxAdventureTable(tableTargetPath);
+                    if (!writtenTable.SequenceEqual(state.OutputBytes))
+                    {
+                        throw new IOException("Dynamax Adventures table readback did not match the staged output bytes.");
+                    }
+
+                    _ = SwShDynamaxAdventureArchive.Parse(writtenTable);
+                }
             }
 
-            var output = archive.WriteEditsPreservingLayout(edits);
-            var finalArchive = SwShDynamaxAdventureArchive.Parse(output);
-            var baseArchive = TryLoadBaseDynamaxAdventureArchive(paths);
-            var tableRestoresVanilla = edits.Length > 0
-                && baseArchive is not null
-                && ArchiveRecordsEqual(finalArchive, baseArchive);
-            var bossTargetRemap = CreateBossTargetRemap(archive, session, diagnostics);
-            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-            {
-                return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-            }
-
-            byte[]? patchedMain = null;
-            string? mainTargetPath = null;
-
-            if (!tableRestoresVanilla && RequiresMainPatch(session.PendingEdits) && bossTargetRemap?.IsRestore != true)
+            var removeRedundantGeneratedMain = state.MatchesBaseBytes
+                && ShouldRemoveRedundantGeneratedMain(paths, project);
+            if (state.MainAnalysis.Kind == SwShDynamaxAdventuresMainKind.Stale
+                || removeRedundantGeneratedMain)
             {
                 var mainSource = ResolveWorkflowFile(project, SwShExeFsPatchWorkflowService.ExeFsMainPath);
-                if (mainSource is null)
+                var baseMainPath = ResolveBaseSourcePath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath);
+                var mainTargetPath = ResolveOutputPath(
+                    paths,
+                    SwShExeFsPatchWorkflowService.ExeFsMainPath,
+                    diagnostics);
+                if (mainSource is null
+                    || baseMainPath is null
+                    || !File.Exists(baseMainPath)
+                    || mainTargetPath is null)
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        "Dynamax Adventures apply could not resolve exefs/main for Adventure mirror patching.",
+                        "Dynamax Adventures verified apply could not resolve base, effective, or target exefs/main.",
                         file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
-                        expected: "Readable Sword/Shield exefs/main NSO"));
-                    return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+                        expected: "Verified selected-game executable sources and output target"));
+                    return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
                 }
 
-                mainTargetPath = ResolveOutputPath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath, diagnostics);
-                if (mainTargetPath is null)
+                var baseMainBytes = File.ReadAllBytes(baseMainPath);
+                var currentMainBytes = File.ReadAllBytes(mainSource.AbsolutePath);
+                var reconciledMain = state.MainAnalysis.Kind == SwShDynamaxAdventuresMainKind.Stale
+                    ? SwShDynamaxAdventuresMainPatcher.Reconcile(
+                        currentMainBytes,
+                        baseMainBytes,
+                        state.FinalArchive,
+                        state.BaseArchive,
+                        paths.SelectedGame,
+                        state.RecognizedMainSourceArchive)
+                    : currentMainBytes;
+                if (SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(reconciledMain, baseMainBytes))
                 {
-                    return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-                }
-
-                patchedMain = File.ReadAllBytes(mainSource.AbsolutePath);
-                if (RequiresAdventureMirrorPatch(session.PendingEdits))
-                {
-                    patchedMain = SwShDynamaxAdventuresMainPatcher.Apply(
-                        patchedMain,
-                        finalArchive,
-                        RequiresCommandValidatorPatch(session.PendingEdits));
-                }
-
-                if (bossTargetRemap is not null)
-                {
-                    patchedMain = SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
-                        patchedMain,
-                        finalArchive,
-                        bossTargetRemap.FromSpecies,
-                        bossTargetRemap.ToSpecies);
-                }
-            }
-
-            if (tableRestoresVanilla)
-            {
-                if (File.Exists(targetPath))
-                {
-                    File.Delete(targetPath);
-                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, source.GraphEntry.RelativePath));
-                }
-            }
-            else if (edits.Length > 0)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                File.WriteAllBytes(targetPath, output);
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, source.GraphEntry.RelativePath));
-            }
-
-            if (tableRestoresVanilla || bossTargetRemap?.IsRestore == true)
-            {
-                mainTargetPath = ResolveOutputPath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath, diagnostics);
-                if (mainTargetPath is not null && File.Exists(mainTargetPath))
-                {
-                    if (!RestoreOrDeleteMain(paths, mainTargetPath, finalArchive.Entries.Count, diagnostics))
+                    if (File.Exists(mainTargetPath))
                     {
-                        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+                        File.Delete(mainTargetPath);
+                        writtenFiles.Add(new ProjectFileReference(
+                            ProjectFileLayer.Generated,
+                            SwShExeFsPatchWorkflowService.ExeFsMainPath));
                     }
-
-                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShExeFsPatchWorkflowService.ExeFsMainPath));
                 }
-            }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(mainTargetPath)!);
+                    File.WriteAllBytes(mainTargetPath, reconciledMain);
+                    writtenFiles.Add(new ProjectFileReference(
+                        ProjectFileLayer.Generated,
+                        SwShExeFsPatchWorkflowService.ExeFsMainPath));
+                    if (!File.ReadAllBytes(mainTargetPath).SequenceEqual(reconciledMain))
+                    {
+                        throw new IOException("Dynamax Adventures exefs/main readback did not match the staged output bytes.");
+                    }
+                }
 
-            if (!tableRestoresVanilla && bossTargetRemap?.IsRestore != true && patchedMain is not null && mainTargetPath is not null)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(mainTargetPath)!);
-                File.WriteAllBytes(mainTargetPath, patchedMain);
-                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShExeFsPatchWorkflowService.ExeFsMainPath));
+                var verifiedMainBytes = File.Exists(mainTargetPath)
+                    ? File.ReadAllBytes(mainTargetPath)
+                    : baseMainBytes;
+                var verifiedMainAnalysis = SwShDynamaxAdventuresMainPatcher.Analyze(
+                    verifiedMainBytes,
+                    baseMainBytes,
+                    state.FinalArchive,
+                    state.BaseArchive,
+                    paths.SelectedGame,
+                    state.RecognizedMainSourceArchive);
+                if (verifiedMainAnalysis.Kind is not (
+                    SwShDynamaxAdventuresMainKind.Vanilla
+                    or SwShDynamaxAdventuresMainKind.Synchronized))
+                {
+                    throw new InvalidDataException(
+                        "Dynamax Adventures staged exefs/main did not re-analyze as the final required semantic state.");
+                }
             }
 
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                tableRestoresVanilla || bossTargetRemap?.IsRestore == true
-                    ? "Restored vanilla Dynamax Adventures Pokemon and safely cleaned generated LayeredFS output."
-                    : "Applied Dynamax Adventures change plan to the configured LayeredFS output root."));
+                state.HasTableEdits && state.MatchesBaseBytes
+                    ? "Restored the verified vanilla Dynamax Adventures table and removed all layered Adventure-table changes atomically."
+                    : "Applied the verified Dynamax Adventures table and executable projection atomically."));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (
+            exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Dynamax Adventures change could not be applied: {exception.Message}",
-                file: RequiresMainPatch(session.PendingEdits) ? SwShExeFsPatchWorkflowService.ExeFsMainPath : source.GraphEntry.RelativePath,
-                expected: "Layout-preserving edit to a Sword/Shield Dynamax Adventures table and Adventure mirrors"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Dynamax Adventures output file could not be written: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Dynamax Adventures output file could not be written: {exception.Message}",
-                file: source.GraphEntry.RelativePath,
-                expected: "Writable output root"));
+                $"Dynamax Adventures verified output could not be prepared: {exception.Message}",
+                expected: "Layout-preserving table edit and owned executable reconciliation"));
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+    }
+
+    private static bool ShouldRemoveRedundantGeneratedMain(
+        ProjectPaths paths,
+        OpenedProject project)
+    {
+        try
+        {
+            var mainTargetPath = SwShDynamaxAdventuresWorkflowService.ResolveOutputPath(
+                paths,
+                SwShExeFsPatchWorkflowService.ExeFsMainPath);
+            var mainSource = ResolveWorkflowFile(project, SwShExeFsPatchWorkflowService.ExeFsMainPath);
+            var baseMainPath = ResolveBaseSourcePath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath);
+            return mainTargetPath is not null
+                && mainSource is not null
+                && baseMainPath is not null
+                && File.Exists(mainTargetPath)
+                && File.Exists(baseMainPath)
+                && string.Equals(
+                    Path.GetFullPath(mainSource.AbsolutePath),
+                    Path.GetFullPath(mainTargetPath),
+                    StringComparison.OrdinalIgnoreCase)
+                && SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(
+                    File.ReadAllBytes(mainSource.AbsolutePath),
+                    File.ReadAllBytes(baseMainPath));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return false;
+        }
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -612,6 +1064,28 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var parsedValue = TryParseFieldValue(editableField, value, diagnostics);
         if (parsedValue is null)
         {
+            return null;
+        }
+
+        if (normalizedField == SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField
+            && encounter.Ivs.Hp >= 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} stores a fixed HP IV of {encounter.Ivs.Hp.ToString(CultureInfo.InvariantCulture)}, which cannot be represented by the guaranteed-perfect-IV control.",
+                field: normalizedField,
+                expected: "Preserve the fixed HP IV"));
+            return null;
+        }
+
+        if (!encounter.LayoutWritableFields.Contains(normalizedField, StringComparer.Ordinal)
+            && GetEncounterFieldValue(encounter, normalizedField) != parsedValue.Value)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} stores {editableField.Label} as an omitted FlatBuffer default, so that field cannot be changed without rebuilding the table layout.",
+                field: normalizedField,
+                expected: "The existing default value for an omitted field"));
             return null;
         }
 
@@ -671,6 +1145,18 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return null;
         }
 
+        if (normalizedField == SwShDynamaxAdventuresWorkflowService.AbilityField
+            && (encounter.AbilityOptions.Count == 0
+                || !encounter.AbilityOptions.Any(option => option.Value == parsedValue.Value)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} cannot use ability roll {parsedValue.Value.ToString(CultureInfo.InvariantCulture)} because no verified species/form ability option maps to it.",
+                field: normalizedField,
+                expected: "A nonempty verified ability option for the current species and form"));
+            return null;
+        }
+
         if (IsMoveField(normalizedField)
             && parsedValue.Value == 0
             && !CanStageVanillaZeroMoveSlot(encounter, normalizedField))
@@ -685,8 +1171,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
 
         if (IsMoveField(normalizedField)
             && parsedValue.Value != 0
-            && encounter.MoveOptions.Count > 0
-            && !encounter.MoveOptions.Any(option => option.Value == parsedValue.Value))
+            && (encounter.MoveOptions.Count == 0
+                || !encounter.MoveOptions.Any(option => option.Value == parsedValue.Value)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -700,7 +1186,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
 
         return new PendingEdit(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
-            $"Set {encounter.Label} {editableField.Label} to {parsedValue.Value}.",
+            FormatPendingSummary(encounter.EntryIndex, editableField.Label, parsedValue.Value),
             [new ProjectFileReference(encounter.Provenance.SourceLayer, encounter.Provenance.SourceFile)],
             RecordId: SwShDynamaxAdventuresWorkflowService.CreateEncounterRecordId(encounter.EntryIndex),
             Field: normalizedField,
@@ -749,7 +1235,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return;
         }
 
-        if (!encounter.IsEditable)
+        var isRestoreOwner = IsVanillaTableRestoreOwner(workflow, encounter, edit);
+        if (!encounter.IsEditable && !isRestoreOwner)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -759,7 +1246,76 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return;
         }
 
-        TryParseFieldValue(editableField, edit.NewValue, diagnostics);
+        var parsedValue = TryParseFieldValue(editableField, edit.NewValue, diagnostics);
+        if (parsedValue is not null
+            && !string.Equals(
+                edit.NewValue,
+                parsedValue.Value.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Dynamax Adventures edit value is not in canonical integer form.",
+                field: edit.Field,
+                expected: parsedValue.Value.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (parsedValue is not null)
+        {
+            var expectedSummary = FormatPendingSummary(encounter.EntryIndex, editableField.Label, parsedValue.Value);
+            var expectedAutoSummary = FormatAutoPendingSummary(
+                encounter.EntryIndex,
+                editableField.Label,
+                parsedValue.Value);
+            var isRepairAction = IsRepairPendingEdit(workflow, encounter, edit, parsedValue.Value);
+            var isRestoreAction = IsVanillaTableRestorePendingEdit(workflow, encounter, edit, parsedValue.Value);
+            if (!string.Equals(edit.Summary, expectedSummary, StringComparison.Ordinal)
+                && !string.Equals(edit.Summary, expectedAutoSummary, StringComparison.Ordinal)
+                && !isRepairAction
+                && !isRestoreAction)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Dynamax Adventures edit summary does not match its canonical action identity.",
+                    field: edit.Field,
+                    expected: expectedSummary));
+            }
+
+
+            if (!isRestoreAction
+                && !encounter.LayoutWritableFields.Contains(editableField.Field, StringComparer.Ordinal)
+                && GetEncounterFieldValue(encounter, editableField.Field) != parsedValue.Value)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Dynamax Adventures edit changes a field stored as an omitted FlatBuffer default.",
+                    field: edit.Field,
+                    expected: "The existing default value for an omitted field"));
+            }
+
+
+            if (editableField.Field == SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField
+                && encounter.Ivs.Hp >= 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Dynamax Adventures edit cannot replace a fixed HP IV through the guaranteed-perfect-IV control.",
+                    field: edit.Field,
+                    expected: $"Preserve fixed HP IV {encounter.Ivs.Hp.ToString(CultureInfo.InvariantCulture)}"));
+            }
+        }
+
+        if (edit.Sources is not { Count: 1 }
+            || edit.Sources[0] is null
+            || edit.Sources[0].Layer != encounter.Provenance.SourceLayer
+            || !string.Equals(edit.Sources[0].RelativePath, encounter.Provenance.SourceFile, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Dynamax Adventures edit sources do not match the selected row's effective source.",
+                field: edit.Field,
+                expected: "Canonical effective Adventure table source"));
+        }
         if (edit.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField
             && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var species)
             && !CanStageSafeNormalSpeciesValue(encounter, species, workflow.SafeNormalSpeciesOptions))
@@ -774,13 +1330,203 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         AddLinkedUsageWarning(edit.Field, diagnostics);
     }
 
+    private static bool ValidatePendingSessionRuntimeShape(
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (session.PendingEdits is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures edit session is missing its pending action list.",
+                expected: "A canonical pending action array"));
+            return false;
+        }
+
+        foreach (var edit in session.PendingEdits)
+        {
+            if (edit is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures edit session contains a null pending action.",
+                    expected: "Canonical pending actions"));
+                continue;
+            }
+
+            if (edit.Sources is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures pending action is missing its source list.",
+                    expected: "A canonical source array"));
+            }
+            else if (edit.Sources.Any(source => source is null))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures pending action contains a null source.",
+                    expected: "Canonical source records"));
+            }
+        }
+
+        return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
+    }
+
+    private static bool ValidatePendingSessionStructure(
+        SwShDynamaxAdventuresWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!ValidatePendingSessionRuntimeShape(session, diagnostics))
+        {
+            return false;
+        }
+
+        var distinctRecordIds = session.PendingEdits
+            .Where(edit => edit is not null && string.Equals(
+                edit.Domain,
+                SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
+                StringComparison.Ordinal))
+            .Select(edit => edit.RecordId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (session.PendingEdits.Count(edit => edit is not null
+                && edit.Summary is RepairExecutableProjectionSummary or RestoreVanillaTableSummary) is > 0
+            && session.PendingEdits.Count != 1)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures recovery actions cannot be combined with Pokemon row edits.",
+                expected: "One canonical repair or vanilla-table restore action"));
+        }
+        if (distinctRecordIds.Length > 1)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "A Dynamax Adventures change plan can target only one Pokemon row at a time.",
+                field: "entryIndex",
+                expected: "Multiple fields on one Dynamax Adventures row"));
+        }
+
+        foreach (var duplicate in session.PendingEdits
+            .Where(edit => edit is not null)
+            .GroupBy(edit => (edit.Domain, edit.RecordId, edit.Field))
+            .Where(group => group.Count() > 1))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "A Dynamax Adventures edit session contains duplicate actions for the same row field.",
+                field: duplicate.Key.Field,
+                expected: "One canonical pending action per row field"));
+        }
+
+        foreach (var edit in session.PendingEdits)
+        {
+            if (edit is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures edit session contains a null pending action.",
+                    expected: "Canonical pending actions"));
+                continue;
+            }
+
+            ValidatePendingEdit(workflow, edit, diagnostics);
+        }
+
+        return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
+    }
+
+    private static bool IsRepairPendingEdit(
+        SwShDynamaxAdventuresWorkflow workflow,
+        SwShDynamaxAdventureEntry encounter,
+        PendingEdit edit,
+        int value)
+    {
+        return string.Equals(edit.Summary, RepairExecutableProjectionSummary, StringComparison.Ordinal)
+            && string.Equals(edit.Field, SwShDynamaxAdventuresWorkflowService.LevelField, StringComparison.Ordinal)
+            && value == encounter.Level
+            && encounter.LayoutWritableFields.Contains(
+                SwShDynamaxAdventuresWorkflowService.LevelField,
+                StringComparer.Ordinal);
+    }
+
+    private static void ValidateDynamicPendingOption(
+        SwShDynamaxAdventuresWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var entryIndex)
+            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        {
+            return;
+        }
+
+        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
+        if (encounter is null)
+        {
+            return;
+        }
+
+        if (edit.Field == SwShDynamaxAdventuresWorkflowService.AbilityField
+            && (encounter.AbilityOptions.Count == 0
+                || !encounter.AbilityOptions.Any(option => option.Value == value)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Dynamax Adventures ability value is not in the verified option set for the final species and form.",
+                field: edit.Field,
+                expected: "Verified nonempty ability option"));
+        }
+
+
+        if (edit.Field == SwShDynamaxAdventuresWorkflowService.GigantamaxStateField
+            && (encounter.GigantamaxOptions.Count == 0
+                || !encounter.GigantamaxOptions.Any(option => option.Value == value)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Dynamax Adventures Gigantamax value is not in the verified option set for the final species and source-table layout.",
+                field: edit.Field,
+                expected: "Verified nonempty layout-writable Gigantamax option"));
+        }
+
+        if (IsMoveField(edit.Field ?? string.Empty)
+            && value != 0
+            && (encounter.MoveOptions.Count == 0
+                || !encounter.MoveOptions.Any(option => option.Value == value)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Dynamax Adventures move value is not in the verified option set for the final species, form, and level.",
+                field: edit.Field,
+                expected: "Verified nonempty compatible move option"));
+        }
+    }
+
+    private static string FormatPendingSummary(int entryIndex, string fieldLabel, int value)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"Set Dynamax Adventure row {entryIndex} {fieldLabel} to {value}.");
+    }
+
+    private static string FormatAutoPendingSummary(int entryIndex, string fieldLabel, int value)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"Automatically reset Dynamax Adventure row {entryIndex} {fieldLabel} to {value} after species change.");
+    }
+
     private static bool CanStageSafeNormalSpeciesValue(
         SwShDynamaxAdventureEntry encounter,
         int species,
         IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> safeNormalSpeciesOptions)
     {
         return species == encounter.SpeciesId
-            || safeNormalSpeciesOptions.Count == 0
+            || species == encounter.VanillaPokemon?.SpeciesId
             || safeNormalSpeciesOptions.Any(option => option.Value == species);
     }
 
@@ -790,7 +1536,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
     {
         return form == 0
             || form == encounter.Form
-            || form == encounter.VanillaPokemon?.Form;
+            || (encounter.SpeciesId == encounter.VanillaPokemon?.SpeciesId
+                && form == encounter.VanillaPokemon.Form);
     }
 
     private static void ValidateDefaultPreviewTarget(
@@ -899,85 +1646,6 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             && encounter.Form == form);
     }
 
-    private static void ValidateBossTargetEdits(
-        SwShDynamaxAdventuresWorkflow workflow,
-        IReadOnlyList<PendingEdit> pendingEdits,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var bossTargetEdits = pendingEdits
-            .Where(edit => edit.Field == SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField)
-            .ToArray();
-        if (bossTargetEdits.Length == 0)
-        {
-            return;
-        }
-
-        if (bossTargetEdits.Length > 1)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Dynamax Adventures can stage only one boss target-species remap at a time.",
-                field: SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-                expected: "One final boss target remap"));
-        }
-
-        if (pendingEdits.Count != bossTargetEdits.Length)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Dynamax Adventures boss target-species remaps must be reviewed and applied separately from table row edits.",
-                field: SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-                expected: "A boss target-only edit session"));
-        }
-
-        foreach (var edit in bossTargetEdits)
-        {
-            if (!SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var entryIndex)
-                || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var targetSpecies))
-            {
-                continue;
-            }
-
-            var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
-            if (encounter is not null)
-            {
-                ValidateBossTargetValue(encounter, targetSpecies, diagnostics);
-            }
-        }
-    }
-
-    private static void ValidateBossTargetValue(
-        SwShDynamaxAdventureEntry encounter,
-        int targetSpecies,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (!IsBossEncounter(encounter))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Dynamax Adventures boss target-species remaps can only target boss rows.",
-                field: SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-                expected: "Boss row 226 or later"));
-            return;
-        }
-
-        if (targetSpecies == encounter.SpeciesId)
-        {
-            return;
-        }
-
-        if (encounter.BossTargetOptions.Any(option => option.SpeciesId == targetSpecies))
-        {
-            return;
-        }
-
-        diagnostics.Add(CreateDiagnostic(
-            DiagnosticSeverity.Error,
-            $"{encounter.Label} cannot target boss species {targetSpecies.ToString(CultureInfo.InvariantCulture)} with the guarded boss remap path.",
-            field: SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-            expected: "A unique boss species in the same version/story bucket"));
-    }
-
     private static void ValidateDynamaxAdventureCompatibility(
         SwShDynamaxAdventuresWorkflow workflow,
         IReadOnlySet<int> usableMoveIds,
@@ -985,6 +1653,15 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         IReadOnlyList<SwShPokemonLearnsetRecord> learnsetRecords,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (personalRecords.Count == 0 || usableMoveIds.Count == 0 || learnsetRecords.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures validation requires readable personal, move, and learnset data; missing dependency data never disables safety checks.",
+                expected: "Readable Sword/Shield personal, move, and learnset data"));
+            return;
+        }
+
         var vanillaBossSpeciesForms = GetVanillaBossSpeciesForms(workflow);
         ValidateDistinctSpeciesForms(workflow.Encounters.Where(IsNormalEncounter), "normal route", diagnostics);
         ValidateDistinctSpeciesForms(workflow.Encounters.Where(IsBossEncounter), "boss", diagnostics);
@@ -995,7 +1672,15 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             var learnsetRecord = personalRecord is not null && (uint)personalRecord.PersonalId < (uint)learnsetRecords.Count
                 ? learnsetRecords[personalRecord.PersonalId]
                 : null;
-            if (personalRecords.Count > 0 && personalRecord?.IsPresentInGame != true)
+            if (!encounter.IsEditable && HasAnyPokemonChangeFromVanilla(encounter))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Label} is outside the live-proven editable row class and must remain base-identical.",
+                    field: SwShDynamaxAdventuresWorkflowService.SpeciesField,
+                    expected: "Verified base values for every hidden normal and boss row"));
+            }
+            if (personalRecord?.IsPresentInGame != true)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -1136,19 +1821,16 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 }
             }
 
-            if (usableMoveIds.Count > 0)
+            foreach (var move in encounter.Moves.Where(move => move.MoveId != 0 && !usableMoveIds.Contains(move.MoveId)))
             {
-                foreach (var move in encounter.Moves.Where(move => move.MoveId != 0 && !usableMoveIds.Contains(move.MoveId)))
-                {
-                    diagnostics.Add(CreateDiagnostic(
-                        DiagnosticSeverity.Error,
-                        $"{encounter.Label} uses move {move.MoveId.ToString(CultureInfo.InvariantCulture)} ({move.Move}), but that move is not marked usable in Sword/Shield move data.",
-                        field: GetMoveField(move.Slot - 1),
-                        expected: "Move with CanUseMove enabled"));
-                }
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{encounter.Label} uses move {move.MoveId.ToString(CultureInfo.InvariantCulture)} ({move.Move}), but that move is not marked usable in Sword/Shield move data.",
+                    field: GetMoveField(move.Slot - 1),
+                    expected: "Move with CanUseMove enabled"));
             }
 
-            if (personalRecord is not null && learnsetRecords.Count > 0)
+            if (personalRecord is not null)
             {
                 foreach (var move in encounter.Moves.Where(move => move.MoveId != 0))
                 {
@@ -1356,11 +2038,6 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return null;
         }
 
-        if (IsIndividualIvOverrideField(editableField.Field))
-        {
-            parsedValue = ClampFixedIvValue(parsedValue);
-        }
-
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
             || (editableField.MaximumValue is not null && parsedValue > editableField.MaximumValue.Value))
         {
@@ -1384,24 +2061,6 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         }
 
         return parsedValue;
-    }
-
-    private static int ClampFixedIvValue(int value)
-    {
-        return Math.Clamp(
-            value,
-            SwShDynamaxAdventureArchive.MinimumFixedIvValue,
-            SwShDynamaxAdventureArchive.MaximumFixedIvValue);
-    }
-
-    private static bool IsIndividualIvOverrideField(string field)
-    {
-        return field is
-            SwShDynamaxAdventuresWorkflowService.IvAttackField
-            or SwShDynamaxAdventuresWorkflowService.IvDefenseField
-            or SwShDynamaxAdventuresWorkflowService.IvSpeedField
-            or SwShDynamaxAdventuresWorkflowService.IvSpecialAttackField
-            or SwShDynamaxAdventuresWorkflowService.IvSpecialDefenseField;
     }
 
     private static bool IsMoveField(string field)
@@ -1448,9 +2107,10 @@ public sealed class SwShDynamaxAdventuresEditSessionService
     private static bool CanEditDynamaxAdventures(
         OpenedProject project,
         SwShDynamaxAdventuresWorkflow workflow,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool allowLegacyBossTargetCleanup = false)
     {
-        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
+        if (!project.Health.CanOpenEditableWorkflows)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -1459,12 +2119,107 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return false;
         }
 
+        if (workflow.HasLegacyBossTargetPatch && !allowLegacyBossTargetCleanup)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Ordinary Dynamax Adventures edits are blocked while unsupported legacy final-boss target remap code is installed. Use Stage Repair or a full vanilla table restore to remove it explicitly.",
+                file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
+                expected: "Vanilla final-boss target call sites"));
+        }
+
         foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             diagnostics.Add(diagnostic);
         }
 
+        if (workflow.Summary.Availability != SwShWorkflowAvailability.Available
+            && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures edit sessions require an available editable workflow.",
+                expected: "Dynamax Adventures workflow without blocking diagnostics"));
+        }
+
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
+    }
+
+    private static bool IsVanillaTableRestoreSession(
+        OpenedProject project,
+        SwShDynamaxAdventuresWorkflow workflow,
+        EditSession session)
+    {
+        if (!project.Health.CanOpenEditableWorkflows
+            || !workflow.CanRestoreVanillaTable
+            || session.PendingEdits is not { Count: 1 })
+        {
+            return false;
+        }
+
+        var edit = session.PendingEdits[0];
+        if (edit is null
+            || !SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var entryIndex)
+            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        {
+            return false;
+        }
+
+        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
+        return encounter is not null
+            && IsVanillaTableRestorePendingEdit(workflow, encounter, edit, value);
+    }
+
+    private static bool IsExecutableRepairSession(
+        SwShDynamaxAdventuresWorkflow workflow,
+        EditSession session)
+    {
+        if (!string.Equals(workflow.InstallStatus, "repairable", StringComparison.Ordinal)
+            || session.PendingEdits is not { Count: 1 })
+        {
+            return false;
+        }
+
+        var edit = session.PendingEdits[0];
+        if (edit is null
+            || !SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var entryIndex)
+            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        {
+            return false;
+        }
+
+        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
+        return encounter is not null
+            && IsRepairPendingEdit(workflow, encounter, edit, value);
+    }
+
+    private static EditSession SanitizeFailedVanillaTableRestoreRetry(EditSession session)
+    {
+        return session with { PendingEdits = [] };
+    }
+
+    private static bool IsVanillaTableRestorePendingEdit(
+        SwShDynamaxAdventuresWorkflow workflow,
+        SwShDynamaxAdventureEntry encounter,
+        PendingEdit edit,
+        int value)
+    {
+        return IsVanillaTableRestoreOwner(workflow, encounter, edit)
+            && value == encounter.Level;
+    }
+
+    private static bool IsVanillaTableRestoreOwner(
+        SwShDynamaxAdventuresWorkflow workflow,
+        SwShDynamaxAdventureEntry encounter,
+        PendingEdit edit)
+    {
+        var firstLayeredEntry = workflow.Encounters.FirstOrDefault(candidate =>
+            candidate.Provenance.SourceLayer == ProjectFileLayer.Layered);
+        return string.Equals(edit.Summary, RestoreVanillaTableSummary, StringComparison.Ordinal)
+            && string.Equals(edit.Domain, SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain, StringComparison.Ordinal)
+            && workflow.CanRestoreVanillaTable
+            && firstLayeredEntry?.EntryIndex == encounter.EntryIndex
+            && string.Equals(edit.Field, SwShDynamaxAdventuresWorkflowService.LevelField, StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<PendingEdit> CreateRelatedPendingEdits(
@@ -1484,9 +2239,11 @@ public sealed class SwShDynamaxAdventuresEditSessionService
 
         if (encounter.Form != 0 && speciesId != encounter.SpeciesId)
         {
+            var formField = SwShDynamaxAdventuresWorkflowService.GetEditableField(
+                SwShDynamaxAdventuresWorkflowService.FormField)!;
             relatedEdits.Add(new PendingEdit(
                 SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
-                $"Set {encounter.Label} Form to 0 because normal Adventure replacements are only live-proven safe as base forms.",
+                FormatAutoPendingSummary(encounter.EntryIndex, formField.Label, 0),
                 pendingEdit.Sources,
                 RecordId: pendingEdit.RecordId,
                 Field: SwShDynamaxAdventuresWorkflowService.FormField,
@@ -1496,9 +2253,11 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         if (encounter.GigantamaxState == SwShDynamaxAdventureArchive.MaximumGigantamaxState
             && !SwShDynamaxAdventuresWorkflowService.IsGigantamaxCapableSpecies(speciesId))
         {
+            var gigantamaxField = SwShDynamaxAdventuresWorkflowService.GetEditableField(
+                SwShDynamaxAdventuresWorkflowService.GigantamaxStateField)!;
             var resetGigantamax = new PendingEdit(
                 SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
-                $"Set {encounter.Label} Gigantamax state to 1 because the selected species cannot Gigantamax.",
+                FormatAutoPendingSummary(encounter.EntryIndex, gigantamaxField.Label, 1),
                 pendingEdit.Sources,
                 RecordId: pendingEdit.RecordId,
                 Field: SwShDynamaxAdventuresWorkflowService.GigantamaxStateField,
@@ -1508,6 +2267,41 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         }
 
         return relatedEdits;
+    }
+
+    private static EditSession RemoveAutoDependentEditsForVanillaSpeciesRestore(
+        EditSession session,
+        SwShDynamaxAdventureEntry encounter,
+        PendingEdit pendingEdit)
+    {
+        if (pendingEdit.Field != SwShDynamaxAdventuresWorkflowService.SpeciesField
+            || encounter.VanillaPokemon is null
+            || !int.TryParse(pendingEdit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var speciesId)
+            || speciesId != encounter.VanillaPokemon.SpeciesId)
+        {
+            return session;
+        }
+
+        var restored = session.PendingEdits.Where(edit =>
+        {
+            if (!string.Equals(edit.Domain, SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+                || edit.Field is not (SwShDynamaxAdventuresWorkflowService.FormField
+                    or SwShDynamaxAdventuresWorkflowService.GigantamaxStateField)
+                || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var dependentValue))
+            {
+                return true;
+            }
+
+            var dependentField = SwShDynamaxAdventuresWorkflowService.GetEditableField(edit.Field);
+            return dependentField is null
+                || !string.Equals(
+                    edit.Summary,
+                    FormatAutoPendingSummary(encounter.EntryIndex, dependentField.Label, dependentValue),
+                    StringComparison.Ordinal);
+        }).ToArray();
+
+        return session with { PendingEdits = restored };
     }
 
     private static EditSession ReplacePendingEncounterEdits(
@@ -1539,7 +2333,16 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
         }
 
-        return updatedWorkflow;
+        return updatedWorkflow with
+        {
+            Stats = updatedWorkflow.Stats with
+            {
+                TotalEncounterCount = updatedWorkflow.Encounters.Count,
+                SingleCaptureCount = updatedWorkflow.Encounters.Count(encounter => encounter.IsSingleCapture),
+                StoryGatedCount = updatedWorkflow.Encounters.Count(encounter => encounter.IsStoryProgressGated),
+                GuaranteedPerfectIvEncounterCount = updatedWorkflow.Encounters.Count(encounter => encounter.GuaranteedPerfectIvs > 0),
+            },
+        };
     }
 
     private static SwShDynamaxAdventuresWorkflow RefreshDynamicEncounterOptions(
@@ -1576,12 +2379,25 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var allAbilityOptions = CreateAbilityOptions(abilityResolver, encounter.SpeciesId, encounter.Form);
         var abilityOptions = SwShDynamaxAdventuresWorkflowService.FilterAbilityOptionsForLayout(
             allAbilityOptions,
-            encounter.AbilityOptions);
+            encounter.LayoutWritableFields.Contains(
+                SwShDynamaxAdventuresWorkflowService.AbilityField,
+                StringComparer.Ordinal)
+                ? allAbilityOptions
+                : [new SwShDynamaxAdventureEditableFieldOption(0, string.Empty)]);
+        var allGigantamaxOptions = SwShDynamaxAdventuresWorkflowService.CreateGigantamaxOptions(
+            encounter.SpeciesId,
+            encounter.GigantamaxState);
+        var gigantamaxOptions = encounter.LayoutWritableFields.Contains(
+            SwShDynamaxAdventuresWorkflowService.GigantamaxStateField,
+            StringComparer.Ordinal)
+                ? allGigantamaxOptions
+                : allGigantamaxOptions.Where(option => option.Value == 0).ToArray();
         return encounter with
         {
             AbilityLabel = allAbilityOptions.FirstOrDefault(option => option.Value == encounter.Ability)?.Label
                 ?? GetOptionLabel(workflow, SwShDynamaxAdventuresWorkflowService.AbilityField, encounter.Ability, "Ability roll"),
             AbilityOptions = abilityOptions,
+            GigantamaxOptions = gigantamaxOptions,
             MoveOptions = CreateMoveOptions(workflow, encounter, usableMoveIds, personalRecords, learnsetRecords),
         };
     }
@@ -1624,7 +2440,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         var moveIds = new SortedSet<int>();
         foreach (var moveId in usableMoveIds)
         {
-            if (SwShDynamaxAdventureSafetyRules.CanLearnMove(personal, learnset, moveId, encounter.Level))
+            if (moveId <= SwShDynamaxAdventuresWorkflowService.MaximumSwordShieldMoveId
+                && SwShDynamaxAdventureSafetyRules.CanLearnMove(personal, learnset, moveId, encounter.Level))
             {
                 moveIds.Add(moveId);
             }
@@ -1715,7 +2532,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             SwShDynamaxAdventuresWorkflowService.SpeciesField => encounter with
             {
                 SpeciesId = value,
-                Species = GetOptionLabel(workflow, field, value, "Species"),
+                Species = GetSpeciesLabel(workflow, encounter, value),
             },
             SwShDynamaxAdventuresWorkflowService.FormField => encounter with { Form = value },
             SwShDynamaxAdventuresWorkflowService.LevelField => encounter with { Level = value },
@@ -1825,7 +2642,9 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             [
                 guaranteedPerfectIvs > 0
                     ? $"{guaranteedPerfectIvs.ToString(CultureInfo.InvariantCulture)} guaranteed perfect"
-                    : "random HP",
+                    : ivs.Hp == SwShDynamaxAdventureArchive.RandomIvValue
+                        ? "random HP"
+                        : $"HP {ivs.Hp.ToString(CultureInfo.InvariantCulture)}",
                 $"Atk {FormatIvValue(ivs.Attack)}",
                 $"Def {FormatIvValue(ivs.Defense)}",
                 $"SpA {FormatIvValue(ivs.SpecialAttack)}",
@@ -1853,52 +2672,125 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         return SwShDynamaxAdventuresWorkflowService.GetOptionLabel(options, value, fallbackPrefix);
     }
 
-    private static DynamaxAdventureApplyState? CreateApplyState(
+    private DynamaxAdventureApplyState? CreateApplyState(
         ProjectPaths paths,
+        OpenedProject project,
         SwShDynamaxAdventuresWorkflowService.WorkflowFileSource source,
         EditSession session,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         try
         {
-            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var sourceBytes = SwShDynamaxAdventuresWorkflowService.ReadBoundedDynamaxAdventureTable(source.AbsolutePath);
             var archive = SwShDynamaxAdventureArchive.Parse(sourceBytes);
-            var edits = session.PendingEdits
-                .Select(edit => ToDynamaxAdventureEdit(edit, diagnostics))
-                .Where(edit => edit is not null)
-                .Select(edit => edit!)
-                .ToArray();
+            var baseBytes = TryLoadBaseDynamaxAdventureBytes(paths);
+            if (baseBytes is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures change planning requires the verified base Adventure table.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    expected: "Verified canonical base Adventure table"));
+                return null;
+            }
+
+            var baseArchive = SwShDynamaxAdventureArchive.Parse(baseBytes);
+            if (!dynamaxAdventuresWorkflowService.AcceptsBaseTable(baseBytes, baseArchive))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures change planning rejected the base Adventure table identity.",
+                    file: SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                    expected: "Verified canonical base Adventure table"));
+                return null;
+            }
+
+            var isVanillaTableRestore = IsVanillaTableRestoreAction(session);
+            var edits = isVanillaTableRestore
+                ? []
+                : session.PendingEdits
+                    .Select(edit => ToDynamaxAdventureEdit(edit, diagnostics))
+                    .Where(edit => edit is not null)
+                    .Select(edit => edit!)
+                    .ToArray();
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return null;
             }
 
-            var output = archive.WriteEditsPreservingLayout(edits);
-            var finalArchive = SwShDynamaxAdventureArchive.Parse(output);
-            var baseBytes = TryLoadBaseDynamaxAdventureBytes(paths);
-            var baseArchive = baseBytes is null
-                ? null
-                : SwShDynamaxAdventureArchive.Parse(baseBytes);
-            var sourceLayoutMatchesBase = baseBytes is null
-                || baseArchive is not null
-                    && SwShDynamaxAdventuresWorkflowService.IsDynamaxAdventureTableLayoutCompatible(
-                        baseArchive,
-                        baseBytes,
-                        archive,
-                        sourceBytes);
-            var bossTargetRemap = CreateBossTargetRemap(archive, session, diagnostics);
-            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            var output = isVanillaTableRestore
+                ? baseBytes.ToArray()
+                : archive.WriteEditsPreservingLayout(edits);
+            var finalArchive = isVanillaTableRestore
+                ? baseArchive
+                : SwShDynamaxAdventureArchive.Parse(output);
+
+            var sourceLayoutMatchesBase = SwShDynamaxAdventuresWorkflowService.IsDynamaxAdventureTableLayoutCompatible(
+                baseArchive,
+                baseBytes,
+                archive,
+                sourceBytes);
+
+            var mainSource = ResolveWorkflowFile(project, SwShExeFsPatchWorkflowService.ExeFsMainPath);
+            var baseMainPath = ResolveBaseSourcePath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath);
+            if (mainSource is null || baseMainPath is null || !File.Exists(baseMainPath))
             {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures change planning requires readable base and effective exefs/main sources for mirror verification.",
+                    file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
+                    expected: "Selected-game base and effective Sword/Shield exefs/main"));
+                return null;
+            }
+
+            var baseMainBytes = File.ReadAllBytes(baseMainPath);
+            var effectiveMainBytes = File.ReadAllBytes(mainSource.AbsolutePath);
+            var recognizedMainSourceArchive = isVanillaTableRestore
+                ? dynamaxAdventuresWorkflowService.CanRecognizeSourceMainProjection(archive, baseArchive)
+                    ? archive
+                    : null
+                : archive;
+            var mainAnalysis = SwShDynamaxAdventuresMainPatcher.Analyze(
+                effectiveMainBytes,
+                baseMainBytes,
+                finalArchive,
+                baseArchive,
+                paths.SelectedGame,
+                recognizedMainSourceArchive);
+            if (mainAnalysis.HasLegacyBossTargetPatch && !IsRecoveryAction(session))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Dynamax Adventures change planning detected unsupported legacy final-boss target remap code after session validation. Ordinary edits cannot remove it implicitly; use Stage Repair or a full vanilla table restore.",
+                    file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
+                    expected: "Explicit legacy cleanup recovery action"));
+                return null;
+            }
+
+            if (mainAnalysis.Kind is SwShDynamaxAdventuresMainKind.UnsupportedBuild
+                or SwShDynamaxAdventuresMainKind.GameMismatch
+                or SwShDynamaxAdventuresMainKind.Conflict)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    mainAnalysis.Message,
+                    file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
+                    expected: "Supported selected-game executable with base, source, or final DA-owned state"));
                 return null;
             }
 
             return new DynamaxAdventureApplyState(
+                archive,
                 finalArchive,
-                baseArchive is not null && ArchiveRecordsEqual(finalArchive, baseArchive),
+                baseArchive,
+                recognizedMainSourceArchive,
+                output,
+                baseBytes,
+                output.SequenceEqual(baseBytes),
                 sourceLayoutMatchesBase,
-                HasTableEdits: edits.Length > 0,
-                bossTargetRemap);
+                HasTableEdits: !output.SequenceEqual(sourceBytes),
+                mainAnalysis);
         }
         catch (InvalidDataException exception) when (exception.Message.Contains("omitted FlatBuffer default", StringComparison.Ordinal))
         {
@@ -1915,6 +2807,14 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 $"Dynamax Adventures change plan could not decode the source table: {exception.Message}",
                 file: source.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield Dynamax Adventures table"));
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventures change plan rejected an out-of-domain field value: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Values in the verified Dynamax Adventures field domains"));
         }
         catch (IOException exception)
         {
@@ -1936,56 +2836,61 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         return null;
     }
 
-    private static BossTargetRemap? CreateBossTargetRemap(
-        SwShDynamaxAdventureArchive archive,
-        EditSession session,
-        ICollection<ValidationDiagnostic> diagnostics)
+    private static bool IsVanillaTableRestoreAction(EditSession session)
     {
-        var edit = session.PendingEdits.SingleOrDefault(edit =>
-            edit.Field == SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField);
-        if (edit is null)
+        if (session.PendingEdits is not { Count: 1 })
         {
-            return null;
+            return false;
         }
 
-        if (!SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var entryIndex)
-            || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var targetSpecies))
+        var edit = session.PendingEdits[0];
+        return edit is not null
+            && string.Equals(edit.Summary, RestoreVanillaTableSummary, StringComparison.Ordinal)
+            && string.Equals(edit.Domain, SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.Field, SwShDynamaxAdventuresWorkflowService.LevelField, StringComparison.Ordinal)
+            && SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out _)
+            && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+            && edit.Sources is { Count: 1 }
+            && edit.Sources[0] is not null
+            && edit.Sources[0].Layer == ProjectFileLayer.Layered
+            && string.Equals(
+                edit.Sources[0].RelativePath,
+                SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                StringComparison.Ordinal);
+    }
+
+    private static bool IsExecutableRepairAction(EditSession session)
+    {
+        if (session.PendingEdits is not { Count: 1 })
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Pending Dynamax Adventures boss target edit does not include a valid target or value.",
-                field: SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-                expected: "Valid boss target remap"));
-            return null;
+            return false;
         }
 
-        var sourceBoss = archive.Entries.FirstOrDefault(row => row.EntryIndex == entryIndex);
-        if (sourceBoss is null)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Dynamax Adventures boss target row {entryIndex.ToString(CultureInfo.InvariantCulture)} is not present in the source table.",
-                field: SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-                expected: "Existing boss row"));
-            return null;
-        }
+        var edit = session.PendingEdits[0];
+        return edit is not null
+            && string.Equals(edit.Summary, RepairExecutableProjectionSummary, StringComparison.Ordinal)
+            && string.Equals(edit.Domain, SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.Field, SwShDynamaxAdventuresWorkflowService.LevelField, StringComparison.Ordinal)
+            && SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out _)
+            && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+            && edit.Sources is { Count: 1 }
+            && edit.Sources[0] is not null
+            && string.Equals(
+                edit.Sources[0].RelativePath,
+                SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+                StringComparison.Ordinal);
+    }
 
-        return new BossTargetRemap(
-            entryIndex,
-            sourceBoss.Species,
-            targetSpecies,
-            targetSpecies == sourceBoss.Species);
+    private static bool IsRecoveryAction(EditSession session)
+    {
+        return IsVanillaTableRestoreAction(session)
+            || IsExecutableRepairAction(session);
     }
 
     private static SwShDynamaxAdventureEdit? ToDynamaxAdventureEdit(
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (edit.Field == SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField)
-        {
-            return null;
-        }
-
         if (!SwShDynamaxAdventuresWorkflowService.TryParseEncounterRecordId(edit.RecordId, out var entryIndex)
             || !int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
             || MapField(edit.Field) is not { } field)
@@ -2030,61 +2935,49 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         };
     }
 
-    private static bool RequiresMainPatch(IEnumerable<PendingEdit> edits)
+    private static string GetSpeciesLabel(
+        SwShDynamaxAdventuresWorkflow workflow,
+        SwShDynamaxAdventureEntry encounter,
+        int speciesId)
     {
-        return RequiresAdventureMirrorPatch(edits);
-    }
-
-    private static bool RequiresAdventureMirrorPatch(IEnumerable<PendingEdit> edits)
-    {
-        return edits.Any(edit => edit.Field is
-            SwShDynamaxAdventuresWorkflowService.SpeciesField
-            or SwShDynamaxAdventuresWorkflowService.FormField
-            or SwShDynamaxAdventuresWorkflowService.GigantamaxStateField
-            or SwShDynamaxAdventuresWorkflowService.ShinyRollField
-            or SwShDynamaxAdventuresWorkflowService.IsSingleCaptureField);
-    }
-
-    private static bool RequiresCommandValidatorPatch(IEnumerable<PendingEdit> edits)
-    {
-        return edits.Any(edit => edit.Field is
-            SwShDynamaxAdventuresWorkflowService.SpeciesField
-            or SwShDynamaxAdventuresWorkflowService.FormField
-            or SwShDynamaxAdventuresWorkflowService.GigantamaxStateField);
-    }
-
-    private static bool RestoreOrDeleteMain(
-        ProjectPaths paths,
-        string targetPath,
-        int entryCount,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var basePath = ResolveBaseSourcePath(paths, SwShExeFsPatchWorkflowService.ExeFsMainPath);
-        if (basePath is null || !File.Exists(basePath))
+        if (encounter.SpeciesId == speciesId)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Dynamax Adventures restore could not resolve base exefs/main for safe cleanup.",
-                file: SwShExeFsPatchWorkflowService.ExeFsMainPath,
-                expected: "Readable base ExeFS main"));
-            return false;
+            return encounter.Species;
         }
 
-        var baseBytes = File.ReadAllBytes(basePath);
-        var restored = SwShDynamaxAdventuresMainPatcher.RestoreFromBase(
-            File.ReadAllBytes(targetPath),
-            baseBytes,
-            entryCount);
-        if (restored.SequenceEqual(baseBytes))
+        if (encounter.VanillaPokemon?.SpeciesId == speciesId)
         {
-            File.Delete(targetPath);
-        }
-        else
-        {
-            File.WriteAllBytes(targetPath, restored);
+            return encounter.VanillaPokemon.Species;
         }
 
-        return true;
+        return GetOptionLabel(
+            workflow,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            speciesId,
+            "Species");
+    }
+
+    private static int GetEncounterFieldValue(SwShDynamaxAdventureEntry encounter, string field)
+    {
+        return field switch
+        {
+            SwShDynamaxAdventuresWorkflowService.SpeciesField => encounter.SpeciesId,
+            SwShDynamaxAdventuresWorkflowService.FormField => encounter.Form,
+            SwShDynamaxAdventuresWorkflowService.LevelField => encounter.Level,
+            SwShDynamaxAdventuresWorkflowService.AbilityField => encounter.Ability,
+            SwShDynamaxAdventuresWorkflowService.GigantamaxStateField => encounter.GigantamaxState,
+            SwShDynamaxAdventuresWorkflowService.Move0Field => encounter.Moves[0].MoveId,
+            SwShDynamaxAdventuresWorkflowService.Move1Field => encounter.Moves[1].MoveId,
+            SwShDynamaxAdventuresWorkflowService.Move2Field => encounter.Moves[2].MoveId,
+            SwShDynamaxAdventuresWorkflowService.Move3Field => encounter.Moves[3].MoveId,
+            SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField => encounter.GuaranteedPerfectIvs,
+            SwShDynamaxAdventuresWorkflowService.IvAttackField => encounter.Ivs.Attack,
+            SwShDynamaxAdventuresWorkflowService.IvDefenseField => encounter.Ivs.Defense,
+            SwShDynamaxAdventuresWorkflowService.IvSpeedField => encounter.Ivs.Speed,
+            SwShDynamaxAdventuresWorkflowService.IvSpecialAttackField => encounter.Ivs.SpecialAttack,
+            SwShDynamaxAdventuresWorkflowService.IvSpecialDefenseField => encounter.Ivs.SpecialDefense,
+            _ => throw new ArgumentOutOfRangeException(nameof(field), field, "Unsupported Dynamax Adventures editable field."),
+        };
     }
 
     private static bool ArchiveRecordsEqual(
@@ -2143,7 +3036,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
     {
         var basePath = ResolveBaseSourcePath(paths, SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath);
         return basePath is not null && File.Exists(basePath)
-            ? File.ReadAllBytes(basePath)
+            ? SwShDynamaxAdventuresWorkflowService.ReadBoundedDynamaxAdventureTable(basePath)
             : null;
     }
 
@@ -2197,6 +3090,138 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             : null;
     }
 
+    private static bool HasAnyPokemonChangeFromVanilla(SwShDynamaxAdventureEntry encounter)
+    {
+        var vanilla = encounter.VanillaPokemon;
+        return vanilla is null
+            || encounter.SpeciesId != vanilla.SpeciesId
+            || encounter.Form != vanilla.Form
+            || encounter.Level != vanilla.Level
+            || encounter.Ability != vanilla.Ability
+            || encounter.GigantamaxState != vanilla.GigantamaxState
+            || encounter.GuaranteedPerfectIvs != vanilla.GuaranteedPerfectIvs
+            || encounter.Ivs != vanilla.Ivs
+            || !MoveIdsEqual(encounter.Moves, vanilla.Moves);
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateCanonicalPlanSources(
+        OpenedProject project,
+        EditSession session,
+        bool includeMain)
+    {
+        var exactPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShPersonalTable.PersonalDataRelativePath,
+            SwShPokemonLearnsetTable.LearnsetDataRelativePath,
+        };
+        if (includeMain)
+        {
+            exactPaths.Add(SwShExeFsPatchWorkflowService.ExeFsMainPath);
+        }
+
+        var movePrefix = SwShMoveDataFile.MoveDataRelativeDirectory.TrimEnd('/') + "/";
+        var sources = new List<ProjectFileReference>();
+        var dependencyPaths = exactPaths
+            .Concat(project.FileGraph.Entries
+                .Where(entry => entry.RelativePath.StartsWith(movePrefix, StringComparison.OrdinalIgnoreCase))
+                .Select(entry => entry.RelativePath))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        foreach (var relativePath in dependencyPaths)
+        {
+            var entry = project.FileGraph.Entries.FirstOrDefault(candidate =>
+                string.Equals(candidate.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+            AddPlanSourceReferences(entry, relativePath, sources);
+        }
+
+        sources.Add(CreatePendingActionSource(session));
+
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateRecoveryPlanSources(
+        OpenedProject project,
+        EditSession session)
+    {
+        var recoveryPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShExeFsPatchWorkflowService.ExeFsMainPath,
+        };
+        var sources = new List<ProjectFileReference>();
+        foreach (var relativePath in recoveryPaths.Order(StringComparer.Ordinal))
+        {
+            var entry = project.FileGraph.Entries.FirstOrDefault(candidate =>
+                string.Equals(candidate.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+            AddPlanSourceReferences(entry, relativePath, sources);
+        }
+
+        sources.Add(CreatePendingActionSource(session));
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static void AddPlanSourceReferences(
+        ProjectFileGraphEntry? entry,
+        string relativePath,
+        ICollection<ProjectFileReference> sources)
+    {
+        if (entry?.BaseFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Base, relativePath));
+        }
+
+        if (entry?.LayeredFile is not null)
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Layered, relativePath));
+        }
+        else
+        {
+            sources.Add(new ProjectFileReference(ProjectFileLayer.Generated, relativePath));
+        }
+    }
+
+    private static ProjectFileReference CreatePendingActionSource(EditSession session)
+    {
+        var canonical = new StringBuilder("dynamax-adventures-actions-v1\n");
+        foreach (var edit in session.PendingEdits
+            .OrderBy(edit => edit.Domain, StringComparer.Ordinal)
+            .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+            .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+            .ThenBy(edit => edit.NewValue, StringComparer.Ordinal)
+            .ThenBy(edit => edit.Summary, StringComparer.Ordinal))
+        {
+            AppendCanonicalPart(canonical, edit.Domain);
+            AppendCanonicalPart(canonical, edit.RecordId);
+            AppendCanonicalPart(canonical, edit.Field);
+            AppendCanonicalPart(canonical, edit.NewValue);
+            AppendCanonicalPart(canonical, edit.Summary);
+        }
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/dynamax-adventures/{hash}");
+    }
+
+    private static void AppendCanonicalPart(StringBuilder target, string? value)
+    {
+        var normalized = value ?? string.Empty;
+        target.Append(normalized.Length.ToString(CultureInfo.InvariantCulture));
+        target.Append(':');
+        target.Append(normalized);
+        target.Append('\n');
+    }
+
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
     {
         if (entry.LayeredFile is not null && !string.IsNullOrWhiteSpace(paths.OutputRootPath))
@@ -2247,38 +3272,16 @@ public sealed class SwShDynamaxAdventuresEditSessionService
     private sealed record WorkflowFileSource(ProjectFileGraphEntry GraphEntry, string AbsolutePath);
 
     private sealed record DynamaxAdventureApplyState(
+        SwShDynamaxAdventureArchive SourceArchive,
         SwShDynamaxAdventureArchive FinalArchive,
-        bool MatchesBaseArchive,
+        SwShDynamaxAdventureArchive BaseArchive,
+        SwShDynamaxAdventureArchive? RecognizedMainSourceArchive,
+        byte[] OutputBytes,
+        byte[] BaseBytes,
+        bool MatchesBaseBytes,
         bool SourceLayoutMatchesBase,
         bool HasTableEdits,
-        BossTargetRemap? BossTargetRemap);
-
-    private sealed record BossTargetRemap(
-        int EntryIndex,
-        int FromSpecies,
-        int ToSpecies,
-        bool IsRestore);
-
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
-    {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
-        {
-            return false;
-        }
-
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
-    }
+        SwShDynamaxAdventuresMainAnalysis MainAnalysis);
 
     private static ApplyResult CreateApplyResult(
         string applyId,

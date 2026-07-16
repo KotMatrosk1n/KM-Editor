@@ -171,6 +171,49 @@ public sealed class SwShHookReservationTests
         Assert.Equal(new[] { region }, SwShTypeChartMainPatcher.ReservedMainRoRegions());
     }
 
+    [Theory]
+    [InlineData(ProjectGame.Sword, "-sword-")]
+    [InlineData(ProjectGame.Shield, "-shield-")]
+    public void DynamaxAdventuresLedgerExposesOnlyActiveGameOwnership(
+        ProjectGame game,
+        string activeGameToken)
+    {
+        var ro = Assert.Single(SwShExeFsReservedRegionLedger.MainRoRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerDynamaxAdventures));
+        Assert.Equal(0x00774054, ro.StartOffset);
+        Assert.Equal(273 * 6, ro.Length);
+        Assert.Equal("payload-preserve-stride-padding", ro.Rule);
+
+        var active = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerDynamaxAdventures,
+            game);
+        Assert.Equal(15, active.Count);
+        Assert.All(active, region =>
+        {
+            Assert.Contains(activeGameToken, region.FeatureId, StringComparison.Ordinal);
+            Assert.Equal(sizeof(uint), region.Length);
+            Assert.Equal("do-not-overwrite", region.Rule);
+        });
+
+        var reservationsSeenByOtherPatcher = SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
+            game,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandy);
+        var dynamaxReservations = reservationsSeenByOtherPatcher
+            .Where(region => region.Owner == SwShExeFsReservedRegionLedger.OwnerDynamaxAdventures)
+            .ToArray();
+        Assert.Equal(active.Select(region => region.FeatureId).Order(), dynamaxReservations.Select(region => region.FeatureId).Order());
+
+        var otherOwners = SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
+            game,
+            SwShExeFsReservedRegionLedger.OwnerDynamaxAdventures);
+        Assert.All(active, dynamaxRegion => Assert.DoesNotContain(otherOwners, other =>
+            string.Equals(dynamaxRegion.Area, other.Area, StringComparison.Ordinal)
+            && SwShExeFsReservedRegionLedger.Overlaps(
+                dynamaxRegion,
+                other.StartOffset!.Value,
+                other.Length!.Value)));
+    }
+
     [Fact]
     public void IvScreenRuntimeDependenciesAreProtectedButNotIvOwnedRestoreRegions()
     {

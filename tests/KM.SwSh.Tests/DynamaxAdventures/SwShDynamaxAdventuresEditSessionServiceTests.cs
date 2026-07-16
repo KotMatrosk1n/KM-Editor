@@ -3,6 +3,8 @@
 using KM.Formats.SwSh;
 using KM.Formats.Executable;
 using KM.SwSh.DynamaxAdventures;
+using KM.SwSh.Editing;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Tests.Items;
 using System.Buffers.Binary;
 using Xunit;
@@ -12,11 +14,417 @@ namespace KM.SwSh.Tests.DynamaxAdventures;
 public sealed class SwShDynamaxAdventuresEditSessionServiceTests
 {
     [Fact]
+    public void StageRepairCleansLegacyExecutableStateWithoutWritingAdventureTable()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = CreateRepairableBossArchive();
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(archive);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile("main", baseMain);
+
+        var legacyMain = SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+            baseMain,
+            archive,
+            fromSpecies: 144,
+            toSpecies: 150);
+        var marker = Enumerable.Range(1, 24).Select(value => checked((byte)value)).ToArray();
+        var legacyNso = NsoFile.Parse(legacyMain);
+        temp.WriteOutputFile(
+            "exefs/main",
+            legacyNso.Write(
+                textDecompressedData: legacyNso.Text.DecompressedData.Concat(marker).ToArray()));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var blockedUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            entryIndex: 0,
+            field: SwShDynamaxAdventuresWorkflowService.LevelField,
+            value: "66");
+        Assert.True(blockedUpdate.Workflow.HasLegacyBossTargetPatch);
+        Assert.Empty(blockedUpdate.Session.PendingEdits);
+        Assert.Contains(blockedUpdate.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("legacy final-boss target remap", StringComparison.Ordinal));
+
+        var blockedPreview = service.PreviewDefaults(
+            temp.Paths,
+            session: null,
+            entryIndex: 0,
+            species: archive.Entries[0].Species,
+            form: 0,
+            level: 65);
+        Assert.Empty(blockedPreview.Changes);
+        Assert.Contains(blockedPreview.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("legacy final-boss target remap", StringComparison.Ordinal));
+
+        var staged = service.StageRepair(temp.Paths, session: null);
+        Assert.DoesNotContain(staged.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Equal("repairable", staged.Workflow.InstallStatus);
+        Assert.True(staged.Workflow.HasLegacyBossTargetPatch);
+        Assert.Contains("Stage Repair", staged.Workflow.InstallMessage, StringComparison.Ordinal);
+        Assert.Contains(staged.Workflow.Encounters, encounter => encounter.IsEditable);
+        Assert.Contains(staged.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Warning
+            && diagnostic.Message.Contains("destructive cleanup", StringComparison.Ordinal));
+        var repair = Assert.Single(staged.Session.PendingEdits);
+        Assert.Equal("workflow.dynamaxAdventures", repair.Domain);
+        Assert.Equal(SwShDynamaxAdventuresEditSessionService.RepairExecutableProjectionSummary, repair.Summary);
+        Assert.Equal(SwShDynamaxAdventuresWorkflowService.LevelField, repair.Field);
+
+        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
+        Assert.DoesNotContain(plan.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        var write = Assert.Single(plan.Writes);
+        Assert.True(plan.CanApply);
+        Assert.Equal("exefs/main", write.TargetRelativePath);
+        Assert.Contains("legacy final-boss target remap", write.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            plan.Writes,
+            candidate => candidate.TargetRelativePath == SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath);
+
+        var applied = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+
+        Assert.DoesNotContain(applied.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        var tableOutputPath = Path.Combine(
+            temp.OutputRootPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.False(File.Exists(tableOutputPath));
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var repairedMain = File.Exists(outputMainPath)
+            ? File.ReadAllBytes(outputMainPath)
+            : baseMain;
+        var repairedText = NsoFile.Parse(repairedMain).Text.DecompressedData;
+        Assert.True(repairedText.AsSpan()[^marker.Length..].SequenceEqual(marker));
+        var analysis = SwShDynamaxAdventuresMainPatcher.Analyze(
+            repairedMain,
+            baseMain,
+            archive,
+            archive,
+            Core.Projects.ProjectGame.Sword,
+            archive);
+        Assert.False(analysis.HasLegacyBossTargetPatch);
+        Assert.NotEqual(SwShDynamaxAdventuresMainKind.Stale, analysis.Kind);
+    }
+
+    [Fact]
+    public void StageRepairCleansExactLegacyBossPatchForShield()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.SelectedGame = Core.Projects.ProjectGame.Shield;
+        var archive = CreateRepairableBossArchive();
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(
+            archive,
+            SwShDynamaxAdventuresMainPatcher.ShieldCommandValidatorOffsetDelta,
+            SwShDynamaxAdventuresMainPatcher.ShieldBuildId);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile("main", baseMain);
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+                baseMain,
+                archive,
+                fromSpecies: 144,
+                toSpecies: 150));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var staged = service.StageRepair(temp.Paths, session: null);
+        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
+        var applied = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+
+        Assert.True(staged.Workflow.HasLegacyBossTargetPatch);
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(applied.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var repairedMain = File.Exists(outputMainPath)
+            ? File.ReadAllBytes(outputMainPath)
+            : baseMain;
+        var analysis = SwShDynamaxAdventuresMainPatcher.Analyze(
+            repairedMain,
+            baseMain,
+            archive,
+            archive,
+            Core.Projects.ProjectGame.Shield,
+            archive);
+        Assert.False(analysis.HasLegacyBossTargetPatch);
+        Assert.NotEqual(SwShDynamaxAdventuresMainKind.Stale, analysis.Kind);
+    }
+
+    [Fact]
+    public void StageRepairUsesGenericWordingForOrdinaryStaleProjection()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = SwShDynamaxAdventureTestFixtures.CreateArchive();
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(sourceArchive: archive));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            archive.WriteEdits([new(1, SwShDynamaxAdventureField.Species, 467)]));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var staged = service.StageRepair(temp.Paths, session: null);
+        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
+
+        Assert.Equal("repairable", staged.Workflow.InstallStatus);
+        Assert.False(staged.Workflow.HasLegacyBossTargetPatch);
+        Assert.DoesNotContain(staged.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("destructive cleanup", StringComparison.Ordinal));
+        Assert.True(plan.CanApply);
+        var mainWrite = Assert.Single(plan.Writes, write => write.TargetRelativePath == "exefs/main");
+        Assert.DoesNotContain("legacy final-boss target remap", mainWrite.Reason, StringComparison.Ordinal);
+        Assert.Contains("Synchronize Dynamax Adventures", mainWrite.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StageRepairSanitizesMalformedSessionBeforeBlockedWorkflowChecks()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var malformed = service.StartSession() with { PendingEdits = null! };
+
+        var staged = service.StageRepair(temp.Paths, malformed);
+        var validation = service.Validate(temp.Paths, malformed);
+        var plan = service.CreateChangePlan(temp.Paths, malformed);
+
+        Assert.Empty(staged.Session.PendingEdits);
+        Assert.Contains(staged.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("missing its pending action list", StringComparison.Ordinal));
+        Assert.False(validation.IsValid);
+        Assert.Empty(validation.Session.PendingEdits);
+        Assert.False(plan.CanApply);
+        Assert.Empty(plan.Writes);
+    }
+
+    [Fact]
+    public void CreateChangePlanRejectsLegacyBossPatchInstalledAfterOrdinaryEditWasStaged()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = CreateRepairableBossArchive();
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(archive);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile("main", baseMain);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var stagedEdit = service.UpdateField(
+            temp.Paths,
+            session: null,
+            entryIndex: 0,
+            field: SwShDynamaxAdventuresWorkflowService.LevelField,
+            value: "66");
+        Assert.Single(stagedEdit.Session.PendingEdits);
+
+        var legacyMain = SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+            baseMain,
+            archive,
+            fromSpecies: 144,
+            toSpecies: 150);
+        temp.WriteOutputFile("exefs/main", legacyMain);
+
+        var plan = service.CreateChangePlan(temp.Paths, stagedEdit.Session);
+
+        Assert.False(plan.CanApply);
+        Assert.Empty(plan.Writes);
+        Assert.Contains(plan.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("legacy final-boss target remap", StringComparison.Ordinal));
+        Assert.Equal(
+            legacyMain,
+            File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main")));
+    }
+
+    [Fact]
+    public void StagedLegacyRepairRejectsUnhealthyPathsAndDamagedPatchDrift()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = CreateRepairableBossArchive();
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(archive);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile("main", baseMain);
+        var legacyMain = SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+            baseMain,
+            archive,
+            fromSpecies: 144,
+            toSpecies: 150);
+        temp.WriteOutputFile("exefs/main", legacyMain);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var staged = service.StageRepair(temp.Paths, session: null);
+        Assert.Single(staged.Session.PendingEdits);
+
+        var unhealthy = service.Validate(
+            temp.Paths with { OutputRootPath = null },
+            staged.Session);
+        Assert.False(unhealthy.IsValid);
+        Assert.Contains(unhealthy.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+
+        var legacyNso = NsoFile.Parse(legacyMain);
+        var damagedText = legacyNso.Text.DecompressedData.ToArray();
+        var baseTextLength = NsoFile.Parse(baseMain).Text.DecompressedData.Length;
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            damagedText.AsSpan(baseTextLength + 0x08, sizeof(uint)),
+            0xD503201F);
+        var damagedMain = legacyNso.Write(textDecompressedData: damagedText);
+        temp.WriteOutputFile("exefs/main", damagedMain);
+        var driftService = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var driftValidation = driftService.Validate(temp.Paths, staged.Session);
+        var driftPlan = driftService.CreateChangePlan(temp.Paths, staged.Session);
+
+        Assert.False(driftValidation.IsValid);
+        Assert.False(driftPlan.CanApply);
+        Assert.Empty(driftPlan.Writes);
+        Assert.Contains(
+            driftValidation.Diagnostics.Concat(driftPlan.Diagnostics),
+            diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("partial or damaged historical KM boss-target remap", StringComparison.Ordinal));
+        Assert.Equal(
+            damagedMain,
+            File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main")));
+    }
+
+    [Fact]
+    public void VanillaTableRestoreExplicitlyCleansLegacyBossPatch()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = CreateRepairableBossArchive();
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(archive);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile("main", baseMain);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            archive.Write().Concat(new byte[] { 0 }).ToArray());
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+                baseMain,
+                archive,
+                fromSpecies: 144,
+                toSpecies: 150));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var staged = service.StageVanillaTableRestore(temp.Paths, session: null);
+        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
+        var applied = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+
+        Assert.True(staged.Workflow.CanRestoreVanillaTable);
+        Assert.True(staged.Workflow.HasLegacyBossTargetPatch);
+        Assert.Contains(staged.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Warning
+            && diagnostic.Message.Contains("legacy final-boss target remap", StringComparison.Ordinal));
+        Assert.True(plan.CanApply);
+        var mainWrite = Assert.Single(plan.Writes, write => write.TargetRelativePath == "exefs/main");
+        Assert.Contains("while restoring", mainWrite.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(applied.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var effectiveMain = File.Exists(outputMainPath) ? File.ReadAllBytes(outputMainPath) : baseMain;
+        var analysis = SwShDynamaxAdventuresMainPatcher.Analyze(
+            effectiveMain,
+            baseMain,
+            archive,
+            archive,
+            Core.Projects.ProjectGame.Sword,
+            archive);
+        Assert.False(analysis.HasLegacyBossTargetPatch);
+    }
+
+    [Fact]
+    public void FixedHpIvCannotBeRewrittenThroughGuaranteedPerfectIvControl()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = new SwShDynamaxAdventureArchive(
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Entries
+                .Select(entry => entry.EntryIndex == 1
+                    ? entry with { Ivs = entry.Ivs with { Hp = 17 } }
+                    : entry)
+                .ToArray());
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(sourceArchive: archive));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            field: SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField,
+            value: "0");
+
+        var encounter = result.Workflow.Encounters.Single(entry => entry.EntryIndex == 1);
+        Assert.Equal(17, encounter.Ivs.Hp);
+        Assert.Equal(0, encounter.GuaranteedPerfectIvs);
+        Assert.Contains("HP 17", encounter.IvSummary, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField,
+            encounter.LayoutWritableFields);
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField
+            && diagnostic.Message.Contains("fixed HP IV of 17", StringComparison.Ordinal));
+
+        var valid = service.UpdateField(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            field: SwShDynamaxAdventuresWorkflowService.LevelField,
+            value: "61");
+        var sourceEdit = Assert.Single(valid.Session.PendingEdits);
+        var tampered = valid.Session with
+        {
+            PendingEdits =
+            [
+                sourceEdit with
+                {
+                    Field = SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField,
+                    NewValue = "0",
+                    Summary = "Set Dynamax Adventure row 1 Guaranteed perfect IVs to 0.",
+                },
+            ],
+        };
+
+        var validation = service.Validate(temp.Paths, tampered);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("cannot replace a fixed HP IV", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void UpdateFieldCreatesPendingDynamaxAdventureIvEdit()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -34,11 +442,11 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateFieldClampsDynamaxAdventureIvOverrides()
+    public void UpdateFieldRejectsOutOfRangeDynamaxAdventureIvOverrides()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -53,16 +461,12 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             field: SwShDynamaxAdventuresWorkflowService.IvDefenseField,
             value: "80");
 
-        Assert.Equal(2, result.Session.PendingEdits.Count);
-        Assert.Contains(result.Session.PendingEdits, edit =>
-            edit.Field == SwShDynamaxAdventuresWorkflowService.IvAttackField
-            && edit.NewValue == "0");
-        Assert.Contains(result.Session.PendingEdits, edit =>
-            edit.Field == SwShDynamaxAdventuresWorkflowService.IvDefenseField
-            && edit.NewValue == "31");
-        Assert.Equal(0, result.Workflow.Encounters[0].Ivs.Attack);
-        Assert.Equal(31, result.Workflow.Encounters[0].Ivs.Defense);
-        Assert.Empty(result.Diagnostics);
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Equal(-1, result.Workflow.Encounters[0].Ivs.Attack);
+        Assert.Equal(-1, result.Workflow.Encounters[0].Ivs.Defense);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.IvDefenseField);
     }
 
     [Fact]
@@ -70,7 +474,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -96,7 +500,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -120,7 +524,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -140,7 +544,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -168,7 +572,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
         WriteMoveData(temp, (10, true), (85, true));
         WriteLearnsetData(temp, recordCount: 200, (133, [(85, 50), (10, 70)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -192,7 +596,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
         WriteMoveData(temp, (10, true), (85, true));
         WriteLearnsetData(temp, recordCount: 200, (25, [(85, 50), (10, 70)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
@@ -215,7 +619,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
         WriteMoveData(temp, (1, true), (2, true), (10, true), (85, true));
         WriteLearnsetData(temp, recordCount: 200, (133, [(1, 1), (2, 5), (10, 20), (85, 50)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var preview = service.PreviewDefaults(
             temp.Paths,
@@ -251,7 +655,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
         WriteMoveData(temp, (1, true), (2, true), (10, true), (85, true));
         WriteLearnsetData(temp, recordCount: 200, (133, [(1, 1), (2, 5), (10, 20), (85, 50)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var preview = service.PreviewDefaults(
             temp.Paths,
@@ -280,7 +684,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             hatchedSpeciesOverrides: new Dictionary<int, int> { [467] = 240 });
         WriteMoveData(temp, (1, true), (2, true), (10, true), (85, true));
         WriteLearnsetData(temp, recordCount: 468, (467, [(1, 1), (2, 5), (10, 20), (85, 50)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var preview = service.PreviewDefaults(
             temp.Paths,
@@ -322,7 +726,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -331,12 +735,10 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             field: SwShDynamaxAdventuresWorkflowService.SpeciesField,
             value: species);
 
-        var validation = service.Validate(temp.Paths, update.Session);
-
-        Assert.False(validation.IsValid);
-        Assert.Contains(validation.Diagnostics, diagnostic =>
+        Assert.Empty(update.Session.PendingEdits);
+        Assert.Contains(update.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("normal route row", StringComparison.Ordinal));
+            && diagnostic.Message.Contains($"cannot use species {species}", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -349,7 +751,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             count: 468,
             presentSpecies: new HashSet<int> { 25, 133, 467 },
             hatchedSpeciesOverrides: new Dictionary<int, int> { [467] = 240 });
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -371,7 +773,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         WritePersonalData(temp, count: 468, presentSpecies: new HashSet<int> { 25, 133 });
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -396,7 +798,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             count: 468,
             presentSpecies: new HashSet<int> { 25, 133, 467 },
             cannotDynamaxSpecies: new HashSet<int> { 467 });
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -421,7 +823,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             count: 865,
             presentSpecies: new HashSet<int> { 25, 133, 864 },
             personalFormOverrides: new Dictionary<int, int> { [864] = 1 });
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -442,7 +844,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         WritePersonalData(temp, count: 902, presentSpecies: new HashSet<int> { 25, 133, 901 });
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -454,7 +856,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Empty(update.Session.PendingEdits);
         Assert.Contains(update.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("cannot use species 901", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("between 1 and 898", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -462,7 +864,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -488,7 +890,11 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             new SwShDynamaxAdventureArchive(duplicateTargetEntries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(
+                sourceArchive: new SwShDynamaxAdventureArchive(duplicateTargetEntries)));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -510,7 +916,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -530,7 +936,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -542,7 +948,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Empty(update.Session.PendingEdits);
         Assert.Contains(update.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("duplicate normal-route species/form 25/0", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("cannot use species 25", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -551,7 +957,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         WriteBossOnlyDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -572,7 +978,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         WriteBossOnlyDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -599,7 +1005,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         WriteBossOnlyDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -619,7 +1025,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -655,7 +1061,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             [
                 new(0, SwShDynamaxAdventureField.GigantamaxState, 2),
             ]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -682,7 +1088,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -707,7 +1113,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -728,7 +1134,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -764,7 +1170,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteOutputFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
             new SwShDynamaxAdventureArchive(editedEntries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -793,7 +1199,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             new SwShDynamaxAdventureArchive(entries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var speciesUpdate = service.UpdateField(
             temp.Paths,
@@ -835,7 +1241,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteOutputFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
             new SwShDynamaxAdventureArchive(editedEntries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var restore = service.UpdateField(
             temp.Paths,
@@ -876,7 +1282,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             new SwShDynamaxAdventureArchive(entries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -905,7 +1311,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             new SwShDynamaxAdventureArchive(entries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -934,7 +1340,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteOutputFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
             new SwShDynamaxAdventureArchive(entries).Write());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -966,7 +1372,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             (10, true),
             (20, true),
             (85, false));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -974,12 +1380,10 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             entryIndex: 0,
             field: SwShDynamaxAdventuresWorkflowService.Move0Field,
             value: "85");
-        var validation = service.Validate(temp.Paths, update.Session);
-
-        Assert.False(validation.IsValid);
-        Assert.Contains(validation.Diagnostics, diagnostic =>
+        Assert.Empty(update.Session.PendingEdits);
+        Assert.Contains(update.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("not marked usable", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("cannot use move 85", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1004,7 +1408,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             recordCount: 500,
             (133, [(1, 1), (2, 1), (10, 1), (20, 1)]),
             (25, [(3, 1), (4, 1), (5, 1), (6, 1)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -1048,7 +1452,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             recordCount: 500,
             (133, [(1, 1), (2, 1), (10, 1), (20, 1)]),
             (25, [(3, 1), (4, 1), (5, 1), (6, 1)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -1094,7 +1498,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             recordCount: 500,
             (133, [(1, 1), (2, 1), (10, 1), (20, 1)]),
             (25, [(3, 1), (4, 1), (5, 1), (6, 1)]));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(
             temp.Paths,
@@ -1115,7 +1519,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 0, SwShDynamaxAdventuresWorkflowService.LevelField, "70");
         update = service.UpdateField(temp.Paths, update.Session, 0, SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField, "6");
@@ -1159,7 +1563,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.Move0Field, "85");
         var validation = service.Validate(temp.Paths, update.Session);
@@ -1184,12 +1588,64 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
     }
 
+    [Theory]
+    [InlineData("exefs/main")]
+    [InlineData("romfs/bin/pml/personal/personal_total.bin")]
+    [InlineData("romfs/bin/pml/waza_oboe/wazaoboe_total.bin")]
+    [InlineData("romfs/bin/pml/waza/waza0085.wazabin")]
+    public void ChangePlanGuardsOutputDependencyThatAppearsBeforeApplyScope(
+        string dependencyRelativePath)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            field: SwShDynamaxAdventuresWorkflowService.Move0Field,
+            value: "85");
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, update.Session);
+        var tableWrite = Assert.Single(reviewedPlan.Writes);
+        Assert.Contains(tableWrite.Sources, source =>
+            source.Layer == Core.Files.ProjectFileLayer.Generated
+            && source.RelativePath == dependencyRelativePath);
+
+        var basePath = dependencyRelativePath.StartsWith("romfs/", StringComparison.Ordinal)
+            ? Path.Combine(
+                temp.BaseRomFsPath,
+                dependencyRelativePath["romfs/".Length..]
+                    .Replace('/', Path.DirectorySeparatorChar))
+            : Path.Combine(
+                temp.BaseExeFsPath,
+                dependencyRelativePath["exefs/".Length..]
+                    .Replace('/', Path.DirectorySeparatorChar));
+        temp.WriteOutputFile(dependencyRelativePath, File.ReadAllBytes(basePath));
+
+        var acquired = SwShChangePlanSourceGuard.TryAcquireApplyScope(
+            temp.Paths,
+            reviewedPlan,
+            out var scope,
+            out var diagnostics,
+            preserveExplicitSourceLayers: true);
+
+        scope?.Dispose();
+        Assert.False(acquired);
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("changed", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath
+                .Replace('/', Path.DirectorySeparatorChar))));
+    }
+
     [Fact]
     public void ApplyAbilityEditWritesOnlyInPlaceDynamaxAdventureTable()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.AbilityField, "2");
         var validation = service.Validate(temp.Paths, update.Session);
@@ -1224,7 +1680,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             .Concat(new byte[] { 0 })
             .ToArray();
         temp.WriteOutputFile(SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath, expandedTable);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.Move0Field, "85");
 
@@ -1244,7 +1700,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         var table = SwShDynamaxAdventureTestFixtures.CreateArchive().Write();
         SwShDynamaxAdventureTestFixtures.ClearTableField(table, entryIndex: 1, fieldIndex: 19);
         temp.WriteOutputFile(SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath, table);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.Move0Field, "85");
 
@@ -1257,21 +1713,45 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void ApplyRestoreCanRemoveMismatchedDynamaxAdventureLayout()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ApplyRestoreCanRemoveMismatchedDynamaxAdventureLayout(bool sameLengthMismatch)
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var editedTable = SwShDynamaxAdventureTestFixtures.CreateArchive()
-            .WriteEdits([new(1, SwShDynamaxAdventureField.Move0, 85)])
-            .Concat(new byte[] { 0 })
-            .ToArray();
+        var editedTable = sameLengthMismatch
+            ? SwShDynamaxAdventureTestFixtures.CreateArchive().Write()
+            : SwShDynamaxAdventureTestFixtures.CreateArchive()
+                .WriteEdits([new(1, SwShDynamaxAdventureField.Move0, 85)])
+                .Concat(new byte[] { 0 })
+                .ToArray();
+        if (sameLengthMismatch)
+        {
+            SwShDynamaxAdventureTestFixtures.ClearTableField(editedTable, entryIndex: 1, fieldIndex: 19);
+        }
         temp.WriteOutputFile(SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath, editedTable);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
-        var restore = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.Move0Field, "3");
+        var blockedEdit = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.Move0Field,
+            "85");
+        Assert.Empty(blockedEdit.Session.PendingEdits);
+        Assert.True(blockedEdit.Workflow.CanRestoreVanillaTable);
+        Assert.Contains(blockedEdit.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+        Assert.Equal(SwShDynamaxAdventuresEditSessionService.RestoreVanillaTableSummary, Assert.Single(restore.Session.PendingEdits).Summary);
         var plan = service.CreateChangePlan(temp.Paths, restore.Session);
         Assert.True(plan.CanApply);
+        Assert.Contains(plan.Writes, write =>
+            write.TargetRelativePath == SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath
+            && write.Reason.Contains("all layered Dynamax Adventures table changes", StringComparison.Ordinal));
 
         var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
 
@@ -1281,10 +1761,593 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar))));
+        var reloaded = SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests().Load(
+            new Core.Projects.ProjectWorkspaceService().Open(temp.Paths));
+        Assert.False(reloaded.CanRestoreVanillaTable);
+        Assert.All(reloaded.Encounters, encounter => Assert.Equal(Core.Files.ProjectFileLayer.Base, encounter.Provenance.SourceLayer));
+    }
+
+    [Theory]
+    [InlineData(SwShDynamaxAdventureField.Species, 0)]
+    [InlineData(SwShDynamaxAdventureField.Species, 999)]
+    [InlineData(SwShDynamaxAdventureField.Level, 101)]
+    [InlineData(SwShDynamaxAdventureField.Move0, 827)]
+    [InlineData(SwShDynamaxAdventureField.Form, 2)]
+    public void ApplyRestoreDiscardsInvalidRowsThroughContractSafeVanillaProjection(
+        SwShDynamaxAdventureField field,
+        int value)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseArchive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(basePath));
+        var entryIndex = field == SwShDynamaxAdventureField.Form ? 0 : 1;
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            baseArchive.WriteEditsPreservingLayout([new(entryIndex, field, value)]));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.CanRestoreVanillaTable);
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.DoesNotContain(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
+        Assert.All(restore.Workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+            Assert.InRange(encounter.SpeciesId, 1, 898);
+            Assert.InRange(encounter.Level, 1, 100);
+            Assert.All(encounter.Moves, move => Assert.InRange(move.MoveId, 0, 826));
+        });
+        var projected = restore.Workflow.Encounters.Single(encounter => encounter.EntryIndex == entryIndex);
+        var vanilla = baseArchive.Entries[entryIndex];
+        Assert.Equal(vanilla.Species, projected.SpeciesId);
+        Assert.Equal(vanilla.Form, projected.Form);
+        Assert.Equal(vanilla.Level, projected.Level);
+        Assert.Equal(vanilla.Moves[0], projected.Moves[0].MoveId);
+        Assert.Equal(
+            SwShDynamaxAdventuresEditSessionService.RestoreVanillaTableSummary,
+            Assert.Single(restore.Session.PendingEdits).Summary);
+
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(plan.CanApply);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar))));
     }
 
     [Fact]
-    public void CreateChangePlanRejectsAbilityEditThatRequiresDynamaxAdventureTableRebuild()
+    public void StageRestoreRejectsInvalidLayeredRowsWhenEffectiveMainIsForeign()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseArchive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(basePath));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            baseArchive.WriteEditsPreservingLayout([
+                new(1, SwShDynamaxAdventureField.Species, 999),
+            ]));
+        var foreignMain = SwShDynamaxAdventureTestFixtures.CreateCompatibleMain().ToArray();
+        foreignMain[0x08] ^= 0x01;
+        temp.WriteOutputFile("exefs/main", foreignMain);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.False(restore.Workflow.CanRestoreVanillaTable);
+        Assert.Equal("blocked", restore.Workflow.InstallStatus);
+        Assert.Empty(restore.Session.PendingEdits);
+        Assert.Contains(restore.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.File == "exefs/main");
+    }
+
+    [Fact]
+    public void ApplyRestoreAllowsMalformedLayerWhenPersonalDataIsMissing()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        File.Delete(Path.Combine(
+            temp.BaseRomFsPath,
+            SwShPersonalTable.PersonalDataRelativePath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar)));
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseArchive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(basePath));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            baseArchive.WriteEditsPreservingLayout([
+                new(1, SwShDynamaxAdventureField.Species, 999),
+            ]));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.CanRestoreVanillaTable);
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.Contains(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("personal data is missing or unreadable", StringComparison.Ordinal));
+        Assert.DoesNotContain(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.StartsWith("Verified base Dynamax Adventures row", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("form", StringComparison.Ordinal));
+        Assert.All(restore.Workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+        });
+
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(plan.CanApply);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void StageRestoreRetryIsIdempotentForCanonicalRestoreSession()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var first = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        var retry = service.StageVanillaTableRestore(temp.Paths, first.Session);
+
+        Assert.Equal(first.Session, retry.Session);
+        Assert.DoesNotContain(retry.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Contains(retry.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("already staged", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StageRestoreRetrySanitizesMarkerWhenProjectBecomesReadOnly()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var first = service.StageVanillaTableRestore(temp.Paths, session: null);
+        Assert.Equal(
+            SwShDynamaxAdventuresEditSessionService.RestoreVanillaTableSummary,
+            Assert.Single(first.Session.PendingEdits).Summary);
+
+        var retry = service.StageVanillaTableRestore(
+            temp.Paths with { OutputRootPath = null },
+            first.Session);
+
+        Assert.Empty(retry.Session.PendingEdits);
+        Assert.Contains(retry.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void StageRestoreSanitizesRuntimeNullPendingListWithoutThrowing()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var malformed = service.StartSession() with { PendingEdits = null! };
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, malformed);
+
+        Assert.Empty(restore.Session.PendingEdits);
+        Assert.Contains(restore.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("missing its pending action list", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StageRestoreSanitizesRuntimeNullPendingActionWithoutThrowing()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var malformed = service.StartSession() with { PendingEdits = [null!] };
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, malformed);
+
+        Assert.Empty(restore.Session.PendingEdits);
+        Assert.Contains(restore.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("null pending action", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StageRestoreRejectsAndSanitizesUnrelatedPendingSession()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var editService = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var rowEdit = editService.UpdateField(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            field: SwShDynamaxAdventuresWorkflowService.LevelField,
+            value: "61");
+        Assert.Single(rowEdit.Session.PendingEdits);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var restoreService = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = restoreService.StageVanillaTableRestore(temp.Paths, rowEdit.Session);
+
+        Assert.Empty(restore.Session.PendingEdits);
+        Assert.Contains(restore.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("empty edit session", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CreateChangePlanRejectsSummaryOnlyRestoreMarkerTampering()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+        var marker = Assert.Single(restore.Session.PendingEdits);
+        var tampered = restore.Session with
+        {
+            PendingEdits =
+            [
+                marker with
+                {
+                    Field = SwShDynamaxAdventuresWorkflowService.SpeciesField,
+                    NewValue = "133",
+                },
+            ],
+        };
+
+        var validation = service.Validate(temp.Paths, tampered);
+        var plan = service.CreateChangePlan(temp.Paths, tampered);
+
+        Assert.False(validation.IsValid);
+        Assert.False(plan.CanApply);
+        Assert.Contains(plan.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.True(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public void CreateChangePlanRejectsRestoreMarkerMixedWithRowEdit()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+        var marker = Assert.Single(restore.Session.PendingEdits);
+        var mixed = restore.Session with
+        {
+            PendingEdits =
+            [
+                marker,
+                marker with
+                {
+                    Summary = "Set Dynamax Adventure row 0 Species to 133.",
+                    Field = SwShDynamaxAdventuresWorkflowService.SpeciesField,
+                    NewValue = "133",
+                },
+            ],
+        };
+
+        var validation = service.Validate(temp.Paths, mixed);
+        var plan = service.CreateChangePlan(temp.Paths, mixed);
+
+        Assert.False(validation.IsValid);
+        Assert.False(plan.CanApply);
+        Assert.Contains(plan.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("cannot be combined", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ApplyRestoreRejectsReviewedPlanAfterRecoverySourceDrift(bool mutateMain)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var tablePath = Path.Combine(
+            temp.OutputRootPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Write().Concat(new byte[] { 0 }).ToArray());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+        var reviewedPlan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(reviewedPlan.CanApply);
+
+        if (mutateMain)
+        {
+            var baseMain = SwShDynamaxAdventureTestFixtures.CreateCompatibleMain();
+            var nso = NsoFile.Parse(baseMain);
+            temp.WriteOutputFile(
+                "exefs/main",
+                nso.Write(textDecompressedData: nso.Text.DecompressedData.Concat(new byte[] { 0xA5 }).ToArray()));
+        }
+        else
+        {
+            File.WriteAllBytes(tablePath, File.ReadAllBytes(tablePath).Concat(new byte[] { 0xA5 }).ToArray());
+        }
+
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, reviewedPlan);
+
+        Assert.Empty(apply.WrittenFiles);
+        Assert.Contains(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && (diagnostic.Message.Contains("stale", StringComparison.OrdinalIgnoreCase)
+                || diagnostic.Message.Contains("changed", StringComparison.OrdinalIgnoreCase)));
+        Assert.True(File.Exists(tablePath));
+        if (mutateMain)
+        {
+            Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
+        }
+    }
+
+    [Fact]
+    public void ApplyRestoreDiscardsSameLayoutHiddenNormalRowChange()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var baseArchive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(basePath));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            baseArchive.WriteEditsPreservingLayout([
+                new(1, SwShDynamaxAdventureField.Species, 144),
+            ]));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.CanRestoreVanillaTable);
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.DoesNotContain(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
+        Assert.Contains(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("hidden normal or boss row", StringComparison.Ordinal));
+        Assert.All(restore.Workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+        });
+
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(plan.CanApply);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData(SwShDynamaxAdventureField.BallItemId, 5, SwShDynamaxAdventureField.Version, 2)]
+    [InlineData(SwShDynamaxAdventureField.ShinyRoll, 2, SwShDynamaxAdventureField.IsSingleCapture, 0)]
+    public void ApplyRestoreDiscardsFullBossRecordChanges(
+        SwShDynamaxAdventureField firstField,
+        int firstValue,
+        SwShDynamaxAdventureField secondField,
+        int secondValue)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var baseArchive = new SwShDynamaxAdventureArchive(
+            CreateRepairableBossArchive().Entries
+                .Select(entry => entry.EntryIndex == SwShDynamaxAdventureSafetyRules.BossEntryStartIndex
+                    ? entry with { Version = 1 }
+                    : entry)
+                .ToArray());
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            baseArchive.Write());
+        temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(baseArchive));
+        var basePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var parsedBase = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(basePath));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            parsedBase.WriteEditsPreservingLayout([
+                new(SwShDynamaxAdventureSafetyRules.BossEntryStartIndex, firstField, firstValue),
+                new(SwShDynamaxAdventureSafetyRules.BossEntryStartIndex, secondField, secondValue),
+            ]));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.CanRestoreVanillaTable);
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.Contains(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("hidden normal or boss row", StringComparison.Ordinal));
+        Assert.All(restore.Workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+        });
+
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(plan.CanApply);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyRestoreReconcilesSynchronizedSourceMainAndPreservesForeignPayload()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var baseArchive = CreateRowCountArchive(SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount);
+        var baseBytes = baseArchive.Write();
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            baseBytes);
+        var parsedBase = SwShDynamaxAdventureArchive.Parse(baseBytes);
+        var sourceBytes = parsedBase.WriteEditsPreservingLayout([
+            new(1, SwShDynamaxAdventureField.Species, 144),
+        ]);
+        var sourceArchive = SwShDynamaxAdventureArchive.Parse(sourceBytes);
+        temp.WriteOutputFile(SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath, sourceBytes);
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(baseArchive);
+        temp.WriteBaseExeFsFile("main", baseMain);
+        var marker = Enumerable.Range(1, 24).Select(value => checked((byte)value)).ToArray();
+        var baseNso = NsoFile.Parse(baseMain);
+        var mainWithPayload = baseNso.Write(
+            textDecompressedData: baseNso.Text.DecompressedData.Concat(marker).ToArray());
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShDynamaxAdventuresMainPatcher.Reconcile(
+                mainWithPayload,
+                baseMain,
+                sourceArchive,
+                baseArchive,
+                Core.Projects.ProjectGame.Sword,
+                sourceArchive));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.CanRestoreVanillaTable);
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.Equal("repairable", restore.Workflow.InstallStatus);
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(plan.CanApply);
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == "exefs/main");
+
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        Assert.True(File.Exists(outputMainPath));
+        var restoredMain = File.ReadAllBytes(outputMainPath);
+        Assert.True(NsoFile.Parse(restoredMain).Text.DecompressedData.AsSpan()[^marker.Length..].SequenceEqual(marker));
+        var analysis = SwShDynamaxAdventuresMainPatcher.Analyze(
+            restoredMain,
+            baseMain,
+            baseArchive,
+            baseArchive,
+            Core.Projects.ProjectGame.Sword);
+        Assert.Equal(SwShDynamaxAdventuresMainKind.Vanilla, analysis.Kind);
+    }
+
+    [Theory]
+    [InlineData(272)]
+    [InlineData(274)]
+    public void ApplyRestoreProjectsVerifiedBaseForLayeredRowCountMismatch(int layeredRowCount)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var baseArchive = CreateRowCountArchive(SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            baseArchive.Write());
+        temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(baseArchive));
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            CreateRowCountArchive(layeredRowCount).Write());
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.CanRestoreVanillaTable);
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.Equal(SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount, restore.Workflow.Encounters.Count);
+        Assert.All(restore.Workflow.Encounters, encounter =>
+        {
+            Assert.False(encounter.IsEditable);
+            Assert.Empty(encounter.LayoutWritableFields);
+        });
+        Assert.Contains(restore.Workflow.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
+
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        Assert.True(plan.CanApply);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void StageRestoreRejectsLayeredRowCountMismatchWithPartialSourceSummary()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var baseArchive = CreateRowCountArchive(SwShDynamaxAdventuresWorkflowService.CanonicalBaseTableRowCount);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            baseArchive.Write());
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(baseArchive);
+        temp.WriteBaseExeFsFile("main", baseMain);
+        var sourceArchive = new SwShDynamaxAdventureArchive(
+            CreateRowCountArchive(272).Entries
+                .Select(entry => entry.EntryIndex == 1
+                    ? entry with { Species = 144 }
+                    : entry)
+                .ToArray());
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            sourceArchive.Write());
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShDynamaxAdventuresMainPatcher.Apply(
+                baseMain,
+                sourceArchive,
+                patchCommandValidatorMirrors: false));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var restore = service.StageVanillaTableRestore(temp.Paths, session: null);
+
+        Assert.True(restore.Workflow.UsesVanillaRecoveryProjection);
+        Assert.False(restore.Workflow.CanRestoreVanillaTable);
+        Assert.Empty(restore.Session.PendingEdits);
+        Assert.Contains(restore.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.File == "exefs/main");
+    }
+
+    [Fact]
+    public void UpdateFieldRejectsAbilityEditThatRequiresDynamaxAdventureTableRebuild()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
@@ -1293,16 +2356,14 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             table);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.AbilityField, "1");
 
-        var plan = service.CreateChangePlan(temp.Paths, update.Session);
-
-        Assert.False(plan.CanApply);
-        Assert.Contains(plan.Diagnostics, diagnostic =>
+        Assert.Empty(update.Session.PendingEdits);
+        Assert.Contains(update.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("rebuilding the table byte layout", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("omitted FlatBuffer default", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1311,7 +2372,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateCompatibleMain());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 0, SwShDynamaxAdventuresWorkflowService.SpeciesField, "467");
         var validation = service.Validate(temp.Paths, update.Session);
@@ -1354,12 +2415,13 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.SelectedGame = Core.Projects.ProjectGame.Shield;
         temp.WriteBaseExeFsFile(
             "main",
             SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(
                 SwShDynamaxAdventuresMainPatcher.ShieldCommandValidatorOffsetDelta,
                 SwShDynamaxAdventuresMainPatcher.ShieldBuildId));
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 0, SwShDynamaxAdventuresWorkflowService.SpeciesField, "467");
         var validation = service.Validate(temp.Paths, update.Session);
@@ -1400,7 +2462,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateCompatibleMain());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var update = service.UpdateField(temp.Paths, null, 0, SwShDynamaxAdventuresWorkflowService.GigantamaxStateField, "2");
         var validation = service.Validate(temp.Paths, update.Session);
@@ -1429,59 +2491,18 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     }
 
     [Fact]
-    public void ApplyBossTargetEditWritesOnlyMainTargetRemap()
+    public void UpdateFieldRejectsRemovedBossTargetField()
     {
         using var temp = TemporarySwShProject.Create();
-        WriteBossOnlyDynamaxAdventures(temp);
-        temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateBossTargetCompatibleMain());
-        var service = new SwShDynamaxAdventuresEditSessionService();
-
-        var update = service.UpdateField(
-            temp.Paths,
-            null,
-            226,
-            SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-            "150");
-
-        Assert.Empty(update.Session.PendingEdits);
-        Assert.Contains(update.Diagnostics, diagnostic =>
-            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("is not supported", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void ApplyBossTargetRestoreRemovesGeneratedMainWhenNoOtherMainPatchRemains()
-    {
-        using var temp = TemporarySwShProject.Create();
-        WriteBossOnlyDynamaxAdventures(temp);
-        temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateBossTargetAndSummaryCompatibleMain(entryCount: 228));
-        var service = new SwShDynamaxAdventuresEditSessionService();
-        var install = service.UpdateField(
-            temp.Paths,
-            null,
-            226,
-            SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-            "150");
-
-        Assert.Empty(install.Session.PendingEdits);
-        Assert.Contains(install.Diagnostics, diagnostic =>
-            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("is not supported", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void UpdateFieldRejectsUnsafeBossTargetSpecies()
-    {
-        using var temp = TemporarySwShProject.Create();
-        WriteBossOnlyDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var result = service.UpdateField(
             temp.Paths,
             null,
-            226,
-            SwShDynamaxAdventuresWorkflowService.BossTargetSpeciesField,
-            "484");
+            0,
+            "bossTargetSpecies",
+            "150");
 
         Assert.Empty(result.Session.PendingEdits);
         Assert.Contains(result.Diagnostics, diagnostic =>
@@ -1490,12 +2511,352 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     }
 
     [Fact]
+    public void OmittedGigantamaxFieldExposesOnlyDefaultAndRejectsNondefaultStage()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var tablePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var bytes = File.ReadAllBytes(tablePath);
+        SwShDynamaxAdventureTestFixtures.ClearTableField(bytes, entryIndex: 1, fieldIndex: 4);
+        File.WriteAllBytes(tablePath, bytes);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var workflow = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.GigantamaxStateField,
+            "0").Workflow;
+        var encounter = workflow.Encounters.Single(candidate => candidate.EntryIndex == 1);
+        Assert.Equal([0], encounter.GigantamaxOptions.Select(option => option.Value));
+        Assert.DoesNotContain(
+            SwShDynamaxAdventuresWorkflowService.GigantamaxStateField,
+            encounter.LayoutWritableFields);
+
+        var rejected = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.GigantamaxStateField,
+            "1");
+        Assert.Empty(rejected.Session.PendingEdits);
+        Assert.Contains(rejected.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("omitted FlatBuffer default", StringComparison.Ordinal));
+
+        var preview = service.PreviewDefaults(temp.Paths, null, 1, species: 25, form: 0, level: 60);
+        Assert.DoesNotContain(preview.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Equal([0], preview.GigantamaxOptions.Select(option => option.Value));
+        Assert.Equal(
+            "0",
+            preview.Changes.Single(change =>
+                change.Field == SwShDynamaxAdventuresWorkflowService.GigantamaxStateField).Value);
+    }
+
+    [Fact]
+    public void OmittedMoveSlotRejectsMoveStageButKeepsOtherRowFieldsEditable()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var tablePath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var bytes = File.ReadAllBytes(tablePath);
+        SwShDynamaxAdventureTestFixtures.ClearTableField(bytes, entryIndex: 1, fieldIndex: 22);
+        File.WriteAllBytes(tablePath, bytes);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var rejected = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.Move1Field,
+            "85");
+        Assert.Empty(rejected.Session.PendingEdits);
+        var encounter = rejected.Workflow.Encounters.Single(candidate => candidate.EntryIndex == 1);
+        Assert.DoesNotContain(SwShDynamaxAdventuresWorkflowService.Move1Field, encounter.LayoutWritableFields);
+        Assert.Contains(rejected.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("omitted FlatBuffer default", StringComparison.Ordinal));
+
+        var levelUpdate = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.LevelField,
+            "61");
+        Assert.Single(levelUpdate.Session.PendingEdits);
+
+        var preview = service.PreviewDefaults(temp.Paths, null, 1, species: 25, form: 0, level: 60);
+        Assert.Empty(preview.Changes);
+        Assert.Contains(preview.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.Move1Field);
+    }
+
+    [Fact]
+    public void PendingSpeciesCanBeRestoredToVerifiedVanillaIdentity()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var changed = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "467");
+
+        var restored = service.UpdateField(
+            temp.Paths,
+            changed.Session,
+            1,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "25");
+
+        var edit = Assert.Single(
+            restored.Session.PendingEdits,
+            pending => pending.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField);
+        Assert.Equal("25", edit.NewValue);
+        Assert.DoesNotContain(restored.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void RestoringVanillaSpeciesRemovesOnlyGeneratedFormReset()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var changed = service.UpdateField(
+            temp.Paths,
+            null,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "467");
+
+        Assert.Contains(changed.Session.PendingEdits, edit =>
+            edit.Field == SwShDynamaxAdventuresWorkflowService.FormField
+            && edit.NewValue == "0"
+            && edit.Summary.StartsWith("Automatically reset", StringComparison.Ordinal));
+
+        var restored = service.UpdateField(
+            temp.Paths,
+            changed.Session,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "133");
+
+        var encounter = restored.Workflow.Encounters.Single(candidate => candidate.EntryIndex == 0);
+        Assert.Equal(133, encounter.SpeciesId);
+        Assert.Equal("Eevee", encounter.Species);
+        Assert.Equal(1, encounter.Form);
+        Assert.DoesNotContain(
+            restored.Session.PendingEdits,
+            edit => edit.Field == SwShDynamaxAdventuresWorkflowService.FormField);
+        Assert.DoesNotContain(restored.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void RestoringVanillaSpeciesPreservesExplicitFormChoice()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var changed = service.UpdateField(
+            temp.Paths,
+            null,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "467");
+        var explicitForm = service.UpdateField(
+            temp.Paths,
+            changed.Session,
+            0,
+            SwShDynamaxAdventuresWorkflowService.FormField,
+            "0");
+        var restored = service.UpdateField(
+            temp.Paths,
+            explicitForm.Session,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "133");
+
+        var formEdit = Assert.Single(
+            restored.Session.PendingEdits,
+            edit => edit.Field == SwShDynamaxAdventuresWorkflowService.FormField);
+        Assert.Equal("0", formEdit.NewValue);
+        Assert.StartsWith("Set Dynamax Adventure", formEdit.Summary, StringComparison.Ordinal);
+        Assert.Equal(0, restored.Workflow.Encounters.Single(candidate => candidate.EntryIndex == 0).Form);
+        Assert.DoesNotContain(restored.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void RestoringVanillaSpeciesRemovesGeneratedGigantamaxReset()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var archive = new SwShDynamaxAdventureArchive(
+            SwShDynamaxAdventureTestFixtures.CreateArchive().Entries
+                .Select(entry => entry.EntryIndex == 0
+                    ? entry with { GigantamaxState = 2 }
+                    : entry)
+                .ToArray());
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            archive.Write());
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(sourceArchive: archive));
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var changed = service.UpdateField(
+            temp.Paths,
+            null,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "467");
+
+        Assert.Contains(changed.Session.PendingEdits, edit =>
+            edit.Field == SwShDynamaxAdventuresWorkflowService.GigantamaxStateField
+            && edit.NewValue == "1"
+            && edit.Summary.StartsWith("Automatically reset", StringComparison.Ordinal));
+
+        var restored = service.UpdateField(
+            temp.Paths,
+            changed.Session,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "133");
+
+        Assert.Equal(2, restored.Workflow.Encounters.Single(candidate => candidate.EntryIndex == 0).GigantamaxState);
+        Assert.DoesNotContain(
+            restored.Session.PendingEdits,
+            edit => edit.Field == SwShDynamaxAdventuresWorkflowService.GigantamaxStateField);
+        Assert.DoesNotContain(restored.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void PendingReplacementSpeciesCannotReuseVanillaAlternateForm()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var changed = service.UpdateField(
+            temp.Paths,
+            null,
+            0,
+            SwShDynamaxAdventuresWorkflowService.SpeciesField,
+            "467");
+
+        var rejected = service.UpdateField(
+            temp.Paths,
+            changed.Session,
+            0,
+            SwShDynamaxAdventuresWorkflowService.FormField,
+            "1");
+
+        Assert.Equal(0, rejected.Workflow.Encounters.Single(candidate => candidate.EntryIndex == 0).Form);
+        Assert.Contains(rejected.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.FormField);
+    }
+
+    [Fact]
+    public void PendingGuaranteedPerfectIvChangesRefreshWorkflowStats()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+
+        var cleared = service.UpdateField(
+            temp.Paths,
+            null,
+            0,
+            SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField,
+            "0");
+        var restored = service.UpdateField(
+            temp.Paths,
+            cleared.Session,
+            0,
+            SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField,
+            "4");
+
+        Assert.Equal(0, cleared.Workflow.Stats.GuaranteedPerfectIvEncounterCount);
+        Assert.Equal(1, restored.Workflow.Stats.GuaranteedPerfectIvEncounterCount);
+        Assert.Equal(cleared.Workflow.Stats.SourceFileCount, restored.Workflow.Stats.SourceFileCount);
+    }
+
+    [Theory]
+    [InlineData(SwShDynamaxAdventuresWorkflowService.SpeciesField, "999")]
+    [InlineData(SwShDynamaxAdventuresWorkflowService.LevelField, "101")]
+    [InlineData(SwShDynamaxAdventuresWorkflowService.Move0Field, "827")]
+    [InlineData(SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField, "1")]
+    public void MalformedPendingSessionNeverOverlaysUnsafeWorkflowValues(string field, string value)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
+        var valid = service.UpdateField(
+            temp.Paths,
+            null,
+            1,
+            SwShDynamaxAdventuresWorkflowService.LevelField,
+            "61");
+        var seedEdit = Assert.Single(valid.Session.PendingEdits);
+        var tamperedSession = valid.Session with
+        {
+            PendingEdits =
+            [
+                seedEdit with
+                {
+                    Field = field,
+                    NewValue = value,
+                },
+            ],
+        };
+
+        var update = service.UpdateField(
+            temp.Paths,
+            tamperedSession,
+            1,
+            SwShDynamaxAdventuresWorkflowService.IvAttackField,
+            "31");
+        var encounter = update.Workflow.Encounters.Single(candidate => candidate.EntryIndex == 1);
+        Assert.Equal(25, encounter.SpeciesId);
+        Assert.Equal(60, encounter.Level);
+        Assert.All(encounter.Moves, move => Assert.InRange(move.MoveId, 0, 826));
+        Assert.Contains(update.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+
+        var preview = service.PreviewDefaults(
+            temp.Paths,
+            tamperedSession,
+            1,
+            species: 25,
+            form: 0,
+            level: 60);
+        Assert.Empty(preview.Changes);
+        Assert.Contains(preview.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+
+        var validation = service.Validate(temp.Paths, tamperedSession);
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(temp.Paths, tamperedSession);
+        Assert.False(plan.CanApply);
+        Assert.Empty(plan.Writes);
+        Assert.Contains(plan.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void ApplyChangePlanRemovesLayeredDynamaxAdventureOutputsWhenRestoredToVanilla()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         temp.WriteBaseExeFsFile("main", SwShDynamaxAdventureTestFixtures.CreateCompatibleMain());
-        var service = new SwShDynamaxAdventuresEditSessionService();
+        var service = SwShDynamaxAdventuresEditSessionService.CreateForSyntheticTests();
 
         var install = service.UpdateField(temp.Paths, null, 0, SwShDynamaxAdventuresWorkflowService.GuaranteedPerfectIvsField, "6");
         var installPlan = service.CreateChangePlan(temp.Paths, install.Session);
@@ -1519,7 +2880,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Contains(restorePlan.Writes, write => write.TargetRelativePath == SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath);
         Assert.Contains(restorePlan.Writes, write => write.TargetRelativePath == "exefs/main");
         Assert.Contains(restorePlan.Writes, write => write.Reason.Contains("removing the generated Adventure table", StringComparison.Ordinal));
-        Assert.Contains(restorePlan.Writes, write => write.Reason.Contains("Restore or remove Dynamax Adventures ExeFS mirrors", StringComparison.Ordinal));
+        Assert.Contains(restorePlan.Writes, write => write.Reason.Contains("Remove redundant generated Dynamax Adventures exefs/main", StringComparison.Ordinal));
 
         var restored = service.ApplyChangePlan(temp.Paths, restore.Session, restorePlan);
 
@@ -1530,7 +2891,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Contains(restored.WrittenFiles, file => file.RelativePath == "exefs/main");
         Assert.Contains(restored.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Info
-            && diagnostic.Message.Contains("Restored vanilla Dynamax Adventures Pokemon", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("Restored the verified vanilla Dynamax Adventures table", StringComparison.Ordinal));
     }
 
     private static uint ReadInstruction(ReadOnlySpan<byte> text, int offset)
@@ -1657,18 +3018,33 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         IReadOnlyDictionary<int, int>? hatchedSpeciesOverrides = null,
         IReadOnlyDictionary<int, int>? personalFormOverrides = null)
     {
+        var includesEeveeFormRecord = count > 133;
+        var recordCount = includesEeveeFormRecord ? count + 1 : count;
         temp.WriteBaseRomFsFile(
             SwShPersonalTable.PersonalDataRelativePath["romfs/".Length..],
             SwShDynamaxAdventureTestFixtures.CreatePersonalTable(
-                Enumerable.Range(0, count).Select(index => CreatePersonalRecord(
-                    presentSpecies?.Contains(index) == true,
-                    cannotDynamaxSpecies?.Contains(index) == true,
-                    hatchedSpeciesOverrides is not null && hatchedSpeciesOverrides.TryGetValue(index, out var hatchedSpecies)
-                        ? hatchedSpecies
-                        : 0,
-                    personalFormOverrides is not null && personalFormOverrides.TryGetValue(index, out var personalForm)
-                        ? personalForm
-                        : 0))));
+                Enumerable.Range(0, recordCount).Select(index =>
+                {
+                    var speciesIndex = includesEeveeFormRecord && index == count ? 133 : index;
+                    var record = CreatePersonalRecord(
+                        presentSpecies?.Contains(speciesIndex) == true,
+                        cannotDynamaxSpecies?.Contains(speciesIndex) == true,
+                        hatchedSpeciesOverrides is not null && hatchedSpeciesOverrides.TryGetValue(speciesIndex, out var hatchedSpecies)
+                            ? hatchedSpecies
+                            : includesEeveeFormRecord && index == count ? 133 : 0,
+                        includesEeveeFormRecord && index == count
+                            ? 1
+                            : personalFormOverrides is not null && personalFormOverrides.TryGetValue(speciesIndex, out var personalForm)
+                                ? personalForm
+                                : 0);
+                    if (includesEeveeFormRecord && index == 133)
+                    {
+                        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1E), checked((ushort)count));
+                        record[0x20] = 2;
+                    }
+
+                    return record;
+                })));
     }
 
     private static byte[] CreatePersonalRecord(bool present, bool cannotDynamax, int hatchedSpecies, int personalForm)
@@ -1691,76 +3067,77 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
 
     private static void WriteBossOnlyDynamaxAdventures(TemporarySwShProject temp)
     {
-        var entries = Enumerable.Range(0, 226)
-            .Select(index => CreateNormalFiller(index))
-            .Concat(
-            [
-                new SwShDynamaxAdventureRecord(
-                    226,
-                    IsSingleCapture: true,
-                    SingleCaptureFlagBlock: 0xDCA342BDF75E52CFUL,
-                    Field02: 0,
-                    Form: 0,
-                    GigantamaxState: 1,
-                    BallItemId: 4,
-                    AdventureIndex: 1003,
-                    Level: 70,
-                    Species: 144,
-                    UiMessageId: 0x8877665544332211UL,
-                    OtGender: 1,
-                    Version: 0,
-                    ShinyRoll: 1,
-                    new SwShDynamaxAdventureIvs(-5, -1, -1, -1, -1, -1),
-                    Ability: 0,
-                    IsStoryProgressGated: false,
-                    Moves: [58, 573, 542, 54]),
-                new SwShDynamaxAdventureRecord(
-                    227,
-                    IsSingleCapture: true,
-                    SingleCaptureFlagBlock: 0xDCA33FBDF75E4DB6UL,
-                    Field02: 0,
-                    Form: 0,
-                    GigantamaxState: 1,
-                    BallItemId: 4,
-                    AdventureIndex: 1004,
-                    Level: 70,
-                    Species: 150,
-                    UiMessageId: 0x0807060504030201UL,
-                    OtGender: 1,
-                    Version: 0,
-                    ShinyRoll: 1,
-                    new SwShDynamaxAdventureIvs(-5, -1, -1, -1, -1, -1),
-                    Ability: 0,
-                    IsStoryProgressGated: false,
-                    Moves: [94, 50, 105, 59]),
-            ])
-            .ToArray();
+        var archive = CreateRepairableBossArchive();
 
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
-            new SwShDynamaxAdventureArchive(entries).Write());
+            archive.Write());
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateProductCompatibleMain(archive));
     }
 
-    private static SwShDynamaxAdventureRecord CreateNormalFiller(int entryIndex)
+    private static SwShDynamaxAdventureArchive CreateRowCountArchive(int rowCount)
     {
-        return new SwShDynamaxAdventureRecord(
-            entryIndex,
-            IsSingleCapture: false,
-            SingleCaptureFlagBlock: 0xCBF29CE484222645UL,
-            Field02: 0,
-            Form: 0,
-            GigantamaxState: 1,
-            BallItemId: 4,
-            AdventureIndex: entryIndex + 1,
-            Level: 65,
-            Species: 1000 + entryIndex,
-            UiMessageId: 0,
-            OtGender: 1,
-            Version: 0,
-            ShinyRoll: 1,
-            new SwShDynamaxAdventureIvs(-5, -1, -1, -1, -1, -1),
-            Ability: 0,
-            IsStoryProgressGated: false,
-            Moves: [1, 2, 10, 20]);
+        var normalSpecies = Enumerable.Range(1, SwShDynamaxAdventureSafetyRules.MaximumVerifiedNormalReplacementSpecies)
+            .Where(species => !SwShDynamaxAdventureSafetyRules.IsSpecialNormalRouteSpecies(species))
+            .Take(SwShDynamaxAdventureSafetyRules.BossEntryStartIndex)
+            .ToArray();
+        int[] bossSpecies = [144, 145, 146, 150];
+        return new SwShDynamaxAdventureArchive(
+            Enumerable.Range(0, rowCount)
+                .Select(index => new SwShDynamaxAdventureRecord(
+                    index,
+                    IsSingleCapture: index >= SwShDynamaxAdventureSafetyRules.BossEntryStartIndex,
+                    SingleCaptureFlagBlock: (ulong)(index + 1),
+                    Field02: 0,
+                    Form: 0,
+                    GigantamaxState: 1,
+                    BallItemId: 4,
+                    AdventureIndex: index + 1,
+                    Level: index >= SwShDynamaxAdventureSafetyRules.BossEntryStartIndex ? 70 : 65,
+                    Species: index < SwShDynamaxAdventureSafetyRules.BossEntryStartIndex
+                        ? normalSpecies[index]
+                        : bossSpecies[(index - SwShDynamaxAdventureSafetyRules.BossEntryStartIndex) % bossSpecies.Length],
+                    UiMessageId: (ulong)(index + 1),
+                    OtGender: 0,
+                    Version: 0,
+                    ShinyRoll: 1,
+                    new SwShDynamaxAdventureIvs(-2, -1, -1, -1, -1, -1),
+                    Ability: 0,
+                    IsStoryProgressGated: false,
+                    Moves: [1, 2, 3, 4]))
+                .ToArray());
     }
+
+    private static SwShDynamaxAdventureArchive CreateRepairableBossArchive()
+    {
+        var normalSpecies = Enumerable.Range(1, SwShDynamaxAdventureSafetyRules.MaximumVerifiedNormalReplacementSpecies)
+            .Where(species => !SwShDynamaxAdventureSafetyRules.IsSpecialNormalRouteSpecies(species))
+            .Take(SwShDynamaxAdventureSafetyRules.BossEntryStartIndex)
+            .ToArray();
+        return new SwShDynamaxAdventureArchive(
+            Enumerable.Range(0, 228)
+                .Select(index => new SwShDynamaxAdventureRecord(
+                    index,
+                    IsSingleCapture: index >= SwShDynamaxAdventureSafetyRules.BossEntryStartIndex,
+                    SingleCaptureFlagBlock: (ulong)(index + 1),
+                    Field02: 0,
+                    Form: 0,
+                    GigantamaxState: 1,
+                    BallItemId: 4,
+                    AdventureIndex: index + 1,
+                    Level: index >= SwShDynamaxAdventureSafetyRules.BossEntryStartIndex ? 70 : 65,
+                    Species: index switch { 226 => 144, 227 => 150, _ => normalSpecies[index] },
+                    UiMessageId: (ulong)(index + 1),
+                    OtGender: 0,
+                    Version: 0,
+                    ShinyRoll: 1,
+                    new SwShDynamaxAdventureIvs(-2, -1, -1, -1, -1, -1),
+                    Ability: 0,
+                    IsStoryProgressGated: false,
+                    Moves: [1, 2, 3, 4]))
+                .ToArray());
+    }
+
 }

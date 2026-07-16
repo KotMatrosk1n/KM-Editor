@@ -1304,7 +1304,26 @@ public static class SwShBridgeMapper
                 workflow.Stats.StoryGatedCount,
                 workflow.Stats.GuaranteedPerfectIvEncounterCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            InstallStatus = workflow.InstallStatus,
+            InstallMessage = workflow.InstallMessage,
+            BuildId = workflow.BuildId,
+            DetectedGame = workflow.DetectedGame is null
+                ? null
+                : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+            HasLegacyBossTargetPatch = workflow.HasLegacyBossTargetPatch,
+            CanRestoreVanillaTable = workflow.CanRestoreVanillaTable,
+            UsesVanillaRecoveryProjection = workflow.UsesVanillaRecoveryProjection,
+            RestoreVanillaTableMessage = workflow.RestoreVanillaTableMessage,
+            ReservedRegions = workflow.ReservedRegions
+                .Select(region => new DynamaxAdventureReservedRegionDto(
+                    region.Area,
+                    region.Offset,
+                    region.Label,
+                    region.Rule))
+                .ToArray(),
+        };
     }
 
     private static DynamaxAdventureRecordDto ToDto(SwShDynamaxAdventureEntry encounter)
@@ -1348,6 +1367,7 @@ public static class SwShBridgeMapper
             AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
             GigantamaxOptions = encounter.GigantamaxOptions.Select(ToDto).ToArray(),
             MoveOptions = encounter.MoveOptions.Select(ToDto).ToArray(),
+            LayoutWritableFields = encounter.LayoutWritableFields,
             BossTargetOptions = encounter.BossTargetOptions.Select(ToDto).ToArray(),
             VanillaPokemon = encounter.VanillaPokemon is null
                 ? null

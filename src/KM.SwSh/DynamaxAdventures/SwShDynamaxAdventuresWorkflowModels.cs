@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.Projects;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.DynamaxAdventures;
@@ -101,6 +102,9 @@ public sealed record SwShDynamaxAdventureEntry(
     public IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> MoveOptions { get; init; } =
         Array.Empty<SwShDynamaxAdventureEditableFieldOption>();
 
+    public IReadOnlyList<string> LayoutWritableFields { get; init; } =
+        Array.Empty<string>();
+
     public IReadOnlyList<SwShDynamaxAdventureBossTargetOption> BossTargetOptions { get; init; } =
         Array.Empty<SwShDynamaxAdventureBossTargetOption>();
 
@@ -118,10 +122,36 @@ public sealed record SwShDynamaxAdventuresWorkflowStats(
     int GuaranteedPerfectIvEncounterCount,
     int SourceFileCount);
 
+public sealed record SwShDynamaxAdventureReservedRegion(
+    string Area,
+    string Offset,
+    string Label,
+    string Rule);
+
 public sealed record SwShDynamaxAdventuresWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShDynamaxAdventureEntry> Encounters,
     IReadOnlyList<SwShDynamaxAdventureEditableField> EditableFields,
     IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> SafeNormalSpeciesOptions,
     SwShDynamaxAdventuresWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public string InstallStatus { get; init; } = "unknown";
+
+    public string InstallMessage { get; init; } = "Dynamax Adventures executable state has not been inspected.";
+
+    public string BuildId { get; init; } = "unknown";
+
+    public ProjectGame? DetectedGame { get; init; }
+
+    public bool HasLegacyBossTargetPatch { get; init; }
+
+    public bool CanRestoreVanillaTable { get; init; }
+
+    public bool UsesVanillaRecoveryProjection { get; init; }
+
+    public string RestoreVanillaTableMessage { get; init; } =
+        "Vanilla Dynamax Adventures table restore is not available for this source state.";
+
+    public IReadOnlyList<SwShDynamaxAdventureReservedRegion> ReservedRegions { get; init; } = [];
+}

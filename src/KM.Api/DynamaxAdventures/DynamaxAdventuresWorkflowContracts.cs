@@ -9,6 +9,14 @@ namespace KM.Api.DynamaxAdventures;
 
 public sealed record LoadDynamaxAdventuresWorkflowRequest(ProjectPathsDto Paths);
 
+public sealed record StageDynamaxAdventureRepairRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session);
+
+public sealed record StageDynamaxAdventureRestoreRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session);
+
 public sealed record UpdateDynamaxAdventureFieldRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
@@ -127,6 +135,9 @@ public sealed record DynamaxAdventureRecordDto(
     public IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> MoveOptions { get; init; } =
         Array.Empty<DynamaxAdventureEditableFieldOptionDto>();
 
+    public IReadOnlyList<string> LayoutWritableFields { get; init; } =
+        Array.Empty<string>();
+
     public IReadOnlyList<DynamaxAdventureBossTargetOptionDto> BossTargetOptions { get; init; } =
         Array.Empty<DynamaxAdventureBossTargetOptionDto>();
 
@@ -196,13 +207,38 @@ public sealed record DynamaxAdventuresWorkflowStatsDto(
     int GuaranteedPerfectIvEncounterCount,
     int SourceFileCount);
 
+public sealed record DynamaxAdventureReservedRegionDto(
+    string Area,
+    string Offset,
+    string Label,
+    string Rule);
+
 public sealed record DynamaxAdventuresWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<DynamaxAdventureRecordDto> Encounters,
     IReadOnlyList<DynamaxAdventureEditableFieldDto> EditableFields,
     IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> SafeNormalSpeciesOptions,
     DynamaxAdventuresWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public string InstallStatus { get; init; } = "unknown";
+
+    public string InstallMessage { get; init; } = string.Empty;
+
+    public string BuildId { get; init; } = "unknown";
+
+    public ProjectGameDto? DetectedGame { get; init; }
+
+    public bool HasLegacyBossTargetPatch { get; init; }
+
+    public bool CanRestoreVanillaTable { get; init; }
+
+    public bool UsesVanillaRecoveryProjection { get; init; }
+
+    public string RestoreVanillaTableMessage { get; init; } = string.Empty;
+
+    public IReadOnlyList<DynamaxAdventureReservedRegionDto> ReservedRegions { get; init; } = [];
+}
 
 public sealed record LoadDynamaxAdventuresWorkflowResponse(DynamaxAdventuresWorkflowDto Workflow);
 

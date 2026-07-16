@@ -10,19 +10,44 @@ namespace KM.SwSh.Tests.DynamaxAdventures;
 
 public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
 {
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(0, 2)]
+    public void PredictRejectsFormsThatDoNotExistForTheSpecies(int entryIndex, int form)
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureTestFixtures.CreateArchive().WriteEdits(
+            [
+                new(entryIndex, SwShDynamaxAdventureField.Form, form),
+            ]));
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
+
+        var plan = service.Predict(temp.Paths, seed: 0, npcCount: 0);
+
+        Assert.Empty(plan.Rentals);
+        Assert.Empty(plan.Encounters);
+        Assert.Contains(plan.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Field == SwShDynamaxAdventuresWorkflowService.FormField
+            && diagnostic.Message.Contains("form does not exist", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void PredictUsesLayeredAdventureTableRows()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
+        SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp, count: 800);
         temp.WriteOutputFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
             SwShDynamaxAdventureTestFixtures.CreateArchive().WriteEdits(
             [
                 new(1, SwShDynamaxAdventureField.Species, 467),
             ]));
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
 
         var plan = service.Predict(temp.Paths, seed: 0, npcCount: 0, requiredRows: [1]);
 
@@ -39,7 +64,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
         var target = service.Predict(temp.Paths, seed: 0, npcCount: 0).Encounters[0].Row;
 
         var search = service.SearchRows(
@@ -60,8 +85,8 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
     public void PredictReturnsDiagnosticWhenPersonalDataIsMissing()
     {
         using var temp = TemporarySwShProject.Create();
-        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp, includeDependencies: false);
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
 
         var plan = service.Predict(temp.Paths, seed: 0, npcCount: 0);
 
@@ -78,7 +103,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
 
         var search = service.SearchRows(
             temp.Paths,
@@ -100,7 +125,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
         using var temp = TemporarySwShProject.Create();
         WriteSeedPlanningDynamaxAdventures(temp, rowCount: 230);
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp, count: 400);
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
 
         var plan = service.Predict(temp.Paths, seed: 0, npcCount: 0, requiredRows: [226]);
 
@@ -118,7 +143,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
 
         var plan = service.Predict(temp.Paths, seed: 0, npcCount: 0, requiredRows: [99]);
 
@@ -136,7 +161,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
         using var temp = TemporarySwShProject.Create();
         WriteSeedPlanningDynamaxAdventures(temp, rowCount: 230);
         SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp, count: 400);
-        var service = new SwShDynamaxAdventureSeedPlanningService();
+        var service = SwShDynamaxAdventureSeedPlanningService.CreateForSyntheticTests();
 
         var search = service.SearchRows(
             temp.Paths,
@@ -154,6 +179,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningServiceTests
 
     private static void WriteSeedPlanningDynamaxAdventures(TemporarySwShProject temp, int rowCount)
     {
+        temp.SelectedGame = KM.Core.Projects.ProjectGame.Sword;
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             new SwShDynamaxAdventureArchive(

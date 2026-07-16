@@ -80,6 +80,10 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
     public const int MaximumGigantamaxState = 2;
     public const int MaximumVersion = 2;
     public const int MaximumShinyRoll = 2;
+    // This is a generic parser/allocation ceiling, not the product's canonical row count.
+    // Product workflows verify their exact row count and content identity separately.
+    public const int MaximumEntryCount = 16 * 1024;
+    public const int MaximumArchiveByteLength = 4 * 1024 * 1024;
 
     private const string OmittedFlatBufferDefaultMessageFragment = "omitted FlatBuffer default";
 
@@ -103,15 +107,39 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
             throw new InvalidDataException("Dynamax Adventure archive is too small to contain a FlatBuffer root.");
         }
 
+        if (data.Length > MaximumArchiveByteLength)
+        {
+            throw new InvalidDataException("Dynamax Adventure archive exceeds the supported allocation bound.");
+        }
+
         var rootTableOffset = ReadUOffset(data, offset: 0);
+        var rootTableRange = ReadTableObjectRange(data, rootTableOffset);
+        var rootVtableRange = ReadTableVtableRange(data, rootTableOffset);
+        if (RangesOverlap(rootTableRange, rootVtableRange))
+        {
+            throw new InvalidDataException("FlatBuffer root table overlaps its own vtable.");
+        }
+
         var tableVectorOffset = ReadTableUOffset(data, rootTableOffset, fieldIndex: 0, required: true);
-        var entries = ReadEntryTableVector(data, tableVectorOffset, out var entryTableOffsets);
+        var entries = ReadEntryTableVector(
+            data,
+            tableVectorOffset,
+            rootTableRange,
+            rootVtableRange,
+            out var entryTableOffsets);
 
         return new SwShDynamaxAdventureArchive(entries, data.ToArray(), entryTableOffsets);
     }
 
     public byte[] Write()
     {
+        if (sourceData is not null)
+        {
+            throw new InvalidOperationException(
+                "A parsed Dynamax Adventure archive cannot be fully rebuilt. Use layout-preserving edits against the parsed source.");
+        }
+
+        ValidateArchiveForSyntheticWrite();
         var writer = new DynamaxAdventureFlatBufferWriter();
         writer.Write(this);
 
@@ -186,7 +214,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
             StringComparison.Ordinal);
     }
 
-    public byte[] WriteRowCopies(IEnumerable<SwShDynamaxAdventureRowCopy> copies)
+    internal byte[] WriteRowCopies(IEnumerable<SwShDynamaxAdventureRowCopy> copies)
     {
         ArgumentNullException.ThrowIfNull(copies);
 
@@ -492,7 +520,13 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
     {
         EnsureRange(data, offset, sizeof(uint));
         var relativeOffset = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint)));
-        var targetOffset = checked(offset + (int)relativeOffset);
+        var targetOffset64 = (long)offset + relativeOffset;
+        if (relativeOffset == 0 || targetOffset64 > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer archive contains an invalid unsigned offset.");
+        }
+
+        var targetOffset = (int)targetOffset64;
         EnsureRange(data, targetOffset, sizeof(int));
 
         return targetOffset;
@@ -500,7 +534,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
 
     private static int ReadTableUOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(uint));
         if (fieldOffset == 0)
         {
             if (required)
@@ -521,7 +555,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
 
     private static int ReadTableByte(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(byte));
         if (fieldOffset == 0)
         {
             if (required)
@@ -545,7 +579,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
 
     private static int ReadTableInt32(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(int));
         if (fieldOffset == 0)
         {
             if (required)
@@ -563,7 +597,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
 
     private static int ReadTableUInt32AsInt(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(uint));
         if (fieldOffset == 0)
         {
             if (required)
@@ -586,7 +620,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
 
     private static ulong ReadTableUInt64(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex, bool required)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(ulong));
         if (fieldOffset == 0)
         {
             if (required)
@@ -602,49 +636,75 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         return BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(tableOffset + fieldOffset, sizeof(ulong)));
     }
 
-    private static int ReadTableFieldOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex)
+    private static int ReadTableFieldOffset(
+        ReadOnlySpan<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        int fieldSize)
     {
+        if (fieldIndex < 0 || fieldSize <= 0)
+        {
+            throw new InvalidDataException("FlatBuffer table field request is invalid.");
+        }
+
         EnsureRange(data, tableOffset, sizeof(int));
-        var vtableOffset = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
-        var vtableStart = tableOffset - vtableOffset;
+        var vtableDistance = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
+        var vtableStart64 = (long)tableOffset - vtableDistance;
+        if (vtableDistance == 0 || vtableStart64 < 0 || vtableStart64 > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer table contains an invalid vtable offset.");
+        }
+
+        var vtableStart = (int)vtableStart64;
         EnsureRange(data, vtableStart, sizeof(ushort) * 2);
         var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableStart, sizeof(ushort)));
-        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
-        if (fieldEntryOffset + sizeof(ushort) > vtableLength)
+        var objectLength = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(vtableStart + sizeof(ushort), sizeof(ushort)));
+        if (vtableLength < sizeof(ushort) * 2
+            || (vtableLength & 1) != 0
+            || objectLength < sizeof(int))
+        {
+            throw new InvalidDataException("FlatBuffer table contains an invalid vtable or object length.");
+        }
+
+        EnsureRange(data, vtableStart, vtableLength);
+        EnsureRange(data, tableOffset, objectLength);
+        var fieldEntryOffset64 = (long)(sizeof(ushort) * 2) + ((long)fieldIndex * sizeof(ushort));
+        if (fieldEntryOffset64 + sizeof(ushort) > vtableLength)
         {
             return 0;
         }
 
+        var fieldEntryOffset = (int)fieldEntryOffset64;
         EnsureRange(data, vtableStart + fieldEntryOffset, sizeof(ushort));
-
-        return BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableStart + fieldEntryOffset, sizeof(ushort)));
-    }
-
-    private static T[] ReadTableVector<T>(
-        ReadOnlySpan<byte> data,
-        int vectorOffset,
-        Func<ReadOnlySpan<byte>, int, int, T> readTable)
-    {
-        var count = ReadVectorLength(data, vectorOffset);
-        var values = new T[count];
-
-        for (var index = 0; index < count; index++)
+        var fieldOffset = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(vtableStart + fieldEntryOffset, sizeof(ushort)));
+        if (fieldOffset == 0)
         {
-            var elementOffset = vectorOffset + sizeof(uint) + (index * sizeof(uint));
-            values[index] = readTable(data, ReadUOffset(data, elementOffset), index);
+            return 0;
         }
 
-        return values;
+        if (fieldOffset < sizeof(int) || fieldOffset > objectLength - fieldSize)
+        {
+            throw new InvalidDataException("FlatBuffer field extends outside its table object.");
+        }
+
+        return fieldOffset;
     }
 
     private static int ReadVectorLength(ReadOnlySpan<byte> data, int vectorOffset)
     {
         EnsureRange(data, vectorOffset, sizeof(uint));
         var count = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(vectorOffset, sizeof(uint)));
-        if (count > int.MaxValue)
+        if (count > MaximumEntryCount)
         {
-            throw new InvalidDataException("FlatBuffer vector is too large.");
+            throw new InvalidDataException(
+                $"Dynamax Adventure entry vector exceeds the supported {MaximumEntryCount}-row bound.");
         }
+        EnsureRange(
+            data,
+            vectorOffset + sizeof(uint),
+            checked((int)count * sizeof(uint)));
 
         return (int)count;
     }
@@ -652,21 +712,227 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
     private static SwShDynamaxAdventureRecord[] ReadEntryTableVector(
         ReadOnlySpan<byte> data,
         int vectorOffset,
+        (int Start, int End) rootTableRange,
+        (int Start, int End) rootVtableRange,
         out int[] tableOffsets)
     {
         var count = ReadVectorLength(data, vectorOffset);
-        var values = new SwShDynamaxAdventureRecord[count];
+        var vectorRange = (
+            Start: vectorOffset,
+            End: checked(vectorOffset + sizeof(uint) + (count * sizeof(uint))));
+        if (RangesOverlap(vectorRange, rootTableRange)
+            || RangesOverlap(vectorRange, rootVtableRange))
+        {
+            throw new InvalidDataException(
+                "Dynamax Adventure entry vector storage overlaps root table or vtable metadata.");
+        }
+
         tableOffsets = new int[count];
+        var seenTableOffsets = new HashSet<int>();
+        var tableRanges = new (int Start, int End)[count];
+        var vtableRanges = new (int Start, int End)[count];
 
         for (var index = 0; index < count; index++)
         {
             var elementOffset = vectorOffset + sizeof(uint) + (index * sizeof(uint));
             var tableOffset = ReadUOffset(data, elementOffset);
+            if (!seenTableOffsets.Add(tableOffset))
+            {
+                throw new InvalidDataException("Dynamax Adventure entry vector aliases the same table more than once.");
+            }
+
+            var tableRange = ReadTableObjectRange(data, tableOffset);
+            var vtableRange = ReadTableVtableRange(data, tableOffset);
+            if (RangesOverlap(tableRange, vtableRange))
+            {
+                throw new InvalidDataException(
+                    "Dynamax Adventure entry table overlaps its own vtable.");
+            }
+
+            var sharesRootVtable = RangesEqual(vtableRange, rootVtableRange);
+            if (RangesOverlap(tableRange, vectorRange)
+                || RangesOverlap(vtableRange, vectorRange)
+                || RangesOverlap(tableRange, rootTableRange)
+                || RangesOverlap(tableRange, rootVtableRange)
+                || RangesOverlap(vtableRange, rootTableRange)
+                || (RangesOverlap(vtableRange, rootVtableRange) && !sharesRootVtable))
+            {
+                throw new InvalidDataException(
+                    "Dynamax Adventure entry ownership overlaps another table, root metadata, or vector storage.");
+            }
+
+            tableRanges[index] = tableRange;
+            vtableRanges[index] = vtableRange;
             tableOffsets[index] = tableOffset;
-            values[index] = ReadEntry(data, tableOffset, index);
+        }
+
+        ValidateEntryOwnershipRanges(tableRanges, vtableRanges);
+
+        var values = new SwShDynamaxAdventureRecord[count];
+        for (var index = 0; index < count; index++)
+        {
+            values[index] = ReadEntry(data, tableOffsets[index], index);
         }
 
         return values;
+    }
+
+    private static void ValidateEntryOwnershipRanges(
+        IReadOnlyList<(int Start, int End)> tableRanges,
+        IReadOnlyList<(int Start, int End)> vtableRanges)
+    {
+        var sortedTables = tableRanges.ToArray();
+        Array.Sort(sortedTables, CompareRanges);
+        for (var index = 1; index < sortedTables.Length; index++)
+        {
+            if (RangesOverlap(sortedTables[index - 1], sortedTables[index]))
+            {
+                throw new InvalidDataException(
+                    "Dynamax Adventure entry ownership overlaps another table, root metadata, or vector storage.");
+            }
+        }
+
+        var sortedVtables = vtableRanges.ToArray();
+        Array.Sort(sortedVtables, CompareRanges);
+        var distinctVtableCount = 0;
+        foreach (var vtableRange in sortedVtables)
+        {
+            if (distinctVtableCount > 0
+                && RangesEqual(sortedVtables[distinctVtableCount - 1], vtableRange))
+            {
+                continue;
+            }
+
+            if (distinctVtableCount > 0
+                && RangesOverlap(sortedVtables[distinctVtableCount - 1], vtableRange))
+            {
+                throw new InvalidDataException(
+                    "Dynamax Adventure entry vtables partially overlap instead of sharing an exact range.");
+            }
+
+            sortedVtables[distinctVtableCount++] = vtableRange;
+        }
+
+        var tableIndex = 0;
+        var vtableIndex = 0;
+        while (tableIndex < sortedTables.Length && vtableIndex < distinctVtableCount)
+        {
+            var tableRange = sortedTables[tableIndex];
+            var vtableRange = sortedVtables[vtableIndex];
+            if (tableRange.End <= vtableRange.Start)
+            {
+                tableIndex++;
+                continue;
+            }
+
+            if (vtableRange.End <= tableRange.Start)
+            {
+                vtableIndex++;
+                continue;
+            }
+
+            throw new InvalidDataException(
+                "Dynamax Adventure entry ownership overlaps another table, root metadata, or vector storage.");
+        }
+    }
+
+    private static int CompareRanges(
+        (int Start, int End) left,
+        (int Start, int End) right)
+    {
+        var startComparison = left.Start.CompareTo(right.Start);
+        return startComparison != 0
+            ? startComparison
+            : left.End.CompareTo(right.End);
+    }
+
+    private static (int Start, int End) ReadTableObjectRange(ReadOnlySpan<byte> data, int tableOffset)
+    {
+        EnsureRange(data, tableOffset, sizeof(int));
+        var vtableDistance = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
+        var vtableStart64 = (long)tableOffset - vtableDistance;
+        if (vtableDistance == 0 || vtableStart64 < 0 || vtableStart64 > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer table contains an invalid vtable offset.");
+        }
+
+        var vtableStart = (int)vtableStart64;
+        EnsureRange(data, vtableStart, sizeof(ushort) * 2);
+        var objectLength = BinaryPrimitives.ReadUInt16LittleEndian(
+            data.Slice(vtableStart + sizeof(ushort), sizeof(ushort)));
+        if (objectLength < sizeof(int))
+        {
+            throw new InvalidDataException("FlatBuffer table contains an invalid object length.");
+        }
+
+        EnsureRange(data, tableOffset, objectLength);
+        return (tableOffset, checked(tableOffset + objectLength));
+    }
+
+    private static (int Start, int End) ReadTableVtableRange(ReadOnlySpan<byte> data, int tableOffset)
+    {
+        EnsureRange(data, tableOffset, sizeof(int));
+        var vtableDistance = BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
+        var vtableStart64 = (long)tableOffset - vtableDistance;
+        if (vtableDistance == 0 || vtableStart64 < 0 || vtableStart64 > int.MaxValue)
+        {
+            throw new InvalidDataException("FlatBuffer table contains an invalid vtable offset.");
+        }
+
+        var vtableStart = (int)vtableStart64;
+        EnsureRange(data, vtableStart, sizeof(ushort) * 2);
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableStart, sizeof(ushort)));
+        if (vtableLength < sizeof(ushort) * 2 || (vtableLength & 1) != 0)
+        {
+            throw new InvalidDataException("FlatBuffer table contains an invalid vtable length.");
+        }
+
+        EnsureRange(data, vtableStart, vtableLength);
+        return (vtableStart, checked(vtableStart + vtableLength));
+    }
+
+    private static bool RangesOverlap(
+        (int Start, int End) left,
+        (int Start, int End) right)
+    {
+        return left.Start < right.End && left.End > right.Start;
+    }
+
+    private static bool RangesEqual(
+        (int Start, int End) left,
+        (int Start, int End) right)
+    {
+        return left.Start == right.Start && left.End == right.End;
+    }
+
+    private void ValidateArchiveForSyntheticWrite()
+    {
+        ArgumentNullException.ThrowIfNull(Entries);
+        if (Entries.Count > MaximumEntryCount)
+        {
+            throw new InvalidDataException(
+                $"Dynamax Adventure archive cannot contain more than {MaximumEntryCount} entries.");
+        }
+
+        for (var index = 0; index < Entries.Count; index++)
+        {
+            var entry = Entries[index];
+            if (entry.EntryIndex != index || entry.Moves.Count != 4)
+            {
+                throw new InvalidDataException(
+                    "Synthetic Dynamax Adventure archives require ordered entry indexes and exactly four move slots per row.");
+            }
+
+            _ = checked((byte)entry.Field02);
+            _ = checked((byte)entry.Form);
+            _ = checked((byte)entry.Version);
+            _ = checked((sbyte)entry.Ivs.Hp);
+            _ = checked((sbyte)entry.Ivs.Attack);
+            _ = checked((sbyte)entry.Ivs.Defense);
+            _ = checked((sbyte)entry.Ivs.Speed);
+            _ = checked((sbyte)entry.Ivs.SpecialAttack);
+            _ = checked((sbyte)entry.Ivs.SpecialDefense);
+        }
     }
 
     private static void WriteTableBool(
@@ -686,7 +952,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         byte value,
         string fieldName)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(byte));
         if (fieldOffset == 0)
         {
             EnsureMissingFieldCanStayDefault(value, fieldName);
@@ -714,7 +980,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         int value,
         string fieldName)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(int));
         if (fieldOffset == 0)
         {
             EnsureMissingFieldCanStayDefault(value, fieldName);
@@ -732,7 +998,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         uint value,
         string fieldName)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(uint));
         if (fieldOffset == 0)
         {
             EnsureMissingFieldCanStayDefault(value, fieldName);
@@ -750,7 +1016,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         ulong value,
         string fieldName)
     {
-        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex, sizeof(ulong));
         if (fieldOffset == 0)
         {
             EnsureMissingFieldCanStayDefault(value, fieldName);

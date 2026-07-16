@@ -10,6 +10,7 @@ namespace KM.SwSh.Moves;
 internal sealed record SwShMoveAvailabilityResult(
     IReadOnlySet<int> UsableMoveIds,
     IReadOnlyDictionary<int, ProjectFileReference> UsableMoveSources,
+    IReadOnlySet<string> ParsedSourcePaths,
     bool HasSemanticData);
 
 internal static class SwShMoveAvailability
@@ -29,11 +30,13 @@ internal static class SwShMoveAvailability
             .ToArray();
 
         var records = new List<MoveAvailabilityRecord>();
+        var parsedSourcePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in moveSources)
         {
             try
             {
                 var move = SwShMoveDataFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+                parsedSourcePaths.Add(Path.GetFullPath(source.AbsolutePath));
                 if (move.MoveId <= int.MaxValue)
                 {
                     records.Add(new MoveAvailabilityRecord(
@@ -72,6 +75,7 @@ internal static class SwShMoveAvailability
         return new SwShMoveAvailabilityResult(
             usableMoveSources.Keys.ToHashSet(),
             usableMoveSources,
+            parsedSourcePaths,
             records.Count > 0);
     }
 
