@@ -53,6 +53,10 @@ import { createHyperspaceBypassBridgeFixture } from './hyperspaceBypassTestFixtu
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
 import { createProfanityFilterBridgeFixture } from './profanityFilterTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
+import {
+  calculateTypeChartPayloadSha256,
+  encodeTypeChartPendingValues
+} from '../features/type-chart/typeChartPending';
 import { createSvBatchFieldBridgeFixtureMethods } from './svBatchFieldBridgeFixture';
 import { createSvCacheBridgeFixture, createZaCacheBridgeFixture } from './svCacheTestFixtures';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
@@ -4249,7 +4253,7 @@ export function createMockProjectBridge(
     },
     stats: {
       chartCellCount: 18 * 18,
-      outputFileCount: 1,
+      outputFileCount: 0,
       sourceFileCount: 1
     },
     summary: typeChartWorkflowSummary,
@@ -6163,8 +6167,9 @@ export function createMockProjectBridge(
     loadShinyRateWorkflow: () => Promise.resolve({ workflow: shinyRateWorkflow }),
     stageShinyRate: (request) => createStageShinyRateFixtureResponse(request, shinyRateWorkflow),
     loadTypeChartWorkflow: () => Promise.resolve({ workflow: typeChartWorkflow }),
-    stageTypeChart: (request) =>
-      Promise.resolve({
+    stageTypeChart: (request) => {
+      const payload = encodeTypeChartPendingValues(request.values);
+      return Promise.resolve({
         diagnostics: [
           {
             message: 'Type Chart effectiveness values are staged for change-plan review.',
@@ -6177,30 +6182,26 @@ export function createMockProjectBridge(
             {
               domain: 'workflow.typeChart',
               field: 'effectiveness',
-              newValue: request.values
-                .map((value) => value.toString(16).padStart(2, '0'))
-                .join('')
-                .toUpperCase(),
+              newValue: payload,
               recordId: 'type-chart',
               sources: [
                 {
                   layer: 'base',
                   relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'pending',
+                  relativePath: `pending/type-chart/effectiveness/${calculateTypeChartPayloadSha256(payload)}`
                 }
               ],
-              summary: 'Stage Type Chart effectiveness values.'
+              summary: 'Stage Type Chart effectiveness table.'
             }
           ],
           sessionId: request.session?.sessionId ?? 'session-type-chart'
         },
-        workflow: {
-          ...typeChartWorkflow,
-          cells: typeChartWorkflow.cells.map((cell, index) => ({
-            ...cell,
-            effectiveness: request.values[index] ?? cell.effectiveness
-          }))
-        }
-      }),
+        workflow: typeChartWorkflow
+      });
+    },
     stageTypeChartUninstall: (request) =>
       Promise.resolve({
         diagnostics: [
@@ -6234,6 +6235,8 @@ export function createMockProjectBridge(
         },
         workflow: {
           ...typeChartWorkflow,
+          buildId: '421C5411B487EB4D049DD065FEC9547773E8E598',
+          chartOffsetHex: 'main.ro+0x0082286C',
           detectedGame: 'scarlet',
           installMessage: 'Type Chart contains custom effectiveness values.',
           installStatus: 'modified',

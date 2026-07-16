@@ -4544,13 +4544,19 @@ h2 {
   display: grid;
   justify-items: center;
   gap: 16px;
+  min-width: 0;
+  width: 100%;
   margin-top: 18px;
 }
 
 .type-chart-scroll {
   display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   padding: 10px;
+  scrollbar-gutter: stable;
 }
 
 .type-chart-grid {
@@ -4696,7 +4702,7 @@ h2 {
 
 .type-chart-source-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   width: 100%;
   margin: 0;

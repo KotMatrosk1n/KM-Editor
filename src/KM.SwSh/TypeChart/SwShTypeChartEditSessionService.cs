@@ -4,9 +4,12 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
-using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.TypeChart;
 
@@ -19,6 +22,8 @@ public sealed class SwShTypeChartEditSessionService
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShTypeChartWorkflowService typeChartWorkflowService;
+    private readonly Action? beforeAcquireApplyScope;
+    private readonly Action<int, string>? beforeVerifiedPromotion;
 
     public SwShTypeChartEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -26,6 +31,26 @@ public sealed class SwShTypeChartEditSessionService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.typeChartWorkflowService = typeChartWorkflowService ?? new SwShTypeChartWorkflowService();
+    }
+
+    internal SwShTypeChartEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShTypeChartWorkflowService? typeChartWorkflowService,
+        Action beforeAcquireApplyScope)
+        : this(projectWorkspaceService, typeChartWorkflowService)
+    {
+        this.beforeAcquireApplyScope = beforeAcquireApplyScope
+            ?? throw new ArgumentNullException(nameof(beforeAcquireApplyScope));
+    }
+
+    internal SwShTypeChartEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShTypeChartWorkflowService? typeChartWorkflowService,
+        Action<int, string> beforeVerifiedPromotion)
+        : this(projectWorkspaceService, typeChartWorkflowService)
+    {
+        this.beforeVerifiedPromotion = beforeVerifiedPromotion
+            ?? throw new ArgumentNullException(nameof(beforeVerifiedPromotion));
     }
 
     public SwShTypeChartEditResult StageChart(
@@ -36,6 +61,7 @@ public sealed class SwShTypeChartEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = typeChartWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -55,16 +81,15 @@ public sealed class SwShTypeChartEditSessionService
         }
 
         var payload = EncodeValues(values);
-        var source = SwShTypeChartWorkflowService.ResolveWorkflowFile(project, SwShTypeChartWorkflowService.ExeFsMainPath);
-        var sourceReferences = source is null
-            ? [new ProjectFileReference(ProjectFileLayer.Base, SwShTypeChartWorkflowService.ExeFsMainPath)]
-            : new[] { CreateSourceReference(source.Entry) };
+        var sourceReferences = CreateCanonicalSources(project, payload, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShTypeChartEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, TypeChartEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit(payload, sourceReferences))
-                .ToArray(),
+            PendingEdits = [CreatePendingEdit(payload, sourceReferences)],
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -79,50 +104,38 @@ public sealed class SwShTypeChartEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = typeChartWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-
-        if (session.PendingEdits.Count == 0)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Stage Type Chart values before validating.",
-                expected: "Pending Type Chart effectiveness values"));
-            return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
-        }
 
         if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Type Chart expects exactly one staged chart edit.",
-                expected: "One pending Type Chart edit"));
+                session.PendingEdits.Count == 0
+                    ? "Stage Type Chart values before validating."
+                    : "Type Chart expects exactly one canonical staged chart edit.",
+                expected: "Exactly one pending Type Chart edit"));
         }
-
-        foreach (var edit in session.PendingEdits)
+        else
         {
-            if (!string.Equals(edit.Domain, TypeChartEditDomain, StringComparison.Ordinal))
+            var edit = session.PendingEdits[0];
+            if (!IsCanonicalIdentity(edit))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pending edit domain '{edit.Domain}' is not supported by Type Chart.",
-                    expected: TypeChartEditDomain));
-                continue;
+                    "Pending edit does not target the canonical Type Chart field.",
+                    field: edit.Field,
+                    expected: $"{TypeChartEditDomain}/{RecordId}/{EffectivenessField}"));
             }
-
-            if (!string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal))
+            else
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pending Type Chart edit '{edit.RecordId}' is not supported.",
-                    expected: "Type Chart effectiveness table"));
-                continue;
+                ValidateCanonicalEdit(project, edit, diagnostics);
             }
-
-            _ = DecodeValues(edit.NewValue, diagnostics);
-            CanStage(project, workflow, diagnostics);
         }
+
+        CanStage(project, workflow, diagnostics);
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -150,29 +163,31 @@ public sealed class SwShTypeChartEditSessionService
         }
 
         var project = projectWorkspaceService.Open(paths);
-        var source = SwShTypeChartWorkflowService.ResolveWorkflowFile(project, SwShTypeChartWorkflowService.ExeFsMainPath);
+        var edit = session.PendingEdits.Single();
+        var values = DecodeValues(edit.NewValue, diagnostics);
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (source is null || targetPath is null)
+        var sources = CreateCanonicalSources(project, edit.NewValue ?? string.Empty, diagnostics);
+        if (targetPath is null
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Type Chart source or output target could not be resolved.",
-                file: SwShTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Readable exefs/main source and writable LayeredFS target"));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
         var write = new PlannedFileWrite(
             SwShTypeChartWorkflowService.ExeFsMainPath,
-            [CreateSourceReference(source.Entry)],
+            sources,
             File.Exists(targetPath),
-            "Update the Sword/Shield type-effectiveness table in exefs/main.");
+            IsVanillaDisplayValues(values)
+                ? "Restore the Sword/Shield type-effectiveness table from the verified vanilla base exefs/main."
+                : "Update the Sword/Shield type-effectiveness table in exefs/main.");
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             "Type Chart change plan preview contains 1 target file."));
 
-        return new ChangePlan(session.Id, [write], diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, [write], diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -181,13 +196,30 @@ public sealed class SwShTypeChartEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
+
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -195,19 +227,80 @@ public sealed class SwShTypeChartEditSessionService
                 expected: "Current reviewed Type Chart change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var values = DecodeValues(session.PendingEdits.Single().NewValue, diagnostics);
+        beforeAcquireApplyScope?.Invoke();
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var acquireDiagnostics))
+        {
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                acquireDiagnostics);
+        }
+
+        using var verifiedScope = applyScope!;
+        var snapshotPlan = CreateChangePlan(verifiedScope.ApplyPaths, session);
+        if (!verifiedScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedPlan))
+        {
+            var staleDiagnostics = preparedPlan.Diagnostics.ToList();
+            staleDiagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Type Chart sources changed while preparing the verified apply snapshot.",
+                expected: "Sources matching the reviewed Type Chart change plan"));
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                staleDiagnostics);
+        }
+
+        var snapshotResult = ApplyPreparedPlan(
+            verifiedScope.ApplyPaths,
+            session,
+            preparedPlan,
+            applyId,
+            appliedAt);
+        return verifiedScope.Commit(snapshotResult, beforeVerifiedPromotion);
+    }
+
+    private ApplyResult ApplyPreparedPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan preparedPlan,
+        string applyId,
+        DateTimeOffset appliedAt)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        var diagnostics = preparedPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+        if (session.PendingEdits.Count != 1 || !IsCanonicalIdentity(session.PendingEdits[0]))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Type Chart prepared apply requires exactly one canonical pending edit.",
+                expected: $"{TypeChartEditDomain}/{RecordId}/{EffectivenessField}"));
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        var values = DecodeValues(session.PendingEdits[0].NewValue, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
         }
 
         ApplyMain(paths, values, writtenFiles, diagnostics);
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
     }
 
     private void ApplyMain(
@@ -219,53 +312,75 @@ public sealed class SwShTypeChartEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var source = SwShTypeChartWorkflowService.ResolveWorkflowFile(project, SwShTypeChartWorkflowService.ExeFsMainPath);
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        if (source is null || targetPath is null)
+        var basePath = SwShTypeChartWorkflowService.ResolveBaseSourcePath(
+            paths,
+            SwShTypeChartWorkflowService.ExeFsMainPath);
+        if (source is null || targetPath is null || basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Type Chart source or output target could not be resolved.",
+                "Type Chart source, vanilla base, or output target could not be resolved.",
                 file: SwShTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Readable exefs/main source and writable LayeredFS target"));
+                expected: "Readable reviewed source and vanilla base with writable LayeredFS target"));
             return;
         }
 
         try
         {
             var gameOrderValues = SwShTypeChartWorkflowService.ToGameOrder(values);
-            var output = SwShTypeChartMainPatcher.ApplyChart(
-                File.ReadAllBytes(source.AbsolutePath),
-                gameOrderValues,
+            var baseBytes = File.ReadAllBytes(basePath);
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            EnsureVerifiedVanillaBase(
+                SwShTypeChartMainPatcher.Analyze(baseBytes, paths.SelectedGame),
                 paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            EnsureEditableEffectiveSource(
+                SwShTypeChartMainPatcher.Analyze(sourceBytes, paths.SelectedGame));
+            SwShTypeChartMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, sourceBytes);
+
+            var isRestore = gameOrderValues.SequenceEqual(SwShTypeChartMainPatcher.VanillaChartValues);
+            var output = isRestore
+                ? SwShTypeChartMainPatcher.RestoreFromBase(sourceBytes, baseBytes, paths.SelectedGame)
+                : SwShTypeChartMainPatcher.ApplyChart(sourceBytes, gameOrderValues, paths.SelectedGame);
+            VerifyOutput(baseBytes, output, gameOrderValues, paths.SelectedGame);
+
+            if (isRestore && SwShExeFsMainComparison.IsSemanticallyEquivalentToBase(output, baseBytes))
+            {
+                if (File.Exists(targetPath))
+                {
+                    File.Delete(targetPath);
+                }
+
+                if (File.Exists(targetPath))
+                {
+                    throw new IOException("Type Chart restore target still exists after verified deletion.");
+                }
+            }
+            else
+            {
+                WriteOutputAtomically(
+                    targetPath,
+                    output,
+                    roundTrip => VerifyOutput(baseBytes, roundTrip, gameOrderValues, paths.SelectedGame));
+            }
+
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Applied Type Chart changes to exefs/main in the configured LayeredFS output root."));
+                isRestore
+                    ? "Restored Type Chart defaults in the configured LayeredFS output root."
+                    : "Applied Type Chart changes to exefs/main in the configured LayeredFS output root."));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or OverflowException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Type Chart could not be patched: {exception.Message}",
+                $"Type Chart verified output could not be prepared: {exception.Message}",
                 file: SwShTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword/Shield 1.3.2 exefs/main with one legal 18x18 type chart table"));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Type Chart output could not be written: {exception.Message}",
-                file: SwShTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Type Chart output could not be written: {exception.Message}",
-                file: SwShTypeChartWorkflowService.ExeFsMainPath,
-                expected: "Writable output root"));
+                expected: "Reviewed selected-game source, exact effectiveness payload, verified vanilla base, and writable output"));
         }
     }
 
@@ -274,18 +389,25 @@ public sealed class SwShTypeChartEditSessionService
         SwShTypeChartWorkflow workflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Type Chart apply requires valid base paths and a valid output root.",
-                expected: "Editable project paths"));
-            return false;
-        }
-
         foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(diagnostic);
+            if (!diagnostics.Contains(diagnostic))
+            {
+                diagnostics.Add(diagnostic);
+            }
+        }
+
+        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
+        {
+            if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Type Chart apply requires valid base paths, Pokemon Sword or Shield, and a valid output root.",
+                    expected: "Editable Pokemon Sword or Pokemon Shield project paths"));
+            }
+
+            return false;
         }
 
         if (workflow.InstallStatus == "blocked")
@@ -313,7 +435,7 @@ public sealed class SwShTypeChartEditSessionService
             SwShTypeChartMainPatcher.ValidateValues(values);
             return true;
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException or ArgumentNullException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -373,12 +495,98 @@ public sealed class SwShTypeChartEditSessionService
             payload);
     }
 
-    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
+    private static bool IsCanonicalIdentity(PendingEdit edit)
     {
-        var layer = entry.LayeredFile is not null
-            ? ProjectFileLayer.Layered
-            : ProjectFileLayer.Base;
-        return new ProjectFileReference(layer, entry.RelativePath);
+        return string.Equals(edit.Domain, TypeChartEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, EffectivenessField, StringComparison.Ordinal);
+    }
+
+    private void ValidateCanonicalEdit(
+        OpenedProject project,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var values = DecodeValues(edit.NewValue, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        var canonicalPayload = EncodeValues(values);
+        if (!string.Equals(edit.NewValue, canonicalPayload, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Type Chart values are not in canonical payload format.",
+                field: EffectivenessField,
+                expected: canonicalPayload));
+        }
+
+        const string expectedSummary = "Stage Type Chart effectiveness table.";
+        if (!string.Equals(edit.Summary, expectedSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Type Chart edit does not have the canonical staged summary.",
+                field: EffectivenessField,
+                expected: expectedSummary));
+        }
+
+        var sourceDiagnostics = new List<ValidationDiagnostic>();
+        var expectedSources = CreateCanonicalSources(project, canonicalPayload, sourceDiagnostics);
+        foreach (var diagnostic in sourceDiagnostics)
+        {
+            diagnostics.Add(diagnostic);
+        }
+
+        if (!edit.Sources.SequenceEqual(expectedSources))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Type Chart sources do not match the canonical base, effective, and payload references.",
+                field: EffectivenessField,
+                expected: "Canonical ordered unique Type Chart source references"));
+        }
+    }
+
+    private IReadOnlyList<ProjectFileReference> CreateCanonicalSources(
+        OpenedProject project,
+        string payload,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sources = typeChartWorkflowService.GetPlanSources(project).ToList();
+        if (!sources.Any(source => source.Layer == ProjectFileLayer.Base
+            && string.Equals(source.RelativePath, SwShTypeChartWorkflowService.ExeFsMainPath, StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Type Chart vanilla base source could not be resolved.",
+                file: SwShTypeChartWorkflowService.ExeFsMainPath,
+                expected: "Readable selected-game base exefs/main"));
+        }
+
+        sources.Add(CreatePendingPayloadSource(payload));
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static ProjectFileReference CreatePendingPayloadSource(string payload)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/type-chart/effectiveness/{hash}");
+    }
+
+    private static bool IsVanillaDisplayValues(IReadOnlyList<int> displayOrderValues)
+    {
+        return SwShTypeChartWorkflowService
+            .ToGameOrder(displayOrderValues)
+            .SequenceEqual(SwShTypeChartMainPatcher.VanillaChartValues);
     }
 
     private static string? ResolveOutputPath(
@@ -407,25 +615,80 @@ public sealed class SwShTypeChartEditSessionService
         return targetPath;
     }
 
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
+    private static void EnsureVerifiedVanillaBase(
+        SwShTypeChartMainAnalysis analysis,
+        ProjectGame? selectedGame)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
+        if (analysis.Kind != SwShTypeChartMainKind.Vanilla
+            || analysis.DetectedGame != selectedGame
+            || analysis.DetectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+            || string.Equals(analysis.BuildId, "unknown", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            throw new InvalidDataException(
+                "Type Chart requires the reviewed selected-game vanilla base exefs/main before apply or restore.");
+        }
+    }
+
+    private static void EnsureEditableEffectiveSource(SwShTypeChartMainAnalysis analysis)
+    {
+        if (analysis.Kind is not (SwShTypeChartMainKind.Vanilla or SwShTypeChartMainKind.Modified))
+        {
+            throw new InvalidDataException(
+                "The reviewed effective exefs/main is no longer a verified Type Chart source.");
+        }
+    }
+
+    private static void VerifyOutput(
+        byte[] baseBytes,
+        byte[] output,
+        IReadOnlyList<int> expectedGameOrderValues,
+        ProjectGame? selectedGame)
+    {
+        var analysis = SwShTypeChartMainPatcher.Analyze(output, selectedGame);
+        if (analysis.Kind is not (SwShTypeChartMainKind.Vanilla or SwShTypeChartMainKind.Modified)
+            || analysis.DetectedGame != selectedGame
+            || !analysis.EffectivenessValues.SequenceEqual(expectedGameOrderValues))
+        {
+            throw new InvalidDataException(
+                "Type Chart output did not round-trip with the reviewed effectiveness table.");
         }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        SwShTypeChartMainPatcher.EnsureCompatibleExecutableIdentity(baseBytes, output);
+    }
 
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+    private static void WriteOutputAtomically(
+        string targetPath,
+        byte[] output,
+        Action<byte[]> verifyRoundTrip)
+    {
+        var directoryPath = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Type Chart output directory could not be resolved.");
+        Directory.CreateDirectory(directoryPath);
+        var temporaryPath = Path.Combine(
+            directoryPath,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, output);
+            var roundTrip = File.ReadAllBytes(temporaryPath);
+            if (!roundTrip.AsSpan().SequenceEqual(output))
+            {
+                throw new IOException("Type Chart temporary output did not round-trip byte-for-byte.");
+            }
+
+            verifyRoundTrip(roundTrip);
+            File.Move(temporaryPath, targetPath, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static ApplyResult CreateApplyResult(

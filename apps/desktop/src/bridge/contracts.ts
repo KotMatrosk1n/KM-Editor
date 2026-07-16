@@ -2639,28 +2639,172 @@ export const stageHyperTrainingResponseSchema = z.strictObject({
   workflow: hyperTrainingWorkflowSchema
 });
 
-export const typeChartProvenanceSchema = z.strictObject({ fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema });
+const typeChartTypeDefinitions = [
+  ['Normal', 'NOR', '#A8A878'],
+  ['Fire', 'FIR', '#F05030'],
+  ['Water', 'WAT', '#6890F0'],
+  ['Electric', 'ELE', '#F8D030'],
+  ['Grass', 'GRA', '#78C850'],
+  ['Ice', 'ICE', '#78C8F0'],
+  ['Fighting', 'FIG', '#A05038'],
+  ['Poison', 'POI', '#A040A0'],
+  ['Ground', 'GRO', '#E0C068'],
+  ['Flying', 'FLY', '#8080F0'],
+  ['Psychic', 'PSY', '#F85888'],
+  ['Bug', 'BUG', '#A8B820'],
+  ['Rock', 'ROC', '#B8A038'],
+  ['Ghost', 'GHO', '#6060B0'],
+  ['Dragon', 'DRA', '#7038F8'],
+  ['Dark', 'DAR', '#705848'],
+  ['Steel', 'STE', '#B8B8D0'],
+  ['Fairy', 'FAI', '#EE99EE']
+] as const;
 
-export const typeChartSourceRecordSchema = z.strictObject({ label: z.string(), provenance: typeChartProvenanceSchema, relativePath: z.string(), sourceId: z.string(), status: z.string() });
+const typeChartIdentityByGame = {
+  scarlet: {
+    buildId: '421C5411B487EB4D049DD065FEC9547773E8E598',
+    chartOffsetHex: 'main.ro+0x0082286C'
+  },
+  shield: {
+    buildId: 'A16802625E7826BF83B6F9708E475B912A9AB7DF',
+    chartOffsetHex: 'main.ro+0x00743600'
+  },
+  sword: {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    chartOffsetHex: 'main.ro+0x00743600'
+  },
+  violet: {
+    buildId: '709BFD66115298640155FCC4979DBA151C7CC79A',
+    chartOffsetHex: 'main.ro+0x0082286C'
+  },
+  za: {
+    buildId: 'B1F12FD919EAE86AB8A978317677E64BCE443D1F',
+    chartOffsetHex: 'main.ro+0x0019F2A4'
+  }
+} as const;
 
-export const typeChartTypeDefinitionSchema = z.strictObject({ color: z.string(), label: z.string(), shortLabel: z.string(), typeIndex: z.number().int().min(0) });
+const typeChartEffectivenessSchema = z.union([
+  z.literal(0),
+  z.literal(2),
+  z.literal(4),
+  z.literal(8)
+]);
 
-export const typeChartCellSchema = z.strictObject({ attackTypeIndex: z.number().int().min(0), defenseTypeIndex: z.number().int().min(0), effectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)]), vanillaEffectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)]) });
+export const typeChartProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.literal('exefs/main'),
+  sourceLayer: projectFileLayerSchema
+});
 
-export const typeChartWorkflowStatsSchema = z.strictObject({ chartCellCount: z.number().int().nonnegative(), outputFileCount: z.number().int().nonnegative(), sourceFileCount: z.number().int().nonnegative() });
+export const typeChartSourceRecordSchema = z.strictObject({
+  label: z.string().min(1),
+  provenance: typeChartProvenanceSchema,
+  relativePath: z.literal('exefs/main'),
+  sourceId: z.string().min(1),
+  status: z.enum(['available', 'missing'])
+});
+
+export const typeChartTypeDefinitionSchema = z.strictObject({
+  color: z.string().regex(/^#[A-F0-9]{6}$/),
+  label: z.string().min(1),
+  shortLabel: z.string().min(1),
+  typeIndex: z.number().int().min(0).max(17)
+});
+
+const typeChartTypeDefinitionsSchema = z
+  .array(typeChartTypeDefinitionSchema)
+  .length(18)
+  .superRefine((types, context) => {
+    for (const [typeIndex, expected] of typeChartTypeDefinitions.entries()) {
+      const type = types.find((candidate) => candidate.typeIndex === typeIndex);
+      if (
+        !type ||
+        type.label !== expected[0] ||
+        type.shortLabel !== expected[1] ||
+        type.color !== expected[2]
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: `Type Chart definition ${typeIndex} does not match the canonical display mapping.`,
+          path: [typeIndex]
+        });
+      }
+    }
+  });
+
+export const typeChartCellSchema = z.strictObject({
+  attackTypeIndex: z.number().int().min(0).max(17),
+  defenseTypeIndex: z.number().int().min(0).max(17),
+  effectiveness: typeChartEffectivenessSchema,
+  vanillaEffectiveness: typeChartEffectivenessSchema
+});
+
+const typeChartCellsSchema = z
+  .array(typeChartCellSchema)
+  .length(18 * 18)
+  .superRefine((cells, context) => {
+    const coordinates = new Set(
+      cells.map((cell) => `${cell.attackTypeIndex}:${cell.defenseTypeIndex}`)
+    );
+    if (coordinates.size !== 18 * 18) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Type Chart cells must contain every attack and defense coordinate exactly once.'
+      });
+    }
+  });
+
+export const typeChartWorkflowStatsSchema = z.strictObject({
+  chartCellCount: z.literal(18 * 18),
+  outputFileCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative()
+});
 
 export const typeChartWorkflowSchema = z.strictObject({
-  buildId: z.string(),
-  cells: z.array(typeChartCellSchema),
+  buildId: z.union([z.literal('unknown'), z.string().regex(/^[A-F0-9]{40}$/)]),
+  cells: typeChartCellsSchema,
   chartOffsetHex: z.string(),
   detectedGame: projectGameSchema.nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
   installMessage: z.string(),
-  installStatus: z.string(),
+  installStatus: z.enum(['available', 'blocked', 'disabled', 'modified', 'readOnly']),
   source: typeChartSourceRecordSchema.nullable(),
   stats: typeChartWorkflowStatsSchema,
   summary: workflowSummarySchema,
-  types: z.array(typeChartTypeDefinitionSchema)
+  types: typeChartTypeDefinitionsSchema
+}).superRefine((workflow, context) => {
+  if (workflow.summary.id !== 'typeChart') {
+    context.addIssue({
+      code: 'custom',
+      message: 'Type Chart workflow summary must use the Type Chart identity.',
+      path: ['summary', 'id']
+    });
+  }
+
+  if (workflow.detectedGame === null) {
+    return;
+  }
+
+  const expectedIdentity = typeChartIdentityByGame[workflow.detectedGame];
+  if (workflow.buildId !== expectedIdentity.buildId) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Type Chart build ID does not match the detected game.',
+      path: ['buildId']
+    });
+  }
+  const hasAllowedBlockedUnknownOffset =
+    workflow.installStatus === 'blocked' && workflow.chartOffsetHex === 'unknown';
+  if (
+    workflow.chartOffsetHex !== expectedIdentity.chartOffsetHex &&
+    !hasAllowedBlockedUnknownOffset
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Type Chart offset does not match the detected game.',
+      path: ['chartOffsetHex']
+    });
+  }
 });
 
 export const loadTypeChartWorkflowResponseSchema = z.strictObject({
@@ -2670,7 +2814,7 @@ export const loadTypeChartWorkflowResponseSchema = z.strictObject({
 export const stageTypeChartRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
-  values: z.array(z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)])).length(324)
+  values: z.array(typeChartEffectivenessSchema).length(18 * 18)
 });
 
 export const stageTypeChartResponseSchema = z.strictObject({

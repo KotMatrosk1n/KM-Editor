@@ -4690,19 +4690,40 @@ export function App({
 
   const handleStageTypeChart = async (values: TypeChartEffectivenessValue[]) => {
     setIsTypeChartStaging(true);
-    prepareScopedEditorPanelAction('typeChart');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageTypeChart({
-        paths: createProjectPaths(draftPaths),
-        session: editSession,
-        values
-      });
-      setTypeChartWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('typeChart', response.diagnostics);
-      registerEditorDraftDirty('typeChart', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageTypeChart({
+            paths: createProjectPaths(draftPaths),
+            session,
+            values
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : typeChartWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('typeChart');
+          setTypeChartWorkflow(response.workflow);
+          setEditSessionSection('typeChart');
+          setScopedEditorPanelDiagnostics('typeChart', response.diagnostics);
+          registerEditorDraftDirty('typeChart', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -4712,18 +4733,39 @@ export function App({
 
   const handleStageTypeChartUninstall = async () => {
     setIsTypeChartStaging(true);
-    prepareScopedEditorPanelAction('typeChart');
+    setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.stageTypeChartUninstall({
-        paths: createProjectPaths(draftPaths),
-        session: editSession
-      });
-      setTypeChartWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setScopedEditorPanelDiagnostics('typeChart', response.diagnostics);
-      registerEditorDraftDirty('typeChart', false);
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageTypeChartUninstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : typeChartWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('typeChart');
+          setTypeChartWorkflow(response.workflow);
+          setEditSessionSection('typeChart');
+          setScopedEditorPanelDiagnostics('typeChart', response.diagnostics);
+          registerEditorDraftDirty('typeChart', false);
+        }
+      );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {

@@ -30,14 +30,21 @@ public sealed class SwShRandomizerOptionCoverageTests
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
     private static readonly int[] ProtectedBoxLegendarySpeciesIds = [888, 889, 890];
+    private static readonly byte[] TypeChartDependenciesBefore = Convert.FromHexString(
+        "E84C74FE0C4D74FE084D74FE0C4D74FE0C4D74FE0C4D74FEF84C74FEE04D74FE" +
+        "EC4D74FEF44D74FEEC4D74FE084E74FEEC4D74FEEC4D74FEEC4D74FE004E74FE");
+    private static readonly byte[] TypeChartDependenciesAfter = Convert.FromHexString(
+        "0000000001000000020000000400000008000000100000002000000040000000" +
+        "800000000001000000020000000400000008000000100000F85D74FE105E74FE");
 
     [Fact]
     public void PreviewCreatesEditsForEverySelectableRandomizerOption()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var service = new SwShRandomizerService();
 
-        var preview = service.Preview(temp.Paths, CreateConfig(AllRandomizerOptions()));
+        var preview = service.Preview(paths, CreateConfig(AllRandomizerOptions()));
         var edits = AllEdits(preview).ToArray();
 
         AssertNoErrors(preview);
@@ -156,13 +163,14 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void PreviewDoesNotRandomizeProtectedBoxLegendarySpecies()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         WritePokemonDataWithProtectedBoxLegendaries(temp);
         WriteWildAndRaidData(temp, protectedFirstSlotSpeciesId: 888);
         WriteProtectedStaticEncounterData(temp);
         WriteProtectedGiftData(temp);
         var service = new SwShRandomizerService();
 
-        var preview = service.Preview(temp.Paths, CreateConfig(AllRandomizerOptions()));
+        var preview = service.Preview(paths, CreateConfig(AllRandomizerOptions()));
         var edits = AllEdits(preview).ToArray();
 
         AssertNoErrors(preview);
@@ -286,9 +294,10 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void TypeChartRandomizerHonorsImmunityConstraints()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var service = new SwShRandomizerService();
 
-        var noImmunities = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var noImmunities = service.Preview(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
             TypeChartNoImmunities = true,
@@ -298,7 +307,7 @@ public sealed class SwShRandomizerOptionCoverageTests
             edit.Domain == SwShTypeChartEditSessionService.TypeChartEditDomain).NewValue);
         Assert.DoesNotContain(0, noImmunityValues);
 
-        var oneImmunityPerType = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var oneImmunityPerType = service.Preview(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
             TypeChartOneImmunityPerType = true,
@@ -350,9 +359,11 @@ public sealed class SwShRandomizerOptionCoverageTests
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseExeFsFile("main", CreateTypeChartCompatibleNso());
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var service = new SwShRandomizerService();
 
-        var preview = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var preview = service.Preview(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
         }));
@@ -366,9 +377,10 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void ApplyAllSelectableRandomizerOptionsWritesExpectedOutputDomains()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var service = new SwShRandomizerService();
 
-        var result = service.Apply(temp.Paths, CreateConfig(AllRandomizerOptions()));
+        var result = service.Apply(paths, CreateConfig(AllRandomizerOptions()));
 
         Assert.DoesNotContain(result.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShPokemonWorkflowService.PersonalDataPath);
@@ -473,11 +485,12 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void ApplyRollsBackEarlierDomainsWhenALaterDomainFails()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var blockedMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         Directory.CreateDirectory(blockedMainPath);
         var service = new SwShRandomizerService();
 
-        var result = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var result = service.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizePokemonStats = true,
             StatHp = true,
@@ -522,7 +535,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         try
         {
             var result = new SwShRandomizerService().Apply(
-                temp.Paths,
+                temp.Paths with { SelectedGame = ProjectGame.Sword },
                 CreateConfig(SwShRandomizerOptions.Empty with { RandomizeTypeChart = true }));
 
             Assert.Contains(
@@ -555,7 +568,11 @@ public sealed class SwShRandomizerOptionCoverageTests
         try
         {
             var result = new SwShRandomizerService().Apply(
-                temp.Paths with { OutputRootPath = rootLink },
+                temp.Paths with
+                {
+                    OutputRootPath = rootLink,
+                    SelectedGame = ProjectGame.Sword,
+                },
                 CreateConfig(SwShRandomizerOptions.Empty with { RandomizeTypeChart = true }));
 
             Assert.DoesNotContain(
@@ -576,6 +593,7 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void RestoreReinstatesPreExistingLayeredOutputInsteadOfDeletingIt()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var originalLayeredMain = ModifyNsoDataByte(
             File.ReadAllBytes(Path.Combine(temp.BaseExeFsPath, "main")),
@@ -584,14 +602,14 @@ public sealed class SwShRandomizerOptionCoverageTests
         temp.WriteOutputFile("exefs/main", originalLayeredMain);
         var service = new SwShRandomizerService();
 
-        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var apply = service.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
         }));
         Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.NotEqual(originalLayeredMain, File.ReadAllBytes(outputMainPath));
 
-        var restore = service.Restore(temp.Paths);
+        var restore = service.Restore(paths);
 
         Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Equal(originalLayeredMain, File.ReadAllBytes(outputMainPath));
@@ -602,6 +620,7 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void RestoreRollsBackEarlierTargetAndRetainsBackupsAndManifestWhenLaterTargetFails()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var mainRelativePath = SwShTypeChartWorkflowService.ExeFsMainPath;
         var personalRelativePath = SwShPokemonWorkflowService.PersonalDataPath;
         var originalMain = ModifyNsoDataByte(
@@ -615,7 +634,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         temp.WriteOutputFile(personalRelativePath, originalPersonal);
 
         var applyService = new SwShRandomizerService();
-        var apply = applyService.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var apply = applyService.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizePokemonStats = true,
             StatHp = true,
@@ -644,7 +663,7 @@ public sealed class SwShRandomizerOptionCoverageTests
             },
         };
 
-        var restore = restoreService.Restore(temp.Paths);
+        var restore = restoreService.Restore(paths);
 
         Assert.Contains(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Contains(
@@ -662,6 +681,7 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void RestoreRollsBackTargetAndRetainsBackupWhenManifestWriteFails()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var mainRelativePath = SwShTypeChartWorkflowService.ExeFsMainPath;
         var personalRelativePath = SwShPokemonWorkflowService.PersonalDataPath;
         var originalMain = ModifyNsoDataByte(
@@ -671,7 +691,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         temp.WriteOutputFile(mainRelativePath, originalMain);
 
         var applyService = new SwShRandomizerService();
-        var apply = applyService.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var apply = applyService.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizePokemonStats = true,
             StatHp = true,
@@ -701,7 +721,7 @@ public sealed class SwShRandomizerOptionCoverageTests
             },
         };
 
-        var restore = restoreService.Restore(temp.Paths);
+        var restore = restoreService.Restore(paths);
 
         Assert.Contains(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Contains(
@@ -719,17 +739,18 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void RestoreDeletesOutputCreatedByRandomizerWhenItIsUnchanged()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var service = new SwShRandomizerService();
 
-        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var apply = service.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
         }));
         Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.True(File.Exists(outputMainPath));
 
-        var restore = service.Restore(temp.Paths);
+        var restore = service.Restore(paths);
 
         Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.False(File.Exists(outputMainPath));
@@ -739,9 +760,10 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void RestorePreservesOutputChangedAfterRandomizerApply()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var service = new SwShRandomizerService();
-        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var apply = service.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
         }));
@@ -749,7 +771,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         var laterEditedMain = ModifyNsoDataByte(File.ReadAllBytes(outputMainPath), offset: 1, value: 0x7B);
         File.WriteAllBytes(outputMainPath, laterEditedMain);
 
-        var restore = service.Restore(temp.Paths);
+        var restore = service.Restore(paths);
 
         Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Contains(
@@ -764,18 +786,19 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void ReapplyBlocksChangedOutputAndRestoreStillPreservesTheLaterEdit()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var service = new SwShRandomizerService();
         var config = CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
         });
-        var firstApply = service.Apply(temp.Paths, config);
+        var firstApply = service.Apply(paths, config);
         Assert.DoesNotContain(firstApply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var laterEditedMain = ModifyNsoDataByte(File.ReadAllBytes(outputMainPath), offset: 1, value: 0x7B);
         File.WriteAllBytes(outputMainPath, laterEditedMain);
 
-        var reapply = service.Apply(temp.Paths, config);
+        var reapply = service.Apply(paths, config);
 
         Assert.Contains(
             reapply.ApplyResult.Diagnostics,
@@ -784,7 +807,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Empty(reapply.ApplyResult.WrittenFiles);
         Assert.Equal(laterEditedMain, File.ReadAllBytes(outputMainPath));
 
-        var restore = service.Restore(temp.Paths);
+        var restore = service.Restore(paths);
 
         Assert.DoesNotContain(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.Contains(
@@ -826,8 +849,9 @@ public sealed class SwShRandomizerOptionCoverageTests
     public void RestoreRejectsOutputThroughSymbolicLinkBelowOutputRoot()
     {
         using var temp = CreateRandomizerProject();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
         var service = new SwShRandomizerService();
-        var apply = service.Apply(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        var apply = service.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
         {
             RandomizeTypeChart = true,
         }));
@@ -846,7 +870,7 @@ public sealed class SwShRandomizerOptionCoverageTests
 
         try
         {
-            var restore = service.Restore(temp.Paths);
+            var restore = service.Restore(paths);
 
             Assert.Contains(restore.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             Assert.Empty(restore.WrittenFiles);
@@ -1416,10 +1440,18 @@ public sealed class SwShRandomizerOptionCoverageTests
         var ro = new byte[SwShTypeChartMainPatcher.SwordRoChartOffset + SwShTypeChartMainPatcher.ChartLength + 0x40];
         var data = Enumerable.Range(0, 0x20).Select(index => (byte)(0x20 + index)).ToArray();
         Array.Fill(ro, (byte)0xCC);
+        TypeChartDependenciesBefore.CopyTo(
+            ro.AsSpan(
+                SwShTypeChartMainPatcher.SwordRoChartOffset - TypeChartDependenciesBefore.Length,
+                TypeChartDependenciesBefore.Length));
         SwShTypeChartMainPatcher.VanillaChartValues
             .Select(value => checked((byte)value))
             .ToArray()
             .CopyTo(ro.AsSpan(SwShTypeChartMainPatcher.SwordRoChartOffset));
+        TypeChartDependenciesAfter.CopyTo(
+            ro.AsSpan(
+                SwShTypeChartMainPatcher.SwordRoChartOffset + SwShTypeChartMainPatcher.ChartLength,
+                TypeChartDependenciesAfter.Length));
 
         return CreateNso(text, ro, data, BuildIdForGame(game));
     }

@@ -22,6 +22,7 @@ using KM.SwSh.StartingItems;
 using KM.SwSh.Tests.FpsPatch;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Performance;
+using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using System.Buffers.Binary;
 using Xunit;
@@ -148,7 +149,13 @@ public sealed class SwShHookReservationTests
     [Fact]
     public void TypeChartReservesTheVerifiedMainRoRange()
     {
-        var region = Assert.Single(SwShExeFsReservedRegionLedger.MainRoRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerTypeChart));
+        var regions = SwShExeFsReservedRegionLedger.MainRoRegionsForOwner(
+            SwShExeFsReservedRegionLedger.OwnerTypeChart);
+        var region = Assert.Single(regions, region => region.Rule == "payload-only");
+        var dependencies = regions
+            .Where(region => region.Rule == "requires-vanilla")
+            .OrderBy(region => region.StartOffset)
+            .ToArray();
 
         Assert.Equal("type-chart-swsh", region.FeatureId);
         Assert.Equal(SwShExeFsReservedRegionLedger.ExeFsMainPath, region.RelativePath);
@@ -156,6 +163,12 @@ public sealed class SwShHookReservationTests
         Assert.Equal(0x00743600, region.StartOffset);
         Assert.Equal(0x144, region.Length);
         Assert.Equal("ro+0x743600..0x743743", region.OffsetLabel);
+        Assert.Equal(2, dependencies.Length);
+        Assert.Equal(0x007435C0, dependencies[0].StartOffset);
+        Assert.Equal(0x40, dependencies[0].Length);
+        Assert.Equal(0x00743744, dependencies[1].StartOffset);
+        Assert.Equal(0x40, dependencies[1].Length);
+        Assert.Equal(new[] { region }, SwShTypeChartMainPatcher.ReservedMainRoRegions());
     }
 
     [Fact]
