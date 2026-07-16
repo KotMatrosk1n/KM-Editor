@@ -27,6 +27,25 @@ it('edits per-answer outcomes and stages guarded Fairy Gym boost selections', as
     />
   );
 
+  const annetteTab = screen.getByRole('tab', { name: 'Annette' });
+  const teresaTab = screen.getByRole('tab', { name: 'Teresa' });
+  const tabList = screen.getByRole('tablist', { name: 'Fairy Gym Boosts' });
+  expect(tabList).toBeInTheDocument();
+  expect(annetteTab).toHaveAttribute('aria-controls', 'fairy-gym-boost-panel');
+  expect(teresaTab).toHaveAttribute('aria-controls', 'fairy-gym-boost-panel');
+  annetteTab.focus();
+  await user.keyboard('{ArrowRight}');
+  expect(teresaTab).toHaveFocus();
+  expect(teresaTab).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('tabpanel')).toHaveAttribute(
+    'id',
+    'fairy-gym-boost-panel'
+  );
+  expect(screen.getByRole('tabpanel')).toHaveAttribute(
+    'aria-labelledby',
+    teresaTab.id
+  );
+
   await user.click(screen.getByRole('tab', { name: 'Opal' }));
 
   const magicUserCard = screen.getByText('The magic-user').closest('article');

@@ -223,8 +223,7 @@ export const workflowDefinitions: Array<{
   {
     id: 'fairyGymBoosts',
     label: 'Fairy Gym Boosts',
-    description:
-      'Preliminary advanced editor that maps Fairy Gym quiz stat boosts to NPC trainers and answer choices.',
+    description: 'Edit the verified Fairy Gym quiz boost and drop outcomes for every answer.',
     icon: Sparkles
   },
   {

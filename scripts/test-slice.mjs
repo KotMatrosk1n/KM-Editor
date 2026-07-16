@@ -220,7 +220,7 @@ function addFastCommands() {
     { label: 'Typecheck desktop app', command: 'pnpm --filter @km-editor/desktop typecheck' },
     {
       label: 'Run focused desktop unit and bridge tests',
-      command: `pnpm --dir apps/desktop test:run src/AppErrorBoundary.test.tsx src/diagnostics.test.ts src/errorReporting.test.ts src/pokemonSprites.test.ts src/workbenchStore.test.ts src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts src/features/fairy-gym-boosts/FairyGymBoostsSection.test.tsx ${appTimeout}`,
+      command: `pnpm --dir apps/desktop test:run src/AppErrorBoundary.test.tsx src/diagnostics.test.ts src/errorReporting.test.ts src/pokemonSprites.test.ts src/workbenchStore.test.ts src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts src/bridge/fairyGymBoostsContracts.test.ts src/fairyGymBoostsUi.test.tsx src/features/fairy-gym-boosts/FairyGymBoostsSection.test.tsx src/features/fairy-gym-boosts/fairyGymBoostsPending.test.ts src/features/type-chart/typeChartPending.test.ts ${appTimeout}`,
     },
     {
       label: 'Run App shell and advanced editor smoke tests',
@@ -581,6 +581,18 @@ function mapDesktopChange(file) {
   if (file.startsWith('apps/desktop/src/bridge/')) {
     add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
     add('desktop-bridge-tests', 'Run desktop bridge tests', `pnpm --dir apps/desktop test:run src/bridge/contracts.test.ts src/bridge/projectBridge.test.ts ${appTimeout}`);
+    const nearbyTest = nearbyDesktopTest(file);
+    if (
+      nearbyTest &&
+      nearbyTest !== 'src/bridge/contracts.test.ts' &&
+      nearbyTest !== 'src/bridge/projectBridge.test.ts'
+    ) {
+      add(
+        `desktop-test:${nearbyTest}`,
+        `Run nearby desktop bridge test ${nearbyTest}`,
+        `pnpm --dir apps/desktop test:run ${nearbyTest} ${appTimeout}`,
+      );
+    }
     add('integration-dispatcher', 'Run bridge dispatcher integration tests', dotnetProject('tests/KM.Integration.Tests/KM.Integration.Tests.csproj', 'FullyQualifiedName~ProjectBridgeDispatcherTests'));
     return;
   }
@@ -1015,7 +1027,7 @@ function nearbyDesktopTest(file) {
   const desktopPath = toDesktopPath(file);
   const parsed = path.posix.parse(desktopPath);
   const candidate = `${parsed.dir}/${parsed.name}.test${parsed.ext}`;
-  if (execStatus(`git ls-files --error-unmatch apps/desktop/${candidate}`) === 0) {
+  if (existsSync(path.join(repoRoot, 'apps/desktop', candidate))) {
     return candidate;
   }
 

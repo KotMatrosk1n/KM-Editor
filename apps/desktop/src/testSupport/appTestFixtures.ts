@@ -46,8 +46,11 @@ import {
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
 import { parseShopInventoryUpdateItemIds } from '../features/shops/shopInventoryUpdate';
+import { encodeFairyGymBoostPendingSelections } from '../features/fairy-gym-boosts/fairyGymBoostsPending';
 import { getApplyMessage, getValidationMessage } from './appTestFixtureMessages';
-import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures'; import { createFpsPatchBridgeFixture } from './fpsPatchTestFixtures';
+import { calculatePendingPayloadSha256 } from '../utils/pendingPayloadHash';
+import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures';
+import { createFpsPatchBridgeFixture } from './fpsPatchTestFixtures';
 import { createGameDumpBridgeFixture } from './gameDumpTestFixtures';
 import { createHyperspaceBypassBridgeFixture } from './hyperspaceBypassTestFixtures';
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
@@ -6253,12 +6256,41 @@ export function createMockProjectBridge(
         }
       }),
     loadFairyGymBoostsWorkflow: () => Promise.resolve({ workflow: fairyGymBoostsWorkflow }),
-    stageFairyGymBoosts: (request) =>
-      Promise.resolve({
-        diagnostics: [{ message: 'Fairy Gym boost outcomes are staged for change-plan review.', severity: 'info' }],
-        session: { hasPendingChanges: true, pendingEdits: [{ domain: 'workflow.fairyGymBoosts', field: 'boostSelections', newValue: request.selections.map((selection) => `${selection.boostId}:${selection.effectId}:${selection.resultKind}`).join(';'), recordId: 'fairy-gym-boosts', sources: [{ layer: 'base', relativePath: 'romfs/bin/battle/waza/sequence/bk143.bseq' }], summary: 'Stage Fairy Gym boost outcomes.' }], sessionId: request.session?.sessionId ?? 'session-fairy-gym-boosts' },
+    stageFairyGymBoosts: (request) => {
+      const payload = encodeFairyGymBoostPendingSelections(request.selections);
+      return Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Fairy Gym boost outcomes are staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.fairyGymBoosts',
+              field: 'boostSelections',
+              newValue: payload,
+              recordId: 'fairy-gym-boosts',
+              sources: [
+                ...fairyGymBoostsWorkflow.sources.map((source) => ({
+                  layer: 'base' as const,
+                  relativePath: source.relativePath
+                })),
+                {
+                  layer: 'pending' as const,
+                  relativePath: `pending/fairy-gym-boosts/selections/${calculatePendingPayloadSha256(payload)}`
+                }
+              ],
+              summary: 'Stage Fairy Gym boost outcomes.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-fairy-gym-boosts'
+        },
         workflow: fairyGymBoostsWorkflow
-      }),
+      });
+    },
     loadFashionUnlockWorkflow: () => Promise.resolve({ workflow: fashionUnlockWorkflow }),
     stageFashionUnlockInstall: (request) =>
       Promise.resolve({

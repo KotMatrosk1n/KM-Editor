@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Formats.SwSh;
 using KM.SwSh.FairyGymBoosts;
-using System.Buffers.Binary;
-using System.Text;
 using Xunit;
 
 namespace KM.SwSh.Tests.FairyGymBoosts;
 
 public sealed class SwShFairyGymBoostsBseqPatcherTests
 {
-    private const int PayloadOffset = 0x38;
-
     [Fact]
-    public void ApplySelectionsWritesOnlyRequestedAnswerSlots()
+    public void ApplySelectionsWritesOnlyRequestedOwnedAnswerSlots()
     {
-        var data = CreateBseq(effectOne: 6, resultOne: 2, effectTwo: 6, resultTwo: 1);
+        var data = FairyGymBoostTestFixtures.CreateBseq(
+            effectOne: 6,
+            resultOne: 2,
+            effectTwo: 6,
+            resultTwo: 1);
+        var slotThree = FairyGymBoostTestFixtures.ReadSlot(data, answerChoice: 3);
 
         var patched = SwShFairyGymBoostsBseqPatcher.ApplySelections(
             data,
@@ -24,76 +24,111 @@ public sealed class SwShFairyGymBoostsBseqPatcherTests
                 new SwShFairyGymBoostAnswerPatch(2, 5, 2),
             ]);
 
-        Assert.Equal((0, 0), ReadSlot(patched, answerChoice: 1));
-        Assert.Equal((5, 2), ReadSlot(patched, answerChoice: 2));
-        Assert.Equal((0, 0), ReadSlot(patched, answerChoice: 3));
+        Assert.Equal((0, 0), FairyGymBoostTestFixtures.ReadSlot(patched, answerChoice: 1));
+        Assert.Equal((5, 2), FairyGymBoostTestFixtures.ReadSlot(patched, answerChoice: 2));
+        Assert.Equal(slotThree, FairyGymBoostTestFixtures.ReadSlot(patched, answerChoice: 3));
+        Assert.Equal(data[0x3000], patched[0x3000]);
+        Assert.All(
+            Enumerable.Range(0, data.Length).Where(offset =>
+                offset < SwShFairyGymBoostsBseqPatcher.PayloadOffset
+                || offset >= SwShFairyGymBoostsBseqPatcher.PayloadOffset
+                    + SwShFairyGymBoostsBseqPatcher.OwnedByteCount),
+            offset => Assert.Equal(data[offset], patched[offset]));
     }
 
     [Fact]
-    public void ReadAnswerSlotsReturnsCurrentPayload()
+    public void ReadAnswerSlotsReturnsOnlyOwnedPayload()
     {
-        var data = CreateBseq(effectOne: 3, resultOne: 2, effectTwo: 3, resultTwo: 1);
+        var data = FairyGymBoostTestFixtures.CreateBseq(
+            effectOne: 3,
+            resultOne: 2,
+            effectTwo: 3,
+            resultTwo: 1);
 
         var slots = SwShFairyGymBoostsBseqPatcher.ReadAnswerSlots(data);
 
-        Assert.Equal(3, slots[0].EffectId);
-        Assert.Equal(2, slots[0].ResultValue);
-        Assert.Equal(3, slots[1].EffectId);
-        Assert.Equal(1, slots[1].ResultValue);
-        Assert.Equal(0, slots[2].EffectId);
-        Assert.Equal(0, slots[2].ResultValue);
+        Assert.Equal(2, slots.Count);
+        Assert.Equal(new SwShFairyGymBoostAnswerSlot(3, 2), slots[0]);
+        Assert.Equal(new SwShFairyGymBoostAnswerSlot(3, 1), slots[1]);
     }
 
-    private static byte[] CreateBseq(
-        int effectOne,
-        int resultOne,
-        int effectTwo,
-        int resultTwo)
+    [Fact]
+    public void ApplySelectionsRejectsEmptyDuplicateAndSlotThreePatches()
     {
-        var data = new byte[0x54];
-        Encoding.ASCII.GetBytes("SESD").CopyTo(data, 0x00);
-        WriteU32(data, 0x04, SwShBseqFile.ExpectedVersion);
-        WriteU32(data, 0x0C, 1);
-        WriteU32(data, 0x10, 0);
-        WriteU32(data, 0x14, 1);
-        WriteU64(data, 0x18, SwShBseqKnownCommands.SpecialQuizResult);
-        WriteU32(data, 0x20, SwShBseqKnownCommands.SpecialQuizResultPayloadLength);
+        var data = FairyGymBoostTestFixtures.CreateVanillaBseq(
+            SwShFairyGymBoostsWorkflowService.AnnetteSequencePath);
 
-        WriteU64(data, 0x30, SwShBseqKnownCommands.SpecialQuizResult);
-        WriteSlot(data, PayloadOffset, answerChoice: 1, effectOne, resultOne);
-        WriteSlot(data, PayloadOffset, answerChoice: 2, effectTwo, resultTwo);
-        WriteSlot(data, PayloadOffset, answerChoice: 3, effectId: 0, resultValue: 0);
-        WriteU32(data, 0x50, 0xFFFFFFFF);
-        return data;
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ApplySelections(data, []));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ApplySelections(
+                data,
+                [
+                    new SwShFairyGymBoostAnswerPatch(1, 1, 1),
+                    new SwShFairyGymBoostAnswerPatch(1, 2, 1),
+                ]));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ApplySelections(
+                data,
+                [new SwShFairyGymBoostAnswerPatch(3, 1, 1)]));
     }
 
-    private static (int EffectId, int ResultValue) ReadSlot(byte[] data, int answerChoice)
+    [Fact]
+    public void LayoutVerificationRejectsWrongLengthOffsetAndAmbiguousCommand()
     {
-        var offset = PayloadOffset + ((answerChoice - 1) * 8);
-        return (
-            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset, sizeof(int))),
-            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(offset + sizeof(int), sizeof(int))));
+        var relativePath = SwShFairyGymBoostsWorkflowService.AnnetteSequencePath;
+        var vanilla = FairyGymBoostTestFixtures.CreateVanillaBseq(relativePath);
+        var truncated = vanilla[..^1];
+        var shifted = vanilla.ToArray();
+        shifted[0x153C + 0x0C] = 0;
+        var ambiguous = FairyGymBoostTestFixtures.CreateVanillaBseq(
+            relativePath,
+            addAmbiguousCommand: true);
+
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ReadAnswerSlots(truncated));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ReadAnswerSlots(shifted));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ReadAnswerSlots(ambiguous));
     }
 
-    private static void WriteSlot(
-        byte[] data,
-        int payloadOffset,
-        int answerChoice,
-        int effectId,
-        int resultValue)
+    [Fact]
+    public void VerifiedRestoreCopiesBaseOwnedBytesAndPreservesUnownedEdits()
     {
-        var offset = payloadOffset + ((answerChoice - 1) * 8);
-        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset, sizeof(int)), effectId);
-        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset + sizeof(int), sizeof(int)), resultValue);
+        var relativePath = SwShFairyGymBoostsWorkflowService.TeresaSequencePath;
+        var baseData = FairyGymBoostTestFixtures.CreateVanillaBseq(relativePath);
+        var effective = SwShFairyGymBoostsBseqPatcher.ApplySelections(
+            baseData,
+            [new SwShFairyGymBoostAnswerPatch(1, 2, 1)]);
+        effective[0x3000] ^= 0xFF;
+
+        var output = SwShFairyGymBoostsBseqPatcher.ApplySelections(
+            effective,
+            baseData,
+            FairyGymBoostTestFixtures.GetVanillaSlots(relativePath),
+            [new SwShFairyGymBoostAnswerPatch(1, 5, 2)]);
+
+        Assert.Equal((5, 2), FairyGymBoostTestFixtures.ReadSlot(output, 1));
+        Assert.Equal(effective[0x3000], output[0x3000]);
+        Assert.False(output.AsSpan().SequenceEqual(baseData));
     }
 
-    private static void WriteU32(byte[] data, int offset, uint value)
+    [Fact]
+    public void ValidateVanillaBaseRequiresExactMappedOwnedSlots()
     {
-        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, sizeof(uint)), value);
-    }
+        var relativePath = SwShFairyGymBoostsWorkflowService.OpalAgeSequencePath;
+        var baseData = FairyGymBoostTestFixtures.CreateVanillaBseq(relativePath);
+        var wrongBase = SwShFairyGymBoostsBseqPatcher.ApplySelections(
+            baseData,
+            [new SwShFairyGymBoostAnswerPatch(1, 1, 1)]);
 
-    private static void WriteU64(byte[] data, int offset, ulong value)
-    {
-        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(offset, sizeof(ulong)), value);
+        SwShFairyGymBoostsBseqPatcher.ValidateVanillaBase(
+            baseData,
+            FairyGymBoostTestFixtures.GetVanillaSlots(relativePath));
+        Assert.Throws<InvalidDataException>(() =>
+            SwShFairyGymBoostsBseqPatcher.ValidateVanillaBase(
+                wrongBase,
+                FairyGymBoostTestFixtures.GetVanillaSlots(relativePath)));
     }
 }

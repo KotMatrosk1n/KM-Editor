@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.Projects;
 using KM.SwSh.Workflows;
 
 namespace KM.SwSh.FairyGymBoosts;
@@ -17,6 +18,8 @@ public sealed record SwShFairyGymBoostsSourceRecord(
     string Label,
     string RelativePath,
     string Status,
+    string PayloadOffsetHex,
+    string OwnedRangeHex,
     SwShFairyGymBoostsProvenance Provenance);
 
 public sealed record SwShFairyGymBoostRecord(
@@ -31,7 +34,8 @@ public sealed record SwShFairyGymBoostRecord(
     int EffectId,
     string EffectLabel,
     int StageAmount,
-    IReadOnlyList<string> AffectedStats);
+    IReadOnlyList<string> AffectedStats,
+    bool IsAvailable);
 
 public sealed record SwShFairyGymBoostTrainer(
     int TrainerId,
@@ -42,10 +46,12 @@ public sealed record SwShFairyGymBoostTrainer(
 public sealed record SwShFairyGymBoostsWorkflowStats(
     int TrainerCount,
     int BoostCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    int OwnedByteCount);
 
 public sealed record SwShFairyGymBoostsWorkflow(
     SwShWorkflowSummary Summary,
+    ProjectGame? DetectedGame,
     IReadOnlyList<SwShFairyGymBoostTrainer> Trainers,
     IReadOnlyList<SwShFairyGymBoostsSourceRecord> Sources,
     SwShFairyGymBoostsWorkflowStats Stats,

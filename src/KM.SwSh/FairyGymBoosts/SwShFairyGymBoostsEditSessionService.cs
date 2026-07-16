@@ -4,8 +4,12 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Editing;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.FairyGymBoosts;
 
@@ -15,9 +19,12 @@ public sealed class SwShFairyGymBoostsEditSessionService
 
     private const string RecordId = "fairy-gym-boosts";
     private const string BoostSelectionsField = "boostSelections";
+    private const string PendingSummary = "Stage Fairy Gym boost outcomes.";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShFairyGymBoostsWorkflowService fairyGymBoostsWorkflowService;
+    private readonly Action? beforeAcquireApplyScope;
+    private readonly Action<int, string>? beforeVerifiedPromotion;
 
     public SwShFairyGymBoostsEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -25,6 +32,26 @@ public sealed class SwShFairyGymBoostsEditSessionService
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.fairyGymBoostsWorkflowService = fairyGymBoostsWorkflowService ?? new SwShFairyGymBoostsWorkflowService();
+    }
+
+    internal SwShFairyGymBoostsEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShFairyGymBoostsWorkflowService? fairyGymBoostsWorkflowService,
+        Action beforeAcquireApplyScope)
+        : this(projectWorkspaceService, fairyGymBoostsWorkflowService)
+    {
+        this.beforeAcquireApplyScope = beforeAcquireApplyScope
+            ?? throw new ArgumentNullException(nameof(beforeAcquireApplyScope));
+    }
+
+    internal SwShFairyGymBoostsEditSessionService(
+        ProjectWorkspaceService? projectWorkspaceService,
+        SwShFairyGymBoostsWorkflowService? fairyGymBoostsWorkflowService,
+        Action<int, string> beforeVerifiedPromotion)
+        : this(projectWorkspaceService, fairyGymBoostsWorkflowService)
+    {
+        this.beforeVerifiedPromotion = beforeVerifiedPromotion
+            ?? throw new ArgumentNullException(nameof(beforeVerifiedPromotion));
     }
 
     public SwShFairyGymBoostsEditResult StageBoosts(
@@ -36,11 +63,21 @@ public sealed class SwShFairyGymBoostsEditSessionService
         ArgumentNullException.ThrowIfNull(selections);
 
         var currentSession = session ?? EditSession.Start();
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = fairyGymBoostsWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (currentSession.PendingEdits.Any(edit => !string.Equals(edit.Domain, FairyGymBoostsEditDomain, StringComparison.Ordinal)))
+        if (!SwShFairyGymBoostsWorkflowService.IsSupportedGame(paths.SelectedGame))
+        {
+            diagnostics.Add(CreateWrongGameDiagnostic());
+            return new SwShFairyGymBoostsEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (currentSession.PendingEdits.Any(edit => !string.Equals(
+            edit.Domain,
+            FairyGymBoostsEditDomain,
+            StringComparison.Ordinal)))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -50,18 +87,33 @@ public sealed class SwShFairyGymBoostsEditSessionService
         }
 
         var normalizedSelections = NormalizeSelections(selections, diagnostics);
-        if (!CanStage(project, workflow, diagnostics) || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        var changedFileGroups = CreateChangedFileGroups(workflow, normalizedSelections).ToArray();
+        if (!CanStage(project, workflow, diagnostics)
+            || diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new SwShFairyGymBoostsEditResult(workflow, currentSession, diagnostics);
         }
 
+        if (changedFileGroups.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fairy Gym Boosts has no changed answer outcomes to stage.",
+                field: BoostSelectionsField,
+                expected: "At least one changed Fairy Gym boost outcome"));
+            return new SwShFairyGymBoostsEditResult(workflow, currentSession, diagnostics);
+        }
+
         var payload = EncodeSelections(normalizedSelections);
+        var sourceReferences = CreateCanonicalSources(project, payload, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShFairyGymBoostsEditResult(workflow, currentSession, diagnostics);
+        }
+
         var updatedSession = currentSession with
         {
-            PendingEdits = currentSession.PendingEdits
-                .Where(edit => !string.Equals(edit.Domain, FairyGymBoostsEditDomain, StringComparison.Ordinal))
-                .Append(CreatePendingEdit(payload, CreateSourceReferences(project)))
-                .ToArray(),
+            PendingEdits = [CreatePendingEdit(payload, sourceReferences)],
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -76,51 +128,43 @@ public sealed class SwShFairyGymBoostsEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = fairyGymBoostsWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (session.PendingEdits.Count == 0)
+        if (!SwShFairyGymBoostsWorkflowService.IsSupportedGame(paths.SelectedGame))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Stage Fairy Gym boost outcomes before validating.",
-                expected: "Pending Fairy Gym Boosts edit"));
-            return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
+            diagnostics.Add(CreateWrongGameDiagnostic());
         }
 
         if (session.PendingEdits.Count != 1)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Fairy Gym Boosts expects exactly one staged boost edit.",
-                expected: "One pending Fairy Gym Boosts edit"));
+                session.PendingEdits.Count == 0
+                    ? "Stage Fairy Gym boost outcomes before validating."
+                    : "Fairy Gym Boosts expects exactly one canonical staged boost edit.",
+                expected: "Exactly one pending Fairy Gym Boosts edit"));
         }
-
-        foreach (var edit in session.PendingEdits)
+        else
         {
-            if (!string.Equals(edit.Domain, FairyGymBoostsEditDomain, StringComparison.Ordinal))
+            var edit = session.PendingEdits[0];
+            if (!IsCanonicalIdentity(edit))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Pending edit domain '{edit.Domain}' is not supported by Fairy Gym Boosts.",
-                    expected: FairyGymBoostsEditDomain));
-                continue;
+                    "Pending edit does not target the canonical Fairy Gym Boosts field.",
+                    field: edit.Field,
+                    expected: $"{FairyGymBoostsEditDomain}/{RecordId}/{BoostSelectionsField}"));
             }
-
-            if (!string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal))
+            else
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"Pending Fairy Gym Boosts edit '{edit.RecordId}' is not supported.",
-                    expected: "Fairy Gym boost outcomes"));
-                continue;
+                ValidateCanonicalEdit(project, workflow, edit, diagnostics);
             }
-
-            _ = DecodeSelections(edit.NewValue, diagnostics);
-            CanStage(project, workflow, diagnostics);
         }
 
+        CanStage(project, workflow, diagnostics);
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -146,25 +190,31 @@ public sealed class SwShFairyGymBoostsEditSessionService
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
+        projectWorkspaceService.ClearMemoryCache();
         var project = projectWorkspaceService.Open(paths);
         var workflow = fairyGymBoostsWorkflowService.Load(project);
-        var selections = DecodeSelections(session.PendingEdits.Single().NewValue, diagnostics);
+        var edit = session.PendingEdits.Single();
+        var selections = DecodeSelections(edit.NewValue, diagnostics);
+        var canonicalSources = CreateCanonicalSources(project, edit.NewValue ?? string.Empty, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var fileGroups = CreateChangedFileGroups(workflow, selections).ToArray();
-
+        var fileGroups = CreateChangedFileGroups(workflow, selections)
+            .OrderBy(group => group.RelativePath, StringComparer.Ordinal)
+            .ToArray();
         if (fileGroups.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                "Fairy Gym Boosts has no changed answer outcomes to write."));
+                DiagnosticSeverity.Error,
+                "Fairy Gym Boosts staged values no longer change any owned answer slots.",
+                field: BoostSelectionsField,
+                expected: "At least one changed owned answer slot"));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
 
-        var writes = new List<PlannedFileWrite>();
+        var writes = new List<PlannedFileWrite>(fileGroups.Length);
         foreach (var fileGroup in fileGroups)
         {
             var source = SwShFairyGymBoostsWorkflowService.ResolveWorkflowFile(project, fileGroup.RelativePath);
@@ -175,22 +225,24 @@ public sealed class SwShFairyGymBoostsEditSessionService
                     DiagnosticSeverity.Error,
                     "Fairy Gym Boosts source or output target could not be resolved.",
                     file: fileGroup.RelativePath,
-                    expected: "Readable BSEQ source and writable LayeredFS target"));
+                    expected: "Verified BSEQ source and writable LayeredFS target"));
                 continue;
             }
 
             writes.Add(new PlannedFileWrite(
                 fileGroup.RelativePath,
-                [CreateSourceReference(source.Entry)],
+                canonicalSources,
                 File.Exists(targetPath),
-                "Update Fairy Gym quiz boost outcomes in the battle sequence file."));
+                "Update reviewed Fairy Gym quiz outcomes in owned answer slots while preserving every unowned byte."));
         }
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
             $"Fairy Gym Boosts change plan preview contains {writes.Count:N0} target file(s)."));
 
-        return new ChangePlan(session.Id, writes, diagnostics);
+        return SwShChangePlanSourceGuard.Capture(
+            paths,
+            new ChangePlan(session.Id, writes, diagnostics));
     }
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
@@ -199,13 +251,29 @@ public sealed class SwShFairyGymBoostsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
 
+        projectWorkspaceService.ClearMemoryCache();
+        try
+        {
+            return ApplyChangePlanCore(paths, session, reviewedPlan);
+        }
+        finally
+        {
+            projectWorkspaceService.ClearMemoryCache();
+        }
+    }
+
+    private ApplyResult ApplyChangePlanCore(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan)
+    {
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        if (!ChangePlanReview.Matches(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -213,91 +281,234 @@ public sealed class SwShFairyGymBoostsEditSessionService
                 expected: "Current reviewed Fairy Gym Boosts change plan"));
         }
 
+        diagnostics.AddRange(SwShChangePlanSourceGuard.Validate(paths, reviewedPlan));
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        beforeAcquireApplyScope?.Invoke();
+        if (!SwShChangePlanSourceGuard.TryAcquireApplyScope(
+                paths,
+                currentPlan,
+                out var applyScope,
+                out var acquireDiagnostics))
+        {
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                acquireDiagnostics);
+        }
+
+        using var verifiedScope = applyScope!;
+        var snapshotPlan = CreateChangePlan(verifiedScope.ApplyPaths, session);
+        if (!verifiedScope.TryPrepareSnapshotPlan(snapshotPlan, out var preparedPlan))
+        {
+            var staleDiagnostics = preparedPlan.Diagnostics.ToList();
+            staleDiagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fairy Gym Boosts sources changed while preparing the verified apply snapshot.",
+                expected: "Sources matching the reviewed Fairy Gym Boosts change plan"));
+            return CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                staleDiagnostics);
+        }
+
+        var snapshotResult = ApplyPreparedPlan(
+            verifiedScope.ApplyPaths,
+            session,
+            preparedPlan,
+            applyId,
+            appliedAt);
+        return verifiedScope.Commit(snapshotResult, beforeVerifiedPromotion);
+    }
+
+    private ApplyResult ApplyPreparedPlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan preparedPlan,
+        string applyId,
+        DateTimeOffset appliedAt)
+    {
+        projectWorkspaceService.ClearMemoryCache();
+        var diagnostics = preparedPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+        if (session.PendingEdits.Count != 1 || !IsCanonicalIdentity(session.PendingEdits[0]))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Fairy Gym Boosts prepared apply requires exactly one canonical pending edit.",
+                expected: $"{FairyGymBoostsEditDomain}/{RecordId}/{BoostSelectionsField}"));
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
         }
 
         var project = projectWorkspaceService.Open(paths);
         var workflow = fairyGymBoostsWorkflowService.Load(project);
-        var selections = DecodeSelections(session.PendingEdits.Single().NewValue, diagnostics);
-        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
-        {
-            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-        }
-
-        var fileGroups = CreateChangedFileGroups(workflow, selections).ToArray();
+        var selections = DecodeSelections(session.PendingEdits[0].NewValue, diagnostics);
+        var fileGroups = CreateChangedFileGroups(workflow, selections)
+            .OrderBy(group => group.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        var preparedOutputs = new List<PreparedFairyGymBoostOutput>(fileGroups.Length);
         foreach (var fileGroup in fileGroups)
         {
-            ApplyFileGroup(project, paths, fileGroup, writtenFiles, diagnostics);
+            var prepared = PrepareFileGroup(project, paths, fileGroup, diagnostics);
+            if (prepared is not null)
+            {
+                preparedOutputs.Add(prepared);
+            }
         }
 
-        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
+        }
+
+        foreach (var prepared in preparedOutputs)
+        {
+            try
+            {
+                if (prepared.DeleteTarget)
+                {
+                    File.Delete(prepared.TargetPath);
+                    if (File.Exists(prepared.TargetPath) || Directory.Exists(prepared.TargetPath))
+                    {
+                        throw new IOException(
+                            "Fairy Gym Boosts restore target still exists after verified deletion.");
+                    }
+                }
+                else
+                {
+                    WriteOutputAtomically(
+                        prepared.TargetPath,
+                        prepared.Output,
+                        roundTrip => VerifyPreparedOutput(prepared, roundTrip));
+                }
+
+                writtenFiles.Add(new ProjectFileReference(
+                    ProjectFileLayer.Generated,
+                    prepared.FileGroup.RelativePath));
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    prepared.DeleteTarget
+                        ? $"Restored Fairy Gym Boosts defaults in {prepared.FileGroup.RelativePath}."
+                        : $"Applied Fairy Gym Boosts changes to {prepared.FileGroup.RelativePath}.",
+                    file: prepared.FileGroup.RelativePath));
+            }
+            catch (Exception exception) when (exception is InvalidDataException
+                or IOException
+                or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Fairy Gym Boosts verified output could not be written: {exception.Message}",
+                    file: prepared.FileGroup.RelativePath,
+                    expected: "Writable output with reviewed owned answer slots"));
+                break;
+            }
+        }
+
+        return CreateApplyResult(applyId, appliedAt, preparedPlan, writtenFiles, diagnostics);
     }
 
-    private static void ApplyFileGroup(
+    private static PreparedFairyGymBoostOutput? PrepareFileGroup(
         OpenedProject project,
         ProjectPaths paths,
         FairyGymBoostFileGroup fileGroup,
-        ICollection<ProjectFileReference> writtenFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var source = SwShFairyGymBoostsWorkflowService.ResolveWorkflowFile(project, fileGroup.RelativePath);
+        var basePath = SwShFairyGymBoostsWorkflowService.ResolveBaseSourcePath(paths, fileGroup.RelativePath);
         var targetPath = ResolveOutputPath(paths, fileGroup.RelativePath, diagnostics);
-        if (source is null || targetPath is null)
+        if (source is null || basePath is null || !File.Exists(basePath) || targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Fairy Gym Boosts source or output target could not be resolved.",
+                "Fairy Gym Boosts source, vanilla base, or output target could not be resolved.",
                 file: fileGroup.RelativePath,
-                expected: "Readable BSEQ source and writable LayeredFS target"));
-            return;
+                expected: "Verified effective source, canonical vanilla base, and writable LayeredFS target"));
+            return null;
         }
 
         try
         {
-            var patches = fileGroup.Selections
-                .Select(selection => new SwShFairyGymBoostAnswerPatch(
-                    selection.Definition.AnswerChoice,
-                    selection.Selection.EffectId,
-                    SwShFairyGymBoostsWorkflowService.ToResultValue(selection.Selection.ResultKind)))
-                .ToArray();
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var baseBytes = File.ReadAllBytes(basePath);
+            var vanillaSlots = SwShFairyGymBoostsWorkflowService.GetVanillaSlots(fileGroup.RelativePath);
+            var patches = CreateAnswerPatches(fileGroup);
             var output = SwShFairyGymBoostsBseqPatcher.ApplySelections(
-                File.ReadAllBytes(source.AbsolutePath),
+                sourceBytes,
+                baseBytes,
+                vanillaSlots,
                 patches);
-
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, fileGroup.RelativePath));
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                $"Applied Fairy Gym Boosts changes to {fileGroup.RelativePath}.",
-                file: fileGroup.RelativePath));
+            var prepared = new PreparedFairyGymBoostOutput(
+                fileGroup,
+                targetPath,
+                sourceBytes,
+                baseBytes,
+                vanillaSlots,
+                patches,
+                output,
+                DeleteTarget: output.AsSpan().SequenceEqual(baseBytes));
+            VerifyPreparedOutput(prepared, output);
+            return prepared;
         }
         catch (InvalidDataException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Fairy Gym Boosts source file could not be patched: {exception.Message}",
+                $"Fairy Gym Boosts source file could not be patched safely: {exception.Message}",
                 file: fileGroup.RelativePath,
-                expected: "Supported Fairy Gym quiz BSEQ command payload"));
+                expected: "Reviewed 0x4A10 BSEQ with owned answer slots at 0x1550-0x155F"));
         }
-        catch (IOException exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Fairy Gym Boosts output file could not be written: {exception.Message}",
+                $"Fairy Gym Boosts source file could not be read: {exception.Message}",
                 file: fileGroup.RelativePath,
-                expected: "Writable output root"));
+                expected: "Readable vanilla base and compatible effective Fairy Gym BSEQ files"));
         }
-        catch (UnauthorizedAccessException exception)
+
+        return null;
+    }
+
+    private static void VerifyPreparedOutput(
+        PreparedFairyGymBoostOutput prepared,
+        byte[] output)
+    {
+        var expected = SwShFairyGymBoostsBseqPatcher.ApplySelections(
+            prepared.SourceBytes,
+            prepared.BaseBytes,
+            prepared.VanillaSlots,
+            prepared.Patches);
+        if (!output.AsSpan().SequenceEqual(expected))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Fairy Gym Boosts output file could not be written: {exception.Message}",
-                file: fileGroup.RelativePath,
-                expected: "Writable output root"));
+            throw new InvalidDataException(
+                "Fairy Gym Boosts output did not round-trip with the exact reviewed owned-slot patch.");
         }
+
+        if (prepared.DeleteTarget != output.AsSpan().SequenceEqual(prepared.BaseBytes))
+        {
+            throw new InvalidDataException(
+                "Fairy Gym Boosts restore decision does not match complete base equivalence.");
+        }
+    }
+
+    private static IReadOnlyList<SwShFairyGymBoostAnswerPatch> CreateAnswerPatches(
+        FairyGymBoostFileGroup fileGroup)
+    {
+        return fileGroup.Selections
+            .OrderBy(selection => selection.Definition.AnswerChoice)
+            .Select(selection => new SwShFairyGymBoostAnswerPatch(
+                selection.Definition.AnswerChoice,
+                selection.Selection.EffectId,
+                SwShFairyGymBoostsWorkflowService.ToResultValue(selection.Selection.ResultKind)))
+            .ToArray();
     }
 
     private static bool CanStage(
@@ -305,27 +516,39 @@ public sealed class SwShFairyGymBoostsEditSessionService
         SwShFairyGymBoostsWorkflow workflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
+        foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Fairy Gym Boosts apply requires valid base paths and a valid output root.",
-                expected: "Editable project paths"));
-            return false;
+            if (!diagnostics.Contains(diagnostic))
+            {
+                diagnostics.Add(diagnostic);
+            }
         }
 
-        foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        if (!SwShFairyGymBoostsWorkflowService.IsSupportedGame(project.Paths.SelectedGame)
+            || !project.Health.CanOpenEditableWorkflows
+            || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
         {
-            diagnostics.Add(diagnostic);
+            if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Fairy Gym Boosts apply requires valid paths, Pokemon Sword or Shield, and a valid output root.",
+                    expected: "Editable Pokemon Sword or Pokemon Shield project paths"));
+            }
+
+            return false;
         }
 
         foreach (var source in workflow.Sources.Where(source => source.Status != "available"))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"{source.Label} is required before Fairy Gym Boosts can be staged.",
+                source.Status == "missing"
+                    ? $"{source.Label} is missing and is required before Fairy Gym Boosts can be staged."
+                    : $"{source.Label} is blocked and cannot be edited safely.",
                 file: source.RelativePath,
-                expected: "Available Fairy Gym quiz BSEQ file"));
+                expected: "Available verified Fairy Gym quiz BSEQ source"));
         }
 
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
@@ -338,6 +561,16 @@ public sealed class SwShFairyGymBoostsEditSessionService
         var byBoostId = new Dictionary<string, SwShFairyGymBoostSelection>(StringComparer.Ordinal);
         foreach (var selection in selections)
         {
+            if (selection is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Fairy Gym Boosts selection is missing.",
+                    field: BoostSelectionsField,
+                    expected: "A complete Fairy Gym boost selection"));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(selection.BoostId))
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -359,27 +592,26 @@ public sealed class SwShFairyGymBoostsEditSessionService
                 continue;
             }
 
-            if (byBoostId.ContainsKey(selection.BoostId))
+            if (!byBoostId.TryAdd(selection.BoostId, selection))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     $"Fairy Gym Boosts selection '{selection.BoostId}' is duplicated.",
                     field: BoostSelectionsField,
-                    expected: "One selection per answer choice"));
+                    expected: "One selection per owned answer choice"));
                 continue;
             }
 
-            if (!SwShFairyGymBoostsWorkflowService.IsSupportedSelection(selection.EffectId, selection.ResultKind))
+            if (!SwShFairyGymBoostsWorkflowService.IsSupportedSelection(
+                selection.EffectId,
+                selection.ResultKind))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     $"Fairy Gym Boosts selection '{selection.BoostId}' is not a supported outcome.",
                     field: BoostSelectionsField,
                     expected: "No effect, or effect 1-6 with boost/drop"));
-                continue;
             }
-
-            byBoostId[selection.BoostId] = selection;
         }
 
         foreach (var boost in SwShFairyGymBoostsWorkflowService.Boosts)
@@ -390,7 +622,7 @@ public sealed class SwShFairyGymBoostsEditSessionService
                     DiagnosticSeverity.Error,
                     $"Fairy Gym Boosts selection '{boost.BoostId}' is missing.",
                     field: BoostSelectionsField,
-                    expected: "One selection per answer choice"));
+                    expected: "All 12 unique Fairy Gym boost selections"));
             }
         }
 
@@ -405,7 +637,9 @@ public sealed class SwShFairyGymBoostsEditSessionService
     {
         return string.Join(
             ';',
-            selections.Select(selection => $"{selection.BoostId}:{selection.EffectId}:{selection.ResultKind}"));
+            selections.Select(selection => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{selection.BoostId}:{selection.EffectId}:{selection.ResultKind}")));
     }
 
     private static IReadOnlyList<SwShFairyGymBoostSelection> DecodeSelections(
@@ -418,17 +652,18 @@ public sealed class SwShFairyGymBoostsEditSessionService
                 DiagnosticSeverity.Error,
                 "Fairy Gym Boosts pending edit has no outcome payload.",
                 field: BoostSelectionsField,
-                expected: "Encoded Fairy Gym boost selections"));
-            return SwShFairyGymBoostsWorkflowService.Boosts
-                .Select(SwShFairyGymBoostsWorkflowService.CreateDefaultSelection)
-                .ToArray();
+                expected: "Canonical encoded Fairy Gym boost selections"));
+            return [];
         }
 
         var selections = new List<SwShFairyGymBoostSelection>();
-        foreach (var entry in value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var entry in value.Split(';', StringSplitOptions.None))
         {
-            var parts = entry.Split(':');
-            if (parts.Length != 3 || !int.TryParse(parts[1], out var effectId))
+            var parts = entry.Split(':', StringSplitOptions.None);
+            if (parts.Length != 3
+                || string.IsNullOrEmpty(parts[0])
+                || !TryParseCanonicalInt(parts[1], out var effectId)
+                || string.IsNullOrEmpty(parts[2]))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -444,6 +679,104 @@ public sealed class SwShFairyGymBoostsEditSessionService
         return NormalizeSelections(selections, diagnostics);
     }
 
+    private static bool TryParseCanonicalInt(string value, out int result)
+    {
+        return int.TryParse(
+                value,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out result)
+            && string.Equals(
+                value,
+                result.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal);
+    }
+
+    private void ValidateCanonicalEdit(
+        OpenedProject project,
+        SwShFairyGymBoostsWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var selections = DecodeSelections(edit.NewValue, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        var canonicalPayload = EncodeSelections(selections);
+        if (!string.Equals(edit.NewValue, canonicalPayload, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Fairy Gym Boosts selections are not in canonical payload format.",
+                field: BoostSelectionsField,
+                expected: "All 12 unique selections in canonical mapping order"));
+        }
+
+        if (!string.Equals(edit.Summary, PendingSummary, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Fairy Gym Boosts edit does not have the canonical staged summary.",
+                field: BoostSelectionsField,
+                expected: PendingSummary));
+        }
+
+        var sourceDiagnostics = new List<ValidationDiagnostic>();
+        var expectedSources = CreateCanonicalSources(project, canonicalPayload, sourceDiagnostics);
+        foreach (var diagnostic in sourceDiagnostics)
+        {
+            diagnostics.Add(diagnostic);
+        }
+
+        if (!edit.Sources.SequenceEqual(expectedSources))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Fairy Gym Boosts sources do not match the canonical base, layered, and payload references.",
+                field: BoostSelectionsField,
+                expected: "Canonical ordered unique Fairy Gym Boosts source references"));
+        }
+
+        if (CreateChangedFileGroups(workflow, selections).Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Fairy Gym Boosts selections contain no changed outcomes.",
+                field: BoostSelectionsField,
+                expected: "At least one changed owned answer slot"));
+        }
+    }
+
+    private IReadOnlyList<ProjectFileReference> CreateCanonicalSources(
+        OpenedProject project,
+        string payload,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sources = fairyGymBoostsWorkflowService.GetPlanSources(project).ToList();
+        foreach (var definition in SwShFairyGymBoostsWorkflowService.Sources)
+        {
+            if (!sources.Contains(new ProjectFileReference(
+                ProjectFileLayer.Base,
+                definition.RelativePath)))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{definition.Label} vanilla base source could not be resolved.",
+                    file: definition.RelativePath,
+                    expected: "Readable vanilla Fairy Gym BSEQ base file"));
+            }
+        }
+
+        sources.Add(CreatePendingPayloadSource(payload));
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static IReadOnlyList<FairyGymBoostFileGroup> CreateChangedFileGroups(
         SwShFairyGymBoostsWorkflow workflow,
         IReadOnlyList<SwShFairyGymBoostSelection> selections)
@@ -455,15 +788,20 @@ public sealed class SwShFairyGymBoostsEditSessionService
             .ToDictionary(boost => boost.BoostId, StringComparer.Ordinal);
 
         return selections
-            .Where(selection =>
-                currentByBoostId.TryGetValue(selection.BoostId, out var current)
+            .Where(selection => currentByBoostId.TryGetValue(selection.BoostId, out var current)
                 && (current.EffectId != selection.EffectId
-                    || !string.Equals(current.ResultKind, selection.ResultKind, StringComparison.Ordinal)))
+                    || !string.Equals(
+                        current.ResultKind,
+                        selection.ResultKind,
+                        StringComparison.Ordinal)))
             .Select(selection => new FairyGymBoostSelectionPatch(
                 definitionsByBoostId[selection.BoostId],
                 selection))
             .GroupBy(selection => selection.Definition.SequenceFile, StringComparer.Ordinal)
-            .Select(group => new FairyGymBoostFileGroup(group.Key, group.ToArray()))
+            .Select(group => new FairyGymBoostFileGroup(
+                group.Key,
+                group.OrderBy(selection => selection.Definition.AnswerChoice).ToArray()))
+            .OrderBy(group => group.RelativePath, StringComparer.Ordinal)
             .ToArray();
     }
 
@@ -473,28 +811,26 @@ public sealed class SwShFairyGymBoostsEditSessionService
     {
         return new PendingEdit(
             FairyGymBoostsEditDomain,
-            "Stage Fairy Gym boost outcomes.",
+            PendingSummary,
             sourceReferences,
             RecordId,
             BoostSelectionsField,
             payload);
     }
 
-    private static IReadOnlyList<ProjectFileReference> CreateSourceReferences(OpenedProject project)
+    private static ProjectFileReference CreatePendingPayloadSource(string canonicalPayload)
     {
-        return SwShFairyGymBoostsWorkflowService.Sources
-            .Select(source => SwShFairyGymBoostsWorkflowService.ResolveWorkflowFile(project, source.RelativePath))
-            .Where(source => source is not null)
-            .Select(source => CreateSourceReference(source!.Entry))
-            .ToArray();
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalPayload)));
+        return new ProjectFileReference(
+            ProjectFileLayer.Pending,
+            $"pending/fairy-gym-boosts/selections/{hash}");
     }
 
-    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
+    private static bool IsCanonicalIdentity(PendingEdit edit)
     {
-        var layer = entry.LayeredFile is not null
-            ? ProjectFileLayer.Layered
-            : ProjectFileLayer.Base;
-        return new ProjectFileReference(layer, entry.RelativePath);
+        return string.Equals(edit.Domain, FairyGymBoostsEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, RecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, BoostSelectionsField, StringComparison.Ordinal);
     }
 
     private static string? ResolveOutputPath(
@@ -525,25 +861,48 @@ public sealed class SwShFairyGymBoostsEditSessionService
         return targetPath;
     }
 
-    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
+    private static void WriteOutputAtomically(
+        string targetPath,
+        byte[] output,
+        Action<byte[]> verifyRoundTrip)
     {
-        if (!reviewedPlan.CanApply
-            || reviewedPlan.SessionId != currentPlan.SessionId
-            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
+        var directoryPath = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Fairy Gym Boosts output directory could not be resolved.");
+        Directory.CreateDirectory(directoryPath);
+        var temporaryPath = Path.Combine(
+            directoryPath,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
         {
-            return false;
+            File.WriteAllBytes(temporaryPath, output);
+            var roundTrip = File.ReadAllBytes(temporaryPath);
+            if (!roundTrip.AsSpan().SequenceEqual(output))
+            {
+                throw new IOException(
+                    "Fairy Gym Boosts temporary output did not round-trip byte-for-byte.");
+            }
+
+            verifyRoundTrip(roundTrip);
+            File.Move(temporaryPath, targetPath, overwrite: true);
         }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+    private static ValidationDiagnostic CreateWrongGameDiagnostic()
+    {
+        return CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Fairy Gym Boosts only supports Pokemon Sword and Pokemon Shield projects.",
+            expected: "Pokemon Sword or Pokemon Shield project");
     }
 
     private static ApplyResult CreateApplyResult(
@@ -584,4 +943,14 @@ public sealed class SwShFairyGymBoostsEditSessionService
     private sealed record FairyGymBoostSelectionPatch(
         SwShFairyGymBoostDefinition Definition,
         SwShFairyGymBoostSelection Selection);
+
+    private sealed record PreparedFairyGymBoostOutput(
+        FairyGymBoostFileGroup FileGroup,
+        string TargetPath,
+        byte[] SourceBytes,
+        byte[] BaseBytes,
+        IReadOnlyList<SwShFairyGymBoostAnswerSlot> VanillaSlots,
+        IReadOnlyList<SwShFairyGymBoostAnswerPatch> Patches,
+        byte[] Output,
+        bool DeleteTarget);
 }
