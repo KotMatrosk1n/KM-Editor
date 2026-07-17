@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAccessWorkflowSectionForHealth,
+  getGameScopedWorkflowSummaries,
   isWorkflowNavigationVisibleForGame,
   readOnlyViewerSectionIds,
   workflowNavigationGroups
@@ -34,26 +35,43 @@ describe('workflow game support', () => {
     ).toBe(false);
   });
 
-  it('routes ExeFS Patches for Sword and Shield and identifies read-only viewers', () => {
+  it('hides the generic ExeFS patch manager even when a backend advertises it', () => {
     const availableSections = new Set<WorkbenchSection>(['exefsPatches', 'flagworkSave']);
     const advancedGroup = workflowNavigationGroups.find(
       (group) => group.id === 'advancedEditors'
     );
 
-    expect(advancedGroup?.sectionIds).toContain('exefsPatches');
+    expect(advancedGroup?.sectionIds).not.toContain('exefsPatches');
+    expect(
+      getGameScopedWorkflowSummaries(
+        [
+          {
+            availability: 'readOnly',
+            description: 'Internal executable patch diagnostics.',
+            diagnostics: [],
+            id: 'exefsPatches',
+            label: 'ExeFS Patch Manager'
+          }
+        ],
+        'sword'
+      )
+    ).toEqual([]);
+    expect(
+      isWorkflowNavigationVisibleForGame('exefsPatches', 'sword', availableSections)
+    ).toBe(false);
+    expect(
+      isWorkflowNavigationVisibleForGame('exefsPatches', 'shield', availableSections)
+    ).toBe(false);
+    expect(
+      isWorkflowNavigationVisibleForGame('exefsPatches', 'scarlet', availableSections)
+    ).toBe(false);
+  });
+
+  it('identifies read-only viewers independently of hidden workflows', () => {
     expect(readOnlyViewerSectionIds).toEqual(new Set(['flagworkSave']));
     expect(canAccessWorkflowSectionForHealth('flagworkSave', true, false)).toBe(true);
     expect(canAccessWorkflowSectionForHealth('items', true, false)).toBe(false);
     expect(canAccessWorkflowSectionForHealth('items', true, true)).toBe(true);
-    expect(
-      isWorkflowNavigationVisibleForGame('exefsPatches', 'sword', availableSections)
-    ).toBe(true);
-    expect(
-      isWorkflowNavigationVisibleForGame('exefsPatches', 'shield', availableSections)
-    ).toBe(true);
-    expect(
-      isWorkflowNavigationVisibleForGame('exefsPatches', 'scarlet', availableSections)
-    ).toBe(false);
   });
 
   it('routes Starting Items only for Sword and Shield', () => {

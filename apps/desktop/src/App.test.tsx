@@ -390,7 +390,9 @@ describe('App', () => {
         window.localStorage.getItem('km-editor.workflow-groups.user-expanded.v2.sword') ?? '[]'
       )
     ).toEqual(['advancedEditors']);
-    expect(within(navigation).getByRole('button', { name: 'ExeFS Patches' })).toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole('button', { name: 'ExeFS Patches' })
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close Editor' }));
     expect(useWorkbenchStore.getState().activeSection).toBe('workflows');
     expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();

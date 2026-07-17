@@ -17681,8 +17681,6 @@ function getPendingEditSection(domain: string): WorkbenchSection | null {
     'workflow.catchCap': 'catchCap',
     'workflow.dynamaxAdventures': 'dynamaxAdventures',
     'workflow.encounters': 'encounters',
-    'workflow.exefs': 'exefsPatches',
-    'workflow.exefsPatches': 'exefsPatches',
     'workflow.fairyGymBoosts': 'fairyGymBoosts',
     'workflow.fashionUnlock': 'fashionUnlock',
     'workflow.giftPokemon': 'giftPokemon',

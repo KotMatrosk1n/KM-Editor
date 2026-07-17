@@ -81,7 +81,6 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     id: 'advancedEditors',
     label: 'Advanced Editors',
     sectionIds: [
-      'exefsPatches',
       'royalCandy',
       'startingItems',
       'npcItemGift',
@@ -181,6 +180,8 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'profanityFilter', 'randomizer', 'gameDump']);
 
 export const readOnlyViewerSectionIds = new Set<WorkbenchSection>(['flagworkSave']);
+
+const hiddenWorkflowSectionIds = new Set<WorkbenchSection>(['exefsPatches']);
 
 export function canAccessWorkflowSectionForHealth(
   section: WorkbenchSection,
@@ -345,7 +346,8 @@ export function getGameScopedWorkflowSummaries(
 ) {
   const supportedSectionIds = getGameWorkflowSectionIds(game);
   return workflows.filter((workflow) =>
-    supportedSectionIds.has(workflow.id as WorkbenchSection)
+    supportedSectionIds.has(workflow.id as WorkbenchSection) &&
+    !hiddenWorkflowSectionIds.has(workflow.id as WorkbenchSection)
   );
 }
 
@@ -447,6 +449,7 @@ export function isWorkflowNavigationVisibleForGame(
   availableWorkflowSectionIds: ReadonlySet<WorkbenchSection>
 ) {
   return (
+    !hiddenWorkflowSectionIds.has(section) &&
     isWorkflowSupportedForGame(section, game) &&
     (availableWorkflowSectionIds.has(section) || standaloneWorkflowSectionIds.has(section))
   );
