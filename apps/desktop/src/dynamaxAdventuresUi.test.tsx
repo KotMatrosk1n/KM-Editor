@@ -80,6 +80,7 @@ describe('Dynamax Adventures UI', () => {
   }, 30_000);
 
   async function verifyReadOnlyTableAndSlots() {
+    const user = userEvent.setup();
     const fixtureBridge = createMockProjectBridge({}, true);
     const { workflow } = await fixtureBridge.loadDynamaxAdventuresWorkflow({
       paths: projectPaths
@@ -106,6 +107,37 @@ describe('Dynamax Adventures UI', () => {
     expect(firstRowCells[0]).toHaveTextContent('0');
     expect(firstRowCells[2]).toHaveTextContent('65');
     expect(screen.queryByText('Boss target species')).not.toBeInTheDocument();
+
+    const technicalDetailsSummary = screen.getByText('Technical details', {
+      selector: 'summary'
+    });
+    const technicalDetails = technicalDetailsSummary.closest('details');
+    expect(technicalDetails).not.toBeNull();
+    expect(technicalDetails).not.toHaveAttribute('open');
+    expect(within(technicalDetails!).getByText('Build ID')).toBeInTheDocument();
+    expect(within(technicalDetails!).getByText(workflow.buildId)).toBeInTheDocument();
+    expect(
+      within(technicalDetails!).getByText(workflow.reservedRegions[0]!.label)
+    ).toBeInTheDocument();
+    await user.click(technicalDetailsSummary);
+    expect(technicalDetails).toHaveAttribute('open');
+
+    const selectedSummary = screen.getByRole('complementary', {
+      name: 'Selected Dynamax Adventure provenance'
+    });
+    const selectedEditor = screen.getByRole('region', {
+      name: 'Selected Adventure'
+    });
+    expect(table).toAppearBefore(selectedSummary);
+    expect(selectedSummary).toAppearBefore(selectedEditor);
+    expect(selectedSummary).toHaveClass('dynamax-adventure-summary');
+    expect(selectedEditor).toHaveClass('dynamax-adventure-editor');
+    for (const groupName of ['Pokemon', 'Traits', 'Moves', 'Stats - IVs']) {
+      expect(
+        within(selectedEditor).getByRole('group', { name: groupName })
+      ).toBeInTheDocument();
+    }
+
     expect(screen.getByLabelText('Species')).toBeDisabled();
     expect(screen.getByLabelText('Move 1')).toHaveValue('001 Scratch');
     expect(screen.getByLabelText('Move 2')).toHaveValue('002 Growl');

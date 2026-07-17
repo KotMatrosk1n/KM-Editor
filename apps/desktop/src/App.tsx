@@ -21437,10 +21437,13 @@ function DynamaxAdventuresSection({
 
         {workflow ? (
           <>
-            <div className="dynamax-adventure-integrity-notice" role="note">
+            <div
+              className="dynamax-adventure-integrity-notice dynamax-adventure-install-status"
+              role="note"
+            >
               <ShieldCheck aria-hidden="true" size={16} />
-              <div>
-                <dl className="item-provenance-list">
+              <div className="dynamax-adventure-install-status-content">
+                <dl className="item-provenance-list dynamax-adventure-status-summary">
                   <div>
                     <dt>Install status</dt>
                     <dd>{humanizePendingEditKey(workflow.installStatus)}</dd>
@@ -21452,10 +21455,6 @@ function DynamaxAdventuresSection({
                         ? gameDefinitions[workflow.detectedGame].label
                         : 'Unknown'}
                     </dd>
-                  </div>
-                  <div>
-                    <dt>Build ID</dt>
-                    <dd data-localization-ignore="true">{workflow.buildId}</dd>
                   </div>
                   <div>
                     <dt>Reserved regions</dt>
@@ -21499,18 +21498,6 @@ function DynamaxAdventuresSection({
                     </div>
                   </div>
                 ) : null}
-                {workflow.reservedRegions.length > 0 ? (
-                  <ul>
-                    {workflow.reservedRegions.map((region) => (
-                      <li key={`${region.area}:${region.offset}`}>
-                        <span data-localization-ignore="true">{region.label}</span>{' '}
-                        <code data-localization-ignore="true">
-                          {region.area} {region.offset}
-                        </code>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
                 {workflow.installStatus === 'repairable' &&
                 canUseDynamaxAdventuresWorkflow &&
                 !workflow.canRestoreVanillaTable &&
@@ -21536,6 +21523,27 @@ function DynamaxAdventuresSection({
                     />
                   </button>
                 ) : null}
+                <details className="dynamax-adventure-technical-details">
+                  <summary>{translateLiteral('Technical details')}</summary>
+                  <dl className="item-provenance-list dynamax-adventure-build-details">
+                    <div>
+                      <dt>Build ID</dt>
+                      <dd data-localization-ignore="true">{workflow.buildId}</dd>
+                    </div>
+                  </dl>
+                  {workflow.reservedRegions.length > 0 ? (
+                    <ul className="dynamax-adventure-region-list">
+                      {workflow.reservedRegions.map((region) => (
+                        <li key={`${region.area}:${region.offset}`}>
+                          <span data-localization-ignore="true">{region.label}</span>{' '}
+                          <code data-localization-ignore="true">
+                            {region.area} {region.offset}
+                          </code>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </details>
               </div>
             </div>
             {workflow.hasLegacyBossTargetPatch ? (
@@ -22049,97 +22057,126 @@ function SelectedDynamaxAdventurePanel({
   };
 
   return (
-    <aside aria-label="Selected Dynamax Adventure provenance" className="trainer-inspector">
-      <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Adventure</h3>
-      </div>
+    <>
+      <aside
+        aria-label="Selected Dynamax Adventure provenance"
+        className="trainer-inspector dynamax-adventure-summary"
+      >
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h3 id="selected-dynamax-adventure-heading">Selected Adventure</h3>
+        </div>
+
+        {encounter ? (
+          <>
+            <div
+              className="dynamax-adventure-selection-summary"
+              data-localization-ignore="true"
+            >
+              <PokemonSummaryCard
+                editorFamily="swsh"
+                form={encounter.form}
+                name={formatSpeciesFormLabel(
+                  encounter.species,
+                  encounter.form,
+                  encounter.speciesId
+                )}
+                speciesId={encounter.speciesId}
+                subtitle={`Adventure #${encounter.adventureIndex} | Lv. ${encounter.level}`}
+                title={formatSpeciesFormLabel(
+                  encounter.species,
+                  encounter.form,
+                  encounter.speciesId
+                )}
+              />
+            </div>
+
+            <dl className="item-provenance-list dynamax-adventure-provenance">
+              <div>
+                <dt>Encounter</dt>
+                <dd data-localization-ignore="true">{encounter.label}</dd>
+              </div>
+              <div>
+                <dt>Index</dt>
+                <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
+              </div>
+              <div>
+                <dt>Adventure</dt>
+                <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
+              </div>
+              <div>
+                <dt>Data file</dt>
+                <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
+              </div>
+              <div>
+                <dt>Layer</dt>
+                <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
+              </div>
+              <div>
+                <dt>File state</dt>
+                <dd>{formatFileState(encounter.provenance.fileState)}</dd>
+              </div>
+              <div>
+                <dt>Pokemon</dt>
+                <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
+              </div>
+              <div>
+                <dt>Ability</dt>
+                <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
+              </div>
+              <div>
+                <dt>Gigantamax</dt>
+                <dd>{encounter.gigantamaxLabel}</dd>
+              </div>
+              <div>
+                <dt>Moves</dt>
+                <dd data-localization-ignore="true">
+                  {formatDynamaxAdventureMoves(encounter)}
+                </dd>
+              </div>
+              <div>
+                <dt>IV detail</dt>
+                <dd data-localization-ignore="true">
+                  {formatDynamaxAdventureIvs(encounter)}
+                </dd>
+              </div>
+              <div>
+                <dt>Ball item</dt>
+                <dd data-localization-ignore="true">{encounter.ballItem}</dd>
+              </div>
+              <div>
+                <dt>Game version</dt>
+                <dd>{encounter.versionLabel}</dd>
+              </div>
+              <div>
+                <dt>Shiny roll</dt>
+                <dd>{encounter.shinyRollLabel}</dd>
+              </div>
+              <div>
+                <dt>OT gender</dt>
+                <dd>{encounter.otGenderLabel}</dd>
+              </div>
+              <div>
+                <dt>Single-capture Pokemon</dt>
+                <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
+              </div>
+              <div>
+                <dt>Requires story progress</dt>
+                <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
+              </div>
+            </dl>
+          </>
+        ) : (
+          <p className="empty-copy">No Adventure encounter selected.</p>
+        )}
+      </aside>
 
       {encounter ? (
-        <>
-          <div data-localization-ignore="true">
-            <PokemonSummaryCard
-              editorFamily="swsh"
-              form={encounter.form}
-              name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
-              speciesId={encounter.speciesId}
-              subtitle={`Adventure #${encounter.adventureIndex} | Lv. ${encounter.level}`}
-              title={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
-            />
-          </div>
-
-          <dl className="item-provenance-list">
-            <div>
-              <dt>Encounter</dt>
-              <dd data-localization-ignore="true">{encounter.label}</dd>
-            </div>
-            <div>
-              <dt>Index</dt>
-              <dd data-localization-ignore="true">{encounter.entryIndex}</dd>
-            </div>
-            <div>
-              <dt>Adventure</dt>
-              <dd data-localization-ignore="true">{encounter.adventureIndex}</dd>
-            </div>
-            <div>
-              <dt>Data file</dt>
-              <dd data-localization-ignore="true">{encounter.provenance.sourceFile}</dd>
-            </div>
-            <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
-            </div>
-            <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(encounter.provenance.fileState)}</dd>
-            </div>
-            <div>
-              <dt>Pokemon</dt>
-              <dd data-localization-ignore="true">{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
-            </div>
-            <div>
-              <dt>Ability</dt>
-              <dd data-localization-ignore="true">{encounter.abilityLabel}</dd>
-            </div>
-            <div>
-              <dt>Gigantamax</dt>
-              <dd>{encounter.gigantamaxLabel}</dd>
-            </div>
-            <div>
-              <dt>Moves</dt>
-              <dd data-localization-ignore="true">{formatDynamaxAdventureMoves(encounter)}</dd>
-            </div>
-            <div>
-              <dt>IV detail</dt>
-              <dd data-localization-ignore="true">{formatDynamaxAdventureIvs(encounter)}</dd>
-            </div>
-            <div>
-              <dt>Ball item</dt>
-              <dd data-localization-ignore="true">{encounter.ballItem}</dd>
-            </div>
-            <div>
-              <dt>Game version</dt>
-              <dd>{encounter.versionLabel}</dd>
-            </div>
-            <div>
-              <dt>Shiny roll</dt>
-              <dd>{encounter.shinyRollLabel}</dd>
-            </div>
-            <div>
-              <dt>OT gender</dt>
-              <dd>{encounter.otGenderLabel}</dd>
-            </div>
-            <div>
-              <dt>Single-capture Pokemon</dt>
-              <dd>{encounter.isSingleCapture ? 'Yes' : 'No'}</dd>
-            </div>
-            <div>
-              <dt>Requires story progress</dt>
-              <dd>{encounter.isStoryProgressGated ? 'Yes' : 'No'}</dd>
-            </div>
-          </dl>
-
-          <div className="trainer-edit-form">
+        <section
+          aria-labelledby="selected-dynamax-adventure-heading"
+          className="trainer-inspector dynamax-adventure-editor"
+        >
+          <div className="trainer-edit-form dynamax-adventure-edit-form">
             {!encounter.isEditable ? (
               <span className="status-pill">Read-only</span>
             ) : null}
@@ -22194,9 +22231,13 @@ function SelectedDynamaxAdventurePanel({
                 )}
               </div>
             </div>
-            <div className="editable-field-groups">
+            <div className="editable-field-groups dynamax-adventure-field-groups">
               {adventureFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
+                <fieldset
+                  className="editable-field-group dynamax-adventure-field-group"
+                  data-field-group={group.group}
+                  key={group.group}
+                >
                   <legend>{group.group}</legend>
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
@@ -22372,11 +22413,9 @@ function SelectedDynamaxAdventurePanel({
               </span>
             </div>
           </div>
-        </>
-      ) : (
-        <p className="empty-copy">No Adventure encounter selected.</p>
-      )}
-    </aside>
+        </section>
+      ) : null}
+    </>
   );
 }
 
@@ -26681,9 +26720,16 @@ function TeraRaidsSection({
     : null;
   const activeRewardTable = rewardKind === 'fixed' ? fixedRewardTable : lotteryRewardTable;
   const activeRewardFields = rewardKind === 'fixed' ? fixedRewardFields : lotteryRewardFields;
+  const activeRewardRows =
+    activeRewardTable?.rewards.filter((reward) => !isEmptyTeraRaidReward(reward)) ?? [];
+  const emptyRewardRows =
+    activeRewardTable?.rewards.filter((reward) => isEmptyTeraRaidReward(reward)) ?? [];
   const selectedReward =
-    activeRewardTable?.rewards.find((reward) => reward.recordId === selectedRewardRecordId) ??
-    activeRewardTable?.rewards[0] ??
+    activeRewardRows.find((reward) => reward.recordId === selectedRewardRecordId) ??
+    (editSession
+      ? emptyRewardRows.find((reward) => reward.recordId === selectedRewardRecordId)
+      : null) ??
+    activeRewardRows[0] ??
     null;
 
   useRegisterEditorDraftDirty('teraRaids', countFieldDraftRecords(draftsByRecordId) > 0);
@@ -26963,11 +27009,35 @@ function TeraRaidsSection({
                           </div>
                         </dl>
 
+                        {editSession && emptyRewardRows.length > 0 ? (
+                          <label className="path-field">
+                            <span>{translateLiteral('Add reward in empty slot')}</span>
+                            <select
+                              aria-label={translateLiteral('Add reward in empty slot')}
+                              onChange={(event) =>
+                                setSelectedRewardRecordId(event.target.value || null)
+                              }
+                              value={
+                                selectedReward && isEmptyTeraRaidReward(selectedReward)
+                                  ? selectedReward.recordId
+                                  : ''
+                              }
+                            >
+                              <option value="">{translateLiteral('Choose an empty slot')}</option>
+                              {emptyRewardRows.map((reward) => (
+                                <option key={reward.recordId} value={reward.recordId}>
+                                  {`#${reward.slot}: ${translateLiteral('Empty slot')}`}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+
                         <div
                           className="encounter-slot-tabs"
                           aria-label={translateLiteral('Tera raid reward rows')}
                         >
-                          {activeRewardTable.rewards.map((reward) => (
+                          {activeRewardRows.map((reward) => (
                             <button
                               aria-pressed={reward.recordId === selectedReward?.recordId}
                               className={`slot-tab-button ${
@@ -26995,7 +27065,15 @@ function TeraRaidsSection({
                             <dl className="encounter-slot-detail">
                               <div>
                                 <dt>{translateLiteral('Item')}</dt>
-                                <dd data-localization-ignore="true">{selectedReward.itemName}</dd>
+                                <dd>
+                                  {isEmptyTeraRaidReward(selectedReward) ? (
+                                    translateLiteral('Empty slot')
+                                  ) : (
+                                    <span data-localization-ignore="true">
+                                      {selectedReward.itemName}
+                                    </span>
+                                  )}
+                                </dd>
                               </div>
                               <div>
                                 <dt>{translateLiteral('Category')}</dt>
@@ -37821,9 +37899,12 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
   }
 
   if (/^id_(?:sub|rest)/i.test(key) || /^id_spn_subq/i.test(key)) {
+    const missionNumber = table.locationDetails?.match(
+      /^Side Mission\s+((?:EX)?\d+)$/i
+    )?.[1];
     return {
       key: `side:${(table.locationDetails ?? key).toLocaleLowerCase()}`,
-      label: table.location,
+      label: missionNumber ? `${missionNumber}: ${table.location}` : table.location,
       rank: table.locationSort ?? Number.MAX_SAFE_INTEGER
     };
   }
@@ -42094,6 +42175,18 @@ function getEditableTeraRaidRewardFieldValue(reward: TeraRaidRewardItem, field: 
     default:
       return null;
   }
+}
+
+function isEmptyTeraRaidReward(reward: TeraRaidRewardItem) {
+  if (reward.category !== 0 || reward.itemId !== 0 || reward.count !== 0) {
+    return false;
+  }
+
+  if (reward.rewardKind === 'fixed') {
+    return reward.subjectType === 0;
+  }
+
+  return reward.rewardKind === 'lottery' && reward.rate === 0 && reward.rareItemFlag === false;
 }
 
 function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: string) {

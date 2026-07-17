@@ -130,6 +130,24 @@ internal static class SwShRaidBattleTestFixtures
         ]).Write();
     }
 
+    public static byte[] CreateFourByteAlignedRaidBattlePack()
+    {
+        var encounterData = Convert.FromHexString(
+            "0C00000000000600080004000600000004000000010000001400000000000000" +
+            "0A00140004000C00100000000C00000088776655443322110100000004000000" +
+            "01000000200000001A0030000C00100014000400180019001C0024002C001A00" +
+            "1B0000001C000000998877665544332200000000190000000000000002010104" +
+            "33221100DDCCBBAA807060504030201004000000050000000A00000014000000" +
+            "1E0000002800000032000000");
+
+        return SwShGfPackFile.Create(
+        [
+            new SwShGfPackNamedFile(SwShRaidBattlesWorkflowService.EncounterMemberName, encounterData),
+            new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
+            new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", SwShRaidRewardTestFixtures.CreateBonusArchive().Write()),
+        ]).Write();
+    }
+
     public static SwShEncounterNestArchive CreatePairedArchive()
     {
         var swordTable = CreateArchive().Tables[0];

@@ -194,6 +194,36 @@ public sealed class SwShRaidRewardsWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadAndLoadBonusUseFourByteAlignedEncounterDataForLabels()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShRaidBattleTestFixtures.WriteBaseRaidBattles(temp);
+        SwShRaidRewardTestFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRaidRewardsWorkflowService.NestDataPath["romfs/".Length..],
+            SwShRaidBattleTestFixtures.CreateFourByteAlignedRaidBattlePack());
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+        var service = new SwShRaidRewardsWorkflowService();
+
+        var dropWorkflow = service.Load(project);
+        var bonusWorkflow = service.LoadBonus(project);
+
+        Assert.Contains("Pikachu", Assert.Single(dropWorkflow.Tables).DisplayName, StringComparison.Ordinal);
+        Assert.Contains("Pikachu", Assert.Single(bonusWorkflow.Tables).DisplayName, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            dropWorkflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                "usage data could not be decoded",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            bonusWorkflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains(
+                "usage data could not be decoded",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadBonusUsesPhysicalTableLabelsForMalformedEncounterPairs()
     {
         using var temp = TemporarySwShProject.Create();

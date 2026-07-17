@@ -278,6 +278,53 @@ public sealed class SwShGameTextFileTests
     }
 
     [Fact]
+    public void ParseAcceptsRawZeroAlignmentIncludedInDeclaredLineLength()
+    {
+        var source = SwShGameTextFile.Write(new[]
+        {
+            new SwShGameTextLine("Victor", Flags: 3),
+            new SwShGameTextLine("Lauren", Flags: 5),
+        });
+        IncludeRawZeroAlignmentInDeclaredLineLength(source, lineIndex: 0);
+        IncludeRawZeroAlignmentInDeclaredLineLength(source, lineIndex: 1);
+
+        var parsed = SwShGameTextFile.Parse(source);
+
+        Assert.Equal(["Victor", "Lauren"], parsed.Lines.Select(line => line.Text));
+        Assert.Equal(source, parsed.WritePreserving(parsed.Lines));
+
+        var editedLines = parsed.Lines.ToArray();
+        editedLines[0] = editedLines[0] with { Text = "Hop" };
+        var edited = parsed.WritePreserving(editedLines);
+
+        Assert.Equal(["Hop", "Lauren"], SwShGameTextFile.Parse(edited).Lines.Select(line => line.Text));
+    }
+
+    [Fact]
+    public void ParseRejectsRawZeroTailThatIsNotOneFourByteAlignmentWord()
+    {
+        var source = SwShGameTextFile.Write(new[]
+        {
+            new SwShGameTextLine("Avery", Flags: 0),
+        });
+        var unaligned = RebuildWithLineValues(
+            source,
+            lineIndex: 0,
+            new ushort[] { 'A', 'v', 'e', 'r', 'y', 0x0000, 0x0000 });
+        ClearEncryptedLineTail(unaligned, lineIndex: 0, wordCount: 1);
+
+        Assert.Throws<InvalidDataException>(() => SwShGameTextFile.Parse(unaligned));
+
+        var oversized = RebuildWithLineValues(
+            source,
+            lineIndex: 0,
+            new ushort[] { 'A', 'v', 'e', 'r', 'y', 0x0000, 0x0000, 0x0000 });
+        ClearEncryptedLineTail(oversized, lineIndex: 0, wordCount: 2);
+
+        Assert.Throws<InvalidDataException>(() => SwShGameTextFile.Parse(oversized));
+    }
+
+    [Fact]
     public void ParseRejectsNestedRubyControlsThatCannotBeEditedSafely()
     {
         var source = SwShGameTextFile.Write(new[]
@@ -411,6 +458,41 @@ public sealed class SwShGameTextFileTests
         var sectionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C));
         var lineEntryOffset = sectionStart + sizeof(uint) + (lineIndex * 0x08);
         return data.AsSpan(lineEntryOffset, 0x08).ToArray();
+    }
+
+    private static void IncludeRawZeroAlignmentInDeclaredLineLength(byte[] data, int lineIndex)
+    {
+        var sectionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C));
+        var sectionLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sectionStart));
+        var lineCount = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x02));
+        Assert.InRange(lineIndex, 0, lineCount - 1);
+
+        var entryOffset = sectionStart + sizeof(uint) + (lineIndex * 0x08);
+        var textOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset));
+        var textLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(entryOffset + 0x04));
+        var nextTextOffset = lineIndex + 1 < lineCount
+            ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset + 0x08))
+            : sectionLength;
+        var rawAlignmentOffset = checked(sectionStart + textOffset + (textLength * sizeof(ushort)));
+
+        Assert.True(textOffset + ((textLength + 1) * sizeof(ushort)) <= nextTextOffset);
+        Assert.Equal((ushort)0, BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(rawAlignmentOffset)));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(entryOffset + 0x04),
+            checked((ushort)(textLength + 1)));
+    }
+
+    private static void ClearEncryptedLineTail(byte[] data, int lineIndex, int wordCount)
+    {
+        var sectionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C));
+        var entryOffset = sectionStart + sizeof(uint) + (lineIndex * 0x08);
+        var textOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset));
+        var textLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(entryOffset + 0x04));
+        Assert.InRange(wordCount, 1, textLength);
+
+        var tailOffset = checked(
+            sectionStart + textOffset + ((textLength - wordCount) * sizeof(ushort)));
+        data.AsSpan(tailOffset, wordCount * sizeof(ushort)).Clear();
     }
 
     private static byte[] RebuildWithLineValues(byte[] source, int lineIndex, IReadOnlyList<ushort> values)

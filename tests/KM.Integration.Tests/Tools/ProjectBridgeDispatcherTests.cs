@@ -134,7 +134,7 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchListWorkflowsReturnsItemsWorkflowAvailability()
+    public void DispatchListWorkflowsReturnsCompleteInventoryAndAvailability()
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
@@ -170,6 +170,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "placement",
                 "behavior",
                 "flagworkSave",
+                "exefsPatches",
                 "bagHook",
                 "catchCap",
                 "hyperTraining",
@@ -193,6 +194,10 @@ public sealed class ProjectBridgeDispatcherTests
             items.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
                 && diagnostic.Domain == "workflow.items.dependencies");
+
+        var exeFsPatches = workflows.Single(workflow => workflow.Id == "exefsPatches");
+        Assert.Equal(WorkflowAvailabilityDto.ReadOnly, exeFsPatches.Availability);
+        Assert.Empty(exeFsPatches.Diagnostics);
 
         var bagHook = workflows.Single(workflow => workflow.Id == "bagHook");
         Assert.Equal(WorkflowAvailabilityDto.ReadOnly, bagHook.Availability);

@@ -87,6 +87,28 @@ public sealed class SwShRaidBattlesWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadReadsFourByteAlignedEncounterTables()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShRaidBattleTestFixtures.WriteBaseRaidBattles(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRaidRewardsWorkflowService.NestDataPath["romfs/".Length..],
+            SwShRaidBattleTestFixtures.CreateFourByteAlignedRaidBattlePack());
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShRaidBattlesWorkflowService().Load(project);
+
+        var table = Assert.Single(workflow.Tables);
+        var slot = Assert.Single(table.Slots);
+        Assert.Equal(25, slot.SpeciesId);
+        Assert.Equal("Pikachu", slot.Species);
+        Assert.DoesNotContain(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("not aligned", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadSharesDenNumberOnlyForExpectedSwordShieldPairs()
     {
         using var temp = TemporarySwShProject.Create();

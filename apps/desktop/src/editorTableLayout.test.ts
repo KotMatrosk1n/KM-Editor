@@ -105,6 +105,7 @@ describe('editor table layout', () => {
     const workspaceRule = styles.match(/\.workspace\s*\{([^}]*)\}/s)?.[1];
 
     expect(workspaceRule).toBeDefined();
+    expect(workspaceRule).toMatch(/grid-column:\s*2;/);
     expect(workspaceRule).toMatch(/container-name:\s*workspace;/);
     expect(workspaceRule).toMatch(/container-type:\s*inline-size;/);
     expect(styles).toContain('@container workspace (max-width: 1300px)');
@@ -120,5 +121,34 @@ describe('editor table layout', () => {
     for (const rowFamily of ['items', 'moves', 'trainers', 'shops', 'flagwork', 'exefs', 'text']) {
       expect(styles).not.toContain(`.${rowFamily}-row span:nth-child`);
     }
+  });
+
+  it('keeps the Dynamax Adventures browser and editor in balanced workspace rows', () => {
+    const layoutRule = getRule('.dynamax-adventures-layout');
+
+    expect(layoutRule).toMatch(
+      /grid-template-areas:\s*"table summary"\s*"editor editor";/
+    );
+    expect(getRule('.dynamax-adventures-table')).toMatch(/grid-area:\s*table;/);
+    expect(getRule('.dynamax-adventure-summary')).toMatch(/grid-area:\s*summary;/);
+    expect(getRule('.dynamax-adventure-editor')).toMatch(/grid-area:\s*editor;/);
+    expect(getRule('.dynamax-adventure-field-groups')).toMatch(
+      /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/
+    );
+    expect(getRule('.dynamax-adventure-edit-form > .draft-action-row')).toMatch(
+      /order:\s*0;/
+    );
+    expect(getRule('.dynamax-adventure-install-status-content > button')).toMatch(
+      /justify-self:\s*start;/
+    );
+    expect(styles).toMatch(
+      /@container workspace \(max-width: 1500px\)[\s\S]*?\.dynamax-adventures-layout\s*\{[^}]*grid-template-areas:\s*"table"\s*"summary"\s*"editor";/
+    );
+    expect(styles).toMatch(
+      /@container workspace \(max-width: 1200px\)[\s\S]*?\.dynamax-adventure-field-groups\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/
+    );
+    expect(styles).toMatch(
+      /@container workspace \(max-width: 760px\)[\s\S]*?\.dynamax-adventure-status-summary,\s*\.dynamax-adventure-field-groups\s*\{[^}]*grid-template-columns:\s*1fr;/
+    );
   });
 });

@@ -51,6 +51,101 @@ public sealed class SwShEncounterNestArchiveTests
     }
 
     [Fact]
+    public void ParseAcceptsFourByteAlignedTablesWithAlignedUInt64Fields()
+    {
+        var source = CreateFourByteAlignedArchive();
+
+        var parsed = SwShEncounterNestArchive.Parse(source);
+
+        var table = Assert.Single(parsed.Tables);
+        Assert.Equal(0x1122334455667788UL, table.TableId);
+        Assert.Equal(1, table.GameVersion);
+        var entry = Assert.Single(table.Entries);
+        Assert.Equal(25, entry.Species);
+        Assert.Equal(0x2233445566778899UL, entry.LevelTableId);
+        Assert.Equal(0xAABBCCDD00112233UL, entry.DropTableId);
+        Assert.Equal(0x0102030405060708UL, entry.BonusTableId);
+        Assert.Equal([10u, 20u, 30u, 40u, 50u], entry.Probabilities);
+        Assert.Equal(source, parsed.Write());
+
+        var edited = parsed.WriteEdits(
+        [
+            new SwShEncounterNestEdit(0, 0, SwShEncounterNestField.Species, 133),
+        ]);
+
+        Assert.Equal(source.Length, edited.Length);
+        Assert.Equal(133, SwShEncounterNestArchive.Parse(edited).Tables[0].Entries[0].Species);
+    }
+
+    [Fact]
+    public void ParseRejectsTargetsThatAreNotFourByteAligned()
+    {
+        var source = CreateFourByteAlignedArchive();
+        var tableVectorOffset = GetRootTableVectorOffset(source);
+        var tableVectorElementOffset = tableVectorOffset + sizeof(uint);
+        var tableOffset = ReadUOffset(source, tableVectorElementOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            source.AsSpan(tableVectorElementOffset, sizeof(uint)),
+            checked((uint)((tableOffset + 1) - tableVectorElementOffset)));
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShEncounterNestArchive.Parse(source));
+
+        Assert.Contains("target is not aligned to 4 bytes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsEntryTargetsThatAreNotFourByteAligned()
+    {
+        var source = CreateFourByteAlignedArchive();
+        var tableOffset = GetTableOffset(source, tableIndex: 0);
+        var entriesVectorOffset = ReadUOffset(source, tableOffset + 16);
+        var entryVectorElementOffset = entriesVectorOffset + sizeof(uint);
+        var entryOffset = ReadUOffset(source, entryVectorElementOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            source.AsSpan(entryVectorElementOffset, sizeof(uint)),
+            checked((uint)((entryOffset + 1) - entryVectorElementOffset)));
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShEncounterNestArchive.Parse(source));
+
+        Assert.Contains("target is not aligned to 4 bytes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsMisalignedUInt64FieldsInFourByteAlignedTables()
+    {
+        var source = CreateFourByteAlignedArchive();
+        var tableOffset = GetTableOffset(source, tableIndex: 0);
+        var vtableOffset = GetVtableOffset(source, tableOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            source.AsSpan(vtableOffset + (sizeof(ushort) * 2), sizeof(ushort)),
+            8);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShEncounterNestArchive.Parse(source));
+
+        Assert.Contains("field 0 is not aligned to 8 bytes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseRejectsMisalignedEntryUInt64FieldsInFourByteAlignedTables()
+    {
+        var source = CreateFourByteAlignedArchive();
+        var tableOffset = GetTableOffset(source, tableIndex: 0);
+        var entriesVectorOffset = ReadUOffset(source, tableOffset + 16);
+        var entryOffset = ReadUOffset(source, entriesVectorOffset + sizeof(uint));
+        var vtableOffset = GetVtableOffset(source, entryOffset);
+        const int levelTableFieldIndex = 3;
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            source.AsSpan(
+                vtableOffset + (sizeof(ushort) * 2) + (levelTableFieldIndex * sizeof(ushort)),
+                sizeof(ushort)),
+            8);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SwShEncounterNestArchive.Parse(source));
+
+        Assert.Contains("field 3 is not aligned to 8 bytes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WriteEditsUpdatesStableFieldsAndProbabilities()
     {
         var archive = CreateArchive();
@@ -348,6 +443,80 @@ public sealed class SwShEncounterNestArchiveTests
                         2),
                 ]),
         ]);
+    }
+
+    private static byte[] CreateFourByteAlignedArchive()
+    {
+        const int rootTableOffset = 12;
+        const int tableVectorOffset = 20;
+        const int tableOffset = 44;
+        const int entriesVectorOffset = 64;
+        const int entryOffset = 100;
+        const int probabilitiesVectorOffset = 148;
+        var data = new byte[172];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data, rootTableOffset);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(6), 6);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(8), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(10), 4);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(rootTableOffset), 6);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rootTableOffset + 4), 4);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(tableVectorOffset), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(tableVectorOffset + sizeof(uint)),
+            tableOffset - (tableVectorOffset + sizeof(uint)));
+
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(32), 10);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(34), 20);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(36), 4);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(38), 12);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(40), 16);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(tableOffset), 12);
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(tableOffset + 4), 0x1122334455667788);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(tableOffset + 12), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(tableOffset + 16), 4);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(entriesVectorOffset), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(entriesVectorOffset + sizeof(uint)),
+            entryOffset - (entriesVectorOffset + sizeof(uint)));
+
+        ushort[] entryFieldOffsets = [12, 16, 20, 4, 24, 25, 28, 36, 44, 26, 27];
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(72), 26);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(74), 48);
+        for (var fieldIndex = 0; fieldIndex < entryFieldOffsets.Length; fieldIndex++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                data.AsSpan(76 + (fieldIndex * sizeof(ushort))),
+                entryFieldOffsets[fieldIndex]);
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(entryOffset), 28);
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(entryOffset + 4), 0x2233445566778899);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(entryOffset + 12), 0);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(entryOffset + 16), 25);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(entryOffset + 20), 0);
+        data[entryOffset + 24] = 2;
+        data[entryOffset + 25] = 1;
+        data[entryOffset + 26] = 1;
+        data[entryOffset + 27] = 4;
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(entryOffset + 28), 0xAABBCCDD00112233);
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(entryOffset + 36), 0x0102030405060708);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(entryOffset + 44), 4);
+
+        uint[] probabilities = [10, 20, 30, 40, 50];
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            data.AsSpan(probabilitiesVectorOffset),
+            checked((uint)probabilities.Length));
+        for (var index = 0; index < probabilities.Length; index++)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                data.AsSpan(probabilitiesVectorOffset + sizeof(uint) + (index * sizeof(uint))),
+                probabilities[index]);
+        }
+
+        return data;
     }
 
     private static (byte[] Source, int EntryOffset) CreateSourceWithExtendedEntry(bool omitAbility)
