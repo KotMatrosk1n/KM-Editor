@@ -159,18 +159,32 @@ function createZaCategoryWorkflow(): EncountersWorkflow {
   const sharedRecordId = 'encount-data:70';
   const tables = [
     {
-      ...makeTable('outzone-group', 'Lumiose Outskirts Spawn Group 1', 'outzone_lumiose', [
-        makeSlot(0, 661, 'Fletchling', sharedRecordId, 60, false, null),
-        makeSlot(1, 664, 'Scatterbug', 'encount-data:71', 40, false, null)
-      ]),
-      location: 'Lumiose Outskirts'
+      ...makeTable(
+        'outzone-group',
+        'Lumiose Outskirts Alpha Spawn Point 00',
+        'outzone_lumiose',
+        [
+          makeSlot(0, 661, 'Fletchling', sharedRecordId, 60, false, null),
+          makeSlot(1, 664, 'Scatterbug', 'encount-data:71', 40, false, null)
+        ]
+      ),
+      location: 'Lumiose Outskirts',
+      spawnerCategory: 'spawnGroup' as const
     },
     {
       ...makeTable('outzone-point', 'Lumiose Outskirts Spawn Point 1', 'outzone_lumiose', [
         makeSlot(0, 661, 'Fletchling', sharedRecordId, 50, false, null),
         makeSlot(1, 659, 'Bunnelby', 'encount-data:72', 50, false, null)
       ]),
-      location: 'Lumiose Outskirts'
+      location: 'Lumiose Outskirts',
+      spawnerCategory: 'spawnPoint' as const
+    },
+    {
+      ...makeTable('outzone-alpha', 'Lumiose Outskirts Spawn Point 405', 'outzone_lumiose', [
+        makeSlot(0, 568, 'Trubbish', 'encount-data:73', 100, true, null)
+      ]),
+      location: 'Lumiose Outskirts',
+      spawnerCategory: 'alpha' as const
     }
   ];
 
@@ -178,7 +192,7 @@ function createZaCategoryWorkflow(): EncountersWorkflow {
     ...createZaEncountersWorkflow(),
     stats: {
       sourceFileCount: 2,
-      totalSlotCount: 4,
+      totalSlotCount: 5,
       totalTableCount: tables.length
     },
     tables
@@ -593,6 +607,13 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     expect(
       within(screen.getByRole('table', { name: 'Fletchling linked spawners' })).getAllByRole('row')
     ).toHaveLength(3);
+
+    await user.click(screen.getByRole('tab', { name: 'Alpha' }));
+
+    expect(screen.getByRole('tab', { name: 'Alpha' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(encounterTable).getByRole('row', { name: /^Trubbish/ })).toBeInTheDocument();
+    expect(within(encounterTable).queryByRole('row', { name: /^Scatterbug/ })).not.toBeInTheDocument();
+    expect(within(encounterTable).queryByRole('row', { name: /^Bunnelby/ })).not.toBeInTheDocument();
   }, 30_000);
 
   it('uses title-only side mission tabs and keeps mission numbers in selected details', async () => {

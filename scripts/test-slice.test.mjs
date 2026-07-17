@@ -100,7 +100,7 @@ test('Gym Uniform Removal bridge contracts run their specialized desktop test', 
   assert.match(output, /Run desktop bridge tests/);
 });
 
-test('Fashion Unlock App changes run focused App staging regressions', () => {
+test('shared App changes run focused editor regressions', () => {
   const output = runChangedPrint(['apps/desktop/src/App.tsx']);
 
   assert.match(output, /Run App regression tests after shell or shared fixture changes/);
@@ -108,6 +108,17 @@ test('Fashion Unlock App changes run focused App staging regressions', () => {
   assert.match(output, /src\/fashionUnlockUi\.test\.tsx/);
   assert.match(output, /Run Gym Uniform Removal App regressions/);
   assert.match(output, /src\/gymUniformRemovalUi\.test\.tsx/);
+  assert.match(output, /Run Z-A Wild Encounters App regressions/);
+  assert.match(output, /src\/zaEncountersUi\.test\.tsx/);
+});
+
+test('Z-A location label sources run their mapping regressions', () => {
+  const output = runChangedPrint([
+    'src/KM.ZA/Data/ZaLumioseLocationLabels.cs',
+  ]);
+
+  assert.match(output, /Run Pokemon Legends Z-A Data tests/);
+  assert.match(output, /FullyQualifiedName~ZaLumioseLocationLabelTests/);
 });
 
 test('Fashion Unlock backend sources run workflow and bridge integration coverage', () => {

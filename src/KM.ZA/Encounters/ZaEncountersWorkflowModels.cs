@@ -46,7 +46,10 @@ public sealed record ZaEncounterTableRecord(
     int? LocationSort = null,
     string? TableLabel = null,
     string? TableDetails = null,
-    string? LocationDetails = null);
+    string? LocationDetails = null)
+{
+    public string? SpawnerCategory { get; init; }
+}
 
 public sealed record ZaEncounterEditableField(
     string Field,

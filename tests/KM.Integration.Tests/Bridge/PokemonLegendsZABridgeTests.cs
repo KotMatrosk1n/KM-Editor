@@ -3831,7 +3831,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var tables = load.Payload!.Workflow.Tables;
-        Assert.Equal(23, tables.Count);
+        Assert.Equal(25, tables.Count);
         var ordinaryLinkedTables = tables
             .Where(table => table.Slots.Count == 1 && table.Slots[0].EncounterDataId == "wild_ignore")
             .ToArray();
@@ -3988,10 +3988,10 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var workflow = load.Payload!.Workflow;
-        Assert.Equal(22, workflow.Tables.Count);
+        Assert.Equal(24, workflow.Tables.Count);
 
         var alphaTables = workflow.Tables.Where(table => table.Slots.Any(slot => slot.IsAlpha)).ToArray();
-        Assert.Equal(2, alphaTables.Length);
+        Assert.Equal(3, alphaTables.Length);
         var alphaTable = alphaTables.Single(table => table.TableLabel == "Spawner 2");
         Assert.Equal("Wild Zone 1", alphaTable.Location);
         Assert.Equal("Spawner 2", alphaTable.TableLabel);
@@ -4122,22 +4122,42 @@ public sealed class PokemonLegendsZABridgeTests
             table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Point 050, Battle Zone");
         Assert.Equal("Bleu District, Sector 1 Outside Wild Zone", outzoneTable.Location);
         Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Spawn Point 050, Battle Zone", outzoneTable.TableLabel);
+        Assert.Equal("spawnPoint", outzoneTable.SpawnerCategory);
 
         var outzoneGroupTable = Assert.Single(
             workflow.Tables,
             table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Group O, Point 50, Battle Zone");
         Assert.Equal("Bleu District, Sector 1 Outside Wild Zone", outzoneGroupTable.Location);
         Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Spawn Group O, Point 50, Battle Zone", outzoneGroupTable.TableLabel);
+        Assert.Equal("spawnGroup", outzoneGroupTable.SpawnerCategory);
 
         var outzonePointZeroTable = Assert.Single(
             workflow.Tables,
             table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Group P, Point 00");
         Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Spawn Group P, Point 00", outzonePointZeroTable.TableLabel);
+        Assert.Equal("spawnGroup", outzonePointZeroTable.SpawnerCategory);
 
         var outzoneSpecialTable = Assert.Single(
             workflow.Tables,
             table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Special Encounter 1");
         Assert.Equal("Bleu District, Sector 1 Outside Wild Zone, Special Encounter 1", outzoneSpecialTable.TableLabel);
+        Assert.Equal("specialEncounter", outzoneSpecialTable.SpawnerCategory);
+
+        var outzoneGroupATable = Assert.Single(
+            workflow.Tables,
+            table => table.TableLabel == "Bleu District, Sector 1 Outside Wild Zone, Spawn Group A, Point 00");
+        Assert.Equal("spawnGroup", outzoneGroupATable.SpawnerCategory);
+        var outzoneGroupASlot = Assert.Single(outzoneGroupATable.Slots);
+        Assert.False(outzoneGroupASlot.IsAlpha);
+        Assert.Equal("Wild", outzoneGroupASlot.EncounterKind);
+        Assert.Equal(0, outzoneGroupASlot.AlphaChancePercent);
+
+        var outzoneAlphaTable = Assert.Single(
+            workflow.Tables,
+            table => table.TableLabel
+                == "Bleu District, Sector 1 Outside Wild Zone, Spawn Point 405, Alpha, Battle Zone, Phase Condition");
+        Assert.Equal("alpha", outzoneAlphaTable.SpawnerCategory);
+        Assert.True(Assert.Single(outzoneAlphaTable.Slots).IsAlpha);
 
         var bossTable = Assert.Single(workflow.Tables, table => table.LocationKey == "boss_0015_re");
         Assert.Equal("Boss Battle Pokemon 15 Rematch", bossTable.Location);
@@ -5848,6 +5868,19 @@ public sealed class PokemonLegendsZABridgeTests
         {
             rows.Add(CreateEncounterData(
                 builder,
+                "wild_ordinary",
+                level: 20,
+                heldItem: 17,
+                move1: 33,
+                move2: 0,
+                ivHp: 1,
+                ivAttack: 2,
+                sex: 1,
+                speciesId: 1,
+                oyabunProbability: 0,
+                oyabunAdditionalLevel: 0));
+            rows.Add(CreateEncounterData(
+                builder,
                 "wild_guaranteed_alpha",
                 level: 20,
                 heldItem: 17,
@@ -5909,6 +5942,8 @@ public sealed class PokemonLegendsZABridgeTests
                 CreateSpawner(builder, "id_spn_outzone_a0201_O50_BZ", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_spn_outzone_a0201_P00", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_spn_outzone_a0201_sp1", "wild_ignore", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_outzone_a0201_A00", "wild_ordinary", zoneId: null, weight: 100),
+                CreateSpawner(builder, "id_spn_outzone_a0201_405_A_BZ_PH", "wild_guaranteed_alpha_Alpha", zoneId: null, weight: 100),
                 CreateSpawner(builder, "zdm406_v00_700", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "zdm406_v00_701", "wild_ignore", zoneId: null, weight: 100),
                 CreateSpawner(builder, "id_zdm_random_t02_r03_701", "wild_ignore", zoneId: null, weight: 100),

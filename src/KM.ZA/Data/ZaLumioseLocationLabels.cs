@@ -6,6 +6,12 @@ namespace KM.ZA.Data;
 
 internal static class ZaLumioseLocationLabels
 {
+    internal const string AlphaSpawnerCategory = "alpha";
+    internal const string OtherSpawnerCategory = "other";
+    internal const string SpawnGroupSpawnerCategory = "spawnGroup";
+    internal const string SpawnPointSpawnerCategory = "spawnPoint";
+    internal const string SpecialEncounterSpawnerCategory = "specialEncounter";
+
     private const string WildZonePlaceNamePrefix = "wild_";
     private const string ZdmRandomLocationKey = "zdm_random_dimension_wilds";
     private const string ZdmRandomLocationLabel = "Dimension Wild Pools";
@@ -341,6 +347,47 @@ internal static class ZaLumioseLocationLabels
         }
 
         return ToReadableId(trimmed);
+    }
+
+    public static string? ClassifyRawSpawnerId(string value)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("id_spn_", StringComparison.Ordinal))
+        {
+            trimmed = trimmed["id_spn_".Length..];
+        }
+
+        var spawnerTrimmed = StripSpawnerPrefix(trimmed);
+        if (!TryParseOutzoneSpawnerId(spawnerTrimmed, out _, out var tail))
+        {
+            return null;
+        }
+
+        if (tail.Any(token => string.Equals(token, "A", StringComparison.OrdinalIgnoreCase)))
+        {
+            return AlphaSpawnerCategory;
+        }
+
+        if (tail.Count == 0)
+        {
+            return OtherSpawnerCategory;
+        }
+
+        var first = tail[0];
+        if (first.StartsWith("sp", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(first["sp".Length..], NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        {
+            return SpecialEncounterSpawnerCategory;
+        }
+
+        if (TryParseLetterSpawnPoint(first, out _, out _))
+        {
+            return SpawnGroupSpawnerCategory;
+        }
+
+        return first.All(char.IsDigit)
+            ? SpawnPointSpawnerCategory
+            : OtherSpawnerCategory;
     }
 
     public static string FormatRawSpawnerLocationKey(string value)
@@ -703,17 +750,34 @@ internal static class ZaLumioseLocationLabels
 
     private static string? TryFormatOutzoneSpawnerId(string value)
     {
-        var parts = value.Split('_', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2 || !string.Equals(parts[0], "outzone", StringComparison.OrdinalIgnoreCase))
+        if (!TryParseOutzoneSpawnerId(value, out var areaCode, out var tailTokens))
         {
             return null;
         }
 
-        var label = FormatOutzoneArea(parts[1]);
-        var tail = FormatOutzoneTail(parts.Skip(2).ToArray());
-        return parts.Length == 2
+        var label = FormatOutzoneArea(areaCode);
+        var tail = FormatOutzoneTail(tailTokens);
+        return tailTokens.Count == 0
             ? label
             : $"{label}, {tail}";
+    }
+
+    private static bool TryParseOutzoneSpawnerId(
+        string value,
+        out string areaCode,
+        out IReadOnlyList<string> tailTokens)
+    {
+        areaCode = string.Empty;
+        tailTokens = Array.Empty<string>();
+        var parts = value.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || !string.Equals(parts[0], "outzone", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        areaCode = parts[1];
+        tailTokens = parts.Skip(2).ToArray();
+        return true;
     }
 
     private static string? TryFormatWildZoneSpawnerId(string value)
@@ -1199,12 +1263,6 @@ internal static class ZaLumioseLocationLabels
         if (first.All(char.IsDigit))
         {
             parts.Add($"Spawn Point {first}");
-        }
-        else if (first.Length > 1
-            && (first[0] is 'A' or 'a')
-            && first[1..].All(char.IsDigit))
-        {
-            parts.Add($"Alpha Spawn Point {first[1..]}");
         }
         else if (first.StartsWith("sp", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(first["sp".Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var specialSpawn))

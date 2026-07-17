@@ -208,7 +208,10 @@ internal sealed class ZaEncountersWorkflowService
                     GetLocationSort(locationKey),
                     FormatTableLabel(locationKey, displayPosition.Ordinal, spawner.Value.Id, labels),
                     FormatTableDetails(slots),
-                    ZaLumioseLocationLabels.GetMissionDetails(locationKey));
+                    ZaLumioseLocationLabels.GetMissionDetails(locationKey))
+                {
+                    SpawnerCategory = GetSpawnerCategory(locationKey, spawner.Value.Id),
+                };
             }
         }
     }
@@ -434,6 +437,19 @@ internal sealed class ZaEncountersWorkflowService
     private static int? GetLocationSort(string locationKey)
     {
         return ZaLumioseLocationLabels.GetLocationSort(locationKey);
+    }
+
+    private static string? GetSpawnerCategory(string locationKey, string? spawnerId)
+    {
+        if (!locationKey.StartsWith("outzone_", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(spawnerId)
+            ? ZaLumioseLocationLabels.OtherSpawnerCategory
+            : ZaLumioseLocationLabels.ClassifyRawSpawnerId(spawnerId)
+                ?? ZaLumioseLocationLabels.OtherSpawnerCategory;
     }
 
     private static bool IsNumberedWildZone(string locationKey)

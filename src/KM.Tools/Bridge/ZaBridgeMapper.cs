@@ -625,6 +625,7 @@ public static class ZaBridgeMapper
             table.TableDetails)
         {
             LocationDetails = table.LocationDetails,
+            SpawnerCategory = table.SpawnerCategory,
         };
     }
 

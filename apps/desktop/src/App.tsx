@@ -37763,25 +37763,20 @@ function buildZaEncounterSpawnerCategoryData(
 
 function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounterSpawnerCategory {
   const key = table.locationKey ?? table.location;
-    const label = table.tableLabel ?? table.location;
   if (/^outzone_/i.test(key)) {
-    if (/\bAlpha\b/i.test(label)) {
-      return { key: 'outzone:alpha', label: 'Alpha', rank: 3 };
+    switch (table.spawnerCategory) {
+      case 'spawnGroup':
+        return { key: 'outzone:groups', label: 'Spawn Groups', rank: 0 };
+      case 'spawnPoint':
+        return { key: 'outzone:points', label: 'Spawn Points', rank: 1 };
+      case 'specialEncounter':
+        return { key: 'outzone:special', label: 'Special Encounters', rank: 2 };
+      case 'alpha':
+        return { key: 'outzone:alpha', label: 'Alpha', rank: 3 };
+      case 'other':
+      default:
+        return { key: 'outzone:other', label: 'Other Spawners', rank: 9 };
     }
-
-    if (/\bSpecial Encounter\b/i.test(label)) {
-      return { key: 'outzone:special', label: 'Special Encounters', rank: 2 };
-    }
-
-    if (/\bSpawn Group\b/i.test(label)) {
-      return { key: 'outzone:groups', label: 'Spawn Groups', rank: 0 };
-    }
-
-    if (/\bSpawn Point\b/i.test(label)) {
-      return { key: 'outzone:points', label: 'Spawn Points', rank: 1 };
-    }
-
-    return { key: 'outzone:other', label: 'Other Spawners', rank: 9 };
   }
 
   if (/^boss_/i.test(key)) {
