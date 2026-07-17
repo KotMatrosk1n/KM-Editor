@@ -6072,7 +6072,6 @@ export function createMockProjectBridge(
           gymUniformRemovalWorkflowSummary,
           hyperspaceBypassWorkflowSummary,
           ivScreenWorkflowSummary,
-          exeFsPatchWorkflowSummary,
           royalCandyWorkflowSummary, startingItemsWorkflowSummary, npcItemGiftWorkflowSummary, spreadsheetImportWorkflowSummary,
           modMergerWorkflowSummary
         ]
