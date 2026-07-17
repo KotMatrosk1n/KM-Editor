@@ -165,6 +165,25 @@ public sealed class SwShTrainersWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadReadsLayeredTrainerNamesWithLegacyRawZeroAlignment()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteTrainerFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var layeredNames = CreateTextTable(10, (1, "Victor"), (10, "Benjamin"));
+        IncludeRawZeroAlignmentInDeclaredLineLength(layeredNames, lineIndex: 1);
+        temp.WriteOutputFile("romfs/bin/message/English/common/trname.dat", layeredNames);
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShTrainersWorkflowService().Load(project);
+
+        Assert.Equal("Benjamin", Assert.Single(workflow.Trainers).Name);
+        Assert.DoesNotContain(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("could not be decoded", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CreateAiFlagStatesUsesVerifiedScriptSlotOrder()
     {
         var states = SwShTrainersWorkflowService.CreateAiFlagStates(SwShTrainerDataFile.KnownAiFlagsMask);
@@ -455,6 +474,28 @@ public sealed class SwShTrainersWorkflowServiceTests
         }
 
         return SwShGameTextFile.Write(lines);
+    }
+
+    private static void IncludeRawZeroAlignmentInDeclaredLineLength(byte[] data, int lineIndex)
+    {
+        var sectionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C));
+        var sectionLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sectionStart));
+        var lineCount = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x02));
+        Assert.InRange(lineIndex, 0, lineCount - 1);
+
+        var entryOffset = sectionStart + sizeof(uint) + (lineIndex * 0x08);
+        var textOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset));
+        var textLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(entryOffset + 0x04));
+        var nextTextOffset = lineIndex + 1 < lineCount
+            ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset + 0x08))
+            : sectionLength;
+        var rawAlignmentOffset = checked(sectionStart + textOffset + (textLength * sizeof(ushort)));
+
+        Assert.True(textOffset + ((textLength + 1) * sizeof(ushort)) <= nextTextOffset);
+        Assert.Equal((ushort)0, BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(rawAlignmentOffset)));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(entryOffset + 0x04),
+            checked((ushort)(textLength + 1)));
     }
 
     private static void WriteUInt16(byte[] data, int offset, int value)

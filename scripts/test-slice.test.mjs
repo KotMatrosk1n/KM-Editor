@@ -104,12 +104,78 @@ test('shared App changes run focused editor regressions', () => {
   const output = runChangedPrint(['apps/desktop/src/App.tsx']);
 
   assert.match(output, /Run App regression tests after shell or shared fixture changes/);
+  assert.match(output, /Run Dynamax Adventures App regressions/);
+  assert.match(output, /src\/dynamaxAdventuresUi\.test\.tsx/);
+  assert.match(output, /Run Dynamax Adventures responsive browser regression/);
   assert.match(output, /Run Fashion Unlock App regressions/);
   assert.match(output, /src\/fashionUnlockUi\.test\.tsx/);
   assert.match(output, /Run Gym Uniform Removal App regressions/);
   assert.match(output, /src\/gymUniformRemovalUi\.test\.tsx/);
   assert.match(output, /Run Z-A Wild Encounters App regressions/);
   assert.match(output, /src\/zaEncountersUi\.test\.tsx/);
+});
+
+test('shared styles run responsive layout and browser geometry regressions', () => {
+  const output = runChangedPrint(['apps/desktop/src/styles.css']);
+
+  assert.match(output, /Run responsive editor layout regressions/);
+  assert.match(output, /src\/editorTableLayout\.test\.ts/);
+  assert.match(output, /Run constrained sidebar overlay browser regression/);
+  assert.match(
+    output,
+    /test:workflow workflow-tests\/app-shell\.spec\.ts --grep "keeps navigation controls reachable at constrained desktop sizes"/,
+  );
+  assert.match(output, /Run Dynamax Adventures responsive browser regression/);
+});
+
+test('changed app shell specs subsume the focused sidebar browser route', () => {
+  const output = runChangedPrint([
+    'apps/desktop/src/styles.css',
+    'apps/desktop/workflow-tests/app-shell.spec.ts',
+  ]);
+
+  assert.equal(
+    countOccurrences(
+      output,
+      'pnpm --dir apps/desktop test:workflow workflow-tests/app-shell.spec.ts',
+    ),
+    1,
+  );
+  assert.match(output, /test:workflow workflow-tests\/app-shell\.spec\.ts/);
+  assert.doesNotMatch(output, /Run constrained sidebar overlay browser regression/);
+});
+
+test('changed desktop workflow specs run directly', () => {
+  const output = runChangedPrint([
+    'apps/desktop/workflow-tests/full-app-smoke.spec.ts',
+  ]);
+
+  assert.match(output, /Run changed desktop workflow test/);
+  assert.match(output, /test:workflow workflow-tests\/full-app-smoke\.spec\.ts/);
+});
+
+test('changed full app smoke specs subsume Dynamax while retaining sidebar geometry', () => {
+  const output = runChangedPrint([
+    'apps/desktop/src/App.tsx',
+    'apps/desktop/src/styles.css',
+    'apps/desktop/workflow-tests/full-app-smoke.spec.ts',
+  ]);
+
+  assert.equal(countOccurrences(output, 'pnpm --dir apps/desktop test:workflow'), 2);
+  assert.match(output, /test:workflow workflow-tests\/full-app-smoke\.spec\.ts/);
+  assert.match(
+    output,
+    /test:workflow workflow-tests\/app-shell\.spec\.ts --grep "keeps navigation controls reachable at constrained desktop sizes"/,
+  );
+});
+
+test('removed desktop workflow specs fall back to the complete workflow suite', () => {
+  const output = runChangedPrint([
+    'apps/desktop/workflow-tests/removed.spec.ts',
+  ]);
+
+  assert.match(output, /Run all desktop workflow tests after a workflow test was removed/);
+  assert.match(output, /pnpm --dir apps\/desktop test:workflow\s*$/m);
 });
 
 test('Z-A location label sources run their mapping regressions', () => {

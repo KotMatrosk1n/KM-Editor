@@ -175,6 +175,7 @@ public sealed class SwShWorkflowService
             placementWorkflowService.CreateSummary(project),
             behaviorWorkflowService.CreateSummary(project),
             flagworkSaveWorkflowService.CreateSummary(project),
+            exeFsPatchWorkflowService.CreateSummary(project),
             bagHookWorkflowService.CreateSummary(project),
             catchCapWorkflowService.CreateSummary(project),
             hyperTrainingWorkflowService.CreateSummary(project),

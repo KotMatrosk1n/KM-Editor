@@ -115,7 +115,7 @@ public sealed class SwShGameTextFile
             CryptLineData(decrypted, key);
             try
             {
-                lines[i] = new SwShGameTextLine(DecodeLine(decrypted), flags);
+                lines[i] = new SwShGameTextLine(DecodeLine(decrypted, encrypted), flags);
             }
             catch (InvalidDataException exception)
             {
@@ -363,7 +363,7 @@ public sealed class SwShGameTextFile
         }
     }
 
-    private static string DecodeLine(ReadOnlySpan<byte> data)
+    private static string DecodeLine(ReadOnlySpan<byte> data, ReadOnlySpan<byte> encryptedData)
     {
         var builder = new StringBuilder();
         var offset = 0;
@@ -386,7 +386,8 @@ public sealed class SwShGameTextFile
             throw new InvalidDataException("Text line has no terminator.");
         }
 
-        if (ContainsNonZeroByte(data[offset..]))
+        if (ContainsNonZeroByte(data[offset..])
+            && !IsLegacyRawZeroAlignment(encryptedData, offset))
         {
             throw new InvalidDataException("Text line contains nonzero data after its terminator.");
         }
@@ -394,6 +395,14 @@ public sealed class SwShGameTextFile
         var text = builder.ToString();
         ValidateUtf16(text);
         return text;
+    }
+
+    private static bool IsLegacyRawZeroAlignment(ReadOnlySpan<byte> encryptedData, int trailingOffset)
+    {
+        var trailingData = encryptedData[trailingOffset..];
+        return encryptedData.Length % 4 == 0
+            && trailingData.Length == sizeof(ushort)
+            && !ContainsNonZeroByte(trailingData);
     }
 
     private static string DecodeFragment(ReadOnlySpan<byte> data)

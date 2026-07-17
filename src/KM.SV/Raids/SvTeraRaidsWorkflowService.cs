@@ -804,14 +804,17 @@ internal sealed class SvTeraRaidsWorkflowService
                 .Where(reward => reward is not null)
                 .Cast<SvTeraRaidRewardItemRecord>()
                 .ToArray();
+            var activeRewards = rewards
+                .Where(reward => !IsEmptyFixedReward(reward))
+                .ToArray();
             yield return new SvTeraRaidRewardTableRecord(
                 CreateRewardRecordId(FixedRewardKind, index, 0),
                 FixedRewardKind,
                 "Fixed rewards",
                 index,
                 tableHash,
-                rewards.Length,
-                CreateRewardPreview(rewards),
+                activeRewards.Length,
+                CreateRewardPreview(activeRewards),
                 rewards,
                 new SvTeraRaidProvenance(source.RelativePath, source.SourceLayer, source.FileState));
         }
@@ -831,14 +834,17 @@ internal sealed class SvTeraRaidsWorkflowService
                 .Where(reward => reward is not null)
                 .Cast<SvTeraRaidRewardItemRecord>()
                 .ToArray();
+            var activeRewards = rewards
+                .Where(reward => !IsEmptyLotteryReward(reward))
+                .ToArray();
             yield return new SvTeraRaidRewardTableRecord(
                 CreateRewardRecordId(LotteryRewardKind, index, 0),
                 LotteryRewardKind,
                 "Lottery rewards",
                 index,
                 tableHash,
-                rewards.Length,
-                CreateRewardPreview(rewards),
+                activeRewards.Length,
+                CreateRewardPreview(activeRewards),
                 rewards,
                 new SvTeraRaidProvenance(source.RelativePath, source.SourceLayer, source.FileState));
         }
@@ -869,7 +875,7 @@ internal sealed class SvTeraRaidsWorkflowService
             (int)reward.SubjectType,
             FormatRewardSubject(reward.SubjectType),
             (int)reward.ItemID,
-            FormatRewardItem(reward.ItemID, labels),
+            FormatRewardItem(reward.Category, reward.ItemID, labels),
             reward.Num,
             null,
             null,
@@ -901,7 +907,7 @@ internal sealed class SvTeraRaidsWorkflowService
             null,
             null,
             (int)reward.ItemID,
-            FormatRewardItem(reward.ItemID, labels),
+            FormatRewardItem(reward.Category, reward.ItemID, labels),
             reward.Num,
             reward.Rate,
             reward.RareItemFlag,
@@ -921,6 +927,23 @@ internal sealed class SvTeraRaidsWorkflowService
                 .Take(3)
                 .Select(reward => $"{reward.Count.ToString(CultureInfo.InvariantCulture)} {reward.ItemName}"))
             + (rewards.Count > 3 ? $" +{(rewards.Count - 3).ToString(CultureInfo.InvariantCulture)} more" : string.Empty);
+    }
+
+    private static bool IsEmptyFixedReward(SvTeraRaidRewardItemRecord reward)
+    {
+        return reward.Category == (int)global::RaidRewardItemCategoryType.ITEM
+            && reward.SubjectType == (int)global::RaidRewardItemSubjectType.ALL
+            && reward.ItemId == (int)global::ItemID.ITEMID_NONE
+            && reward.Count == 0;
+    }
+
+    private static bool IsEmptyLotteryReward(SvTeraRaidRewardItemRecord reward)
+    {
+        return reward.Category == (int)global::RaidRewardItemCategoryType.ITEM
+            && reward.ItemId == (int)global::ItemID.ITEMID_NONE
+            && reward.Count == 0
+            && reward.Rate == 0
+            && reward.RareItemFlag is false;
     }
 
     private static IReadOnlyList<SvTeraRaidMoveRecord> ReadMoves(
@@ -1267,10 +1290,23 @@ internal sealed class SvTeraRaidsWorkflowService
             ?? SvLabels.EnumName(value);
     }
 
-    private static string FormatRewardItem(global::ItemID itemId, SvTextLabelLookup labels)
+    private static string FormatRewardItem(
+        global::RaidRewardItemCategoryType category,
+        global::ItemID itemId,
+        SvTextLabelLookup labels)
     {
         var value = (int)itemId;
-        return value == 0 ? "None" : labels.Item(value);
+        if (value != 0)
+        {
+            return labels.Item(value);
+        }
+
+        return category switch
+        {
+            global::RaidRewardItemCategoryType.POKE => "Pokemon material",
+            global::RaidRewardItemCategoryType.GEM => "Tera shard",
+            _ => "None",
+        };
     }
 
     internal static string FormatHash(ulong value) =>

@@ -32,22 +32,32 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
 });
 
 test('keeps navigation controls reachable at constrained desktop sizes', async ({ page }) => {
-  await page.setViewportSize({ width: 960, height: 540 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Pokemon Sword' }).click();
 
   const sidebar = page.getByLabel('Application navigation');
+  const workspace = page.locator('.workspace');
   const expandSidebarButton = page.getByRole('button', { name: 'Expand sidebar' });
   await expect(expandSidebarButton).toBeVisible();
   await expect(page.getByRole('button', { name: 'Changes', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
 
   const collapsedBox = await sidebar.boundingBox();
+  const collapsedWorkspaceBox = await workspace.boundingBox();
   expect(collapsedBox?.width).toBe(76);
+  expect(collapsedWorkspaceBox?.x).toBe(76);
+  expect(collapsedWorkspaceBox?.width).toBe(1204);
 
   await expandSidebarButton.click();
   const expandedBox = await sidebar.boundingBox();
+  const expandedWorkspaceBox = await workspace.boundingBox();
   expect(expandedBox?.width).toBe(300);
+  expect(expandedWorkspaceBox?.x).toBe(collapsedWorkspaceBox?.x);
+  expect(expandedWorkspaceBox?.width).toBe(collapsedWorkspaceBox?.width);
+  await expect(page.locator('.sidebar-scrim')).toBeVisible();
+  await expect(workspace).toHaveAttribute('inert');
+  await expect(page.getByRole('heading', { name: 'Project Setup' })).toBeVisible();
   const collapseSidebarButton = page.getByRole('button', { name: 'Collapse sidebar' });
   await expect(collapseSidebarButton).toBeVisible();
 
@@ -59,7 +69,13 @@ test('keeps navigation controls reachable at constrained desktop sizes', async (
   );
 
   await collapseSidebarButton.click();
+  await expect(page.locator('.sidebar-scrim')).toBeHidden();
+  await expect(workspace).not.toHaveAttribute('inert');
+  const restoredWorkspaceBox = await workspace.boundingBox();
+  expect(restoredWorkspaceBox?.x).toBe(collapsedWorkspaceBox?.x);
+  expect(restoredWorkspaceBox?.width).toBe(collapsedWorkspaceBox?.width);
   for (const viewport of [
+    { width: 960, height: 540 },
     { width: 1024, height: 640 },
     { width: 1280, height: 720 },
     { width: 1280, height: 800 },

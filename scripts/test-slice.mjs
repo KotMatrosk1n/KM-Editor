@@ -463,7 +463,11 @@ function addChangedCommands() {
     return;
   }
 
-  for (const file of relevantFiles) {
+  const routedFiles = [
+    ...relevantFiles.filter((file) => file.startsWith('apps/desktop/workflow-tests/')),
+    ...relevantFiles.filter((file) => !file.startsWith('apps/desktop/workflow-tests/')),
+  ];
+  for (const file of routedFiles) {
     mapChangedFile(file);
   }
 }
@@ -563,6 +567,29 @@ function mapDesktopChange(file) {
     return;
   }
 
+  if (file.startsWith('apps/desktop/workflow-tests/') && file.endsWith('.spec.ts')) {
+    add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
+    if (!existsSync(path.join(repoRoot, file))) {
+      add(
+        'desktop-workflow-tests',
+        'Run all desktop workflow tests after a workflow test was removed',
+        'pnpm --dir apps/desktop test:workflow',
+      );
+      return;
+    }
+
+    const commandKey =
+      file === 'apps/desktop/workflow-tests/full-app-smoke.spec.ts'
+        ? 'desktop-dynamax-adventures-workflow'
+        : `desktop-workflow-test:${file}`;
+    add(
+      commandKey,
+      `Run changed desktop workflow test ${file}`,
+      `pnpm --dir apps/desktop test:workflow ${toDesktopPath(file)}`,
+    );
+    return;
+  }
+
   if (file.endsWith('.test.ts') || file.endsWith('.test.tsx')) {
     if (!existsSync(path.join(repoRoot, file))) {
       add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
@@ -601,9 +628,23 @@ function mapDesktopChange(file) {
 
   if (file === 'apps/desktop/src/App.tsx' || file.startsWith('apps/desktop/src/testSupport/')) {
     add('desktop-app-tests', 'Run App regression tests after shell or shared fixture changes', `pnpm --dir apps/desktop test:run src/App.test.tsx ${appTimeout}`);
+    add('desktop-dynamax-adventures-ui', 'Run Dynamax Adventures App regressions', `pnpm --dir apps/desktop test:run src/dynamaxAdventuresUi.test.tsx ${appTimeout}`);
+    add('desktop-dynamax-adventures-workflow', 'Run Dynamax Adventures responsive browser regression', 'pnpm --dir apps/desktop test:workflow --grep "keeps Dynamax Adventures browsing and editing balanced"');
     add('desktop-fashion-unlock-ui', 'Run Fashion Unlock App regressions', `pnpm --dir apps/desktop test:run src/fashionUnlockUi.test.tsx ${appTimeout}`);
     add('desktop-gym-uniform-removal-ui', 'Run Gym Uniform Removal App regressions', `pnpm --dir apps/desktop test:run src/gymUniformRemovalUi.test.tsx ${appTimeout}`);
     add('desktop-za-encounters-ui', 'Run Z-A Wild Encounters App regressions', `pnpm --dir apps/desktop test:run src/zaEncountersUi.test.tsx ${appTimeout}`);
+    return;
+  }
+
+  if (file === 'apps/desktop/src/styles.css') {
+    add('desktop-editor-layout', 'Run responsive editor layout regressions', `pnpm --dir apps/desktop test:run src/editorTableLayout.test.ts ${appTimeout}`);
+    add(
+      'desktop-workflow-test:apps/desktop/workflow-tests/app-shell.spec.ts',
+      'Run constrained sidebar overlay browser regression',
+      'pnpm --dir apps/desktop test:workflow workflow-tests/app-shell.spec.ts --grep "keeps navigation controls reachable at constrained desktop sizes"',
+    );
+    add('desktop-dynamax-adventures-workflow', 'Run Dynamax Adventures responsive browser regression', 'pnpm --dir apps/desktop test:workflow --grep "keeps Dynamax Adventures browsing and editing balanced"');
+    add('desktop-app-smoke', 'Run App shell smoke tests', `pnpm --dir apps/desktop test:run src/App.test.tsx -t "project workbench shell|switches workbench sections" ${appTimeout}`);
     return;
   }
 

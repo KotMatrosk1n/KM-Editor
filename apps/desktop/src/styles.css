@@ -545,6 +545,7 @@ button > span {
 }
 
 .workspace {
+  grid-column: 2;
   display: grid;
   grid-template-rows: auto 1fr;
   container-name: workspace;
@@ -2378,6 +2379,59 @@ h2 {
   margin-top: 6px;
 }
 
+.dynamax-adventure-install-status-content {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dynamax-adventure-status-summary {
+  grid-template-columns: repeat(3, minmax(140px, 180px));
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.dynamax-adventure-install-status-content > button {
+  justify-self: start;
+}
+
+.dynamax-adventure-technical-details {
+  min-width: 0;
+}
+
+.dynamax-adventure-technical-details > summary {
+  width: max-content;
+  max-width: 100%;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dynamax-adventure-technical-details[open] > summary {
+  margin-bottom: 10px;
+}
+
+.dynamax-adventure-build-details {
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+
+.dynamax-adventure-region-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 6px 24px;
+  max-height: 220px;
+  margin: 10px 0 0;
+  padding: 0 0 0 20px;
+  overflow: auto;
+}
+
+.dynamax-adventure-region-list code {
+  color: var(--color-text-muted);
+}
+
 .dynamax-adventure-table-restore {
   margin-top: 10px;
 }
@@ -3164,10 +3218,45 @@ h2 {
 
 .dynamax-adventures-layout {
   grid-template-columns: minmax(766px, 1.35fr) minmax(360px, 0.65fr);
+  grid-template-areas:
+    "table summary"
+    "editor editor";
 }
 
 .dynamax-adventures-table {
+  grid-area: table;
   min-width: min(766px, 100%);
+}
+
+.dynamax-adventure-summary {
+  grid-area: summary;
+}
+
+.dynamax-adventure-editor {
+  grid-area: editor;
+}
+
+.dynamax-adventure-selection-summary {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.dynamax-adventure-summary > .dynamax-adventure-provenance {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.dynamax-adventure-editor > .dynamax-adventure-edit-form {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.dynamax-adventure-field-groups {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dynamax-adventure-edit-form > .draft-action-row {
+  order: 0;
 }
 
 .dynamax-adventure-pending-owner {
@@ -8088,6 +8177,16 @@ input {
 @container workspace (max-width: 1500px) {
   .dynamax-adventures-layout {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "table"
+      "summary"
+      "editor";
+  }
+}
+
+@container workspace (max-width: 1200px) {
+  .dynamax-adventure-field-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -8184,6 +8283,11 @@ input {
 }
 
 @container workspace (max-width: 760px) {
+  .dynamax-adventure-status-summary,
+  .dynamax-adventure-field-groups {
+    grid-template-columns: 1fr;
+  }
+
   .toolbar {
     grid-template-columns: 1fr;
   }

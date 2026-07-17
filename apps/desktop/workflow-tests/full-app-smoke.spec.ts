@@ -23,7 +23,12 @@ const gameSmokeCases = [
 test.describe('full app smoke pass', () => {
   for (const smokeCase of gameSmokeCases) {
     test(`opens every visible workflow for ${smokeCase.label}`, async ({ page }) => {
-      const runtimeIssues = await installMockRuntime(page);
+      const runtimeIssues = await installMockRuntime(
+        page,
+        smokeCase.label === 'Pokemon Sword'
+          ? await createCanonicalDynamaxAdventureBridge()
+          : undefined
+      );
 
       await page.goto('/');
       await expect(page.getByRole('heading', { name: 'Which game are you using?' })).toBeVisible();
@@ -87,10 +92,97 @@ test.describe('full app smoke pass', () => {
 
     await assertNoRuntimeIssues(page, runtimeIssues);
   });
+
+  test('keeps Dynamax Adventures browsing and editing balanced at desktop sizes', async ({ page }) => {
+    const runtimeIssues = await installMockRuntime(
+      page,
+      await createCanonicalDynamaxAdventureBridge()
+    );
+    await page.setViewportSize({ width: 2560, height: 1600 });
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Which game are you using?' })).toBeVisible();
+    await page.getByRole('button', { name: 'Pokemon Sword' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Project Setup' })).toBeVisible();
+
+    await fillProjectPathInputs(page);
+    await page.getByRole('button', { name: 'Validate Paths' }).click();
+    await page.getByRole('button', { exact: true, name: 'Advanced Editors' }).click();
+    await openWorkflow(page, 'Dynamax Adventures');
+
+    await expect(page.locator('.dynamax-adventures-layout')).toBeVisible();
+    await expect(page.locator('.dynamax-adventure-technical-details')).not.toHaveAttribute(
+      'open'
+    );
+
+    const wideGeometry = await readDynamaxAdventureGeometry(page);
+    expect(wideGeometry.documentScrollWidth).toBeLessThanOrEqual(
+      wideGeometry.documentClientWidth + 1
+    );
+    expect(Math.abs(wideGeometry.table.top - wideGeometry.summary.top)).toBeLessThanOrEqual(1);
+    expect(wideGeometry.editor.top).toBeGreaterThanOrEqual(
+      Math.max(wideGeometry.table.bottom, wideGeometry.summary.bottom) - 1
+    );
+    expect(Math.abs(wideGeometry.table.left - wideGeometry.editor.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(wideGeometry.summary.right - wideGeometry.editor.right)).toBeLessThanOrEqual(1);
+    expect(wideGeometry.fieldGroupColumns).toBe(4);
+
+    await page.setViewportSize({ width: 1024, height: 800 });
+    const compactGeometry = await readDynamaxAdventureGeometry(page);
+    expect(compactGeometry.documentScrollWidth).toBeLessThanOrEqual(
+      compactGeometry.documentClientWidth + 1
+    );
+    expect(compactGeometry.summary.top).toBeGreaterThanOrEqual(
+      compactGeometry.table.bottom - 1
+    );
+    expect(compactGeometry.editor.top).toBeGreaterThanOrEqual(
+      compactGeometry.summary.bottom - 1
+    );
+    expect(Math.abs(compactGeometry.table.left - compactGeometry.summary.left)).toBeLessThanOrEqual(
+      1
+    );
+    expect(Math.abs(compactGeometry.table.left - compactGeometry.editor.left)).toBeLessThanOrEqual(
+      1
+    );
+    expect(Math.abs(compactGeometry.table.right - compactGeometry.summary.right)).toBeLessThanOrEqual(
+      1
+    );
+    expect(Math.abs(compactGeometry.table.right - compactGeometry.editor.right)).toBeLessThanOrEqual(
+      1
+    );
+    expect(compactGeometry.fieldGroupColumns).toBe(2);
+
+    await page.setViewportSize({ width: 820, height: 800 });
+    const narrowGeometry = await readDynamaxAdventureGeometry(page);
+    expect(narrowGeometry.documentScrollWidth).toBeLessThanOrEqual(
+      narrowGeometry.documentClientWidth + 1
+    );
+    expect(narrowGeometry.summary.top).toBeGreaterThanOrEqual(
+      narrowGeometry.table.bottom - 1
+    );
+    expect(narrowGeometry.editor.top).toBeGreaterThanOrEqual(
+      narrowGeometry.summary.bottom - 1
+    );
+    expect(Math.abs(narrowGeometry.table.left - narrowGeometry.summary.left)).toBeLessThanOrEqual(
+      1
+    );
+    expect(Math.abs(narrowGeometry.table.left - narrowGeometry.editor.left)).toBeLessThanOrEqual(
+      1
+    );
+    expect(Math.abs(narrowGeometry.table.right - narrowGeometry.summary.right)).toBeLessThanOrEqual(
+      1
+    );
+    expect(Math.abs(narrowGeometry.table.right - narrowGeometry.editor.right)).toBeLessThanOrEqual(
+      1
+    );
+    expect(narrowGeometry.fieldGroupColumns).toBe(1);
+
+    await assertNoRuntimeIssues(page, runtimeIssues);
+  });
 });
 
-async function installMockRuntime(page: Page) {
-  const bridge = createMockProjectBridge({}, true);
+async function installMockRuntime(page: Page, bridge?: ProjectBridge) {
+  const runtimeBridge = bridge ?? createMockProjectBridge({}, true);
   const commandMethodLookup = new Map(
     Object.entries(kmCommandNames).map(([methodName, command]) => [command, methodName])
   );
@@ -115,7 +207,7 @@ async function installMockRuntime(page: Page) {
       };
       const methodName = commandMethodLookup.get(request.command);
       const handler = methodName
-        ? (bridge as unknown as Record<string, ProjectBridge[keyof ProjectBridge]>)[methodName]
+        ? (runtimeBridge as unknown as Record<string, ProjectBridge[keyof ProjectBridge]>)[methodName]
         : undefined;
 
       if (typeof handler !== 'function') {
@@ -222,6 +314,76 @@ async function installMockRuntime(page: Page) {
   });
 
   return runtimeIssues;
+}
+
+async function createCanonicalDynamaxAdventureBridge() {
+  const fixtureBridge = createMockProjectBridge({}, true);
+  const { workflow } = await fixtureBridge.loadDynamaxAdventuresWorkflow({
+    paths: {
+      baseExeFsPath: 'mock-exefs',
+      baseRomFsPath: 'mock-romfs',
+      outputRootPath: 'mock-output',
+      pokemonLegendsZASupportFolderPath: '',
+      saveFilePath: '',
+      scarletVioletSupportFolderPath: '',
+      selectedGame: 'sword'
+    }
+  });
+  const template = workflow.encounters[0]!;
+  const encounters = Array.from({ length: 273 }, (_, entryIndex) => {
+    const encounter = {
+      ...structuredClone(template),
+      adventureIndex: entryIndex,
+      entryIndex,
+      label: `Adventure ${entryIndex.toString().padStart(3, '0')}`,
+      singleCaptureFlagBlock: `0x${entryIndex
+        .toString(16)
+        .toUpperCase()
+        .padStart(16, '0')}`,
+      uiMessageId: `0x${(entryIndex + 0x1000)
+        .toString(16)
+        .toUpperCase()
+        .padStart(16, '0')}`
+    };
+    if (entryIndex >= 226) {
+      encounter.isEditable = false;
+      encounter.layoutWritableFields = [];
+      encounter.vanillaPokemon = {
+        ability: encounter.ability,
+        abilityLabel: encounter.abilityLabel,
+        form: encounter.form,
+        gigantamaxLabel: encounter.gigantamaxLabel,
+        gigantamaxState: encounter.gigantamaxState,
+        guaranteedPerfectIvs: encounter.guaranteedPerfectIvs,
+        ivs: structuredClone(encounter.ivs),
+        ivSummary: encounter.ivSummary,
+        level: encounter.level,
+        moves: structuredClone(encounter.moves),
+        species: encounter.species,
+        speciesId: encounter.speciesId
+      };
+    }
+    return encounter;
+  });
+  const canonicalWorkflow = {
+    ...workflow,
+    encounters,
+    stats: {
+      guaranteedPerfectIvEncounterCount: encounters.length,
+      singleCaptureCount: encounters.length,
+      sourceFileCount: 1,
+      storyGatedCount: 0,
+      totalEncounterCount: encounters.length
+    }
+  };
+
+  return createMockProjectBridge(
+    {
+      loadDynamaxAdventuresWorkflow: () =>
+        Promise.resolve({ workflow: canonicalWorkflow })
+    },
+    true
+  );
 }
 
 function getProjectBridgeRequestJson(args: unknown) {
@@ -377,6 +539,40 @@ async function assertLearnsetInlineControlsStayInRow(
   await expect(page.getByRole('button', { name: 'Move learnset row up' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Move learnset row down' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove learnset row' })).toBeVisible();
+}
+
+async function readDynamaxAdventureGeometry(page: Page) {
+  return page.locator('.dynamax-adventures-layout').evaluate((layout) => {
+    const readRect = (selector: string) => {
+      const element = layout.querySelector<HTMLElement>(selector);
+      if (!element) {
+        throw new Error(`Missing Dynamax Adventures layout element: ${selector}`);
+      }
+
+      const bounds = element.getBoundingClientRect();
+      return {
+        bottom: bounds.bottom,
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top
+      };
+    };
+    const fieldGroups = layout.querySelector<HTMLElement>(
+      '.dynamax-adventure-field-groups'
+    );
+    if (!fieldGroups) {
+      throw new Error('Missing Dynamax Adventures field groups.');
+    }
+
+    return {
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      editor: readRect('.dynamax-adventure-editor'),
+      fieldGroupColumns: getComputedStyle(fieldGroups).gridTemplateColumns.split(' ').length,
+      summary: readRect('.dynamax-adventure-summary'),
+      table: readRect('.dynamax-adventures-table')
+    };
+  });
 }
 
 function escapeRegExp(value: string) {

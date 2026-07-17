@@ -1910,12 +1910,45 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Grass", raid.TeraTypeLabel);
         Assert.Equal("0x1111222233334444", raid.FixedRewardTableHash);
         Assert.Equal("0x5555666677778888", raid.LotteryRewardTableHash);
-        var fixedReward = Assert.Single(Assert.Single(loaded.Payload.Workflow.FixedRewardTables).Rewards);
+        var fixedTable = Assert.Single(loaded.Payload.Workflow.FixedRewardTables);
+        Assert.Equal(3, fixedTable.Rewards.Count);
+        Assert.Equal(2, fixedTable.RewardItemCount);
+        Assert.Equal("2 Master Ball, 3 Pokemon material", fixedTable.Preview);
+        Assert.Equal(fixedTable.Preview, raid.FixedRewardPreview);
+        Assert.DoesNotContain("0 None", fixedTable.Preview, StringComparison.Ordinal);
+        var fixedReward = fixedTable.Rewards.Single(reward => reward.Slot == 0);
         Assert.Equal(1, fixedReward.ItemId);
         Assert.Equal(2, fixedReward.Count);
-        var lotteryReward = Assert.Single(Assert.Single(loaded.Payload.Workflow.LotteryRewardTables).Rewards);
+        var emptyFixedReward = fixedTable.Rewards.Single(reward => reward.Slot == 1);
+        Assert.Equal("fixed:0:1", emptyFixedReward.RecordId);
+        Assert.Equal(0, emptyFixedReward.ItemId);
+        Assert.Equal(0, emptyFixedReward.Count);
+        var pokemonMaterialReward = fixedTable.Rewards.Single(reward => reward.Slot == 2);
+        Assert.Equal("fixed:0:2", pokemonMaterialReward.RecordId);
+        Assert.Equal((int)global::RaidRewardItemCategoryType.POKE, pokemonMaterialReward.Category);
+        Assert.Equal(0, pokemonMaterialReward.ItemId);
+        Assert.Equal("Pokemon material", pokemonMaterialReward.ItemName);
+
+        var lotteryTable = Assert.Single(loaded.Payload.Workflow.LotteryRewardTables);
+        Assert.Equal(3, lotteryTable.Rewards.Count);
+        Assert.Equal(2, lotteryTable.RewardItemCount);
+        Assert.Equal("1 TM001, 4 Tera shard", lotteryTable.Preview);
+        Assert.Equal(lotteryTable.Preview, raid.LotteryRewardPreview);
+        Assert.DoesNotContain("0 None", lotteryTable.Preview, StringComparison.Ordinal);
+        var lotteryReward = lotteryTable.Rewards.Single(reward => reward.Slot == 0);
         Assert.Equal(2, lotteryReward.ItemId);
         Assert.Equal(25, lotteryReward.Rate);
+        var emptyLotteryReward = lotteryTable.Rewards.Single(reward => reward.Slot == 1);
+        Assert.Equal("lottery:0:1", emptyLotteryReward.RecordId);
+        Assert.Equal(0, emptyLotteryReward.ItemId);
+        Assert.Equal(0, emptyLotteryReward.Count);
+        Assert.Equal(0, emptyLotteryReward.Rate);
+        var teraShardReward = lotteryTable.Rewards.Single(reward => reward.Slot == 2);
+        Assert.Equal("lottery:0:2", teraShardReward.RecordId);
+        Assert.Equal((int)global::RaidRewardItemCategoryType.GEM, teraShardReward.Category);
+        Assert.Equal(0, teraShardReward.ItemId);
+        Assert.Equal("Tera shard", teraShardReward.ItemName);
+        Assert.Equal(4, loaded.Payload.Workflow.Stats.TotalRewardItemCount);
 
         var updatedRaid = Dispatch<UpdateTeraRaidFieldResponse>(
             dispatcher,
@@ -1937,7 +1970,31 @@ public sealed class ScarletVioletBridgeTests
         session = updatedReward.Payload!.Session;
         Assert.Contains(session.PendingEdits, edit =>
             edit.Domain == "workflow.teraRaids" && edit.RecordId == fixedReward.RecordId && edit.Field == "fixedCount" && edit.NewValue == "3");
-        Assert.Equal(3, Assert.Single(Assert.Single(updatedReward.Payload.Workflow.FixedRewardTables).Rewards).Count);
+        Assert.Equal(
+            3,
+            Assert.Single(updatedReward.Payload.Workflow.FixedRewardTables)
+                .Rewards.Single(reward => reward.RecordId == fixedReward.RecordId)
+                .Count);
+
+        var filledEmptyReward = Dispatch<UpdateTeraRaidFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTeraRaidFields,
+            new UpdateTeraRaidFieldsRequest(
+                paths,
+                session,
+                [
+                    new TeraRaidFieldUpdateDto(emptyFixedReward.RecordId, "fixedItemId", "2"),
+                    new TeraRaidFieldUpdateDto(emptyFixedReward.RecordId, "fixedCount", "1"),
+                ]),
+            "request-sv-tera-raid-empty-reward-update");
+        AssertSuccess(filledEmptyReward);
+        session = filledEmptyReward.Payload!.Session;
+        var updatedFixedTable = Assert.Single(filledEmptyReward.Payload.Workflow.FixedRewardTables);
+        Assert.Equal(3, updatedFixedTable.RewardItemCount);
+        Assert.Contains("1 TM001", updatedFixedTable.Preview, StringComparison.Ordinal);
+        Assert.Equal(
+            "fixed:0:1",
+            updatedFixedTable.Rewards.Single(reward => reward.Slot == 1).RecordId);
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,
@@ -1962,6 +2019,9 @@ public sealed class ScarletVioletBridgeTests
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
         Assert.Equal((global::pml.common.DevID)4, ReadTeraRaidBossSpecies(temp));
         Assert.Equal(3, ReadTeraRaidFixedRewardCount(temp));
+        var filledReward = ReadTeraRaidFixedRewardSlot1(temp);
+        Assert.Equal(global::ItemID.ITEMID_HAIPAABOORU, filledReward.ItemId);
+        Assert.Equal(1, filledReward.Count);
     }
 
     [Theory]
@@ -4774,6 +4834,18 @@ public sealed class ScarletVioletBridgeTests
         return reward.Value.Num;
     }
 
+    private static (global::ItemID ItemId, int Count) ReadTeraRaidFixedRewardSlot1(
+        TemporaryBridgeProject temp)
+    {
+        var table = global::RaidFixedRewardItemArray.GetRootAsRaidFixedRewardItemArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.TeraRaidFixedRewardItemArray)));
+        var row = table.Values(0);
+        Assert.NotNull(row);
+        var reward = row.Value.RewardItem01;
+        Assert.NotNull(reward);
+        return (reward.Value.ItemID, reward.Value.Num);
+    }
+
     private static byte[] CreateItemDataArray(
         bool masterBallEvolutionItem = false,
         bool ultraBallEvolutionItem = false,
@@ -5560,10 +5632,19 @@ public sealed class ScarletVioletBridgeTests
             subject_type: global::RaidRewardItemSubjectType.ALL,
             itemID: global::ItemID.ITEMID_MASUTAABOORU,
             num: 2);
+        var emptyReward = global::RaidFixedRewardItemInfo.CreateRaidFixedRewardItemInfo(builder);
+        var pokemonMaterialReward = global::RaidFixedRewardItemInfo.CreateRaidFixedRewardItemInfo(
+            builder,
+            category: global::RaidRewardItemCategoryType.POKE,
+            subject_type: global::RaidRewardItemSubjectType.ALL,
+            itemID: global::ItemID.ITEMID_NONE,
+            num: 3);
         var table = global::RaidFixedRewardItem.CreateRaidFixedRewardItem(
             builder,
             table_name: TeraRaidFixedRewardTableHash,
-            reward_item_00Offset: reward);
+            reward_item_00Offset: reward,
+            reward_item_01Offset: emptyReward,
+            reward_item_02Offset: pokemonMaterialReward);
         var vector = global::RaidFixedRewardItemArray.CreateValuesVector(builder, [table]);
         var root = global::RaidFixedRewardItemArray.CreateRaidFixedRewardItemArray(builder, vector);
         global::RaidFixedRewardItemArray.FinishRaidFixedRewardItemArrayBuffer(builder, root);
@@ -5580,10 +5661,19 @@ public sealed class ScarletVioletBridgeTests
             num: 1,
             rate: 25,
             rare_item_flag: true);
+        var emptyReward = global::RaidLotteryRewardItemInfo.CreateRaidLotteryRewardItemInfo(builder);
+        var teraShardReward = global::RaidLotteryRewardItemInfo.CreateRaidLotteryRewardItemInfo(
+            builder,
+            category: global::RaidRewardItemCategoryType.GEM,
+            itemID: global::ItemID.ITEMID_NONE,
+            num: 4,
+            rate: 25);
         var table = global::RaidLotteryRewardItem.CreateRaidLotteryRewardItem(
             builder,
             table_name: TeraRaidLotteryRewardTableHash,
-            reward_item_00Offset: reward);
+            reward_item_00Offset: reward,
+            reward_item_01Offset: emptyReward,
+            reward_item_02Offset: teraShardReward);
         var vector = global::RaidLotteryRewardItemArray.CreateValuesVector(builder, [table]);
         var root = global::RaidLotteryRewardItemArray.CreateRaidLotteryRewardItemArray(builder, vector);
         global::RaidLotteryRewardItemArray.FinishRaidLotteryRewardItemArrayBuffer(builder, root);

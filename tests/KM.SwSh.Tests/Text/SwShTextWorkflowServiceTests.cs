@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
@@ -72,6 +73,46 @@ public sealed class SwShTextWorkflowServiceTests
         Assert.Equal("Layered line.", entry.Value);
         Assert.Equal(ProjectFileLayer.Layered, entry.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, entry.Provenance.FileState);
+    }
+
+    [Fact]
+    public void LoadReadsLegacyAlignedLayeredMessageTables()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/pw.dat",
+            CreateTextTable("Base header.", "Base posting."));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/trname.dat",
+            CreateTextTable("Base header.", "Base trainer."));
+        var layeredPostings = CreateTextTable("Header", "Victor", "Completed");
+        var layeredTrainerNames = CreateTextTable("Header", "Lauren", "Benjamin");
+        IncludeRawZeroAlignmentInDeclaredLineLength(layeredPostings, lineIndex: 1);
+        IncludeRawZeroAlignmentInDeclaredLineLength(layeredTrainerNames, lineIndex: 1);
+        temp.WriteOutputFile("romfs/bin/message/English/common/pw.dat", layeredPostings);
+        temp.WriteOutputFile("romfs/bin/message/English/common/trname.dat", layeredTrainerNames);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShTextWorkflowService().Load(project);
+
+        var posting = Assert.Single(workflow.Entries, entry =>
+            entry.SourceFile == "romfs/bin/message/English/common/pw.dat"
+            && entry.LineIndex == 1);
+        Assert.Equal("Victor", posting.Value);
+        Assert.Equal(ProjectFileLayer.Layered, posting.Provenance.SourceLayer);
+        Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, posting.Provenance.FileState);
+        var trainerName = Assert.Single(workflow.Entries, entry =>
+            entry.SourceFile == "romfs/bin/message/English/common/trname.dat"
+            && entry.LineIndex == 1);
+        Assert.Equal("Lauren", trainerName.Value);
+        Assert.Equal(ProjectFileLayer.Layered, trainerName.Provenance.SourceLayer);
+        Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, trainerName.Provenance.FileState);
+        Assert.Equal(6, workflow.Entries.Count);
+        Assert.Equal(2, workflow.Stats.SourceFileCount);
+        Assert.DoesNotContain(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("could not be decoded", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -188,5 +229,27 @@ public sealed class SwShTextWorkflowServiceTests
     private static byte[] CreateTextTable(params string[] lines)
     {
         return SwShGameTextFile.Write(lines.Select(line => new SwShGameTextLine(line, Flags: 0)).ToArray());
+    }
+
+    private static void IncludeRawZeroAlignmentInDeclaredLineLength(byte[] data, int lineIndex)
+    {
+        var sectionStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C));
+        var sectionLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sectionStart));
+        var lineCount = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x02));
+        Assert.InRange(lineIndex, 0, lineCount - 1);
+
+        var entryOffset = sectionStart + sizeof(uint) + (lineIndex * 0x08);
+        var textOffset = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset));
+        var textLength = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(entryOffset + 0x04));
+        var nextTextOffset = lineIndex + 1 < lineCount
+            ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(entryOffset + 0x08))
+            : sectionLength;
+        var rawAlignmentOffset = checked(sectionStart + textOffset + (textLength * sizeof(ushort)));
+
+        Assert.True(textOffset + ((textLength + 1) * sizeof(ushort)) <= nextTextOffset);
+        Assert.Equal((ushort)0, BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(rawAlignmentOffset)));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(entryOffset + 0x04),
+            checked((ushort)(textLength + 1)));
     }
 }

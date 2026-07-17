@@ -222,6 +222,17 @@ function createZaMissionWorkflow(): EncountersWorkflow {
       location: 'Be a Defenseless Dodger!',
       locationDetails: 'Side Mission 173',
       locationSort: 173
+    },
+    {
+      ...makeTable(
+        'shine-bright-1',
+        'Shine Bright like a Gemstone Spawn Point 01',
+        'id_sub119',
+        [makeSlot(0, 719, 'Diancie', 'encount-data:82', 100, false, null)]
+      ),
+      location: 'Shine Bright like a Gemstone',
+      locationDetails: 'Side Mission EX1',
+      locationSort: 1001
     }
   ];
 
@@ -229,7 +240,7 @@ function createZaMissionWorkflow(): EncountersWorkflow {
     ...createZaEncountersWorkflow(),
     stats: {
       sourceFileCount: 2,
-      totalSlotCount: 2,
+      totalSlotCount: 3,
       totalTableCount: tables.length
     },
     tables
@@ -616,25 +627,26 @@ describe('Pokemon Legends Z-A wild encounters UI', () => {
     expect(within(encounterTable).queryByRole('row', { name: /^Bunnelby/ })).not.toBeInTheDocument();
   }, 30_000);
 
-  it('uses title-only side mission tabs and keeps mission numbers in selected details', async () => {
+  it('prefixes side mission tabs with mission numbers and keeps full references in selected details', async () => {
     const user = await openZaWildEncounters(createZaMissionWorkflow());
 
     expect(
-      screen.getByRole('tab', { name: 'Full Course of Battles: High Rolling' })
+      screen.getByRole('tab', { name: '73: Full Course of Battles: High Rolling' })
     ).toHaveAttribute('aria-selected', 'true');
-    expect(screen.queryByRole('tab', { name: /Mission 73/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('tab', { name: 'EX1: Shine Bright like a Gemstone' })
+    ).toBeInTheDocument();
     expect(
       within(screen.getByText('Mission', { selector: 'dt' }).parentElement!).getByText(
         'Side Mission 73'
       )
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Be a Defenseless Dodger!' }));
+    await user.click(screen.getByRole('tab', { name: '173: Be a Defenseless Dodger!' }));
 
-    expect(screen.getByRole('tab', { name: 'Be a Defenseless Dodger!' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    );
+    expect(
+      screen.getByRole('tab', { name: '173: Be a Defenseless Dodger!' })
+    ).toHaveAttribute('aria-selected', 'true');
     expect(
       within(screen.getByText('Mission', { selector: 'dt' }).parentElement!).getByText(
         'Side Mission 173'

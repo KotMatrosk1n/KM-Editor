@@ -116,13 +116,13 @@ public sealed record SwShEncounterNestArchive(IReadOnlyList<SwShEncounterNestTab
         {
             var tableVectorElementOffset = checked(
                 tableVectorOffset + sizeof(uint) + (tableIndex * sizeof(uint)));
-            var tableOffset = ReadUOffset(data, tableVectorElementOffset, targetAlignment: sizeof(ulong));
+            var tableOffset = ReadUOffset(data, tableVectorElementOffset, targetAlignment: sizeof(uint));
             var table = ReadTableLayout(
                 data,
                 tableOffset,
                 $"encounter table {tableIndex}",
                 "encounter table",
-                alignment: sizeof(ulong),
+                alignment: sizeof(uint),
                 ranges,
                 [
                     new FieldLayout(0, sizeof(ulong), sizeof(ulong)),
@@ -149,13 +149,13 @@ public sealed record SwShEncounterNestArchive(IReadOnlyList<SwShEncounterNestTab
             {
                 var entryVectorElementOffset = checked(
                     entriesVectorOffset + sizeof(uint) + (entryIndex * sizeof(uint)));
-                var entryOffset = ReadUOffset(data, entryVectorElementOffset, targetAlignment: sizeof(ulong));
+                var entryOffset = ReadUOffset(data, entryVectorElementOffset, targetAlignment: sizeof(uint));
                 var entry = ReadTableLayout(
                     data,
                     entryOffset,
                     $"encounter table {tableIndex} entry {entryIndex}",
                     "encounter entry table",
-                    alignment: sizeof(ulong),
+                    alignment: sizeof(uint),
                     ranges,
                     [
                         new FieldLayout(0, sizeof(int), sizeof(int)),
