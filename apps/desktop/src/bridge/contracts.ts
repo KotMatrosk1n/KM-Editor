@@ -2750,6 +2750,10 @@ export const encounterTableRecordSchema = z.strictObject({
   locationSort: z.number().int().nullable().optional(),
   provenance: encounterProvenanceSchema,
   slots: z.array(encounterSlotRecordSchema),
+  spawnerCategory: z
+    .enum(['spawnGroup', 'spawnPoint', 'specialEncounter', 'alpha', 'other'])
+    .nullable()
+    .optional(),
   tableDetails: z.string().nullable().optional(),
   tableLabel: z.string().nullable().optional(),
   tableId: z.string()

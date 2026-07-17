@@ -68,6 +68,9 @@ public sealed record EncounterTableRecordDto(
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LocationDetails { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpawnerCategory { get; init; }
 }
 
 public sealed record EncounterEditableFieldDto(

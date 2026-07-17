@@ -98,7 +98,7 @@ const swshFeatureFilters = new Map([
 const zaFeatureFilters = new Map([
   [
     'Data',
-    'PokemonLegendsZAProjectLoadsPokemonData|PokemonLegendsZAProjectLoadsGiftPokemonData|PokemonLegendsZAProjectLoadsTradePokemonData|PokemonLegendsZAProjectLoadsGameDefaultGiftPokemonSentinels|PokemonLegendsZALoadsSignedDefaultPokemonDataFields',
+    'PokemonLegendsZAProjectLoadsPokemonData|PokemonLegendsZAProjectLoadsGiftPokemonData|PokemonLegendsZAProjectLoadsTradePokemonData|PokemonLegendsZAProjectLoadsGameDefaultGiftPokemonSentinels|PokemonLegendsZALoadsSignedDefaultPokemonDataFields|ZaLumioseLocationLabelTests',
   ],
   ['DumpImport', 'PokemonLegendsZAGameDumpWritesImplementedCategoryFiles'],
   [
@@ -603,6 +603,7 @@ function mapDesktopChange(file) {
     add('desktop-app-tests', 'Run App regression tests after shell or shared fixture changes', `pnpm --dir apps/desktop test:run src/App.test.tsx ${appTimeout}`);
     add('desktop-fashion-unlock-ui', 'Run Fashion Unlock App regressions', `pnpm --dir apps/desktop test:run src/fashionUnlockUi.test.tsx ${appTimeout}`);
     add('desktop-gym-uniform-removal-ui', 'Run Gym Uniform Removal App regressions', `pnpm --dir apps/desktop test:run src/gymUniformRemovalUi.test.tsx ${appTimeout}`);
+    add('desktop-za-encounters-ui', 'Run Z-A Wild Encounters App regressions', `pnpm --dir apps/desktop test:run src/zaEncountersUi.test.tsx ${appTimeout}`);
     return;
   }
 
