@@ -9,6 +9,7 @@ using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.Placement;
 using KM.SwSh.Workflows;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -18,6 +19,12 @@ namespace KM.SwSh.Tests.RoyalCandy;
 
 public sealed class SwShRoyalCandyWorkflowServiceTests
 {
+    private const ulong RareCandyItemHash = 0x1111111111111111;
+    private const ulong RoyalCandyItemHash = 0x2222222222222222;
+    private const ulong UnrelatedItemHash = 0x3333333333333333;
+
+    private static readonly byte[] RaidUnrelatedMemberData = [0x10, 0x20, 0x30, 0x40];
+
     private static readonly string[] ExpectedRoyalCandyItemNameTextPaths =
     [
         "romfs/bin/message/English/common/itemname.dat",
@@ -201,10 +208,10 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.Equal("blocked", unlimited.Status);
         Assert.Equal("installed", storyLimits.Status);
         Assert.All(
-            workflow.Outputs.Where(output => output.WorkflowId == unlimited.WorkflowId && output.Status != "deferred"),
+            workflow.Outputs.Where(output => output.WorkflowId == unlimited.WorkflowId),
             output => Assert.Equal("blocked", output.Status));
         Assert.All(
-            workflow.Outputs.Where(output => output.WorkflowId == storyLimits.WorkflowId && output.Status != "deferred"),
+            workflow.Outputs.Where(output => output.WorkflowId == storyLimits.WorkflowId),
             output => Assert.Equal("review", output.Status));
         Assert.Contains(
             workflow.Diagnostics,
@@ -372,6 +379,13 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
 
         var failingWrite = plan.Writes
             .Skip(1)
+            .Where(candidate => !plan.Writes
+                .Where(other => !ReferenceEquals(other, candidate))
+                .Any(other => other.Sources.Any(source =>
+                    string.Equals(
+                        source.RelativePath,
+                        candidate.TargetRelativePath,
+                        StringComparison.OrdinalIgnoreCase))))
             .Last(write => !File.Exists(OutputPath(temp, write.TargetRelativePath)));
         var failingPath = OutputPath(temp, failingWrite.TargetRelativePath);
         Directory.CreateDirectory(failingPath);
@@ -407,7 +421,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
     }
 
     [Fact]
-    public void LoadUsesSelectedGameTextLanguageAndDoesNotRequireDeferredArchives()
+    public void LoadUsesSelectedGameTextLanguageAndPlansConcreteAcquisitionArchives()
     {
         using var temp = TemporarySwShProject.Create();
         WriteRoyalCandyBaseInputs(temp);
@@ -425,8 +439,472 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.NotEmpty(textOutputs);
         Assert.All(textOutputs, path => Assert.Contains("/French/", path, StringComparison.Ordinal));
         Assert.DoesNotContain(textOutputs, path => path.Contains("/English/", StringComparison.Ordinal));
-        Assert.Contains(workflow.Outputs, output => output.RelativePath == SwShRoyalCandyWorkflowService.NestDataPath && output.Status == "deferred");
-        Assert.Contains(workflow.Outputs, output => output.RelativePath == SwShRoyalCandyWorkflowService.PlacementPath && output.Status == "deferred");
+        Assert.Contains(
+            workflow.Outputs,
+            output => output.WorkflowId == "royal-candy-unlimited"
+                && output.RelativePath == SwShRoyalCandyWorkflowService.NestDataPath
+                && output.Status == "ready");
+        Assert.Contains(
+            workflow.Outputs,
+            output => output.WorkflowId == "royal-candy-unlimited"
+                && output.RelativePath == SwShRoyalCandyWorkflowService.PlacementPath
+                && output.Status == "ready");
+    }
+
+    [Fact]
+    public void AcquisitionPlanBindsOwnershipManifestAndEveryAuthoritativeBaseInput()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var stage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+
+        var plan = service.CreateChangePlan(temp.Paths, stage.Session);
+
+        Assert.True(plan.CanApply);
+        foreach (var relativePath in new[]
+        {
+            SwShRoyalCandyWorkflowService.ShopDataPath,
+            SwShRoyalCandyWorkflowService.NestDataPath,
+            SwShRoyalCandyWorkflowService.PlacementPath,
+        })
+        {
+            var acquisitionWrite = Assert.Single(
+                plan.Writes,
+                write => write.TargetRelativePath == relativePath);
+            Assert.Contains(
+                acquisitionWrite.Sources,
+                source => source.Layer == ProjectFileLayer.Base
+                    && source.RelativePath == relativePath);
+            Assert.Contains(
+                acquisitionWrite.Sources,
+                source => source.Layer == ProjectFileLayer.Generated
+                    && source.RelativePath == SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        }
+
+        var placementWrite = Assert.Single(
+            plan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.PlacementPath);
+        Assert.Contains(
+            placementWrite.Sources,
+            source => source.Layer == ProjectFileLayer.Base
+                && source.RelativePath == SwShRoyalCandyWorkflowService.ItemHashPath);
+
+        var manifestWrite = Assert.Single(
+            plan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        foreach (var relativePath in new[]
+        {
+            SwShRoyalCandyWorkflowService.ShopDataPath,
+            SwShRoyalCandyWorkflowService.NestDataPath,
+            SwShRoyalCandyWorkflowService.PlacementPath,
+            SwShRoyalCandyWorkflowService.ItemHashPath,
+        })
+        {
+            Assert.Contains(
+                manifestWrite.Sources,
+                source => source.Layer == ProjectFileLayer.Base
+                    && source.RelativePath == relativePath);
+        }
+    }
+
+    [Fact]
+    public void LegacyShopOnlyUninstallBindsManifestToLegacyBaseWithoutLayeredShop()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var modernBaseShopPath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var legacyBaseShopBytes = File.ReadAllBytes(modernBaseShopPath);
+        File.Delete(modernBaseShopPath);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.LegacyShopDataPath["romfs/".Length..],
+            legacyBaseShopBytes);
+        var outputBeforeInstall = SnapshotOutputTree(temp.OutputRootPath);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertValidAcquisitionOwnershipManifest(temp);
+
+        var legacyLayeredShopPath = OutputPath(
+            temp,
+            SwShRoyalCandyWorkflowService.LegacyShopDataPath);
+        Assert.True(File.Exists(legacyLayeredShopPath));
+        File.Delete(legacyLayeredShopPath);
+        Assert.False(File.Exists(OutputPath(
+            temp,
+            SwShRoyalCandyWorkflowService.ShopDataPath)));
+
+        var uninstallStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-uninstall",
+            levelCaps: null,
+            session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+
+        Assert.True(uninstallPlan.CanApply);
+        Assert.DoesNotContain(
+            uninstallPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.LegacyShopDataPath);
+        var manifestWrite = Assert.Single(
+            uninstallPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        Assert.Contains(
+            manifestWrite.Sources,
+            source => source.Layer == ProjectFileLayer.Base
+                && source.RelativePath == SwShRoyalCandyWorkflowService.LegacyShopDataPath);
+        Assert.DoesNotContain(
+            manifestWrite.Sources,
+            source => source.Layer == ProjectFileLayer.Base
+                && source.RelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+
+        var uninstall = service.ApplyChangePlan(
+            temp.Paths,
+            uninstallStage.Session,
+            uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertOutputTreeMatches(temp.OutputRootPath, outputBeforeInstall);
+    }
+
+    [Fact]
+    public void LegacyInstallCannotClaimPreexistingAcquisitionReplacementsWithoutManifest()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var manifestPath = OutputPath(
+            temp,
+            SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        Assert.True(File.Exists(manifestPath));
+        File.Delete(manifestPath);
+        var raidPath = OutputPath(temp, SwShRoyalCandyWorkflowService.NestDataPath);
+        var placementPath = OutputPath(temp, SwShRoyalCandyWorkflowService.PlacementPath);
+        var raidBefore = File.ReadAllBytes(raidPath);
+        var placementBefore = File.ReadAllBytes(placementPath);
+
+        var refreshStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var refreshPlan = service.CreateChangePlan(temp.Paths, refreshStage.Session);
+
+        Assert.False(refreshPlan.CanApply);
+        Assert.Contains(
+            refreshPlan.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("ownership manifest", StringComparison.OrdinalIgnoreCase));
+        var refresh = service.ApplyChangePlan(temp.Paths, refreshStage.Session, refreshPlan);
+        Assert.Empty(refresh.WrittenFiles);
+        Assert.Equal(raidBefore, File.ReadAllBytes(raidPath));
+        Assert.Equal(placementBefore, File.ReadAllBytes(placementPath));
+        Assert.False(File.Exists(manifestPath));
+
+        var uninstallStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-uninstall",
+            levelCaps: null,
+            session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+
+        Assert.False(uninstallPlan.CanApply);
+        Assert.Equal(
+            "blocked",
+            uninstallStage.Workflow.Workflows
+                .Single(workflow => workflow.WorkflowId == "royal-candy-uninstall")
+                .Status);
+        foreach (var relativePath in new[]
+        {
+            SwShRoyalCandyWorkflowService.NestDataPath,
+            SwShRoyalCandyWorkflowService.PlacementPath,
+        })
+        {
+            Assert.Contains(
+                uninstallStage.Workflow.Outputs,
+                output => output.WorkflowId == "royal-candy-uninstall"
+                    && output.RelativePath == relativePath
+                    && output.Status == "blocked"
+                    && output.Description.Contains("ownership manifest", StringComparison.OrdinalIgnoreCase));
+        }
+        Assert.Contains(
+            uninstallStage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("cleanup is blocked", StringComparison.OrdinalIgnoreCase));
+        var uninstall = service.ApplyChangePlan(
+            temp.Paths,
+            uninstallStage.Session,
+            uninstallPlan);
+        Assert.Empty(uninstall.WrittenFiles);
+        Assert.Equal(raidBefore, File.ReadAllBytes(raidPath));
+        Assert.Equal(placementBefore, File.ReadAllBytes(placementPath));
+        Assert.False(File.Exists(manifestPath));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InvalidOrStaleAcquisitionManifestBlocksWithoutChangingOutput(bool useStaleManifest)
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var manifestPath = OutputPath(
+            temp,
+            SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        if (useStaleManifest)
+        {
+            var manifest = SwShRoyalCandyAcquisitionOwnershipManifest.Parse(
+                File.ReadAllBytes(manifestPath));
+            File.WriteAllBytes(
+                manifestPath,
+                SwShRoyalCandyAcquisitionOwnershipManifest.Write(
+                    manifest with { BaseNestSha256 = new string('0', 64) }));
+        }
+        else
+        {
+            File.WriteAllBytes(manifestPath, [0x7B, 0x7D]);
+        }
+
+        var outputBefore = SnapshotOutputTree(temp.OutputRootPath);
+        var refreshStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var refreshPlan = service.CreateChangePlan(temp.Paths, refreshStage.Session);
+
+        Assert.False(refreshPlan.CanApply);
+        Assert.Contains(
+            refreshStage.Workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("ownership manifest", StringComparison.OrdinalIgnoreCase)
+                && diagnostic.Message.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+        var refresh = service.ApplyChangePlan(temp.Paths, refreshStage.Session, refreshPlan);
+        Assert.Empty(refresh.WrittenFiles);
+        AssertOutputTreeMatches(temp.OutputRootPath, outputBefore);
+    }
+
+    [Fact]
+    public void InstallRefreshAndUninstallReplaceAllVerifiedAcquisitionReferencesExactly()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 1128, 50]))],
+                []).Write());
+        var outputBeforeInstall = SnapshotOutputTree(temp.OutputRootPath);
+        var service = new SwShRoyalCandyEditSessionService();
+
+        var installStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+
+        Assert.True(installPlan.CanApply);
+        Assert.Contains(
+            installPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.NestDataPath);
+        Assert.Contains(
+            installPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.PlacementPath);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertInstalledAcquisitionOutputs(temp, [50, 50, 50]);
+        AssertValidAcquisitionOwnershipManifest(temp);
+        var installedOutputs = SnapshotOutputTree(temp.OutputRootPath);
+
+        var refreshStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        Assert.Equal(
+            "installed",
+            refreshStage.Workflow.Workflows
+                .Single(workflow => workflow.WorkflowId == "royal-candy-unlimited")
+                .Status);
+        var refreshPlan = service.CreateChangePlan(temp.Paths, refreshStage.Session);
+        Assert.True(refreshPlan.CanApply);
+        var refresh = service.ApplyChangePlan(temp.Paths, refreshStage.Session, refreshPlan);
+
+        Assert.DoesNotContain(refresh.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertOutputTreeMatches(temp.OutputRootPath, installedOutputs);
+        AssertInstalledAcquisitionOutputs(temp, [50, 50, 50]);
+        AssertValidAcquisitionOwnershipManifest(temp);
+
+        var uninstallStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-uninstall",
+            levelCaps: null,
+            session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        Assert.True(uninstallPlan.CanApply);
+        Assert.Contains(
+            uninstallPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.NestDataPath);
+        Assert.Contains(
+            uninstallPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.PlacementPath);
+        Assert.Contains(
+            uninstallPlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        AssertOutputTreeMatches(temp.OutputRootPath, outputBeforeInstall);
+        Assert.False(File.Exists(OutputPath(
+            temp,
+            SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath)));
+    }
+
+    [Fact]
+    public void UninstallRestoresOwnedAcquisitionSlotsAndPreservesUnrelatedArchiveMembers()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        byte[] raidMarker = [0xF0, 0x0D, 0xBA, 0xBE];
+        var raidPath = OutputPath(temp, SwShRoyalCandyWorkflowService.NestDataPath);
+        var raidPack = SwShGfPackFile.Parse(File.ReadAllBytes(raidPath));
+        raidPack.SetFileByName("unrelated.bin", raidMarker);
+        File.WriteAllBytes(raidPath, raidPack.Write());
+
+        byte[] placementMarker = [0xCA, 0xFE, 0xD0, 0x0D];
+        var placementPath = OutputPath(temp, SwShRoyalCandyWorkflowService.PlacementPath);
+        var placementPack = SwShGfPackFile.Parse(File.ReadAllBytes(placementPath));
+        placementPack.SetFileByName("ObjectNameHashTable.tbl", placementMarker);
+        File.WriteAllBytes(placementPath, placementPack.Write());
+
+        var uninstallStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-uninstall",
+            levelCaps: null,
+            session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(raidPath));
+        var restoredRaidPack = SwShGfPackFile.Parse(File.ReadAllBytes(raidPath));
+        Assert.Equal(raidMarker, restoredRaidPack.GetFileByName("unrelated.bin"));
+        AssertRaidRewardItems(
+            restoredRaidPack,
+            expectedDropItems: [50u, 777u],
+            expectedBonusItems: [1128u, 50u, 1128u]);
+
+        Assert.True(File.Exists(placementPath));
+        var restoredPlacementPack = SwShGfPackFile.Parse(File.ReadAllBytes(placementPath));
+        Assert.Equal(placementMarker, restoredPlacementPack.GetFileByName("ObjectNameHashTable.tbl"));
+        AssertPlacementItems(
+            temp,
+            restoredPlacementPack,
+            expectedFieldItemHash: RoyalCandyItemHash,
+            expectedHiddenItemHashes: [RoyalCandyItemHash, RareCandyItemHash, UnrelatedItemHash]);
+    }
+
+    [Fact]
+    public void InstalledRefreshRepairsLegacyRemovedShopSlotAndUninstallRestoresVanilla()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 1128, 51]))],
+                []).Write());
+        var service = new SwShRoyalCandyEditSessionService();
+        var installStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        var installPlan = service.CreateChangePlan(temp.Paths, installStage.Session);
+        var install = service.ApplyChangePlan(temp.Paths, installStage.Session, installPlan);
+        Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var shopPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
+        Assert.Equal(
+            [50, 50, 51],
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items);
+        File.WriteAllBytes(
+            shopPath,
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 51]))],
+                []).Write());
+
+        var refreshStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-unlimited",
+            levelCaps: null,
+            session: null);
+        Assert.Equal(
+            "installed",
+            refreshStage.Workflow.Workflows
+                .Single(workflow => workflow.WorkflowId == "royal-candy-unlimited")
+                .Status);
+        var refreshPlan = service.CreateChangePlan(temp.Paths, refreshStage.Session);
+        var refresh = service.ApplyChangePlan(temp.Paths, refreshStage.Session, refreshPlan);
+
+        Assert.DoesNotContain(refresh.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var refreshedItems =
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items;
+        Assert.Equal([50, 50, 51], refreshedItems);
+        Assert.Equal(3, refreshedItems.Count);
+
+        var uninstallStage = service.StageWorkflow(
+            temp.Paths,
+            "royal-candy-uninstall",
+            levelCaps: null,
+            session: null);
+        var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
+        var uninstall = service.ApplyChangePlan(temp.Paths, uninstallStage.Session, uninstallPlan);
+
+        Assert.DoesNotContain(uninstall.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(shopPath));
     }
 
     [Fact]
@@ -968,8 +1446,11 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.DoesNotContain(install.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         var shopPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
         Assert.Equal(
-            [777, 50, 51],
+            [777, 50, 50, 51],
             Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items);
+        Assert.Equal(
+            4,
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items.Count);
 
         var uninstallStage = service.StageWorkflow(temp.Paths, "royal-candy-uninstall", levelCaps: null, session: null);
         var uninstallPlan = service.CreateChangePlan(temp.Paths, uninstallStage.Session);
@@ -1006,7 +1487,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.Contains(
             plan.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
-                && diagnostic.Message.Contains("already missing before this workflow was installed", StringComparison.Ordinal));
+                && diagnostic.Message.Contains("already replaced or missing before this workflow was installed", StringComparison.Ordinal));
 
         var apply = service.ApplyChangePlan(temp.Paths, stage.Session, plan);
         Assert.Empty(apply.WrittenFiles);
@@ -1075,31 +1556,199 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
 
         Assert.Equal(2, mapping.BaseOccurrences);
-        Assert.Equal(2, mapping.MatchedOccurrences);
-        Assert.Equal(0, mapping.MissingOccurrences);
+        Assert.Equal(2, mapping.OriginalOccurrences);
+        Assert.Equal(0, mapping.OwnedReplacementOccurrences);
+        Assert.Equal(0, mapping.LegacyMissingOccurrences);
         Assert.Collection(
-            mapping.RemovalEdits.OrderBy(edit => edit.ShopIndex),
+            mapping.InstallEdits.OrderBy(edit => edit.ShopIndex),
             edit =>
             {
                 Assert.Equal(SwShShopKind.Multi, edit.Kind);
                 Assert.Equal(0, edit.ShopIndex);
                 Assert.Equal(0, edit.InventoryIndex);
-                Assert.Equal([99, 1, 2], edit.Items);
+                Assert.Equal([99, 1, 50, 2], edit.Items);
             },
             edit =>
             {
                 Assert.Equal(SwShShopKind.Multi, edit.Kind);
                 Assert.Equal(1, edit.ShopIndex);
                 Assert.Equal(1, edit.InventoryIndex);
-                Assert.Equal([7, 8, 100], edit.Items);
+                Assert.Equal([7, 50, 8, 100], edit.Items);
             });
 
-        var removedData = SwShShopDataFile.Parse(targetData.Write().AsSpan()).WriteEdits(mapping.RemovalEdits);
-        var restoreMapping = SwShRoyalCandyShopPatchMapper.Analyze(SwShShopDataFile.Parse(removedData), baseData);
+        var installedData = SwShShopDataFile.Parse(targetData.Write().AsSpan()).WriteEdits(mapping.InstallEdits);
+        var restoreMapping = SwShRoyalCandyShopPatchMapper.Analyze(SwShShopDataFile.Parse(installedData), baseData);
+        Assert.Equal(2, restoreMapping.OwnedReplacementOccurrences);
         var restoredData = SwShShopDataFile.Parse(
-            SwShShopDataFile.Parse(removedData).WriteEdits(restoreMapping.RestoreEdits));
+            SwShShopDataFile.Parse(installedData).WriteEdits(restoreMapping.UninstallEdits));
         Assert.Equal([99, 1, 1128, 2], restoredData.MultiShops[0].Inventories[0].Items);
         Assert.Equal([7, 1128, 8, 100], restoredData.MultiShops[1].Inventories[1].Items);
+    }
+
+    private static void AssertInstalledAcquisitionOutputs(
+        TemporarySwShProject temp,
+        IReadOnlyList<int> expectedShopItems)
+    {
+        var shopPath = OutputPath(temp, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var shopItems =
+            Assert.Single(SwShShopDataFile.Parse(File.ReadAllBytes(shopPath)).SingleShops).Inventory.Items;
+        Assert.Equal(expectedShopItems.Count, shopItems.Count);
+        Assert.Equal(expectedShopItems, shopItems);
+
+        var raidPack = SwShGfPackFile.Parse(
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.NestDataPath)));
+        Assert.Equal(RaidUnrelatedMemberData, raidPack.GetFileByName("unrelated.bin"));
+        AssertRaidRewardItems(
+            raidPack,
+            expectedDropItems: [50u, 777u],
+            expectedBonusItems: [50u, 50u, 50u]);
+
+        var placementPack = SwShGfPackFile.Parse(
+            File.ReadAllBytes(OutputPath(temp, SwShRoyalCandyWorkflowService.PlacementPath)));
+        var basePlacementPack = SwShGfPackFile.Parse(
+            File.ReadAllBytes(Path.Combine(
+                temp.BaseRomFsPath,
+                SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..]
+                    .Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(
+            basePlacementPack.GetFileByName("ObjectNameHashTable.tbl"),
+            placementPack.GetFileByName("ObjectNameHashTable.tbl"));
+        AssertPlacementItems(
+            temp,
+            placementPack,
+            expectedFieldItemHash: RareCandyItemHash,
+            expectedHiddenItemHashes: [RareCandyItemHash, RareCandyItemHash, UnrelatedItemHash]);
+    }
+
+    private static void AssertValidAcquisitionOwnershipManifest(TemporarySwShProject temp)
+    {
+        var manifestPath = OutputPath(
+            temp,
+            SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath);
+        Assert.True(File.Exists(manifestPath));
+        var inputs = SwShRoyalCandyAcquisitionOwnershipService.ReadAuthoritativeInputs(temp.Paths);
+        _ = SwShRoyalCandyAcquisitionOwnershipManifest.ParseAndValidate(
+            File.ReadAllBytes(manifestPath),
+            inputs.ShopRelativePath,
+            inputs.BaseShopBytes,
+            inputs.BaseNestBytes,
+            inputs.BasePlacementBytes,
+            inputs.BaseItemHashBytes);
+    }
+
+    private static void AssertRaidRewardItems(
+        SwShGfPackFile pack,
+        IReadOnlyList<uint> expectedDropItems,
+        IReadOnlyList<uint> expectedBonusItems)
+    {
+        var dropItems = SwShNestHoleRewardArchive.Parse(
+                pack.GetFileByName("nest_hole_drop_rewards.bin"))
+            .Tables
+            .SelectMany(table => table.Rewards)
+            .Select(reward => reward.ItemId)
+            .ToArray();
+        var bonusItems = SwShNestHoleRewardArchive.Parse(
+                pack.GetFileByName("nest_hole_bonus_rewards.bin"))
+            .Tables
+            .SelectMany(table => table.Rewards)
+            .Select(reward => reward.ItemId)
+            .ToArray();
+
+        Assert.Equal(expectedDropItems, dropItems);
+        Assert.Equal(expectedBonusItems, bonusItems);
+    }
+
+    private static void AssertPlacementItems(
+        TemporarySwShProject temp,
+        SwShGfPackFile pack,
+        ulong expectedFieldItemHash,
+        IReadOnlyList<ulong> expectedHiddenItemHashes)
+    {
+        var itemHashPath = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+        var itemIdsByHash = SwShItemHashTable.Parse(File.ReadAllBytes(itemHashPath)).ToItemIdByHash();
+        var archive = SwShPlacementZoneArchive.Parse(
+            pack.GetFileByName(SwShPlacementTestFixtures.AreaMember),
+            itemIdsByHash);
+        var zone = Assert.Single(archive.Zones);
+        var fieldItem = Assert.Single(zone.FieldItems);
+        Assert.Equal(expectedFieldItemHash, Assert.Single(fieldItem.ItemHashes));
+        var hiddenItem = Assert.Single(zone.HiddenItems);
+        Assert.Equal(
+            expectedHiddenItemHashes,
+            hiddenItem.Chances.Select(chance => chance.ItemHash).ToArray());
+    }
+
+    private static byte[] CreateRoyalCandyRaidRewardPack()
+    {
+        var dropArchive = new SwShNestHoleRewardArchive(
+        [
+            new SwShNestHoleRewardTable(
+                0xAABBCCDD00112233,
+                [
+                    new SwShNestHoleReward(100, 50, [1, 2, 3, 4, 5]),
+                    new SwShNestHoleReward(101, 777, [5, 4, 3, 2, 1]),
+                ]),
+        ]);
+        var bonusArchive = new SwShNestHoleRewardArchive(
+        [
+            new SwShNestHoleRewardTable(
+                0x1020304050607080,
+                [
+                    new SwShNestHoleReward(200, 1128, [1, 1, 1, 1, 1]),
+                    new SwShNestHoleReward(201, 50, [2, 2, 2, 2, 2]),
+                ]),
+            new SwShNestHoleRewardTable(
+                0x1020304050607081,
+                [
+                    new SwShNestHoleReward(300, 1128, [3, 3, 3, 3, 3]),
+                ]),
+        ]);
+
+        return SwShGfPackFile.Create(
+        [
+            new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", dropArchive.Write()),
+            new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", bonusArchive.Write()),
+            new SwShGfPackNamedFile("unrelated.bin", RaidUnrelatedMemberData),
+        ]).Write();
+    }
+
+    private static byte[] CreateRoyalCandyPlacementPack()
+    {
+        return SwShPlacementTestFixtures.CreatePlacementPack(
+            fieldItemHash: RoyalCandyItemHash,
+            hiddenItemChances:
+            [
+                new SwShPlacementHiddenItemChance(
+                    ChanceIndex: 0,
+                    ItemHash: RoyalCandyItemHash,
+                    ItemId: 1128,
+                    Chance: 50,
+                    Quantity: 1,
+                    ItemHashOffset: 0,
+                    ChanceOffset: 0,
+                    QuantityOffset: 0),
+                new SwShPlacementHiddenItemChance(
+                    ChanceIndex: 1,
+                    ItemHash: RareCandyItemHash,
+                    ItemId: 50,
+                    Chance: 30,
+                    Quantity: 2,
+                    ItemHashOffset: 0,
+                    ChanceOffset: 0,
+                    QuantityOffset: 0),
+                new SwShPlacementHiddenItemChance(
+                    ChanceIndex: 2,
+                    ItemHash: UnrelatedItemHash,
+                    ItemId: 777,
+                    Chance: 20,
+                    Quantity: 3,
+                    ItemHashOffset: 0,
+                    ChanceOffset: 0,
+                    QuantityOffset: 0),
+            ]);
     }
 
     private static byte[] CreateLegacyNormalizedItemHashBase()
@@ -1129,14 +1778,21 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
             new SwShItemHashTable(
             [
-                new SwShItemHashEntry(50, 0x1111111111111111),
-                new SwShItemHashEntry(1128, 0x2222222222222222),
+                new SwShItemHashEntry(50, RareCandyItemHash),
+                new SwShItemHashEntry(777, UnrelatedItemHash),
+                new SwShItemHashEntry(1128, RoyalCandyItemHash),
             ]).Write());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
             new SwShShopDataFile(
                 [new SwShSingleShopRecord(0x1234, new SwShShopInventory([50, 1128]))],
                 []).Write());
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
+            CreateRoyalCandyRaidRewardPack());
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..],
+            CreateRoyalCandyPlacementPack());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
             CreateRoyalCandyBagEventScript());

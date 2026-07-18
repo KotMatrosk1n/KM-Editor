@@ -698,6 +698,7 @@ function isRoyalCandyChangedFile(file) {
   return file.startsWith('src/KM.SwSh/RoyalCandy/')
     || file.startsWith('tests/KM.SwSh.Tests/RoyalCandy/')
     || file.includes('SwShExeFsRoyalCandyMainPatcher')
+    || file === 'src/KM.SwSh/BagHook/SwShBagHookEditSessionService.cs'
     || file === 'tests/KM.SwSh.Tests/Hooks/SwShHookReservationTests.cs';
 }
 

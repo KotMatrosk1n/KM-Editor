@@ -7,6 +7,7 @@ namespace KM.SwSh.RoyalCandy;
 internal static class SwShRoyalCandyShopPatchMapper
 {
     private const int RoyalCandyItemId = 1128;
+    private const int RareCandyItemId = 50;
 
     public static SwShRoyalCandyShopPatchMapping Analyze(
         SwShShopDataFile targetData,
@@ -15,11 +16,12 @@ internal static class SwShRoyalCandyShopPatchMapper
         ArgumentNullException.ThrowIfNull(targetData);
         ArgumentNullException.ThrowIfNull(baseData);
 
-        var removalEdits = new List<SwShShopInventoryEdit>();
-        var restoreEdits = new List<SwShShopInventoryEdit>();
+        var installEdits = new List<SwShShopInventoryEdit>();
+        var uninstallEdits = new List<SwShShopInventoryEdit>();
         var baseOccurrences = 0;
-        var matchedOccurrences = 0;
-        var missingOccurrences = 0;
+        var originalOccurrences = 0;
+        var ownedReplacementOccurrences = 0;
+        var legacyMissingOccurrences = 0;
 
         foreach (var (baseShop, baseIndex) in baseData.SingleShops.Select((shop, index) => (shop, index)))
         {
@@ -36,8 +38,8 @@ internal static class SwShRoyalCandyShopPatchMapper
                 shop => shop.Hash,
                 "single");
             AddInventoryMapping(
-                removalEdits,
-                restoreEdits,
+                installEdits,
+                uninstallEdits,
                 SwShShopKind.Single,
                 baseShop.Hash,
                 inventoryIndex: 0,
@@ -45,8 +47,9 @@ internal static class SwShRoyalCandyShopPatchMapper
                 targetData.SingleShops[targetIndex].Inventory.Items,
                 baseShop.Inventory.Items,
                 ref baseOccurrences,
-                ref matchedOccurrences,
-                ref missingOccurrences);
+                ref originalOccurrences,
+                ref ownedReplacementOccurrences,
+                ref legacyMissingOccurrences);
         }
 
         foreach (var (baseShop, baseIndex) in baseData.MultiShops.Select((shop, index) => (shop, index)))
@@ -84,8 +87,8 @@ internal static class SwShRoyalCandyShopPatchMapper
                 }
 
                 AddInventoryMapping(
-                    removalEdits,
-                    restoreEdits,
+                    installEdits,
+                    uninstallEdits,
                     SwShShopKind.Multi,
                     baseShop.Hash,
                     inventoryIndex,
@@ -93,22 +96,24 @@ internal static class SwShRoyalCandyShopPatchMapper
                     targetShop.Inventories[inventoryIndex].Items,
                     baseShop.Inventories[inventoryIndex].Items,
                     ref baseOccurrences,
-                    ref matchedOccurrences,
-                    ref missingOccurrences);
+                    ref originalOccurrences,
+                    ref ownedReplacementOccurrences,
+                    ref legacyMissingOccurrences);
             }
         }
 
         return new SwShRoyalCandyShopPatchMapping(
-            removalEdits,
-            restoreEdits,
+            installEdits,
+            uninstallEdits,
             baseOccurrences,
-            matchedOccurrences,
-            missingOccurrences);
+            originalOccurrences,
+            ownedReplacementOccurrences,
+            legacyMissingOccurrences);
     }
 
     private static void AddInventoryMapping(
-        ICollection<SwShShopInventoryEdit> removalEdits,
-        ICollection<SwShShopInventoryEdit> restoreEdits,
+        ICollection<SwShShopInventoryEdit> installEdits,
+        ICollection<SwShShopInventoryEdit> uninstallEdits,
         SwShShopKind kind,
         ulong hash,
         int inventoryIndex,
@@ -116,51 +121,68 @@ internal static class SwShRoyalCandyShopPatchMapper
         IReadOnlyList<int> targetItems,
         IReadOnlyList<int> baseItems,
         ref int baseOccurrences,
-        ref int matchedOccurrences,
-        ref int missingOccurrences)
+        ref int originalOccurrences,
+        ref int ownedReplacementOccurrences,
+        ref int legacyMissingOccurrences)
     {
         var mapping = SwShRoyalCandyShopInventoryMapper.Analyze(baseItems, targetItems);
         var inventoryBaseOccurrences = baseItems.Count(itemId => itemId == RoyalCandyItemId);
-        if (mapping.MatchedTargetSlots.Count + mapping.MissingOccurrences.Count != inventoryBaseOccurrences)
+        if (mapping.OriginalTargetSlots.Count
+                + mapping.OwnedReplacementTargetSlots.Count
+                + mapping.LegacyMissingOccurrences.Count
+            != inventoryBaseOccurrences)
         {
             throw new SwShRoyalCandyShopMappingException(
                 "The Royal Candy shop mapping did not account for every base item 1128 occurrence.");
         }
 
         baseOccurrences += inventoryBaseOccurrences;
-        matchedOccurrences += mapping.MatchedTargetSlots.Count;
-        missingOccurrences += mapping.MissingOccurrences.Count;
+        originalOccurrences += mapping.OriginalTargetSlots.Count;
+        ownedReplacementOccurrences += mapping.OwnedReplacementTargetSlots.Count;
+        legacyMissingOccurrences += mapping.LegacyMissingOccurrences.Count;
 
-        if (mapping.MatchedTargetSlots.Count > 0)
+        if (mapping.OriginalTargetSlots.Count > 0
+            || mapping.LegacyMissingOccurrences.Count > 0)
         {
-            var removedItems = targetItems.ToList();
-            foreach (var slot in mapping.MatchedTargetSlots.OrderDescending())
+            var installedItems = targetItems.ToList();
+            foreach (var slot in mapping.OriginalTargetSlots)
             {
-                removedItems.RemoveAt(slot);
+                installedItems[slot] = RareCandyItemId;
             }
 
-            removalEdits.Add(CreateSetEdit(
+            foreach (var occurrence in mapping.LegacyMissingOccurrences.OrderByDescending(occurrence => occurrence.TargetSlot))
+            {
+                installedItems.Insert(occurrence.TargetSlot, RareCandyItemId);
+            }
+
+            installEdits.Add(CreateSetEdit(
                 kind,
                 hash,
                 inventoryIndex,
                 targetShopIndex,
-                removedItems));
+                installedItems));
         }
 
-        if (mapping.MissingOccurrences.Count > 0)
+        if (mapping.OwnedReplacementTargetSlots.Count > 0
+            || mapping.LegacyMissingOccurrences.Count > 0)
         {
-            var restoredItems = targetItems.ToList();
-            foreach (var occurrence in mapping.MissingOccurrences.OrderByDescending(occurrence => occurrence.TargetSlot))
+            var uninstalledItems = targetItems.ToList();
+            foreach (var slot in mapping.OwnedReplacementTargetSlots)
             {
-                restoredItems.Insert(occurrence.TargetSlot, RoyalCandyItemId);
+                uninstalledItems[slot] = RoyalCandyItemId;
             }
 
-            restoreEdits.Add(CreateSetEdit(
+            foreach (var occurrence in mapping.LegacyMissingOccurrences.OrderByDescending(occurrence => occurrence.TargetSlot))
+            {
+                uninstalledItems.Insert(occurrence.TargetSlot, RoyalCandyItemId);
+            }
+
+            uninstallEdits.Add(CreateSetEdit(
                 kind,
                 hash,
                 inventoryIndex,
                 targetShopIndex,
-                restoredItems));
+                uninstalledItems));
         }
     }
 
@@ -224,6 +246,7 @@ internal static class SwShRoyalCandyShopPatchMapper
 internal static class SwShRoyalCandyShopInventoryMapper
 {
     private const int RoyalCandyItemId = 1128;
+    private const int RareCandyItemId = 50;
 
     public static SwShRoyalCandyShopInventoryMapping Analyze(
         IReadOnlyList<int> baseItems,
@@ -235,8 +258,9 @@ internal static class SwShRoyalCandyShopInventoryMapper
         var prefix = BuildPrefixEditDistances(baseItems, targetItems);
         var suffix = BuildSuffixEditDistances(baseItems, targetItems);
         var totalDistance = prefix[baseItems.Count, targetItems.Count];
-        var matchedSlots = new List<int>();
-        var missingOccurrences = new List<SwShRoyalCandyMissingShopOccurrence>();
+        var originalSlots = new List<int>();
+        var ownedReplacementSlots = new List<int>();
+        var legacyMissingOccurrences = new List<SwShRoyalCandyMissingShopOccurrence>();
 
         foreach (var (itemId, baseIndex) in baseItems.Select((itemId, index) => (itemId, index)))
         {
@@ -245,67 +269,95 @@ internal static class SwShRoyalCandyShopInventoryMapper
                 continue;
             }
 
-            var matchCandidates = Enumerable.Range(0, targetItems.Count)
+            var originalCandidates = Enumerable.Range(0, targetItems.Count)
                 .Where(targetIndex => targetItems[targetIndex] == RoyalCandyItemId
-                    && prefix[baseIndex, targetIndex] + suffix[baseIndex + 1, targetIndex + 1] == totalDistance)
+                    && prefix[baseIndex, targetIndex]
+                        + AlignmentCost.ExactMatch
+                        + suffix[baseIndex + 1, targetIndex + 1]
+                    == totalDistance)
+                .ToArray();
+            var replacementCandidates = Enumerable.Range(0, targetItems.Count)
+                .Where(targetIndex => targetItems[targetIndex] == RareCandyItemId
+                    && prefix[baseIndex, targetIndex]
+                        + AlignmentCost.OwnedReplacement
+                        + suffix[baseIndex + 1, targetIndex + 1]
+                    == totalDistance)
                 .ToArray();
             var deletionCandidates = Enumerable.Range(0, targetItems.Count + 1)
-                .Where(targetIndex => prefix[baseIndex, targetIndex] + 1 + suffix[baseIndex + 1, targetIndex] == totalDistance)
+                .Where(targetIndex => prefix[baseIndex, targetIndex]
+                    + AlignmentCost.StructuralEdit
+                    + suffix[baseIndex + 1, targetIndex]
+                    == totalDistance)
                 .ToArray();
 
-            if (matchCandidates.Length > 1
-                || deletionCandidates.Length > 1
-                || (matchCandidates.Length == 1 && deletionCandidates.Length == 1)
-                || (matchCandidates.Length == 0 && deletionCandidates.Length == 0))
+            if (originalCandidates.Length
+                    + replacementCandidates.Length
+                    + deletionCandidates.Length
+                != 1)
             {
                 throw new SwShRoyalCandyShopMappingException(
-                    $"Base Royal Candy shop occurrence at slot {baseIndex} cannot be isolated uniquely after unrelated inventory edits.");
+                    $"Base item 1128 shop occurrence at slot {baseIndex} cannot be classified uniquely as original, Royal Candy-owned item 50 replacement, or legacy missing after unrelated inventory edits.");
             }
 
-            if (matchCandidates.Length == 1)
+            if (originalCandidates.Length == 1)
             {
-                matchedSlots.Add(matchCandidates[0]);
+                originalSlots.Add(originalCandidates[0]);
+            }
+            else if (replacementCandidates.Length == 1)
+            {
+                ownedReplacementSlots.Add(replacementCandidates[0]);
             }
             else
             {
-                missingOccurrences.Add(new SwShRoyalCandyMissingShopOccurrence(baseIndex, deletionCandidates[0]));
+                legacyMissingOccurrences.Add(new SwShRoyalCandyMissingShopOccurrence(baseIndex, deletionCandidates[0]));
             }
         }
 
-        if (matchedSlots.Count != matchedSlots.Distinct().Count())
+        var mappedTargetSlots = originalSlots
+            .Concat(ownedReplacementSlots)
+            .ToArray();
+        if (mappedTargetSlots.Length != mappedTargetSlots.Distinct().Count())
         {
             throw new SwShRoyalCandyShopMappingException(
                 "Multiple base Royal Candy shop occurrences resolve to the same target slot.");
         }
 
-        return new SwShRoyalCandyShopInventoryMapping(matchedSlots, missingOccurrences);
+        return new SwShRoyalCandyShopInventoryMapping(
+            originalSlots,
+            ownedReplacementSlots,
+            legacyMissingOccurrences);
     }
 
-    private static int[,] BuildPrefixEditDistances(
+    private static AlignmentCost[,] BuildPrefixEditDistances(
         IReadOnlyList<int> baseItems,
         IReadOnlyList<int> targetItems)
     {
-        var distances = new int[baseItems.Count + 1, targetItems.Count + 1];
+        var distances = new AlignmentCost[baseItems.Count + 1, targetItems.Count + 1];
         for (var baseIndex = 0; baseIndex <= baseItems.Count; baseIndex++)
         {
-            distances[baseIndex, 0] = baseIndex;
+            distances[baseIndex, 0] = AlignmentCost.StructuralEdit * baseIndex;
         }
 
         for (var targetIndex = 0; targetIndex <= targetItems.Count; targetIndex++)
         {
-            distances[0, targetIndex] = targetIndex;
+            distances[0, targetIndex] = AlignmentCost.StructuralEdit * targetIndex;
         }
 
         for (var baseIndex = 1; baseIndex <= baseItems.Count; baseIndex++)
         {
             for (var targetIndex = 1; targetIndex <= targetItems.Count; targetIndex++)
             {
-                var best = Math.Min(
-                    distances[baseIndex - 1, targetIndex] + 1,
-                    distances[baseIndex, targetIndex - 1] + 1);
-                if (baseItems[baseIndex - 1] == targetItems[targetIndex - 1])
+                var best = AlignmentCost.Min(
+                    distances[baseIndex - 1, targetIndex] + AlignmentCost.StructuralEdit,
+                    distances[baseIndex, targetIndex - 1] + AlignmentCost.StructuralEdit);
+                if (TryGetMatchCost(
+                    baseItems[baseIndex - 1],
+                    targetItems[targetIndex - 1],
+                    out var matchCost))
                 {
-                    best = Math.Min(best, distances[baseIndex - 1, targetIndex - 1]);
+                    best = AlignmentCost.Min(
+                        best,
+                        distances[baseIndex - 1, targetIndex - 1] + matchCost);
                 }
 
                 distances[baseIndex, targetIndex] = best;
@@ -315,31 +367,38 @@ internal static class SwShRoyalCandyShopInventoryMapper
         return distances;
     }
 
-    private static int[,] BuildSuffixEditDistances(
+    private static AlignmentCost[,] BuildSuffixEditDistances(
         IReadOnlyList<int> baseItems,
         IReadOnlyList<int> targetItems)
     {
-        var distances = new int[baseItems.Count + 1, targetItems.Count + 1];
+        var distances = new AlignmentCost[baseItems.Count + 1, targetItems.Count + 1];
         for (var baseIndex = baseItems.Count; baseIndex >= 0; baseIndex--)
         {
-            distances[baseIndex, targetItems.Count] = baseItems.Count - baseIndex;
+            distances[baseIndex, targetItems.Count] =
+                AlignmentCost.StructuralEdit * (baseItems.Count - baseIndex);
         }
 
         for (var targetIndex = targetItems.Count; targetIndex >= 0; targetIndex--)
         {
-            distances[baseItems.Count, targetIndex] = targetItems.Count - targetIndex;
+            distances[baseItems.Count, targetIndex] =
+                AlignmentCost.StructuralEdit * (targetItems.Count - targetIndex);
         }
 
         for (var baseIndex = baseItems.Count - 1; baseIndex >= 0; baseIndex--)
         {
             for (var targetIndex = targetItems.Count - 1; targetIndex >= 0; targetIndex--)
             {
-                var best = Math.Min(
-                    distances[baseIndex + 1, targetIndex] + 1,
-                    distances[baseIndex, targetIndex + 1] + 1);
-                if (baseItems[baseIndex] == targetItems[targetIndex])
+                var best = AlignmentCost.Min(
+                    distances[baseIndex + 1, targetIndex] + AlignmentCost.StructuralEdit,
+                    distances[baseIndex, targetIndex + 1] + AlignmentCost.StructuralEdit);
+                if (TryGetMatchCost(
+                    baseItems[baseIndex],
+                    targetItems[targetIndex],
+                    out var matchCost))
                 {
-                    best = Math.Min(best, distances[baseIndex + 1, targetIndex + 1]);
+                    best = AlignmentCost.Min(
+                        best,
+                        distances[baseIndex + 1, targetIndex + 1] + matchCost);
                 }
 
                 distances[baseIndex, targetIndex] = best;
@@ -348,18 +407,93 @@ internal static class SwShRoyalCandyShopInventoryMapper
 
         return distances;
     }
+
+    private static bool TryGetMatchCost(
+        int baseItemId,
+        int targetItemId,
+        out AlignmentCost cost)
+    {
+        if (baseItemId == targetItemId)
+        {
+            cost = AlignmentCost.ExactMatch;
+            return true;
+        }
+
+        if (baseItemId == RoyalCandyItemId && targetItemId == RareCandyItemId)
+        {
+            cost = AlignmentCost.OwnedReplacement;
+            return true;
+        }
+
+        cost = default;
+        return false;
+    }
+
+    private readonly record struct AlignmentCost(
+        int StructuralEdits,
+        int OwnedReplacements) : IComparable<AlignmentCost>
+    {
+        public static AlignmentCost ExactMatch => default;
+
+        public static AlignmentCost OwnedReplacement => new(0, 1);
+
+        public static AlignmentCost StructuralEdit => new(1, 0);
+
+        public static AlignmentCost operator +(AlignmentCost left, AlignmentCost right)
+        {
+            return new AlignmentCost(
+                checked(left.StructuralEdits + right.StructuralEdits),
+                checked(left.OwnedReplacements + right.OwnedReplacements));
+        }
+
+        public static AlignmentCost operator *(AlignmentCost value, int multiplier)
+        {
+            return new AlignmentCost(
+                checked(value.StructuralEdits * multiplier),
+                checked(value.OwnedReplacements * multiplier));
+        }
+
+        public static AlignmentCost Min(AlignmentCost first, AlignmentCost second)
+        {
+            return first.CompareTo(second) <= 0 ? first : second;
+        }
+
+        public int CompareTo(AlignmentCost other)
+        {
+            var structuralComparison = StructuralEdits.CompareTo(other.StructuralEdits);
+            return structuralComparison != 0
+                ? structuralComparison
+                : OwnedReplacements.CompareTo(other.OwnedReplacements);
+        }
+    }
 }
 
 internal sealed record SwShRoyalCandyShopInventoryMapping(
-    IReadOnlyList<int> MatchedTargetSlots,
-    IReadOnlyList<SwShRoyalCandyMissingShopOccurrence> MissingOccurrences);
+    IReadOnlyList<int> OriginalTargetSlots,
+    IReadOnlyList<int> OwnedReplacementTargetSlots,
+    IReadOnlyList<SwShRoyalCandyMissingShopOccurrence> LegacyMissingOccurrences)
+{
+    public IReadOnlyList<int> MatchedTargetSlots => OriginalTargetSlots;
+
+    public IReadOnlyList<SwShRoyalCandyMissingShopOccurrence> MissingOccurrences => LegacyMissingOccurrences;
+}
 
 internal sealed record SwShRoyalCandyShopPatchMapping(
-    IReadOnlyList<SwShShopInventoryEdit> RemovalEdits,
-    IReadOnlyList<SwShShopInventoryEdit> RestoreEdits,
+    IReadOnlyList<SwShShopInventoryEdit> InstallEdits,
+    IReadOnlyList<SwShShopInventoryEdit> UninstallEdits,
     int BaseOccurrences,
-    int MatchedOccurrences,
-    int MissingOccurrences);
+    int OriginalOccurrences,
+    int OwnedReplacementOccurrences,
+    int LegacyMissingOccurrences)
+{
+    public IReadOnlyList<SwShShopInventoryEdit> RemovalEdits => InstallEdits;
+
+    public IReadOnlyList<SwShShopInventoryEdit> RestoreEdits => UninstallEdits;
+
+    public int MatchedOccurrences => OriginalOccurrences;
+
+    public int MissingOccurrences => LegacyMissingOccurrences;
+}
 
 internal sealed record SwShRoyalCandyMissingShopOccurrence(int BaseSlot, int TargetSlot);
 

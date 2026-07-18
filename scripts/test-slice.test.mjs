@@ -41,6 +41,19 @@ test('Royal Candy hook test changes split the former mega-class into exhaustive 
   assert.doesNotMatch(output, /--filter "FullyQualifiedName~SwShHookReservationTests"/);
 });
 
+test('Bag Hook cleanup integration uses the bounded Royal Candy route without a duplicate hook matrix', () => {
+  const output = runChangedPrint([
+    'src/KM.SwSh/BagHook/SwShBagHookEditSessionService.cs',
+    'src/KM.SwSh/RoyalCandy/SwShRoyalCandyCleanup.cs',
+  ]);
+
+  assertRoyalCandyPlan(output);
+  assert.doesNotMatch(
+    output,
+    /FullyQualifiedName~BagHook\|FullyQualifiedName~SwShHookReservationTests/,
+  );
+});
+
 test('other Sword and Shield editors retain their existing focused routing', () => {
   const output = runChangedPrint([
     'src/KM.SwSh/CatchCap/SwShCatchCapWorkflowService.cs',

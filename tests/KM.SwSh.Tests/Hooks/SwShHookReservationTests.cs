@@ -3579,9 +3579,102 @@ public sealed class SwShHookReservationTests
                         new SwShShopInventory([3, 4]),
                     ])])
                 .Write());
+        WriteRoyalCandyAcquisitionInputs(temp);
         temp.WriteBaseExeFsFile("main", CreateSharedHookNso(game));
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(game == ProjectGame.Sword ? SwordTitleId : ShieldTitleId));
         return temp;
+    }
+
+    private static void WriteRoyalCandyAcquisitionInputs(TemporarySwShProject temp)
+    {
+        var itemHashes = SwShItemHashTable.Parse(File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "item",
+            "item_hash_to_index.dat"))).ToHashByItemId();
+        var rareCandyHash = itemHashes[50];
+        var expCandyXlHash = itemHashes[1128];
+
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "nest_hole_drop_rewards.bin",
+                    new SwShNestHoleRewardArchive(
+                    [
+                        new SwShNestHoleRewardTable(
+                            0x1020304050607080,
+                            [new SwShNestHoleReward(10, 50, [1, 2, 3, 4, 5])]),
+                    ]).Write()),
+                new SwShGfPackNamedFile(
+                    "nest_hole_bonus_rewards.bin",
+                    new SwShNestHoleRewardArchive(
+                    [
+                        new SwShNestHoleRewardTable(
+                            0x8877665544332211,
+                            [
+                                new SwShNestHoleReward(20, 1128, [0, 0, 1, 2, 3]),
+                                new SwShNestHoleReward(21, 50, [1, 2, 3, 4, 5]),
+                            ]),
+                    ]).Write()),
+            ]).Write());
+
+        const string areaName = "a_hook_royal_candy";
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..],
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "AreaNameHashTable.tbl",
+                    new SwShAhtbFile(
+                    [
+                        new SwShAhtbEntry(SwShGfPackFile.HashFnv1a64(areaName), areaName),
+                    ]).Write()),
+                new SwShGfPackNamedFile(
+                    areaName + ".bin",
+                    new SwShPlacementZoneArchive(
+                    [
+                        new SwShPlacementZone(
+                            ZoneIndex: 0,
+                            ZoneId: 0x1122334455667788,
+                            ObjectHash: 0x8877665544332211,
+                            Transform: new SwShPlacementTransform(0, 0, 0, 0),
+                            FieldItems: [],
+                            HiddenItems:
+                            [
+                                new SwShPlacementHiddenItem(
+                                    ObjectIndex: 0,
+                                    Transform: new SwShPlacementTransform(12, 0, -5, 180),
+                                    Chances:
+                                    [
+                                        new SwShPlacementHiddenItemChance(
+                                            ChanceIndex: 0,
+                                            ItemHash: expCandyXlHash,
+                                            ItemId: 1128,
+                                            Chance: 25,
+                                            Quantity: 1,
+                                            ItemHashOffset: 0,
+                                            ChanceOffset: 0,
+                                            QuantityOffset: 0),
+                                        new SwShPlacementHiddenItemChance(
+                                            ChanceIndex: 1,
+                                            ItemHash: rareCandyHash,
+                                            ItemId: 50,
+                                            Chance: 75,
+                                            Quantity: 2,
+                                            ItemHashOffset: 0,
+                                            ChanceOffset: 0,
+                                            QuantityOffset: 0),
+                                    ],
+                                    TransformOffsets: new PlacementTransformOffsets(0, 0, 0, 0)),
+                            ]),
+                    ],
+                    Hash: 0x0123456789ABCDEF,
+                    Description: "sanitized hook placement archive",
+                    SourceData: []).Write()),
+            ]).Write());
     }
 
     private static TemporarySwShProject CreateHookProjectWithFpsAnchors(ProjectGame game)
@@ -3830,8 +3923,6 @@ public sealed class SwShHookReservationTests
             [SwShRoyalCandyWorkflowService.ItemPath] = [0xA0, 0x01, 0x02, 0x03],
             [SwShRoyalCandyWorkflowService.ItemHashPath] = [0xB0, 0x01, 0x02, 0x03],
             [SwShRoyalCandyWorkflowService.ShopDataPath] = [0xC0, 0x01, 0x02, 0x03],
-            [SwShRoyalCandyWorkflowService.NestDataPath] = [0xD0, 0x01, 0x02, 0x03],
-            [SwShRoyalCandyWorkflowService.PlacementPath] = [0xE0, 0x01, 0x02, 0x03],
         };
 
         foreach (var (relativePath, contents) in files)

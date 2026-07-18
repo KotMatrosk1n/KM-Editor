@@ -21,6 +21,7 @@ public sealed class SwShRoyalCandyWorkflowService
     public const string LegacyShopDataPath = "romfs/bin/app/shop/shop_data.bin";
     public const string NestDataPath = "romfs/bin/archive/field/resident/data_table.gfpak";
     public const string PlacementPath = "romfs/bin/archive/field/resident/placement.gfpak";
+    public const string AcquisitionOwnershipManifestPath = ".km-editor/royal-candy-acquisition-manifest.json";
     public const string BagEventScriptPath = "romfs/bin/script/amx/main_event_0020.amx";
     public const string ExeFsMainPath = "exefs/main";
     public const string ExeFsNpdmPath = "exefs/main.npdm";
@@ -56,7 +57,9 @@ public sealed class SwShRoyalCandyWorkflowService
     [
         new("item-data", "RomFS", "Item data", [ItemPath], "RomFS data", "Appends the Rare Candy template as a unique Royal Candy key-item row and points item 1128 at it."),
         new("item-hash", "RomFS", "Item hash table", [ItemHashPath], "RomFS data", "Preserves the existing item hash lookup while verifying item 1128 is present."),
-        new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Removes the vanilla Exp. Candy XL shop listing that would become purchasable Royal Candy."),
+        new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Replaces every verified vanilla Exp. Candy XL shop listing with Rare Candy."),
+        new("nest-data", "RomFS", "Raid reward data", [NestDataPath], "RomFS archive", "Replaces every verified vanilla Exp. Candy XL raid reward with Rare Candy."),
+        new("placement-data", "RomFS", "Placement data", [PlacementPath], "RomFS archive", "Replaces every verified vanilla Exp. Candy XL overworld pickup with Rare Candy."),
         new("bag-event-script", "RomFS", "Bag event script", [BagEventScriptPath], "RomFS script", "Validates the bag event script source used by the grant workflow."),
         new("exefs-main", "ExeFS", "ExeFS main", [ExeFsMainPath], "ExeFS NSO", "Validates the NSO source used by Royal Candy UI and usage patches."),
     ];
@@ -485,6 +488,20 @@ public sealed class SwShRoyalCandyWorkflowService
             "shop-data-shape",
             "Shop data",
             bytes => _ = SwShShopDataFile.Parse(bytes));
+        AddDecodedInputCheck(
+            project,
+            checks,
+            sourceMap.GetValueOrDefault(NestDataPath),
+            "nest-data-shape",
+            "Raid reward data",
+            bytes => _ = SwShGfPackFile.Parse(bytes));
+        AddDecodedInputCheck(
+            project,
+            checks,
+            sourceMap.GetValueOrDefault(PlacementPath),
+            "placement-data-shape",
+            "Placement data",
+            bytes => _ = SwShGfPackFile.Parse(bytes));
         AddDecodedInputCheck(
             project,
             checks,
@@ -1047,7 +1064,7 @@ public sealed class SwShRoyalCandyWorkflowService
             new(1, "Validate sources", "Resolve required RomFS files, a supported ExeFS main, optional main.npdm, and the selected item text language set from the project graph."),
             new(2, "Prepare item records", $"Append a unique Royal Candy item row from item {RareCandyItemId} into item {RoyalCandyItemId} and preserve item hash lookup data."),
             new(3, "Patch item text", "Patch Royal Candy names and descriptions in every applicable itemname table for the selected game-text language."),
-            new(4, "Plan acquisition edits", "Patch the verified shop and Bag Hook targets while keeping raid reward and placement integrations explicitly deferred."),
+            new(4, "Replace vanilla acquisition references", "Replace every verified vanilla Exp. Candy XL shop, raid reward, and overworld pickup reference with Rare Candy while preserving unrelated layered changes."),
             new(5, "Validate ExeFS anchors", "Verify the Royal Candy reserved item-route/decrement anchors are vanilla, already KM-owned, or blocked as a foreign signature before writing."),
         };
 
@@ -1077,9 +1094,10 @@ public sealed class SwShRoyalCandyWorkflowService
 
         yield return CreateOutput(workflowId, ItemPath, FindSource(sourceMap, ItemPath), "RomFS data", outputStatus, "Royal Candy item row patch.");
         yield return CreateOutput(workflowId, ItemHashPath, FindSource(sourceMap, ItemHashPath), "RomFS data", outputStatus, "Royal Candy item hash lookup patch.");
-        yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Royal Candy shop inventory cleanup.");
-        yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", "deferred", "Reserved future Royal Candy raid reward integration; this workflow does not write the archive.");
-        yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", "deferred", "Reserved future Royal Candy placement integration; this workflow does not write the archive.");
+        yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Replace verified vanilla Exp. Candy XL shop listings with Rare Candy.");
+        yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", outputStatus, "Replace verified vanilla Exp. Candy XL raid rewards with Rare Candy.");
+        yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", outputStatus, "Replace verified vanilla Exp. Candy XL overworld pickups with Rare Candy.");
+        yield return CreateOutput(workflowId, AcquisitionOwnershipManifestPath, sourceEntry: null, "Ownership manifest", outputStatus, "Record KM ownership of the verified acquisition substitutions for safe refresh and uninstall.");
         yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "Bag Hook slot", outputStatus, "Royal Candy Bag Hook slot 1 grant.");
         yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
 
@@ -1141,9 +1159,13 @@ public sealed class SwShRoyalCandyWorkflowService
         var shopEntries = hasIdentifyingOutput
             ? FindRoyalCandyShopOutputs(project)
             : Array.Empty<ProjectFileGraphEntry>();
+        var acquisitionEntries = hasIdentifyingOutput
+            ? FindRoyalCandyAcquisitionOutputs(project)
+            : Array.Empty<ProjectFileGraphEntry>();
         var itemHashEntry = hasIdentifyingOutput ? FindBaseIdenticalItemHashOutput(project) : null;
         var cleanupOutputCount = installationState.LayeredEntries.Count
             + shopEntries.Count
+            + acquisitionEntries.Count
             + (itemHashEntry is null ? 0 : 1)
             + (bagHookEntry is null ? 0 : 1)
             + cleanupBlockers.Count;
@@ -1172,13 +1194,15 @@ public sealed class SwShRoyalCandyWorkflowService
             ? CreateProvenance(installationState.LayeredEntries[0])
             : shopEntries.Count > 0
                 ? CreateProvenance(shopEntries[0])
-                : itemHashEntry is not null
-                    ? CreateProvenance(itemHashEntry)
-                    : bagHookEntry is not null
-                        ? CreateProvenance(bagHookEntry)
-                        : cleanupBlockers.Count > 0
-                            ? CreateProvenance(cleanupBlockers[0].Entry)
-                            : GeneratedProvenance;
+                : acquisitionEntries.Count > 0
+                    ? CreateProvenance(acquisitionEntries[0])
+                    : itemHashEntry is not null
+                        ? CreateProvenance(itemHashEntry)
+                        : bagHookEntry is not null
+                            ? CreateProvenance(bagHookEntry)
+                            : cleanupBlockers.Count > 0
+                                ? CreateProvenance(cleanupBlockers[0].Entry)
+                                : GeneratedProvenance;
 
         workflows.Add(new SwShRoyalCandyWorkflowRecord(
             UninstallWorkflowId,
@@ -1189,12 +1213,12 @@ public sealed class SwShRoyalCandyWorkflowService
             RoyalCandyItemId,
             RareCandyItemId,
             status,
-            "Safely removes reviewed Royal Candy output, restores the verified item 1128 mapping, clears Bag Hook slot 1, restores Royal Candy-owned shop entries, and restores only Royal Candy-owned ExeFS bytes.",
+            "Safely removes reviewed Royal Candy output, restores the verified item 1128 mapping, clears Bag Hook slot 1, restores Royal Candy-owned acquisition references, and restores only Royal Candy-owned ExeFS bytes.",
             Array.Empty<SwShRoyalCandyLevelCapRecord>(),
             [
                 new(1, "Inspect output root", "Find known Royal Candy LayeredFS files without reading or changing base RomFS/ExeFS."),
                 new(2, "Review leftovers", "Review detected Royal Candy output files and ExeFS state before cleanup."),
-                new(3, "Clean LayeredFS output", "Remove reviewed Royal Candy output while preserving Bag Hook, Starting Items, and Catch Cap when present."),
+                new(3, "Clean LayeredFS output", "Restore reviewed Royal Candy-owned shop, raid reward, and overworld pickup references while preserving unrelated layered changes."),
             ],
             provenance));
 
@@ -1227,7 +1251,18 @@ public sealed class SwShRoyalCandyWorkflowService
                 shopEntry,
                 "Shop data",
                 "review",
-                "Detected Royal Candy shop inventory patch; cleanup will restore only base Exp. Candy XL item 1128 shop entries."));
+                "Detected Royal Candy shop inventory patch; cleanup will restore only verified vanilla Exp. Candy XL shop entries."));
+        }
+
+        foreach (var acquisitionEntry in acquisitionEntries)
+        {
+            outputs.Add(CreateOutput(
+                UninstallWorkflowId,
+                acquisitionEntry.RelativePath,
+                acquisitionEntry,
+                "Acquisition data",
+                "review",
+                "Detected Royal Candy acquisition substitutions; cleanup will restore only verified vanilla Exp. Candy XL references."));
         }
 
         if (itemHashEntry is not null)
@@ -1358,11 +1393,29 @@ public sealed class SwShRoyalCandyWorkflowService
         OpenedProject project,
         IReadOnlyList<MessageTextSet> selectedTextSets)
     {
+        var acquisitionOwnership = SwShRoyalCandyAcquisitionOwnershipService.Inspect(project);
         var layeredEntries = GetKnownRoyalCandyLayeredEntries(project)
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .ToArray();
+        if (acquisitionOwnership.State == SwShRoyalCandyAcquisitionOwnershipState.Invalid)
+        {
+            var conflictEntries = acquisitionOwnership.Entry is null
+                ? layeredEntries
+                : layeredEntries
+                    .Append(acquisitionOwnership.Entry)
+                    .DistinctBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
+                    .ToArray();
+            return new RoyalCandyInstallationState(
+                RoyalCandyInstallKind.UnknownConflict,
+                null,
+                conflictEntries,
+                acquisitionOwnership.Message);
+        }
+
         var identifyingEntries = layeredEntries
-            .Where(entry => !string.Equals(entry.RelativePath, ItemHashPath, StringComparison.OrdinalIgnoreCase))
+            .Where(entry => !string.Equals(entry.RelativePath, ItemHashPath, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(entry.RelativePath, AcquisitionOwnershipManifestPath, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         if (identifyingEntries.Length == 0)
@@ -1646,8 +1699,22 @@ public sealed class SwShRoyalCandyWorkflowService
 
     private static IEnumerable<ProjectFileGraphEntry> GetKnownRoyalCandyLayeredEntries(OpenedProject project)
     {
+        var acquisitionOwnership = SwShRoyalCandyAcquisitionOwnershipService.Inspect(project);
+        if (acquisitionOwnership.IsValid && acquisitionOwnership.Entry is not null)
+        {
+            yield return acquisitionOwnership.Entry;
+        }
+
         foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
+            if (string.Equals(
+                entry.RelativePath,
+                AcquisitionOwnershipManifestPath,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (string.Equals(entry.RelativePath, ItemPath, StringComparison.OrdinalIgnoreCase))
             {
                 if (SwShRoyalCandyCleanup.HasRoyalCandyItemData(project, entry))
@@ -1893,6 +1960,17 @@ public sealed class SwShRoyalCandyWorkflowService
             .ToArray();
     }
 
+    private static IReadOnlyList<ProjectFileGraphEntry> FindRoyalCandyAcquisitionOutputs(OpenedProject project)
+    {
+        return project.FileGraph.Entries
+            .Where(entry => entry.LayeredFile is not null
+                && (string.Equals(entry.RelativePath, NestDataPath, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(entry.RelativePath, PlacementPath, StringComparison.OrdinalIgnoreCase)))
+            .Where(entry => SwShRoyalCandyCleanup.HasRoyalCandyAcquisitionPatch(project, entry))
+            .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static bool HasRoyalCandyShopPatch(OpenedProject project, ProjectFileGraphEntry entry)
     {
         var sourcePath = ResolveSourcePath(project.Paths, entry);
@@ -1906,7 +1984,7 @@ public sealed class SwShRoyalCandyWorkflowService
         {
             var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(sourcePath));
             var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
-            return HasMissingBaseRoyalCandyShopEntry(targetData, baseData);
+            return HasRoyalCandyShopReplacement(targetData, baseData);
         }
         catch (InvalidDataException)
         {
@@ -1918,9 +1996,11 @@ public sealed class SwShRoyalCandyWorkflowService
         return false;
     }
 
-    private static bool HasMissingBaseRoyalCandyShopEntry(SwShShopDataFile targetData, SwShShopDataFile baseData)
+    private static bool HasRoyalCandyShopReplacement(SwShShopDataFile targetData, SwShShopDataFile baseData)
     {
-        return SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData).MissingOccurrences > 0;
+        var mapping = SwShRoyalCandyShopPatchMapper.Analyze(targetData, baseData);
+        return mapping.OwnedReplacementOccurrences > 0
+            || mapping.LegacyMissingOccurrences > 0;
     }
 
     private static bool IsItemMessageOutputPath(string relativePath)
