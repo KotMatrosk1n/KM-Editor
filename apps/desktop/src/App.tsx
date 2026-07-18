@@ -43995,10 +43995,6 @@ function getEditSessionSignature(editSession: EditSession | null) {
 }
 
 function delay(milliseconds: number) {
-  if (import.meta.env.MODE === 'test') {
-    return Promise.resolve();
-  }
-
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, milliseconds);
   });

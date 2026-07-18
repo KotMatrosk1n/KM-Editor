@@ -158,27 +158,6 @@ public sealed class SwShModMergerWorkflowService
         return new SwShModMergerStageResult(workflow, preview, diagnostics);
     }
 
-    internal SwShModMergerApplyResult ApplyWithoutReviewForTesting(
-        ProjectPaths paths,
-        string? modDirectory1,
-        string? modDirectory2,
-        IReadOnlyList<string> selectedDirectory1Files,
-        IReadOnlyList<string> selectedDirectory2Files,
-        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
-        string? mergeMode = null)
-    {
-        return ApplyCore(
-            paths,
-            modDirectory1,
-            modDirectory2,
-            selectedDirectory1Files,
-            selectedDirectory2Files,
-            resolutions,
-            mergeMode,
-            reviewToken: null,
-            requireReviewToken: false);
-    }
-
     [Obsolete("Call Stage, review the preview, then call ApplyReviewed with its ReviewToken.")]
     public SwShModMergerApplyResult Apply(
         ProjectPaths paths,

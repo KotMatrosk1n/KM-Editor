@@ -1,6 +1,6 @@
 # Contributing to KM Editor
 
-KM Editor supports Pokemon Sword and Shield, Pokemon Scarlet and Violet, and Pokemon Legends Z-A mod projects. Contributions are welcome across the desktop app, backend workflows, binary formats, tests, documentation, localization, and issue reports.
+KM Editor supports Pokemon Sword and Shield, Pokemon Scarlet and Violet, and Pokemon Legends Z-A mod projects. Contributions are welcome across the desktop app, backend workflows, binary formats, documentation, localization, and issue reports.
 
 The best contribution is not necessarily the largest one. A focused fix that preserves someone else's project is worth far more than a heroic rewrite that eats their output folder.
 
@@ -49,17 +49,9 @@ pnpm install --frozen-lockfile
 dotnet restore .\KM.Editor.slnx
 ```
 
-Start the complete desktop development environment with `pnpm tauri:dev`. The root `package.json` remains the source of truth for development, build, and test scripts.
+Start the complete desktop development environment with `pnpm tauri:dev`. The root `package.json` remains the source of truth for development and build scripts.
 
-The repository provides three main test scopes:
-
-| Scope | Use it for |
-| --- | --- |
-| `test:changed` | The normal development loop. It selects tests from tracked and untracked source changes. |
-| `test:fast` | A broader confidence check without the full suite cost. |
-| `test:full` | Broad changes, shared infrastructure, and release preparation. |
-
-Use `test:changed:print` to inspect the selected slice before running it. Pull requests also run bounded validation jobs automatically.
+Run `pnpm check` before submitting a change. It checks tracked workspace paths, builds the desktop app, and builds the .NET solution. Pull requests run the same product build checks automatically.
 
 ## Make changes that are safe to review
 
@@ -79,11 +71,9 @@ Avoid unrelated formatting or generated file churn. Do not commit local output, 
 
 External projects may be useful research references, but their source, namespaces, generated types, and comments do not automatically belong in KM Editor. Follow their licenses, document permitted provenance for maintainers, and use KM owned names in original project code.
 
-## Tests and documentation
+## Verification and documentation
 
-Add the smallest test that proves a new rule or prevents a meaningful regression. Prefer backend or format tests for binary behavior, focused component tests for visible controls, and only a small shell test when navigation or application wiring is the behavior under test.
-
-Temporary probes and highly specific debugging tests should be removed when their job is done. Keep durable coverage only where it continues to protect behavior that could realistically regress. Do not duplicate the same assertion across every layer.
+Verify the affected workflow with the relevant supported game and a disposable output folder. Check both the visible editor result and the files written by apply, restore, cleanup, or uninstall actions. Remove temporary probes, generated projects, and debugging artifacts after verification.
 
 Update public documentation when behavior, supported fields, project setup, output ownership, or troubleshooting steps change. Public text should describe shipped behavior, not private research history or local development context.
 
@@ -92,7 +82,7 @@ Update public documentation when behavior, supported fields, project setup, outp
 Before opening a pull request, make sure:
 
 * The change is scoped and unrelated local work is excluded.
-* Changed behavior is covered at the cheapest useful test layer.
+* Changed behavior was manually verified in the affected workflow.
 * Temporary files, diagnostics, and private data are absent from the diff.
 * Output ownership and cleanup behavior are explained when relevant.
 * User documentation is updated when the workflow changed.

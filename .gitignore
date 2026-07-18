@@ -40,15 +40,6 @@ node_modules/
 *.msi
 *.pdb
 
-## Test and coverage output
-TestResults/
-test-results/
-coverage/
-coverage-*/
-playwright-report/
-*.coverage
-*.coveragexml
-
 ## Root-level local game data and generated output
 /romfs/
 /exefs/
@@ -85,4 +76,3 @@ playwright-report/
 
 ## Private fixtures
 /fixtures/private/
-/tests/fixtures/private/

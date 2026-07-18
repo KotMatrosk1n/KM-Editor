@@ -9,10 +9,4 @@
     <Project Path="src/KM.Tools/KM.Tools.csproj" />
     <Project Path="src/KM.ZA/KM.ZA.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/KM.Core.Tests/KM.Core.Tests.csproj" />
-    <Project Path="tests/KM.Formats.Tests/KM.Formats.Tests.csproj" />
-    <Project Path="tests/KM.Integration.Tests/KM.Integration.Tests.csproj" />
-    <Project Path="tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj" />
-  </Folder>
 </Solution>

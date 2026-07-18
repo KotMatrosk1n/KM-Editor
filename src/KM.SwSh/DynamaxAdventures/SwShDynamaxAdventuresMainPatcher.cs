@@ -293,32 +293,6 @@ internal static class SwShDynamaxAdventuresMainPatcher
         return output;
     }
 
-    // Compatibility primitive retained for focused patcher tests. Product apply uses Reconcile so
-    // the effective table is always evaluated against a verified base archive and executable.
-    public static byte[] Apply(
-        byte[] mainBytes,
-        SwShDynamaxAdventureArchive archive,
-        bool patchCommandValidatorMirrors)
-    {
-        ArgumentNullException.ThrowIfNull(mainBytes);
-        ArgumentNullException.ThrowIfNull(archive);
-
-        var nso = NsoFile.Parse(mainBytes);
-        ValidateRequiredSegmentHashes(nso);
-        var layout = FindLayout(nso.BuildId)
-            ?? throw new InvalidDataException("Dynamax Adventures supports only recognized full 32-byte Sword/Shield 1.3.2 build identities.");
-        var text = nso.Text.DecompressedData.ToArray();
-        var ro = nso.Ro.DecompressedData.ToArray();
-
-        WriteSummary(ro, archive.Entries);
-        if (patchCommandValidatorMirrors)
-        {
-            PatchCommandValidatorMirrors(text, layout.CommandValidatorOffsetDelta);
-        }
-
-        return nso.Write(textDecompressedData: text, roDecompressedData: ro);
-    }
-
     public static byte[] RestoreFromBase(byte[] currentMainBytes, byte[] baseMainBytes, int entryCount)
     {
         ArgumentNullException.ThrowIfNull(currentMainBytes);

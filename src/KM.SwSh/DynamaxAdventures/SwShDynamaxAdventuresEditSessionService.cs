@@ -33,12 +33,6 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         this.dynamaxAdventuresWorkflowService = dynamaxAdventuresWorkflowService ?? new SwShDynamaxAdventuresWorkflowService();
     }
 
-    internal static SwShDynamaxAdventuresEditSessionService CreateForSyntheticTests()
-    {
-        return new SwShDynamaxAdventuresEditSessionService(
-            dynamaxAdventuresWorkflowService: SwShDynamaxAdventuresWorkflowService.CreateForSyntheticTests());
-    }
-
     public EditSession StartSession()
     {
         return EditSession.Start();

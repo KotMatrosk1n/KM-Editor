@@ -37,9 +37,8 @@ changelog:
         - release
         - packaging
         - desktop
-    - title: Tests & Maintenance
+    - title: Maintenance
       labels:
-        - tests
         - maintenance
         - refactor
     - title: Other Changes
