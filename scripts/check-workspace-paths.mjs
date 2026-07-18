@@ -12,7 +12,6 @@ const blockedPrefixes = [
   'tmp/',
   'temp/',
   'fixtures/private/',
-  'tests/fixtures/private/',
 ];
 
 const blockedExactPaths = new Set([

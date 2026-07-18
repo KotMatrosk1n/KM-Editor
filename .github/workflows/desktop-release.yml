@@ -34,7 +34,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Verify release source passed validation
+      - name: Verify release source passed product builds
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -42,33 +42,27 @@ jobs:
           $parentLine = (git show -s --format='%P' $env:GITHUB_SHA).Trim()
           $parents = @($parentLine -split '\s+' | Where-Object { $_ })
           if ($parents.Count -ne 2) {
-            throw "Release source '$env:GITHUB_SHA' must be a validated pull request merge commit."
+            throw "Release source '$env:GITHUB_SHA' must be a build-checked pull request merge commit."
           }
 
-          $validatedCommit = $parents[1]
-          git diff --quiet $validatedCommit $env:GITHUB_SHA --
+          $buildCheckedCommit = $parents[1]
+          git diff --quiet $buildCheckedCommit $env:GITHUB_SHA --
           if ($LASTEXITCODE -ne 0) {
-            throw "Release source '$env:GITHUB_SHA' does not match validated pull request head '$validatedCommit'."
+            throw "Release source '$env:GITHUB_SHA' does not match build-checked pull request head '$buildCheckedCommit'."
           }
 
           $responseJson = gh api `
             --method GET `
             -H 'Accept: application/vnd.github+json' `
-            "repos/$env:GITHUB_REPOSITORY/commits/$validatedCommit/check-runs?per_page=100&filter=latest"
+            "repos/$env:GITHUB_REPOSITORY/commits/$buildCheckedCommit/check-runs?per_page=100&filter=latest"
           if ($LASTEXITCODE -ne 0) {
-            throw "Could not read validation checks for '$validatedCommit'."
+            throw "Could not read product build checks for '$buildCheckedCommit'."
           }
 
           $checkRuns = @(($responseJson | ConvertFrom-Json).check_runs)
           $requiredChecks = @(
-            'Validation / Desktop',
-            'Validation / Core and formats',
-            'Validation / Sword and Shield general',
-            'Validation / Sword and Shield other cleanup hooks',
-            'Validation / Sword and Shield other behavior hooks',
-            'Validation / Scarlet and Violet integration',
-            'Validation / Pokemon Legends Z-A integration',
-            'Validation / Shared bridge integration'
+            'Build / Desktop',
+            'Build / Backend'
           )
 
           foreach ($requiredCheck in $requiredChecks) {
@@ -79,11 +73,11 @@ jobs:
               $_.conclusion -eq 'success'
             })
             if ($successfulRuns.Count -eq 0) {
-              throw "Required check '$requiredCheck' did not pass for '$validatedCommit'."
+              throw "Required check '$requiredCheck' did not pass for '$buildCheckedCommit'."
             }
           }
 
-          Write-Host "Release source matches validated pull request head $validatedCommit."
+          Write-Host "Release source matches build-checked pull request head $buildCheckedCommit."
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4

@@ -11,27 +11,10 @@ namespace KM.SwSh.DynamaxAdventures;
 public sealed class SwShDynamaxAdventureSeedPlanningService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
-    private readonly bool allowSyntheticTestTables;
 
     public SwShDynamaxAdventureSeedPlanningService(ProjectWorkspaceService? projectWorkspaceService = null)
-        : this(projectWorkspaceService, allowSyntheticTestTables: false)
-    {
-    }
-
-    private SwShDynamaxAdventureSeedPlanningService(
-        ProjectWorkspaceService? projectWorkspaceService,
-        bool allowSyntheticTestTables)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        this.allowSyntheticTestTables = allowSyntheticTestTables;
-    }
-
-    internal static SwShDynamaxAdventureSeedPlanningService CreateForSyntheticTests(
-        ProjectWorkspaceService? projectWorkspaceService = null)
-    {
-        return new SwShDynamaxAdventureSeedPlanningService(
-            projectWorkspaceService,
-            allowSyntheticTestTables: true);
     }
 
     public SwShDynamaxAdventureSeedPlanResult Predict(
@@ -332,8 +315,7 @@ public sealed class SwShDynamaxAdventureSeedPlanningService
 
             var baseBytes = SwShDynamaxAdventuresWorkflowService.ReadBoundedDynamaxAdventureTable(baseAdventurePath);
             var baseArchive = SwShDynamaxAdventureArchive.Parse(baseBytes);
-            if (!allowSyntheticTestTables
-                && !SwShDynamaxAdventuresWorkflowService.IsCanonicalBaseDynamaxAdventureTable(baseBytes, baseArchive))
+            if (!SwShDynamaxAdventuresWorkflowService.IsCanonicalBaseDynamaxAdventureTable(baseBytes, baseArchive))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,

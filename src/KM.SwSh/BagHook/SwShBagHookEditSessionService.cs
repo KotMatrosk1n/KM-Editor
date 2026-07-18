@@ -709,14 +709,56 @@ public sealed class SwShBagHookEditSessionService
             {
                 new(ProjectFileLayer.Layered, entry.RelativePath),
             };
-            if (isBagHookOutput || SwShRoyalCandyCleanup.IsCleanupOutputPath(entry.RelativePath))
+            var isAcquisitionOwnershipManifest = string.Equals(
+                entry.RelativePath,
+                SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath,
+                StringComparison.OrdinalIgnoreCase);
+            if ((isBagHookOutput || SwShRoyalCandyCleanup.IsCleanupOutputPath(entry.RelativePath))
+                && !isAcquisitionOwnershipManifest)
             {
                 sources.Add(new ProjectFileReference(ProjectFileLayer.Base, entry.RelativePath));
             }
 
+            if (isAcquisitionOwnershipManifest)
+            {
+                var ownershipInputs =
+                    SwShRoyalCandyAcquisitionOwnershipService.ReadAuthoritativeInputs(paths);
+                sources.Add(new ProjectFileReference(
+                    ProjectFileLayer.Base,
+                    ownershipInputs.ShopRelativePath));
+                sources.Add(new ProjectFileReference(
+                    ProjectFileLayer.Base,
+                    SwShRoyalCandyWorkflowService.NestDataPath));
+                sources.Add(new ProjectFileReference(
+                    ProjectFileLayer.Base,
+                    SwShRoyalCandyWorkflowService.PlacementPath));
+                sources.Add(new ProjectFileReference(
+                    ProjectFileLayer.Base,
+                    SwShRoyalCandyWorkflowService.ItemHashPath));
+            }
+            else if (IsRoyalCandyAcquisitionOutput(entry.RelativePath))
+            {
+                sources.Add(new ProjectFileReference(
+                    ProjectFileLayer.Generated,
+                    SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath));
+                if (string.Equals(
+                    entry.RelativePath,
+                    SwShRoyalCandyWorkflowService.PlacementPath,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    sources.Add(new ProjectFileReference(
+                        ProjectFileLayer.Base,
+                        SwShRoyalCandyWorkflowService.ItemHashPath));
+                }
+            }
+
             writes[entry.RelativePath] = new PlannedFileWrite(
                 entry.RelativePath,
-                sources,
+                sources
+                    .Distinct()
+                    .OrderBy(source => source.Layer)
+                    .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+                    .ToArray(),
                 ReplacesExistingOutput: true,
                 isBagHookOutput
                     ? "Uninstall Bag Hook V2 and remove all dependent startup item grants."
@@ -731,7 +773,35 @@ public sealed class SwShBagHookEditSessionService
                 expected: "Bag Hook output or dependent Royal Candy text, shop, or ExeFS output"));
         }
 
-        return writes.Values.ToArray();
+        return writes.Values
+            .OrderBy(write => string.Equals(
+                write.TargetRelativePath,
+                SwShRoyalCandyWorkflowService.AcquisitionOwnershipManifestPath,
+                StringComparison.OrdinalIgnoreCase)
+                ? 1
+                : 0)
+            .ThenBy(write => write.TargetRelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static bool IsRoyalCandyAcquisitionOutput(string relativePath)
+    {
+        return string.Equals(
+                relativePath,
+                SwShRoyalCandyWorkflowService.ShopDataPath,
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                relativePath,
+                SwShRoyalCandyWorkflowService.LegacyShopDataPath,
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                relativePath,
+                SwShRoyalCandyWorkflowService.NestDataPath,
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                relativePath,
+                SwShRoyalCandyWorkflowService.PlacementPath,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private static PendingEdit CreatePendingEdit(ProjectFileReference source)

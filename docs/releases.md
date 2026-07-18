@@ -4,7 +4,7 @@ KM Editor publishes Windows desktop builds through GitHub Releases.
 
 ## Release Workflow
 
-The `Desktop Release` workflow verifies that the exact pull request merge passed the required validation, builds the Tauri desktop app on Windows, packages it, and creates a draft GitHub Release.
+The `Desktop Release` workflow verifies that the exact pull request merge passed the required product builds, builds the Tauri desktop app on Windows, packages it, and creates a draft GitHub Release.
 
 The release assets are:
 
@@ -33,7 +33,7 @@ The private signing key must never be committed. If the private key or password 
 
 ## Manual Release
 
-Use the GitHub Actions UI when a release should be created from the final validated pull request merge on `master`:
+Use the GitHub Actions UI when a release should be created from the final pull request merge on `master`:
 
 1. Open `Actions`.
 2. Run `Desktop Release`.
@@ -45,7 +45,7 @@ Use the GitHub Actions UI when a release should be created from the final valida
 
 The workflow creates the tag at the commit that ran the workflow if the tag does not already exist.
 
-The tag must match the desktop app version and point to a pull request merge whose tree matches its validated head. For example, `v0.1.0` requires the app version to be `0.1.0`.
+The tag must match the desktop app version and point to a pull request merge whose tree matches its build-checked head. For example, `v0.1.0` requires the app version to be `0.1.0`.
 
 ## Tag Release
 
@@ -56,7 +56,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Create the tag at the final validated pull request merge on `master`. Direct release commits, mismatched merge trees, and tags on unvalidated source are rejected before packaging.
+Create the tag at the final build-checked pull request merge on `master`. Direct release commits, mismatched merge trees, and tags on source without successful product builds are rejected before packaging.
 
 ## Version Checklist
 

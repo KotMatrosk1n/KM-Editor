@@ -24,14 +24,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "types": [
-      "vitest/globals",
-      "@testing-library/jest-dom"
-    ]
+    "jsx": "react-jsx"
   },
   "include": [
-    "src",
-    "vitest.setup.ts"
+    "src"
   ]
 }

@@ -16,8 +16,6 @@ namespace KM.SwSh.DynamaxAdventures;
 
 public sealed class SwShDynamaxAdventuresWorkflowService
 {
-    private readonly bool allowSyntheticTestTables;
-
     public const string SpeciesField = "species";
     public const string FormField = "form";
     public const string LevelField = "level";
@@ -194,16 +192,6 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     public SwShDynamaxAdventuresWorkflowService()
     {
-    }
-
-    internal SwShDynamaxAdventuresWorkflowService(bool allowSyntheticTestTables)
-    {
-        this.allowSyntheticTestTables = allowSyntheticTestTables;
-    }
-
-    internal static SwShDynamaxAdventuresWorkflowService CreateForSyntheticTests()
-    {
-        return new SwShDynamaxAdventuresWorkflowService(allowSyntheticTestTables: true);
     }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -1469,8 +1457,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             var data = ReadBoundedDynamaxAdventureTable(sourcePath);
             var archive = SwShDynamaxAdventureArchive.Parse(data);
             parsedSourcePaths.Add(Path.GetFullPath(sourcePath));
-            if (!allowSyntheticTestTables
-                && !IsCanonicalBaseDynamaxAdventureTable(data, archive))
+            if (!IsCanonicalBaseDynamaxAdventureTable(data, archive))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -1790,7 +1777,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     internal bool AcceptsBaseTable(byte[] data, SwShDynamaxAdventureArchive archive)
     {
-        return allowSyntheticTestTables || IsCanonicalBaseDynamaxAdventureTable(data, archive);
+        return IsCanonicalBaseDynamaxAdventureTable(data, archive);
     }
 
     internal static byte[] ReadBoundedDynamaxAdventureTable(string path)
@@ -1828,11 +1815,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         ArgumentNullException.ThrowIfNull(sourceArchive);
         ArgumentNullException.ThrowIfNull(baseArchive);
 
-        var expectedRowCount = allowSyntheticTestTables
-            ? baseArchive.Entries.Count
-            : CanonicalBaseTableRowCount;
-        return baseArchive.Entries.Count == expectedRowCount
-            && sourceArchive.Entries.Count == expectedRowCount
+        return baseArchive.Entries.Count == CanonicalBaseTableRowCount
+            && sourceArchive.Entries.Count == CanonicalBaseTableRowCount
             && sourceArchive.Entries.Select((entry, index) => (entry, index)).All(pair =>
                 pair.entry.EntryIndex == pair.index
                 && pair.entry.Species is >= short.MinValue and <= short.MaxValue

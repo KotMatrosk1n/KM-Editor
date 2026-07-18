@@ -587,31 +587,6 @@ public sealed class SwShDynamaxAdventureSaveSeedService
         }
     }
 
-    internal ReplacementResult ReplaceWithVerifiedRollbackForTests(
-        string savePath,
-        byte[] replacementBytes,
-        Func<bool> verifyReplacement,
-        Action? beforeReplacement = null)
-    {
-        var sourceSnapshot = CaptureFileSnapshot(savePath);
-        var replacementPath = WriteUniqueSiblingFile(savePath, "tmp", replacementBytes);
-        var replacementSnapshot = CaptureSnapshot(replacementBytes);
-        try
-        {
-            beforeReplacement?.Invoke();
-            return ReplaceWithVerifiedRollback(
-                savePath,
-                replacementPath,
-                sourceSnapshot,
-                replacementSnapshot,
-                verifyReplacement);
-        }
-        finally
-        {
-            DeleteTempFile(replacementPath);
-        }
-    }
-
     private static string CreateUniqueSiblingPath(string savePath, string purpose)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(savePath)) ?? string.Empty;

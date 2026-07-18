@@ -79,17 +79,16 @@ See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for the
 ```powershell
 pnpm install --frozen-lockfile
 dotnet restore .\KM.Editor.slnx
-pnpm test:changed
+pnpm check
 pnpm tauri:dev
 ```
 
-Use `pnpm test:full` for broad shared changes and release preparation. Installer and updater release builds also require the signing configuration described in [`docs/releases.md`](docs/releases.md).
+Use `pnpm check` to verify workspace hygiene and compile the desktop and backend projects. Installer and updater release builds also require the signing configuration described in [`docs/releases.md`](docs/releases.md).
 
 ## Repository Map
 
 - [`src/`](src/) contains backend workflows, binary formats, API contracts, and the bridge host.
 - [`apps/desktop/`](apps/desktop/) contains the React, TypeScript, Vite, and Tauri desktop app.
-- [`tests/`](tests/) contains format, backend, integration, and desktop coverage.
 - [`docs/`](docs/) contains release and repository documentation.
 
 Contributions are welcome. Read [Contributing](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md), and the [Security Policy](SECURITY.md) before submitting changes or reports. See [Contributors](CONTRIBUTORS.md) for project credits.

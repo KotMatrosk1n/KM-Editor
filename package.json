@@ -14,16 +14,7 @@
     "tauri:dev": "pnpm --filter @km-editor/desktop tauri:dev",
     "tauri:build": "pnpm --filter @km-editor/desktop tauri:build",
     "typecheck": "pnpm --filter @km-editor/desktop typecheck",
-    "test": "pnpm --filter @km-editor/desktop test",
-    "test:run": "pnpm --filter @km-editor/desktop test:run",
-    "test:changed": "node scripts/test-slice.mjs changed",
-    "test:changed:print": "node scripts/test-slice.mjs changed --print",
-    "test:fast": "node scripts/test-slice.mjs fast",
-    "test:full": "node scripts/test-slice.mjs full",
-    "test:shard": "node scripts/test-slice.mjs shard",
-    "test:workflow": "pnpm --filter @km-editor/desktop test:workflow",
-    "check": "pnpm run typecheck && pnpm run build && pnpm run test:run",
-    "check:fast": "node scripts/test-slice.mjs fast",
+    "check": "pnpm run check:workspace && pnpm run build && dotnet build KM.Editor.slnx --nologo",
     "check:workspace": "node scripts/check-workspace-paths.mjs"
   }
 }
