@@ -46,6 +46,7 @@ export function WorkflowsSection({
   isHyperspaceBypassLoading,
   isIvScreenLoading,
   isTypeChartLoading,
+  isAngeFightLoading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
   isNpcItemGiftLoading,
@@ -70,6 +71,7 @@ export function WorkflowsSection({
   onOpenHyperspaceBypassWorkflow,
   onOpenIvScreenWorkflow,
   onOpenTypeChartWorkflow,
+  onOpenAngeFightWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -121,6 +123,7 @@ export function WorkflowsSection({
   isHyperspaceBypassLoading: boolean;
   isIvScreenLoading: boolean;
   isTypeChartLoading: boolean;
+  isAngeFightLoading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
   isNpcItemGiftLoading: boolean;
@@ -145,6 +148,7 @@ export function WorkflowsSection({
   onOpenHyperspaceBypassWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
   onOpenTypeChartWorkflow: () => void;
+  onOpenAngeFightWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -199,6 +203,7 @@ export function WorkflowsSection({
   }
 
   const actions: Record<string, WorkflowActionConfig> = {
+    angeFight: action('Open Ange Fight', isAngeFightLoading, onOpenAngeFightWorkflow),
     bagHook: action('Open Bag Hook', isBagHookLoading, onOpenBagHookWorkflow),
     behavior: action('Open Behavior', isBehaviorLoading, onOpenBehaviorWorkflow),
     catchCap: action('Open Catch Cap', isCatchCapLoading, onOpenCatchCapWorkflow),

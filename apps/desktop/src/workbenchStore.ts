@@ -39,6 +39,7 @@ import {
   type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
+import { type AngeFightWorkflow } from './bridge/angeFightContracts';
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
@@ -73,6 +74,7 @@ export type WorkbenchSection =
   | 'hyperTraining'
   | 'shinyRate'
   | 'typeChart'
+  | 'angeFight'
   | 'fairyGymBoosts'
   | 'fashionUnlock' | 'gymUniformRemoval' | 'hyperspaceBypass' | 'ivScreen'
   | 'exefsPatches'
@@ -115,6 +117,7 @@ type WorkbenchState = {
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
   shinyRateWorkflow: ShinyRateWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
+  angeFightWorkflow: AngeFightWorkflow | null;
   fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
   fashionUnlockWorkflow: FashionUnlockWorkflow | null; gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null; hyperspaceBypassWorkflow: HyperspaceBypassWorkflow | null; ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
@@ -206,6 +209,7 @@ type WorkbenchState = {
   setHyperTrainingWorkflow: (hyperTrainingWorkflow: HyperTrainingWorkflow) => void;
   setShinyRateWorkflow: (shinyRateWorkflow: ShinyRateWorkflow) => void;
   setTypeChartWorkflow: (typeChartWorkflow: TypeChartWorkflow) => void;
+  setAngeFightWorkflow: (angeFightWorkflow: AngeFightWorkflow) => void;
   setFairyGymBoostsWorkflow: (fairyGymBoostsWorkflow: FairyGymBoostsWorkflow) => void;
   setFashionUnlockWorkflow: (fashionUnlockWorkflow: FashionUnlockWorkflow) => void;
   setGymUniformRemovalWorkflow: (
@@ -400,6 +404,7 @@ function createLoadedWorkflowResetState(): Partial<WorkbenchState> {
     hyperTrainingWorkflow: null,
     shinyRateWorkflow: null,
     typeChartWorkflow: null,
+    angeFightWorkflow: null,
     fairyGymBoostsWorkflow: null,
     fashionUnlockWorkflow: null,
     gymUniformRemovalWorkflow: null, hyperspaceBypassWorkflow: null, ivScreenWorkflow: null,
@@ -503,6 +508,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   hyperTrainingWorkflow: null,
   shinyRateWorkflow: null,
   typeChartWorkflow: null,
+  angeFightWorkflow: null,
   fairyGymBoostsWorkflow: null,
   fashionUnlockWorkflow: null,
   gymUniformRemovalWorkflow: null, hyperspaceBypassWorkflow: null, ivScreenWorkflow: null,
@@ -771,6 +777,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       hyperTrainingWorkflow: null,
       shinyRateWorkflow: null,
       typeChartWorkflow: null,
+      angeFightWorkflow: null,
       fairyGymBoostsWorkflow: null,
       fashionUnlockWorkflow: null,
       gymUniformRemovalWorkflow: null,
@@ -1116,6 +1123,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'typeChart'),
       typeChartWorkflow
+    })),
+  setAngeFightWorkflow: (angeFightWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'angeFight'),
+      angeFightWorkflow
     })),
   setFairyGymBoostsWorkflow: (fairyGymBoostsWorkflow) =>
     set((state) => ({

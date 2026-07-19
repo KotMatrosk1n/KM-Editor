@@ -20,6 +20,9 @@ public static class ZaDataPaths
     public const string ItemBallSpawnerTransformArray = "world/ik_data/field/spawner_transform_data/itemball_spawner_transform/itemball_spawner_transform/itemball_spawner_transform_array.bin";
     public const string RandomPopItemSpawnerDataArray = "world/ik_data/field/random_pop_item_spawner/random_pop_item_spawner_data/random_pop_item_spawner_data_array.bin";
     public const string BattleTrainerSpawnerDataArray = "world/ik_data/field/npc_spawner/za_battle_trainer_spawner_data/za_battle_trainer_spawner_data/za_battle_trainer_spawner_data_array.bin";
+    public const string FieldWazagimmickPublic = "world/ik_data/field/field_wazagimmick_public/field_wazagimmick_public/field_wazagimmick_public.bin";
+    public const string AiAttackParamArray = "param_ai/data/ai/attack/attack_param/attack_param_array.bin";
+    public const string AiBulletParamArray = "param_ai/data/ai/bullet/bullet_param/bullet_param_array.bin";
     public const string ShopItemArray = "world/exl/shop/shop/shop_item.bin";
     public const string ShopItemLineupArray = "world/exl/shop/shop_item_lineup/shop_item_lineup.bin";
     public const string ShopDressUpArray = "world/exl/shop/shop/shop_dressup.bin";

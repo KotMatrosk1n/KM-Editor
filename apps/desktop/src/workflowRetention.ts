@@ -8,6 +8,7 @@ export const workflowRetentionMaxUnits = 60_000;
 export const workflowRetentionMinimumRecent = 2;
 
 export const workflowStoreKeyBySection = {
+  angeFight: 'angeFightWorkflow',
   bagHook: 'bagHookWorkflow',
   behavior: 'behaviorWorkflow',
   catchCap: 'catchCapWorkflow',
@@ -77,6 +78,7 @@ type WorkflowRetentionLimits = {
 };
 
 const pendingEditSectionByDomain: Readonly<Record<string, RetainedWorkflowSection>> = {
+  'workflow.angeFight': 'angeFight',
   'workflow.bagHook': 'bagHook',
   'workflow.behavior': 'behavior',
   'workflow.catchCap': 'catchCap',

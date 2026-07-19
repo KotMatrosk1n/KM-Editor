@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Security.Cryptography;
+using System.Text;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.ZA.AngeFight;
 using KM.ZA.DumpImport;
 using KM.ZA.Encounters;
 using KM.ZA.Gifts;
@@ -38,6 +41,7 @@ public sealed class ZaWorkflowService
     private readonly ZaGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly ZaTradePokemonWorkflowService tradePokemonWorkflowService;
     private readonly ZaTypeChartWorkflowService typeChartWorkflowService;
+    private readonly ZaAngeFightWorkflowService angeFightWorkflowService;
     private readonly ZaDumpImportWorkflowService dumpImportWorkflowService;
     private readonly ZaDumpImportExecutionService dumpImportExecutionService;
     private readonly ZaModMergerWorkflowService modMergerWorkflowService;
@@ -53,6 +57,7 @@ public sealed class ZaWorkflowService
     private readonly ZaGiftPokemonEditSessionService giftPokemonEditSessionService;
     private readonly ZaTradePokemonEditSessionService tradePokemonEditSessionService;
     private readonly ZaTypeChartEditSessionService typeChartEditSessionService;
+    private readonly ZaAngeFightEditSessionService angeFightEditSessionService;
 
     public ZaWorkflowService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -73,6 +78,7 @@ public sealed class ZaWorkflowService
         giftPokemonWorkflowService = new ZaGiftPokemonWorkflowService(fileSource);
         tradePokemonWorkflowService = new ZaTradePokemonWorkflowService(fileSource);
         typeChartWorkflowService = new ZaTypeChartWorkflowService();
+        angeFightWorkflowService = new ZaAngeFightWorkflowService(fileSource);
         dumpImportWorkflowService = new ZaDumpImportWorkflowService(itemsWorkflowService);
         modMergerWorkflowService = new ZaModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new ZaItemsEditSessionService(
@@ -122,6 +128,10 @@ public sealed class ZaWorkflowService
         typeChartEditSessionService = new ZaTypeChartEditSessionService(
             this.projectWorkspaceService,
             typeChartWorkflowService);
+        angeFightEditSessionService = new ZaAngeFightEditSessionService(
+            this.projectWorkspaceService,
+            fileSource,
+            angeFightWorkflowService);
         dumpImportExecutionService = new ZaDumpImportExecutionService(
             this.projectWorkspaceService,
             itemsWorkflowService,
@@ -187,6 +197,7 @@ public sealed class ZaWorkflowService
             itemsWorkflowService.CreateSummary(project),
             shopsWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
+            angeFightWorkflowService.CreateSummary(project),
             dumpImportWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
@@ -303,6 +314,14 @@ public sealed class ZaWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return typeChartWorkflowService.Load(project);
+    }
+
+    public ZaAngeFightWorkflow LoadAngeFight(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return angeFightWorkflowService.Load(project);
     }
 
     public ZaModMergerWorkflow LoadModMerger(
@@ -545,6 +564,21 @@ public sealed class ZaWorkflowService
         return typeChartEditSessionService.StageUninstall(paths, session);
     }
 
+    public ZaAngeFightEditResult StageAngeFight(
+        ProjectPaths paths,
+        ZaAngeFightSettings settings,
+        EditSession? session = null)
+    {
+        return angeFightEditSessionService.StageSettings(paths, settings, session);
+    }
+
+    public ZaAngeFightEditResult StageAngeFightUninstall(
+        ProjectPaths paths,
+        EditSession? session = null)
+    {
+        return angeFightEditSessionService.StageUninstall(paths, session);
+    }
+
     public ZaEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
         var domain = GetDomain(session);
@@ -588,6 +622,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
+            ZaEditSessionDomain.AngeFight => angeFightEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => pokemonEditSessionService.Validate(paths, session),
         };
@@ -613,6 +648,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session, outputMode),
+            ZaEditSessionDomain.AngeFight => angeFightEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
         };
@@ -639,6 +675,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
+            ZaEditSessionDomain.AngeFight => angeFightEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
         };
@@ -763,6 +800,7 @@ public sealed class ZaWorkflowService
             [ZaEditSessionSupport.GiftPokemonDomain] => ZaEditSessionDomain.GiftPokemon,
             [ZaEditSessionSupport.TradePokemonDomain] => ZaEditSessionDomain.TradePokemon,
             [ZaEditSessionSupport.TypeChartDomain] => ZaEditSessionDomain.TypeChart,
+            [ZaEditSessionSupport.AngeFightDomain] => ZaEditSessionDomain.AngeFight,
             _ => ZaEditSessionDomain.Mixed,
         };
     }
@@ -805,6 +843,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionSupport.GiftPokemonDomain => ZaEditSessionDomain.GiftPokemon,
             ZaEditSessionSupport.TradePokemonDomain => ZaEditSessionDomain.TradePokemon,
             ZaEditSessionSupport.TypeChartDomain => ZaEditSessionDomain.TypeChart,
+            ZaEditSessionSupport.AngeFightDomain => ZaEditSessionDomain.AngeFight,
             null or "" => ZaEditSessionDomain.None,
             _ => ZaEditSessionDomain.Mixed,
         };
@@ -852,6 +891,7 @@ public sealed class ZaWorkflowService
             ZaEditSessionDomain.GiftPokemon => ZaEditSessionSupport.GiftPokemonDomain,
             ZaEditSessionDomain.TradePokemon => ZaEditSessionSupport.TradePokemonDomain,
             ZaEditSessionDomain.TypeChart => ZaEditSessionSupport.TypeChartDomain,
+            ZaEditSessionDomain.AngeFight => ZaEditSessionSupport.AngeFightDomain,
             _ => string.Empty,
         };
     }
@@ -880,10 +920,26 @@ public sealed class ZaWorkflowService
                         groupedWrites
                             .Select(write => write.Reason)
                             .Where(reason => !string.IsNullOrWhiteSpace(reason))
-                            .Distinct(StringComparer.Ordinal)));
+                            .Distinct(StringComparer.Ordinal)),
+                    CombineSourceFingerprints(groupedWrites));
             })
             .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static string? CombineSourceFingerprints(
+        IReadOnlyList<PlannedFileWrite> writes)
+    {
+        if (writes.All(write => string.IsNullOrWhiteSpace(write.SourceFingerprint)))
+        {
+            return null;
+        }
+
+        var components = writes
+            .Select(write => write.SourceFingerprint ?? "<none>")
+            .Order(StringComparer.Ordinal);
+        var payload = Encoding.UTF8.GetBytes(string.Join('\n', components));
+        return Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
     }
 
     private static ZaEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
@@ -933,6 +989,7 @@ public sealed class ZaWorkflowService
         GiftPokemon,
         TradePokemon,
         TypeChart,
+        AngeFight,
         Mixed,
     }
 }

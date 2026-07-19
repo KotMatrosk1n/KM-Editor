@@ -9,6 +9,7 @@ import {
   Candy,
   Dna,
   Dumbbell,
+  Flower2,
   Gem,
   Gift,
   GitMerge,
@@ -212,6 +213,13 @@ export const workflowDefinitions: Array<{
     description:
       'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
     icon: Table2
+  },
+  {
+    id: 'angeFight',
+    label: 'Ange Fight',
+    description:
+      'Advanced Z-A editor for both flowers’ HP and Ange’s direct damage to Pokemon and the player.',
+    icon: Flower2
   },
   {
     id: 'fairyGymBoosts',

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.AngeFight;
 using KM.Api.Encounters;
 using KM.Api.Gifts;
 using KM.Api.Items;
@@ -18,6 +19,7 @@ using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Encounters;
+using KM.ZA.AngeFight;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
 using KM.ZA.ModMerger;
@@ -175,6 +177,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadTypeChartWorkflowResponse(ToTypeChartWorkflowDto(workflow));
+    }
+
+    public static LoadAngeFightWorkflowResponse ToDto(ZaAngeFightWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadAngeFightWorkflowResponse(ToAngeFightWorkflowDto(workflow));
     }
 
     public static LoadTradePokemonWorkflowResponse ToDto(ZaTradePokemonWorkflow workflow)
@@ -357,6 +366,27 @@ public static class ZaBridgeMapper
 
         return new StageTypeChartUninstallResponse(
             ToTypeChartWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageAngeFightResponse ToDto(ZaAngeFightEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageAngeFightResponse(
+            ToAngeFightWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageAngeFightUninstallResponse ToAngeFightUninstallDto(
+        ZaAngeFightEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageAngeFightUninstallResponse(
+            ToAngeFightWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -647,7 +677,14 @@ public static class ZaBridgeMapper
             slot.EncounterRecordId,
             slot.ContributesToWildZoneCompletion,
             slot.AlphaChancePercent,
-            slot.AlphaLevelBonus);
+            slot.AlphaLevelBonus,
+            slot.SlotMaxCount,
+            slot.AppearanceMinCount,
+            slot.AppearanceMaxCount,
+            slot.AppearanceObjectCount,
+            slot.CanEditWeight,
+            slot.CanEditSlotMaxCount,
+            slot.CanEditAppearanceCounts);
     }
 
     private static EncounterProvenanceDto ToDto(ZaEncounterProvenance provenance)
@@ -833,6 +870,67 @@ public static class ZaBridgeMapper
             cell.DefenseTypeIndex,
             cell.Effectiveness,
             cell.VanillaEffectiveness);
+    }
+
+    private static AngeFightWorkflowDto ToAngeFightWorkflowDto(
+        ZaAngeFightWorkflow workflow)
+    {
+        return new AngeFightWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.CanUninstall,
+            workflow.UninstallMessage,
+            workflow.Sources.Select(ToDto).ToArray(),
+            workflow.Flowers.Select(ToDto).ToArray(),
+            workflow.Attacks.Select(ToDto).ToArray(),
+            new AngeFightWorkflowStatsDto(
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.FlowerCount,
+                workflow.Stats.AttackCount,
+                workflow.Stats.EditableValueCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static AngeFightSourceRecordDto ToDto(ZaAngeFightSourceRecord source)
+    {
+        return new AngeFightSourceRecordDto(
+            source.Id,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            source.EffectiveSha256,
+            source.VanillaSha256,
+            new AngeFightProvenanceDto(
+                source.Provenance.RelativePath,
+                ProjectBridgeMapper.ToDto(source.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(source.Provenance.State)));
+    }
+
+    private static AngeFightFlowerRecordDto ToDto(ZaAngeFightFlowerRecord flower)
+    {
+        return new AngeFightFlowerRecordDto(
+            flower.FlowerId,
+            flower.Label,
+            flower.Hp,
+            flower.VanillaHp);
+    }
+
+    private static AngeFightAttackRecordDto ToDto(ZaAngeFightAttackRecord attack)
+    {
+        return new AngeFightAttackRecordDto(
+            attack.MoveId,
+            attack.Label,
+            attack.Usage,
+            attack.BulletId,
+            attack.AttackId,
+            attack.DamageToPokemon,
+            attack.DamageToPlayer,
+            attack.VanillaDamageToPokemon,
+            attack.VanillaDamageToPlayer,
+            attack.HitIntervalSeconds,
+            attack.SharedByMultipleActions,
+            attack.CanRepeatHit);
     }
 
     private static SpreadsheetImportWorkflowDto ToSpreadsheetImportWorkflowDto(

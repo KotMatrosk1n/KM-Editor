@@ -50,7 +50,14 @@ public sealed record EncounterSlotRecordDto(
     string? EncounterRecordId = null,
     bool? ContributesToWildZoneCompletion = null,
     int? AlphaChancePercent = null,
-    int? AlphaLevelBonus = null);
+    int? AlphaLevelBonus = null,
+    int? SlotMaxCount = null,
+    int? AppearanceMinCount = null,
+    int? AppearanceMaxCount = null,
+    int? AppearanceObjectCount = null,
+    bool? CanEditWeight = null,
+    bool? CanEditSlotMaxCount = null,
+    bool? CanEditAppearanceCounts = null);
 
 public sealed record EncounterTableRecordDto(
     string TableId,
