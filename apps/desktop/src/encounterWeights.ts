@@ -32,8 +32,16 @@ export function formatEncounterLotShare(weight: number, totalWeight: number) {
   return `${formatEncounterShare(weight, totalWeight)} share`;
 }
 
-function formatEncounterShare(weight: number, totalWeight: number) {
-  return `${((weight / totalWeight) * 100).toLocaleString(undefined, {
+export function formatEncounterSharePercent(
+  weight: number,
+  totalWeight: number,
+  locale?: string
+) {
+  return totalWeight > 0 ? formatEncounterShare(weight, totalWeight, locale) : null;
+}
+
+function formatEncounterShare(weight: number, totalWeight: number, locale?: string) {
+  return `${((weight / totalWeight) * 100).toLocaleString(locale, {
     maximumFractionDigits: 1
   })}%`;
 }

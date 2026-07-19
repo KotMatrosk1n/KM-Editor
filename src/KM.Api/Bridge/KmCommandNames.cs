@@ -84,6 +84,9 @@ public static class KmCommandNames
     public const string LoadTypeChartWorkflow = "typeChart.load";
     public const string StageTypeChart = "typeChart.stage";
     public const string StageTypeChartUninstall = "typeChart.uninstall.stage";
+    public const string LoadAngeFightWorkflow = "angeFight.load";
+    public const string StageAngeFight = "angeFight.stage";
+    public const string StageAngeFightUninstall = "angeFight.uninstall.stage";
     public const string LoadFairyGymBoostsWorkflow = "fairyGymBoosts.load";
     public const string StageFairyGymBoosts = "fairyGymBoosts.stage";
     public const string LoadFashionUnlockWorkflow = "fashionUnlock.load";

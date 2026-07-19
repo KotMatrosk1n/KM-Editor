@@ -19,8 +19,38 @@ public static class ZaTrinityDescriptorPatcher
 
     public static byte[] CreateLayeredDescriptor(string baseRomFsRoot, string outputRoot)
     {
+        return CreateLayeredDescriptor(
+            baseRomFsRoot,
+            outputRoot,
+            Array.Empty<string>());
+    }
+
+    public static byte[] CreateLayeredDescriptor(
+        string baseRomFsRoot,
+        string outputRoot,
+        IEnumerable<string> excludedLayeredVirtualPaths)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
+        ArgumentNullException.ThrowIfNull(excludedLayeredVirtualPaths);
+
+        var excludedPaths = excludedLayeredVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var layeredFileHashes = EnumerateLayeredVirtualPaths(outputRoot)
+            .Where(path => !excludedPaths.Contains(path))
+            .Select(ZaTrinityPathHasher.HashPath)
+            .ToHashSet();
+
+        var descriptorBytes = ReadBaseDescriptor(baseRomFsRoot);
+        return layeredFileHashes.Count == 0
+            ? descriptorBytes
+            : RemoveFileHashes(descriptorBytes, layeredFileHashes);
+    }
+
+    public static byte[] ReadBaseDescriptor(string baseRomFsRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseRomFsRoot);
 
         var descriptorPath = Path.Combine(ResolveRomFsRoot(baseRomFsRoot), "arc", "data.trpfd");
         if (!File.Exists(descriptorPath))
@@ -28,11 +58,21 @@ public static class ZaTrinityDescriptorPatcher
             throw new FileNotFoundException("Pokemon Legends Z-A Trinity descriptor was not found.", descriptorPath);
         }
 
-        var layeredFileHashes = EnumerateLayeredVirtualPaths(outputRoot)
-            .Select(ZaTrinityPathHasher.HashPath)
-            .ToHashSet();
+        return File.ReadAllBytes(descriptorPath);
+    }
 
-        return RemoveFileHashes(File.ReadAllBytes(descriptorPath), layeredFileHashes);
+    public static bool HasLayeredVirtualPaths(
+        string outputRoot,
+        IEnumerable<string> excludedLayeredVirtualPaths)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
+        ArgumentNullException.ThrowIfNull(excludedLayeredVirtualPaths);
+
+        var excludedPaths = excludedLayeredVirtualPaths
+            .Select(NormalizeVirtualPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return EnumerateLayeredVirtualPaths(outputRoot)
+            .Any(path => !excludedPaths.Contains(path));
     }
 
     public static byte[] RemoveFileHashes(byte[] descriptorBytes, IReadOnlySet<ulong> removedHashes)
@@ -159,6 +199,30 @@ public static class ZaTrinityDescriptorPatcher
         return File.Exists(Path.Combine(nestedRomFsPath, "arc", "data.trpfd"))
             ? nestedRomFsPath
             : path;
+    }
+
+    private static string NormalizeVirtualPath(string virtualPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualPath);
+
+        var normalized = virtualPath.Replace('\\', '/').TrimStart('/');
+        if (normalized.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["romfs/".Length..];
+        }
+
+        var segments = normalized.Split('/');
+        if (segments.Length == 0
+            || segments.Any(segment =>
+                string.IsNullOrWhiteSpace(segment)
+                || segment is "." or ".."))
+        {
+            throw new ArgumentException(
+                $"Pokemon Legends Z-A virtual path '{virtualPath}' is not canonical.",
+                nameof(virtualPath));
+        }
+
+        return normalized;
     }
 
     private sealed record DescriptorModel(

@@ -22,6 +22,7 @@ internal static class ZaEditSessionSupport
     public const string GiftPokemonDomain = "workflow.giftPokemon";
     public const string TradePokemonDomain = "workflow.tradePokemon";
     public const string TypeChartDomain = "workflow.typeChart";
+    public const string AngeFightDomain = "workflow.angeFight";
 
     public static bool CanEdit(
         OpenedProject project,
@@ -229,22 +230,46 @@ internal static class ZaEditSessionSupport
     public static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
     {
         if (!reviewedPlan.CanApply
+            || !currentPlan.CanApply
             || reviewedPlan.SessionId != currentPlan.SessionId
             || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
         {
             return false;
         }
 
-        var reviewedTargets = reviewedPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
+        var reviewedWrites = reviewedPlan.Writes
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
-        var currentTargets = currentPlan.Writes
-            .Select(write => write.TargetRelativePath)
-            .Order(StringComparer.Ordinal)
+        var currentWrites = currentPlan.Writes
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
             .ToArray();
+        for (var index = 0; index < currentWrites.Length; index++)
+        {
+            var reviewed = reviewedWrites[index];
+            var current = currentWrites[index];
+            if (!string.Equals(
+                    reviewed.TargetRelativePath,
+                    current.TargetRelativePath,
+                    StringComparison.Ordinal)
+                || reviewed.ReplacesExistingOutput != current.ReplacesExistingOutput
+                || !string.Equals(reviewed.Reason, current.Reason, StringComparison.Ordinal)
+                || !string.Equals(
+                    reviewed.SourceFingerprint,
+                    current.SourceFingerprint,
+                    StringComparison.Ordinal)
+                || !reviewed.Sources
+                    .OrderBy(source => source.Layer)
+                    .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+                    .SequenceEqual(
+                        current.Sources
+                            .OrderBy(source => source.Layer)
+                            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)))
+            {
+                return false;
+            }
+        }
 
-        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+        return true;
     }
 
     public static ApplyResult CreateApplyResult(

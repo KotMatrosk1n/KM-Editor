@@ -330,6 +330,17 @@ import {
   stageFairyGymBoostsResponseSchema
 } from './fairyGymBoostsContracts';
 import {
+  type LoadAngeFightWorkflowRequest,
+  type LoadAngeFightWorkflowResponse,
+  type StageAngeFightRequest,
+  type StageAngeFightResponse,
+  type StageAngeFightUninstallRequest,
+  type StageAngeFightUninstallResponse,
+  loadAngeFightWorkflowResponseSchema,
+  stageAngeFightResponseSchema,
+  stageAngeFightUninstallResponseSchema
+} from './angeFightContracts';
+import {
   type LoadShinyRateWorkflowRequest,
   type LoadShinyRateWorkflowResponse,
   type StageShinyRateRequest,
@@ -458,6 +469,15 @@ export type ProjectBridge = {
     request: StageTypeChartRequest
   ) => Promise<StageTypeChartResponse>;
   stageTypeChartUninstall: (request: StageTypeChartUninstallRequest) => Promise<StageTypeChartUninstallResponse>;
+  loadAngeFightWorkflow: (
+    request: LoadAngeFightWorkflowRequest
+  ) => Promise<LoadAngeFightWorkflowResponse>;
+  stageAngeFight: (
+    request: StageAngeFightRequest
+  ) => Promise<StageAngeFightResponse>;
+  stageAngeFightUninstall: (
+    request: StageAngeFightUninstallRequest
+  ) => Promise<StageAngeFightUninstallResponse>;
   loadFairyGymBoostsWorkflow: (
     request: LoadFairyGymBoostsWorkflowRequest
   ) => Promise<LoadFairyGymBoostsWorkflowResponse>;
@@ -771,6 +791,27 @@ export function createProjectBridge(
         stageTypeChartResponseSchema
       ),
     stageTypeChartUninstall: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTypeChartUninstall, request, stageTypeChartUninstallResponseSchema),
+    loadAngeFightWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadAngeFightWorkflow,
+        request,
+        loadAngeFightWorkflowResponseSchema
+      ),
+    stageAngeFight: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageAngeFight,
+        request,
+        stageAngeFightResponseSchema
+      ),
+    stageAngeFightUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageAngeFightUninstall,
+        request,
+        stageAngeFightUninstallResponseSchema
+      ),
     loadFairyGymBoostsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,

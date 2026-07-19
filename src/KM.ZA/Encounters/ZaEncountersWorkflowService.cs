@@ -18,12 +18,17 @@ internal sealed class ZaEncountersWorkflowService
     public const string LevelMaxField = "levelMax";
     public const string AlphaChancePercentField = "alphaChancePercent";
     public const string AlphaLevelBonusField = "alphaLevelBonus";
+    public const string WeightField = "weight";
+    public const string SlotMaxCountField = "slotMaxCount";
+    public const string AppearanceMinCountField = "appearanceMinCount";
+    public const string AppearanceMaxCountField = "appearanceMaxCount";
 
     private const string WorkflowLabel = "Wild Encounters";
-    private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows.";
+    private const string WorkflowDescription = "Edit Pokemon Legends Z-A wild encounter Pokemon rows, slot weights, and spawn counts.";
     private const string GameVersionLabel = "Pokemon Legends ZA";
     private const string TableIdPrefix = "za-spawner";
     private const string PokemonDataRecordIdPrefix = "encount-data:";
+    private const string AppearanceRecordIdSuffix = "#appearance";
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -105,6 +110,11 @@ internal sealed class ZaEncountersWorkflowService
         return string.Create(CultureInfo.InvariantCulture, $"{PokemonDataRecordIdPrefix}{sourceIndex}");
     }
 
+    internal static string CreateAppearanceRecordId(string tableId)
+    {
+        return $"{tableId}{AppearanceRecordIdSuffix}";
+    }
+
     internal static bool TryParsePokemonDataRecordId(string? recordId, out int sourceIndex)
     {
         sourceIndex = -1;
@@ -133,6 +143,38 @@ internal sealed class ZaEncountersWorkflowService
             && slot >= 0;
     }
 
+    internal static bool TryParseAppearanceRecordId(string? recordId, out string tableId)
+    {
+        tableId = string.Empty;
+        if (recordId?.EndsWith(AppearanceRecordIdSuffix, StringComparison.Ordinal) != true
+            || recordId.Length == AppearanceRecordIdSuffix.Length)
+        {
+            return false;
+        }
+
+        tableId = recordId[..^AppearanceRecordIdSuffix.Length];
+        return true;
+    }
+
+    internal static bool TryParseTableId(string? tableId, out int groupIndex, out int spawnerIndex)
+    {
+        groupIndex = -1;
+        spawnerIndex = -1;
+
+        var prefix = $"{TableIdPrefix}:";
+        if (tableId?.StartsWith(prefix, StringComparison.Ordinal) != true)
+        {
+            return false;
+        }
+
+        var parts = tableId[prefix.Length..].Split(':');
+        return parts.Length == 2
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out groupIndex)
+            && groupIndex >= 0
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out spawnerIndex)
+            && spawnerIndex >= 0;
+    }
+
     internal static string FormatEncounterSpeciesLabel(int speciesId, int form, ZaTextLabelLookup labels)
     {
         return FormatEncounterSpeciesLabel(speciesId, form, labels.Pokemon(speciesId));
@@ -157,6 +199,11 @@ internal sealed class ZaEncountersWorkflowService
 
         var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(spawnerSource.Bytes));
         var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
+        var scalarSpawners = ZaPokemonSpawnerDataDocument.Parse(spawnerSource.Bytes)
+            .Entries
+            .ToDictionary(
+                entry => (entry.GroupIndex, entry.SpawnerIndex),
+                entry => entry);
         var reportedInvalidAlphaChanceSources = new HashSet<int>();
         var reportedInvalidAlphaLevelBonusSources = new HashSet<int>();
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
@@ -177,12 +224,51 @@ internal sealed class ZaEncountersWorkflowService
 
                 var displayPosition = displayOrder[(groupIndex, spawnerIndex)];
                 var locationKey = displayPosition.LocationKey;
+                scalarSpawners.TryGetValue(
+                    (groupIndex, spawnerIndex),
+                    out var scalarSpawner);
+                if (scalarSpawner is not null
+                    && !string.Equals(scalarSpawner.Id, spawner.Value.Id, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        $"Spawner '{spawner.Value.Id}' could not be matched safely to its exact-byte scalar storage. "
+                        + "Weight and population fields will remain read-only and be preserved.",
+                        spawnerSource.RelativePath,
+                        WeightField,
+                        "Matching generated and exact-byte spawner identities"));
+                    scalarSpawner = null;
+                }
+
+                var appearanceCounts = ReadAppearanceCounts(spawner.Value, scalarSpawner);
+                if (appearanceCounts.ObjectCount > 0
+                    && !appearanceCounts.HasUniformReadableValues)
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        $"Spawner '{spawner.Value.Id}' has missing or mixed appearance count values. "
+                        + "Overall minimum and maximum counts will remain read-only and be preserved.",
+                        spawnerSource.RelativePath,
+                        AppearanceMinCountField,
+                        "Matching count values on every appearance object"));
+                }
+                else if (appearanceCounts.ObjectCount > 0
+                    && !appearanceCounts.CanEdit)
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        $"Spawner '{spawner.Value.Id}' stores at least one appearance count as an omitted default. "
+                        + "The current uniform count range will remain visible but read-only.",
+                        spawnerSource.RelativePath,
+                        AppearanceMinCountField,
+                        "Materialized minimum and maximum counts on every appearance object"));
+                }
+
                 var slots = ReadSlots(
                     spawner.Value,
+                    scalarSpawner,
                     pokemonRows,
                     encounterSource,
                     labels,
                     IsNumberedWildZone(locationKey),
+                    appearanceCounts,
                     diagnostics,
                     reportedInvalidAlphaChanceSources,
                     reportedInvalidAlphaLevelBonusSources).ToArray();
@@ -218,10 +304,12 @@ internal sealed class ZaEncountersWorkflowService
 
     private static IEnumerable<ZaEncounterSlotRecord> ReadSlots(
         PokemonSpawnerData spawner,
+        ZaPokemonSpawnerDataEntry? scalarSpawner,
         IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows,
         ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels,
         bool isNumberedWildZone,
+        AppearanceCountSummary appearanceCounts,
         ICollection<ValidationDiagnostic> diagnostics,
         ISet<int> reportedInvalidAlphaChanceSources,
         ISet<int> reportedInvalidAlphaLevelBonusSources)
@@ -234,7 +322,18 @@ internal sealed class ZaEncountersWorkflowService
                 continue;
             }
 
+            var scalarSlot = scalarSpawner is not null
+                && slot < scalarSpawner.EncountDataInfoList.Count
+                ? scalarSpawner.EncountDataInfoList[slot]
+                : null;
             var encounterDataId = encounter.Value.EncountDataId ?? string.Empty;
+            var hasMatchingScalarSlot = scalarSlot is not null
+                && string.Equals(
+                    scalarSlot.EncountDataId ?? string.Empty,
+                    encounterDataId,
+                    StringComparison.Ordinal)
+                && scalarSlot.Weight == encounter.Value.Weight
+                && scalarSlot.MaxCount == encounter.Value.MaxCount;
             var hasStructuralAlphaReference = HasStructuralAlphaReference(encounterDataId);
             var pokemon = ResolvePokemonRow(encounterDataId, pokemonRows);
             var speciesId = pokemon?.DevNo ?? 0;
@@ -295,7 +394,16 @@ internal sealed class ZaEncountersWorkflowService
                 isNumberedWildZone ? encounter.Value.ShowMapIcon == 0 : null,
                 alphaChancePercent,
                 alphaLevelBonus,
-                pokemon?.OyabunProbability > 0);
+                pokemon?.OyabunProbability > 0)
+            {
+                SlotMaxCount = encounter.Value.MaxCount,
+                CanEditWeight = hasMatchingScalarSlot && scalarSlot!.CanEditWeight,
+                CanEditSlotMaxCount = hasMatchingScalarSlot && scalarSlot!.CanEditMaxCount,
+                AppearanceMinCount = appearanceCounts.Minimum,
+                AppearanceMaxCount = appearanceCounts.Maximum,
+                AppearanceObjectCount = appearanceCounts.ObjectCount,
+                CanEditAppearanceCounts = appearanceCounts.CanEdit,
+            };
         }
     }
 
@@ -384,7 +492,68 @@ internal sealed class ZaEncountersWorkflowService
             new(LevelMaxField, "Max Level", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(AlphaChancePercentField, "Alpha Chance (%)", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(AlphaLevelBonusField, "Alpha Level Bonus", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(WeightField, "Weight", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(SlotMaxCountField, "Slot Max Count", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(AppearanceMinCountField, "Overall Min Count", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(AppearanceMaxCountField, "Overall Max Count", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
         ];
+    }
+
+    private static AppearanceCountSummary ReadAppearanceCounts(
+        PokemonSpawnerData spawner,
+        ZaPokemonSpawnerDataEntry? scalarSpawner)
+    {
+        var objectCount = spawner.AppearanceSpawnerObjectInfoListLength;
+        if (objectCount == 0)
+        {
+            return new AppearanceCountSummary(0, null, null, false);
+        }
+
+        int? minimum = null;
+        int? maximum = null;
+        var canEdit = scalarSpawner is not null
+            && scalarSpawner.AppearanceSpawnerObjectInfoList.Count == objectCount
+            && scalarSpawner.CanEditAppearanceCounts;
+        for (var index = 0; index < objectCount; index++)
+        {
+            var objectInfo = spawner.AppearanceSpawnerObjectInfoList(index);
+            var appearanceInfo = objectInfo?.AppearanceInfo;
+            if (appearanceInfo is null)
+            {
+                return new AppearanceCountSummary(objectCount, null, null, false);
+            }
+
+            var scalarObjectInfo = scalarSpawner is not null
+                && index < scalarSpawner.AppearanceSpawnerObjectInfoList.Count
+                ? scalarSpawner.AppearanceSpawnerObjectInfoList[index]
+                : null;
+            var scalarAppearanceInfo = scalarObjectInfo?.AppearanceInfo;
+            if (scalarAppearanceInfo is null
+                || !string.Equals(
+                    scalarObjectInfo!.ObjectName ?? string.Empty,
+                    objectInfo!.Value.ObjectName ?? string.Empty,
+                    StringComparison.Ordinal)
+                || scalarAppearanceInfo.MinCount != appearanceInfo.Value.MinCount
+                || scalarAppearanceInfo.MaxCount != appearanceInfo.Value.MaxCount)
+            {
+                canEdit = false;
+            }
+
+            if (minimum is null)
+            {
+                minimum = appearanceInfo.Value.MinCount;
+                maximum = appearanceInfo.Value.MaxCount;
+                continue;
+            }
+
+            if (minimum.Value != appearanceInfo.Value.MinCount
+                || maximum!.Value != appearanceInfo.Value.MaxCount)
+            {
+                return new AppearanceCountSummary(objectCount, null, null, false);
+            }
+        }
+
+        return new AppearanceCountSummary(objectCount, minimum, maximum, canEdit);
     }
 
     private static IReadOnlyList<ZaEncounterEditableFieldOption> CreateIndexedOptions(
@@ -498,12 +667,12 @@ internal sealed class ZaEncountersWorkflowService
         }
 
         var slotLabel = slots.Count == 1 ? "slot" : "slots";
-        var weightTotal = slots.Sum(slot => slot.Weight);
+        var weightTotal = slots.Sum(slot => (long)slot.Weight);
         var alphaCount = slots.Count(slot => slot.IsAlpha);
         var alphaLabel = alphaCount == 0
             ? string.Empty
             : $" - {alphaCount.ToString(CultureInfo.InvariantCulture)} Alpha";
-        return $"{speciesLabel} - {slots.Count.ToString(CultureInfo.InvariantCulture)} {slotLabel} - total {weightTotal.ToString(CultureInfo.InvariantCulture)}{alphaLabel}";
+        return $"{speciesLabel} - {slots.Count.ToString(CultureInfo.InvariantCulture)} {slotLabel} - total weight {weightTotal.ToString(CultureInfo.InvariantCulture)}{alphaLabel}";
     }
 
     private static string FormatSlotPreviewSpecies(ZaEncounterSlotRecord slot)
@@ -590,5 +759,14 @@ internal sealed class ZaEncountersWorkflowService
             4 => "Fog",
             _ => $"Weather condition {value.ToString(CultureInfo.InvariantCulture)}",
         };
+    }
+
+    private readonly record struct AppearanceCountSummary(
+        int ObjectCount,
+        int? Minimum,
+        int? Maximum,
+        bool CanEdit)
+    {
+        public bool HasUniformReadableValues => Minimum is not null && Maximum is not null;
     }
 }

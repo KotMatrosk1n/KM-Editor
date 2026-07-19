@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.AngeFight;
 using KM.Api.BagHook;
 using KM.Api.Behavior;
 using KM.Api.CatchCap;
@@ -356,6 +357,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadTypeChartWorkflow => DispatchLoadTypeChartWorkflow(requestJson),
                 KmCommandNames.StageTypeChart => DispatchStageTypeChart(requestJson),
                 KmCommandNames.StageTypeChartUninstall => DispatchStageTypeChartUninstall(requestJson),
+                KmCommandNames.LoadAngeFightWorkflow => DispatchLoadAngeFightWorkflow(requestJson),
+                KmCommandNames.StageAngeFight => DispatchStageAngeFight(requestJson),
+                KmCommandNames.StageAngeFightUninstall => DispatchStageAngeFightUninstall(requestJson),
                 KmCommandNames.LoadFairyGymBoostsWorkflow => DispatchLoadFairyGymBoostsWorkflow(requestJson),
                 KmCommandNames.StageFairyGymBoosts => DispatchStageFairyGymBoosts(requestJson),
                 KmCommandNames.LoadFashionUnlockWorkflow => DispatchLoadFashionUnlockWorkflow(requestJson),
@@ -2107,6 +2111,50 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadAngeFightWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadAngeFightWorkflowRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDto(zaWorkflowService.LoadAngeFight(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageAngeFight(string requestJson)
+    {
+        var request = DeserializeRequest<StageAngeFightRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var settings = new KM.ZA.AngeFight.ZaAngeFightSettings(
+            request.Payload.BlueFlowerHp,
+            request.Payload.RedFlowerHp,
+            request.Payload.Attacks
+                .Select(attack => new KM.ZA.AngeFight.ZaAngeFightAttackSelection(
+                    attack.AttackId,
+                    attack.DamageToPokemon,
+                    attack.DamageToPlayer))
+                .ToArray());
+        var response = ZaBridgeMapper.ToDto(
+            zaWorkflowService.StageAngeFight(paths, settings, session));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageAngeFightUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageAngeFightUninstallRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = ZaBridgeMapper.ToAngeFightUninstallDto(
+            zaWorkflowService.StageAngeFightUninstall(paths, session));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadFashionUnlockWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadFashionUnlockWorkflowRequest>(requestJson);
@@ -3812,6 +3860,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
             KmCommandNames.WarmupZaCacheStep or
+            KmCommandNames.LoadAngeFightWorkflow or
+            KmCommandNames.StageAngeFight or
+            KmCommandNames.StageAngeFightUninstall or
             KmCommandNames.LoadZaModMergerWorkflow or
             KmCommandNames.StageZaModMerge or
             KmCommandNames.ApplyZaModMerge;
@@ -3859,6 +3910,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadTypeChartWorkflow or
             KmCommandNames.StageTypeChart or
             KmCommandNames.StageTypeChartUninstall or
+            KmCommandNames.LoadAngeFightWorkflow or
+            KmCommandNames.StageAngeFight or
+            KmCommandNames.StageAngeFightUninstall or
             KmCommandNames.StartEditSession or
             KmCommandNames.ValidateEditSession or
             KmCommandNames.LoadSpreadsheetImportWorkflow or

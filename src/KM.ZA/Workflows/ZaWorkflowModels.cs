@@ -19,6 +19,7 @@ public static class ZaWorkflowIds
     public const string TradePokemon = "tradePokemon";
     public const string Placement = "placement";
     public const string TypeChart = "typeChart";
+    public const string AngeFight = "angeFight";
     public const string FashionUnlock = "fashionUnlock";
     public const string SpreadsheetImport = "spreadsheetImport";
     public const string ModMerger = "modMerger";

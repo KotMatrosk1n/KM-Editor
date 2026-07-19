@@ -32,7 +32,7 @@ Changing a project path requires validation so every editor reloads from the new
 | --- | --- | --- | --- |
 | Sword and Shield | Pokemon, Rental Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, raids, shops, rewards, and placement | ExeFS and hook based editors, Randomizer, Mod Merger, Game Dump, and Dump Importer | [Sword and Shield overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview) |
 | Scarlet and Violet | Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, Tera Raids, shops, and placement | Type Chart, Fashion Unlock, Hyperspace Bypass, data cache, Mod Merger, Game Dump, and Dump Importer | [Scarlet and Violet overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
-| Legends Z-A | Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, shops, and placement | Type Chart, data cache, Mod Merger, Game Dump, and Dump Importer | [Legends Z-A overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) |
+| Legends Z-A | Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, shops, and placement | Ange Fight, Type Chart, data cache, Mod Merger, Game Dump, and Dump Importer | [Legends Z-A overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) |
 
 The game guides are the authoritative feature maps. Similar editor names do not mean the games share formats or output rules.
 

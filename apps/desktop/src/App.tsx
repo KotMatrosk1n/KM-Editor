@@ -17,6 +17,7 @@ import {
   Download,
   Dumbbell,
   ExternalLink,
+  Flower2,
   FolderOpen,
   Gem,
   Gift,
@@ -64,6 +65,7 @@ import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-vi
 import { listen } from '@tauri-apps/api/event';
 import {
   formatEncounterLotShare,
+  formatEncounterSharePercent,
   formatEncounterSlotWeightSummary
 } from './encounterWeights';
 import {
@@ -217,6 +219,10 @@ import {
   type ZaModMergerSource,
   type ZaModMergerWorkflow
 } from './bridge/contracts';
+import {
+  type AngeFightAttackSelection,
+  type AngeFightWorkflow
+} from './bridge/angeFightContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type NpcItemGiftSelection } from './bridge/npcItemGiftContracts';
 import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
@@ -273,7 +279,7 @@ import {
   getMoveEditableFieldGroup,
   getMoveEditableFieldLabel
 } from './movesEditor';
-import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, readOnlyViewerSectionIds, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
   WorkflowLoadGeneration,
   createWorkflowRetentionSizeHint,
@@ -366,6 +372,7 @@ import {
   decodeTypeChartPendingValues,
   getTypeChartWorkflowValues
 } from './features/type-chart/TypeChartSection';
+import { AngeFightSection } from './features/ange-fight/AngeFightSection';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
 import { calculatePendingPayloadSha256 } from './utils/pendingPayloadHash';
 import { getSectionWikiUrl } from './wikiLinks';
@@ -666,6 +673,11 @@ const sections: Array<{
     id: 'typeChart',
     label: 'Type Chart',
     icon: Table2
+  },
+  {
+    id: 'angeFight',
+    label: 'Ange Fight',
+    icon: Flower2
   },
   {
     id: 'fairyGymBoosts',
@@ -1520,8 +1532,20 @@ const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
 const encounterLevelMinFieldName = 'levelMin';
 const encounterLevelMaxFieldName = 'levelMax';
+const zaEncounterWeightFieldName = 'weight';
+const zaEncounterSlotMaxCountFieldName = 'slotMaxCount';
+const zaEncounterAppearanceMinCountFieldName = 'appearanceMinCount';
+const zaEncounterAppearanceMaxCountFieldName = 'appearanceMaxCount';
 const zaEncounterAlphaChanceFieldName = 'alphaChancePercent';
 const zaEncounterAlphaLevelBonusFieldName = 'alphaLevelBonus';
+const zaEncounterSlotSpecificFieldNames = new Set([
+  zaEncounterWeightFieldName,
+  zaEncounterSlotMaxCountFieldName
+]);
+const zaEncounterAppearanceFieldNames = new Set([
+  zaEncounterAppearanceMinCountFieldName,
+  zaEncounterAppearanceMaxCountFieldName
+]);
 const encounterClearFieldNames = [
   encounterSpeciesFieldName,
   encounterFormFieldName,
@@ -1865,6 +1889,7 @@ export function App({
   const hyperTrainingWorkflow = useWorkbenchStore((state) => state.hyperTrainingWorkflow);
   const shinyRateWorkflow = useWorkbenchStore((state) => state.shinyRateWorkflow);
   const typeChartWorkflow = useWorkbenchStore((state) => state.typeChartWorkflow);
+  const angeFightWorkflow = useWorkbenchStore((state) => state.angeFightWorkflow);
   const fairyGymBoostsWorkflow = useWorkbenchStore(
     (state) => state.fairyGymBoostsWorkflow
   );
@@ -1883,6 +1908,7 @@ export function App({
   );
   const setShinyRateWorkflow = useWorkbenchStore((state) => state.setShinyRateWorkflow);
   const setTypeChartWorkflow = useWorkbenchStore((state) => state.setTypeChartWorkflow);
+  const setAngeFightWorkflow = useWorkbenchStore((state) => state.setAngeFightWorkflow);
   const setFairyGymBoostsWorkflow = useWorkbenchStore(
     (state) => state.setFairyGymBoostsWorkflow
   );
@@ -2138,6 +2164,8 @@ export function App({
   const [isShinyRateStaging, setIsShinyRateStaging] = useState(false);
   const [isTypeChartLoading, setIsTypeChartLoading] = useState(false);
   const [isTypeChartStaging, setIsTypeChartStaging] = useState(false);
+  const [isAngeFightLoading, setIsAngeFightLoading] = useState(false);
+  const [isAngeFightStaging, setIsAngeFightStaging] = useState(false);
   const [isFairyGymBoostsLoading, setIsFairyGymBoostsLoading] = useState(false);
   const [isFairyGymBoostsStaging, setIsFairyGymBoostsStaging] = useState(false);
   const [isFashionUnlockLoading, setIsFashionUnlockLoading] = useState(false);
@@ -2357,6 +2385,7 @@ export function App({
     () =>
       getLoadedWorkflowRetentionEntries(
         {
+          angeFightWorkflow,
           bagHookWorkflow,
           behaviorWorkflow,
           catchCapWorkflow,
@@ -2396,6 +2425,7 @@ export function App({
       ),
     [
       activeModMergerRetentionValue,
+      angeFightWorkflow,
       bagHookWorkflow,
       behaviorWorkflow,
       catchCapWorkflow,
@@ -2475,7 +2505,7 @@ export function App({
     !isEditSessionMutating &&
     !isSessionValidating;
   const activeSectionHasLoadedWorkflow = getLoadedWorkflowStateForSection(activeSection, {
-    bagHookWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
+    angeFightWorkflow, bagHookWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionUnlockWorkflow,
     flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
     hyperspaceBypassWorkflow,
@@ -2519,6 +2549,22 @@ export function App({
       activeSectionOwnsEditSession ||
       isScarletVioletAdvancedEditorSection(activeSection, selectedGame)
     );
+  const editSessionIsPokemonLegendsZAAdvancedEditor =
+    editSession !== null &&
+    isPokemonLegendsZAGame(selectedGame) &&
+    editSession.pendingEdits.length > 0 &&
+    editSession.pendingEdits.every((edit) =>
+      pokemonLegendsZAAdvancedEditorDomains.has(edit.domain)
+    );
+  const activeSectionOwnsPokemonLegendsZAAdvancedEditSession =
+    editSessionIsPokemonLegendsZAAdvancedEditor &&
+    (
+      activeSectionOwnsEditSession ||
+      isPokemonLegendsZAAdvancedEditorSection(activeSection, selectedGame)
+    );
+  const activeSectionOwnsAdvancedEditSession =
+    activeSectionOwnsScarletVioletAdvancedEditSession ||
+    activeSectionOwnsPokemonLegendsZAAdvancedEditSession;
   const getEditSessionForSection = useCallback(
     (section: WorkbenchSection) =>
       editSessionSection === section ||
@@ -2568,7 +2614,10 @@ export function App({
   };
 
   const getScopedEditorOutputMode = (section: WorkbenchSection): ChangePlanOutputMode | undefined =>
-    isScarletVioletAdvancedEditorSection(section, selectedGame) ? 'standalone' : undefined;
+    isScarletVioletAdvancedEditorSection(section, selectedGame) ||
+    isPokemonLegendsZAAdvancedEditorSection(section, selectedGame)
+      ? 'standalone'
+      : undefined;
 
   const getProtectedWorkflowSections = useCallback(
     (includeActiveSection = true) => {
@@ -2902,9 +2951,9 @@ export function App({
       if (editSession || (kind === 'editor' && activeEditorHasLocalDrafts)) {
         setExitPrompt({
           allowGoToChanges:
-            !activeSectionOwnsScarletVioletAdvancedEditSession && !activeEditorHasLocalDrafts,
+            !activeSectionOwnsAdvancedEditSession && !activeEditorHasLocalDrafts,
           destination,
-          discardPendingSession: activeSectionOwnsScarletVioletAdvancedEditSession,
+          discardPendingSession: activeSectionOwnsAdvancedEditSession,
           kind,
           mode: 'confirm'
         });
@@ -2917,7 +2966,7 @@ export function App({
     },
     [
       activeEditorHasLocalDrafts,
-      activeSectionOwnsScarletVioletAdvancedEditSession,
+      activeSectionOwnsAdvancedEditSession,
       editSession,
       setActiveSection
     ]
@@ -2958,13 +3007,13 @@ export function App({
           activeSection === 'changes' ||
           activeSectionIsEditor
         );
-      const isLeavingScarletVioletAdvancedEditorForChanges =
-        destination === 'changes' && activeSectionOwnsScarletVioletAdvancedEditSession;
+      const isLeavingAdvancedEditorForChanges =
+        destination === 'changes' && activeSectionOwnsAdvancedEditSession;
 
-      if (isLeavingActiveEditSession || isLeavingScarletVioletAdvancedEditorForChanges) {
+      if (isLeavingActiveEditSession || isLeavingAdvancedEditorForChanges) {
         setExitPrompt({
           allowGoToChanges:
-            !activeSectionOwnsScarletVioletAdvancedEditSession && !activeEditorHasLocalDrafts,
+            !activeSectionOwnsAdvancedEditSession && !activeEditorHasLocalDrafts,
           destination,
           discardPendingSession: true,
           kind: 'editorSwitch',
@@ -2989,7 +3038,7 @@ export function App({
       activeSection,
       activeSectionIsEditor,
       activeSectionOwnsEditSession,
-      activeSectionOwnsScarletVioletAdvancedEditSession,
+      activeSectionOwnsAdvancedEditSession,
       availableWorkflowSectionIds,
       editSession,
       editSessionCanBeSharedAcrossNormalEditors,
@@ -4801,6 +4850,108 @@ export function App({
     }
   };
 
+  const handleOpenAngeFightWorkflow = async () => {
+    await runRetainedWorkflowLoad(
+      'angeFight',
+      setIsAngeFightLoading,
+      () => bridge.loadAngeFightWorkflow({
+        paths: createProjectPaths(draftPaths)
+      }),
+      (response) => setAngeFightWorkflow(response.workflow)
+    );
+  };
+
+  const handleStageAngeFight = async (
+    blueFlowerHp: number,
+    redFlowerHp: number,
+    attacks: AngeFightAttackSelection[]
+  ) => {
+    setIsAngeFightStaging(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageAngeFight({
+            attacks,
+            blueFlowerHp,
+            paths: createProjectPaths(draftPaths),
+            redFlowerHp,
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : angeFightWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('angeFight');
+          setAngeFightWorkflow(response.workflow);
+          setEditSessionSection('angeFight');
+          setScopedEditorPanelDiagnostics('angeFight', response.diagnostics);
+          registerEditorDraftDirty('angeFight', false);
+        }
+      );
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsAngeFightStaging(false);
+    }
+  };
+
+  const handleStageAngeFightUninstall = async () => {
+    setIsAngeFightStaging(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      await runEditSessionMutation(
+        async (session) => {
+          const response = await bridge.stageAngeFightUninstall({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !response.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...response,
+            didSucceed,
+            session: didSucceed ? response.session : session,
+            workflow: didSucceed ? response.workflow : angeFightWorkflow
+          };
+        },
+        (response) => {
+          if (!response.didSucceed || !response.workflow) {
+            setBridgeDiagnostics(response.diagnostics);
+            return;
+          }
+
+          prepareScopedEditorPanelAction('angeFight');
+          setAngeFightWorkflow(response.workflow);
+          setEditSessionSection('angeFight');
+          setScopedEditorPanelDiagnostics('angeFight', response.diagnostics);
+          registerEditorDraftDirty('angeFight', false);
+        }
+      );
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsAngeFightStaging(false);
+    }
+  };
+
   const handleOpenFairyGymBoostsWorkflow = async () => {
     await runRetainedWorkflowLoad(
       'fairyGymBoosts',
@@ -5710,6 +5861,12 @@ export function App({
           void handleOpenTypeChartWorkflow();
         }
         break;
+      case 'angeFight':
+        if (!angeFightWorkflow && !isAngeFightLoading) {
+          markLazyLoadStarted();
+          void handleOpenAngeFightWorkflow();
+        }
+        break;
       case 'fairyGymBoosts':
         if (!fairyGymBoostsWorkflow && !isFairyGymBoostsLoading) {
           markLazyLoadStarted();
@@ -5776,6 +5933,7 @@ export function App({
   }, [
     activeSection,
     activeSectionHasLoadedWorkflow,
+    angeFightWorkflow,
     bagHookWorkflow,
     catchCapWorkflow,
     dynamaxAdventuresWorkflow,
@@ -5802,6 +5960,7 @@ export function App({
     isItemsLoading,
     isBehaviorLoading,
     isBagHookLoading,
+    isAngeFightLoading,
     isCatchCapLoading,
     isFairyGymBoostsLoading,
     isFashionUnlockLoading,
@@ -7379,12 +7538,8 @@ export function App({
     }
   };
 
-  const handleUpdateTrainerFields = async (
-    trainerId: number,
-    slot: number | null,
-    changes: Array<{ field: string; value: string }>
-  ) => {
-    if (changes.length === 0) {
+  const handleUpdateTrainerFields = async (updates: TrainerFieldUpdate[]) => {
+    if (updates.length === 0) {
       return false;
     }
 
@@ -7405,12 +7560,7 @@ export function App({
             const updateResponse = await bridge.updateTrainerFields({
               paths: createProjectPaths(draftPaths),
               session,
-              updates: changes.map((change) => ({
-                field: change.field,
-                slot,
-                trainerId,
-                value: change.value
-              }))
+              updates
             });
             nextDiagnostics = updateResponse.diagnostics;
             didSucceed = !updateResponse.diagnostics.some(
@@ -7421,14 +7571,14 @@ export function App({
               nextWorkflow = updateResponse.workflow;
             }
           } else {
-            for (const change of changes) {
+            for (const update of updates) {
               const updateResponse = await bridge.updateTrainerField({
-                field: change.field,
+                field: update.field,
                 paths: createProjectPaths(draftPaths),
                 session: nextSession,
-                slot,
-                trainerId,
-                value: change.value
+                slot: update.slot,
+                trainerId: update.trainerId,
+                value: update.value
               });
               nextDiagnostics = [...nextDiagnostics, ...updateResponse.diagnostics];
               if (
@@ -9127,6 +9277,7 @@ export function App({
       'hyperTraining',
       'shinyRate',
       'typeChart',
+      'angeFight',
       'fairyGymBoosts',
       'fashionUnlock',
       'gymUniformRemoval',
@@ -9142,6 +9293,7 @@ export function App({
       StoredRetainedWorkflowSection,
       (isLoading: boolean) => void
     > = {
+      angeFight: setIsAngeFightLoading,
       bagHook: setIsBagHookLoading,
       behavior: setIsBehaviorLoading,
       catchCap: setIsCatchCapLoading,
@@ -9510,6 +9662,16 @@ export function App({
         }
       );
     }
+    if (angeFightWorkflow && refreshSections.has('angeFight')) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadAngeFightWorkflow({ paths });
+          if (canCommitRefresh()) {
+            setAngeFightWorkflow(response.workflow);
+          }
+        }
+      );
+    }
     if (fairyGymBoostsWorkflow && refreshSections.has('fairyGymBoosts')) {
       reloadTasks.push(
         async () => {
@@ -9676,6 +9838,7 @@ export function App({
     Boolean(hyperTrainingWorkflow) ||
     Boolean(shinyRateWorkflow) ||
     Boolean(typeChartWorkflow) ||
+    Boolean(angeFightWorkflow) ||
     Boolean(fairyGymBoostsWorkflow) ||
     Boolean(fashionUnlockWorkflow) ||
     Boolean(gymUniformRemovalWorkflow) ||
@@ -9767,7 +9930,7 @@ export function App({
         }));
       }
 
-      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+      if (!hasApplyErrors) {
         setWorkProgress(createIndeterminateWorkProgress(
           'Applying Editor Changes',
           'Refreshing loaded editor data',
@@ -10119,6 +10282,7 @@ export function App({
               isHyperspaceBypassLoading={isHyperspaceBypassLoading}
               isIvScreenLoading={isIvScreenLoading}
               isTypeChartLoading={isTypeChartLoading}
+              isAngeFightLoading={isAngeFightLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
@@ -10144,6 +10308,7 @@ export function App({
               onOpenHyperspaceBypassWorkflow={handleOpenHyperspaceBypassWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
               onOpenTypeChartWorkflow={handleOpenTypeChartWorkflow}
+              onOpenAngeFightWorkflow={handleOpenAngeFightWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -10813,6 +10978,25 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'angeFight' ? (
+            isAngeFightLoading && !angeFightWorkflow ? (
+              <WorkflowLoadingPanel label="Ange Fight" />
+            ) : (
+              <AngeFightSection
+                editSession={getEditSessionForSection('angeFight')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isAngeFightStaging}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('angeFight')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('angeFight')}
+                onDirtyChange={(isDirty) => registerEditorDraftDirty('angeFight', isDirty)}
+                onStageFight={handleStageAngeFight}
+                onStageUninstall={handleStageAngeFightUninstall}
+                panelOutput={getScopedEditorPanelOutput('angeFight')}
+                workflow={angeFightWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'fairyGymBoosts' ? (
             isFairyGymBoostsLoading && !fairyGymBoostsWorkflow ? (
               <WorkflowLoadingPanel label="Fairy Gym Boosts" />
@@ -11135,6 +11319,7 @@ export function App({
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
               pendingEditContext={{
+                angeFightWorkflow,
                 bagHookWorkflow,
                 catchCapWorkflow,
                 dynamaxAdventuresWorkflow,
@@ -15197,6 +15382,13 @@ function SelectedTextPanel({
   );
 }
 
+type TrainerFieldUpdate = {
+  field: string;
+  slot: number | null;
+  trainerId: number;
+  value: string;
+};
+
 type TrainersSectionProps = {
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
@@ -15212,11 +15404,7 @@ type TrainersSectionProps = {
     field: string,
     value: string
   ) => void;
-  onUpdateTrainerFields: (
-    trainerId: number,
-    slot: number | null,
-    changes: Array<{ field: string; value: string }>
-  ) => Promise<boolean>;
+  onUpdateTrainerFields: (updates: TrainerFieldUpdate[]) => Promise<boolean>;
   pokemonWorkflow: PokemonWorkflow | null;
   searchText: string;
   selectedTrainerId: number | null;
@@ -15499,11 +15687,7 @@ function SelectedTrainerPanel({
     field: string,
     value: string
   ) => void;
-  onUpdateTrainerFields: (
-    trainerId: number,
-    slot: number | null,
-    changes: Array<{ field: string; value: string }>
-  ) => Promise<boolean>;
+  onUpdateTrainerFields: (updates: TrainerFieldUpdate[]) => Promise<boolean>;
   pokemonWorkflow: PokemonWorkflow | null;
   selectedPokemon: TrainerPokemonRecord | null;
   selectedSlot: number | null;
@@ -15767,6 +15951,25 @@ function SelectedTrainerPanel({
     !isTrainerUpdating &&
     pokemonDraftSummary.changedFields.length > 0 &&
     pokemonDraftSummary.invalidFields.length === 0;
+  const trainerMaxIvUpdates = useMemo(
+    () => createTrainerMaxIvUpdates(trainer, contextualPokemonFields),
+    [contextualPokemonFields, trainer]
+  );
+  const hasTrainerMaxIvDraftChanges = useMemo(
+    () =>
+      hasTrainerNonMaxIvDrafts(
+        pokemonDraftsByTrainerSlot,
+        trainer,
+        contextualPokemonFields
+      ),
+    [contextualPokemonFields, pokemonDraftsByTrainerSlot, trainer]
+  );
+  const canMaxTrainerIvs =
+    trainer !== null &&
+    editSession !== null &&
+    canEditTrainers &&
+    !isTrainerUpdating &&
+    (trainerMaxIvUpdates.length > 0 || hasTrainerMaxIvDraftChanges);
   useRegisterEditorDraftDirty(
     'trainers',
     countFieldDraftRecords(trainerDraftsByTrainerId) > 0 ||
@@ -15962,10 +16165,10 @@ function SelectedTrainerPanel({
                   disabled={!canSaveTrainerDrafts}
                   onClick={async () => {
                     const didSave = await onUpdateTrainerFields(
-                      trainer.trainerId,
-                      null,
                       trainerDraftSummary.changedFields.map((change) => ({
                         field: change.field,
+                        slot: null,
+                        trainerId: trainer.trainerId,
                         value: change.value
                       }))
                     );
@@ -16006,6 +16209,33 @@ function SelectedTrainerPanel({
 
             <div className="trainer-party-header">
               <strong>Party</strong>
+              <button
+                aria-busy={isTrainerUpdating || undefined}
+                className="primary-button compact-button trainer-max-iv-button"
+                disabled={!canMaxTrainerIvs}
+                onClick={async () => {
+                  const didSave =
+                    trainerMaxIvUpdates.length === 0 ||
+                    (await onUpdateTrainerFields(trainerMaxIvUpdates));
+                  if (didSave) {
+                    setPokemonDraftsByTrainerSlot((currentDrafts) =>
+                      reconcileTrainerMaxIvDrafts(
+                        currentDrafts,
+                        trainer,
+                        contextualPokemonFields
+                      )
+                    );
+                  }
+                }}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Staging"
+                  icon={<Sparkles aria-hidden="true" size={14} />}
+                  isBusy={isTrainerUpdating}
+                  label="MAX IV"
+                />
+              </button>
             </div>
 
             {trainer.team.length > 0 ? (
@@ -16146,10 +16376,10 @@ function SelectedTrainerPanel({
                       disabled={!canSavePokemonDrafts}
                       onClick={async () => {
                         const didSave = await onUpdateTrainerFields(
-                          trainer.trainerId,
-                          selectedPokemon.slot,
                           pokemonDraftSummary.changedFields.map((change) => ({
                             field: change.field,
+                            slot: selectedPokemon.slot,
+                            trainerId: trainer.trainerId,
                             value: change.value
                           }))
                         );
@@ -16643,6 +16873,100 @@ function getProjectedTrainerHighestLevel(
 
 function getOccupiedTrainerPokemonCount(trainer: TrainerRecord) {
   return trainer.team.filter((pokemon) => pokemon.speciesId > 0).length;
+}
+
+function createTrainerMaxIvUpdates(
+  trainer: TrainerRecord | null,
+  fields: TrainerEditableField[]
+): TrainerFieldUpdate[] {
+  if (!trainer) {
+    return [];
+  }
+
+  const editableIvFields = getEditableTrainerIvFields(fields);
+
+  return trainer.team
+    .filter((pokemon) => pokemon.speciesId > 0)
+    .flatMap((pokemon) =>
+      editableIvFields
+        .filter(
+          (field) => getEditablePokemonFieldValue(pokemon, field) !== maximumPokemonIvValue
+        )
+        .map((field) => ({
+          field,
+          slot: pokemon.slot,
+          trainerId: trainer.trainerId,
+          value: maximumPokemonIvValue.toString()
+        }))
+    );
+}
+
+function reconcileTrainerMaxIvDrafts(
+  records: Record<string, Record<string, string>>,
+  trainer: TrainerRecord,
+  fields: TrainerEditableField[]
+) {
+  const editableIvFields = getEditableTrainerIvFields(fields);
+  let nextRecords = records;
+
+  for (const pokemon of trainer.team) {
+    if (pokemon.speciesId <= 0) {
+      continue;
+    }
+
+    const recordKey = `${trainer.trainerId}:${pokemon.slot}`;
+    const currentDrafts = nextRecords[recordKey];
+    if (!currentDrafts) {
+      continue;
+    }
+
+    const nextDrafts = { ...currentDrafts };
+    const nextDefaults = createTrainerDrafts(fields, (field) =>
+      getEditablePokemonFieldValue(pokemon, field)
+    );
+    for (const field of editableIvFields) {
+      nextDrafts[field] = maximumPokemonIvValue.toString();
+      nextDefaults[field] = maximumPokemonIvValue.toString();
+    }
+
+    nextRecords = setFieldDraftRecord(nextRecords, recordKey, nextDrafts, nextDefaults);
+  }
+
+  return nextRecords;
+}
+
+function hasTrainerNonMaxIvDrafts(
+  records: Record<string, Record<string, string>>,
+  trainer: TrainerRecord | null,
+  fields: TrainerEditableField[]
+) {
+  if (!trainer) {
+    return false;
+  }
+
+  const editableIvFields = getEditableTrainerIvFields(fields);
+
+  return trainer.team
+    .filter((pokemon) => pokemon.speciesId > 0)
+    .some((pokemon) => {
+      const drafts = records[`${trainer.trainerId}:${pokemon.slot}`];
+      return (
+        drafts !== undefined &&
+        editableIvFields.some(
+          (field) =>
+            drafts[field] !== undefined &&
+            drafts[field].trim() !== maximumPokemonIvValue.toString()
+        )
+      );
+    });
+}
+
+function getEditableTrainerIvFields(fields: TrainerEditableField[]) {
+  return fields
+    .map((field) => field.field)
+    .filter((field): field is (typeof ivFieldNames)[number] =>
+      ivFieldNames.includes(field as (typeof ivFieldNames)[number])
+    );
 }
 
 function formatTrainerSlotNumber(slot: number, editorFamily: EditorUiFamily) {
@@ -17636,6 +17960,7 @@ function formatDraftSummary(summary: {
 
 function formatPendingEditDomain(domain: string) {
   const labels: Record<string, string> = {
+    'workflow.angeFight': 'Ange Fight',
     'workflow.bagHook': 'Bag Hook',
     'workflow.catchCap': 'Catch Cap',
     'workflow.dynamaxAdventures': 'Dynamax Adventures',
@@ -17676,6 +18001,7 @@ function formatPendingEditDomain(domain: string) {
 
 function getPendingEditSection(domain: string): WorkbenchSection | null {
   const sectionsByDomain: Record<string, WorkbenchSection> = {
+    'workflow.angeFight': 'angeFight',
     'workflow.bagHook': 'bagHook',
     'workflow.behavior': 'behavior',
     'workflow.catchCap': 'catchCap',
@@ -17935,6 +18261,16 @@ function getPendingEditDisplayDetails(
         recordLabel: entry?.label
       });
     }
+    case 'workflow.angeFight':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'settings' ? 'Fight settings' : 'Uninstall',
+        newValueLabel:
+          edit.recordId === 'za-ange-fight-v1-uninstall'
+            ? 'Restore vanilla Ange Fight values'
+            : '2 flower HP values and 10 direct-damage profiles',
+        recordLabel: 'Ange and Floette'
+      });
     case 'workflow.bagHook':
       return createPendingEditDisplayDetails(edit, {
         editorLabel,
@@ -18455,6 +18791,7 @@ function getEncounterPendingEditDisplayDetails(
   const workflow = context.encountersWorkflow;
   const [tableId, slotText] = (edit.recordId ?? '').split('#');
   const slot = parseOptionalInteger(slotText);
+  const isAppearanceRecord = slotText === 'appearance';
   let table = workflow?.tables.find((candidate) => candidate.tableId === tableId);
   let slotRecord = slot === null ? null : table?.slots.find((candidate) => candidate.slot === slot);
   if (!slotRecord && edit.recordId) {
@@ -18482,6 +18819,7 @@ function getEncounterPendingEditDisplayDetails(
       ).size
     : 0;
   const field = findPendingEditableField(context.encountersWorkflow?.editableFields, edit.field);
+  const isZaEncounter = table ? isPokemonLegendsZAEncounterTable(table) : false;
 
   return createPendingEditDisplayDetails(edit, {
     editorLabel,
@@ -18489,13 +18827,65 @@ function getEncounterPendingEditDisplayDetails(
     newValueLabel: formatPendingEditValue(edit.newValue, field),
     recordLabel:
       table && slotRecord
-        ? `${table.location} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${slotRecord.slot}: ${slotRecord.species}${
+        ? `${table.location} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${
+            isZaEncounter ? slotRecord.slot + 1 : slotRecord.slot
+          }: ${slotRecord.species}${
             sharedSpawnerCount > 1 ? `, shared by ${formatZaEncounterSpawnerCount(sharedSpawnerCount)}` : ''
           }`
+        : table && isAppearanceRecord
+          ? `${table.location} ${table.tableLabel ?? table.tableId}`
         : table
           ? `${table.location} ${table.encounterType} ${table.gameVersion}`
           : undefined
   });
+}
+
+function localizePendingEditRecordLabel(
+  edit: PendingEdit,
+  context: PendingEditContext,
+  recordLabel: string,
+  t: ZaLocalizationFormatter
+) {
+  if (
+    edit.domain === 'workflow.encounters' &&
+    isPokemonLegendsZAGame(context.selectedGame) &&
+    edit.recordId?.endsWith('#appearance')
+  ) {
+    const tableId = edit.recordId.slice(0, -'#appearance'.length);
+    const table = context.encountersWorkflow?.tables.find(
+      (candidate) => candidate.tableId === tableId
+    );
+    if (table) {
+      return t('za.spawnSettings.pendingAppearanceRecord', {
+        location: table.location,
+        spawner: table.tableLabel ?? table.tableId
+      });
+    }
+  }
+
+  return recordLabel;
+}
+
+function localizePendingEditFieldLabel(
+  edit: PendingEdit,
+  context: PendingEditContext,
+  fieldLabel: string,
+  t: (key: string) => string,
+  translateLiteral: (literal: string) => string
+) {
+  if (edit.domain === 'workflow.encounters' && isPokemonLegendsZAGame(context.selectedGame)) {
+    const localizationKey = {
+      [zaEncounterWeightFieldName]: 'za.spawnSettings.weightLabel',
+      [zaEncounterSlotMaxCountFieldName]: 'za.spawnSettings.slotMaxCountLabel',
+      [zaEncounterAppearanceMinCountFieldName]: 'za.spawnSettings.overallMinCountLabel',
+      [zaEncounterAppearanceMaxCountFieldName]: 'za.spawnSettings.overallMaxCountLabel'
+    }[edit.field ?? ''];
+    if (localizationKey) {
+      return t(localizationKey);
+    }
+  }
+
+  return translateLiteral(fieldLabel);
 }
 
 function getRaidBattlePendingEditDisplayDetails(
@@ -18881,6 +19271,17 @@ function getEncounterEditableFieldGroup(field: NumericEditableField) {
   }
 
   if (
+    field.field === zaEncounterWeightFieldName ||
+    field.field === zaEncounterSlotMaxCountFieldName
+  ) {
+    return 'Spawner Slot';
+  }
+
+  if (zaEncounterAppearanceFieldNames.has(field.field)) {
+    return 'Spawner Population';
+  }
+
+  if (
     field.field === zaEncounterAlphaChanceFieldName ||
     field.field === zaEncounterAlphaLevelBonusFieldName
   ) {
@@ -18908,6 +19309,27 @@ function contextualizeZaEncounterField(
     ...field,
     maximumValue: Math.min(field.maximumValue ?? 99, 99)
   };
+}
+
+function localizeZaEncounterSpawnerField(
+  field: NumericEditableField,
+  editorFamily: EditorUiFamily,
+  translate: ZaLocalizationFormatter
+) {
+  if (editorFamily !== 'za') {
+    return field;
+  }
+
+  const labelKeyByField: Record<string, string> = {
+    [zaEncounterWeightFieldName]: 'za.spawnSettings.weightLabel',
+    [zaEncounterSlotMaxCountFieldName]: 'za.spawnSettings.slotMaxCountLabel',
+    [zaEncounterAppearanceMinCountFieldName]:
+      'za.spawnSettings.overallMinCountLabel',
+    [zaEncounterAppearanceMaxCountFieldName]:
+      'za.spawnSettings.overallMaxCountLabel'
+  };
+  const labelKey = labelKeyByField[field.field];
+  return labelKey ? { ...field, label: translate(labelKey) } : field;
 }
 
 function getRaidBattleEditableFieldGroup(field: NumericEditableField) {
@@ -25019,12 +25441,18 @@ function SelectedEncounterPanel({
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
-  const [levelDraftsByTableId, setLevelDraftsByTableId] = useState<
+  const [zaSlotDraftsBySlotKey, setZaSlotDraftsBySlotKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [zaAppearanceDraftsByTableId, setZaAppearanceDraftsByTableId] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [levelDraftsByScopeKey, setLevelDraftsByScopeKey] = useState<
     Record<string, Record<string, string>>
   >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
-  const { t } = useLocalization();
+  const { language, t } = useLocalization();
   const defaultEncounterFields = useMemo(
     () =>
       editableFields.map((field) => {
@@ -25037,7 +25465,11 @@ function SelectedEncounterPanel({
               })
             : undefined
         );
-        return contextualizeZaEncounterField(numericField, encounterSlot, editorFamily);
+        return localizeZaEncounterSpawnerField(
+          contextualizeZaEncounterField(numericField, encounterSlot, editorFamily),
+          editorFamily,
+          t
+        );
       }),
     [
       editableFields,
@@ -25045,7 +25477,8 @@ function SelectedEncounterPanel({
       encounterSlot?.alphaChancePercent,
       encounterSlot?.isAlpha,
       encounterSlot?.species,
-      encounterSlot?.speciesId
+      encounterSlot?.speciesId,
+      t
     ]
   );
   const encounterDraftDefaults = useMemo(
@@ -25059,11 +25492,15 @@ function SelectedEncounterPanel({
       defaultEncounterFields,
       encounterSlot?.alphaChancePercent,
       encounterSlot?.alphaLevelBonus,
+      encounterSlot?.appearanceMaxCount,
+      encounterSlot?.appearanceMinCount,
+      encounterSlot?.appearanceObjectCount,
       encounterSlot?.form,
       encounterSlot?.isAlpha,
       encounterSlot?.levelMax,
       encounterSlot?.levelMin,
       encounterSlot?.slot,
+      encounterSlot?.slotMaxCount,
       encounterSlot?.speciesId,
       encounterSlot?.weight,
       table?.tableId
@@ -25075,8 +25512,18 @@ function SelectedEncounterPanel({
         ? getZaEncounterGroupKey(table.tableId, encounterSlot)
         : `${table.tableId}:${encounterSlot.slot}`
       : null;
+  const zaEncounterSlotDraftKey =
+    editorFamily === 'za' && table && encounterSlot
+      ? `${table.tableId}:${encounterSlot.slot}`
+      : null;
+  const zaEncounterAppearanceDraftKey =
+    editorFamily === 'za' && table ? table.tableId : null;
   const encounterLevelDraftKey =
-    editorFamily === 'swsh' && table ? table.tableId : null;
+    table && editorFamily === 'swsh'
+      ? table.tableId
+      : editorFamily === 'za'
+        ? encounterDraftKey
+        : null;
   const encounterSlotDraftDefaults = useMemo<Record<string, string>>(
     () =>
       editorFamily === 'swsh'
@@ -25086,7 +25533,39 @@ function SelectedEncounterPanel({
                 field !== encounterLevelMinFieldName && field !== encounterLevelMaxFieldName
             )
           )
-        : encounterDraftDefaults,
+        : editorFamily === 'za'
+          ? Object.fromEntries(
+              Object.entries(encounterDraftDefaults).filter(
+                ([field]) =>
+                  !zaEncounterSlotSpecificFieldNames.has(field) &&
+                  !zaEncounterAppearanceFieldNames.has(field) &&
+                  field !== encounterLevelMinFieldName &&
+                  field !== encounterLevelMaxFieldName
+              )
+            )
+          : encounterDraftDefaults,
+    [editorFamily, encounterDraftDefaults]
+  );
+  const zaEncounterSlotDraftDefaults = useMemo<Record<string, string>>(
+    () =>
+      editorFamily === 'za'
+        ? Object.fromEntries(
+            Object.entries(encounterDraftDefaults).filter(([field]) =>
+              zaEncounterSlotSpecificFieldNames.has(field)
+            )
+          )
+        : {},
+    [editorFamily, encounterDraftDefaults]
+  );
+  const zaEncounterAppearanceDraftDefaults = useMemo<Record<string, string>>(
+    () =>
+      editorFamily === 'za'
+        ? Object.fromEntries(
+            Object.entries(encounterDraftDefaults).filter(([field]) =>
+              zaEncounterAppearanceFieldNames.has(field)
+            )
+          )
+        : {},
     [editorFamily, encounterDraftDefaults]
   );
   const encounterLevelDraftDefaults = useMemo<Record<string, string>>(
@@ -25107,12 +25586,21 @@ function SelectedEncounterPanel({
   const slotDrafts = encounterDraftKey
     ? draftsBySlotKey[encounterDraftKey] ?? encounterSlotDraftDefaults
     : {};
-  const drafts = encounterLevelDraftKey
-    ? {
-        ...slotDrafts,
-        ...(levelDraftsByTableId[encounterLevelDraftKey] ?? encounterLevelDraftDefaults)
-      }
-    : slotDrafts;
+  const zaSlotDrafts = zaEncounterSlotDraftKey
+    ? zaSlotDraftsBySlotKey[zaEncounterSlotDraftKey] ?? zaEncounterSlotDraftDefaults
+    : {};
+  const zaAppearanceDrafts = zaEncounterAppearanceDraftKey
+    ? zaAppearanceDraftsByTableId[zaEncounterAppearanceDraftKey] ??
+      zaEncounterAppearanceDraftDefaults
+    : {};
+  const drafts = {
+    ...slotDrafts,
+    ...(encounterLevelDraftKey
+      ? levelDraftsByScopeKey[encounterLevelDraftKey] ?? encounterLevelDraftDefaults
+      : {}),
+    ...zaSlotDrafts,
+    ...zaAppearanceDrafts
+  };
   const isSelectedZaGuaranteedAlpha =
     editorFamily === 'za' && encounterSlot !== null && isZaGuaranteedAlphaSlot(encounterSlot);
   const linkedZaAlphaReferenceKinds = useMemo(() => {
@@ -25194,6 +25682,30 @@ function SelectedEncounterPanel({
   const alphaLevelBonusDisabledReason = isSelectedZaAlphaLevelBonusUnavailable
     ? t('za.alphaSettings.levelBonusUnavailableDisabled')
     : undefined;
+  const weightDisabledReason =
+    editorFamily === 'za' &&
+    encounterSlot !== null &&
+    encounterSlot.canEditWeight !== true
+      ? t('za.spawnSettings.weightUnmaterializedDisabled')
+      : undefined;
+  const slotMaxCountDisabledReason =
+    editorFamily === 'za' &&
+    encounterSlot !== null &&
+    encounterSlot.canEditSlotMaxCount !== true
+      ? t('za.spawnSettings.slotMaxCountUnmaterializedDisabled')
+      : undefined;
+  const areSelectedZaAppearanceCountsUnavailable =
+    editorFamily === 'za' &&
+    encounterSlot !== null &&
+    (typeof encounterSlot.appearanceMinCount !== 'number' ||
+      typeof encounterSlot.appearanceMaxCount !== 'number');
+  const appearanceCountDisabledReason = areSelectedZaAppearanceCountsUnavailable
+    ? t('za.spawnSettings.appearanceCountsUnavailableDisabled')
+    : editorFamily === 'za' &&
+        encounterSlot !== null &&
+        encounterSlot.canEditAppearanceCounts !== true
+      ? t('za.spawnSettings.appearanceCountsUnmaterializedDisabled')
+      : undefined;
   const encounterFormOptionContext = useMemo(
     () =>
       encounterSlot
@@ -25217,9 +25729,13 @@ function SelectedEncounterPanel({
           field,
           encounterSlot ? getContextualFieldOptions(field, encounterFormOptionContext) : undefined
         );
-        return contextualizeZaEncounterField(numericField, encounterSlot, editorFamily);
+        return localizeZaEncounterSpawnerField(
+          contextualizeZaEncounterField(numericField, encounterSlot, editorFamily),
+          editorFamily,
+          t
+        );
       }),
-    [editableFields, encounterFormOptionContext, encounterSlot, editorFamily]
+    [editableFields, encounterFormOptionContext, encounterSlot, editorFamily, t]
   );
   const encounterFieldGroups = useMemo(
     () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
@@ -25237,13 +25753,70 @@ function SelectedEncounterPanel({
   useRegisterEditorDraftDirty(
     'encounters',
     countFieldDraftRecords(draftsBySlotKey) +
-      countFieldDraftRecords(levelDraftsByTableId) >
+      countFieldDraftRecords(zaSlotDraftsBySlotKey) +
+      countFieldDraftRecords(zaAppearanceDraftsByTableId) +
+      countFieldDraftRecords(levelDraftsByScopeKey) >
       0
   );
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
   const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
+  const draftedZaWeight = getEncounterDraftInteger(
+    selectedPlacementDrafts[zaEncounterWeightFieldName],
+    encounterSlot?.weight ?? null
+  );
+  const draftedZaSlotMaxCount = getEncounterDraftInteger(
+    selectedPlacementDrafts[zaEncounterSlotMaxCountFieldName],
+    encounterSlot?.slotMaxCount ?? null
+  );
+  const draftedZaAppearanceMaxCount = getEncounterDraftInteger(
+    selectedPlacementDrafts[zaEncounterAppearanceMaxCountFieldName],
+    encounterSlot?.appearanceMaxCount ?? null
+  );
+  const changedZaSpawnerFieldNames = new Set(
+    encounterDraftSummary.changedFields
+      .map((field) => field.field)
+      .filter(
+        (field) =>
+          zaEncounterSlotSpecificFieldNames.has(field) ||
+          zaEncounterAppearanceFieldNames.has(field)
+      )
+  );
+  const zaSpawnerCountWarnings: string[] = [];
+  const hasChangedZaSlotSelectionSetting =
+    changedZaSpawnerFieldNames.has(zaEncounterWeightFieldName) ||
+    changedZaSpawnerFieldNames.has(zaEncounterSlotMaxCountFieldName);
+  if (
+    isZaEncounterTable &&
+    hasChangedZaSlotSelectionSetting &&
+    draftedZaWeight === 0 &&
+    (draftedZaSlotMaxCount ?? 0) > 0
+  ) {
+    zaSpawnerCountWarnings.push(t('za.spawnSettings.zeroWeightWarning'));
+  }
+  if (
+    isZaEncounterTable &&
+    hasChangedZaSlotSelectionSetting &&
+    (draftedZaWeight ?? 0) > 0 &&
+    draftedZaSlotMaxCount === 0
+  ) {
+    zaSpawnerCountWarnings.push(t('za.spawnSettings.zeroSlotMaxWarning'));
+  }
+  if (
+    isZaEncounterTable &&
+    (changedZaSpawnerFieldNames.has(zaEncounterSlotMaxCountFieldName) ||
+      changedZaSpawnerFieldNames.has(zaEncounterAppearanceMaxCountFieldName)) &&
+    draftedZaSlotMaxCount !== null &&
+    draftedZaAppearanceMaxCount !== null &&
+    draftedZaSlotMaxCount > draftedZaAppearanceMaxCount
+  ) {
+    zaSpawnerCountWarnings.push(t('za.spawnSettings.slotMaxExceedsOverallWarning'));
+  }
   const encounterLevelFieldNames = [encounterLevelMinFieldName, encounterLevelMaxFieldName];
+  const zaAppearanceCountFieldNames = [
+    zaEncounterAppearanceMinCountFieldName,
+    zaEncounterAppearanceMaxCountFieldName
+  ];
   const encounterLevelChanges = encounterSlot
     ? getOrderedEncounterLevelChanges(encounterSlot, encounterDraftSummary.changedFields)
     : [];
@@ -25257,16 +25830,50 @@ function SelectedEncounterPanel({
     hasChangedEncounterLevelDraft &&
     !hasInvalidEncounterLevelDraft &&
     encounterLevelChanges.length === 0;
+  const zaAppearanceCountChanges = encounterSlot
+    ? getOrderedZaAppearanceCountChanges(
+        encounterSlot,
+        encounterDraftSummary.changedFields
+      )
+    : [];
+  const hasChangedZaAppearanceCountDraft = encounterDraftSummary.changedFields.some(
+    (field) => zaAppearanceCountFieldNames.includes(field.field)
+  );
+  const hasInvalidZaAppearanceCountDraft = encounterDraftSummary.invalidFields.some(
+    (field) => zaAppearanceCountFieldNames.includes(field.field)
+  );
+  const hasInvalidZaAppearanceCountPair =
+    hasChangedZaAppearanceCountDraft &&
+    !hasInvalidZaAppearanceCountDraft &&
+    zaAppearanceCountChanges.length === 0;
   const encounterStageChanges = [
     ...encounterDraftSummary.changedFields.filter(
-      (change) => !encounterLevelFieldNames.includes(change.field)
+      (change) =>
+        !encounterLevelFieldNames.includes(change.field) &&
+        !zaAppearanceCountFieldNames.includes(change.field)
     ),
-    ...encounterLevelChanges
+    ...encounterLevelChanges,
+    ...zaAppearanceCountChanges
   ];
-  const encounterLevelConditionUpdates =
+  const zaEncounterLevelZoneGroups = useMemo(
+    () => (table && isZaEncounterTable ? getZaEncounterLevelZoneGroups(table, tables) : []),
+    [isZaEncounterTable, table, tables]
+  );
+  const encounterLevelScopeUpdates =
     table && isSwShEncounterTable
       ? createEncounterLevelConditionUpdates(table, tables, encounterLevelChanges)
-      : [];
+      : encounterSlot && isZaEncounterTable
+        ? createZaEncounterLevelZoneUpdates(
+            encounterSlot,
+            zaEncounterLevelZoneGroups,
+            encounterLevelChanges
+          )
+        : [];
+  const encounterLevelScopeDraftKeys = new Set(
+    isZaEncounterTable
+      ? zaEncounterLevelZoneGroups.map((group) => group.key)
+      : encounterLevelScopeUpdates.map((update) => update.tableId)
+  );
   const canSaveEncounterDrafts =
     table !== null &&
     encounterSlot !== null &&
@@ -25275,7 +25882,8 @@ function SelectedEncounterPanel({
     !isEncounterUpdating &&
     encounterDraftSummary.changedFields.length > 0 &&
     encounterDraftSummary.invalidFields.length === 0 &&
-    !hasInvalidEncounterLevelPair;
+    !hasInvalidEncounterLevelPair &&
+    !hasInvalidZaAppearanceCountPair;
   const workflowHasZaAlphaChanceField = editableFields.some(
     (field) => field.field === zaEncounterAlphaChanceFieldName
   );
@@ -25311,8 +25919,8 @@ function SelectedEncounterPanel({
     editSession !== null &&
     canEditEncounters &&
     !isEncounterUpdating &&
-    (isSwShEncounterTable
-      ? encounterLevelConditionUpdates.length > 0
+    (isSwShEncounterTable || isZaEncounterTable
+      ? encounterLevelScopeUpdates.length > 0
       : encounterLevelChanges.length > 0) &&
     !hasInvalidEncounterLevelDraft;
   const areaCopyTargetArea =
@@ -25361,7 +25969,7 @@ function SelectedEncounterPanel({
       return;
     }
 
-    setLevelDraftsByTableId((currentDrafts) =>
+    setLevelDraftsByScopeKey((currentDrafts) =>
       pruneFieldDraftRecord(
         currentDrafts,
         encounterLevelDraftKey,
@@ -25369,6 +25977,34 @@ function SelectedEncounterPanel({
       )
     );
   }, [encounterLevelDraftDefaults, encounterLevelDraftKey]);
+
+  useEffect(() => {
+    if (!zaEncounterSlotDraftKey) {
+      return;
+    }
+
+    setZaSlotDraftsBySlotKey((currentDrafts) =>
+      pruneFieldDraftRecord(
+        currentDrafts,
+        zaEncounterSlotDraftKey,
+        zaEncounterSlotDraftDefaults
+      )
+    );
+  }, [zaEncounterSlotDraftDefaults, zaEncounterSlotDraftKey]);
+
+  useEffect(() => {
+    if (!zaEncounterAppearanceDraftKey) {
+      return;
+    }
+
+    setZaAppearanceDraftsByTableId((currentDrafts) =>
+      pruneFieldDraftRecord(
+        currentDrafts,
+        zaEncounterAppearanceDraftKey,
+        zaEncounterAppearanceDraftDefaults
+      )
+    );
+  }, [zaEncounterAppearanceDraftDefaults, zaEncounterAppearanceDraftKey]);
 
   return (
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
@@ -25546,14 +26182,20 @@ function SelectedEncounterPanel({
               <strong>Slots</strong>
               <span
                 className={
-                  isSvEncounterTable || encounterWeightTotal === 100
-                    ? 'encounter-total-status'
+                  isSvEncounterTable || isZaEncounterTable || encounterWeightTotal === 100
+                    ? `encounter-total-status ${
+                        isZaEncounterTable ? 'encounter-total-relative' : ''
+                      }`
                     : 'encounter-total-status encounter-total-warning'
                 }
               >
                 {isSvEncounterTable
                   ? `Total lot weight: ${encounterWeightTotal}`
-                  : `Total chance: ${encounterWeightTotal}%`}
+                  : isZaEncounterTable
+                    ? t('za.spawnSettings.listedWeightTotal', {
+                        total: encounterWeightTotal
+                      })
+                    : `Total chance: ${encounterWeightTotal}%`}
               </span>
             </div>
 
@@ -25609,11 +26251,29 @@ function SelectedEncounterPanel({
                           </div>
                         ) : null}
                         <small>
-                          {formatEncounterSlotWeightSummary(
-                            slot,
-                            encounterWeightTotal,
-                            isSvEncounterTable
-                          )}
+                          {isZaEncounterTable
+                            ? encounterWeightTotal > 0
+                              ? t('za.spawnSettings.slotSummaryWithShare', {
+                                  levelMax: slot.levelMax,
+                                  levelMin: slot.levelMin,
+                                  share:
+                                    formatEncounterSharePercent(
+                                      slot.weight,
+                                      encounterWeightTotal,
+                                      language
+                                    ) ?? '',
+                                  weight: slot.weight
+                                })
+                              : t('za.spawnSettings.slotSummary', {
+                                  levelMax: slot.levelMax,
+                                  levelMin: slot.levelMin,
+                                  weight: slot.weight
+                                })
+                            : formatEncounterSlotWeightSummary(
+                                slot,
+                                encounterWeightTotal,
+                                isSvEncounterTable
+                              )}
                         </small>
                       </button>
                     );
@@ -25652,9 +26312,40 @@ function SelectedEncounterPanel({
                     </dd>
                   </div>
                   <div>
-                    <dt>{isSvEncounterTable ? 'Lot weight' : 'Probability'}</dt>
+                    <dt>
+                      {isSvEncounterTable
+                        ? 'Lot weight'
+                        : isZaEncounterTable
+                          ? t('za.spawnSettings.weightLabel')
+                          : 'Probability'}
+                    </dt>
                     <dd>{encounterSlot.weight}</dd>
                   </div>
+                  {isZaEncounterTable &&
+                  typeof encounterSlot.slotMaxCount === 'number' ? (
+                    <div>
+                      <dt>{t('za.spawnSettings.slotMaxCountLabel')}</dt>
+                      <dd>{encounterSlot.slotMaxCount}</dd>
+                    </div>
+                  ) : null}
+                  {isZaEncounterTable ? (
+                    <div>
+                      <dt>{t('za.spawnSettings.overallCountLabel')}</dt>
+                      <dd>
+                        {typeof encounterSlot.appearanceMinCount === 'number' &&
+                        typeof encounterSlot.appearanceMaxCount === 'number'
+                          ? `${encounterSlot.appearanceMinCount}-${encounterSlot.appearanceMaxCount}`
+                          : t('za.spawnSettings.unavailable')}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {isZaEncounterTable &&
+                  typeof encounterSlot.appearanceObjectCount === 'number' ? (
+                    <div>
+                      <dt>{t('za.spawnSettings.appearanceObjectsLabel')}</dt>
+                      <dd>{encounterSlot.appearanceObjectCount}</dd>
+                    </div>
+                  ) : null}
                   {zaAlphaChanceDisplay ? (
                     <div>
                       <dt>{t('za.alphaSettings.chanceLabel')}</dt>
@@ -25673,12 +26364,31 @@ function SelectedEncounterPanel({
                       <dd>{zaAlphaLevelRangeDisplay}</dd>
                     </div>
                   ) : null}
-                  {isSvEncounterTable ? (
+                  {isSvEncounterTable || isZaEncounterTable ? (
                     <div>
-                      <dt title="Calculated from this slot's lot weight divided by the selected condition row's total lot weight.">
-                        Share in row
+                      <dt
+                        title={
+                          isZaEncounterTable
+                            ? t('za.spawnSettings.listedShareHelp')
+                            : 'Calculated from this slot\'s lot weight divided by the selected condition row\'s total lot weight.'
+                        }
+                      >
+                        {isZaEncounterTable
+                          ? t('za.spawnSettings.listedShareLabel')
+                          : 'Share in row'}
                       </dt>
-                      <dd>{formatEncounterLotShare(encounterSlot.weight, encounterWeightTotal)}</dd>
+                      <dd>
+                        {isZaEncounterTable
+                          ? formatEncounterSharePercent(
+                              encounterSlot.weight,
+                              encounterWeightTotal,
+                              language
+                            ) ?? t('za.spawnSettings.unavailable')
+                          : formatEncounterLotShare(
+                              encounterSlot.weight,
+                              encounterWeightTotal
+                            )}
+                      </dd>
                     </div>
                   ) : null}
                   {isSvEncounterTable ? (
@@ -25711,7 +26421,13 @@ function SelectedEncounterPanel({
                 <div className="editable-field-groups">
                   {encounterFieldGroups.map((group) => (
                     <fieldset className="editable-field-group" key={group.group}>
-                      <legend>{group.group}</legend>
+                      <legend>
+                        {group.group === 'Spawner Slot'
+                          ? t('za.spawnSettings.slotGroup')
+                          : group.group === 'Spawner Population'
+                            ? t('za.spawnSettings.populationGroup')
+                            : group.group}
+                      </legend>
                       <div className="editable-field-grid">
                         {group.fields.map((field) => {
                           const currentValue = getEditableEncounterFieldValue(
@@ -25738,7 +26454,13 @@ function SelectedEncounterPanel({
                                   ? alphaChanceDisabledReason
                                   : field.field === zaEncounterAlphaLevelBonusFieldName
                                     ? alphaLevelBonusDisabledReason
-                                    : undefined
+                                    : field.field === zaEncounterWeightFieldName
+                                      ? weightDisabledReason
+                                      : field.field === zaEncounterSlotMaxCountFieldName
+                                        ? slotMaxCountDisabledReason
+                                        : zaEncounterAppearanceFieldNames.has(field.field)
+                                          ? appearanceCountDisabledReason
+                                          : undefined
                               }
                               draftState={draftState}
                               draftValue={draftValue}
@@ -25756,14 +26478,44 @@ function SelectedEncounterPanel({
                                   encounterLevelFieldNames.includes(field.field)
                                 ) {
                                   const currentLevelDrafts =
-                                    levelDraftsByTableId[encounterLevelDraftKey] ??
+                                    levelDraftsByScopeKey[encounterLevelDraftKey] ??
                                     encounterLevelDraftDefaults;
-                                  setLevelDraftsByTableId((currentDrafts) =>
+                                  setLevelDraftsByScopeKey((currentDrafts) =>
                                     setFieldDraftRecord(
                                       currentDrafts,
                                       encounterLevelDraftKey,
                                       { ...currentLevelDrafts, [field.field]: value },
                                       encounterLevelDraftDefaults
+                                    )
+                                  );
+                                  return;
+                                }
+
+                                if (
+                                  zaEncounterSlotDraftKey &&
+                                  zaEncounterSlotSpecificFieldNames.has(field.field)
+                                ) {
+                                  setZaSlotDraftsBySlotKey((currentDrafts) =>
+                                    setFieldDraftRecord(
+                                      currentDrafts,
+                                      zaEncounterSlotDraftKey,
+                                      { ...zaSlotDrafts, [field.field]: value },
+                                      zaEncounterSlotDraftDefaults
+                                    )
+                                  );
+                                  return;
+                                }
+
+                                if (
+                                  zaEncounterAppearanceDraftKey &&
+                                  zaEncounterAppearanceFieldNames.has(field.field)
+                                ) {
+                                  setZaAppearanceDraftsByTableId((currentDrafts) =>
+                                    setFieldDraftRecord(
+                                      currentDrafts,
+                                      zaEncounterAppearanceDraftKey,
+                                      { ...zaAppearanceDrafts, [field.field]: value },
+                                      zaEncounterAppearanceDraftDefaults
                                     )
                                   );
                                   return;
@@ -25798,6 +26550,30 @@ function SelectedEncounterPanel({
                           );
                         })}
                       </div>
+                      {group.group === 'Spawner Slot' && isZaEncounterTable ? (
+                        <div className="field-group-action-row za-spawner-field-note">
+                          <small className="editable-field-status">
+                            {t('za.spawnSettings.slotHelp')}
+                          </small>
+                        </div>
+                      ) : null}
+                      {group.group === 'Spawner Population' && isZaEncounterTable ? (
+                        <div className="field-group-action-row za-spawner-field-note">
+                          <small className="editable-field-status">
+                            {encounterSlot &&
+                            (encounterSlot.appearanceObjectCount ?? 0) > 1
+                              ? t('za.spawnSettings.populationHelp.many', {
+                                  count: encounterSlot.appearanceObjectCount ?? 0
+                                })
+                              : t('za.spawnSettings.populationHelp.one')}
+                          </small>
+                          {hasInvalidZaAppearanceCountPair ? (
+                            <small className="editable-field-error">
+                              {t('za.spawnSettings.minExceedsMaxError')}
+                            </small>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {group.group === 'Levels' ? (
                         <div className="field-group-action-row">
                           {isSwShEncounterTable ? (
@@ -25820,26 +26596,23 @@ function SelectedEncounterPanel({
                                 return;
                               }
 
-                              const didSave = isSwShEncounterTable
-                                ? await onUpdateEncounterSlotUpdates(
-                                    encounterLevelConditionUpdates
-                                  )
-                                : await onUpdateEncounterSlotFields(
-                                    table.tableId,
-                                    encounterSlot.slot,
-                                    encounterLevelChanges
-                                  );
+                              const didSave =
+                                isSwShEncounterTable || isZaEncounterTable
+                                  ? await onUpdateEncounterSlotUpdates(
+                                      encounterLevelScopeUpdates
+                                    )
+                                  : await onUpdateEncounterSlotFields(
+                                      table.tableId,
+                                      encounterSlot.slot,
+                                      encounterLevelChanges
+                                    );
                               if (didSave) {
                                 if (encounterLevelDraftKey) {
-                                  const updatedTableIds = new Set(
-                                    encounterLevelConditionUpdates.map(
-                                      (update) => update.tableId
-                                    )
-                                  );
-                                  setLevelDraftsByTableId((currentDrafts) =>
+                                  setLevelDraftsByScopeKey((currentDrafts) =>
                                     Object.fromEntries(
                                       Object.entries(currentDrafts).filter(
-                                        ([tableId]) => !updatedTableIds.has(tableId)
+                                        ([scopeKey]) =>
+                                          !encounterLevelScopeDraftKeys.has(scopeKey)
                                       )
                                     )
                                   );
@@ -25878,6 +26651,21 @@ function SelectedEncounterPanel({
                     </fieldset>
                   ))}
                 </div>
+                {isZaEncounterTable && zaSpawnerCountWarnings.length > 0 ? (
+                  <div
+                    aria-label={t('za.spawnSettings.warningHeading')}
+                    className="za-spawner-count-warnings"
+                    role="status"
+                  >
+                    <AlertTriangle aria-hidden="true" size={16} />
+                    <div>
+                      <strong>{t('za.spawnSettings.warningHeading')}</strong>
+                      {zaSpawnerCountWarnings.map((warning) => (
+                        <small key={warning}>{warning}</small>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {editSession ? (
                   <div className="draft-action-row">
                     <button
@@ -25901,8 +26689,24 @@ function SelectedEncounterPanel({
                           setDraftsBySlotKey((currentDrafts) =>
                             deleteFieldDraftRecord(currentDrafts, encounterDraftKey)
                           );
+                          if (zaEncounterSlotDraftKey) {
+                            setZaSlotDraftsBySlotKey((currentDrafts) =>
+                              deleteFieldDraftRecord(
+                                currentDrafts,
+                                zaEncounterSlotDraftKey
+                              )
+                            );
+                          }
+                          if (zaEncounterAppearanceDraftKey) {
+                            setZaAppearanceDraftsByTableId((currentDrafts) =>
+                              deleteFieldDraftRecord(
+                                currentDrafts,
+                                zaEncounterAppearanceDraftKey
+                              )
+                            );
+                          }
                           if (encounterLevelDraftKey) {
-                            setLevelDraftsByTableId((currentDrafts) =>
+                            setLevelDraftsByScopeKey((currentDrafts) =>
                               deleteFieldDraftRecord(currentDrafts, encounterLevelDraftKey)
                             );
                           }
@@ -25964,7 +26768,9 @@ function SelectedEncounterPanel({
                       onClick={() =>
                         cancelActiveEditSession(() => {
                           setDraftsBySlotKey({});
-                          setLevelDraftsByTableId({});
+                          setZaSlotDraftsBySlotKey({});
+                          setZaAppearanceDraftsByTableId({});
+                          setLevelDraftsByScopeKey({});
                         })
                       }
                       type="button"
@@ -26028,7 +26834,7 @@ function SelectedEncounterPanel({
                       )
                     )
                   );
-                  setLevelDraftsByTableId((currentDrafts) =>
+                  setLevelDraftsByScopeKey((currentDrafts) =>
                     Object.fromEntries(
                       Object.entries(currentDrafts).filter(
                         ([tableId]) => !copiedLevelTableIds.has(tableId)
@@ -26412,7 +27218,7 @@ function ZaEncounterGroupBrowser({
           >
             <span role="columnheader">Spawner</span>
             <span role="columnheader">Slot</span>
-            <span role="columnheader">Probability</span>
+            <span role="columnheader">{t('za.spawnSettings.weightLabel')}</span>
             <span role="columnheader">Conditions</span>
             {showPlacementAlphaChance ? (
               <span role="columnheader">{t('za.alphaSettings.chanceLabel')}</span>
@@ -26435,7 +27241,10 @@ function ZaEncounterGroupBrowser({
               : null;
             return (
               <button
-                aria-label={`${placementLabel}, slot ${placement.slot.slot + 1}, probability ${placement.slot.weight}, ${formatZaEncounterPlacementConditions(placement)}${
+                aria-label={`${placementLabel}, ${t('za.spawnSettings.slotAria', {
+                  slot: placement.slot.slot + 1,
+                  weight: placement.slot.weight
+                })}, ${formatZaEncounterPlacementConditions(placement)}${
                   placementAlphaChanceLabel
                     ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
                     : ''
@@ -34542,6 +35351,7 @@ function SelectedSpreadsheetImportPanel({
 type PendingEdit = EditSession['pendingEdits'][number];
 
 type PendingEditContext = {
+  angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
@@ -34870,7 +35680,7 @@ function ChangesSection({
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const pendingEdits = editSession?.pendingEdits ?? [];
   const isPendingValidationBusy = isSessionValidating || isChangePlanCreating;
   const pendingEditGroups: Array<{
@@ -35117,11 +35927,26 @@ function ChangesSection({
                           <dl className="pending-edit-meta pending-edit-summary-meta">
                             <div>
                               <dt>Record</dt>
-                              <dd>{details.recordLabel}</dd>
+                              <dd>
+                                {localizePendingEditRecordLabel(
+                                  edit,
+                                  pendingEditContext,
+                                  details.recordLabel,
+                                  t
+                                )}
+                              </dd>
                             </div>
                             <div>
                               <dt>Field</dt>
-                              <dd>{details.fieldLabel}</dd>
+                              <dd>
+                                {localizePendingEditFieldLabel(
+                                  edit,
+                                  pendingEditContext,
+                                  details.fieldLabel,
+                                  t,
+                                  translateLiteral
+                                )}
+                              </dd>
                             </div>
                             <div>
                               <dt>New value</dt>
@@ -38296,7 +39121,8 @@ function isZaEncounterGroupPending(
     (placement) =>
       (placement.slot.encounterRecordId != null &&
         pendingRecordIds.has(placement.slot.encounterRecordId)) ||
-      pendingRecordIds.has(`${placement.table.tableId}#${placement.slot.slot}`)
+      pendingRecordIds.has(`${placement.table.tableId}#${placement.slot.slot}`) ||
+      pendingRecordIds.has(`${placement.table.tableId}#appearance`)
   );
 }
 
@@ -38460,6 +39286,78 @@ function createEncounterLevelConditionUpdates(
     });
 }
 
+function getZaEncounterLevelZoneGroups(
+  selectedTable: EncounterTableRecord,
+  tables: EncounterTableRecord[]
+) {
+  const selectedZoneKey = getEncounterTableZoneKey(selectedTable);
+  const zoneTables = tables.filter(
+    (table) =>
+      isPokemonLegendsZAEncounterTable(table) &&
+      getEncounterTableZoneKey(table) === selectedZoneKey
+  );
+
+  return buildZaEncounterGroups(zoneTables, tables).filter(
+    (group) => Boolean(group.slot.encounterRecordId?.trim())
+  );
+}
+
+function createZaEncounterLevelZoneUpdates(
+  selectedSlot: EncounterSlotRecord,
+  groups: ZaEncounterGroup[],
+  changes: Array<{ field: string; value: string }>
+): EncounterSlotFieldUpdate[] {
+  if (changes.length === 0) {
+    return [];
+  }
+
+  const finalMinimumLevel = Number.parseInt(
+    changes.find((change) => change.field === encounterLevelMinFieldName)?.value ??
+      selectedSlot.levelMin.toString(),
+    10
+  );
+  const finalMaximumLevel = Number.parseInt(
+    changes.find((change) => change.field === encounterLevelMaxFieldName)?.value ??
+      selectedSlot.levelMax.toString(),
+    10
+  );
+  if (
+    !Number.isInteger(finalMinimumLevel) ||
+    !Number.isInteger(finalMaximumLevel) ||
+    finalMinimumLevel > finalMaximumLevel
+  ) {
+    return [];
+  }
+
+  return groups.flatMap((group) => {
+    const placement = group.placements[0];
+    if (
+      !placement ||
+      (group.slot.levelMin === finalMinimumLevel &&
+        group.slot.levelMax === finalMaximumLevel)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        changes: getOrderedEncounterLevelChanges(group.slot, [
+          {
+            field: encounterLevelMinFieldName,
+            value: finalMinimumLevel.toString()
+          },
+          {
+            field: encounterLevelMaxFieldName,
+            value: finalMaximumLevel.toString()
+          }
+        ]),
+        slot: placement.slot.slot,
+        tableId: placement.table.tableId
+      }
+    ];
+  });
+}
+
 function compareEncounterTablesForCopy(
   left: EncounterTableRecord,
   right: EncounterTableRecord
@@ -38574,6 +39472,9 @@ function filterEncounterTables(tables: EncounterTableRecord[], searchText: strin
         slot.levelMin.toString(),
         slot.levelMax.toString(),
         slot.weight.toString(),
+        slot.slotMaxCount?.toString() ?? '',
+        slot.appearanceMinCount?.toString() ?? '',
+        slot.appearanceMaxCount?.toString() ?? '',
         slot.weather
       ])
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
@@ -39028,6 +39929,14 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
       return encounterSlot.form;
     case encounterProbabilityFieldName:
       return encounterSlot.weight;
+    case zaEncounterWeightFieldName:
+      return encounterSlot.weight;
+    case zaEncounterSlotMaxCountFieldName:
+      return encounterSlot.slotMaxCount ?? null;
+    case zaEncounterAppearanceMinCountFieldName:
+      return encounterSlot.appearanceMinCount ?? null;
+    case zaEncounterAppearanceMaxCountFieldName:
+      return encounterSlot.appearanceMaxCount ?? null;
     case encounterLevelMinFieldName:
       return encounterSlot.levelMin;
     case encounterLevelMaxFieldName:
@@ -39039,6 +39948,20 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
     default:
       return null;
   }
+}
+
+function getEncounterDraftInteger(value: string | undefined, fallback: number | null) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const normalizedValue = value.trim();
+  if (!/^\d+$/.test(normalizedValue)) {
+    return null;
+  }
+
+  const parsedValue = Number(normalizedValue);
+  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
 }
 
 function getOrderedEncounterLevelChanges(
@@ -39086,6 +40009,69 @@ function getOrderedEncounterLevelChanges(
   const completeChanges = [
     { field: encounterLevelMinFieldName, value: nextMinimumLevel.toString() },
     { field: encounterLevelMaxFieldName, value: nextMaximumLevel.toString() }
+  ];
+
+  return completeChanges.sort(
+    (left, right) => preferredOrder.indexOf(left.field) - preferredOrder.indexOf(right.field)
+  );
+}
+
+function getOrderedZaAppearanceCountChanges(
+  encounterSlot: EncounterSlotRecord,
+  changedFields: Array<{ field: string; value: string }>
+) {
+  const changes = changedFields
+    .filter(
+      (change) =>
+        change.field === zaEncounterAppearanceMinCountFieldName ||
+        change.field === zaEncounterAppearanceMaxCountFieldName
+    )
+    .map((change) => ({ field: change.field, value: change.value }));
+
+  if (
+    changes.length === 0 ||
+    typeof encounterSlot.appearanceMinCount !== 'number' ||
+    typeof encounterSlot.appearanceMaxCount !== 'number'
+  ) {
+    return [];
+  }
+
+  const nextMinimumCount = Number.parseInt(
+    changes.find((change) => change.field === zaEncounterAppearanceMinCountFieldName)
+      ?.value ?? encounterSlot.appearanceMinCount.toString(),
+    10
+  );
+  const nextMaximumCount = Number.parseInt(
+    changes.find((change) => change.field === zaEncounterAppearanceMaxCountFieldName)
+      ?.value ?? encounterSlot.appearanceMaxCount.toString(),
+    10
+  );
+
+  if (
+    !Number.isInteger(nextMinimumCount) ||
+    !Number.isInteger(nextMaximumCount) ||
+    nextMinimumCount > nextMaximumCount
+  ) {
+    return [];
+  }
+
+  const updateMaximumFirst = nextMinimumCount > encounterSlot.appearanceMaxCount;
+  const updateMinimumFirst = nextMaximumCount < encounterSlot.appearanceMinCount;
+  const preferredOrder = updateMaximumFirst
+    ? [zaEncounterAppearanceMaxCountFieldName, zaEncounterAppearanceMinCountFieldName]
+    : updateMinimumFirst
+      ? [zaEncounterAppearanceMinCountFieldName, zaEncounterAppearanceMaxCountFieldName]
+      : [zaEncounterAppearanceMinCountFieldName, zaEncounterAppearanceMaxCountFieldName];
+
+  const completeChanges = [
+    {
+      field: zaEncounterAppearanceMinCountFieldName,
+      value: nextMinimumCount.toString()
+    },
+    {
+      field: zaEncounterAppearanceMaxCountFieldName,
+      value: nextMaximumCount.toString()
+    }
   ];
 
   return completeChanges.sort(

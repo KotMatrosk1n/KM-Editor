@@ -33,6 +33,7 @@ import {
   type ZaModMergerWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
+import { type AngeFightWorkflow } from './bridge/angeFightContracts';
 import { type FashionUnlockWorkflow } from './bridge/fashionUnlockContracts';
 import { type GymUniformRemovalWorkflow } from './bridge/gymUniformRemovalContracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
@@ -89,6 +90,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'hyperTraining',
       'shinyRate',
       'typeChart',
+      'angeFight',
       'fairyGymBoosts',
       'fashionUnlock',
       'gymUniformRemoval',
@@ -172,6 +174,7 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'placement',
   'shops',
   'typeChart',
+  'angeFight',
   'spreadsheetImport',
   'modMerger',
   'gameDump'
@@ -204,6 +207,14 @@ export const scarletVioletAdvancedEditorDomains = new Set([
   'workflow.typeChart',
   'workflow.fashionUnlock',
   'workflow.hyperspaceBypass'
+]);
+
+export const pokemonLegendsZAAdvancedEditorSectionIds = new Set<WorkbenchSection>([
+  'angeFight'
+]);
+
+export const pokemonLegendsZAAdvancedEditorDomains = new Set([
+  'workflow.angeFight'
 ]);
 
 export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
@@ -264,7 +275,19 @@ export function isScarletVioletAdvancedEditorSection(
   );
 }
 
+export function isPokemonLegendsZAAdvancedEditorSection(
+  section: WorkbenchSection | null,
+  game: ProjectGame | null | undefined
+) {
+  return (
+    section !== null &&
+    isPokemonLegendsZAGame(game) &&
+    pokemonLegendsZAAdvancedEditorSectionIds.has(section)
+  );
+}
+
 export type LoadedWorkflowStateBySection = {
+  angeFightWorkflow: AngeFightWorkflow | null;
   bagHookWorkflow: BagHookWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
@@ -356,6 +379,8 @@ export function getLoadedWorkflowStateForSection(
   state: LoadedWorkflowStateBySection
 ) {
   switch (section) {
+    case 'angeFight':
+      return state.angeFightWorkflow !== null;
     case 'bagHook':
       return state.bagHookWorkflow !== null;
     case 'behavior':

@@ -31,7 +31,22 @@ public sealed record ZaEncounterSlotRecord(
     bool? ContributesToWildZoneCompletion,
     int? AlphaChancePercent,
     int? AlphaLevelBonus,
-    bool HasAlphaChance);
+    bool HasAlphaChance)
+{
+    public int SlotMaxCount { get; init; }
+
+    public bool CanEditWeight { get; init; }
+
+    public bool CanEditSlotMaxCount { get; init; }
+
+    public int? AppearanceMinCount { get; init; }
+
+    public int? AppearanceMaxCount { get; init; }
+
+    public int AppearanceObjectCount { get; init; }
+
+    public bool CanEditAppearanceCounts { get; init; }
+}
 
 public sealed record ZaEncounterTableRecord(
     string TableId,
