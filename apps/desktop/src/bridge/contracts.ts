@@ -11,6 +11,7 @@ export const kmCommandNameValues = [
   'pokemon.field.update', 'pokemon.fields.update',
   'pokemon.learnset.update',
   'pokemon.evolution.update',
+  'pokemon.dex.swap',
   'moves.load',
   'moves.field.update', 'moves.fields.update',
   'text.load',
@@ -127,6 +128,7 @@ export const kmCommandNames = {
   updatePokemonFields: 'pokemon.fields.update',
   updatePokemonLearnset: 'pokemon.learnset.update',
   updatePokemonEvolution: 'pokemon.evolution.update',
+  swapPokemonDexPlacement: 'pokemon.dex.swap',
   loadMovesWorkflow: 'moves.load',
   updateMoveField: 'moves.field.update',
   updateMoveFields: 'moves.fields.update',
@@ -1021,6 +1023,22 @@ export const pokemonEvolutionMethodOptionSchema = z.strictObject({
   value: z.number().int()
 });
 
+export const pokemonDexPlacementSchema = z.strictObject({
+  dexKind: z.enum(['regular', 'hyperspace']),
+  displayedNumber: z.number().int().positive(),
+  internalIndex: z.number().int().positive(),
+  label: z.string(),
+  speciesId: z.number().int().positive()
+});
+
+export const pokemonDexEditorSchema = z.strictObject({
+  blockedReason: z.string().nullable(),
+  canEdit: z.boolean(),
+  hyperspaceCount: z.number().int().nonnegative(),
+  placements: z.array(pokemonDexPlacementSchema),
+  regularCount: z.number().int().nonnegative()
+});
+
 export const pokemonRecordSchema = z.strictObject({
   abilities: pokemonAbilitySetSchema,
   baseExperience: z.number().int(),
@@ -1056,6 +1074,7 @@ export const pokemonWorkflowStatsSchema = z.strictObject({
 });
 
 export const pokemonWorkflowSchema = z.strictObject({
+  dexEditor: pokemonDexEditorSchema.nullable().optional().default(null),
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(pokemonEditableFieldSchema),
   evolutionMethodOptions: z.array(pokemonEvolutionMethodOptionSchema).default([]),
@@ -1113,6 +1132,19 @@ export const updatePokemonEvolutionRequestSchema = z.strictObject({
 });
 
 export const updatePokemonEvolutionResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
+export const swapPokemonDexPlacementRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  sourceSpeciesId: z.number().int().positive(),
+  targetSpeciesId: z.number().int().positive()
+});
+
+export const swapPokemonDexPlacementResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: pokemonWorkflowSchema
@@ -4971,6 +5003,8 @@ export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type PokemonEditableField = z.infer<typeof pokemonEditableFieldSchema>;
 export type PokemonEditableFieldOption = z.infer<typeof pokemonEditableFieldOptionSchema>;
+export type PokemonDexEditor = z.infer<typeof pokemonDexEditorSchema>;
+export type PokemonDexPlacement = z.infer<typeof pokemonDexPlacementSchema>;
 export type PokemonEvolutionMethodOption = z.infer<
   typeof pokemonEvolutionMethodOptionSchema
 >;
@@ -5129,6 +5163,12 @@ export type UpdatePokemonLearnsetRequest = z.infer<typeof updatePokemonLearnsetR
 export type UpdatePokemonLearnsetResponse = z.infer<typeof updatePokemonLearnsetResponseSchema>;
 export type UpdatePokemonEvolutionRequest = z.infer<typeof updatePokemonEvolutionRequestSchema>;
 export type UpdatePokemonEvolutionResponse = z.infer<typeof updatePokemonEvolutionResponseSchema>;
+export type SwapPokemonDexPlacementRequest = z.infer<
+  typeof swapPokemonDexPlacementRequestSchema
+>;
+export type SwapPokemonDexPlacementResponse = z.infer<
+  typeof swapPokemonDexPlacementResponseSchema
+>;
 export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
 export type UpdateMoveFieldRequest = z.infer<typeof updateMoveFieldRequestSchema>;

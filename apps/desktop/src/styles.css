@@ -2126,7 +2126,8 @@ h2 {
 .za-pokemon-selected-stack > .item-provenance-list,
 .swsh-pokemon-personal-edit-block,
 .sv-pokemon-personal-edit-block,
-.za-pokemon-personal-edit-block {
+.za-pokemon-personal-edit-block,
+.za-pokemon-dex-placement-block {
   grid-column: 1 / -1;
   min-width: 0;
 }
@@ -2155,6 +2156,7 @@ h2 {
 .swsh-pokemon-traits-block,
 .sv-pokemon-traits-block,
 .za-pokemon-traits-block,
+.za-pokemon-dex-placement-block,
 .swsh-pokemon-personal-edit-block,
 .sv-pokemon-personal-edit-block,
 .za-pokemon-personal-edit-block,
@@ -2203,12 +2205,108 @@ h2 {
   margin: 0;
 }
 
+.za-pokemon-dex-placement-heading {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.za-pokemon-dex-placement-heading div {
+  display: grid;
+  gap: 4px;
+}
+
+.za-pokemon-dex-placement-heading p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.za-pokemon-dex-placement-heading > svg {
+  flex: 0 0 auto;
+  color: var(--color-gold);
+}
+
+.za-pokemon-dex-current {
+  margin: 12px 0 0;
+}
+
+.za-pokemon-dex-current div {
+  display: grid;
+  gap: 3px;
+}
+
+.za-pokemon-dex-current dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.za-pokemon-dex-current dd {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.za-pokemon-dex-swap-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.45fr) minmax(220px, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.za-pokemon-dex-swap-preview {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--color-text-muted);
+  background: rgb(214 168 66 / 8%);
+  border: 1px solid rgb(214 168 66 / 38%);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.za-pokemon-dex-swap-preview strong {
+  color: var(--color-gold);
+}
+
+.za-pokemon-dex-placement-block > .draft-action-row {
+  margin-top: 12px;
+}
+
+.za-pokemon-dex-placement-warning {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--color-text);
+  background: rgb(214 168 66 / 8%);
+  border: 1px solid rgb(214 168 66 / 45%);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.za-pokemon-dex-placement-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--color-gold);
+}
+
 .swsh-pokemon-stats-block,
 .sv-pokemon-stats-block,
 .za-pokemon-stats-block,
 .swsh-pokemon-traits-block,
 .sv-pokemon-traits-block,
 .za-pokemon-traits-block,
+.za-pokemon-dex-placement-block,
 .swsh-pokemon-personal-edit-block,
 .sv-pokemon-personal-edit-block,
 .za-pokemon-personal-edit-block,
@@ -8611,6 +8709,7 @@ input {
   .swsh-pokemon-traits-block,
   .sv-pokemon-traits-block,
   .za-pokemon-traits-block,
+  .za-pokemon-dex-placement-block,
   .swsh-pokemon-compatibility-block,
   .sv-pokemon-compatibility-block,
   .za-pokemon-compatibility-block,
@@ -8622,6 +8721,10 @@ input {
   .za-pokemon-learnset-block {
     grid-column: 1 / -1;
     grid-row: auto;
+  }
+
+  .za-pokemon-dex-swap-controls {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -25,7 +25,7 @@ internal sealed class ZaItemsWorkflowService
     public const string SortOrderField = "sortOrder";
     public const string CanNotHoldField = "canNotHold";
     public const string MachineMoveIdField = "machineMoveId";
-    public const string MachineIndexField = "machineIndex";
+    public const string TechnicalMachineNumberField = "tmNumber";
     public const string CureSleepField = "cureSleep";
     public const string CurePoisonField = "curePoison";
     public const string CureBurnField = "cureBurn";
@@ -154,7 +154,7 @@ internal sealed class ZaItemsWorkflowService
         Field(EvolutionItemField, "Evolution Item", "boolean", 0, 1, BooleanOptions),
         Field(CanNotHoldField, "Cannot be held", "boolean", 0, 1, BooleanOptions),
         Field(MachineMoveIdField, "TM move", "integer", 0, ushort.MaxValue),
-        Field(MachineIndexField, "TM index", "integer", -1, int.MaxValue),
+        Field(TechnicalMachineNumberField, "TM number", "integer", 1, int.MaxValue),
         Field(CureSleepField, "Cures sleep", "boolean", 0, 1, BooleanOptions),
         Field(CurePoisonField, "Cures poison", "boolean", 0, 1, BooleanOptions),
         Field(CureBurnField, "Cures burn", "boolean", 0, 1, BooleanOptions),
@@ -226,6 +226,53 @@ internal sealed class ZaItemsWorkflowService
             source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
             var mintNatureRecovery = DetectMintNatureRecovery(project, source, diagnostics);
             items = LoadRecords(source, labels, mintNatureRecovery.ItemIds).ToArray();
+            var inconsistentMachineCount = items.Count(item =>
+                IsTechnicalMachineRecord(item)
+                && item.FieldValues.GetValueOrDefault(TechnicalMachineNumberField) is null);
+            if (inconsistentMachineCount > 0)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"{inconsistentMachineCount} TM number assignment(s) have mismatched sort and index metadata. "
+                    + "Choose a TM number on each affected item to repair both values together.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    TechnicalMachineNumberField,
+                    "TM number N stored as sort order N and machine index N - 1"));
+            }
+
+            var machines = items.Where(IsTechnicalMachineRecord).ToArray();
+            var assignedNumbers = machines
+                .Select(item => item.Metadata.MachineSlot ?? 0)
+                .ToArray();
+            var duplicateNumbers = assignedNumbers
+                .Where(number => number > 0)
+                .GroupBy(number => number)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .Order()
+                .ToArray();
+            var missingNumbers = Enumerable
+                .Range(1, machines.Length)
+                .Except(assignedNumbers)
+                .ToArray();
+            var outOfRangeNumbers = assignedNumbers
+                .Where(number => number < 1 || number > machines.Length)
+                .Distinct()
+                .Order()
+                .ToArray();
+            if (duplicateNumbers.Length > 0
+                || missingNumbers.Length > 0
+                || outOfRangeNumbers.Length > 0)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    "TM number assignments need repair. "
+                    + FormatMachineNumberIssue("Duplicate", duplicateNumbers)
+                    + FormatMachineNumberIssue("Missing", missingNumbers)
+                    + FormatMachineNumberIssue("Out of range", outOfRangeNumbers)
+                    + "Assign a missing number to one item using a duplicate or out-of-range number; KM will stage the safe repair.",
+                    $"romfs/{ZaDataPaths.ItemDataArray}",
+                    TechnicalMachineNumberField,
+                    $"Each TM number from 1 through {machines.Length} assigned exactly once"));
+            }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -244,15 +291,9 @@ internal sealed class ZaItemsWorkflowService
         return new ZaItemsWorkflow(
             summary,
             items,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, items),
             new ZaItemsWorkflowStats(items.Length, source is null ? 0 : 1),
             diagnostics);
-    }
-
-    internal static ZaItemEditableField? GetEditableField(string? field)
-    {
-        return BaseEditableFields.FirstOrDefault(candidate =>
-            string.Equals(candidate.Field, field, StringComparison.Ordinal));
     }
 
     internal static string FormatItemType(int value) => FormatIndexed(value, ItemTypeNames, "Item type");
@@ -450,7 +491,7 @@ internal sealed class ZaItemsWorkflowService
             [SortOrderField] = machine.Slot,
             [CanNotHoldField] = 0,
             [MachineMoveIdField] = machine.MoveId,
-            [MachineIndexField] = machine.MachineIndex,
+            [TechnicalMachineNumberField] = machine.Slot,
             [CureSleepField] = 0,
             [CurePoisonField] = 0,
             [CureBurnField] = 0,
@@ -552,7 +593,7 @@ internal sealed class ZaItemsWorkflowService
                     Detail("Item type", "5 Technical Machine"),
                     Detail("Bag pocket", "6 Technical Machines"),
                     Detail("Stack cap", 1),
-                    Detail("Sort order", machine.Slot),
+                    Detail("TM number", machine.Slot),
                     Detail("Cannot be held", "No"),
                     Detail("Can use in battle", "No"),
                 ]),
@@ -568,8 +609,6 @@ internal sealed class ZaItemsWorkflowService
                 "TM Assignment",
                 [
                     Detail("TM move", $"{machine.MoveId.ToString(CultureInfo.InvariantCulture)} {machine.MoveName}"),
-                    Detail("TM slot", ZaTechnicalMachineCatalog.FormatMachineLabel(machine.Slot)),
-                    Detail("TM index", machine.MachineIndex),
                 ]),
             new ZaItemDetailGroup(
                 "Effects",
@@ -609,7 +648,7 @@ internal sealed class ZaItemsWorkflowService
             [SortOrderField] = item.SortNum,
             [CanNotHoldField] = item.CanNotHold ? 1 : 0,
             [MachineMoveIdField] = item.MachineWaza,
-            [MachineIndexField] = item.MachineIndex,
+            [TechnicalMachineNumberField] = GetTechnicalMachineNumber(item),
             [CureSleepField] = item.WorkRecvSleep ? 1 : 0,
             [CurePoisonField] = item.WorkRecvPoison ? 1 : 0,
             [CureBurnField] = item.WorkRecvBurn ? 1 : 0,
@@ -751,7 +790,9 @@ internal sealed class ZaItemsWorkflowService
                     Detail("Item type", $"{item.ItemType.ToString(CultureInfo.InvariantCulture)} {FormatItemType(item.ItemType)}"),
                     Detail("Bag pocket", $"{item.Pocket.ToString(CultureInfo.InvariantCulture)} {FormatPocket(item.Pocket)}"),
                     Detail("Stack cap", item.SlotMaxNum),
-                    Detail("Sort order", item.SortNum),
+                    Detail(
+                        ZaTechnicalMachineCatalog.IsTechnicalMachine(item) ? "TM number" : "Sort order",
+                        item.SortNum),
                     Detail("Cannot be held", ZaLabels.Bool(item.CanNotHold)),
                     Detail("Can use in battle", ZaLabels.Bool(item.CanUseInBattle)),
                 ]),
@@ -767,8 +808,6 @@ internal sealed class ZaItemsWorkflowService
                 "TM Assignment",
                 [
                     Detail("TM move", item.MachineWaza > 0 ? $"{item.MachineWaza.ToString(CultureInfo.InvariantCulture)} {labels.Move(item.MachineWaza)}" : "None"),
-                    Detail("TM slot", FormatMachineSlot(item, labels)),
-                    Detail("TM index", item.MachineIndex),
                 ]),
             new ZaItemDetailGroup(
                 "Effects",
@@ -795,17 +834,33 @@ internal sealed class ZaItemsWorkflowService
         ];
     }
 
-    private static IReadOnlyList<ZaItemEditableField> CreateEditableFields(ZaTextLabelLookup labels)
+    private static IReadOnlyList<ZaItemEditableField> CreateEditableFields(
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaItemRecord> items)
     {
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var technicalMachineCount = items.Count(IsTechnicalMachineRecord);
+        var maximumTechnicalMachineNumber = items
+            .Where(IsTechnicalMachineRecord)
+            .Select(item => item.Metadata.MachineSlot ?? 0)
+            .DefaultIfEmpty(1)
+            .Max();
         return BaseEditableFields
-            .Select(field => field.Field == MachineMoveIdField
-                ? field with
+            .Select(field => field.Field switch
+            {
+                MachineMoveIdField => field with
                 {
                     MaximumValue = moveOptions.Count > 1 ? moveOptions.Max(option => option.Value) : field.MaximumValue,
                     Options = moveOptions,
-                }
-                : field)
+                },
+                TechnicalMachineNumberField => field with
+                {
+                    MaximumValue = Math.Max(
+                        Math.Max(maximumTechnicalMachineNumber, technicalMachineCount),
+                        1),
+                },
+                _ => field,
+            })
             .ToArray();
     }
 
@@ -815,12 +870,29 @@ internal sealed class ZaItemsWorkflowService
     private static ZaItemDetail Detail(string label, string value) =>
         new(label, value);
 
-    private static string FormatMachineSlot(ZaItemData item, ZaTextLabelLookup labels)
+    internal static bool IsTechnicalMachineRecord(ZaItemRecord item) =>
+        item.Metadata.Pouch == 6
+        && item.Metadata.ItemType == 5
+        && item.Metadata.MachineMoveId is > 0;
+
+    private static string FormatMachineNumberIssue(
+        string label,
+        IReadOnlyList<int> numbers)
+    {
+        return numbers.Count == 0
+            ? string.Empty
+            : $"{label}: {string.Join(", ", numbers.Take(8).Select(ZaTechnicalMachineCatalog.FormatMachineLabel))}"
+                + (numbers.Count > 8 ? $" (+{numbers.Count - 8} more)" : string.Empty)
+                + ". ";
+    }
+
+    private static int? GetTechnicalMachineNumber(ZaItemData item)
     {
         return ZaTechnicalMachineCatalog.IsTechnicalMachine(item)
-            && ZaTechnicalMachineCatalog.TryResolveMachineSlot(item, labels.Item(item.Id), out var slot)
-                ? ZaTechnicalMachineCatalog.FormatMachineLabel(slot)
-                : "None";
+            && item.SortNum > 0
+            && item.MachineIndex == item.SortNum - 1
+                ? item.SortNum
+                : null;
     }
 
     private static ZaItemEditableField Field(

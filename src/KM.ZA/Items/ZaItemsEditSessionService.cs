@@ -68,13 +68,23 @@ internal sealed class ZaItemsEditSessionService
             return new ZaItemsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(item, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(workflow, item, field, value, diagnostics);
         if (pendingEdit is null)
         {
             return new ZaItemsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        if (!TryStagePendingEdit(
+                workflow,
+                currentSession,
+                pendingEdit,
+                diagnostics,
+                out var updatedSession,
+                out _))
+        {
+            return new ZaItemsEditResult(workflow, currentSession, diagnostics);
+        }
+
         return new ZaItemsEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -132,14 +142,27 @@ internal sealed class ZaItemsEditSessionService
                 continue;
             }
 
-            var pendingEdit = CreatePendingEdit(item, update.Field, update.Value, diagnostics);
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                item,
+                update.Field,
+                update.Value,
+                diagnostics);
             if (pendingEdit is null)
             {
                 continue;
             }
 
-            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            if (!TryStagePendingEdit(
+                    effectiveWorkflow,
+                    updatedSession,
+                    pendingEdit,
+                    diagnostics,
+                    out updatedSession,
+                    out effectiveWorkflow))
+            {
+                continue;
+            }
         }
 
         return new ZaItemsEditResult(
@@ -167,6 +190,11 @@ internal sealed class ZaItemsEditSessionService
         foreach (var edit in session.PendingEdits)
         {
             ValidatePendingEdit(workflow, edit, diagnostics);
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateTechnicalMachineNumberAssignments(workflow, session, diagnostics);
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -505,19 +533,20 @@ internal sealed class ZaItemsEditSessionService
     }
 
     private static PendingEdit? CreatePendingEdit(
+        ZaItemsWorkflow workflow,
         ZaItemRecord item,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
-        var parsedValue = TryParseEditableValue(normalizedField, value, diagnostics);
+        var parsedValue = TryParseEditableValue(workflow, normalizedField, value, diagnostics);
         if (parsedValue is null)
         {
             return null;
         }
 
-        var editableField = ZaItemsWorkflowService.GetEditableField(normalizedField)!;
+        var editableField = GetEditableField(workflow, normalizedField)!;
         if (!CanEditTechnicalMachineField(item, editableField, diagnostics))
         {
             return null;
@@ -535,6 +564,123 @@ internal sealed class ZaItemsEditSessionService
             item.ItemId.ToString(CultureInfo.InvariantCulture),
             normalizedField,
             parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static bool TryStagePendingEdit(
+        ZaItemsWorkflow workflow,
+        EditSession session,
+        PendingEdit pendingEdit,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out EditSession updatedSession,
+        out ZaItemsWorkflow updatedWorkflow)
+    {
+        updatedSession = session;
+        updatedWorkflow = workflow;
+
+        if (!string.Equals(
+                pendingEdit.Field,
+                ZaItemsWorkflowService.TechnicalMachineNumberField,
+                StringComparison.Ordinal))
+        {
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+            updatedWorkflow = OverlayPendingEdit(workflow, pendingEdit);
+            return true;
+        }
+
+        if (!int.TryParse(
+                pendingEdit.RecordId,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var itemId)
+            || !int.TryParse(
+                pendingEdit.NewValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var newNumber)
+            || workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId) is not { } item
+            || item.Metadata.MachineSlot is not { } previousNumber
+            || previousNumber <= 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The selected TM does not have a recoverable current number.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.TechnicalMachineNumberField,
+                expected: "TM with a positive current number"));
+            return false;
+        }
+
+        if (newNumber == previousNumber)
+        {
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+            updatedWorkflow = OverlayPendingEdit(workflow, pendingEdit);
+            return true;
+        }
+
+        var targetOwners = workflow.Items
+            .Where(candidate =>
+                candidate.ItemId != itemId
+                && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
+                && candidate.Metadata.MachineSlot == newNumber)
+            .ToArray();
+        if (targetOwners.Length == 0)
+        {
+            var previousNumberOwners = workflow.Items.Count(candidate =>
+                ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
+                && candidate.Metadata.MachineSlot == previousNumber);
+            var technicalMachineCount = workflow.Items.Count(
+                ZaItemsWorkflowService.IsTechnicalMachineRecord);
+            if (previousNumberOwners <= 1 && previousNumber <= technicalMachineCount)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"TM number {newNumber} is not currently assigned. Choose another occupied number so the two assignments can be swapped.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.TechnicalMachineNumberField,
+                    expected: "Occupied TM number, or an unoccupied number that repairs a duplicate or out-of-range assignment"));
+                return false;
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+            updatedWorkflow = OverlayPendingEdit(workflow, pendingEdit);
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Staged a TM number repair for {item.Name}.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.TechnicalMachineNumberField));
+            return true;
+        }
+
+        if (targetOwners.Length > 1)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"TM number {newNumber} is already assigned to more than one item and cannot be swapped safely.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.TechnicalMachineNumberField,
+                expected: "Exactly one current TM owner for the selected number"));
+            return false;
+        }
+
+        var target = targetOwners[0];
+        var reciprocalEdit = ZaEditSessionSupport.CreatePendingEdit(
+            ZaEditSessionSupport.ItemsDomain,
+            $"Swap {target.Name} TM number to {previousNumber}.",
+            new ProjectFileReference(target.Provenance.SourceLayer, target.Provenance.SourceFile),
+            target.ItemId.ToString(CultureInfo.InvariantCulture),
+            ZaItemsWorkflowService.TechnicalMachineNumberField,
+            previousNumber.ToString(CultureInfo.InvariantCulture));
+
+        updatedSession = ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+        updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, reciprocalEdit);
+        updatedWorkflow = OverlayPendingEdit(workflow, pendingEdit);
+        updatedWorkflow = OverlayPendingEdit(updatedWorkflow, reciprocalEdit);
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            $"Staged a TM number swap between {item.Name} and {target.Name}.",
+            ZaEditSessionSupport.ItemsDomain,
+            field: ZaItemsWorkflowService.TechnicalMachineNumberField));
+        return true;
     }
 
     private static void ValidatePendingEdit(
@@ -575,7 +721,7 @@ internal sealed class ZaItemsEditSessionService
             return;
         }
 
-        var editableField = ZaItemsWorkflowService.GetEditableField(edit.Field);
+        var editableField = GetEditableField(workflow, edit.Field);
         if (editableField is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -597,7 +743,51 @@ internal sealed class ZaItemsEditSessionService
             return;
         }
 
-        _ = TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+        _ = TryParseEditableValue(workflow, edit.Field, edit.NewValue, diagnostics);
+    }
+
+    private static void ValidateTechnicalMachineNumberAssignments(
+        ZaItemsWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var numberEdits = session.PendingEdits
+            .Where(edit =>
+                string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+                && string.Equals(
+                    edit.Field,
+                    ZaItemsWorkflowService.TechnicalMachineNumberField,
+                    StringComparison.Ordinal))
+            .ToArray();
+        if (numberEdits.Length == 0)
+        {
+            return;
+        }
+
+        var effectiveWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
+        var effectiveMachines = effectiveWorkflow.Items
+            .Where(ZaItemsWorkflowService.IsTechnicalMachineRecord)
+            .ToArray();
+        var effectiveNumbers = effectiveMachines
+            .Select(item => item.Metadata.MachineSlot)
+            .ToArray();
+        if (effectiveMachines.Any(item =>
+                item.FieldValues.GetValueOrDefault(
+                    ZaItemsWorkflowService.TechnicalMachineNumberField) is null)
+            || effectiveNumbers.Any(number => number is null or <= 0)
+            || effectiveNumbers.Distinct().Count() != effectiveNumbers.Length
+            || !effectiveNumbers
+                .Select(number => number!.Value)
+                .Order()
+                .SequenceEqual(Enumerable.Range(1, effectiveMachines.Length)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "TM number changes must finish as a complete swap or repair. Every number from 1 through the loaded TM count must belong to exactly one item.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.TechnicalMachineNumberField,
+                expected: "Unique one-to-one TM number assignments"));
+        }
     }
 
     private static bool CanEditTechnicalMachineField(
@@ -605,8 +795,35 @@ internal sealed class ZaItemsEditSessionService
         ZaItemEditableField field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (field.Field is not ZaItemsWorkflowService.MachineMoveIdField
-            and not ZaItemsWorkflowService.MachineIndexField)
+        var isTechnicalMachine = ZaItemsWorkflowService.IsTechnicalMachineRecord(item);
+        if (field.Field == ZaItemsWorkflowService.SortOrderField && isTechnicalMachine)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "TM sort order cannot be edited independently. Use TM number so both stored values stay paired.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: field.Field,
+                expected: "TM number edit"));
+            return false;
+        }
+
+        if (field.Field == ZaItemsWorkflowService.TechnicalMachineNumberField)
+        {
+            if (isTechnicalMachine)
+            {
+                return true;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "TM numbers can only be edited on Pokemon Legends Z-A TM item records.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: field.Field,
+                expected: "Item in the Technical Machines pocket with a mapped move"));
+            return false;
+        }
+
+        if (field.Field != ZaItemsWorkflowService.MachineMoveIdField)
         {
             return true;
         }
@@ -643,12 +860,21 @@ internal sealed class ZaItemsEditSessionService
         return false;
     }
 
+    private static ZaItemEditableField? GetEditableField(
+        ZaItemsWorkflow workflow,
+        string? field)
+    {
+        return workflow.EditableFields.FirstOrDefault(candidate =>
+            string.Equals(candidate.Field, field, StringComparison.Ordinal));
+    }
+
     private static int? TryParseEditableValue(
+        ZaItemsWorkflow workflow,
         string? field,
         string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var editableField = ZaItemsWorkflowService.GetEditableField(field);
+        var editableField = GetEditableField(workflow, field);
         if (editableField is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -731,6 +957,7 @@ internal sealed class ZaItemsEditSessionService
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
             || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
             || TryParseEditableValue(
+                workflow,
                 edit.Field,
                 edit.NewValue,
                 new List<ValidationDiagnostic>()) is not { } value)
@@ -767,11 +994,7 @@ internal sealed class ZaItemsEditSessionService
             ZaItemsWorkflowService.StackCapField => item,
             ZaItemsWorkflowService.SortOrderField => item with
             {
-                Metadata = metadata with
-                {
-                    SortIndex = value,
-                    MachineSlot = metadata.MachineSlot is null ? null : value,
-                },
+                Metadata = metadata with { SortIndex = value },
             },
             ZaItemsWorkflowService.CanNotHoldField => item,
             ZaItemsWorkflowService.MachineMoveIdField => item with
@@ -782,9 +1005,14 @@ internal sealed class ZaItemsEditSessionService
                     MachineMoveName = value > 0 ? ResolveMoveName(workflow, value) : null,
                 },
             },
-            ZaItemsWorkflowService.MachineIndexField => item with
+            ZaItemsWorkflowService.TechnicalMachineNumberField => item with
             {
-                Metadata = metadata with { GroupIndex = value },
+                Metadata = metadata with
+                {
+                    SortIndex = value,
+                    GroupIndex = value - 1,
+                    MachineSlot = value,
+                },
             },
             ZaItemsWorkflowService.CureSleepField => item with { Metadata = metadata with { CureStatusFlags = SetFlag(metadata.CureStatusFlags, 0, value != 0) } },
             ZaItemsWorkflowService.CurePoisonField => item with { Metadata = metadata with { CureStatusFlags = SetFlag(metadata.CureStatusFlags, 1, value != 0) } },
@@ -820,6 +1048,14 @@ internal sealed class ZaItemsEditSessionService
         }
 
         var fieldValues = SetFieldValue(updated.FieldValues, field, value);
+        if (field == ZaItemsWorkflowService.TechnicalMachineNumberField)
+        {
+            fieldValues = SetFieldValue(
+                fieldValues,
+                ZaItemsWorkflowService.SortOrderField,
+                value);
+        }
+
         var canUseOnPokemon = CanUseOnPokemon(fieldValues);
         fieldValues = SetFieldValue(fieldValues, ZaItemsWorkflowService.CanUseOnPokemonField, canUseOnPokemon ? 1 : 0);
         return updated with
@@ -979,8 +1215,9 @@ internal sealed class ZaItemsEditSessionService
             case ZaItemsWorkflowService.MachineMoveIdField:
                 row.MachineWaza = checked((ushort)value);
                 break;
-            case ZaItemsWorkflowService.MachineIndexField:
-                row.MachineIndex = value;
+            case ZaItemsWorkflowService.TechnicalMachineNumberField:
+                row.SortNum = value;
+                row.MachineIndex = checked(value - 1);
                 break;
             case ZaItemsWorkflowService.CureSleepField:
                 row.WorkRecvSleep = value != 0;

@@ -151,7 +151,8 @@ public sealed record ZaPokemonWorkflow(
     IReadOnlyList<ZaPokemonEvolutionMethodOption> EvolutionMethodOptions,
     IReadOnlyList<ZaPokemonEditableFieldOption> LearnsetMoveOptions,
     IReadOnlyList<ZaPokemonEditableField> EditableFields,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics,
+    ZaPokemonDexEditor? DexEditor = null);
 
 public sealed record ZaPokemonEditableField(
     string Field,
@@ -165,6 +166,22 @@ public sealed record ZaPokemonEditableField(
 public sealed record ZaPokemonEditableFieldOption(
     int Value,
     string Label);
+
+public sealed record ZaPokemonDexPlacement(
+    int SpeciesId,
+    int InternalIndex,
+    string DexKind,
+    int DisplayedNumber,
+    string Label);
+
+public sealed record ZaPokemonDexEditor(
+    bool CanEdit,
+    string? BlockedReason,
+    int RegularCount,
+    int HyperspaceCount,
+    IReadOnlyList<ZaPokemonDexPlacement> Placements,
+    ZaPokemonProvenance? PersonalProvenance,
+    ZaPokemonProvenance? ContentsProvenance);
 
 public sealed record ZaPokemonEditResult(
     ZaPokemonWorkflow Workflow,

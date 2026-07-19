@@ -28,7 +28,6 @@ internal sealed class ZaPokemonWorkflowService
     private const int LearnsetDisplayLevelMask = 0x00FF;
     private const int LearnsetMasteryLevelShift = 8;
     private const int LearnsetMasteryLevelMask = 0xFF00;
-    private const int MaximumDexOrder = 400;
 
     public const string HPField = "hp";
     public const string AttackField = "attack";
@@ -62,6 +61,9 @@ internal sealed class ZaPokemonWorkflowService
     public const string ModelIdField = "modelId";
     public const string HatchedSpeciesField = "hatchedSpecies";
     public const string RegionalDexIndexField = "regionalDexIndex";
+    public const string DexPlacementField = "dexPlacement";
+    public const string RegularDexKind = "regular";
+    public const string HyperspaceDexKind = "hyperspace";
     public const string FormField = "form";
     public const string CompatibilityFieldPrefix = "compatibility";
     public const string TechnicalMachineCompatibilityGroupId = "tm";
@@ -108,7 +110,6 @@ internal sealed class ZaPokemonWorkflowService
         CreateField(WeightField, "Weight", "Identity", 0, ushort.MaxValue),
         CreateField(HatchedSpeciesField, "Hatched Species", "Breeding", 0, ushort.MaxValue),
         CreateField(IsPresentInGameField, "Present In Game", "Flags", 0, 1, BooleanOptions),
-        CreateField(RegionalDexIndexField, "Z-A Dex Order", "Identity", 0, MaximumDexOrder),
     ];
 
     private static readonly IReadOnlyList<ZaPokemonEditableFieldOption> TypeOptions =
@@ -335,8 +336,10 @@ internal sealed class ZaPokemonWorkflowService
 
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
+        ZaWorkflowFile? pokedexSource = null;
         var labels = ZaTextLabelLookup.None();
         var pokemon = Array.Empty<ZaPokemonRecord>();
+        ZaPokemonDexEditor? dexEditor = null;
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
 
         try
@@ -398,6 +401,22 @@ internal sealed class ZaPokemonWorkflowService
                 spriteLabels,
                 tmCatalog,
                 evolutionItemArgumentLabels).ToArray();
+
+            try
+            {
+                pokedexSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
+                dexEditor = CreateDexEditor(pokemon, source, pokedexSource);
+            }
+            catch (Exception exception) when (
+                exception is IOException or InvalidDataException or ArgumentException or OverflowException)
+            {
+                var blockedReason =
+                    $"Pokédex placement is unavailable because its active slot mapping could not be verified: {exception.Message}";
+                dexEditor = CreateBlockedDexEditor(blockedReason, source, pokedexSource);
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    blockedReason,
+                    $"romfs/{ZaDataPaths.PokedexContentsData}"));
+            }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -418,7 +437,7 @@ internal sealed class ZaPokemonWorkflowService
             pokemon.Count(record => record.DexPresence.IsPresentInGame),
             pokemon.Sum(record => record.Evolutions.Count),
             pokemon.Sum(record => record.Learnset.Count),
-            source is null ? 0 : 1);
+            (source is null ? 0 : 1) + (pokedexSource is null ? 0 : 1));
 
         return new ZaPokemonWorkflow(
             summary,
@@ -427,7 +446,142 @@ internal sealed class ZaPokemonWorkflowService
             CreateEvolutionOptions(pokemon, labels, evolutionItemArgumentLabels),
             CreateMoveOptions(pokemon, labels),
             CreateEditableFields(labels),
-            diagnostics);
+            diagnostics,
+            dexEditor);
+    }
+
+    private static ZaPokemonDexEditor CreateDexEditor(
+        IReadOnlyList<ZaPokemonRecord> pokemon,
+        ZaWorkflowFile personalSource,
+        ZaWorkflowFile contentsSource)
+    {
+        var contents = ZaPokedexContentsTable.Read(contentsSource.Bytes);
+        var activeSpecies = pokemon
+            .Where(record => record.DexPresence.IsPresentInGame)
+            .GroupBy(record => record.SpeciesId)
+            .ToArray();
+        if (activeSpecies.Length == 0)
+        {
+            throw new InvalidDataException("No active Pokédex species were found.");
+        }
+
+        var indexBySpecies = new Dictionary<int, int>(activeSpecies.Length);
+        var representativeBySpecies = new Dictionary<int, ZaPokemonRecord>(activeSpecies.Length);
+        foreach (var speciesGroup in activeSpecies)
+        {
+            var indices = speciesGroup
+                .Select(record => record.DexPresence.RegionalDexIndex)
+                .Distinct()
+                .ToArray();
+            if (indices.Length != 1 || indices[0] <= 0)
+            {
+                throw new InvalidDataException(
+                    $"Species {speciesGroup.Key} does not have one shared positive Pokédex slot across its active forms.");
+            }
+
+            indexBySpecies.Add(speciesGroup.Key, indices[0]);
+            representativeBySpecies.Add(
+                speciesGroup.Key,
+                speciesGroup
+                    .OrderBy(record => record.Form == 0 ? 0 : 1)
+                    .ThenBy(record => record.Form)
+                    .ThenBy(record => record.PersonalId)
+                    .First());
+        }
+
+        var contentRows = contents.Rows.ToArray();
+        if (contentRows.Any(row => !row.HasKnownGroup))
+        {
+            throw new InvalidDataException("The contents table contains an unsupported Pokédex group.");
+        }
+
+        var activeSpeciesIds = indexBySpecies.Keys.Order().ToArray();
+        var contentSpeciesIds = contentRows.Select(row => row.Species).Order().ToArray();
+        if (!activeSpeciesIds.SequenceEqual(contentSpeciesIds))
+        {
+            throw new InvalidDataException(
+                "The contents table does not exactly cover the active personal-data species.");
+        }
+
+        var orderedIndices = indexBySpecies.Values.Order().ToArray();
+        if (!orderedIndices.SequenceEqual(Enumerable.Range(1, indexBySpecies.Count)))
+        {
+            throw new InvalidDataException(
+                "Active Pokédex slots must be unique and contiguous.");
+        }
+
+        var groupBySpecies = contentRows.ToDictionary(row => row.Species, row => row.Group);
+        var regularIndices = indexBySpecies
+            .Where(pair => groupBySpecies[pair.Key] == (int)ZaPokedexContentsGroup.Regular)
+            .Select(pair => pair.Value)
+            .Order()
+            .ToArray();
+        var hyperspaceIndices = indexBySpecies
+            .Where(pair => groupBySpecies[pair.Key] == (int)ZaPokedexContentsGroup.Hyperspace)
+            .Select(pair => pair.Value)
+            .Order()
+            .ToArray();
+        if (regularIndices.Length == 0
+            || hyperspaceIndices.Length == 0
+            || !regularIndices.SequenceEqual(Enumerable.Range(1, regularIndices.Length))
+            || !hyperspaceIndices.SequenceEqual(
+                Enumerable.Range(regularIndices.Length + 1, hyperspaceIndices.Length)))
+        {
+            throw new InvalidDataException(
+                "Regular and Hyperspace species do not occupy one verified contiguous slot range each.");
+        }
+
+        var placements = indexBySpecies
+            .Select(pair =>
+            {
+                var group = groupBySpecies[pair.Key];
+                var isRegular = group == (int)ZaPokedexContentsGroup.Regular;
+                var displayedNumber = isRegular
+                    ? pair.Value
+                    : pair.Value - regularIndices.Length;
+                var dexKind = isRegular ? RegularDexKind : HyperspaceDexKind;
+                var representative = representativeBySpecies[pair.Key];
+                return new ZaPokemonDexPlacement(
+                    pair.Key,
+                    pair.Value,
+                    dexKind,
+                    displayedNumber,
+                    representative.Name);
+            })
+            .OrderBy(placement => placement.InternalIndex)
+            .ToArray();
+
+        return new ZaPokemonDexEditor(
+            CanEdit: true,
+            BlockedReason: null,
+            regularIndices.Length,
+            hyperspaceIndices.Length,
+            placements,
+            ToProvenance(personalSource),
+            ToProvenance(contentsSource));
+    }
+
+    private static ZaPokemonDexEditor CreateBlockedDexEditor(
+        string blockedReason,
+        ZaWorkflowFile? personalSource,
+        ZaWorkflowFile? contentsSource)
+    {
+        return new ZaPokemonDexEditor(
+            CanEdit: false,
+            blockedReason,
+            RegularCount: 0,
+            HyperspaceCount: 0,
+            Array.Empty<ZaPokemonDexPlacement>(),
+            personalSource is null ? null : ToProvenance(personalSource),
+            contentsSource is null ? null : ToProvenance(contentsSource));
+    }
+
+    private static ZaPokemonProvenance ToProvenance(ZaWorkflowFile source)
+    {
+        return new ZaPokemonProvenance(
+            source.RelativePath,
+            source.SourceLayer,
+            source.FileState);
     }
 
     private IReadOnlyDictionary<int, string> LoadEvolutionItemArgumentLabels(

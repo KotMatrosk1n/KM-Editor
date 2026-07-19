@@ -8,6 +8,8 @@ public static class ZaDataPaths
     public const string LegacyMessageRoot = "message/dat";
 
     public const string PersonalArray = "avalon/data/personal_array.bin";
+    public const string PokedexContentsData =
+        "world/exl/pokedex_contents_data/pokedex_contents_data/pokedex_contents_data.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";
     public const string ItemDataArray = "world/exl/item_data/item_data/item_data.bin";
     public const string EvolutionItemConversionArray = "world/ik_data/battle/plib_item_conversion/plib_item_conversion_array.bin";
