@@ -51,7 +51,7 @@ dotnet restore .\KM.Editor.slnx
 
 Start the complete desktop development environment with `pnpm tauri:dev`. The root `package.json` remains the source of truth for development and build scripts.
 
-Run `pnpm check` before submitting a change. It checks tracked workspace paths, builds the desktop app, and builds the .NET solution. Pull requests run the same product build checks automatically.
+Run `pnpm check` before submitting a change. It checks tracked workspace paths, builds the desktop app, and builds the .NET solution. Pull requests run those product builds and also compile the native desktop shell with locked Cargo dependencies.
 
 ## Make changes that are safe to review
 
@@ -74,6 +74,8 @@ External projects may be useful research references, but their source, namespace
 ## Verification and documentation
 
 Verify the affected workflow with the relevant supported game and a disposable output folder. Check both the visible editor result and the files written by apply, restore, cleanup, or uninstall actions. Remove temporary probes, generated projects, and debugging artifacts after verification.
+
+Temporary local tests are welcome when they help verify a change. Submitted diffs should not add tracked test projects, fixtures, runners, result files, or test-only dependencies.
 
 Update public documentation when behavior, supported fields, project setup, output ownership, or troubleshooting steps change. Public text should describe shipped behavior, not private research history or local development context.
 
