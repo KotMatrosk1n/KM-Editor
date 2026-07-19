@@ -48,6 +48,12 @@ public sealed record UpdatePokemonEvolutionRequest(
     int? Form,
     int? Level);
 
+public sealed record SwapPokemonDexPlacementRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int SourceSpeciesId,
+    int TargetSpeciesId);
+
 public sealed record PokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -188,6 +194,20 @@ public sealed record PokemonEditableFieldOptionDto(
     int Value,
     string Label);
 
+public sealed record PokemonDexPlacementDto(
+    int SpeciesId,
+    int InternalIndex,
+    string DexKind,
+    int DisplayedNumber,
+    string Label);
+
+public sealed record PokemonDexEditorDto(
+    bool CanEdit,
+    string? BlockedReason,
+    int RegularCount,
+    int HyperspaceCount,
+    IReadOnlyList<PokemonDexPlacementDto> Placements);
+
 public sealed record PokemonWorkflowStatsDto(
     int TotalPokemonCount,
     int PresentPokemonCount,
@@ -202,7 +222,9 @@ public sealed record PokemonWorkflowDto(
     IReadOnlyList<PokemonEvolutionMethodOptionDto> EvolutionMethodOptions,
     IReadOnlyList<PokemonEditableFieldOptionDto> LearnsetMoveOptions,
     IReadOnlyList<PokemonEditableFieldDto> EditableFields,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    PokemonDexEditorDto? DexEditor = null);
 
 public sealed record LoadPokemonWorkflowResponse(PokemonWorkflowDto Workflow);
 
@@ -222,6 +244,11 @@ public sealed record UpdatePokemonLearnsetResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdatePokemonEvolutionResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record SwapPokemonDexPlacementResponse(
     PokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

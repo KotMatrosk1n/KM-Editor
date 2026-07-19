@@ -148,6 +148,8 @@ import {
   type MoveRecord,
   type MovesWorkflow,
   type PokemonCompatibilityGroup,
+  type PokemonDexEditor,
+  type PokemonDexPlacement,
   type PokemonEditableField,
   type PokemonEditableFieldOption,
   type PokemonEvolutionMethodOption,
@@ -1150,6 +1152,8 @@ const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
 const itemCanUseOnPokemonFieldName = 'canUseOnPokemon';
 const itemMachineMoveIdFieldName = 'machineMoveId';
+const itemSortOrderFieldName = 'sortOrder';
+const itemTechnicalMachineNumberFieldName = 'tmNumber';
 const pokemonGlobalEvYieldFieldName = 'evYieldAll';
 const pokemonGlobalExpYieldFieldName = 'expYieldAll';
 const pokemonRemoveEvYieldValue = 'remove';
@@ -7258,6 +7262,38 @@ export function App({
     }
   };
 
+  const handleSwapPokemonDexPlacement = async (
+    sourceSpeciesId: number,
+    targetSpeciesId: number
+  ) => {
+    setIsPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await runEditSessionMutation(
+        (session) =>
+          bridge.swapPokemonDexPlacement({
+            paths: createProjectPaths(draftPaths),
+            session,
+            sourceSpeciesId,
+            targetSpeciesId
+          }),
+        (updateResponse) => {
+          setPokemonWorkflow(updateResponse.workflow);
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response !== null &&
+        !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
   const handleUpdatePokemonLearnset = async (
     personalId: number,
     action: string,
@@ -10389,6 +10425,7 @@ export function App({
                 onUpdatePokemonFields={handleUpdatePokemonFields}
                 onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
                 onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
+                onSwapPokemonDexPlacement={handleSwapPokemonDexPlacement}
                 searchText={pokemonSearchText}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
@@ -12454,6 +12491,10 @@ type PokemonSectionProps = {
     moveId: number | null,
     level: number | null
   ) => Promise<boolean>;
+  onSwapPokemonDexPlacement?: (
+    sourceSpeciesId: number,
+    targetSpeciesId: number
+  ) => Promise<boolean>;
   searchText: string;
   selectedPokemonPersonalId: number | null;
   workflow: PokemonWorkflow | null;
@@ -12485,6 +12526,7 @@ function PokemonSection({
   onUpdatePokemonFields,
   onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
+  onSwapPokemonDexPlacement,
   searchText,
   selectedPokemonPersonalId,
   workflow
@@ -12557,6 +12599,7 @@ function PokemonSection({
       <div className={`${editorFamily}-pokemon-diagnostics-row`}>
         <DiagnosticsSection diagnostics={workflow.diagnostics} />
         <SelectedPokemonSummaryCard
+          dexEditor={workflow.dexEditor}
           editorFamily={editorFamily}
           pokemon={selectedPokemon}
           variant="context"
@@ -12654,6 +12697,7 @@ function PokemonSection({
               editSession={editSession}
               editorFamily={editorFamily}
               editableFields={workflow.editableFields}
+              dexEditor={workflow.dexEditor}
               evolutionMethodOptions={workflow.evolutionMethodOptions}
               isEditStarting={isEditStarting}
               isPokemonUpdating={isPokemonUpdating}
@@ -12704,6 +12748,7 @@ function PokemonSection({
               onUpdatePokemonFields={onUpdatePokemonFields}
               onUpdatePokemonEvolution={onUpdatePokemonEvolution}
               onUpdatePokemonLearnset={onUpdatePokemonLearnset}
+              onSwapPokemonDexPlacement={onSwapPokemonDexPlacement}
               pokemon={selectedPokemon}
               pokemonRecords={pokemon}
             />
@@ -12735,10 +12780,12 @@ function PokemonSection({
 }
 
 function SelectedPokemonSummaryCard({
+  dexEditor,
   editorFamily,
   pokemon,
   variant = 'detailed'
 }: {
+  dexEditor?: PokemonDexEditor | null;
   editorFamily: EditorUiFamily;
   pokemon: PokemonRecord;
   variant?: 'context' | 'detailed';
@@ -12782,7 +12829,7 @@ function SelectedPokemonSummaryCard({
         </div>
         <div>
           <dt>Dex</dt>
-          <dd>{formatPokemonDexPresence(pokemon)}</dd>
+          <dd>{formatPokemonDexPresence(pokemon, dexEditor)}</dd>
         </div>
         {!isContext ? (
           <>
@@ -12841,8 +12888,224 @@ function getPokemonRecordSpriteName(pokemon?: PokemonRecord | null) {
     : null;
 }
 
+function ZaPokemonDexPlacementEditor({
+  canEditPokemon,
+  dexEditor,
+  editSessionActive,
+  isPokemonUpdating,
+  onStageSwap,
+  pokemon
+}: {
+  canEditPokemon: boolean;
+  dexEditor: PokemonDexEditor;
+  editSessionActive: boolean;
+  isPokemonUpdating: boolean;
+  onStageSwap?: (sourceSpeciesId: number, targetSpeciesId: number) => Promise<boolean>;
+  pokemon: PokemonRecord;
+}) {
+  const { translateLiteral } = useLocalization();
+  const currentPlacement =
+    dexEditor.placements.find((placement) => placement.speciesId === pokemon.speciesId) ?? null;
+  const [destinationDexKind, setDestinationDexKind] =
+    useState<PokemonDexPlacement['dexKind']>('regular');
+  const [targetSpeciesIdDraft, setTargetSpeciesIdDraft] = useState('');
+  const formatPlacementLabel = useCallback(
+    (placement: PokemonDexPlacement) =>
+      `${translateLiteral(formatPokemonDexKind(placement.dexKind))} #${formatPokemonDexNumber(
+        placement.displayedNumber
+      )} - ${placement.label}`,
+    [translateLiteral]
+  );
+
+  useEffect(() => {
+    setDestinationDexKind(
+      currentPlacement?.dexKind === 'regular' ? 'hyperspace' : 'regular'
+    );
+    setTargetSpeciesIdDraft('');
+  }, [currentPlacement?.dexKind, pokemon.speciesId]);
+
+  const destinationOptions = useMemo(
+    () =>
+      dexEditor.placements
+        .filter(
+          (placement) =>
+            placement.dexKind === destinationDexKind &&
+            placement.speciesId !== pokemon.speciesId
+        )
+        .sort((left, right) => left.displayedNumber - right.displayedNumber)
+        .map((placement) => ({
+          label: formatPlacementLabel(placement),
+          value: placement.speciesId
+        })),
+    [destinationDexKind, dexEditor.placements, formatPlacementLabel, pokemon.speciesId]
+  );
+  const targetSpeciesId = parseEditableIntegerDraft(
+    targetSpeciesIdDraft,
+    destinationOptions
+  );
+  const targetPlacement =
+    targetSpeciesId === null
+      ? null
+      : dexEditor.placements.find(
+          (placement) =>
+            placement.speciesId === targetSpeciesId &&
+            placement.dexKind === destinationDexKind &&
+            placement.speciesId !== pokemon.speciesId
+        ) ?? null;
+  const canStageSwap =
+    canEditPokemon &&
+    dexEditor.canEdit &&
+    editSessionActive &&
+    !isPokemonUpdating &&
+    onStageSwap !== undefined &&
+    currentPlacement !== null &&
+    targetPlacement !== null &&
+    targetPlacement.speciesId !== currentPlacement.speciesId;
+
+  return (
+    <div className="inspector-block za-pokemon-dex-placement-block">
+      <div className="za-pokemon-dex-placement-heading">
+        <div>
+          <h4>{translateLiteral('Pokédex Placement')}</h4>
+          <p>
+            {translateLiteral(
+              'Swap occupied slots so Pokédex numbers stay unique and both Pokédexes remain complete.'
+            )}
+          </p>
+        </div>
+        <ArrowLeftRight aria-hidden="true" size={18} />
+      </div>
+
+      {!dexEditor.canEdit ? (
+        <div className="za-pokemon-dex-placement-warning" role="note">
+          <AlertTriangle aria-hidden="true" size={16} />
+          <span>
+            {translateLiteral(
+              dexEditor.blockedReason ??
+                'Pokédex placement is unavailable for the loaded game data.'
+            )}
+          </span>
+        </div>
+      ) : currentPlacement ? (
+        <>
+          <dl className="za-pokemon-dex-current">
+            <div>
+              <dt>{translateLiteral('Current placement')}</dt>
+              <dd>
+                {translateLiteral(formatPokemonDexKind(currentPlacement.dexKind))}{' '}
+                #{formatPokemonDexNumber(currentPlacement.displayedNumber)}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="za-pokemon-dex-swap-controls">
+            <label className="path-field" htmlFor="za-pokemon-destination-dex">
+              <span>{translateLiteral('Destination Pokédex')}</span>
+              <select
+                disabled={!canEditPokemon || !dexEditor.canEdit || isPokemonUpdating}
+                id="za-pokemon-destination-dex"
+                onChange={(event) => {
+                  setDestinationDexKind(
+                    event.target.value === 'hyperspace' ? 'hyperspace' : 'regular'
+                  );
+                  setTargetSpeciesIdDraft('');
+                }}
+                value={destinationDexKind}
+              >
+                <option value="regular">
+                  {translateLiteral('Regular Dex')} ({dexEditor.regularCount})
+                </option>
+                <option value="hyperspace">
+                  {translateLiteral('Hyperspace Dex')} ({dexEditor.hyperspaceCount})
+                </option>
+              </select>
+            </label>
+
+            <label className="path-field" htmlFor="za-pokemon-destination-slot">
+              <span>{translateLiteral('Occupied destination slot')}</span>
+              <SearchableOptionInput
+                ariaLabel="Occupied destination slot"
+                disabled={!canEditPokemon || !dexEditor.canEdit || isPokemonUpdating}
+                emptyOptionLabel="Choose a Pokédex slot"
+                id="za-pokemon-destination-slot"
+                onChange={setTargetSpeciesIdDraft}
+                options={destinationOptions}
+                value={targetSpeciesIdDraft}
+              />
+            </label>
+          </div>
+
+          {targetPlacement ? (
+            <div className="za-pokemon-dex-swap-preview" role="status">
+              <strong>{translateLiteral('Swap preview')}</strong>
+              <span>
+                <span data-localization-ignore="true">
+                  {formatPlacementLabel(currentPlacement)}
+                </span>{' '}
+                →{' '}
+                {translateLiteral(formatPokemonDexKind(targetPlacement.dexKind))} #
+                {formatPokemonDexNumber(targetPlacement.displayedNumber)}
+              </span>
+              <span>
+                <span data-localization-ignore="true">
+                  {formatPlacementLabel(targetPlacement)}
+                </span>{' '}
+                →{' '}
+                {translateLiteral(formatPokemonDexKind(currentPlacement.dexKind))} #
+                {formatPokemonDexNumber(currentPlacement.displayedNumber)}
+              </span>
+            </div>
+          ) : null}
+
+          <div className="draft-action-row">
+            <button
+              aria-busy={isPokemonUpdating || undefined}
+              className="primary-button"
+              disabled={!canStageSwap}
+              onClick={async () => {
+                if (currentPlacement && targetPlacement && onStageSwap) {
+                  await onStageSwap(
+                    currentPlacement.speciesId,
+                    targetPlacement.speciesId
+                  );
+                }
+              }}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Staging"
+                icon={<ArrowLeftRight aria-hidden="true" size={16} />}
+                isBusy={isPokemonUpdating}
+                label="Stage Swap"
+              />
+            </button>
+            {!editSessionActive ? (
+              <span className="draft-action-summary">
+                {translateLiteral('Start editing to stage a Pokédex swap.')}
+              </span>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">
+          {translateLiteral('This Pokémon does not occupy a Pokédex slot.')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function formatPokemonDexNumber(value: number) {
+  return value.toString().padStart(3, '0');
+}
+
+function formatPokemonDexKind(kind: PokemonDexPlacement['dexKind']) {
+  return kind === 'hyperspace' ? 'Hyperspace Dex' : 'Regular Dex';
+}
+
 function SelectedPokemonPanel({
   canEditPokemon,
+  dexEditor,
   editSession,
   editorFamily,
   editableFields,
@@ -12856,10 +13119,12 @@ function SelectedPokemonPanel({
   onUpdatePokemonFields,
   onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
+  onSwapPokemonDexPlacement,
   pokemon,
   pokemonRecords
 }: {
   canEditPokemon: boolean;
+  dexEditor: PokemonDexEditor | null;
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
   editableFields: PokemonEditableField[];
@@ -12892,6 +13157,10 @@ function SelectedPokemonPanel({
     slot: number | null,
     moveId: number | null,
     level: number | null
+  ) => Promise<boolean>;
+  onSwapPokemonDexPlacement?: (
+    sourceSpeciesId: number,
+    targetSpeciesId: number
   ) => Promise<boolean>;
   pokemon: PokemonRecord | null;
   pokemonRecords: PokemonRecord[];
@@ -13481,7 +13750,11 @@ function SelectedPokemonPanel({
 
         {pokemon ? (
           <>
-          <SelectedPokemonSummaryCard editorFamily={editorFamily} pokemon={pokemon} />
+            <SelectedPokemonSummaryCard
+              dexEditor={dexEditor}
+              editorFamily={editorFamily}
+              pokemon={pokemon}
+            />
 
           <div className={`inspector-block ${editorFamily}-pokemon-stats-block`}>
             <h4>Base Stats</h4>
@@ -13552,6 +13825,17 @@ function SelectedPokemonPanel({
               </div>
             </dl>
           </div>
+
+          {editorFamily === 'za' && dexEditor ? (
+            <ZaPokemonDexPlacementEditor
+              canEditPokemon={canEditPokemon}
+              dexEditor={dexEditor}
+              editSessionActive={editSession !== null}
+              isPokemonUpdating={isPokemonUpdating}
+              onStageSwap={onSwapPokemonDexPlacement}
+              pokemon={pokemon}
+            />
+          ) : null}
 
           <div className={`inspector-block ${editorFamily}-pokemon-personal-edit-block`}>
             <h4>Personal Edit</h4>
@@ -18663,6 +18947,15 @@ function getPokemonPendingEditDisplayDetails(
   );
   const fieldKey = edit.field ?? '';
 
+  if (fieldKey === 'dexPlacement') {
+    return createPendingEditDisplayDetails(edit, {
+      editorLabel,
+      fieldLabel: 'Pokédex placement',
+      newValueLabel: 'Safe slot swap staged',
+      recordLabel: 'Regular and Hyperspace Pokédexes'
+    });
+  }
+
   if (fieldKey.startsWith('learnset:')) {
     const details = parsePokemonGroupedEditField(fieldKey);
     return createPendingEditDisplayDetails(edit, {
@@ -19517,12 +19810,33 @@ function getItemFieldDisabledReason(
   item?: ItemRecord | null
 ) {
   const fieldName = field.field;
+  const isZaTechnicalMachine =
+    editorFamily === 'za' &&
+    item?.metadata.pouch === 6 &&
+    item.metadata.itemType === 5 &&
+    item.metadata.machineMoveId !== null &&
+    item.metadata.machineSlot !== null;
   if (field.isReadOnly) {
     return field.readOnlyReason ?? 'This field is read-only.';
   }
 
   if (editorFamily === 'za' && fieldName === itemCanUseOnPokemonFieldName) {
     return 'Derived from item effects. Edit healing, revive, EV, form change, or Evolution Item instead.';
+  }
+
+  if (
+    isZaTechnicalMachine &&
+    fieldName === itemSortOrderFieldName
+  ) {
+    return 'TM numbering is managed as one paired value. Use TM number instead.';
+  }
+
+  if (
+    editorFamily === 'za' &&
+    fieldName === itemTechnicalMachineNumberFieldName &&
+    !isZaTechnicalMachine
+  ) {
+    return 'Only TM item records can edit the TM number.';
   }
 
   if (fieldName === itemFieldFlagsFieldName) {
@@ -43420,13 +43734,25 @@ function formatPokemonTypes(pokemon: PokemonRecord) {
     : `${pokemon.type1} / ${pokemon.type2}`;
 }
 
-function formatPokemonDexPresence(pokemon: PokemonRecord) {
+function formatPokemonDexPresence(
+  pokemon: PokemonRecord,
+  dexEditor?: PokemonDexEditor | null
+) {
   if (!pokemon.dexPresence.isPresentInGame) {
     return 'Not present';
   }
 
   if (!pokemon.dexPresence.isInAnyDex) {
     return 'Present, no dex index';
+  }
+
+  const placement = dexEditor?.placements.find(
+    (candidate) => candidate.speciesId === pokemon.speciesId
+  );
+  if (placement) {
+    return `${formatPokemonDexKind(placement.dexKind)} #${formatPokemonDexNumber(
+      placement.displayedNumber
+    )}`;
   }
 
   return [

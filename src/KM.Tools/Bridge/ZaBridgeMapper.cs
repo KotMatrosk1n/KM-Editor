@@ -472,6 +472,16 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static SwapPokemonDexPlacementResponse ToDtoDexPlacementSwap(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new SwapPokemonDexPlacementResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(ZaEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -506,7 +516,22 @@ public static class ZaBridgeMapper
             workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
             workflow.LearnsetMoveOptions.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            workflow.DexEditor is null
+                ? null
+                : new PokemonDexEditorDto(
+                    workflow.DexEditor.CanEdit,
+                    workflow.DexEditor.BlockedReason,
+                    workflow.DexEditor.RegularCount,
+                    workflow.DexEditor.HyperspaceCount,
+                    workflow.DexEditor.Placements
+                        .Select(placement => new PokemonDexPlacementDto(
+                            placement.SpeciesId,
+                            placement.InternalIndex,
+                            placement.DexKind,
+                            placement.DisplayedNumber,
+                            placement.Label))
+                        .ToArray()));
     }
 
     private static ItemsWorkflowDto ToItemsWorkflowDto(ZaItemsWorkflow workflow)

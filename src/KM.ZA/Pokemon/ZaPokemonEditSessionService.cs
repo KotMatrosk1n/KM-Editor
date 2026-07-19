@@ -26,6 +26,8 @@ internal sealed class ZaPokemonEditSessionService
     private const string MoveUpAction = "moveUp";
     private const string MoveDownAction = "moveDown";
     private const string MoveToAction = "moveTo";
+    private const string DexPlacementRecordId = "dex-placement";
+    private const string DexPlacementPayloadPrefix = "v1|";
     private const int PersonalTableEntryFieldIndex = 0;
     private const int PersonalSpeciesFieldIndex = 0;
     private const int PersonalIsPresentFieldIndex = 1;
@@ -187,6 +189,113 @@ internal sealed class ZaPokemonEditSessionService
             diagnostics);
     }
 
+    public ZaPokemonEditResult SwapDexPlacement(
+        ProjectPaths paths,
+        EditSession? session,
+        int sourceSpeciesId,
+        int targetSpeciesId)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!ZaEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var editor = workflow.DexEditor;
+        var loadedEditor = loadedWorkflow.DexEditor;
+        if (editor is null
+            || loadedEditor is null
+            || !editor.CanEdit
+            || editor.PersonalProvenance is null
+            || editor.ContentsProvenance is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor?.BlockedReason ?? "Pokédex placement is not available for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified active Pokédex placement data"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (sourceSpeciesId == targetSpeciesId)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Choose a different Pokédex slot to stage a swap.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Two different active Pokédex species"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var sourcePlacement = editor.Placements
+            .FirstOrDefault(placement => placement.SpeciesId == sourceSpeciesId);
+        var targetPlacement = editor.Placements
+            .FirstOrDefault(placement => placement.SpeciesId == targetSpeciesId);
+        if (sourcePlacement is null || targetPlacement is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement swap targets a species that is not in the verified active Pokédex.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Two active Pokédex species"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var assignments = editor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        assignments[sourceSpeciesId] = targetPlacement.InternalIndex;
+        assignments[targetSpeciesId] = sourcePlacement.InternalIndex;
+
+        var baseAssignments = loadedEditor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        var pendingEdits = currentSession.PendingEdits
+            .Where(edit => !IsDexPlacementEdit(edit))
+            .ToList();
+        if (!DexAssignmentsEqual(assignments, baseAssignments))
+        {
+            var changedSpeciesCount = assignments.Count(pair =>
+                !baseAssignments.TryGetValue(pair.Key, out var baseIndex)
+                || baseIndex != pair.Value);
+            var summary = changedSpeciesCount == 2
+                ? $"Swap {GetSpeciesName(workflow, sourceSpeciesId)} from {FormatDexPlacement(sourcePlacement)} "
+                    + $"with {GetSpeciesName(workflow, targetSpeciesId)} in {FormatDexPlacement(targetPlacement)}."
+                : $"Stage Pokédex placement changes for {changedSpeciesCount.ToString(CultureInfo.InvariantCulture)} species.";
+            pendingEdits.Add(new PendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                summary,
+                [
+                    ToSourceReference(loadedEditor.PersonalProvenance!),
+                    ToSourceReference(loadedEditor.ContentsProvenance!),
+                ],
+                DexPlacementRecordId,
+                ZaPokemonWorkflowService.DexPlacementField,
+                EncodeDexAssignments(assignments)));
+        }
+
+        var updatedSession = currentSession with { PendingEdits = pendingEdits };
+        return new ZaPokemonEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public ZaPokemonEditResult UpdateLearnset(
         ProjectPaths paths,
         EditSession? session,
@@ -339,6 +448,17 @@ internal sealed class ZaPokemonEditSessionService
             }
         }
 
+        if (session.PendingEdits.Any(IsDexPlacementEdit)
+            && session.PendingEdits.Any(IsDexPresenceEdit))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement swaps and Present In Game changes must be applied separately.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Apply or discard Present In Game changes before staging a Pokédex placement swap"));
+        }
+
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -362,14 +482,20 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        var plan = ZaEditSessionSupport.CreateSingleFileChangePlan(
-            paths,
-            session,
-            ZaEditSessionSupport.PokemonDomain,
-            ZaDataPaths.PersonalArray,
-            "Pokemon Data",
-            validation.Diagnostics,
-            outputMode);
+        var plan = session.PendingEdits.Any(IsDexPlacementEdit)
+            ? CreateDexAwareChangePlan(
+                paths,
+                session,
+                validation.Diagnostics,
+                outputMode)
+            : ZaEditSessionSupport.CreateSingleFileChangePlan(
+                paths,
+                session,
+                ZaEditSessionSupport.PokemonDomain,
+                ZaDataPaths.PersonalArray,
+                "Pokemon Data",
+                validation.Diagnostics,
+                outputMode);
         if (!plan.CanApply)
         {
             return plan;
@@ -470,16 +596,34 @@ internal sealed class ZaPokemonEditSessionService
             var source = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var personalArray = ReadRows(project, source);
             var rows = personalArray.Rows;
+            var dexEdit = session.PendingEdits.SingleOrDefault(IsDexPlacementEdit);
+            ZaWorkflowFile? contentsSource = null;
+            ZaPokedexContentsTable? contentsTable = null;
+            if (dexEdit is not null)
+            {
+                contentsSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
+                contentsTable = ZaPokedexContentsTable.Read(contentsSource.Bytes);
+            }
+
             var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
             var migratedLegacyArguments = PrepareEvolutionItemConversions(
                 rows,
                 session.PendingEdits,
                 conversionState);
+            var dexApply = dexEdit is null
+                ? DexPlacementApplyResult.None
+                : ApplyDexPlacement(rows, contentsTable!, dexEdit, diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            }
+
             var requiresRebuild = personalArray.RequiresLegacyDexOrderRepair
                 || RequiresPersonalArrayRebuild(rows, session.PendingEdits)
                 || migratedLegacyArguments
-                || RequiresEncodedEvolutionRebuild(session.PendingEdits);
-            foreach (var edit in session.PendingEdits)
+                || RequiresEncodedEvolutionRebuild(session.PendingEdits)
+                || dexApply.RequiresPersonalRebuild;
+            foreach (var edit in session.PendingEdits.Where(edit => !IsDexPlacementEdit(edit)))
             {
                 ApplyEdit(rows, edit, conversionState, diagnostics);
             }
@@ -489,9 +633,20 @@ internal sealed class ZaPokemonEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
+            var binaryPatchEdits = session.PendingEdits
+                .Where(edit => !IsDexPlacementEdit(edit))
+                .Concat(dexApply.ChangedPersonalIds.Select(personalId =>
+                    new PendingEdit(
+                        ZaEditSessionSupport.PokemonDomain,
+                        "Update Pokédex placement.",
+                        Array.Empty<ProjectFileReference>(),
+                        personalId.ToString(CultureInfo.InvariantCulture),
+                        ZaPokemonWorkflowService.RegionalDexIndexField,
+                        rows[personalId].ZADexOrder.ToString(CultureInfo.InvariantCulture))))
+                .ToArray();
             var outputBytes = requiresRebuild
                 ? WriteRows(rows)
-                : ApplyPersonalArrayBinaryPatch(source.Bytes, session.PendingEdits, diagnostics);
+                : ApplyPersonalArrayBinaryPatch(source.Bytes, binaryPatchEdits, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -500,25 +655,47 @@ internal sealed class ZaPokemonEditSessionService
             var conversionBytes = conversionState.Modified
                 ? conversionState.Write()
                 : null;
+            var contentsBytes = dexApply.GroupUpdates.Count > 0
+                ? contentsTable!.WriteSpeciesGroups(dexApply.GroupUpdates)
+                : null;
+            var outputWrites = new List<ZaWorkflowFileWrite>();
             if (conversionBytes is not null)
             {
-                ZaWorkflowFileSource.Write(
-                    paths,
+                outputWrites.Add(new ZaWorkflowFileWrite(
                     ZaDataPaths.EvolutionItemConversionArray,
-                    conversionBytes,
-                    outputMode);
+                    conversionBytes));
+            }
+
+            outputWrites.Add(new ZaWorkflowFileWrite(ZaDataPaths.PersonalArray, outputBytes));
+            if (contentsBytes is not null)
+            {
+                outputWrites.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.PokedexContentsData,
+                    contentsBytes));
+            }
+
+            ZaWorkflowFileSource.WriteBatch(paths, outputWrites, outputMode);
+            if (conversionBytes is not null)
+            {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
                     ZaDataPaths.EvolutionItemConversionArray,
                     outputMode));
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.PersonalArray, outputBytes, outputMode);
             writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PersonalArray, outputMode));
+            if (contentsBytes is not null)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.PokedexContentsData,
+                    outputMode));
+            }
+
             if (outputMode == ZaOutputMode.Standalone)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
             }
 
+            pokemonWorkflowService.ClearMemoryCache();
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 ZaEditSessionSupport.CreateApplyOutputMessage("Pokemon Data", outputMode),
@@ -530,8 +707,7 @@ internal sealed class ZaPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 $"Pokemon Data output could not be written: {exception.Message}",
                 ZaEditSessionSupport.PokemonDomain,
-                file: $"romfs/{ZaDataPaths.PersonalArray}",
-                expected: "Readable source and writable output root"));
+                expected: "Readable Pokemon and Pokédex sources with a writable output root"));
         }
 
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -630,6 +806,12 @@ internal sealed class ZaPokemonEditSessionService
             return;
         }
 
+        if (IsDexPlacementEdit(edit))
+        {
+            ValidateDexPlacementEdit(workflow, edit, diagnostics);
+            return;
+        }
+
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -721,6 +903,11 @@ internal sealed class ZaPokemonEditSessionService
 
     private static ZaPokemonWorkflow OverlayPendingEdit(ZaPokemonWorkflow workflow, PendingEdit edit)
     {
+        if (IsDexPlacementEdit(edit))
+        {
+            return OverlayDexPlacement(workflow, edit);
+        }
+
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
             || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
@@ -733,6 +920,536 @@ internal sealed class ZaPokemonEditSessionService
                 .Select(pokemon => pokemon.PersonalId == personalId ? OverlayPokemon(workflow, pokemon, edit) : pokemon)
                 .ToArray(),
         };
+    }
+
+    private static void ValidateDexPlacementEdit(
+        ZaPokemonWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var editor = workflow.DexEditor;
+        if (editor is null
+            || !editor.CanEdit
+            || editor.PersonalProvenance is null
+            || editor.ContentsProvenance is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor?.BlockedReason ?? "Pokédex placement is not available for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified active Pokédex placement data"));
+            return;
+        }
+
+        if (!string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
+            || !TryDecodeDexAssignments(edit.NewValue, out var assignments)
+            || !string.Equals(edit.NewValue, EncodeDexAssignments(assignments), StringComparison.Ordinal))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokédex placement data is malformed or non-canonical.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Canonical complete Pokédex placement map"));
+            return;
+        }
+
+        var expectedSources = new[]
+        {
+            ToSourceReference(editor.PersonalProvenance),
+            ToSourceReference(editor.ContentsProvenance),
+        }
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        var actualSources = edit.Sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        if (!actualSources.SequenceEqual(expectedSources))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokédex placement sources do not match the loaded personal and contents data.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Current effective Pokédex source pair"));
+            return;
+        }
+
+        var expectedSpecies = editor.Placements
+            .Select(placement => placement.SpeciesId)
+            .Order()
+            .ToArray();
+        var actualSpecies = assignments.Keys.Order().ToArray();
+        var expectedIndices = editor.Placements
+            .Select(placement => placement.InternalIndex)
+            .Order()
+            .ToArray();
+        var actualIndices = assignments.Values.Order().ToArray();
+        if (!actualSpecies.SequenceEqual(expectedSpecies)
+            || !actualIndices.SequenceEqual(expectedIndices))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokédex placement must preserve every active species and every unique slot.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Complete one-to-one active Pokédex slot assignment"));
+            return;
+        }
+
+        var currentAssignments = editor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        if (DexAssignmentsEqual(assignments, currentAssignments))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokédex placement does not change any species slot.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "At least one staged slot swap"));
+        }
+    }
+
+    private ChangePlan CreateDexAwareChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<ValidationDiagnostic> validationDiagnostics,
+        ZaOutputMode outputMode)
+    {
+        var diagnostics = validationDiagnostics.ToList();
+        if (session.PendingEdits.Count == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Pokemon Data edit before reviewing a change plan.",
+                ZaEditSessionSupport.PokemonDomain,
+                expected: "Pending Pokemon Data edit"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var workflow = pokemonWorkflowService.Load(project);
+            var dexEdit = session.PendingEdits.Single(IsDexPlacementEdit);
+            var writes = new List<PlannedFileWrite>();
+            var personalSources = session.PendingEdits
+                .SelectMany(edit => edit.Sources)
+                .Distinct()
+                .ToArray();
+            var personalWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.PersonalArray,
+                personalSources,
+                outputMode);
+            writes.Add(new PlannedFileWrite(
+                personalWriteInfo.TargetRelativePath,
+                personalWriteInfo.Sources,
+                personalWriteInfo.ReplacesExistingOutput,
+                session.PendingEdits.Count == 1
+                    ? $"Apply pending Pokemon Data edit: {dexEdit.Summary}"
+                    : $"Apply {session.PendingEdits.Count.ToString(CultureInfo.InvariantCulture)} pending Pokemon Data edits."));
+
+            if (DexPlacementChangesGroups(workflow, dexEdit))
+            {
+                var contentsWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                    paths,
+                    ZaDataPaths.PokedexContentsData,
+                    dexEdit.Sources,
+                    outputMode);
+                writes.Add(new PlannedFileWrite(
+                    contentsWriteInfo.TargetRelativePath,
+                    contentsWriteInfo.Sources,
+                    contentsWriteInfo.ReplacesExistingOutput,
+                    "Update Regular and Hyperspace Pokédex membership for the staged slot swap."));
+            }
+
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(
+                    descriptorWriteInfo.TargetRelativePath,
+                    descriptorWriteInfo.Sources,
+                    descriptorWriteInfo.ReplacesExistingOutput,
+                    "Patch Pokemon Legends Z-A Trinity descriptor for standalone LayeredFS overrides."));
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Change plan preview contains {writes.Count.ToString(CultureInfo.InvariantCulture)} target files.",
+                ZaEditSessionSupport.PokemonDomain));
+            return new ChangePlan(session.Id, writes, diagnostics);
+        }
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon Data change plan could not resolve Pokédex targets: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                expected: "Verified Pokédex sources and writable output root"));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+    }
+
+    private static bool DexPlacementChangesGroups(
+        ZaPokemonWorkflow workflow,
+        PendingEdit edit)
+    {
+        var editor = workflow.DexEditor;
+        if (editor is null
+            || !editor.CanEdit
+            || !TryDecodeDexAssignments(edit.NewValue, out var assignments))
+        {
+            throw new InvalidDataException(
+                "The staged Pokédex placement cannot be compared with the verified source mapping.");
+        }
+
+        var placementBySpecies = editor.Placements.ToDictionary(
+            placement => placement.SpeciesId);
+        var slotByIndex = editor.Placements.ToDictionary(
+            placement => placement.InternalIndex);
+        if (assignments.Count != placementBySpecies.Count
+            || assignments.Keys.Any(speciesId => !placementBySpecies.ContainsKey(speciesId))
+            || assignments.Values.Any(internalIndex => !slotByIndex.ContainsKey(internalIndex)))
+        {
+            throw new InvalidDataException(
+                "The staged Pokédex placement does not preserve the verified active slot mapping.");
+        }
+
+        return assignments.Any(pair =>
+            !string.Equals(
+                placementBySpecies[pair.Key].DexKind,
+                slotByIndex[pair.Value].DexKind,
+                StringComparison.Ordinal));
+    }
+
+    private static DexPlacementApplyResult ApplyDexPlacement(
+        IReadOnlyList<PersonalRow> rows,
+        ZaPokedexContentsTable contents,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryDecodeDexAssignments(edit.NewValue, out var assignments)
+            || !string.Equals(edit.NewValue, EncodeDexAssignments(assignments), StringComparison.Ordinal))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokédex placement data is malformed or non-canonical.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Canonical complete Pokédex placement map"));
+            return DexPlacementApplyResult.None;
+        }
+
+        var presentRows = rows
+            .Select((row, personalId) => (Row: row, PersonalId: personalId))
+            .Where(pair =>
+                pair.Row.IsPresent
+                && pair.Row.Species is { Species: > 0 })
+            .ToArray();
+        var currentIndexBySpecies = new Dictionary<int, int>();
+        foreach (var speciesGroup in presentRows.GroupBy(pair => (int)pair.Row.Species!.Species))
+        {
+            var indices = speciesGroup
+                .Select(pair => (int)pair.Row.ZADexOrder)
+                .Distinct()
+                .ToArray();
+            if (indices.Length != 1 || indices[0] <= 0)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Species {speciesGroup.Key.ToString(CultureInfo.InvariantCulture)} does not have one shared active Pokédex slot across its present forms.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: ZaPokemonWorkflowService.DexPlacementField,
+                    expected: "One positive shared Pokédex slot per active species"));
+                return DexPlacementApplyResult.None;
+            }
+
+            currentIndexBySpecies.Add(speciesGroup.Key, indices[0]);
+        }
+
+        var contentRows = contents.Rows.ToArray();
+        if (contentRows.Any(row => !row.HasKnownGroup))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The Pokédex contents table contains an unsupported membership group.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Regular or Hyperspace membership"));
+            return DexPlacementApplyResult.None;
+        }
+
+        var expectedSpecies = currentIndexBySpecies.Keys.Order().ToArray();
+        var contentSpecies = contentRows.Select(row => row.Species).Order().ToArray();
+        var assignedSpecies = assignments.Keys.Order().ToArray();
+        var expectedIndices = currentIndexBySpecies.Values.Order().ToArray();
+        var assignedIndices = assignments.Values.Order().ToArray();
+        if (!contentSpecies.SequenceEqual(expectedSpecies)
+            || !assignedSpecies.SequenceEqual(expectedSpecies)
+            || !expectedIndices.SequenceEqual(Enumerable.Range(1, expectedSpecies.Length))
+            || !assignedIndices.SequenceEqual(expectedIndices))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The active personal data, Pokédex contents, and staged slots no longer form the same complete one-to-one mapping.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Exact active species coverage with contiguous unique slots"));
+            return DexPlacementApplyResult.None;
+        }
+
+        var groupBySpecies = contentRows.ToDictionary(
+            row => row.Species,
+            row => (ZaPokedexContentsGroup)row.Group);
+        var regularIndices = currentIndexBySpecies
+            .Where(pair => groupBySpecies[pair.Key] == ZaPokedexContentsGroup.Regular)
+            .Select(pair => pair.Value)
+            .Order()
+            .ToArray();
+        var hyperspaceIndices = currentIndexBySpecies
+            .Where(pair => groupBySpecies[pair.Key] == ZaPokedexContentsGroup.Hyperspace)
+            .Select(pair => pair.Value)
+            .Order()
+            .ToArray();
+        if (regularIndices.Length == 0
+            || hyperspaceIndices.Length == 0
+            || !regularIndices.SequenceEqual(Enumerable.Range(1, regularIndices.Length))
+            || !hyperspaceIndices.SequenceEqual(
+                Enumerable.Range(regularIndices.Length + 1, hyperspaceIndices.Length)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Regular and Hyperspace species no longer occupy one verified contiguous slot range each.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Contiguous Regular slots followed by contiguous Hyperspace slots"));
+            return DexPlacementApplyResult.None;
+        }
+
+        var slotGroupByIndex = currentIndexBySpecies.ToDictionary(
+            pair => pair.Value,
+            pair => groupBySpecies[pair.Key]);
+        var groupUpdates = new Dictionary<int, ZaPokedexContentsGroup>();
+        foreach (var assignment in assignments)
+        {
+            var targetGroup = slotGroupByIndex[assignment.Value];
+            if (groupBySpecies[assignment.Key] != targetGroup)
+            {
+                groupUpdates.Add(assignment.Key, targetGroup);
+            }
+        }
+
+        var changedPersonalIds = new HashSet<int>();
+        var requiresPersonalRebuild = false;
+        foreach (var (row, personalId) in presentRows)
+        {
+            var speciesId = (int)row.Species!.Species;
+            var targetIndex = assignments[speciesId];
+            if (row.ZADexOrder == targetIndex)
+            {
+                continue;
+            }
+
+            requiresPersonalRebuild |= !row.HasZADexOrder;
+            row.HasZADexOrder = true;
+            row.ZADexOrder = checked((ushort)targetIndex);
+            changedPersonalIds.Add(personalId);
+        }
+
+        return new DexPlacementApplyResult(
+            changedPersonalIds,
+            groupUpdates,
+            requiresPersonalRebuild);
+    }
+
+    private static ZaPokemonWorkflow OverlayDexPlacement(
+        ZaPokemonWorkflow workflow,
+        PendingEdit edit)
+    {
+        var editor = workflow.DexEditor;
+        if (editor is null
+            || !editor.CanEdit
+            || !TryDecodeDexAssignments(edit.NewValue, out var assignments))
+        {
+            return workflow;
+        }
+
+        var updatedPokemon = workflow.Pokemon
+            .Select(pokemon =>
+            {
+                if (!pokemon.DexPresence.IsPresentInGame
+                    || !assignments.TryGetValue(pokemon.SpeciesId, out var internalIndex))
+                {
+                    return pokemon;
+                }
+
+                return pokemon with
+                {
+                    DexPresence = pokemon.DexPresence with
+                    {
+                        IsInAnyDex = true,
+                        RegionalDexIndex = internalIndex,
+                    },
+                    Personal = pokemon.Personal with { RegionalDexIndex = internalIndex },
+                };
+            })
+            .ToArray();
+        var slotByIndex = editor.Placements.ToDictionary(
+            placement => placement.InternalIndex);
+        var representativeBySpecies = updatedPokemon
+            .Where(pokemon =>
+                pokemon.DexPresence.IsPresentInGame
+                && assignments.ContainsKey(pokemon.SpeciesId))
+            .GroupBy(pokemon => pokemon.SpeciesId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(pokemon => pokemon.Form == 0 ? 0 : 1)
+                    .ThenBy(pokemon => pokemon.Form)
+                    .ThenBy(pokemon => pokemon.PersonalId)
+                    .First());
+        var placements = assignments
+            .Select(pair =>
+            {
+                if (!slotByIndex.TryGetValue(pair.Value, out var slot)
+                    || !representativeBySpecies.TryGetValue(pair.Key, out var representative))
+                {
+                    return null;
+                }
+
+                return new ZaPokemonDexPlacement(
+                    pair.Key,
+                    pair.Value,
+                    slot.DexKind,
+                    slot.DisplayedNumber,
+                    representative.Name);
+            })
+            .Where(placement => placement is not null)
+            .Select(placement => placement!)
+            .OrderBy(placement => placement.InternalIndex)
+            .ToArray();
+        if (placements.Length != editor.Placements.Count)
+        {
+            return workflow;
+        }
+
+        return workflow with
+        {
+            Pokemon = updatedPokemon,
+            DexEditor = editor with { Placements = placements },
+        };
+    }
+
+    private static bool IsDexPlacementEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, ZaPokemonWorkflowService.DexPlacementField, StringComparison.Ordinal);
+    }
+
+    private static bool IsDexPresenceEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && string.Equals(edit.Field, ZaPokemonWorkflowService.IsPresentInGameField, StringComparison.Ordinal);
+    }
+
+    private static string EncodeDexAssignments(IReadOnlyDictionary<int, int> assignments)
+    {
+        return DexPlacementPayloadPrefix + string.Join(
+            ",",
+            assignments
+                .OrderBy(pair => pair.Key)
+                .Select(pair => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{pair.Key}:{pair.Value}")));
+    }
+
+    private static bool TryDecodeDexAssignments(
+        string? payload,
+        out Dictionary<int, int> assignments)
+    {
+        assignments = [];
+        if (payload is null
+            || !payload.StartsWith(DexPlacementPayloadPrefix, StringComparison.Ordinal)
+            || payload.Length == DexPlacementPayloadPrefix.Length)
+        {
+            return false;
+        }
+
+        foreach (var assignment in payload[DexPlacementPayloadPrefix.Length..].Split(','))
+        {
+            var separator = assignment.IndexOf(':', StringComparison.Ordinal);
+            if (separator <= 0
+                || separator == assignment.Length - 1
+                || assignment.IndexOf(':', separator + 1) >= 0
+                || !int.TryParse(
+                    assignment.AsSpan(0, separator),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var speciesId)
+                || !int.TryParse(
+                    assignment.AsSpan(separator + 1),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var internalIndex)
+                || speciesId <= 0
+                || internalIndex <= 0
+                || !assignments.TryAdd(speciesId, internalIndex))
+            {
+                assignments = [];
+                return false;
+            }
+        }
+
+        return assignments.Count > 0;
+    }
+
+    private static bool DexAssignmentsEqual(
+        IReadOnlyDictionary<int, int> left,
+        IReadOnlyDictionary<int, int> right)
+    {
+        return left.Count == right.Count
+            && left.All(pair =>
+                right.TryGetValue(pair.Key, out var rightIndex)
+                && rightIndex == pair.Value);
+    }
+
+    private static ProjectFileReference ToSourceReference(ZaPokemonProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static string GetSpeciesName(ZaPokemonWorkflow workflow, int speciesId)
+    {
+        return workflow.Pokemon
+            .Where(pokemon => pokemon.SpeciesId == speciesId)
+            .OrderBy(pokemon => pokemon.Form == 0 ? 0 : 1)
+            .ThenBy(pokemon => pokemon.Form)
+            .Select(pokemon => pokemon.Name)
+            .FirstOrDefault()
+            ?? $"Species {speciesId.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string FormatDexPlacement(ZaPokemonDexPlacement placement)
+    {
+        var dexName = string.Equals(
+            placement.DexKind,
+            ZaPokemonWorkflowService.RegularDexKind,
+            StringComparison.Ordinal)
+            ? "Regular Dex"
+            : "Hyperspace Dex";
+        return $"{dexName} #{placement.DisplayedNumber.ToString("000", CultureInfo.InvariantCulture)}";
     }
 
     private static ZaPokemonRecord OverlayPokemon(
@@ -3187,6 +3904,17 @@ internal sealed class ZaPokemonEditSessionService
     private sealed record PersonalArrayRows(
         IReadOnlyList<PersonalRow> Rows,
         bool RequiresLegacyDexOrderRepair);
+
+    private sealed record DexPlacementApplyResult(
+        IReadOnlySet<int> ChangedPersonalIds,
+        IReadOnlyDictionary<int, ZaPokedexContentsGroup> GroupUpdates,
+        bool RequiresPersonalRebuild)
+    {
+        public static readonly DexPlacementApplyResult None = new(
+            new HashSet<int>(),
+            new Dictionary<int, ZaPokedexContentsGroup>(),
+            false);
+    }
 
     private sealed record SpeciesInfoRow(
         ushort Species,

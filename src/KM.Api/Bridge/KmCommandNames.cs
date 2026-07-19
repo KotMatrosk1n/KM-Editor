@@ -19,6 +19,7 @@ public static class KmCommandNames
     public const string UpdatePokemonFields = "pokemon.fields.update";
     public const string UpdatePokemonLearnset = "pokemon.learnset.update";
     public const string UpdatePokemonEvolution = "pokemon.evolution.update";
+    public const string SwapPokemonDexPlacement = "pokemon.dex.swap";
     public const string LoadMovesWorkflow = "moves.load";
     public const string UpdateMoveField = "moves.field.update";
     public const string UpdateMoveFields = "moves.fields.update";

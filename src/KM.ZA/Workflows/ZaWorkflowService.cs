@@ -408,6 +408,19 @@ public sealed class ZaWorkflowService
         return pokemonEditSessionService.UpdateEvolution(paths, session, personalId, action, slot, method, argument, species, form, level);
     }
 
+    public ZaPokemonEditResult SwapPokemonDexPlacement(
+        ProjectPaths paths,
+        EditSession? session,
+        int sourceSpeciesId,
+        int targetSpeciesId)
+    {
+        return pokemonEditSessionService.SwapDexPlacement(
+            paths,
+            session,
+            sourceSpeciesId,
+            targetSpeciesId);
+    }
+
     public ZaMovesEditResult UpdateMoveField(
         ProjectPaths paths,
         EditSession? session,

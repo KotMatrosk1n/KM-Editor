@@ -292,6 +292,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdatePokemonFields => DispatchUpdatePokemonFields(requestJson),
                 KmCommandNames.UpdatePokemonLearnset => DispatchUpdatePokemonLearnset(requestJson),
                 KmCommandNames.UpdatePokemonEvolution => DispatchUpdatePokemonEvolution(requestJson),
+                KmCommandNames.SwapPokemonDexPlacement => DispatchSwapPokemonDexPlacement(requestJson),
                 KmCommandNames.LoadMovesWorkflow => DispatchLoadMovesWorkflow(requestJson),
                 KmCommandNames.UpdateMoveField => DispatchUpdateMoveField(requestJson),
                 KmCommandNames.UpdateMoveFields => DispatchUpdateMoveFields(requestJson),
@@ -688,6 +689,23 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.Species,
                 request.Payload.Form,
                 request.Payload.Level));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchSwapPokemonDexPlacement(string requestJson)
+    {
+        var request = DeserializeRequest<SwapPokemonDexPlacementRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDtoDexPlacementSwap(
+            zaWorkflowService.SwapPokemonDexPlacement(
+                paths,
+                session,
+                request.Payload.SourceSpeciesId,
+                request.Payload.TargetSpeciesId));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3860,6 +3878,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
             KmCommandNames.WarmupZaCacheStep or
+            KmCommandNames.SwapPokemonDexPlacement or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
             KmCommandNames.StageAngeFightUninstall or
@@ -3883,6 +3902,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdatePokemonFields or
             KmCommandNames.UpdatePokemonLearnset or
             KmCommandNames.UpdatePokemonEvolution or
+            KmCommandNames.SwapPokemonDexPlacement or
             KmCommandNames.LoadTrainersWorkflow or
             KmCommandNames.UpdateTrainerField or
             KmCommandNames.UpdateTrainerFields or
