@@ -42,6 +42,7 @@ Use the GitHub Actions UI when a release should be created from the final pull r
 5. Leave `prerelease` unchecked for normal releases.
 6. Review the generated draft release notes and assets.
 7. Publish the draft release from GitHub.
+8. Replace the generated notes with the final changelog and comparison link.
 
 The workflow creates the tag at the commit that ran the workflow if the tag does not already exist.
 

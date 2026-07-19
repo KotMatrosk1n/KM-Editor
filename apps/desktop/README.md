@@ -7,13 +7,9 @@ The KM Editor desktop frontend shell lives here.
 - React
 - TypeScript
 - Vite
-- TanStack Query
 - Zustand
-- TanStack Table
 - TanStack Virtual
-- React Hook Form
 - Zod
-- React Resizable Panels
 - lucide-react
 - Tauri 2
 
@@ -41,7 +37,7 @@ Tauri builds on Windows require Visual Studio Build Tools with the Microsoft C++
 When building from a protected or synced workspace, use a local writable Cargo target cache to avoid generated Rust build artifacts inheriting restrictive workspace ACLs:
 
 ```powershell
-set "CARGO_TARGET_DIR=%LOCALAPPDATA%\Temp\km-editor-tauri-target"
+$env:CARGO_TARGET_DIR = "$env:LOCALAPPDATA\Temp\km-editor-tauri-target"
 pnpm tauri:build
 ```
 

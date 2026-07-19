@@ -30,7 +30,7 @@ Changing a project path requires validation so every editor reloads from the new
 
 | Game family | Editing coverage | Advanced tools | Guide |
 | --- | --- | --- | --- |
-| Sword and Shield | Pokemon, Rental Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, raids, shops, rewards, and placement | ExeFS and hook based editors, Randomizer, Mod Merger, Game Dump, and Dump Importer | [Sword and Shield overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview) |
+| Sword and Shield | Pokemon, Rental Pokemon, moves, items, trainers, text, behavior, wild and static encounters, gifts, trades, raids, shops, rewards, and placement | Dedicated ExeFS and hook based editors, Randomizer, Mod Merger, Game Dump, and Dump Importer | [Sword and Shield overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview) |
 | Scarlet and Violet | Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, Tera Raids, shops, and placement | Type Chart, Fashion Unlock, Hyperspace Bypass, data cache, Mod Merger, Game Dump, and Dump Importer | [Scarlet and Violet overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
 | Legends Z-A | Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, shops, and placement | Ange Fight, Type Chart, data cache, Mod Merger, Game Dump, and Dump Importer | [Legends Z-A overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) |
 
@@ -70,7 +70,7 @@ KM Editor uses .NET 10, React, TypeScript, pnpm, Rust, and Tauri 2. Windows buil
 
 - .NET SDK `10.0.300`, as defined in [`global.json`](global.json).
 - Node.js `24.16.0` or newer and pnpm `11.5.2` or newer, as defined in [`package.json`](package.json).
-- The Rust MSVC toolchain with `rustc` `1.77.2` or newer, matching [`Cargo.toml`](apps/desktop/src-tauri/Cargo.toml).
+- The Rust MSVC toolchain with `rustc` `1.88.0` or newer, matching [`Cargo.toml`](apps/desktop/src-tauri/Cargo.toml).
 - Visual Studio 2022 Build Tools with Desktop development with C++ and a Windows 10 or 11 SDK.
 - Microsoft Edge WebView2 Runtime.
 
