@@ -3853,8 +3853,6 @@ public sealed class ProjectBridgeDispatcher
     {
         return command is
             KmCommandNames.UpdateTrainerFields or
-            KmCommandNames.UpdateTradePokemonFields or
-            KmCommandNames.UpdateEncounterSlotFields or
             KmCommandNames.LoadTeraRaidsWorkflow or
             KmCommandNames.UpdateTeraRaidField or
             KmCommandNames.UpdateTeraRaidFields or
