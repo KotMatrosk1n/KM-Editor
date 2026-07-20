@@ -402,6 +402,7 @@ internal sealed class ZaItemsEditSessionService
                     source.Bytes,
                     baseItemSource.Bytes);
             var technicalMachineRecovery = itemSemanticState.Recovery;
+            var machineWazaLayoutRepair = itemSemanticState.MachineWazaLayout;
             RestoreMintNatureSentinels(rows, mintNatureRecovery.ItemIds);
             ApplyTechnicalMachineLegacyRecovery(rows, technicalMachineRecovery, diagnostics);
             ZaWorkflowFile? migratedShopLineupSource = null;
@@ -528,6 +529,7 @@ internal sealed class ZaItemsEditSessionService
                 expectedTechnicalMachines,
                 diagnostics,
                 "serialized item output");
+            ValidateMachineWazaLayout(itemBytes, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -640,6 +642,16 @@ internal sealed class ZaItemsEditSessionService
                     field: ZaItemsWorkflowService.TechnicalMachineNumberField));
             }
 
+            if (machineWazaLayoutRepair.RequiresRepair)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"Repaired {machineWazaLayoutRepair.UnsafeRowCount} legacy TM pickup layout record(s) "
+                    + "while preserving TM numbers, moves, prices, icons, and unrelated item fields.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.TechnicalMachineNumberField));
+            }
+
             if (migratedShopReferenceCount > 0)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -718,7 +730,8 @@ internal sealed class ZaItemsEditSessionService
                     CreatePlanChangeSetFingerprint(pendingEdits)),
             };
             var recovery = itemSemanticState.Recovery;
-            if (!recovery.HasChanges)
+            var machineWazaLayout = itemSemanticState.MachineWazaLayout;
+            if (!recovery.HasChanges && !machineWazaLayout.RequiresRepair)
             {
                 return plan with { Writes = writes };
             }
@@ -726,25 +739,47 @@ internal sealed class ZaItemsEditSessionService
             var iconRepairReason = recovery.IconRepairs.Count == 0
                 ? string.Empty
                 : $" Synchronize {recovery.IconRepairs.Count} unchanged stale TM disc icon(s) with the preserved move type.";
+            var numberingRepairReason = recovery.HasChanges
+                ? " Repair legacy KM Editor TM numbering without changing moves, prices, custom icons, or unrelated item fields."
+                    + iconRepairReason
+                : string.Empty;
+            var pickupLayoutRepairReason = machineWazaLayout.RequiresRepair
+                ? $" Repair {machineWazaLayout.UnsafeRowCount} legacy TM pickup layout record(s) "
+                    + "without changing TM numbers, moves, prices, icons, or unrelated item fields."
+                : string.Empty;
             writes[itemWriteIndex] = writes[itemWriteIndex] with
             {
                 Reason =
-                    $"{writes[itemWriteIndex].Reason} Repair legacy KM Editor TM numbering without changing moves, prices, custom icons, or unrelated item fields."
-                    + iconRepairReason,
+                    writes[itemWriteIndex].Reason
+                    + numberingRepairReason
+                    + pickupLayoutRepairReason,
             };
-            var diagnostics = plan.Diagnostics
-                .Append(ZaEditSessionSupport.CreateDiagnostic(
+            var diagnostics = plan.Diagnostics.AsEnumerable();
+            if (recovery.HasChanges)
+            {
+                diagnostics = diagnostics.Append(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Info,
                     recovery.IconRepairs.Count == 0
                         ? "The reviewed Items output includes the detected legacy TM-numbering repair."
                         : $"The reviewed Items output includes the detected legacy TM-numbering repair and {recovery.IconRepairs.Count} stale disc-icon synchronization(s).",
                     ZaEditSessionSupport.ItemsDomain,
-                    field: ZaItemsWorkflowService.TechnicalMachineNumberField))
-                .ToArray();
+                    field: ZaItemsWorkflowService.TechnicalMachineNumberField));
+            }
+
+            if (machineWazaLayout.RequiresRepair)
+            {
+                diagnostics = diagnostics.Append(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"The reviewed Items output includes repair of {machineWazaLayout.UnsafeRowCount} "
+                    + "legacy TM pickup layout record(s).",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.TechnicalMachineNumberField));
+            }
+
             return plan with
             {
                 Writes = writes,
-                Diagnostics = diagnostics,
+                Diagnostics = diagnostics.ToArray(),
             };
         }
         catch (Exception exception) when (
@@ -998,7 +1033,10 @@ internal sealed class ZaItemsEditSessionService
             }
         }
 
-        return new ItemPlanSemanticState(sources, recovery);
+        return new ItemPlanSemanticState(
+            sources,
+            recovery,
+            ZaMachineWazaLayoutDetector.Analyze(active.Bytes));
     }
 
     private IReadOnlyList<PlanFingerprintSource> ReadEvolutionPlanSemanticSources(
@@ -1240,7 +1278,8 @@ internal sealed class ZaItemsEditSessionService
 
     private sealed record ItemPlanSemanticState(
         IReadOnlyList<PlanFingerprintSource> Sources,
-        ZaTechnicalMachineLegacyRecovery Recovery);
+        ZaTechnicalMachineLegacyRecovery Recovery,
+        ZaMachineWazaLayoutInspection MachineWazaLayout);
 
     private sealed record CapturedOptionalPlanFingerprintSource(
         PlanFingerprintSource Fingerprint,
@@ -1572,15 +1611,15 @@ internal sealed class ZaItemsEditSessionService
             return null;
         }
 
-        var stagesLegacyTechnicalMachineRepair =
+        var stagesTechnicalMachineRepair =
             string.Equals(
                 normalizedField,
                 ZaItemsWorkflowService.TechnicalMachineNumberField,
                 StringComparison.Ordinal)
             && item.FieldValues.GetValueOrDefault(normalizedField) == parsedValue.Value
-            && HasLegacyTechnicalMachineRecovery(workflow);
-        var summary = stagesLegacyTechnicalMachineRepair
-            ? "Apply the detected legacy KM Editor TM-numbering recovery."
+            && HasTechnicalMachineRepair(workflow);
+        var summary = stagesTechnicalMachineRepair
+            ? "Apply the detected legacy KM Editor TM output repair."
             : $"Set {item.Name} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.";
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.ItemsDomain,
@@ -2069,7 +2108,7 @@ internal sealed class ZaItemsEditSessionService
                 edit.Field,
                 ZaItemsWorkflowService.TechnicalMachineNumberField,
                 StringComparison.Ordinal)
-            && HasLegacyTechnicalMachineRecovery(sourceWorkflow))
+            && HasTechnicalMachineRepair(sourceWorkflow))
         {
             // A source-equivalent TM number is the explicit, no-data-loss marker used by
             // the desktop to request the reviewed legacy repair without inventing an
@@ -2081,7 +2120,7 @@ internal sealed class ZaItemsEditSessionService
             && sourceValue == value;
     }
 
-    private static bool HasLegacyTechnicalMachineRecovery(ZaItemsWorkflow workflow)
+    private static bool HasTechnicalMachineRepair(ZaItemsWorkflow workflow)
     {
         return workflow.Diagnostics.Any(diagnostic =>
             diagnostic.Severity == DiagnosticSeverity.Warning
@@ -2089,9 +2128,12 @@ internal sealed class ZaItemsEditSessionService
                 diagnostic.Field,
                 ZaItemsWorkflowService.TechnicalMachineNumberField,
                 StringComparison.Ordinal)
-            && diagnostic.Message.StartsWith(
-                "A legacy KM Editor TM-numbering output was detected.",
-                StringComparison.Ordinal));
+            && (diagnostic.Message.StartsWith(
+                    ZaItemsWorkflowService.LegacyTechnicalMachineNumberingWarningPrefix,
+                    StringComparison.Ordinal)
+                || diagnostic.Message.StartsWith(
+                    ZaItemsWorkflowService.LegacyMachineWazaLayoutWarningPrefix,
+                    StringComparison.Ordinal)));
     }
 
     private static ZaItemsWorkflow OverlayPendingEdits(ZaItemsWorkflow workflow, IEnumerable<PendingEdit> edits)
@@ -2538,6 +2580,25 @@ internal sealed class ZaItemsEditSessionService
             ZaEditSessionSupport.ItemsDomain,
             field: ZaItemsWorkflowService.TechnicalMachineNumberField,
             expected: "Unique item IDs, unchanged physical TM membership, move assignments, and reviewed icons, plus paired number/index permutations"));
+    }
+
+    private static void ValidateMachineWazaLayout(
+        byte[] bytes,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var inspection = ZaMachineWazaLayoutDetector.Analyze(bytes);
+        if (!inspection.RequiresRepair)
+        {
+            return;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"The serialized item output contains {inspection.UnsafeRowCount} TM move field(s) "
+            + "that are unsafe for the game's 32-bit reader. No output was written.",
+            ZaEditSessionSupport.ItemsDomain,
+            field: ZaItemsWorkflowService.MachineMoveIdField,
+            expected: "Zero-extended 32-bit TM move fields"));
     }
 
     private static byte[] WriteRows(IReadOnlyList<ItemRow> rows)

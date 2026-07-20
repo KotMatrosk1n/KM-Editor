@@ -90,7 +90,11 @@ public struct ZaItemData : IFlatbufferObject
   public static void AddPriceMegaShard(FlatBufferBuilder builder, int priceMegaShard) { builder.AddInt(8, priceMegaShard, 0); }
   public static void AddPriceColorfulScrew(FlatBufferBuilder builder, int priceColorfulScrew) { builder.AddInt(9, priceColorfulScrew, 0); }
   public static void AddCanNotHold(FlatBufferBuilder builder, bool canNotHold) { builder.AddBool(10, canNotHold, false); }
-  public static void AddMachineWaza(FlatBufferBuilder builder, ushort machineWaza) { builder.AddUshort(11, machineWaza, 0); }
+  public static void AddMachineWaza(FlatBufferBuilder builder, ushort machineWaza) {
+    // Retail Z-A reads this schema ushort with a 32-bit load. Store it
+    // zero-extended so the following field cannot become part of the move ID.
+    builder.AddUint(11, machineWaza, 0);
+  }
   public static void AddMachineIndex(FlatBufferBuilder builder, int machineIndex) { builder.AddInt(12, machineIndex, 0); }
   public static void AddWorkRecvSleep(FlatBufferBuilder builder, bool workRecvSleep) { builder.AddBool(13, workRecvSleep, false); }
   public static void AddWorkRecvPoison(FlatBufferBuilder builder, bool workRecvPoison) { builder.AddBool(14, workRecvPoison, false); }

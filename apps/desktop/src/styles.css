@@ -1686,6 +1686,11 @@ h2 {
   margin-top: 16px;
 }
 
+.items-repair-action {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .swsh-pokemon-section .pokemon-toolbar,
 .sv-pokemon-section .pokemon-toolbar,
 .za-pokemon-section .pokemon-toolbar {

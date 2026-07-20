@@ -13,6 +13,11 @@ namespace KM.ZA.Items;
 
 internal sealed class ZaItemsWorkflowService
 {
+    internal const string LegacyTechnicalMachineNumberingWarningPrefix =
+        "A legacy KM Editor TM-numbering output was detected.";
+    internal const string LegacyMachineWazaLayoutWarningPrefix =
+        "A legacy KM Editor TM pickup layout was detected.";
+
     private const string WorkflowLabel = "Items";
     private const string WorkflowDescription = "Edit Pokemon Legends Z-A item data, prices, pockets, stack caps, and TM assignments.";
 
@@ -224,6 +229,7 @@ internal sealed class ZaItemsWorkflowService
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+            DetectMachineWazaLayout(source, diagnostics);
             var mintNatureRecovery = DetectMintNatureRecovery(project, source, diagnostics);
             var technicalMachineRecovery = DetectTechnicalMachineLegacyRecovery(project, source, diagnostics);
             items = LoadRecords(
@@ -314,6 +320,26 @@ internal sealed class ZaItemsWorkflowService
     internal static string FormatNature(int value) => value < 0
         ? "None"
         : FormatIndexed(value, NatureNames, "Nature");
+
+    private static void DetectMachineWazaLayout(
+        ZaWorkflowFile source,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var inspection = ZaMachineWazaLayoutDetector.Analyze(source.Bytes);
+        if (!inspection.RequiresRepair)
+        {
+            return;
+        }
+
+        diagnostics.Add(ZaWorkflowSupport.Warning(
+            $"{LegacyMachineWazaLayoutWarningPrefix} "
+            + $"The game reads the TM move as a 32-bit value, and {inspection.UnsafeRowCount} "
+            + "record(s) contain adjacent field data in its upper half. The next Items output will "
+            + "repair those rows while preserving TM numbers, moves, prices, icons, and unrelated item edits.",
+            $"romfs/{ZaDataPaths.ItemDataArray}",
+            TechnicalMachineNumberField,
+            "TM move IDs stored with a zero upper 16-bit half for game compatibility"));
+    }
 
     private ZaItemMintNatureRecovery DetectMintNatureRecovery(
         OpenedProject project,
@@ -423,7 +449,7 @@ internal sealed class ZaItemsWorkflowService
                     ? string.Empty
                     : $" and synchronize {recovery.IconRepairs.Count} unchanged stale disc icon(s)";
                 diagnostics.Add(ZaWorkflowSupport.Warning(
-                    $"A legacy KM Editor TM-numbering output was detected. "
+                    $"{LegacyTechnicalMachineNumberingWarningPrefix} "
                     + $"The next Items output will {action}{iconAction} while preserving moves, prices, custom icons, and unrelated item edits.",
                     $"romfs/{ZaDataPaths.ItemDataArray}",
                     TechnicalMachineNumberField,
