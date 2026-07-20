@@ -1151,6 +1151,8 @@ const itemCureStatusFlagsFieldName = 'cureStatusFlags';
 const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
 const itemCanUseOnPokemonFieldName = 'canUseOnPokemon';
+const itemTypeFieldName = 'itemType';
+const itemPocketFieldName = 'pocket';
 const itemMachineMoveIdFieldName = 'machineMoveId';
 const itemSortOrderFieldName = 'sortOrder';
 const itemTechnicalMachineNumberFieldName = 'tmNumber';
@@ -7886,7 +7888,10 @@ export function App({
         async (session) => {
           const paths = createProjectPaths(draftPaths);
 
-          if (staticEncountersWorkflow?.editorFamily === 'swsh') {
+          if (
+            staticEncountersWorkflow?.editorFamily === 'swsh' ||
+            staticEncountersWorkflow?.editorFamily === 'za'
+          ) {
             return bridge.updateStaticEncounterFields({ paths, session, updates });
           }
 
@@ -12073,6 +12078,15 @@ function ItemsSection({
     () => getPendingItemIds(editSession, items),
     [editSession, items]
   );
+  const hasLegacyTechnicalMachineRecovery =
+    editorFamily === 'za' &&
+    (workflow?.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.severity === 'warning' &&
+        diagnostic.field === itemTechnicalMachineNumberFieldName &&
+        diagnostic.message.startsWith('A legacy KM Editor TM-numbering output was detected.')
+    ) ??
+      false);
   const secondaryPriceLabels = getItemSecondaryPriceLabels(editorFamily);
 
   return (
@@ -12156,6 +12170,7 @@ function ItemsSection({
               canEditItems={canEditItems}
               editSession={editSession}
               editorFamily={editorFamily}
+              hasLegacyTechnicalMachineRecovery={hasLegacyTechnicalMachineRecovery}
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               item={selectedItem}
@@ -12190,6 +12205,7 @@ function SelectedItemPanel({
   editSession,
   editorFamily,
   editableFields,
+  hasLegacyTechnicalMachineRecovery,
   isEditStarting,
   isItemUpdating,
   item,
@@ -12200,6 +12216,7 @@ function SelectedItemPanel({
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
   editableFields: ItemEditableField[];
+  hasLegacyTechnicalMachineRecovery: boolean;
   isEditStarting: boolean;
   isItemUpdating: boolean;
   item: ItemRecord | null;
@@ -12209,6 +12226,7 @@ function SelectedItemPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
+  const { translateLiteral } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -12255,6 +12273,10 @@ function SelectedItemPanel({
     () => normalizeLinkedItemPriceChanges(itemDraftSummary.changedFields),
     [itemDraftSummary.changedFields]
   );
+  const legacyTechnicalMachineRepairNumber =
+    hasLegacyTechnicalMachineRecovery && item
+      ? getEditableItemFieldValue(item, itemTechnicalMachineNumberFieldName)
+      : null;
   useRegisterEditorDraftDirty('items', countFieldDraftRecords(fieldDraftsByItemId) > 0);
   const canSaveItemDrafts =
     item !== null &&
@@ -12314,6 +12336,29 @@ function SelectedItemPanel({
           <div className="item-edit-form">
             {editSession ? (
               <div className="draft-action-row">
+                {legacyTechnicalMachineRepairNumber !== null ? (
+                  <button
+                    aria-busy={isItemUpdating || undefined}
+                    className="secondary-button"
+                    disabled={!canEditItems || isItemUpdating}
+                    onClick={() =>
+                      onUpdateItemFields(item.itemId, [
+                        {
+                          field: itemTechnicalMachineNumberFieldName,
+                          value: legacyTechnicalMachineRepairNumber.toString()
+                        }
+                      ])
+                    }
+                    type="button"
+                  >
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<ShieldCheck aria-hidden="true" size={16} />}
+                      isBusy={isItemUpdating}
+                      label="Stage legacy TM repair"
+                    />
+                  </button>
+                ) : null}
                 <button
                   aria-busy={isItemUpdating || undefined}
                   className="primary-button"
@@ -12360,20 +12405,29 @@ function SelectedItemPanel({
                 <span className="draft-action-summary">{formatDraftSummary(itemDraftSummary)}</span>
               </div>
             ) : (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditItems || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
+              <>
+                <button
+                  aria-busy={isEditStarting || undefined}
+                  className="secondary-button"
+                  disabled={!canEditItems || isEditStarting}
+                  onClick={onStartEditSession}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel="Starting"
+                    icon={<Pencil aria-hidden="true" size={16} />}
+                    isBusy={isEditStarting}
+                    label="Edit"
+                  />
+                </button>
+                {legacyTechnicalMachineRepairNumber !== null ? (
+                  <p className="empty-copy">
+                    {translateLiteral(
+                      'Start editing to stage the detected legacy TM repair without changing another item field.'
+                    )}
+                  </p>
+                ) : null}
+              </>
             )}
 
             <div className="editable-field-groups">
@@ -16006,6 +16060,8 @@ function SelectedTrainerPanel({
           selectedPokemon
             ? {
                 abilityOptions: selectedPokemon.abilityOptions,
+                formOptions: selectedPokemon.formOptions,
+                gameFamily: editorFamily,
                 species: selectedPokemon.species,
                 speciesId: selectedPokemon.speciesId
               }
@@ -16014,7 +16070,7 @@ function SelectedTrainerPanel({
 
         return options === field.options ? field : { ...field, options };
       }),
-    [pokemonFields, selectedPokemon]
+    [editorFamily, pokemonFields, selectedPokemon]
   );
   const trainerDraftDefaults = useMemo(
     () =>
@@ -16049,15 +16105,17 @@ function SelectedTrainerPanel({
       }
 
       const context = createDraftSpeciesFormOptionContext(
-            defaultContextualPokemonFields.find(
-              (field) => field.field === speciesIdFieldName
-            ) ?? null,
-            pokemonDrafts[speciesIdFieldName],
-            selectedPokemon.species,
-            selectedPokemon.speciesId,
-            selectedPokemon.abilityOptions,
-            editorFamily
-          );
+        defaultContextualPokemonFields.find(
+          (field) => field.field === speciesIdFieldName
+        ) ?? null,
+        pokemonDrafts[speciesIdFieldName],
+        selectedPokemon.species,
+        selectedPokemon.speciesId,
+        selectedPokemon.abilityOptions,
+        editorFamily,
+        undefined,
+        selectedPokemon.formOptions
+      );
       const draftedForm = Number.parseInt(
         pokemonDrafts[formFieldName] ?? selectedPokemon.form.toString(),
         10
@@ -16799,7 +16857,7 @@ type NumericEditableField = {
   label: string;
   maximumValue: number | null;
   minimumValue: number | null;
-  options: Array<{ label: string; value: number }>;
+  options: EditableFieldOption[];
   valueKind: string;
 };
 
@@ -16827,13 +16885,13 @@ function TrainerDraftField({
   onChange: (value: string) => void;
 }) {
   const inputId = `${idPrefix}-${field.field}`;
-  const { contextualFormOptionContext, knownFormCount, options } =
+  const { contextualFormOptionContext, options } =
     useContextualSpeciesFormOptions(field, formOptionContext, currentValue);
   const formDisabledReason = getFormFieldDisabledReason(
     field,
     contextualFormOptionContext,
-    currentValue,
-    knownFormCount
+    draftValue,
+    options
   );
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
@@ -19810,12 +19868,11 @@ function getItemFieldDisabledReason(
   item?: ItemRecord | null
 ) {
   const fieldName = field.field;
-  const isZaTechnicalMachine =
+  const isZaPhysicalTechnicalMachine =
     editorFamily === 'za' &&
     item?.metadata.pouch === 6 &&
     item.metadata.itemType === 5 &&
-    item.metadata.machineMoveId !== null &&
-    item.metadata.machineSlot !== null;
+    item.metadata.machineMoveId !== null;
   if (field.isReadOnly) {
     return field.readOnlyReason ?? 'This field is read-only.';
   }
@@ -19825,16 +19882,23 @@ function getItemFieldDisabledReason(
   }
 
   if (
-    isZaTechnicalMachine &&
+    isZaPhysicalTechnicalMachine &&
     fieldName === itemSortOrderFieldName
   ) {
     return 'TM numbering is managed as one paired value. Use TM number instead.';
   }
 
   if (
+    isZaPhysicalTechnicalMachine &&
+    (fieldName === itemPocketFieldName || fieldName === itemTypeFieldName)
+  ) {
+    return 'Physical Z-A TMs must keep their item type and pocket so TM membership stays unchanged.';
+  }
+
+  if (
     editorFamily === 'za' &&
     fieldName === itemTechnicalMachineNumberFieldName &&
-    !isZaTechnicalMachine
+    !isZaPhysicalTechnicalMachine
   ) {
     return 'Only TM item records can edit the TM number.';
   }
@@ -19856,6 +19920,10 @@ function getItemFieldDisabledReason(
   }
 
   if (fieldName === itemMachineMoveIdFieldName) {
+    if (isZaPhysicalTechnicalMachine) {
+      return 'Z-A TM moves are locked until Pokemon compatibility can be migrated with the move.';
+    }
+
     if (!item || item.metadata.machineSlot === null) {
       return 'Only TM and TR item records can edit the taught move.';
     }
@@ -19930,13 +19998,13 @@ function GiftPokemonDraftField({
   preservedValue?: number | null;
 }) {
   const inputId = `${idPrefix}-${field.field}`;
-  const { contextualFormOptionContext, knownFormCount, options } =
+  const { contextualFormOptionContext, options } =
     useContextualSpeciesFormOptions(field, formOptionContext, currentValue);
   const formDisabledReason = getFormFieldDisabledReason(
     field,
     contextualFormOptionContext,
-    currentValue,
-    knownFormCount
+    draftValue,
+    options
   );
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
@@ -20332,6 +20400,7 @@ function SelectedGiftPokemonPanel({
           gift
             ? {
                 abilityOptions: gift.abilityOptions,
+                formOptions: gift.formOptions,
                 gameFamily: editorFamily,
                 genderOptions: gift.genderOptions,
                 species: gift.species,
@@ -20366,7 +20435,8 @@ function SelectedGiftPokemonPanel({
       gift.speciesId,
       gift.abilityOptions,
       editorFamily,
-      gift.genderOptions
+      gift.genderOptions,
+      gift.formOptions
     );
     const draftedForm = Number.parseInt(
       giftDrafts[formFieldName] ?? gift.form.toString(),
@@ -20987,6 +21057,7 @@ function SelectedTradePokemonPanel({
       trade
         ? {
             abilityOptions: trade.abilityOptions,
+            formOptions: trade.formOptions,
             gameFamily: editorFamily,
             genderOptions: trade.genderOptions,
             species: trade.species,
@@ -21043,7 +21114,8 @@ function SelectedTradePokemonPanel({
       trade.speciesId,
       trade.abilityOptions,
       editorFamily,
-      trade.genderOptions
+      trade.genderOptions,
+      trade.formOptions
     );
     const draftedForm = Number.parseInt(tradeDrafts[formFieldName] ?? trade.form.toString(), 10);
     const normalizedDraftedForm = Number.isInteger(draftedForm) ? draftedForm : trade.form;
@@ -23512,7 +23584,9 @@ function SelectedStaticEncounterPanel({
       encounter.species,
       encounter.speciesId,
       undefined,
-      encounter.editorFamily
+      encounter.editorFamily,
+      undefined,
+      encounter.formOptions
     );
 
     return {
@@ -25774,6 +25848,8 @@ function SelectedEncounterPanel({
           field,
           encounterSlot
             ? getContextualFieldOptions(field, {
+                formOptions: encounterSlot.formOptions,
+                gameFamily: editorFamily,
                 species: encounterSlot.species,
                 speciesId: encounterSlot.speciesId
               })
@@ -25790,6 +25866,7 @@ function SelectedEncounterPanel({
       editorFamily,
       encounterSlot?.alphaChancePercent,
       encounterSlot?.isAlpha,
+      encounterSlot?.formOptions,
       encounterSlot?.species,
       encounterSlot?.speciesId,
       t
@@ -26031,7 +26108,9 @@ function SelectedEncounterPanel({
             encounterSlot.species,
             encounterSlot.speciesId,
             undefined,
-            editorFamily
+            editorFamily,
+            undefined,
+            encounterSlot.formOptions
           )
         : undefined,
     [defaultEncounterFields, selectedPlacementDrafts, editorFamily, encounterSlot]
@@ -37538,7 +37617,8 @@ function createDraftSpeciesFormOptionContext(
   fallbackSpeciesId: number,
   abilityOptions?: EditableFieldOption[],
   gameFamily?: EditorUiFamily,
-  genderOptions?: EditableFieldOption[]
+  genderOptions?: EditableFieldOption[],
+  formOptions?: EditableFieldOption[]
 ): SpeciesFormOptionContext {
   const options = speciesField?.options ?? [];
   const parsedSpeciesId =
@@ -37550,9 +37630,34 @@ function createDraftSpeciesFormOptionContext(
     options.find((option) => option.value === speciesId)?.label ??
     `${speciesId.toString().padStart(3, '0')} ${fallbackSpecies}`;
   const species = getReferenceSpriteName(speciesLabel) || fallbackSpecies;
+  const selectedSpeciesOption = options.find((option) => option.value === speciesId);
+  const hasExactSpeciesFormCatalog =
+    options.length > 0 &&
+    options.every(
+      (option) => option.formOptions !== undefined && option.formOptions !== null
+    );
+  const selectedSpeciesFormOptions = selectedSpeciesOption?.formOptions;
+  const hasSelectedExactFormOptions =
+    selectedSpeciesFormOptions !== undefined && selectedSpeciesFormOptions !== null;
+  const hasFallbackRecordFormOptions =
+    speciesId === fallbackSpeciesId && Boolean(formOptions?.length);
+  const contextualFormOptions = hasSelectedExactFormOptions
+    ? selectedSpeciesFormOptions
+    : hasExactSpeciesFormCatalog
+      ? []
+      : hasFallbackRecordFormOptions
+        ? formOptions
+        : gameFamily === 'za'
+          ? []
+          : undefined;
 
   return {
     abilityOptions,
+    formOptions: contextualFormOptions,
+    formOptionsAreAuthoritative:
+      hasSelectedExactFormOptions ||
+      hasExactSpeciesFormCatalog ||
+      (gameFamily === 'za' && !hasFallbackRecordFormOptions),
     gameFamily,
     genderOptions,
     species,
@@ -41157,10 +41262,11 @@ type EditableFieldWithOptions = {
   label: string;
   minimumValue?: number | null;
   maximumValue?: number | null;
-  options?: Array<{ label: string; value: number }>;
+  options?: EditableFieldOption[];
 };
 
 type EditableFieldOption = {
+  formOptions?: EditableFieldOption[] | null;
   label: string;
   value: number;
 };
@@ -41168,6 +41274,7 @@ type EditableFieldOption = {
 type SpeciesFormOptionContext = {
   abilityOptions?: EditableFieldOption[];
   formOptions?: EditableFieldOption[];
+  formOptionsAreAuthoritative?: boolean;
   gameFamily?: EditorUiFamily;
   genderOptions?: EditableFieldOption[];
   species: string;
@@ -42304,9 +42411,11 @@ function getContextualFieldOptions(
     return options;
   }
 
-  const formOptions = formOptionContext.formOptions?.length
-    ? formOptionContext.formOptions
-    : options;
+  const formOptions = formOptionContext.formOptionsAreAuthoritative
+    ? (formOptionContext.formOptions ?? [])
+    : formOptionContext.formOptions?.length
+      ? formOptionContext.formOptions
+      : options;
 
   return formOptions.map((option) => ({
     ...option,
@@ -42320,39 +42429,79 @@ function useContextualSpeciesFormOptions(
   currentValue: number | null
 ) {
   const knownFormCount = useWorkbenchStore((state) => {
-    if (!formOptionContext?.speciesId) {
+    if (
+      !formOptionContext?.speciesId ||
+      (formOptionContext.gameFamily ?? 'swsh') !== 'swsh'
+    ) {
       return undefined;
     }
 
-    return state.pokemonWorkflow?.pokemon.find(
+    const formCount = state.pokemonWorkflow?.pokemon.find(
       (pokemon) => pokemon.speciesId === formOptionContext.speciesId && pokemon.form === 0
     )?.personal.formCount;
+    return formCount !== undefined && formCount > 0 ? formCount : undefined;
   });
+  const knownFormValuesKey = useWorkbenchStore((state) => {
+    if (
+      !formOptionContext?.speciesId ||
+      (formOptionContext.gameFamily ?? 'swsh') === 'swsh' ||
+      state.pokemonWorkflow === null
+    ) {
+      return undefined;
+    }
+
+    return [
+      ...new Set(
+        state.pokemonWorkflow.pokemon
+          .filter(
+            (pokemon) =>
+              pokemon.speciesId === formOptionContext.speciesId &&
+              pokemon.personal.isPresentInGame
+          )
+          .map((pokemon) => pokemon.form)
+      )
+    ]
+      .sort((left, right) => left - right)
+      .join(',');
+  });
+  const knownFormValues = useMemo(() => {
+    if (knownFormValuesKey === undefined) {
+      return undefined;
+    }
+    if (knownFormValuesKey.length === 0) {
+      return [];
+    }
+
+    return knownFormValuesKey.split(',').map((value) => Number.parseInt(value, 10));
+  }, [knownFormValuesKey]);
   const contextualFormOptionContext = useMemo(
     () =>
       createContextualSpeciesFormOptionContext(
         field,
         formOptionContext,
         currentValue,
-        knownFormCount
+        knownFormCount,
+        knownFormValues
       ),
-    [currentValue, field, formOptionContext, knownFormCount]
+    [currentValue, field, formOptionContext, knownFormCount, knownFormValues]
   );
   const options = getContextualFieldOptions(field, contextualFormOptionContext);
 
-  return { contextualFormOptionContext, knownFormCount, options };
+  return { contextualFormOptionContext, options };
 }
 
 function createContextualSpeciesFormOptionContext(
   field: EditableFieldWithOptions,
   formOptionContext: SpeciesFormOptionContext | undefined,
   currentValue: number | null,
-  knownFormCount?: number
+  knownFormCount?: number,
+  knownFormValues?: readonly number[]
 ): SpeciesFormOptionContext | undefined {
   if (
-    formOptionContext === undefined ||
-    !isSpeciesFormField(field.field) ||
-    formOptionContext.formOptions?.length
+      formOptionContext === undefined ||
+      !isSpeciesFormField(field.field) ||
+      formOptionContext.formOptionsAreAuthoritative ||
+      formOptionContext.formOptions?.length
   ) {
     return formOptionContext;
   }
@@ -42362,7 +42511,8 @@ function createContextualSpeciesFormOptionContext(
     formOptions: createContextualSpeciesFormOptions(
       formOptionContext,
       currentValue,
-      knownFormCount
+      knownFormCount,
+      knownFormValues
     )
   };
 }
@@ -42370,45 +42520,57 @@ function createContextualSpeciesFormOptionContext(
 function createContextualSpeciesFormOptions(
   formOptionContext: SpeciesFormOptionContext,
   currentValue: number | null,
-  knownFormCount?: number
+  knownFormCount?: number,
+  knownFormValues?: readonly number[]
 ): EditableFieldOption[] {
-  const formValues = new Set<number>([0]);
+  const formValues = new Set<number>();
 
-  addKnownSpeciesFormValues(formOptionContext, formValues);
-
-  if (knownFormCount !== undefined && knownFormCount > 1) {
-    for (let form = 1; form < knownFormCount && form <= 255; form += 1) {
-      if (
-        resolveSpeciesFormLabel(
-          formOptionContext.species,
-          form,
-          formOptionContext.speciesId,
-          formOptionContext.gameFamily
-        ) !== undefined
-      ) {
+  if (knownFormValues !== undefined) {
+    for (const form of knownFormValues) {
+      if (Number.isInteger(form) && form >= 0) {
         formValues.add(form);
       }
     }
+  } else {
+    formValues.add(0);
+    if (knownFormCount !== undefined) {
+      for (let form = 1; form < knownFormCount && form <= 255; form += 1) {
+        formValues.add(form);
+      }
+    } else {
+      addKnownSpeciesFormValues(formOptionContext, formValues);
+    }
   }
 
-  return [...formValues]
+  if (currentValue !== null && Number.isInteger(currentValue) && currentValue >= 0) {
+    formValues.add(currentValue);
+  }
+  if (formValues.size === 0) {
+    formValues.add(0);
+  }
+
+  const options = [...formValues]
     .sort((left, right) => left - right)
     .map((form) => ({
       label: formatSpeciesFormOptionLabel(form, formOptionContext),
       value: form
-    }))
-    .reduce<EditableFieldOption[]>((options, option) => {
-      const duplicateIndex = options.findIndex(
-        (candidate) => normalizeSpeciesName(candidate.label) === normalizeSpeciesName(option.label)
-      );
-      if (duplicateIndex === -1) {
-        options.push(option);
-      } else if (option.value === currentValue) {
-        options[duplicateIndex] = option;
-      }
+    }));
+  if (knownFormValues !== undefined) {
+    return options;
+  }
 
-      return options;
-    }, []);
+  return options.reduce<EditableFieldOption[]>((deduplicatedOptions, option) => {
+    const duplicateIndex = deduplicatedOptions.findIndex(
+      (candidate) => normalizeSpeciesName(candidate.label) === normalizeSpeciesName(option.label)
+    );
+    if (duplicateIndex === -1) {
+      deduplicatedOptions.push(option);
+    } else if (option.value === currentValue) {
+      deduplicatedOptions[duplicateIndex] = option;
+    }
+
+    return deduplicatedOptions;
+  }, []);
 }
 
 function isSpeciesFormField(fieldName: string | undefined) {
@@ -42418,36 +42580,19 @@ function isSpeciesFormField(fieldName: string | undefined) {
 function getFormFieldDisabledReason(
   field: EditableFieldWithOptions,
   formOptionContext: SpeciesFormOptionContext | undefined,
-  currentValue: number | null,
-  knownFormCount?: number
+  draftValue: string,
+  options: readonly EditableFieldOption[]
 ) {
   if (!isSpeciesFormField(field.field)) {
     return null;
   }
 
-  if (currentValue !== null && currentValue !== 0) {
+  const activeValue = parseEditableIntegerDraft(draftValue, [...options]);
+  if (!formOptionContext || options.some((option) => option.value !== activeValue)) {
     return null;
   }
 
-  if (knownFormCount !== undefined) {
-    return knownFormCount <= 1 ? 'No alternate forms available for this Pokemon.' : null;
-  }
-
-  if (!formOptionContext) {
-    return null;
-  }
-
-  return speciesHasKnownAlternateForms(formOptionContext)
-    ? null
-    : 'No alternate forms available for this Pokemon.';
-}
-
-function speciesHasKnownAlternateForms(context: SpeciesFormOptionContext) {
-  const formLabels = getSpeciesFormLabelData(context.gameFamily);
-  return (
-    (context.speciesId !== undefined && formLabels.alternateSpeciesIds.has(context.speciesId)) ||
-    formLabels.alternateSpeciesNames.has(normalizeSpeciesName(context.species))
-  );
+  return 'No alternate forms available for this Pokemon.';
 }
 
 function getIntegerDraftState(

@@ -92,6 +92,7 @@ using KM.ZA.Gifts;
 using KM.ZA.GameDump;
 using KM.ZA.ModMerger;
 using KM.ZA.Placement;
+using KM.ZA.StaticEncounters;
 using KM.ZA.Text;
 using KM.ZA.Trades;
 using KM.SV.Workflows;
@@ -1174,15 +1175,30 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var updates = request.Payload.Updates
-            .Select(update => new SwShStaticEncounterFieldUpdate(
-                update.EncounterIndex,
-                update.Field,
-                update.Value,
-                update.EncounterId))
-            .ToArray();
-        var response = SwShBridgeMapper.ToDto(
-            staticEncountersEditSessionService.UpdateFields(paths, session, updates));
+        object response;
+        if (IsPokemonLegendsZA(paths))
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new ZaStaticEncounterFieldUpdate(
+                    update.EncounterIndex,
+                    update.Field,
+                    update.Value))
+                .ToArray();
+            response = ZaBridgeMapper.ToDto(
+                zaWorkflowService.UpdateStaticEncounterFields(paths, session, updates));
+        }
+        else
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new SwShStaticEncounterFieldUpdate(
+                    update.EncounterIndex,
+                    update.Field,
+                    update.Value,
+                    update.EncounterId))
+                .ToArray();
+            response = SwShBridgeMapper.ToDto(
+                staticEncountersEditSessionService.UpdateFields(paths, session, updates));
+        }
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3665,7 +3681,10 @@ public sealed class ProjectBridgeDispatcher
             return null;
         }
 
-        if (IsSwordShieldOnlyCommand(command) && !IsSwordShield(selectedGame))
+        if (IsSwordShieldOnlyCommand(command)
+            && !IsSwordShield(selectedGame)
+            && !(command is KmCommandNames.UpdateStaticEncounterFields
+                && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
                 "bridge.gameMismatch",
@@ -3918,6 +3937,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateEncounterSlotFields or
             KmCommandNames.LoadStaticEncountersWorkflow or
             KmCommandNames.UpdateStaticEncounterField or
+            KmCommandNames.UpdateStaticEncounterFields or
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or

@@ -54,6 +54,9 @@ public sealed record TrainerPokemonRecordDto(
     public IReadOnlyList<TrainerEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<TrainerEditableFieldOptionDto>();
 
+    public IReadOnlyList<TrainerEditableFieldOptionDto> FormOptions { get; init; } =
+        Array.Empty<TrainerEditableFieldOptionDto>();
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpriteName { get; init; }
 
@@ -120,7 +123,11 @@ public sealed record TrainerEditableFieldDto(
 
 public sealed record TrainerEditableFieldOptionDto(
     int Value,
-    string Label);
+    string Label)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<TrainerEditableFieldOptionDto>? FormOptions { get; init; }
+}
 
 public sealed record TrainersWorkflowStatsDto(
     int TotalTrainerCount,

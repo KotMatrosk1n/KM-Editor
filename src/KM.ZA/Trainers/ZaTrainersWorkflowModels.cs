@@ -40,6 +40,9 @@ public sealed record ZaTrainerPokemonRecord(
     public IReadOnlyList<ZaTrainerEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaTrainerEditableFieldOption>();
 
+    public IReadOnlyList<ZaTrainerEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<ZaTrainerEditableFieldOption>();
+
     public string? SpriteName { get; init; }
 
     public ZaTrainerPokemonStatsRecord? BaseStats { get; init; }
@@ -104,7 +107,10 @@ public sealed record ZaTrainerEditableField(
     }
 }
 
-public sealed record ZaTrainerEditableFieldOption(int Value, string Label);
+public sealed record ZaTrainerEditableFieldOption(int Value, string Label)
+{
+    public IReadOnlyList<ZaTrainerEditableFieldOption>? FormOptions { get; init; }
+}
 
 public sealed record ZaTrainersWorkflowStats(
     int TotalTrainerCount,
@@ -116,4 +122,8 @@ public sealed record ZaTrainersWorkflow(
     IReadOnlyList<ZaTrainerRecord> Trainers,
     IReadOnlyList<ZaTrainerEditableField> EditableFields,
     ZaTrainersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal ZaPokemonAvailability PokemonAvailability { get; init; } =
+        ZaPokemonAvailability.Unfiltered;
+}

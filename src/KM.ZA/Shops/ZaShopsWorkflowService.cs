@@ -104,6 +104,11 @@ internal sealed class ZaShopsWorkflowService
         try
         {
             var itemWorkflow = itemsWorkflowService.Load(project);
+            diagnostics.AddRange(itemWorkflow.Diagnostics.Where(diagnostic =>
+                string.Equals(
+                    diagnostic.Field,
+                    ZaItemsWorkflowService.TechnicalMachineNumberField,
+                    StringComparison.Ordinal)));
             itemRecords = itemWorkflow.Items.ToArray();
             var itemLookup = itemRecords
                 .GroupBy(item => item.ItemId)

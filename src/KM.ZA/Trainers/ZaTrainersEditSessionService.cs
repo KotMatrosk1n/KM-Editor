@@ -75,10 +75,18 @@ internal sealed class ZaTrainersEditSessionService
         }
 
         var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new ZaTrainersEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
+        var projectedWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            updatedSession.PendingEdits,
             diagnostics);
+        ValidateFinalSpeciesFormPairs(loadedWorkflow, projectedWorkflow, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
+        }
+
+        return new ZaTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public ZaTrainersEditResult UpdateFields(
@@ -148,10 +156,18 @@ internal sealed class ZaTrainersEditSessionService
             effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
         }
 
-        return new ZaTrainersEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
+        var projectedWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            updatedSession.PendingEdits,
             diagnostics);
+        ValidateFinalSpeciesFormPairs(loadedWorkflow, projectedWorkflow, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaTrainersEditResult(workflow, currentSession, diagnostics);
+        }
+
+        return new ZaTrainersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -171,15 +187,20 @@ internal sealed class ZaTrainersEditSessionService
             diagnostics);
 
         var effectiveWorkflow = workflow;
+        var validEdits = new List<PendingEdit>();
         foreach (var edit in session.PendingEdits)
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
             {
+                validEdits.Add(edit);
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
             }
         }
+
+        var projectedWorkflow = OverlayPendingEdits(project, workflow, validEdits, diagnostics);
+        ValidateFinalSpeciesFormPairs(workflow, projectedWorkflow, diagnostics);
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -318,11 +339,6 @@ internal sealed class ZaTrainersEditSessionService
             return null;
         }
 
-        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
-        {
-            return null;
-        }
-
         if (IsPokemonField(normalizedField))
         {
             if (slot is null)
@@ -348,7 +364,7 @@ internal sealed class ZaTrainersEditSessionService
                 return null;
             }
 
-            if (pokemon.SpeciesId <= 0 && !string.Equals(normalizedField, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+            if (pokemon.SpeciesId <= 0 && !IsSpeciesFormField(normalizedField))
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -361,7 +377,12 @@ internal sealed class ZaTrainersEditSessionService
 
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
             ValidateTeamOrder(
-                OverlayTrainerPokemon(trainer, slot.Value, normalizedField, parsedValue.Value),
+                OverlayTrainerPokemon(
+                    trainer,
+                    slot.Value,
+                    normalizedField,
+                    parsedValue.Value,
+                    workflow.PokemonAvailability),
                 diagnostics);
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) != errorCount)
             {
@@ -463,11 +484,10 @@ internal sealed class ZaTrainersEditSessionService
             diagnostics);
         if (parsedValue is not null)
         {
-            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
             if (pokemonTrainer is not null && pokemonSlot is not null)
             {
                 if (pokemonTrainer.Team.First(candidate => candidate.Slot == pokemonSlot.Value).SpeciesId <= 0
-                    && !string.Equals(edit.Field, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
+                    && !IsSpeciesFormField(edit.Field))
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -479,31 +499,65 @@ internal sealed class ZaTrainersEditSessionService
                 }
 
                 ValidateTeamOrder(
-                    OverlayTrainerPokemon(pokemonTrainer, pokemonSlot.Value, edit.Field, parsedValue.Value),
+                    OverlayTrainerPokemon(
+                        pokemonTrainer,
+                        pokemonSlot.Value,
+                        edit.Field,
+                        parsedValue.Value,
+                        workflow.PokemonAvailability),
                     diagnostics);
             }
         }
     }
 
-    private static bool ValidateSpeciesOption(
-        string? field,
-        int value,
-        ZaTrainerEditableField editableField,
+    private static void ValidateFinalSpeciesFormPairs(
+        ZaTrainersWorkflow sourceWorkflow,
+        ZaTrainersWorkflow projectedWorkflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(field, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
-        {
-            return true;
-        }
+        var projectedTrainersById = projectedWorkflow.Trainers.ToDictionary(trainer => trainer.TrainerId);
 
-        return ZaEditSessionSupport.ValidateOptionValue(
-            value,
-            editableField.Options.Select(option => option.Value),
-            ZaEditSessionSupport.TrainersDomain,
-            field,
-            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
-            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
-            diagnostics);
+        foreach (var sourceTrainer in sourceWorkflow.Trainers)
+        {
+            if (!projectedTrainersById.TryGetValue(sourceTrainer.TrainerId, out var projectedTrainer))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Trainer {sourceTrainer.TrainerId} is missing from the projected Trainers workflow.",
+                    ZaEditSessionSupport.TrainersDomain,
+                    field: "trainerId",
+                    expected: "Stable projected trainer identity"));
+                continue;
+            }
+
+            var projectedPokemonBySlot = projectedTrainer.Team.ToDictionary(pokemon => pokemon.Slot);
+            foreach (var sourcePokemon in sourceTrainer.Team)
+            {
+                if (!projectedPokemonBySlot.TryGetValue(sourcePokemon.Slot, out var projectedPokemon))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{sourceTrainer.Name} slot {sourcePokemon.Slot} is missing from the projected Trainers workflow.",
+                        ZaEditSessionSupport.TrainersDomain,
+                        file: sourceTrainer.Provenance.TeamSourceFile,
+                        field: "slot",
+                        expected: "Stable projected trainer Pokémon slot identity"));
+                    continue;
+                }
+
+                ZaSpeciesFormPairValidation.ValidateChangedPair(
+                    sourceWorkflow.PokemonAvailability,
+                    sourcePokemon.SpeciesId,
+                    sourcePokemon.Form,
+                    projectedPokemon.SpeciesId,
+                    projectedPokemon.Form,
+                    ZaEditSessionSupport.TrainersDomain,
+                    $"{sourceTrainer.Name} slot {sourcePokemon.Slot}",
+                    diagnostics,
+                    sourceTrainer.Provenance.TeamSourceFile,
+                    ZaTrainersWorkflowService.FormField);
+            }
+        }
     }
 
     private ZaTrainersWorkflow OverlayPendingEdits(
@@ -556,6 +610,9 @@ internal sealed class ZaTrainersEditSessionService
             var overlaySource = source with { Bytes = WriteRows(rows) };
             var trainersById = ZaTrainersWorkflowService
                 .LoadRecords(overlaySource, labels, spriteLabels, abilityResolver)
+                .Select(trainer => ZaTrainersWorkflowService.WithPokemonFormOptions(
+                    trainer,
+                    workflow.PokemonAvailability))
                 .ToDictionary(trainer => trainer.TrainerId);
 
             return workflow with
@@ -595,7 +652,14 @@ internal sealed class ZaTrainersEditSessionService
             return workflow with
             {
                 Trainers = workflow.Trainers
-                    .Select(trainer => trainer.TrainerId == trainerId ? OverlayTrainerPokemon(trainer, slot, edit.Field, value) : trainer)
+                    .Select(trainer => trainer.TrainerId == trainerId
+                        ? OverlayTrainerPokemon(
+                            trainer,
+                            slot,
+                            edit.Field,
+                            value,
+                            workflow.PokemonAvailability)
+                        : trainer)
                     .ToArray(),
             };
         }
@@ -634,64 +698,82 @@ internal sealed class ZaTrainersEditSessionService
         };
     }
 
-    private static ZaTrainerRecord OverlayTrainerPokemon(ZaTrainerRecord trainer, int slot, string? field, int value)
+    private static ZaTrainerRecord OverlayTrainerPokemon(
+        ZaTrainerRecord trainer,
+        int slot,
+        string? field,
+        int value,
+        ZaPokemonAvailability pokemonAvailability)
     {
         return trainer with
         {
             Team = trainer.Team
-                .Select(pokemon => pokemon.Slot == slot ? OverlayPokemon(pokemon, field, value) : pokemon)
+                .Select(pokemon => pokemon.Slot == slot
+                    ? OverlayPokemon(pokemon, field, value, pokemonAvailability)
+                    : pokemon)
                 .ToArray(),
         };
     }
 
-    private static ZaTrainerPokemonRecord OverlayPokemon(ZaTrainerPokemonRecord pokemon, string? field, int value)
+    private static ZaTrainerPokemonRecord OverlayPokemon(
+        ZaTrainerPokemonRecord pokemon,
+        string? field,
+        int value,
+        ZaPokemonAvailability pokemonAvailability)
     {
+        ZaTrainerPokemonRecord projectedPokemon;
         if (string.Equals(field, ZaTrainersWorkflowService.SpeciesIdField, StringComparison.Ordinal) && value == 0)
         {
-            return CreateEmptyPokemonRecord(pokemon.Slot);
+            projectedPokemon = CreateEmptyPokemonRecord(pokemon.Slot);
+        }
+        else
+        {
+            projectedPokemon = field switch
+            {
+                ZaTrainersWorkflowService.SpeciesIdField => pokemon with
+                {
+                    SpeciesId = value,
+                    Species = value == 0 ? "None" : ZaLabels.Pokemon(value),
+                },
+                ZaTrainersWorkflowService.FormField => pokemon with { Form = value },
+                ZaTrainersWorkflowService.LevelField => pokemon with { Level = value },
+                ZaTrainersWorkflowService.HeldItemIdField => pokemon with
+                {
+                    HeldItemId = value,
+                    HeldItem = value > 0 ? ZaLabels.Item(value) : null,
+                },
+                ZaTrainersWorkflowService.Move1IdField => OverlayMove(pokemon, 0, value),
+                ZaTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
+                ZaTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
+                ZaTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
+                ZaTrainersWorkflowService.GenderField => pokemon with { Gender = value, GenderLabel = ZaTrainersWorkflowService.FormatGender(value) },
+                ZaTrainersWorkflowService.AbilityField => pokemon with
+                {
+                    Ability = value,
+                    AbilityLabel = pokemon.AbilityOptions.FirstOrDefault(option => option.Value == value)?.Label
+                        ?? $"Ability mode {value.ToString(CultureInfo.InvariantCulture)}",
+                },
+                ZaTrainersWorkflowService.NatureField => pokemon with { Nature = value, NatureLabel = ZaTrainersWorkflowService.FormatNature(value) },
+                ZaTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
+                ZaTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
+                ZaTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },
+                ZaTrainersWorkflowService.EvSpecialAttackField => pokemon with { Evs = pokemon.Evs with { SpecialAttack = value } },
+                ZaTrainersWorkflowService.EvSpecialDefenseField => pokemon with { Evs = pokemon.Evs with { SpecialDefense = value } },
+                ZaTrainersWorkflowService.EvSpeedField => pokemon with { Evs = pokemon.Evs with { Speed = value } },
+                ZaTrainersWorkflowService.IvHpField => pokemon with { Ivs = pokemon.Ivs with { HP = value } },
+                ZaTrainersWorkflowService.IvAttackField => pokemon with { Ivs = pokemon.Ivs with { Attack = value } },
+                ZaTrainersWorkflowService.IvDefenseField => pokemon with { Ivs = pokemon.Ivs with { Defense = value } },
+                ZaTrainersWorkflowService.IvSpecialAttackField => pokemon with { Ivs = pokemon.Ivs with { SpecialAttack = value } },
+                ZaTrainersWorkflowService.IvSpecialDefenseField => pokemon with { Ivs = pokemon.Ivs with { SpecialDefense = value } },
+                ZaTrainersWorkflowService.IvSpeedField => pokemon with { Ivs = pokemon.Ivs with { Speed = value } },
+                ZaTrainersWorkflowService.ShinyField => pokemon with { Shiny = value != 0 },
+                _ => pokemon,
+            };
         }
 
-        return field switch
-        {
-            ZaTrainersWorkflowService.SpeciesIdField => pokemon with
-            {
-                SpeciesId = value,
-                Species = value == 0 ? "None" : ZaLabels.Pokemon(value),
-            },
-            ZaTrainersWorkflowService.FormField => pokemon with { Form = value },
-            ZaTrainersWorkflowService.LevelField => pokemon with { Level = value },
-            ZaTrainersWorkflowService.HeldItemIdField => pokemon with
-            {
-                HeldItemId = value,
-                HeldItem = value > 0 ? ZaLabels.Item(value) : null,
-            },
-            ZaTrainersWorkflowService.Move1IdField => OverlayMove(pokemon, 0, value),
-            ZaTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
-            ZaTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
-            ZaTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
-            ZaTrainersWorkflowService.GenderField => pokemon with { Gender = value, GenderLabel = ZaTrainersWorkflowService.FormatGender(value) },
-            ZaTrainersWorkflowService.AbilityField => pokemon with
-            {
-                Ability = value,
-                AbilityLabel = pokemon.AbilityOptions.FirstOrDefault(option => option.Value == value)?.Label
-                    ?? $"Ability mode {value.ToString(CultureInfo.InvariantCulture)}",
-            },
-            ZaTrainersWorkflowService.NatureField => pokemon with { Nature = value, NatureLabel = ZaTrainersWorkflowService.FormatNature(value) },
-            ZaTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
-            ZaTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
-            ZaTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },
-            ZaTrainersWorkflowService.EvSpecialAttackField => pokemon with { Evs = pokemon.Evs with { SpecialAttack = value } },
-            ZaTrainersWorkflowService.EvSpecialDefenseField => pokemon with { Evs = pokemon.Evs with { SpecialDefense = value } },
-            ZaTrainersWorkflowService.EvSpeedField => pokemon with { Evs = pokemon.Evs with { Speed = value } },
-            ZaTrainersWorkflowService.IvHpField => pokemon with { Ivs = pokemon.Ivs with { HP = value } },
-            ZaTrainersWorkflowService.IvAttackField => pokemon with { Ivs = pokemon.Ivs with { Attack = value } },
-            ZaTrainersWorkflowService.IvDefenseField => pokemon with { Ivs = pokemon.Ivs with { Defense = value } },
-            ZaTrainersWorkflowService.IvSpecialAttackField => pokemon with { Ivs = pokemon.Ivs with { SpecialAttack = value } },
-            ZaTrainersWorkflowService.IvSpecialDefenseField => pokemon with { Ivs = pokemon.Ivs with { SpecialDefense = value } },
-            ZaTrainersWorkflowService.IvSpeedField => pokemon with { Ivs = pokemon.Ivs with { Speed = value } },
-            ZaTrainersWorkflowService.ShinyField => pokemon with { Shiny = value != 0 },
-            _ => pokemon,
-        };
+        return IsSpeciesFormField(field)
+            ? ZaTrainersWorkflowService.WithFormOptions(projectedPokemon, pokemonAvailability)
+            : projectedPokemon;
     }
 
     private static ZaTrainerPokemonRecord CreateEmptyPokemonRecord(int slot)
@@ -998,6 +1080,13 @@ internal sealed class ZaTrainersEditSessionService
             ZaTrainersWorkflowService.IvSpecialDefenseField or
             ZaTrainersWorkflowService.IvSpeedField or
             ZaTrainersWorkflowService.ShinyField;
+    }
+
+    private static bool IsSpeciesFormField(string? field)
+    {
+        return field is
+            ZaTrainersWorkflowService.SpeciesIdField or
+            ZaTrainersWorkflowService.FormField;
     }
 
     private static string CreateTeamRecordId(int trainerId, int slot)

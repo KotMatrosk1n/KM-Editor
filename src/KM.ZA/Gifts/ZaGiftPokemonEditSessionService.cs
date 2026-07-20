@@ -37,45 +37,10 @@ internal sealed class ZaGiftPokemonEditSessionService
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
         ArgumentNullException.ThrowIfNull(value);
 
-        var currentSession = session ?? EditSession.Start();
-        var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = giftPokemonWorkflowService.Load(project);
-        var diagnostics = new List<ValidationDiagnostic>();
-        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
-
-        if (!ZaEditSessionSupport.CanEdit(
-                project,
-                workflow.Summary,
-                workflow.Diagnostics,
-                ZaEditSessionSupport.GiftPokemonDomain,
-                diagnostics))
-        {
-            return new ZaGiftPokemonEditResult(workflow, currentSession, diagnostics);
-        }
-
-        var gift = workflow.Gifts.FirstOrDefault(candidate => candidate.GiftIndex == giftIndex);
-        if (gift is null)
-        {
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Gift Pokemon {giftIndex} is not present in the loaded Gift Pokemon workflow.",
-                ZaEditSessionSupport.GiftPokemonDomain,
-                field: "giftIndex",
-                expected: "Existing gift Pokemon record"));
-            return new ZaGiftPokemonEditResult(workflow, currentSession, diagnostics);
-        }
-
-        var pendingEdit = CreatePendingEdit(workflow, gift, field, value, diagnostics);
-        if (pendingEdit is null)
-        {
-            return new ZaGiftPokemonEditResult(workflow, currentSession, diagnostics);
-        }
-
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new ZaGiftPokemonEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
-            diagnostics);
+        return UpdateFields(
+            paths,
+            session,
+            [new ZaGiftPokemonFieldUpdate(giftIndex, field, value)]);
     }
 
     public ZaGiftPokemonEditResult UpdateFields(
@@ -90,20 +55,24 @@ internal sealed class ZaGiftPokemonEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = giftPokemonWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
+        var currentWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            currentSession.PendingEdits,
+            diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
-                workflow.Summary,
-                workflow.Diagnostics,
+                currentWorkflow.Summary,
+                currentWorkflow.Diagnostics,
                 ZaEditSessionSupport.GiftPokemonDomain,
                 diagnostics))
         {
-            return new ZaGiftPokemonEditResult(workflow, currentSession, diagnostics);
+            return new ZaGiftPokemonEditResult(currentWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = currentSession;
-        var effectiveWorkflow = workflow;
+        var projectedWorkflow = currentWorkflow;
         foreach (var update in updates)
         {
             if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
@@ -114,10 +83,11 @@ internal sealed class ZaGiftPokemonEditSessionService
                     ZaEditSessionSupport.GiftPokemonDomain,
                     field: "updates",
                     expected: "Complete gift Pokemon field update"));
-                continue;
+                return new ZaGiftPokemonEditResult(currentWorkflow, currentSession, diagnostics);
             }
 
-            var gift = effectiveWorkflow.Gifts.FirstOrDefault(candidate => candidate.GiftIndex == update.GiftIndex);
+            var gift = projectedWorkflow.Gifts.FirstOrDefault(
+                candidate => candidate.GiftIndex == update.GiftIndex);
             if (gift is null)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -126,28 +96,36 @@ internal sealed class ZaGiftPokemonEditSessionService
                     ZaEditSessionSupport.GiftPokemonDomain,
                     field: "giftIndex",
                     expected: "Existing gift Pokemon record"));
-                continue;
+                return new ZaGiftPokemonEditResult(currentWorkflow, currentSession, diagnostics);
             }
 
             var pendingEdit = CreatePendingEdit(
-                effectiveWorkflow,
+                projectedWorkflow,
                 gift,
                 update.Field,
                 update.Value,
                 diagnostics);
             if (pendingEdit is null)
             {
-                continue;
+                return new ZaGiftPokemonEditResult(currentWorkflow, currentSession, diagnostics);
             }
 
             updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            projectedWorkflow = OverlayPendingEdit(projectedWorkflow, pendingEdit);
         }
 
-        return new ZaGiftPokemonEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
+        projectedWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            updatedSession.PendingEdits,
             diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            || !ValidateFinalSpeciesForms(loadedWorkflow, projectedWorkflow, diagnostics))
+        {
+            return new ZaGiftPokemonEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        return new ZaGiftPokemonEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -175,6 +153,11 @@ internal sealed class ZaGiftPokemonEditSessionService
             {
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
             }
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateFinalSpeciesForms(workflow, effectiveWorkflow, diagnostics);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -307,11 +290,6 @@ internal sealed class ZaGiftPokemonEditSessionService
             return null;
         }
 
-        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
-        {
-            return null;
-        }
-
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.GiftPokemonDomain,
             $"Set {gift.Label} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -355,38 +333,43 @@ internal sealed class ZaGiftPokemonEditSessionService
             return;
         }
 
-        var parsedValue = ZaEditSessionSupport.TryParseInt(
+        _ = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.GiftPokemonDomain,
             diagnostics);
-        if (parsedValue is not null)
-        {
-            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
-        }
     }
 
-    private static bool ValidateSpeciesOption(
-        string? field,
-        int value,
-        ZaGiftPokemonEditableField editableField,
+    private static bool ValidateFinalSpeciesForms(
+        ZaGiftPokemonWorkflow loadedWorkflow,
+        ZaGiftPokemonWorkflow projectedWorkflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(field, ZaGiftPokemonWorkflowService.SpeciesField, StringComparison.Ordinal))
+        var projectedByIndex = projectedWorkflow.Gifts.ToDictionary(gift => gift.GiftIndex);
+        var isValid = true;
+
+        foreach (var source in loadedWorkflow.Gifts)
         {
-            return true;
+            if (!projectedByIndex.TryGetValue(source.GiftIndex, out var projected))
+            {
+                continue;
+            }
+
+            isValid &= ZaSpeciesFormPairValidation.ValidateChangedPair(
+                loadedWorkflow.PokemonAvailability,
+                source.SpeciesId,
+                source.Form,
+                projected.SpeciesId,
+                projected.Form,
+                ZaEditSessionSupport.GiftPokemonDomain,
+                $"Gift Pokemon {source.GiftIndex}",
+                diagnostics,
+                source.Provenance.SourceFile);
         }
 
-        return ZaEditSessionSupport.ValidateOptionValue(
-            value,
-            editableField.Options.Select(option => option.Value),
-            ZaEditSessionSupport.GiftPokemonDomain,
-            field,
-            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
-            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
-            diagnostics);
+        return isValid;
     }
 
     private ZaGiftPokemonWorkflow OverlayPendingEdits(
@@ -443,6 +426,9 @@ internal sealed class ZaGiftPokemonEditSessionService
             var overlaySource = source with { Bytes = document.Write() };
             var giftsByIndex = ZaGiftPokemonWorkflowService
                 .LoadRecords(overlaySource, labels, abilityResolver)
+                .Select(gift => ZaGiftPokemonWorkflowService.WithFormOptions(
+                    gift,
+                    workflow.PokemonAvailability))
                 .ToDictionary(gift => gift.GiftIndex);
 
             return workflow with
@@ -476,7 +462,11 @@ internal sealed class ZaGiftPokemonEditSessionService
         return workflow with
         {
             Gifts = workflow.Gifts
-                .Select(gift => gift.GiftIndex == giftIndex ? OverlayGift(workflow, gift, edit.Field, value) : gift)
+                .Select(gift => gift.GiftIndex == giftIndex
+                    ? ZaGiftPokemonWorkflowService.WithFormOptions(
+                        OverlayGift(workflow, gift, edit.Field, value),
+                        workflow.PokemonAvailability)
+                    : gift)
                 .ToArray(),
         };
     }
@@ -601,7 +591,8 @@ internal sealed class ZaGiftPokemonEditSessionService
         }
 
         var rows = ZaGiftPokemonWorkflowService.ResolveApplyTargets(document, giftIndex);
-        if (rows.Count == 0)
+        var displayRow = ZaGiftPokemonWorkflowService.ResolveApplyDisplayEntry(document, giftIndex);
+        if (rows.Count == 0 || displayRow is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -615,6 +606,15 @@ internal sealed class ZaGiftPokemonEditSessionService
         foreach (var row in rows)
         {
             ApplyField(row, edit.Field, value);
+        }
+
+        if (edit.Field is ZaGiftPokemonWorkflowService.SpeciesField or ZaGiftPokemonWorkflowService.FormField)
+        {
+            foreach (var row in rows)
+            {
+                row.DevNo = displayRow.DevNo;
+                row.FormNo = displayRow.FormNo;
+            }
         }
     }
 

@@ -1315,6 +1315,16 @@ export const trainerPokemonStatsSchema = z.strictObject({
   speed: z.number().int()
 });
 
+const trainerFormOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const trainerEditableFieldOptionSchema = z.strictObject({
+  ...trainerFormOptionSchema.shape,
+  formOptions: z.array(trainerFormOptionSchema).nullable().optional()
+});
+
 export const trainerPokemonRecordSchema = z.strictObject({
   ability: z.number().int(),
   abilityLabel: z.string(),
@@ -1324,7 +1334,8 @@ export const trainerPokemonRecordSchema = z.strictObject({
   canGigantamax: z.boolean().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative().nullable().default(null),
   evs: trainerPokemonStatsSchema,
-  form: z.number().int().nonnegative(),
+  form: z.number().int(),
+  formOptions: z.array(trainerEditableFieldOptionSchema).default([]),
   gender: z.number().int(),
   genderLabel: z.string(),
   heldItem: z.string().nullable(),
@@ -1380,11 +1391,6 @@ export const trainerRecordSchema = z.strictObject({
   zaRank: z.number().int().nonnegative().nullable().default(null)
 });
 
-export const trainerEditableFieldOptionSchema = z.strictObject({
-  label: z.string(),
-  value: z.number().int()
-});
-
 export const trainerEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
@@ -1423,9 +1429,14 @@ export const giftPokemonMoveSchema = z.strictObject({
   slot: z.number().int().min(0).max(3)
 });
 
-export const giftPokemonEditableFieldOptionSchema = z.strictObject({
+const giftPokemonFormOptionSchema = z.strictObject({
   label: z.string(),
   value: z.number().int()
+});
+
+export const giftPokemonEditableFieldOptionSchema = z.strictObject({
+  ...giftPokemonFormOptionSchema.shape,
+  formOptions: z.array(giftPokemonFormOptionSchema).nullable().optional()
 });
 
 export const giftPokemonEditableFieldSchema = z.strictObject({
@@ -1448,7 +1459,8 @@ export const giftPokemonRecordSchema = z.strictObject({
   editorFamily: z.enum(['swsh', 'sv', 'za']).default('swsh'),
   eventLabel: z.string().nullable().default(null),
   flawlessIvCount: z.number().int().nullable(),
-  form: z.number().int().nonnegative(),
+  form: z.number().int(),
+  formOptions: z.array(giftPokemonEditableFieldOptionSchema).default([]),
   gender: z.number().int(),
   genderLabel: z.string(),
   genderOptions: z.array(giftPokemonEditableFieldOptionSchema).default([]),
@@ -1518,9 +1530,14 @@ export const tradePokemonMoveSchema = z.strictObject({
   slot: z.number().int().min(0).max(3)
 });
 
-export const tradePokemonEditableFieldOptionSchema = z.strictObject({
+const tradePokemonFormOptionSchema = z.strictObject({
   label: z.string(),
   value: z.number().int()
+});
+
+export const tradePokemonEditableFieldOptionSchema = z.strictObject({
+  ...tradePokemonFormOptionSchema.shape,
+  formOptions: z.array(tradePokemonFormOptionSchema).nullable().optional()
 });
 
 export const tradePokemonEditableFieldSchema = z.strictObject({
@@ -1544,7 +1561,8 @@ export const tradePokemonRecordSchema = z.strictObject({
   eventLabel: z.string().nullable().default(null),
   field03: z.number().int().nonnegative(),
   flawlessIvCount: z.number().int().nullable(),
-  form: z.number().int().nonnegative(),
+  form: z.number().int(),
+  formOptions: z.array(tradePokemonEditableFieldOptionSchema).default([]),
   gender: z.number().int(),
   genderLabel: z.string(),
   genderOptions: z.array(tradePokemonEditableFieldOptionSchema).default([]),
@@ -1627,9 +1645,14 @@ export const staticEncounterMoveSchema = z.strictObject({
   slot: z.number().int().nonnegative()
 });
 
-export const staticEncounterEditableFieldOptionSchema = z.strictObject({
+const staticEncounterFormOptionSchema = z.strictObject({
   label: z.string(),
   value: z.number().int()
+});
+
+export const staticEncounterEditableFieldOptionSchema = z.strictObject({
+  ...staticEncounterFormOptionSchema.shape,
+  formOptions: z.array(staticEncounterFormOptionSchema).nullable().optional()
 });
 
 export const staticEncounterEditableFieldSchema = z.strictObject({
@@ -1663,7 +1686,8 @@ export const staticEncounterRecordSchema = z.strictObject({
   fieldReadOnly: z.record(z.string(), z.boolean()).default({}),
   fieldValues: z.record(z.string(), z.string()).default({}),
   flawlessIvCount: z.number().int().nullable(),
-  form: z.number().int().nonnegative(),
+  form: z.number().int(),
+  formOptions: z.array(staticEncounterEditableFieldOptionSchema).default([]),
   gender: z.number().int(),
   genderLabel: z.string(),
   genderOptions: z.array(staticEncounterEditableFieldOptionSchema).optional(),
@@ -2758,6 +2782,16 @@ export const encounterProvenanceSchema = z.strictObject({
   sourceLayer: projectFileLayerSchema
 });
 
+const encounterFormOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const encounterEditableFieldOptionSchema = z.strictObject({
+  ...encounterFormOptionSchema.shape,
+  formOptions: z.array(encounterFormOptionSchema).nullable().optional()
+});
+
 export const encounterSlotRecordSchema = z.strictObject({
   alphaChancePercent: z.number().int().min(0).max(100).nullable().optional(),
   alphaLevelBonus: z.number().int().min(0).max(100).nullable().optional(),
@@ -2771,7 +2805,8 @@ export const encounterSlotRecordSchema = z.strictObject({
   encounterDataId: z.string().nullable().optional(),
   encounterKind: z.string().nullable().optional(),
   encounterRecordId: z.string().nullable().optional(),
-  form: z.number().int().nonnegative(),
+  form: z.number().int(),
+  formOptions: z.array(encounterEditableFieldOptionSchema).default([]),
   isAlpha: z.boolean().optional(),
   levelMax: z.number().int().nonnegative(),
   levelMin: z.number().int().nonnegative(),
@@ -2802,11 +2837,6 @@ export const encounterTableRecordSchema = z.strictObject({
   tableDetails: z.string().nullable().optional(),
   tableLabel: z.string().nullable().optional(),
   tableId: z.string()
-});
-
-export const encounterEditableFieldOptionSchema = z.strictObject({
-  label: z.string(),
-  value: z.number().int()
 });
 
 export const encounterEditableFieldSchema = z.strictObject({

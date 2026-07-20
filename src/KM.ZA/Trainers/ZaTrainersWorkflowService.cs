@@ -134,7 +134,7 @@ internal sealed class ZaTrainersWorkflowService
         CreateField(AiFlagsField, "AI flags", 0, byte.MaxValue),
         CreateField(MegaEvolutionField, "Mega Evolution", 0, 1, BooleanOptions, "boolean"),
         CreateField(LastHandField, "Last hand", 0, 1, BooleanOptions, "boolean"),
-        CreateField(FormField, "Form", short.MinValue, short.MaxValue),
+        CreateField(FormField, "Form", 0, short.MaxValue),
         CreateField(LevelField, "Level", 0, 100),
         CreateField(GenderField, "Gender", -1, 2, GenderOptions),
         CreateField(AbilityField, "Ability mode", 0, 255, CreateAbilityModeOptions(ZaTrainerAbilitySet.Empty)),
@@ -189,7 +189,9 @@ internal sealed class ZaTrainersWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver).ToArray();
+            trainers = LoadRecords(source, labels, spriteLabels, abilityResolver)
+                .Select(trainer => WithPokemonFormOptions(trainer, pokemonAvailability))
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -213,7 +215,10 @@ internal sealed class ZaTrainersWorkflowService
                 trainers.Length,
                 trainers.Sum(GetOccupiedPokemonCount),
                 source is null ? 0 : 1),
-            diagnostics);
+            diagnostics)
+        {
+            PokemonAvailability = pokemonAvailability,
+        };
     }
 
     internal static IEnumerable<ZaTrainerRecord> LoadRecords(
@@ -233,6 +238,32 @@ internal sealed class ZaTrainersWorkflowService
 
             yield return ToRecord(index, trainer.Value, source, labels, spriteLabels, abilityResolver);
         }
+    }
+
+    internal static ZaTrainerRecord WithPokemonFormOptions(
+        ZaTrainerRecord trainer,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return trainer with
+        {
+            Team = trainer.Team
+                .Select(pokemon => WithFormOptions(pokemon, pokemonAvailability))
+                .ToArray(),
+        };
+    }
+
+    internal static ZaTrainerPokemonRecord WithFormOptions(
+        ZaTrainerPokemonRecord pokemon,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemon with
+        {
+            FormOptions = pokemonAvailability.CreateFormOptions(
+                pokemon.SpeciesId,
+                form => new ZaTrainerEditableFieldOption(
+                    form,
+                    ZaLabels.PokemonFormLabel(pokemon.SpeciesId, form, pokemon.Species))),
+        };
     }
 
     private static ZaTrainerRecord ToRecord(
@@ -514,8 +545,36 @@ internal sealed class ZaTrainersWorkflowService
     {
         return pokemonAvailability
             .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
-            .Select(option => new ZaTrainerEditableFieldOption(option.Value, option.Label))
+            .Select(option => new ZaTrainerEditableFieldOption(option.Value, option.Label)
+            {
+                FormOptions = CreateSpeciesFormOptions(
+                    option.Value,
+                    labels,
+                    pokemonAvailability),
+            })
             .ToArray();
+    }
+
+    private static IReadOnlyList<ZaTrainerEditableFieldOption>? CreateSpeciesFormOptions(
+        int speciesId,
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        if (speciesId == 0)
+        {
+            return [new ZaTrainerEditableFieldOption(0, ZaLabels.PokemonFormLabel(0, 0, "None"))];
+        }
+
+        if (!pokemonAvailability.HasKnownAvailability)
+        {
+            return null;
+        }
+
+        return pokemonAvailability.CreateFormOptions(
+            speciesId,
+            form => new ZaTrainerEditableFieldOption(
+                form,
+                ZaLabels.PokemonFormLabel(speciesId, form, labels.Pokemon(speciesId))));
     }
 
     private static IReadOnlyList<ZaTrainerEditableFieldOption> CreateIndexedOptions(

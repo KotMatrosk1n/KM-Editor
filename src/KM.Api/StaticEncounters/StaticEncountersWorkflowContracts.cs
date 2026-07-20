@@ -92,6 +92,8 @@ public sealed record StaticEncounterRecordDto(
         new Dictionary<string, bool>(StringComparer.Ordinal);
     public IReadOnlyList<StaticEncounterEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<StaticEncounterEditableFieldOptionDto>();
+    public IReadOnlyList<StaticEncounterEditableFieldOptionDto> FormOptions { get; init; } =
+        Array.Empty<StaticEncounterEditableFieldOptionDto>();
     public IReadOnlyList<StaticEncounterEditableFieldOptionDto> GenderOptions { get; init; } =
         Array.Empty<StaticEncounterEditableFieldOptionDto>();
 }
@@ -111,7 +113,11 @@ public sealed record StaticEncounterEditableFieldDto(
 
 public sealed record StaticEncounterEditableFieldOptionDto(
     int Value,
-    string Label);
+    string Label)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<StaticEncounterEditableFieldOptionDto>? FormOptions { get; init; }
+}
 
 public sealed record StaticEncountersWorkflowStatsDto(
     int TotalEncounterCount,

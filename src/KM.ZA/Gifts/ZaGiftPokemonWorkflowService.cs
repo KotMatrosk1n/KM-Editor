@@ -143,7 +143,9 @@ internal sealed class ZaGiftPokemonWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaGiftAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
-            gifts = LoadRecords(source, labels, abilityResolver).ToArray();
+            gifts = LoadRecords(source, labels, abilityResolver)
+                .Select(gift => WithFormOptions(gift, pokemonAvailability))
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -168,7 +170,10 @@ internal sealed class ZaGiftPokemonWorkflowService
                 gifts.Count(gift => gift.IsEgg),
                 gifts.Count(gift => !string.Equals(gift.IvSummary, "Random IVs", StringComparison.Ordinal)),
                 source is null ? 0 : 1),
-            diagnostics);
+            diagnostics)
+        {
+            PokemonAvailability = pokemonAvailability,
+        };
     }
 
     internal static ZaGiftPokemonEditableField? GetEditableField(
@@ -237,6 +242,20 @@ internal sealed class ZaGiftPokemonWorkflowService
             .ToArray();
     }
 
+    internal static ZaGiftPokemonEntry WithFormOptions(
+        ZaGiftPokemonEntry gift,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return gift with
+        {
+            FormOptions = pokemonAvailability.CreateFormOptions(
+                gift.SpeciesId,
+                form => new ZaGiftPokemonEditableFieldOption(
+                    form,
+                    ZaLabels.PokemonFormLabel(gift.SpeciesId, form, gift.Species))),
+        };
+    }
+
     private static ZaGiftPokemonEntry ToRecord(
         int giftIndex,
         GiftSourceGroup group,
@@ -298,6 +317,13 @@ internal sealed class ZaGiftPokemonWorkflowService
     {
         var group = CreateGiftSourceGroups(document).ElementAtOrDefault(giftIndex);
         return group is null ? Array.Empty<ZaPokemonDataEntry>() : group.ApplyEntries;
+    }
+
+    internal static ZaPokemonDataEntry? ResolveApplyDisplayEntry(
+        ZaPokemonDataDocument document,
+        int giftIndex)
+    {
+        return CreateGiftSourceGroups(document).ElementAtOrDefault(giftIndex)?.DisplayEntry;
     }
 
     private static IReadOnlyList<GiftSourceGroup> CreateGiftSourceGroups(ZaPokemonDataDocument document)
@@ -480,8 +506,36 @@ internal sealed class ZaGiftPokemonWorkflowService
     {
         return pokemonAvailability
             .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
-            .Select(option => new ZaGiftPokemonEditableFieldOption(option.Value, option.Label))
+            .Select(option => new ZaGiftPokemonEditableFieldOption(option.Value, option.Label)
+            {
+                FormOptions = CreateSpeciesFormOptions(
+                    option.Value,
+                    labels,
+                    pokemonAvailability),
+            })
             .ToArray();
+    }
+
+    private static IReadOnlyList<ZaGiftPokemonEditableFieldOption>? CreateSpeciesFormOptions(
+        int speciesId,
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        if (speciesId == 0)
+        {
+            return [new ZaGiftPokemonEditableFieldOption(0, ZaLabels.PokemonFormLabel(0, 0, "None"))];
+        }
+
+        if (!pokemonAvailability.HasKnownAvailability)
+        {
+            return null;
+        }
+
+        return pokemonAvailability.CreateFormOptions(
+            speciesId,
+            form => new ZaGiftPokemonEditableFieldOption(
+                form,
+                ZaLabels.PokemonFormLabel(speciesId, form, labels.Pokemon(speciesId))));
     }
 
     private static string FormatOption(int value, string label)

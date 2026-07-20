@@ -57,7 +57,11 @@ public sealed record EncounterSlotRecordDto(
     int? AppearanceObjectCount = null,
     bool? CanEditWeight = null,
     bool? CanEditSlotMaxCount = null,
-    bool? CanEditAppearanceCounts = null);
+    bool? CanEditAppearanceCounts = null)
+{
+    public IReadOnlyList<EncounterEditableFieldOptionDto> FormOptions { get; init; } =
+        Array.Empty<EncounterEditableFieldOptionDto>();
+}
 
 public sealed record EncounterTableRecordDto(
     string TableId,
@@ -90,7 +94,11 @@ public sealed record EncounterEditableFieldDto(
 
 public sealed record EncounterEditableFieldOptionDto(
     int Value,
-    string Label);
+    string Label)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<EncounterEditableFieldOptionDto>? FormOptions { get; init; }
+}
 
 public sealed record EncountersWorkflowStatsDto(
     int TotalTableCount,

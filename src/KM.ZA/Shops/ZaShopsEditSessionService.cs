@@ -5,7 +5,6 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.ZA.Data;
-using KM.ZA.Items;
 using KM.ZA.Workflows;
 using System.Globalization;
 
@@ -160,11 +159,6 @@ internal sealed class ZaShopsEditSessionService
                 lineupWriteInfo.ReplacesExistingOutput,
                 lineupReason));
 
-            if (TryCreateKnownMissingTechnicalMachineItemDataWrite(paths, session, outputMode) is { } itemDataWrite)
-            {
-                writes.Add(itemDataWrite);
-            }
-
             if (outputMode == ZaOutputMode.Standalone)
             {
                 var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
@@ -239,20 +233,6 @@ internal sealed class ZaShopsEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            if (PendingEditsReferenceKnownMissingTechnicalMachine(session))
-            {
-                var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
-                if (!ZaItemsEditSessionService.ContainsKnownMissingTechnicalMachineRow(itemSource.Bytes))
-                {
-                    ZaWorkflowFileSource.Write(
-                        paths,
-                        ZaDataPaths.ItemDataArray,
-                        ZaItemsEditSessionService.EnsureKnownMissingTechnicalMachineRow(itemSource.Bytes),
-                        outputMode);
-                    writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.ItemDataArray, outputMode));
-                }
-            }
-
             ZaWorkflowFileSource.Write(
                 paths,
                 ZaDataPaths.ShopItemLineupArray,
@@ -278,62 +258,6 @@ internal sealed class ZaShopsEditSessionService
         }
 
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
-    }
-
-    private PlannedFileWrite? TryCreateKnownMissingTechnicalMachineItemDataWrite(
-        ProjectPaths paths,
-        EditSession session,
-        ZaOutputMode outputMode)
-    {
-        if (!PendingEditsReferenceKnownMissingTechnicalMachine(session))
-        {
-            return null;
-        }
-
-        var project = projectWorkspaceService.Open(paths);
-        var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
-        if (ZaItemsEditSessionService.ContainsKnownMissingTechnicalMachineRow(itemSource.Bytes))
-        {
-            return null;
-        }
-
-        var writeInfo = ZaWorkflowFileSource.CreatePlannedWrite(
-            paths,
-            ZaDataPaths.ItemDataArray,
-            [ZaWorkflowFileSource.CreateReference(itemSource)],
-            outputMode);
-        return new PlannedFileWrite(
-            writeInfo.TargetRelativePath,
-            writeInfo.Sources,
-            writeInfo.ReplacesExistingOutput,
-            "Materialize Pokemon Legends Z-A TM101 item data for shop inventory item 2161.");
-    }
-
-    private static bool PendingEditsReferenceKnownMissingTechnicalMachine(EditSession session)
-    {
-        foreach (var edit in session.PendingEdits)
-        {
-            if (!string.Equals(edit.Domain, ZaEditSessionSupport.ShopsDomain, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (edit.Field is ZaShopsWorkflowService.ItemIdField or ZaShopsWorkflowService.AddItemField
-                && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
-                && ZaTechnicalMachineCatalog.IsKnownMissingTechnicalMachineItemId(itemId))
-            {
-                return true;
-            }
-
-            if (edit.Field == ZaShopsWorkflowService.SetInventoryField
-                && ParseInventoryList(edit.NewValue ?? string.Empty) is { } itemIds
-                && itemIds.Any(ZaTechnicalMachineCatalog.IsKnownMissingTechnicalMachineItemId))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static PendingEdit? CreatePendingEdit(
