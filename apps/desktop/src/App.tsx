@@ -2258,7 +2258,6 @@ export function App({
   const [changePlanSessionSignature, setChangePlanSessionSignature] = useState<string | null>(
     null
   );
-  const [appliedChangePlan, setAppliedChangePlan] = useState<ChangePlan | null>(null);
   const [dynamaxAdventurePanelDiagnostics, setDynamaxAdventurePanelDiagnostics] =
     useState<ApiDiagnostic[]>([]);
   const [dynamaxAdventureChangePlan, setDynamaxAdventureChangePlan] =
@@ -2486,7 +2485,7 @@ export function App({
     changePlan !== null &&
     currentEditSessionSignature !== null &&
     currentEditSessionSignature === changePlanSessionSignature;
-  const visibleChangePlan = isChangePlanCurrent ? changePlan : appliedChangePlan;
+  const visibleChangePlan = isChangePlanCurrent ? changePlan : null;
   const isDynamaxAdventureChangePlanCurrent =
     dynamaxAdventureChangePlan !== null &&
     currentEditSessionSignature !== null &&
@@ -2615,7 +2614,6 @@ export function App({
     setEditValidationDiagnostics([]);
     setChangePlan(null);
     setApplyResult(null);
-    setAppliedChangePlan(null);
     clearScopedEditorPanelState(section);
   };
 
@@ -2879,7 +2877,6 @@ export function App({
     setEditValidationDiagnostics([]);
     setValidatedEditSessionSignature(null);
     setChangePlanSessionSignature(null);
-    setAppliedChangePlan(null);
     clearScopedEditorPanelState();
     clearDynamaxAdventurePanelState();
     setEditorDraftDirtySections(new Set());
@@ -5435,7 +5432,6 @@ export function App({
           setApplyResult(null);
           setValidatedEditSessionSignature(null);
           setChangePlanSessionSignature(null);
-          setAppliedChangePlan(null);
         }
       );
     } catch (error) {
@@ -6965,7 +6961,6 @@ export function App({
     setApplyResult(null);
     setValidatedEditSessionSignature(null);
     setChangePlanSessionSignature(null);
-    setAppliedChangePlan(null);
 
     try {
       const response = await bridge.startEditSession({ paths: createProjectPaths(draftPaths) });
@@ -7013,7 +7008,6 @@ export function App({
       setApplyResult(null);
       setValidatedEditSessionSignature(null);
       setChangePlanSessionSignature(null);
-      setAppliedChangePlan(null);
     },
     [
       clearLoadedWorkflowData,
@@ -8165,7 +8159,6 @@ export function App({
           setChangePlan(null);
           setApplyResult(null);
           setChangePlanSessionSignature(null);
-          setAppliedChangePlan(null);
           setValidatedEditSessionSignature(null);
         }
       );
@@ -8216,7 +8209,6 @@ export function App({
           setChangePlan(null);
           setApplyResult(null);
           setChangePlanSessionSignature(null);
-          setAppliedChangePlan(null);
           setValidatedEditSessionSignature(null);
           const repairOwner = getPendingDynamaxAdventureOwner(repairResponse.session);
           if (repairOwner !== null) {
@@ -8271,7 +8263,6 @@ export function App({
           setChangePlan(null);
           setApplyResult(null);
           setChangePlanSessionSignature(null);
-          setAppliedChangePlan(null);
           setValidatedEditSessionSignature(null);
           const restoreOwner = getPendingDynamaxAdventureOwner(
             restoreResponse.session
@@ -8314,7 +8305,6 @@ export function App({
     setApplyResult(null);
     setValidatedEditSessionSignature(null);
     setChangePlanSessionSignature(null);
-    setAppliedChangePlan(null);
 
     try {
       const response = await bridge.validateEditSession({
@@ -8396,7 +8386,6 @@ export function App({
     setDynamaxAdventurePanelDiagnostics([]);
     setDynamaxAdventureApplyResult(null);
     setApplyResult(null);
-    setAppliedChangePlan(null);
     setWorkProgress(createIndeterminateWorkProgress(
       'Applying Dynamax Adventure Changes',
       'Writing reviewed adventure changes',
@@ -8430,7 +8419,6 @@ export function App({
         setApplyResult(null);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
-        setAppliedChangePlan(null);
       }
 
       setDynamaxAdventureApplyResult(response.applyResult);
@@ -9073,7 +9061,6 @@ export function App({
     setApplyResult(null);
     setValidatedEditSessionSignature(null);
     setChangePlanSessionSignature(null);
-    setAppliedChangePlan(null);
 
     try {
       const response = await bridge.validateEditSession({
@@ -9141,7 +9128,6 @@ export function App({
     setEditValidationDiagnostics([]);
     setChangePlan(null);
     setApplyResult(null);
-    setAppliedChangePlan(null);
     clearDynamaxAdventurePanelState();
     setScopedEditorPanelStates((currentStates) => ({
       ...currentStates,
@@ -9244,9 +9230,15 @@ export function App({
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
+      const didWriteFiles =
+        !hasApplyErrors && response.applyResult.writtenFiles.length > 0;
+      const hasApplyWarnings = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'warning'
+      );
+      const shouldRetainApplyResult =
+        !didWriteFiles || hasApplyWarnings;
 
-      if (!hasApplyErrors) {
-        setAppliedChangePlan(planToApply);
+      if (didWriteFiles) {
         editSessionMutationGenerationRef.current += 1;
         editSessionMutationQueueRef.current = Promise.resolve();
         editSessionRef.current = null;
@@ -9257,7 +9249,9 @@ export function App({
         setChangePlanSessionSignature(null);
       }
 
-      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+      setApplyResult(response.applyResult);
+
+      if (didWriteFiles) {
         setWorkProgress(
           createIndeterminateWorkProgress(
             'Refreshing Editors',
@@ -9269,7 +9263,9 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
-      setApplyResult(response.applyResult);
+      if (!shouldRetainApplyResult) {
+        setApplyResult(null);
+      }
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -9915,7 +9911,6 @@ export function App({
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
     setApplyResult(null);
-    setAppliedChangePlan(null);
     setWorkProgress(createIndeterminateWorkProgress(
       'Applying Editor Changes',
       'Writing reviewed editor changes',
@@ -12069,10 +12064,6 @@ function ItemsSection({
     [workflow?.items]
   );
   const filteredItems = useMemo(() => filterItems(items, searchText), [items, searchText]);
-  const selectedItem = useMemo(
-    () => filteredItems.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
-    [filteredItems, selectedItemId]
-  );
   const canEditItems = workflow?.summary.availability === 'available';
   const pendingItemIds = useMemo(
     () => getPendingItemIds(editSession, items),
@@ -12084,9 +12075,37 @@ function ItemsSection({
       (diagnostic) =>
         diagnostic.severity === 'warning' &&
         diagnostic.field === itemTechnicalMachineNumberFieldName &&
-        diagnostic.message.startsWith('A legacy KM Editor TM-numbering output was detected.')
+        (diagnostic.message.startsWith('A legacy KM Editor TM-numbering output was detected.') ||
+          diagnostic.message.startsWith('A legacy KM Editor TM pickup layout was detected.'))
     ) ??
       false);
+  const legacyTechnicalMachineRepairTarget = useMemo(() => {
+    if (!hasLegacyTechnicalMachineRecovery) {
+      return null;
+    }
+
+    for (const item of items) {
+      const number = getEditableItemFieldValue(item, itemTechnicalMachineNumberFieldName);
+      if (number !== null && Number.isInteger(number) && number > 0) {
+        return { itemId: item.itemId, number };
+      }
+    }
+
+    return null;
+  }, [hasLegacyTechnicalMachineRecovery, items]);
+  const isLegacyTechnicalMachineRepairStaged =
+    legacyTechnicalMachineRepairTarget !== null &&
+    (editSession?.pendingEdits.some(
+      (edit) =>
+        edit.domain === 'workflow.items' &&
+        edit.field === itemTechnicalMachineNumberFieldName &&
+        edit.summary === 'Apply the detected legacy KM Editor TM output repair.'
+    ) ??
+      false);
+  const selectedItem = useMemo(
+    () => filteredItems.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
+    [filteredItems, selectedItemId]
+  );
   const secondaryPriceLabels = getItemSecondaryPriceLabels(editorFamily);
 
   return (
@@ -12121,6 +12140,41 @@ function ItemsSection({
             value={(editSession?.pendingEdits.length ?? 0).toString()}
           />
         </div>
+
+        {legacyTechnicalMachineRepairTarget ? (
+          <div className="draft-action-row items-repair-action">
+            <button
+              aria-busy={isItemUpdating || undefined}
+              className="secondary-button"
+              disabled={
+                !canEditItems ||
+                isEditStarting ||
+                isItemUpdating ||
+                isLegacyTechnicalMachineRepairStaged
+              }
+              onClick={() =>
+                onUpdateItemFields(legacyTechnicalMachineRepairTarget.itemId, [
+                  {
+                    field: itemTechnicalMachineNumberFieldName,
+                    value: legacyTechnicalMachineRepairTarget.number.toString()
+                  }
+                ])
+              }
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Staging"
+                icon={<ShieldCheck aria-hidden="true" size={16} />}
+                isBusy={isItemUpdating}
+                label={
+                  isLegacyTechnicalMachineRepairStaged
+                    ? 'All legacy TM repairs staged'
+                    : 'Stage all legacy TM repairs'
+                }
+              />
+            </button>
+          </div>
+        ) : null}
 
         {workflow ? (
           <div className="items-layout">
@@ -12170,7 +12224,6 @@ function ItemsSection({
               canEditItems={canEditItems}
               editSession={editSession}
               editorFamily={editorFamily}
-              hasLegacyTechnicalMachineRecovery={hasLegacyTechnicalMachineRecovery}
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               item={selectedItem}
@@ -12205,7 +12258,6 @@ function SelectedItemPanel({
   editSession,
   editorFamily,
   editableFields,
-  hasLegacyTechnicalMachineRecovery,
   isEditStarting,
   isItemUpdating,
   item,
@@ -12216,7 +12268,6 @@ function SelectedItemPanel({
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
   editableFields: ItemEditableField[];
-  hasLegacyTechnicalMachineRecovery: boolean;
   isEditStarting: boolean;
   isItemUpdating: boolean;
   item: ItemRecord | null;
@@ -12226,7 +12277,6 @@ function SelectedItemPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
-  const { translateLiteral } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -12273,10 +12323,6 @@ function SelectedItemPanel({
     () => normalizeLinkedItemPriceChanges(itemDraftSummary.changedFields),
     [itemDraftSummary.changedFields]
   );
-  const legacyTechnicalMachineRepairNumber =
-    hasLegacyTechnicalMachineRecovery && item
-      ? getEditableItemFieldValue(item, itemTechnicalMachineNumberFieldName)
-      : null;
   useRegisterEditorDraftDirty('items', countFieldDraftRecords(fieldDraftsByItemId) > 0);
   const canSaveItemDrafts =
     item !== null &&
@@ -12336,29 +12382,6 @@ function SelectedItemPanel({
           <div className="item-edit-form">
             {editSession ? (
               <div className="draft-action-row">
-                {legacyTechnicalMachineRepairNumber !== null ? (
-                  <button
-                    aria-busy={isItemUpdating || undefined}
-                    className="secondary-button"
-                    disabled={!canEditItems || isItemUpdating}
-                    onClick={() =>
-                      onUpdateItemFields(item.itemId, [
-                        {
-                          field: itemTechnicalMachineNumberFieldName,
-                          value: legacyTechnicalMachineRepairNumber.toString()
-                        }
-                      ])
-                    }
-                    type="button"
-                  >
-                    <BusyActionContent
-                      busyLabel="Staging"
-                      icon={<ShieldCheck aria-hidden="true" size={16} />}
-                      isBusy={isItemUpdating}
-                      label="Stage legacy TM repair"
-                    />
-                  </button>
-                ) : null}
                 <button
                   aria-busy={isItemUpdating || undefined}
                   className="primary-button"
@@ -12420,13 +12443,6 @@ function SelectedItemPanel({
                     label="Edit"
                   />
                 </button>
-                {legacyTechnicalMachineRepairNumber !== null ? (
-                  <p className="empty-copy">
-                    {translateLiteral(
-                      'Start editing to stage the detected legacy TM repair without changing another item field.'
-                    )}
-                  </p>
-                ) : null}
               </>
             )}
 
@@ -36034,6 +36050,28 @@ function SettingsSection({
   );
 }
 
+function deduplicateDiagnostics(diagnostics: ApiDiagnostic[]): ApiDiagnostic[] {
+  const seenDiagnostics = new Set<string>();
+
+  return diagnostics.filter((diagnostic) => {
+    const key = JSON.stringify([
+      diagnostic.severity,
+      diagnostic.message,
+      diagnostic.domain ?? null,
+      diagnostic.file ?? null,
+      diagnostic.field ?? null,
+      diagnostic.expected ?? null
+    ]);
+
+    if (seenDiagnostics.has(key)) {
+      return false;
+    }
+
+    seenDiagnostics.add(key);
+    return true;
+  });
+}
+
 function ChangesSection({
   applyResult,
   canSaveValidatedChanges,
@@ -36107,16 +36145,17 @@ function ChangesSection({
       label: 'Review'
     },
     {
-      complete: applyResult !== null && !hasWriteErrors,
+      complete:
+        applyResult !== null && !hasWriteErrors && applyResult.writtenFiles.length > 0,
       label: 'Written'
     }
   ];
   const activeProgressIndex = progressSteps.findIndex((step) => !step.complete);
-  const combinedDiagnostics = [
+  const combinedDiagnostics = deduplicateDiagnostics([
     ...diagnostics,
     ...(changePlan?.diagnostics ?? []),
     ...(applyResult?.diagnostics ?? [])
-  ];
+  ]);
 
   return (
     <>
