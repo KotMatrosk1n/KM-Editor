@@ -55,6 +55,9 @@ public sealed record ZaTradePokemonEntry(
 {
     public IReadOnlyList<ZaTradePokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaTradePokemonEditableFieldOption>();
+
+    public IReadOnlyList<ZaTradePokemonEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<ZaTradePokemonEditableFieldOption>();
 }
 
 public sealed record ZaTradePokemonEditableField(
@@ -67,7 +70,10 @@ public sealed record ZaTradePokemonEditableField(
 
 public sealed record ZaTradePokemonEditableFieldOption(
     int Value,
-    string Label);
+    string Label)
+{
+    public IReadOnlyList<ZaTradePokemonEditableFieldOption>? FormOptions { get; init; }
+}
 
 public sealed record ZaTradePokemonWorkflowStats(
     int TotalTradeCount,
@@ -79,7 +85,11 @@ public sealed record ZaTradePokemonWorkflow(
     IReadOnlyList<ZaTradePokemonEntry> Trades,
     IReadOnlyList<ZaTradePokemonEditableField> EditableFields,
     ZaTradePokemonWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal ZaPokemonAvailability PokemonAvailability { get; init; } =
+        ZaPokemonAvailability.Unfiltered;
+}
 
 public sealed record ZaTradePokemonFieldUpdate(
     int TradeIndex,

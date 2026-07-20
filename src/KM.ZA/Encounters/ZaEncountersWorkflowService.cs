@@ -65,7 +65,12 @@ internal sealed class ZaEncountersWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
-            tables = LoadTables(spawnerSource, encounterSource, labels, diagnostics).ToArray();
+            tables = LoadTables(
+                spawnerSource,
+                encounterSource,
+                labels,
+                pokemonAvailability,
+                diagnostics).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -89,7 +94,10 @@ internal sealed class ZaEncountersWorkflowService
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
                 new[] { encounterSource, spawnerSource }.Count(source => source is not null)),
-            diagnostics);
+            diagnostics)
+        {
+            PokemonAvailability = pokemonAvailability,
+        };
     }
 
     internal static ZaEncounterEditableField? GetEditableField(
@@ -189,6 +197,7 @@ internal sealed class ZaEncountersWorkflowService
         ZaWorkflowFile spawnerSource,
         ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var pokemonRows = ZaEncounterDataDocument.Parse(encounterSource.Bytes)
@@ -267,6 +276,7 @@ internal sealed class ZaEncountersWorkflowService
                     pokemonRows,
                     encounterSource,
                     labels,
+                    pokemonAvailability,
                     IsNumberedWildZone(locationKey),
                     appearanceCounts,
                     diagnostics,
@@ -308,6 +318,7 @@ internal sealed class ZaEncountersWorkflowService
         IReadOnlyDictionary<string, ZaPokemonDataEntry> pokemonRows,
         ZaWorkflowFile encounterSource,
         ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability,
         bool isNumberedWildZone,
         AppearanceCountSummary appearanceCounts,
         ICollection<ValidationDiagnostic> diagnostics,
@@ -403,6 +414,10 @@ internal sealed class ZaEncountersWorkflowService
                 AppearanceMaxCount = appearanceCounts.Maximum,
                 AppearanceObjectCount = appearanceCounts.ObjectCount,
                 CanEditAppearanceCounts = appearanceCounts.CanEdit,
+                FormOptions = CreateFormOptions(
+                    speciesId,
+                    labels.Pokemon(speciesId),
+                    pokemonAvailability),
             };
         }
     }
@@ -585,8 +600,44 @@ internal sealed class ZaEncountersWorkflowService
     {
         return pokemonAvailability
             .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
-            .Select(option => new ZaEncounterEditableFieldOption(option.Value, option.Label))
+            .Select(option => new ZaEncounterEditableFieldOption(option.Value, option.Label)
+            {
+                FormOptions = CreateSpeciesFormOptions(
+                    option.Value,
+                    labels,
+                    pokemonAvailability),
+            })
             .ToArray();
+    }
+
+    private static IReadOnlyList<ZaEncounterEditableFieldOption>? CreateSpeciesFormOptions(
+        int speciesId,
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        if (speciesId == 0)
+        {
+            return [new ZaEncounterEditableFieldOption(0, ZaLabels.PokemonFormLabel(0, 0, "None"))];
+        }
+
+        if (!pokemonAvailability.HasKnownAvailability)
+        {
+            return null;
+        }
+
+        return CreateFormOptions(speciesId, labels.Pokemon(speciesId), pokemonAvailability);
+    }
+
+    internal static IReadOnlyList<ZaEncounterEditableFieldOption> CreateFormOptions(
+        int speciesId,
+        string speciesName,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return pokemonAvailability.CreateFormOptions(
+            speciesId,
+            form => new ZaEncounterEditableFieldOption(
+                form,
+                ZaLabels.PokemonFormLabel(speciesId, form, speciesName)));
     }
 
     private static string CreateTableId(int groupIndex, int spawnerIndex)

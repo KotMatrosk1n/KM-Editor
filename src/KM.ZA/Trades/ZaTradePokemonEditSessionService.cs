@@ -37,45 +37,10 @@ internal sealed class ZaTradePokemonEditSessionService
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
         ArgumentNullException.ThrowIfNull(value);
 
-        var currentSession = session ?? EditSession.Start();
-        var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = tradePokemonWorkflowService.Load(project);
-        var diagnostics = new List<ValidationDiagnostic>();
-        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
-
-        if (!ZaEditSessionSupport.CanEdit(
-                project,
-                workflow.Summary,
-                workflow.Diagnostics,
-                ZaEditSessionSupport.TradePokemonDomain,
-                diagnostics))
-        {
-            return new ZaTradePokemonEditResult(workflow, currentSession, diagnostics);
-        }
-
-        var trade = workflow.Trades.FirstOrDefault(candidate => candidate.TradeIndex == tradeIndex);
-        if (trade is null)
-        {
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Trade Pokemon {tradeIndex} is not present in the loaded Trade Pokemon workflow.",
-                ZaEditSessionSupport.TradePokemonDomain,
-                field: "tradeIndex",
-                expected: "Existing trade Pokemon record"));
-            return new ZaTradePokemonEditResult(workflow, currentSession, diagnostics);
-        }
-
-        var pendingEdit = CreatePendingEdit(workflow, trade, field, value, diagnostics);
-        if (pendingEdit is null)
-        {
-            return new ZaTradePokemonEditResult(workflow, currentSession, diagnostics);
-        }
-
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new ZaTradePokemonEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
-            diagnostics);
+        return UpdateFields(
+            paths,
+            session,
+            [new ZaTradePokemonFieldUpdate(tradeIndex, field, value)]);
     }
 
     public ZaTradePokemonEditResult UpdateFields(
@@ -90,20 +55,24 @@ internal sealed class ZaTradePokemonEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = tradePokemonWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
+        var currentWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            currentSession.PendingEdits,
+            diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
-                workflow.Summary,
-                workflow.Diagnostics,
+                currentWorkflow.Summary,
+                currentWorkflow.Diagnostics,
                 ZaEditSessionSupport.TradePokemonDomain,
                 diagnostics))
         {
-            return new ZaTradePokemonEditResult(workflow, currentSession, diagnostics);
+            return new ZaTradePokemonEditResult(currentWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = currentSession;
-        var effectiveWorkflow = workflow;
+        var projectedWorkflow = currentWorkflow;
         foreach (var update in updates)
         {
             if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
@@ -114,10 +83,11 @@ internal sealed class ZaTradePokemonEditSessionService
                     ZaEditSessionSupport.TradePokemonDomain,
                     field: "updates",
                     expected: "Complete trade Pokemon field update"));
-                continue;
+                return new ZaTradePokemonEditResult(currentWorkflow, currentSession, diagnostics);
             }
 
-            var trade = effectiveWorkflow.Trades.FirstOrDefault(candidate => candidate.TradeIndex == update.TradeIndex);
+            var trade = projectedWorkflow.Trades.FirstOrDefault(
+                candidate => candidate.TradeIndex == update.TradeIndex);
             if (trade is null)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -126,28 +96,36 @@ internal sealed class ZaTradePokemonEditSessionService
                     ZaEditSessionSupport.TradePokemonDomain,
                     field: "tradeIndex",
                     expected: "Existing trade Pokemon record"));
-                continue;
+                return new ZaTradePokemonEditResult(currentWorkflow, currentSession, diagnostics);
             }
 
             var pendingEdit = CreatePendingEdit(
-                effectiveWorkflow,
+                projectedWorkflow,
                 trade,
                 update.Field,
                 update.Value,
                 diagnostics);
             if (pendingEdit is null)
             {
-                continue;
+                return new ZaTradePokemonEditResult(currentWorkflow, currentSession, diagnostics);
             }
 
             updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
-            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+            projectedWorkflow = OverlayPendingEdit(projectedWorkflow, pendingEdit);
         }
 
-        return new ZaTradePokemonEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
+        projectedWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            updatedSession.PendingEdits,
             diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            || !ValidateFinalSpeciesForms(loadedWorkflow, projectedWorkflow, diagnostics))
+        {
+            return new ZaTradePokemonEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        return new ZaTradePokemonEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -175,6 +153,11 @@ internal sealed class ZaTradePokemonEditSessionService
             {
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
             }
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateFinalSpeciesForms(workflow, effectiveWorkflow, diagnostics);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -307,11 +290,6 @@ internal sealed class ZaTradePokemonEditSessionService
             return null;
         }
 
-        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
-        {
-            return null;
-        }
-
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.TradePokemonDomain,
             $"Set {trade.Label} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -355,38 +333,43 @@ internal sealed class ZaTradePokemonEditSessionService
             return;
         }
 
-        var parsedValue = ZaEditSessionSupport.TryParseInt(
+        _ = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.TradePokemonDomain,
             diagnostics);
-        if (parsedValue is not null)
-        {
-            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
-        }
     }
 
-    private static bool ValidateSpeciesOption(
-        string? field,
-        int value,
-        ZaTradePokemonEditableField editableField,
+    private static bool ValidateFinalSpeciesForms(
+        ZaTradePokemonWorkflow loadedWorkflow,
+        ZaTradePokemonWorkflow projectedWorkflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(field, ZaTradePokemonWorkflowService.SpeciesField, StringComparison.Ordinal))
+        var projectedByIndex = projectedWorkflow.Trades.ToDictionary(trade => trade.TradeIndex);
+        var isValid = true;
+
+        foreach (var source in loadedWorkflow.Trades)
         {
-            return true;
+            if (!projectedByIndex.TryGetValue(source.TradeIndex, out var projected))
+            {
+                continue;
+            }
+
+            isValid &= ZaSpeciesFormPairValidation.ValidateChangedPair(
+                loadedWorkflow.PokemonAvailability,
+                source.SpeciesId,
+                source.Form,
+                projected.SpeciesId,
+                projected.Form,
+                ZaEditSessionSupport.TradePokemonDomain,
+                $"Trade Pokemon {source.TradeIndex}",
+                diagnostics,
+                source.Provenance.SourceFile);
         }
 
-        return ZaEditSessionSupport.ValidateOptionValue(
-            value,
-            editableField.Options.Select(option => option.Value),
-            ZaEditSessionSupport.TradePokemonDomain,
-            field,
-            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
-            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
-            diagnostics);
+        return isValid;
     }
 
     private ZaTradePokemonWorkflow OverlayPendingEdits(
@@ -443,6 +426,9 @@ internal sealed class ZaTradePokemonEditSessionService
             var overlaySource = source with { Bytes = document.Write() };
             var tradesByIndex = ZaTradePokemonWorkflowService
                 .LoadRecords(overlaySource, labels, abilityResolver)
+                .Select(trade => ZaTradePokemonWorkflowService.WithFormOptions(
+                    trade,
+                    workflow.PokemonAvailability))
                 .ToDictionary(trade => trade.TradeIndex);
 
             return workflow with
@@ -476,7 +462,11 @@ internal sealed class ZaTradePokemonEditSessionService
         return workflow with
         {
             Trades = workflow.Trades
-                .Select(trade => trade.TradeIndex == tradeIndex ? OverlayTrade(workflow, trade, edit.Field, value) : trade)
+                .Select(trade => trade.TradeIndex == tradeIndex
+                    ? ZaTradePokemonWorkflowService.WithFormOptions(
+                        OverlayTrade(workflow, trade, edit.Field, value),
+                        workflow.PokemonAvailability)
+                    : trade)
                 .ToArray(),
         };
     }

@@ -131,7 +131,9 @@ internal sealed class ZaTradePokemonWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             var abilityResolver = ZaTradeAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PokemonDataArray);
-            trades = LoadRecords(source, labels, abilityResolver).ToArray();
+            trades = LoadRecords(source, labels, abilityResolver)
+                .Select(trade => WithFormOptions(trade, pokemonAvailability))
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -155,7 +157,10 @@ internal sealed class ZaTradePokemonWorkflowService
                 trades.Length,
                 trades.Count(trade => !string.Equals(trade.IvSummary, "Random IVs", StringComparison.Ordinal)),
                 source is null ? 0 : 1),
-            diagnostics);
+            diagnostics)
+        {
+            PokemonAvailability = pokemonAvailability,
+        };
     }
 
     internal static ZaTradePokemonEditableField? GetEditableField(
@@ -216,6 +221,20 @@ internal sealed class ZaTradePokemonWorkflowService
             .Where(entry => IsTradePokemonId(entry.Id))
             .Select((entry, tradeIndex) => ToRecord(tradeIndex, entry, source, labels, abilityResolver))
             .ToArray();
+    }
+
+    internal static ZaTradePokemonEntry WithFormOptions(
+        ZaTradePokemonEntry trade,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return trade with
+        {
+            FormOptions = pokemonAvailability.CreateFormOptions(
+                trade.SpeciesId,
+                form => new ZaTradePokemonEditableFieldOption(
+                    form,
+                    ZaLabels.PokemonFormLabel(trade.SpeciesId, form, trade.Species))),
+        };
     }
 
     private static ZaTradePokemonEntry ToRecord(
@@ -416,8 +435,36 @@ internal sealed class ZaTradePokemonWorkflowService
     {
         return pokemonAvailability
             .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
-            .Select(option => new ZaTradePokemonEditableFieldOption(option.Value, option.Label))
+            .Select(option => new ZaTradePokemonEditableFieldOption(option.Value, option.Label)
+            {
+                FormOptions = CreateSpeciesFormOptions(
+                    option.Value,
+                    labels,
+                    pokemonAvailability),
+            })
             .ToArray();
+    }
+
+    private static IReadOnlyList<ZaTradePokemonEditableFieldOption>? CreateSpeciesFormOptions(
+        int speciesId,
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        if (speciesId == 0)
+        {
+            return [new ZaTradePokemonEditableFieldOption(0, ZaLabels.PokemonFormLabel(0, 0, "None"))];
+        }
+
+        if (!pokemonAvailability.HasKnownAvailability)
+        {
+            return null;
+        }
+
+        return pokemonAvailability.CreateFormOptions(
+            speciesId,
+            form => new ZaTradePokemonEditableFieldOption(
+                form,
+                ZaLabels.PokemonFormLabel(speciesId, form, labels.Pokemon(speciesId))));
     }
 
     private static string FormatOption(int value, string label)

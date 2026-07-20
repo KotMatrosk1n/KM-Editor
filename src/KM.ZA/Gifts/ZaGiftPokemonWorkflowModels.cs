@@ -56,6 +56,9 @@ public sealed record ZaGiftPokemonEntry(
 {
     public IReadOnlyList<ZaGiftPokemonEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<ZaGiftPokemonEditableFieldOption>();
+
+    public IReadOnlyList<ZaGiftPokemonEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<ZaGiftPokemonEditableFieldOption>();
 }
 
 public sealed record ZaGiftPokemonEditableField(
@@ -68,7 +71,10 @@ public sealed record ZaGiftPokemonEditableField(
 
 public sealed record ZaGiftPokemonEditableFieldOption(
     int Value,
-    string Label);
+    string Label)
+{
+    public IReadOnlyList<ZaGiftPokemonEditableFieldOption>? FormOptions { get; init; }
+}
 
 public sealed record ZaGiftPokemonWorkflowStats(
     int TotalGiftCount,
@@ -81,7 +87,11 @@ public sealed record ZaGiftPokemonWorkflow(
     IReadOnlyList<ZaGiftPokemonEntry> Gifts,
     IReadOnlyList<ZaGiftPokemonEditableField> EditableFields,
     ZaGiftPokemonWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal ZaPokemonAvailability PokemonAvailability { get; init; } =
+        ZaPokemonAvailability.Unfiltered;
+}
 
 public sealed record ZaGiftPokemonFieldUpdate(
     int GiftIndex,

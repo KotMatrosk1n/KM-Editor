@@ -33,6 +33,9 @@ public sealed record ZaEncounterSlotRecord(
     int? AlphaLevelBonus,
     bool HasAlphaChance)
 {
+    public IReadOnlyList<ZaEncounterEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<ZaEncounterEditableFieldOption>();
+
     public int SlotMaxCount { get; init; }
 
     public bool CanEditWeight { get; init; }
@@ -76,7 +79,10 @@ public sealed record ZaEncounterEditableField(
 
 public sealed record ZaEncounterEditableFieldOption(
     int Value,
-    string Label);
+    string Label)
+{
+    public IReadOnlyList<ZaEncounterEditableFieldOption>? FormOptions { get; init; }
+}
 
 public sealed record ZaEncountersWorkflowStats(
     int TotalTableCount,
@@ -88,7 +94,11 @@ public sealed record ZaEncountersWorkflow(
     IReadOnlyList<ZaEncounterTableRecord> Tables,
     IReadOnlyList<ZaEncounterEditableField> EditableFields,
     ZaEncountersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal ZaPokemonAvailability PokemonAvailability { get; init; } =
+        ZaPokemonAvailability.Unfiltered;
+}
 
 public sealed record ZaEncounterSlotFieldUpdate(
     string TableId,

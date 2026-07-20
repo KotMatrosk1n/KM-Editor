@@ -38,44 +38,97 @@ internal sealed class ZaStaticEncountersEditSessionService
         ArgumentException.ThrowIfNullOrWhiteSpace(field);
         ArgumentNullException.ThrowIfNull(value);
 
+        return UpdateFields(
+            paths,
+            session,
+            [new ZaStaticEncounterFieldUpdate(encounterIndex, field, value)]);
+    }
+
+    public ZaStaticEncountersEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaStaticEncounterFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = staticEncountersWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
-        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits, diagnostics);
+        var currentWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            currentSession.PendingEdits,
+            diagnostics);
 
         if (!ZaEditSessionSupport.CanEdit(
                 project,
-                workflow.Summary,
-                workflow.Diagnostics,
+                currentWorkflow.Summary,
+                currentWorkflow.Diagnostics,
                 ZaEditSessionSupport.StaticEncountersDomain,
                 diagnostics))
         {
-            return new ZaStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            return new ZaStaticEncountersEditResult(currentWorkflow, currentSession, diagnostics);
         }
-
-        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EncounterIndex == encounterIndex);
-        if (encounter is null)
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Static Encounter {encounterIndex} is not present in the loaded Static Encounters workflow.",
-                field: "encounterIndex",
-                expected: "Existing Pokemon Legends Z-A static encounter record"));
-            return new ZaStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            return new ZaStaticEncountersEditResult(currentWorkflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(workflow, encounter, field, value, diagnostics);
-        if (pendingEdit is null)
+        var updatedSession = currentSession;
+        var projectedWorkflow = currentWorkflow;
+        foreach (var update in updates)
         {
-            return new ZaStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Static Encounter batch update is missing a field or value.",
+                    field: "updates",
+                    expected: "Complete Pokemon Legends Z-A static encounter field update"));
+                return new ZaStaticEncountersEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            var encounter = projectedWorkflow.Encounters.FirstOrDefault(
+                candidate => candidate.EncounterIndex == update.EncounterIndex);
+            if (encounter is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Static Encounter {update.EncounterIndex} is not present in the loaded Static Encounters workflow.",
+                    field: "encounterIndex",
+                    expected: "Existing Pokemon Legends Z-A static encounter record"));
+                return new ZaStaticEncountersEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                projectedWorkflow,
+                encounter,
+                update.Field,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                return new ZaStaticEncountersEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            projectedWorkflow = OverlayPendingEdit(projectedWorkflow, pendingEdit);
         }
 
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new ZaStaticEncountersEditResult(
-            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
-            updatedSession,
+        projectedWorkflow = OverlayPendingEdits(
+            project,
+            loadedWorkflow,
+            updatedSession.PendingEdits,
             diagnostics);
+        ValidateFinalSpeciesForms(loadedWorkflow, projectedWorkflow, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaStaticEncountersEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        return new ZaStaticEncountersEditResult(projectedWorkflow, updatedSession, diagnostics);
     }
 
     public ZaEditSessionValidation Validate(ProjectPaths paths, EditSession session)
@@ -103,6 +156,11 @@ internal sealed class ZaStaticEncountersEditSessionService
             {
                 effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
             }
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateFinalSpeciesForms(workflow, effectiveWorkflow, diagnostics);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -246,11 +304,6 @@ internal sealed class ZaStaticEncountersEditSessionService
             return null;
         }
 
-        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
-        {
-            return null;
-        }
-
         return ZaEditSessionSupport.CreatePendingEdit(
             ZaEditSessionSupport.StaticEncountersDomain,
             $"Set {encounter.Label} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
@@ -318,38 +371,44 @@ internal sealed class ZaStaticEncountersEditSessionService
             return;
         }
 
-        var parsedValue = ZaEditSessionSupport.TryParseInt(
+        _ = ZaEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             ZaEditSessionSupport.StaticEncountersDomain,
             diagnostics);
-        if (parsedValue is not null)
-        {
-            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
-        }
     }
 
-    private static bool ValidateSpeciesOption(
-        string? field,
-        int value,
-        ZaStaticEncounterEditableField editableField,
+    private static bool ValidateFinalSpeciesForms(
+        ZaStaticEncountersWorkflow loadedWorkflow,
+        ZaStaticEncountersWorkflow projectedWorkflow,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(field, ZaStaticEncountersWorkflowService.SpeciesField, StringComparison.Ordinal))
+        var projectedByIndex = projectedWorkflow.Encounters.ToDictionary(
+            encounter => encounter.EncounterIndex);
+        var isValid = true;
+
+        foreach (var source in loadedWorkflow.Encounters)
         {
-            return true;
+            if (!projectedByIndex.TryGetValue(source.EncounterIndex, out var projected))
+            {
+                continue;
+            }
+
+            isValid &= ZaSpeciesFormPairValidation.ValidateChangedPair(
+                loadedWorkflow.PokemonAvailability,
+                source.SpeciesId,
+                source.Form,
+                projected.SpeciesId,
+                projected.Form,
+                ZaEditSessionSupport.StaticEncountersDomain,
+                $"Static Encounter {source.EncounterIndex}",
+                diagnostics,
+                source.Provenance.SourceFile);
         }
 
-        return ZaEditSessionSupport.ValidateOptionValue(
-            value,
-            editableField.Options.Select(option => option.Value),
-            ZaEditSessionSupport.StaticEncountersDomain,
-            field,
-            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
-            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
-            diagnostics);
+        return isValid;
     }
 
     private ZaStaticEncountersWorkflow OverlayPendingEdits(
@@ -405,6 +464,9 @@ internal sealed class ZaStaticEncountersEditSessionService
             var overlaySource = source with { Bytes = document.Write() };
             var encountersByIndex = ZaStaticEncountersWorkflowService
                 .LoadRecords(overlaySource, labels, wildIds)
+                .Select(encounter => ZaStaticEncountersWorkflowService.WithFormOptions(
+                    encounter,
+                    workflow.PokemonAvailability))
                 .ToDictionary(encounter => encounter.EncounterIndex);
 
             return workflow with
@@ -449,7 +511,9 @@ internal sealed class ZaStaticEncountersEditSessionService
         {
             Encounters = workflow.Encounters
                 .Select(encounter => encounter.EncounterIndex == encounterIndex
-                    ? OverlayEntry(encounter, edit.Field, value, FormatDisplayValue(value, editableField))
+                    ? ZaStaticEncountersWorkflowService.WithFormOptions(
+                        OverlayEntry(encounter, edit.Field, value, FormatDisplayValue(value, editableField)),
+                        workflow.PokemonAvailability)
                     : encounter)
                 .ToArray(),
         };

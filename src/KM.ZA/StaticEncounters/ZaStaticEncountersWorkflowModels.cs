@@ -61,6 +61,9 @@ public sealed record ZaStaticEncounterEntry(
     IReadOnlyList<ZaStaticEncounterEditableFieldOption> AbilityOptions)
 {
     public string? ScenarioDetails { get; init; }
+
+    public IReadOnlyList<ZaStaticEncounterEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<ZaStaticEncounterEditableFieldOption>();
 }
 
 public sealed record ZaStaticEncounterEditableField(
@@ -76,7 +79,10 @@ public sealed record ZaStaticEncounterEditableField(
 
 public sealed record ZaStaticEncounterEditableFieldOption(
     int Value,
-    string Label);
+    string Label)
+{
+    public IReadOnlyList<ZaStaticEncounterEditableFieldOption>? FormOptions { get; init; }
+}
 
 public sealed record ZaStaticEncountersWorkflowStats(
     int TotalEncounterCount,
@@ -89,9 +95,18 @@ public sealed record ZaStaticEncountersWorkflow(
     IReadOnlyList<ZaStaticEncounterEntry> Encounters,
     IReadOnlyList<ZaStaticEncounterEditableField> EditableFields,
     ZaStaticEncountersWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    internal ZaPokemonAvailability PokemonAvailability { get; init; } =
+        ZaPokemonAvailability.Unfiltered;
+}
 
 public sealed record ZaStaticEncountersEditResult(
     ZaStaticEncountersWorkflow Workflow,
     EditSession Session,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record ZaStaticEncounterFieldUpdate(
+    int EncounterIndex,
+    string Field,
+    string Value);

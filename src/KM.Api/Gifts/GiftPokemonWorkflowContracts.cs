@@ -82,6 +82,9 @@ public sealed record GiftPokemonRecordDto(
     public IReadOnlyList<GiftPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<GiftPokemonEditableFieldOptionDto>();
 
+    public IReadOnlyList<GiftPokemonEditableFieldOptionDto> FormOptions { get; init; } =
+        Array.Empty<GiftPokemonEditableFieldOptionDto>();
+
     public IReadOnlyList<GiftPokemonEditableFieldOptionDto> GenderOptions { get; init; } =
         Array.Empty<GiftPokemonEditableFieldOptionDto>();
 
@@ -113,7 +116,11 @@ public sealed record GiftPokemonEditableFieldDto(
 
 public sealed record GiftPokemonEditableFieldOptionDto(
     int Value,
-    string Label);
+    string Label)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<GiftPokemonEditableFieldOptionDto>? FormOptions { get; init; }
+}
 
 public sealed record GiftPokemonWorkflowStatsDto(
     int TotalGiftCount,

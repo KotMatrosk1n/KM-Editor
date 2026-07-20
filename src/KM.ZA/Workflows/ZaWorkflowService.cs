@@ -536,6 +536,14 @@ public sealed class ZaWorkflowService
         return staticEncountersEditSessionService.UpdateField(paths, session, encounterIndex, field, value);
     }
 
+    public ZaStaticEncountersEditResult UpdateStaticEncounterFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaStaticEncounterFieldUpdate> updates)
+    {
+        return staticEncountersEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public ZaGiftPokemonEditResult UpdateGiftPokemonFields(
         ProjectPaths paths,
         EditSession? session,

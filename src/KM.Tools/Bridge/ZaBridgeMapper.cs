@@ -709,7 +709,10 @@ public static class ZaBridgeMapper
             slot.AppearanceObjectCount,
             slot.CanEditWeight,
             slot.CanEditSlotMaxCount,
-            slot.CanEditAppearanceCounts);
+            slot.CanEditAppearanceCounts)
+        {
+            FormOptions = slot.FormOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static EncounterProvenanceDto ToDto(ZaEncounterProvenance provenance)
@@ -733,7 +736,10 @@ public static class ZaBridgeMapper
 
     private static EncounterEditableFieldOptionDto ToDto(ZaEncounterEditableFieldOption option)
     {
-        return new EncounterEditableFieldOptionDto(option.Value, option.Label);
+        return new EncounterEditableFieldOptionDto(option.Value, option.Label)
+        {
+            FormOptions = option.FormOptions?.Select(ToDto).ToArray(),
+        };
     }
 
     private static StaticEncountersWorkflowDto ToStaticEncountersWorkflowDto(
@@ -801,6 +807,7 @@ public static class ZaBridgeMapper
             FieldDisplayValues = encounter.FieldDisplayValues,
             FieldReadOnly = encounter.FieldReadOnly,
             AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+            FormOptions = encounter.FormOptions.Select(ToDto).ToArray(),
         };
     }
 
@@ -839,7 +846,10 @@ public static class ZaBridgeMapper
     private static StaticEncounterEditableFieldOptionDto ToDto(
         ZaStaticEncounterEditableFieldOption option)
     {
-        return new StaticEncounterEditableFieldOptionDto(option.Value, option.Label);
+        return new StaticEncounterEditableFieldOptionDto(option.Value, option.Label)
+        {
+            FormOptions = option.FormOptions?.Select(ToDto).ToArray(),
+        };
     }
 
     private static TypeChartWorkflowDto ToTypeChartWorkflowDto(ZaTypeChartWorkflow workflow)
@@ -1559,6 +1569,7 @@ public static class ZaBridgeMapper
         {
             EditorFamily = "za",
             AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
+            FormOptions = gift.FormOptions.Select(ToDto).ToArray(),
             EventLabel = gift.EventLabel,
             Moves = gift.Moves.Select(ToDto).ToArray(),
         };
@@ -1582,7 +1593,10 @@ public static class ZaBridgeMapper
 
     private static GiftPokemonEditableFieldOptionDto ToDto(ZaGiftPokemonEditableFieldOption option)
     {
-        return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label);
+        return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label)
+        {
+            FormOptions = option.FormOptions?.Select(ToDto).ToArray(),
+        };
     }
 
     private static TradePokemonRecordDto ToDto(ZaTradePokemonEntry trade)
@@ -1646,6 +1660,7 @@ public static class ZaBridgeMapper
             EventLabel = trade.EventLabel,
             Moves = moves,
             AbilityOptions = trade.AbilityOptions.Select(ToDto).ToArray(),
+            FormOptions = trade.FormOptions.Select(ToDto).ToArray(),
         };
     }
 
@@ -1667,7 +1682,10 @@ public static class ZaBridgeMapper
 
     private static TradePokemonEditableFieldOptionDto ToDto(ZaTradePokemonEditableFieldOption option)
     {
-        return new TradePokemonEditableFieldOptionDto(option.Value, option.Label);
+        return new TradePokemonEditableFieldOptionDto(option.Value, option.Label)
+        {
+            FormOptions = option.FormOptions?.Select(ToDto).ToArray(),
+        };
     }
 
     private static ZaModMergerSourceRecordDto ToDto(ZaModMergerSourceRecord source)
@@ -1739,6 +1757,7 @@ public static class ZaBridgeMapper
             null)
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
+            FormOptions = pokemon.FormOptions.Select(ToDto).ToArray(),
             BaseStats = pokemon.BaseStats is null ? null : ToDto(pokemon.BaseStats),
             SpriteName = pokemon.SpriteName,
         };
@@ -1857,7 +1876,10 @@ public static class ZaBridgeMapper
 
     private static TrainerEditableFieldOptionDto ToDto(ZaTrainerEditableFieldOption option)
     {
-        return new TrainerEditableFieldOptionDto(option.Value, option.Label);
+        return new TrainerEditableFieldOptionDto(option.Value, option.Label)
+        {
+            FormOptions = option.FormOptions?.Select(ToDto).ToArray(),
+        };
     }
 
     private static TrainerProvenanceDto ToDto(ZaTrainerProvenance provenance)

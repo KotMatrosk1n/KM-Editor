@@ -79,6 +79,13 @@ internal sealed class ZaEncountersEditSessionService
 
         var candidateWorkflow = OverlayPendingEdit(workflow, pendingEdit);
         var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var pairErrorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        ValidateFinalSpeciesFormPairs(loadedWorkflow, candidateWorkflow, diagnostics);
+        if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) > pairErrorCount)
+        {
+            return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
+        }
+
         if (AffectsSharedLevelRange(pendingEdit.Field))
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -181,10 +188,10 @@ internal sealed class ZaEncountersEditSessionService
 
         }
 
-        var finalRangeErrorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        ValidateFinalSpeciesFormPairs(loadedWorkflow, effectiveWorkflow, diagnostics);
         ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
         ValidateFinalSpawnerCounts(effectiveWorkflow, updatedSession.PendingEdits, diagnostics);
-        if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) > finalRangeErrorCount)
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
         }
@@ -228,6 +235,7 @@ internal sealed class ZaEncountersEditSessionService
             }
         }
 
+        ValidateFinalSpeciesFormPairs(workflow, effectiveWorkflow, diagnostics);
         ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
         ValidateFinalSpawnerCounts(effectiveWorkflow, session.PendingEdits, diagnostics);
 
@@ -788,11 +796,6 @@ internal sealed class ZaEncountersEditSessionService
             return null;
         }
 
-        if (!ValidateSpeciesOption(normalizedField, parsedValue.Value, editableField, diagnostics))
-        {
-            return null;
-        }
-
         if (AffectsSharedPokemonData(normalizedField)
             && !ValidateSharedAlphaChance(
                 workflow,
@@ -922,7 +925,6 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics);
         if (parsedValue is not null)
         {
-            ValidateSpeciesOption(edit.Field, parsedValue.Value, editableField, diagnostics);
             if (AffectsSharedPokemonData(edit.Field))
             {
                 ValidateSharedAlphaChance(
@@ -938,27 +940,6 @@ internal sealed class ZaEncountersEditSessionService
                     diagnostics);
             }
         }
-    }
-
-    private static bool ValidateSpeciesOption(
-        string? field,
-        int value,
-        ZaEncounterEditableField editableField,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        if (!string.Equals(field, ZaEncountersWorkflowService.SpeciesIdField, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return ZaEditSessionSupport.ValidateOptionValue(
-            value,
-            editableField.Options.Select(option => option.Value),
-            ZaEditSessionSupport.EncountersDomain,
-            field,
-            $"Pokemon species {value.ToString(CultureInfo.InvariantCulture)} is not available in Pokemon Legends Z-A.",
-            "Pokemon marked present in Pokemon Legends Z-A Pokemon Data",
-            diagnostics);
     }
 
     private static bool ValidateSharedAlphaChance(
@@ -1370,6 +1351,44 @@ internal sealed class ZaEncountersEditSessionService
         }
     }
 
+    private static void ValidateFinalSpeciesFormPairs(
+        ZaEncountersWorkflow sourceWorkflow,
+        ZaEncountersWorkflow projectedWorkflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var projectedSlotsBySourceIndex = projectedWorkflow.Tables
+            .SelectMany(table => table.Slots)
+            .Where(slot => slot.PokemonDataSourceIndex >= 0)
+            .GroupBy(slot => slot.PokemonDataSourceIndex)
+            .ToDictionary(group => group.Key, group => group.First());
+
+        foreach (var sourceGroup in sourceWorkflow.Tables
+                     .SelectMany(table => table.Slots)
+                     .Where(slot => slot.PokemonDataSourceIndex >= 0)
+                     .GroupBy(slot => slot.PokemonDataSourceIndex))
+        {
+            var sourceSlot = sourceGroup.First();
+            if (!projectedSlotsBySourceIndex.TryGetValue(
+                    sourceSlot.PokemonDataSourceIndex,
+                    out var projectedSlot))
+            {
+                continue;
+            }
+
+            ZaSpeciesFormPairValidation.ValidateChangedPair(
+                sourceWorkflow.PokemonAvailability,
+                sourceSlot.SpeciesId,
+                sourceSlot.Form,
+                projectedSlot.SpeciesId,
+                projectedSlot.Form,
+                ZaEditSessionSupport.EncountersDomain,
+                $"Encounter data row '{sourceSlot.EncounterDataId}'",
+                diagnostics,
+                sourceSlot.PokemonProvenance.SourceFile,
+                ZaEncountersWorkflowService.FormField);
+        }
+    }
+
     private static ZaEncountersWorkflow OverlayPendingEdits(
         ZaEncountersWorkflow workflow,
         IEnumerable<PendingEdit> edits)
@@ -1456,7 +1475,7 @@ internal sealed class ZaEncountersEditSessionService
         string? field,
         int value)
     {
-        return field switch
+        var updatedSlot = field switch
         {
             ZaEncountersWorkflowService.SpeciesIdField => slot with
             {
@@ -1494,6 +1513,17 @@ internal sealed class ZaEncountersEditSessionService
             ZaEncountersWorkflowService.AppearanceMaxCountField => slot with { AppearanceMaxCount = value },
             _ => slot,
         };
+
+        return field is ZaEncountersWorkflowService.SpeciesIdField
+            or ZaEncountersWorkflowService.FormField
+            ? updatedSlot with
+            {
+                FormOptions = ZaEncountersWorkflowService.CreateFormOptions(
+                    updatedSlot.SpeciesId,
+                    ResolveSpeciesName(workflow, updatedSlot.SpeciesId),
+                    workflow.PokemonAvailability),
+            }
+            : updatedSlot;
     }
 
     private static string ResolveSpeciesName(ZaEncountersWorkflow workflow, int speciesId)

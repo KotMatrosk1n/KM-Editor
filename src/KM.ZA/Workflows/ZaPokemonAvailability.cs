@@ -12,13 +12,56 @@ namespace KM.ZA.Workflows;
 internal sealed class ZaPokemonAvailability
 {
     private readonly IReadOnlySet<int>? presentSpeciesIds;
+    private readonly IReadOnlyDictionary<int, IReadOnlyList<int>>? presentFormIdsBySpecies;
 
-    private ZaPokemonAvailability(IReadOnlySet<int>? presentSpeciesIds)
+    private ZaPokemonAvailability(
+        IReadOnlySet<int>? presentSpeciesIds,
+        IReadOnlyDictionary<int, IReadOnlyList<int>>? presentFormIdsBySpecies)
     {
         this.presentSpeciesIds = presentSpeciesIds;
+        this.presentFormIdsBySpecies = presentFormIdsBySpecies;
     }
 
-    public static ZaPokemonAvailability Unfiltered { get; } = new(null);
+    public static ZaPokemonAvailability Unfiltered { get; } = new(null, null);
+
+    public bool HasKnownAvailability => presentFormIdsBySpecies is not null;
+
+    public bool IsPresentSpeciesForm(int speciesId, int form)
+    {
+        return presentFormIdsBySpecies is not null
+            && presentFormIdsBySpecies.TryGetValue(speciesId, out var formIds)
+            && formIds.Contains(form);
+    }
+
+    public bool AllowsSpeciesForm(int speciesId, int form)
+    {
+        return !HasKnownAvailability || IsPresentSpeciesForm(speciesId, form);
+    }
+
+    public bool TryGetPresentFormIds(int speciesId, out IReadOnlyList<int> formIds)
+    {
+        if (presentFormIdsBySpecies is null)
+        {
+            formIds = Array.Empty<int>();
+            return false;
+        }
+
+        formIds = presentFormIdsBySpecies.TryGetValue(speciesId, out var presentFormIds)
+            ? presentFormIds
+            : Array.Empty<int>();
+        return true;
+    }
+
+    public IReadOnlyList<TOption> CreateFormOptions<TOption>(
+        int speciesId,
+        Func<int, TOption> createOption)
+    {
+        ArgumentNullException.ThrowIfNull(createOption);
+
+        return TryGetPresentFormIds(speciesId, out var formIds)
+            ? formIds.Select(createOption).ToArray()
+            : Array.Empty<TOption>();
+    }
 
     public static ZaPokemonAvailability Load(
         OpenedProject project,
@@ -71,6 +114,7 @@ internal sealed class ZaPokemonAvailability
     {
         var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
         var speciesIds = new HashSet<int>();
+        var formIdsBySpecies = new Dictionary<int, HashSet<int>>();
         for (var index = 0; index < table.EntryLength; index++)
         {
             var row = table.Entry(index);
@@ -82,10 +126,21 @@ internal sealed class ZaPokemonAvailability
             if (species.Species > 0)
             {
                 speciesIds.Add(species.Species);
+                if (!formIdsBySpecies.TryGetValue(species.Species, out var formIds))
+                {
+                    formIds = [];
+                    formIdsBySpecies.Add(species.Species, formIds);
+                }
+
+                formIds.Add(species.Form);
             }
         }
 
-        return new ZaPokemonAvailability(speciesIds);
+        var sortedFormIdsBySpecies = formIdsBySpecies.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<int>)entry.Value.Order().ToArray());
+
+        return new ZaPokemonAvailability(speciesIds, sortedFormIdsBySpecies);
     }
 
     private static IEnumerable<int> EnumerateLabelSpecies(

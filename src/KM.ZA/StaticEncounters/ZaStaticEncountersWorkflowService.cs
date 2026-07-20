@@ -170,7 +170,9 @@ internal sealed class ZaStaticEncountersWorkflowService
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             var wildIds = LoadWildEncounterIds(project, diagnostics, out var usedSpawnerSource);
             sourceFileCount = usedSpawnerSource ? 2 : 1;
-            encounters = LoadRecords(encounterSource, labels, wildIds).ToArray();
+            encounters = LoadRecords(encounterSource, labels, wildIds)
+                .Select(encounter => WithFormOptions(encounter, pokemonAvailability))
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -195,7 +197,10 @@ internal sealed class ZaStaticEncountersWorkflowService
                 encounters.Count(encounter => encounter.FlawlessIvCount is not null and not 0),
                 encounterSource is null ? 0 : sourceFileCount,
                 encounters.Length),
-            diagnostics);
+            diagnostics)
+        {
+            PokemonAvailability = pokemonAvailability,
+        };
     }
 
     internal static ZaStaticEncounterEditableField? GetEditableField(
@@ -232,6 +237,23 @@ internal sealed class ZaStaticEncountersWorkflowService
             .Where(entry => IsStaticPokemonId(entry.Id, wildEncounterIds))
             .Select((entry, encounterIndex) => ToRecord(encounterIndex, entry, source, labels))
             .ToArray();
+    }
+
+    internal static ZaStaticEncounterEntry WithFormOptions(
+        ZaStaticEncounterEntry encounter,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        return encounter with
+        {
+            FormOptions = pokemonAvailability.CreateFormOptions(
+                encounter.SpeciesId,
+                form => new ZaStaticEncounterEditableFieldOption(
+                    form,
+                    ZaLabels.PokemonFormLabel(
+                        encounter.SpeciesId,
+                        form,
+                        encounter.Species))),
+        };
     }
 
     internal static bool IsStaticPokemonId(
@@ -1023,8 +1045,36 @@ internal sealed class ZaStaticEncountersWorkflowService
     {
         return pokemonAvailability
             .CreateSpeciesOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true)
-            .Select(option => new ZaStaticEncounterEditableFieldOption(option.Value, option.Label))
+            .Select(option => new ZaStaticEncounterEditableFieldOption(option.Value, option.Label)
+            {
+                FormOptions = CreateSpeciesFormOptions(
+                    option.Value,
+                    labels,
+                    pokemonAvailability),
+            })
             .ToArray();
+    }
+
+    private static IReadOnlyList<ZaStaticEncounterEditableFieldOption>? CreateSpeciesFormOptions(
+        int speciesId,
+        ZaTextLabelLookup labels,
+        ZaPokemonAvailability pokemonAvailability)
+    {
+        if (speciesId == 0)
+        {
+            return [new ZaStaticEncounterEditableFieldOption(0, ZaLabels.PokemonFormLabel(0, 0, "None"))];
+        }
+
+        if (!pokemonAvailability.HasKnownAvailability)
+        {
+            return null;
+        }
+
+        return pokemonAvailability.CreateFormOptions(
+            speciesId,
+            form => new ZaStaticEncounterEditableFieldOption(
+                form,
+                ZaLabels.PokemonFormLabel(speciesId, form, labels.Pokemon(speciesId))));
     }
 
     private static ZaStaticEncounterEditableField CreateField(
