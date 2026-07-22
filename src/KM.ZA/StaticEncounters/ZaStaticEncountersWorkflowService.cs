@@ -37,7 +37,7 @@ internal sealed class ZaStaticEncountersWorkflowService
     public const string FlawlessIvCountField = "flawlessIvCount";
 
     private const string WorkflowLabel = "Static Encounters";
-    private const string WorkflowDescription = "Edit Pokemon Legends Z-A scripted static encounter Pokemon sources.";
+    private const string WorkflowDescription = "Review Pokemon Legends Z-A static encounter availability. Live scripted encounters are spawner-backed and edited under Wild Encounters.";
     private const string CategoryId = "encounterData";
     private const string CategoryLabel = "Encounter Data";
     private const string ScenarioLabel = "Scripted Pokemon";
@@ -145,11 +145,11 @@ internal sealed class ZaStaticEncountersWorkflowService
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        return ZaWorkflowSupport.CreateSummary(
+        return AsInformationalWorkflow(ZaWorkflowSupport.CreateSummary(
             project,
             ZaWorkflowIds.StaticEncounters,
             WorkflowLabel,
-            WorkflowDescription);
+            WorkflowDescription));
     }
 
     public ZaStaticEncountersWorkflow Load(OpenedProject project)
@@ -158,21 +158,16 @@ internal sealed class ZaStaticEncountersWorkflowService
 
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? encounterSource = null;
-        var labels = ZaTextLabelLookup.None();
-        var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var encounters = Array.Empty<ZaStaticEncounterEntry>();
         var sourceFileCount = 0;
 
         try
         {
-            labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
-            pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             var wildIds = LoadWildEncounterIds(project, diagnostics, out var usedSpawnerSource);
             sourceFileCount = usedSpawnerSource ? 2 : 1;
-            encounters = LoadRecords(encounterSource, labels, wildIds)
-                .Select(encounter => WithFormOptions(encounter, pokemonAvailability))
-                .ToArray();
+            var omittedDefinitionCount = CountUnreferencedDefinitions(encounterSource, wildIds);
+            diagnostics.Add(CreateClassificationDiagnostic(omittedDefinitionCount));
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -181,17 +176,17 @@ internal sealed class ZaStaticEncountersWorkflowService
                 $"romfs/{ZaDataPaths.EncountDataArray}"));
         }
 
-        var summary = ZaWorkflowSupport.CreateSummary(
+        var summary = AsInformationalWorkflow(ZaWorkflowSupport.CreateSummary(
             project,
             ZaWorkflowIds.StaticEncounters,
             WorkflowLabel,
             WorkflowDescription,
-            diagnostics.Count == 0 ? null : diagnostics);
+            diagnostics.Count == 0 ? null : diagnostics));
 
         return new ZaStaticEncountersWorkflow(
             summary,
             encounters,
-            CreateEditableFields(labels, pokemonAvailability),
+            Array.Empty<ZaStaticEncounterEditableField>(),
             new ZaStaticEncountersWorkflowStats(
                 encounters.Length,
                 encounters.Count(encounter => encounter.FlawlessIvCount is not null and not 0),
@@ -199,7 +194,7 @@ internal sealed class ZaStaticEncountersWorkflowService
                 encounters.Length),
             diagnostics)
         {
-            PokemonAvailability = pokemonAvailability,
+            PokemonAvailability = ZaPokemonAvailability.Unfiltered,
         };
     }
 
@@ -232,11 +227,14 @@ internal sealed class ZaStaticEncountersWorkflowService
         ZaTextLabelLookup labels,
         IReadOnlySet<string> wildEncounterIds)
     {
-        var document = ZaEncounterDataDocument.Parse(source.Bytes);
-        return document.Entries
-            .Where(entry => IsStaticPokemonId(entry.Id, wildEncounterIds))
-            .Select((entry, encounterIndex) => ToRecord(encounterIndex, entry, source, labels))
-            .ToArray();
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(labels);
+        ArgumentNullException.ThrowIfNull(wildEncounterIds);
+
+        // Active Z-A scripted encounters are reached through PokemonSpawnerData.
+        // The remaining encounter definitions have no runtime owner and must not
+        // be presented as a separate editable Static Encounters table.
+        return Array.Empty<ZaStaticEncounterEntry>();
     }
 
     internal static ZaStaticEncounterEntry WithFormOptions(
@@ -256,7 +254,7 @@ internal sealed class ZaStaticEncountersWorkflowService
         };
     }
 
-    internal static bool IsStaticPokemonId(
+    internal static bool IsUnreferencedDefinitionId(
         string? id,
         IReadOnlySet<string> wildEncounterIds)
     {
@@ -264,6 +262,34 @@ internal sealed class ZaStaticEncountersWorkflowService
             && !ZaGiftPokemonWorkflowService.IsGiftPokemonSourceId(id)
             && !ZaTradePokemonWorkflowService.IsTradePokemonId(id)
             && !wildEncounterIds.Contains(id);
+    }
+
+    private static int CountUnreferencedDefinitions(
+        ZaWorkflowFile source,
+        IReadOnlySet<string> spawnerEncounterIds)
+    {
+        var document = ZaEncounterDataDocument.Parse(source.Bytes);
+        return document.Entries.Count(entry =>
+            IsUnreferencedDefinitionId(entry.Id, spawnerEncounterIds));
+    }
+
+    private static ValidationDiagnostic CreateClassificationDiagnostic(int omittedDefinitionCount)
+    {
+        var omittedSummary = omittedDefinitionCount == 1
+            ? "1 unreferenced encounter definition was omitted."
+            : $"{omittedDefinitionCount.ToString(CultureInfo.InvariantCulture)} unreferenced encounter definitions were omitted.";
+        return new ValidationDiagnostic(
+            DiagnosticSeverity.Info,
+            $"Pokemon Legends Z-A scripted encounters are spawner-backed and remain available under Wild Encounters. {omittedSummary}",
+            File: $"romfs/{ZaDataPaths.EncountDataArray}",
+            Domain: StaticEncountersEditDomain);
+    }
+
+    private static ZaWorkflowSummary AsInformationalWorkflow(ZaWorkflowSummary summary)
+    {
+        return summary.Availability == ZaWorkflowAvailability.Disabled
+            ? summary
+            : summary with { Availability = ZaWorkflowAvailability.ReadOnly };
     }
 
     internal static string FormatGender(int value)

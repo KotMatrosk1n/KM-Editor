@@ -12,6 +12,11 @@ public sealed record ZaEncounterProvenance(
     ProjectFileLayer SourceLayer,
     ProjectFileGraphEntryState FileState);
 
+public sealed record ZaBossBattleContext(
+    string Key,
+    string Label,
+    int Rank);
+
 public sealed record ZaEncounterSlotRecord(
     int Slot,
     int PokemonDataSourceIndex,
@@ -67,6 +72,22 @@ public sealed record ZaEncounterTableRecord(
     string? LocationDetails = null)
 {
     public string? SpawnerCategory { get; init; }
+
+    public string? RawSpawnerId { get; init; }
+
+    public bool IsPostgame { get; init; }
+
+    public string? BossBattleContextKey { get; init; }
+
+    public string? BossBattleContextLabel { get; init; }
+
+    public int? BossBattleContextRank { get; init; }
+
+    public string? BossBattleWaveLabel { get; init; }
+
+    public int? BossBattleWaveRank { get; init; }
+
+    public IReadOnlyList<ZaBossBattleContext>? BossBattleContexts { get; init; }
 }
 
 public sealed record ZaEncounterEditableField(

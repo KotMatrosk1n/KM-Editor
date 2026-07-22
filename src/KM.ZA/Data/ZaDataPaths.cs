@@ -17,6 +17,7 @@ public static class ZaDataPaths
     public const string PokemonDataArray = "world/ik_data/field/pokemon/pokemon_data/pokemon_data/pokemon_data_array.bin";
     public const string EncountDataArray = "world/ik_data/field/pokemon/encount_data/encount_data/encount_data_array.bin";
     public const string PokemonSpawnerDataArray = "world/ik_data/field/pokemon_spawner/pokemon_spawner_data/pokemon_spawner_data_array.bin";
+    public const string BossBattleDataGlobal = "ik_event/bin/event_boss_battle_data/boss_btl_data_global.bin";
     public const string PokemonSpawnerTransformArray = "world/ik_data/field/spawner_transform_data/pokemon_spawner_transform/pokemon_spawner_transform/pokemon_spawner_transform_array.bin";
     public const string ItemBallSpawnerDataArray = "world/ik_data/field/item_ball/item_ball_spawner_data/item_ball_spawner_data/item_ball_spawner_data_array.bin";
     public const string ItemBallSpawnerTransformArray = "world/ik_data/field/spawner_transform_data/itemball_spawner_transform/itemball_spawner_transform/itemball_spawner_transform_array.bin";

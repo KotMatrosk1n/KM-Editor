@@ -40,6 +40,7 @@ export type PlacementObjectGroup = {
 export type PlacementObjectGroupTab = {
   label: string;
   objectId: string;
+  sharedUsage: string | null;
   title: string;
 };
 
@@ -212,7 +213,7 @@ export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
   if (species) return species.displayValue || species.value;
 
   if (getPlacementCategoryId(object) === 'pokemonSpawners') {
-    return object.label;
+    return formatPlacementObjectDisplayLabel(object);
   }
 
   if (getPlacementCategoryId(object) === 'itemBallSpawners') {
@@ -277,6 +278,24 @@ export function formatPlacementCoordinates(object: PlacedObjectRecord) {
   }
 
   return `${formatCoordinate(object.x)}, ${formatCoordinate(object.y)}, ${formatCoordinate(object.z)}`;
+}
+
+export function formatPlacementObjectDisplayLabel(object: PlacedObjectRecord) {
+  if (!getPlacementMetadataValue(object, 'spawner.bossBattleContextKey')) {
+    return object.label;
+  }
+
+  return getZaBossPlacementBaseLabel(object.label) ?? object.label;
+}
+
+export function formatPlacementObjectDisplayMap(object: PlacedObjectRecord) {
+  if (!getPlacementMetadataValue(object, 'spawner.bossBattleContextKey')) {
+    return object.map;
+  }
+
+  return getZaBossPlacementBaseLabel(object.map) ??
+    getZaBossPlacementBaseLabel(object.label) ??
+    object.map;
 }
 
 export function isPokemonPlacementObject(object: PlacedObjectRecord) {
@@ -1081,9 +1100,10 @@ function getPlacementObjectSubgroupInfo(
   object: PlacedObjectRecord
 ) {
   if (group.map === 'Boss Battles') {
+    const presentation = getZaBossPlacementPresentation(object);
     return {
-      key: 'subgroup:general',
-      label: 'General'
+      key: `subgroup:boss:${presentation.contextKey}`,
+      label: presentation.contextLabel
     };
   }
 
@@ -1163,15 +1183,210 @@ function getZaBossPlacementBaseLabel(label: string) {
 
   return trimmed
     .replace(
-      /\s+(?:Phase\s+\d+|Rematch|Simulation(?:\s+\d+)?|Rush(?:\s+\d+)?|Dimension|Variant\s+[A-Z]|Y|Z)(?:\b.*)?$/i,
+      /\s+(?:Phase\s+\d+|Rematch|Simulation(?:\s+\d+)?|Rush(?:\s+\d+)?|Dimension|Variant\s+[A-Z]|Y)(?:\b.*)?$/i,
       ''
     )
     .trim();
 }
 
+function getZaBossPlacementPresentation(object: PlacedObjectRecord) {
+  const metadataContextKey = getPlacementMetadataValue(
+    object,
+    'spawner.bossBattleContextKey'
+  );
+  const metadataContextLabel = getPlacementMetadataValue(
+    object,
+    'spawner.bossBattleContextLabel'
+  );
+  if (metadataContextKey && metadataContextLabel) {
+    const metadataContextRank = Number.parseInt(
+      getPlacementMetadataValue(object, 'spawner.bossBattleContextRank') ?? '',
+      10
+    );
+    const metadataWaveRank = Number.parseInt(
+      getPlacementMetadataValue(object, 'spawner.bossBattleWaveRank') ?? '',
+      10
+    );
+    const metadataWaveLabel = getPlacementMetadataValue(
+      object,
+      'spawner.bossBattleWaveLabel'
+    );
+    const roleLabel = getZaBossPlacementRoleTabLabel(object);
+    return {
+      contextKey: metadataContextKey,
+      contextLabel: metadataContextLabel,
+      contextRank: Number.isFinite(metadataContextRank) ? metadataContextRank : 9,
+      tabLabel: metadataWaveLabel
+        ? /^Follower\s+\d+$/i.test(roleLabel)
+          ? `${metadataWaveLabel}, ${roleLabel}`
+          : metadataWaveLabel
+        : roleLabel,
+      waveRank: Number.isFinite(metadataWaveRank) ? metadataWaveRank : 0
+    };
+  }
+
+  const variant = getZaBossPlacementVariantLabel(object);
+  if (/^(?:Phase\s+\d+\s+)?Rematch\s+Dimension(?:\s|$)/i.test(variant)) {
+    return {
+      contextKey: 'rematch',
+      contextLabel: 'Rematch',
+      contextRank: 4,
+      tabLabel: getZaBossPlacementRoleTabLabel(object),
+      waveRank: 0
+    };
+  }
+
+  if (/^Phase\s+\d+\s+Rematch(?:\s|$)/i.test(variant)) {
+    return {
+      contextKey: 'rush',
+      contextLabel: 'Rush',
+      contextRank: 5,
+      tabLabel: getZaBossPlacementRoleTabLabel(object),
+      waveRank: 0
+    };
+  }
+
+  const phaseMatch = variant.match(/^Phase\s+(\d+)/i);
+  if (phaseMatch?.[1]) {
+    const wave = Number.parseInt(phaseMatch[1], 10);
+    return {
+      contextKey: 'story',
+      contextLabel: 'Main Battle',
+      contextRank: 0,
+      tabLabel: `Wave ${wave}`,
+      waveRank: wave
+    };
+  }
+
+  if (!variant) {
+    return {
+      contextKey: 'story',
+      contextLabel: 'Main Battle',
+      contextRank: 0,
+      tabLabel: 'Primary',
+      waveRank: 0
+    };
+  }
+
+  if (/^Y(?:\s|$)/i.test(variant)) {
+    return {
+      contextKey: 'simulator-mission',
+      contextLabel: 'Simulator During Mission',
+      contextRank: 1,
+      tabLabel: 'Primary',
+      waveRank: 0
+    };
+  }
+
+  if (/^Simulation\s+2(?:\s|$)/i.test(variant)) {
+    return {
+      contextKey: 'simulation-dlc',
+      contextLabel: 'Simulation 2',
+      contextRank: 3,
+      tabLabel: 'Primary',
+      waveRank: 0
+    };
+  }
+
+  if (/^Simulation(?:\s+1)?(?:\s|$)/i.test(variant)) {
+    const isFollower = /^Simulation\s+1(?:\s|$)/i.test(variant);
+    return {
+      contextKey: 'simulation',
+      contextLabel: 'Simulation',
+      contextRank: 2,
+      tabLabel: isFollower ? 'Followers' : 'Boss',
+      waveRank: isFollower ? 1 : 0
+    };
+  }
+
+  if (/^Rematch(?:\s|$)/i.test(variant)) {
+    return {
+      contextKey: 'rematch',
+      contextLabel: 'Rematch',
+      contextRank: 4,
+      tabLabel: 'Primary',
+      waveRank: 0
+    };
+  }
+
+  const rushMatch = variant.match(/^Rush(?:\s+(\d+))?/i);
+  if (rushMatch) {
+    const wave = rushMatch[1] ? Number.parseInt(rushMatch[1], 10) : 0;
+    return {
+      contextKey: 'rush',
+      contextLabel: 'Rush',
+      contextRank: 5,
+      tabLabel: wave > 0 ? `Wave ${wave}` : 'Primary',
+      waveRank: wave
+    };
+  }
+
+  return {
+    contextKey: normalizePlacementGroupKey(variant),
+    contextLabel: variant,
+    contextRank: 9,
+    tabLabel: 'Primary',
+    waveRank: 0
+  };
+}
+
+function getZaBossPlacementRoleTabLabel(object: PlacedObjectRecord) {
+  const spawnerId = getPlacementMetadataValue(object, 'spawner.id') ?? '';
+  if (/^btl_spn_boss_/i.test(spawnerId)) {
+    return 'Boss';
+  }
+
+  if (/^spn_boss_/i.test(spawnerId)) {
+    const followerMatch = [
+      spawnerId,
+      object.label,
+      getPlacementMetadataValue(object, 'point.name') ?? ''
+    ]
+      .join(' ')
+      .match(/(?:^|[_\s-])follower[_\s-]*0*(\d+)\b/i);
+    return followerMatch?.[1]
+      ? `Follower ${Number.parseInt(followerMatch[1], 10)}`
+      : 'Support';
+  }
+
+  return 'Primary';
+}
+
+function getZaBossPlacementVariantLabel(object: PlacedObjectRecord) {
+  for (const label of [object.label, object.map]) {
+    const baseLabel = getZaBossPlacementBaseLabel(label);
+    if (!baseLabel) {
+      continue;
+    }
+
+    return stripPlacementGroupPrefix(label, baseLabel);
+  }
+
+  return '';
+}
+
+function getPlacementMetadataValue(object: PlacedObjectRecord, fieldName: string) {
+  const field = object.fields?.find((candidate) => candidate.field === fieldName);
+  if (!field) {
+    return null;
+  }
+
+  const value = getPlacementDisplayValue(field).trim();
+  return value.length > 0 && value !== 'None' ? value : null;
+}
+
+function hasZaBossPlacementPresentation(object: PlacedObjectRecord) {
+  return Boolean(
+    (getPlacementMetadataValue(object, 'spawner.bossBattleContextKey') &&
+      getPlacementMetadataValue(object, 'spawner.bossBattleContextLabel')) ||
+    getZaBossPlacementBaseLabel(object.label) ||
+    getZaBossPlacementBaseLabel(object.map)
+  );
+}
+
 function comparePlacementObjectsForGroup(left: PlacedObjectRecord, right: PlacedObjectRecord) {
-  const leftRank = getPlacementObjectSortRank(left.label);
-  const rightRank = getPlacementObjectSortRank(right.label);
+  const leftRank = getPlacementObjectSortRank(left);
+  const rightRank = getPlacementObjectSortRank(right);
   if (leftRank !== rightRank) {
     return leftRank - rightRank;
   }
@@ -1181,7 +1396,13 @@ function comparePlacementObjectsForGroup(left: PlacedObjectRecord, right: Placed
     left.objectId.localeCompare(right.objectId);
 }
 
-function getPlacementObjectSortRank(label: string) {
+function getPlacementObjectSortRank(object: PlacedObjectRecord) {
+  if (hasZaBossPlacementPresentation(object)) {
+    const presentation = getZaBossPlacementPresentation(object);
+    return presentation.contextRank * 100 + presentation.waveRank;
+  }
+
+  const label = object.label;
   if (/\bPhase\s+\d+\b/i.test(label)) {
     return 10 + (parseFirstInteger(label) ?? 0);
   }
@@ -1288,6 +1509,17 @@ function comparePlacementNaturalLabels(left: string, right: string) {
 }
 
 function comparePlacementSubgroups(left: PlacementObjectSubgroup, right: PlacementObjectSubgroup) {
+  const leftBoss = left.objects[0] ? hasZaBossPlacementPresentation(left.objects[0]) : false;
+  const rightBoss = right.objects[0] ? hasZaBossPlacementPresentation(right.objects[0]) : false;
+  if (leftBoss && rightBoss) {
+    const rank =
+      getZaBossPlacementPresentation(left.objects[0]!).contextRank -
+      getZaBossPlacementPresentation(right.objects[0]!).contextRank;
+    if (rank !== 0) {
+      return rank;
+    }
+  }
+
   return getPlacementSubgroupSortRank(left.label) - getPlacementSubgroupSortRank(right.label) ||
     comparePlacementNaturalLabels(left.label, right.label);
 }
@@ -1340,11 +1572,42 @@ function createPlacementObjectGroupTab(
   index: number,
   subgroupLabel = ''
 ) {
+  const sharedUsage = formatZaBossPlacementSharedUsage(object);
   return {
     label: formatPlacementObjectTabLabel(group, object, index, subgroupLabel),
     objectId: object.objectId,
-    title: `${object.label} - ${formatPlacementCoordinates(object)}`
+    sharedUsage,
+    title: `${formatPlacementObjectDisplayLabel(object)} - ${formatPlacementCoordinates(object)}${
+      sharedUsage ? ` - ${sharedUsage}` : ''
+    }`
   };
+}
+
+function formatZaBossPlacementSharedUsage(object: PlacedObjectRecord) {
+  const primaryLabel = getPlacementMetadataValue(
+    object,
+    'spawner.bossBattleContextLabel'
+  );
+  const contextLabels = getPlacementMetadataValue(
+    object,
+    'spawner.bossBattleContexts'
+  )
+    ?.split(',')
+    .map((label) => label.trim())
+    .filter(Boolean);
+  if (!primaryLabel || !contextLabels?.length) {
+    return null;
+  }
+
+  const normalizedPrimary = primaryLabel.toLocaleLowerCase();
+  const otherLabels = contextLabels.filter(
+    (label, index, labels) =>
+      label.toLocaleLowerCase() !== normalizedPrimary &&
+      labels.findIndex(
+        (candidate) => candidate.toLocaleLowerCase() === label.toLocaleLowerCase()
+      ) === index
+  );
+  return otherLabels.length > 0 ? `Also used by ${otherLabels.join(', ')}` : null;
 }
 
 function formatPlacementObjectTabLabel(
@@ -1353,6 +1616,10 @@ function formatPlacementObjectTabLabel(
   index: number,
   subgroupLabel = ''
 ) {
+  if (group.map === 'Boss Battles') {
+    return getZaBossPlacementPresentation(object).tabLabel;
+  }
+
   const missionInfo = getZaMissionPlacementInfo(object);
   if (missionInfo?.tailLabel) {
     return missionInfo.tailLabel;
