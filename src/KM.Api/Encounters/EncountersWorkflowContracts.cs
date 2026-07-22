@@ -34,6 +34,11 @@ public sealed record EncounterProvenanceDto(
     ProjectFileLayerDto SourceLayer,
     ProjectFileGraphEntryStateDto FileState);
 
+public sealed record BossBattleContextDto(
+    string Key,
+    string Label,
+    int Rank);
+
 public sealed record EncounterSlotRecordDto(
     int Slot,
     int SpeciesId,
@@ -82,6 +87,30 @@ public sealed record EncounterTableRecordDto(
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpawnerCategory { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RawSpawnerId { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsPostgame { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BossBattleContextKey { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BossBattleContextLabel { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BossBattleContextRank { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? BossBattleWaveLabel { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? BossBattleWaveRank { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<BossBattleContextDto>? BossBattleContexts { get; init; }
 }
 
 public sealed record EncounterEditableFieldDto(

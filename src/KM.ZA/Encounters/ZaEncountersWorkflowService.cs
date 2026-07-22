@@ -29,6 +29,9 @@ internal sealed class ZaEncountersWorkflowService
     private const string TableIdPrefix = "za-spawner";
     private const string PokemonDataRecordIdPrefix = "encount-data:";
     private const string AppearanceRecordIdSuffix = "#appearance";
+    private const string PhaseCondition = "phase_condition";
+    private const int CurrentPhaseAtLeastComparison = 5;
+    private const int PostgamePhaseThreshold = 100000;
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -55,6 +58,7 @@ internal sealed class ZaEncountersWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? encounterSource = null;
         ZaWorkflowFile? spawnerSource = null;
+        ZaWorkflowFile? bossBattleSource = null;
         var labels = ZaTextLabelLookup.None();
         var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
         var tables = Array.Empty<ZaEncounterTableRecord>();
@@ -65,9 +69,14 @@ internal sealed class ZaEncountersWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
+            var bossBattleConsumers = TryLoadBossBattleConsumers(
+                project,
+                diagnostics,
+                out bossBattleSource);
             tables = LoadTables(
                 spawnerSource,
                 encounterSource,
+                bossBattleConsumers,
                 labels,
                 pokemonAvailability,
                 diagnostics).ToArray();
@@ -93,11 +102,42 @@ internal sealed class ZaEncountersWorkflowService
             new ZaEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
-                new[] { encounterSource, spawnerSource }.Count(source => source is not null)),
+                new[] { encounterSource, spawnerSource, bossBattleSource }.Count(source => source is not null)),
             diagnostics)
         {
             PokemonAvailability = pokemonAvailability,
         };
+    }
+
+    private IReadOnlyList<ZaBossBattleConsumerRecord>? TryLoadBossBattleConsumers(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics,
+        out ZaWorkflowFile? source)
+    {
+        source = null;
+        try
+        {
+            if (!fileSource.Exists(project, ZaDataPaths.BossBattleDataGlobal))
+            {
+                return null;
+            }
+
+            var candidateSource = fileSource.Read(project, ZaDataPaths.BossBattleDataGlobal);
+            var consumers = ZaBossBattleConsumerTable.Read(candidateSource.Bytes);
+            source = candidateSource;
+            return consumers;
+        }
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or ArgumentException
+            or UnauthorizedAccessException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                "Boss battle gameplay relationships could not be loaded. "
+                + $"Boss encounter organization will use raw spawner identifiers instead: {exception.Message}",
+                $"romfs/{ZaDataPaths.BossBattleDataGlobal}"));
+            return null;
+        }
     }
 
     internal static ZaEncounterEditableField? GetEditableField(
@@ -196,6 +236,7 @@ internal sealed class ZaEncountersWorkflowService
     private static IEnumerable<ZaEncounterTableRecord> LoadTables(
         ZaWorkflowFile spawnerSource,
         ZaWorkflowFile encounterSource,
+        IReadOnlyList<ZaBossBattleConsumerRecord>? bossBattleConsumers,
         ZaTextLabelLookup labels,
         ZaPokemonAvailability pokemonAvailability,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -213,6 +254,30 @@ internal sealed class ZaEncountersWorkflowService
             .ToDictionary(
                 entry => (entry.GroupIndex, entry.SpawnerIndex),
                 entry => entry);
+        var availableSpawnerIds = new List<string>();
+        for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
+        {
+            var db = table.Values(groupIndex);
+            if (db is null)
+            {
+                continue;
+            }
+
+            for (var spawnerIndex = 0; spawnerIndex < db.Value.RootLength; spawnerIndex++)
+            {
+                var spawner = db.Value.Root(spawnerIndex);
+                if (spawner is not null
+                    && spawner.Value.EncountDataInfoListLength > 0
+                    && !string.IsNullOrWhiteSpace(spawner.Value.Id))
+                {
+                    availableSpawnerIds.Add(spawner.Value.Id!);
+                }
+            }
+        }
+
+        var bossBattleContextResolver = new ZaBossBattleContextResolver(
+            bossBattleConsumers,
+            availableSpawnerIds);
         var reportedInvalidAlphaChanceSources = new HashSet<int>();
         var reportedInvalidAlphaLevelBonusSources = new HashSet<int>();
         for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
@@ -287,6 +352,10 @@ internal sealed class ZaEncountersWorkflowService
                     continue;
                 }
 
+                var bossBattleContext = bossBattleContextResolver.Resolve(
+                    spawner.Value.Id,
+                    slots.Select(slot => slot.EncounterDataId));
+                var spawnerCategory = GetSpawnerCategory(locationKey, spawner.Value.Id);
                 var location = FormatLocation(locationKey, labels);
                 yield return new ZaEncounterTableRecord(
                     CreateTableId(groupIndex, spawnerIndex),
@@ -306,7 +375,15 @@ internal sealed class ZaEncountersWorkflowService
                     FormatTableDetails(slots),
                     ZaLumioseLocationLabels.GetMissionDetails(locationKey))
                 {
-                    SpawnerCategory = GetSpawnerCategory(locationKey, spawner.Value.Id),
+                    SpawnerCategory = spawnerCategory,
+                    RawSpawnerId = spawner.Value.Id,
+                    IsPostgame = HasPostgamePhaseCondition(spawner.Value),
+                    BossBattleContextKey = bossBattleContext?.PrimaryContext.Key,
+                    BossBattleContextLabel = bossBattleContext?.PrimaryContext.Label,
+                    BossBattleContextRank = bossBattleContext?.PrimaryContext.Rank,
+                    BossBattleWaveLabel = bossBattleContext?.WaveLabel,
+                    BossBattleWaveRank = bossBattleContext?.WaveRank,
+                    BossBattleContexts = bossBattleContext?.Contexts,
                 };
             }
         }
@@ -677,6 +754,51 @@ internal sealed class ZaEncountersWorkflowService
         return ZaLumioseLocationLabels.IsNumberedWildZone(locationKey);
     }
 
+    private static bool HasPostgamePhaseCondition(PokemonSpawnerData spawner)
+    {
+        for (var conditionIndex = 0; conditionIndex < spawner.ActivationConditionLength; conditionIndex++)
+        {
+            var condition = spawner.ActivationCondition(conditionIndex);
+            if (condition is null)
+            {
+                continue;
+            }
+
+            for (var elementIndex = 0; elementIndex < condition.Value.ElementLength; elementIndex++)
+            {
+                var element = condition.Value.Element(elementIndex);
+                if (element is null)
+                {
+                    continue;
+                }
+
+                for (var parameterIndex = 0; parameterIndex < element.Value.ParamLength; parameterIndex++)
+                {
+                    var parameter = element.Value.Param(parameterIndex);
+                    if (parameter is null
+                        || !string.Equals(parameter.Value.Condition, PhaseCondition, StringComparison.Ordinal)
+                        || parameter.Value.Op != CurrentPhaseAtLeastComparison
+                        || parameter.Value.ParamLength != 1)
+                    {
+                        continue;
+                    }
+
+                    if (int.TryParse(
+                            parameter.Value.Param(0),
+                            NumberStyles.None,
+                            CultureInfo.InvariantCulture,
+                            out var phaseThreshold)
+                        && phaseThreshold >= PostgamePhaseThreshold)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     private static string FormatTableLabel(string locationKey, int tableNumber, string? spawnerId, ZaTextLabelLookup labels)
     {
         if (IsNumberedWildZone(locationKey))
@@ -791,10 +913,8 @@ internal sealed class ZaEncountersWorkflowService
         return value switch
         {
             0 => null,
-            1 => "Morning",
-            2 => "Day",
-            3 => "Evening",
-            4 => "Night",
+            1 => "Day",
+            2 => "Night",
             _ => $"Time condition {value.ToString(CultureInfo.InvariantCulture)}",
         };
     }

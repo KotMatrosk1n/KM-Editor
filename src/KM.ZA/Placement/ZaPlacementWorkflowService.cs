@@ -5,6 +5,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.ZA.Generated.Field.PokemonSpawner;
 using KM.ZA.Data;
+using KM.ZA.Encounters;
 using KM.ZA.Workflows;
 using System.Globalization;
 using ItemBallSpawnerData = KM.Formats.ZA.Generated.Field.ItemBall.ItemBallSpawnerData;
@@ -203,6 +204,11 @@ internal sealed class ZaPlacementWorkflowService
             sourceFiles.Add(source.RelativePath);
             var table = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(new ByteBuffer(source.Bytes));
             var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(table);
+            var bossBattleContextResolver = TryLoadBossBattleContextResolver(
+                project,
+                table,
+                diagnostics,
+                sourceFiles);
             var contexts = new Dictionary<string, ZaPlacementSpawnerContext>(StringComparer.Ordinal);
             for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
             {
@@ -225,7 +231,14 @@ internal sealed class ZaPlacementWorkflowService
                         spawner.Value,
                         groupIndex,
                         spawnerIndex,
-                        displayOrder[(groupIndex, spawnerIndex)]);
+                        displayOrder[(groupIndex, spawnerIndex)],
+                        bossBattleContextResolver.Resolve(
+                            spawner.Value.Id,
+                            Enumerable
+                                .Range(0, spawner.Value.EncountDataInfoListLength)
+                                .Select(index => spawner.Value.EncountDataInfoList(index)?.EncountDataId)
+                                .Where(id => !string.IsNullOrWhiteSpace(id))
+                                .Cast<string>()));
                 }
             }
 
@@ -245,7 +258,8 @@ internal sealed class ZaPlacementWorkflowService
         PokemonSpawnerData spawner,
         int groupIndex,
         int spawnerIndex,
-        ZaPokemonSpawnerDisplayPosition displayPosition)
+        ZaPokemonSpawnerDisplayPosition displayPosition,
+        ZaBossBattleTableContext? bossBattleContext)
     {
         for (var objectIndex = 0; objectIndex < spawner.AppearanceSpawnerObjectInfoListLength; objectIndex++)
         {
@@ -276,7 +290,62 @@ internal sealed class ZaPlacementWorkflowService
                     DisplayLabel: string.Empty,
                     DisplayMap: string.Empty,
                     FormatTags(appearance.Value),
-                    displayPosition.Ordinal));
+                    displayPosition.Ordinal,
+                    bossBattleContext));
+        }
+    }
+
+    private ZaBossBattleContextResolver TryLoadBossBattleContextResolver(
+        OpenedProject project,
+        PokemonSpawnerDataDBArray table,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ISet<string> sourceFiles)
+    {
+        var spawnerIds = new List<string>();
+        for (var groupIndex = 0; groupIndex < table.ValuesLength; groupIndex++)
+        {
+            var db = table.Values(groupIndex);
+            if (db is null)
+            {
+                continue;
+            }
+
+            for (var spawnerIndex = 0; spawnerIndex < db.Value.RootLength; spawnerIndex++)
+            {
+                var spawner = db.Value.Root(spawnerIndex);
+                if (!string.IsNullOrWhiteSpace(spawner?.Id))
+                {
+                    spawnerIds.Add(spawner.Value.Id!);
+                }
+            }
+        }
+
+        try
+        {
+            if (!fileSource.Exists(project, ZaDataPaths.BossBattleDataGlobal))
+            {
+                return new ZaBossBattleContextResolver(
+                    consumerRecords: null,
+                    spawnerIds);
+            }
+
+            var source = fileSource.Read(project, ZaDataPaths.BossBattleDataGlobal);
+            var consumers = ZaBossBattleConsumerTable.Read(source.Bytes);
+            sourceFiles.Add(source.RelativePath);
+            return new ZaBossBattleContextResolver(consumers, spawnerIds);
+        }
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or ArgumentException
+            or UnauthorizedAccessException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                "Boss battle gameplay relationships could not be loaded. "
+                + $"Placement organization will use raw spawner identifiers instead: {exception.Message}",
+                $"romfs/{ZaDataPaths.BossBattleDataGlobal}"));
+            return new ZaBossBattleContextResolver(
+                consumerRecords: null,
+                spawnerIds);
         }
     }
 
@@ -376,7 +445,8 @@ internal sealed class ZaPlacementWorkflowService
                     itemBallLabel,
                     itemBallMap,
                     string.Join(", ", tableIds),
-                    spawnerIndex + 1));
+                    spawnerIndex + 1,
+                    BossBattleContext: null));
         }
     }
 
@@ -460,6 +530,25 @@ internal sealed class ZaPlacementWorkflowService
                 Text("spawner.minCount", "Minimum Count", "Spawner Context", context.MinCount.ToString(CultureInfo.InvariantCulture), context.MinCount.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
                 Text("spawner.maxCount", "Maximum Count", "Spawner Context", context.MaxCount.ToString(CultureInfo.InvariantCulture), context.MaxCount.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
             ]);
+
+            if (context.BossBattleContext is { } bossBattleContext)
+            {
+                var contextLabels = string.Join(", ", bossBattleContext.Contexts.Select(battleContext => battleContext.Label));
+                fields.AddRange(
+                [
+                    Text("spawner.bossBattleContextKey", "Boss Battle Context Key", "Boss Battle Context", bossBattleContext.PrimaryContext.Key, bossBattleContext.PrimaryContext.Key, isReadOnly: true),
+                    Text("spawner.bossBattleContextLabel", "Boss Battle Context", "Boss Battle Context", bossBattleContext.PrimaryContext.Label, bossBattleContext.PrimaryContext.Label, isReadOnly: true),
+                    Text("spawner.bossBattleContextRank", "Boss Battle Context Rank", "Boss Battle Context", bossBattleContext.PrimaryContext.Rank.ToString(CultureInfo.InvariantCulture), bossBattleContext.PrimaryContext.Rank.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
+                    Text("spawner.bossBattleContexts", "Boss Battle Usage", "Boss Battle Context", contextLabels, contextLabels, isReadOnly: true),
+                ]);
+
+                if (!string.IsNullOrWhiteSpace(bossBattleContext.WaveLabel)
+                    && bossBattleContext.WaveRank is { } waveRank)
+                {
+                    fields.Add(Text("spawner.bossBattleWaveLabel", "Boss Battle Wave", "Boss Battle Context", bossBattleContext.WaveLabel, bossBattleContext.WaveLabel, isReadOnly: true));
+                    fields.Add(Text("spawner.bossBattleWaveRank", "Boss Battle Wave Rank", "Boss Battle Context", waveRank.ToString(CultureInfo.InvariantCulture), waveRank.ToString(CultureInfo.InvariantCulture), isReadOnly: true));
+                }
+            }
 
             if (ZaLumioseLocationLabels.GetMissionDetails(locationKey) is { Length: > 0 } missionDetails)
             {
@@ -691,7 +780,8 @@ internal sealed class ZaPlacementWorkflowService
             DisplayLabel: label,
             DisplayMap: string.IsNullOrWhiteSpace(map) ? "Item Ball Spawners" : map,
             Tags: string.Empty,
-            DisplayOrdinal: row.RowIndex + 1);
+            DisplayOrdinal: row.RowIndex + 1,
+            BossBattleContext: null);
     }
 
     private static string FormatItemBallTablePreview(
@@ -990,7 +1080,8 @@ internal sealed class ZaPlacementWorkflowService
         string DisplayLabel,
         string DisplayMap,
         string Tags,
-        int DisplayOrdinal);
+        int DisplayOrdinal,
+        ZaBossBattleTableContext? BossBattleContext);
 
     private sealed record CategorySeed(
         string Id,

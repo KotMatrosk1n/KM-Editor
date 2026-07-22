@@ -681,6 +681,19 @@ public static class ZaBridgeMapper
         {
             LocationDetails = table.LocationDetails,
             SpawnerCategory = table.SpawnerCategory,
+            RawSpawnerId = table.RawSpawnerId,
+            IsPostgame = table.IsPostgame ? true : null,
+            BossBattleContextKey = table.BossBattleContextKey,
+            BossBattleContextLabel = table.BossBattleContextLabel,
+            BossBattleContextRank = table.BossBattleContextRank,
+            BossBattleWaveLabel = table.BossBattleWaveLabel,
+            BossBattleWaveRank = table.BossBattleWaveRank,
+            BossBattleContexts = table.BossBattleContexts?
+                .Select(context => new BossBattleContextDto(
+                    context.Key,
+                    context.Label,
+                    context.Rank))
+                .ToArray(),
         };
     }
 

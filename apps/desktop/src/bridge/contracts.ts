@@ -2819,16 +2819,30 @@ export const encounterSlotRecordSchema = z.strictObject({
   weight: z.number().int().nonnegative()
 });
 
+const bossBattleContextSchema = z.strictObject({
+  key: z.string(),
+  label: z.string(),
+  rank: z.number().int()
+});
+
 export const encounterTableRecordSchema = z.strictObject({
   archiveMember: z.string(),
   area: z.string(),
+  bossBattleContextKey: z.string().nullable().optional(),
+  bossBattleContextLabel: z.string().nullable().optional(),
+  bossBattleContextRank: z.number().int().nullable().optional(),
+  bossBattleContexts: z.array(bossBattleContextSchema).nullable().optional(),
+  bossBattleWaveLabel: z.string().nullable().optional(),
+  bossBattleWaveRank: z.number().int().nullable().optional(),
   encounterType: z.string(),
   gameVersion: z.string(),
+  isPostgame: z.boolean().nullable().optional(),
   location: z.string(),
   locationDetails: z.string().nullable().optional(),
   locationKey: z.string().nullable().optional(),
   locationSort: z.number().int().nullable().optional(),
   provenance: encounterProvenanceSchema,
+  rawSpawnerId: z.string().nullable().optional(),
   slots: z.array(encounterSlotRecordSchema),
   spawnerCategory: z
     .enum(['spawnGroup', 'spawnPoint', 'specialEncounter', 'alpha', 'other'])

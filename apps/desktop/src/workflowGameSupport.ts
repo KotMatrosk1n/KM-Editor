@@ -165,7 +165,6 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
   'encounters',
-  'staticEncounters',
   'giftPokemon',
   'tradePokemon',
   'moves',

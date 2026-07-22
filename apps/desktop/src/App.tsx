@@ -345,6 +345,8 @@ import {
   type PlacementObjectGroup,
   buildPlacementObjectGroups,
   formatPlacementCoordinates,
+  formatPlacementObjectDisplayLabel,
+  formatPlacementObjectDisplayMap,
   getPlacementInspectorPrimaryData,
   getPlacementObjectGroupTabs,
   getPlacementObjectSubgroups,
@@ -19187,6 +19189,9 @@ function getEncounterPendingEditDisplayDetails(
     : 0;
   const field = findPendingEditableField(context.encountersWorkflow?.editableFields, edit.field);
   const isZaEncounter = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const tableLocation = table && isZaEncounter && isZaBossEncounterTable(table)
+    ? formatZaEncounterBrowserLocation(table, null)
+    : table?.location;
 
   return createPendingEditDisplayDetails(edit, {
     editorLabel,
@@ -19194,15 +19199,15 @@ function getEncounterPendingEditDisplayDetails(
     newValueLabel: formatPendingEditValue(edit.newValue, field),
     recordLabel:
       table && slotRecord
-        ? `${table.location} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${
+        ? `${tableLocation} ${table.encounterType} ${table.gameVersion} ${slotRecord.weather} slot #${
             isZaEncounter ? slotRecord.slot + 1 : slotRecord.slot
           }: ${slotRecord.species}${
             sharedSpawnerCount > 1 ? `, shared by ${formatZaEncounterSpawnerCount(sharedSpawnerCount)}` : ''
           }`
         : table && isAppearanceRecord
-          ? `${table.location} ${table.tableLabel ?? table.tableId}`
+          ? `${tableLocation} ${table.tableLabel ?? table.tableId}`
         : table
-          ? `${table.location} ${table.encounterType} ${table.gameVersion}`
+          ? `${tableLocation} ${table.encounterType} ${table.gameVersion}`
           : undefined
   });
 }
@@ -19224,7 +19229,9 @@ function localizePendingEditRecordLabel(
     );
     if (table) {
       return t('za.spawnSettings.pendingAppearanceRecord', {
-        location: table.location,
+        location: isZaBossEncounterTable(table)
+          ? formatZaEncounterBrowserLocation(table, null)
+          : table.location,
         spawner: table.tableLabel ?? table.tableId
       });
     }
@@ -26427,7 +26434,11 @@ function SelectedEncounterPanel({
           <dl className="item-provenance-list">
             <div>
               <dt>Location</dt>
-              <dd>{table.location}</dd>
+              <dd>
+                {isZaEncounterTable && isZaBossEncounterTable(table)
+                  ? formatZaEncounterBrowserLocation(table, null)
+                  : table.location}
+              </dd>
             </div>
             {isZaEncounterTable && table.locationDetails ? (
               <div>
@@ -26445,6 +26456,12 @@ function SelectedEncounterPanel({
               <div>
                 <dt>Group</dt>
                 <dd>{getZaEncounterZoneFamily(table).label}</dd>
+              </div>
+            ) : null}
+            {isZaEncounterTable && table.isPostgame === true ? (
+              <div>
+                <dt>{t('za.encounters.availabilityLabel')}</dt>
+                <dd>{t('za.encounters.availability.postgame')}</dd>
               </div>
             ) : null}
             <div>
@@ -27351,18 +27368,34 @@ function ZaEncounterGroupBrowser({
   tables: EncounterTableRecord[];
 }) {
   const { t } = useLocalization();
+  const selectedZoneKey = getEncounterTableZoneKey(table);
+  const [selectedSpawnerCategory, setSelectedSpawnerCategory] = useState<{
+    key: string;
+    zoneKey: string;
+  } | null>(null);
+  const preferredSpawnerCategoryKey =
+    selectedSpawnerCategory?.zoneKey === selectedZoneKey
+      ? selectedSpawnerCategory.key
+      : null;
   const isDimensionWildTable = isZaDimensionWildEncounterTable(table);
   const dimensionWildData = useMemo(
     () => (isDimensionWildTable ? buildZaDimensionWildBrowserData(table, tables) : null),
     [isDimensionWildTable, table, tables]
   );
   const spawnerRows = useMemo(
-    () => buildZaEncounterSpawnerRows(table, tables),
-    [table, tables]
+    () => buildZaEncounterSpawnerRows(table, tables, t),
+    [t, table, tables]
   );
   const spawnerCategoryData = useMemo(
-    () => (!dimensionWildData ? buildZaEncounterSpawnerCategoryData(table, spawnerRows) : null),
-    [dimensionWildData, spawnerRows, table]
+    () =>
+      !dimensionWildData
+        ? buildZaEncounterSpawnerCategoryData(
+            table,
+            spawnerRows,
+            preferredSpawnerCategoryKey
+          )
+        : null,
+    [dimensionWildData, preferredSpawnerCategoryKey, spawnerRows, table]
   );
   const displayedRows = dimensionWildData
     ? dimensionWildData.rows
@@ -27376,8 +27409,8 @@ function ZaEncounterGroupBrowser({
   );
   const groupingTables = useMemo(
     () =>
-      groupingRows
-        .map((row) => tableById.get(row.tableId))
+      Array.from(new Set(groupingRows.map((row) => row.tableId)))
+        .map((tableId) => tableById.get(tableId))
         .filter((candidate): candidate is EncounterTableRecord => candidate !== undefined),
     [groupingRows, tableById]
   );
@@ -27387,13 +27420,19 @@ function ZaEncounterGroupBrowser({
   );
   const displayedTableIds = new Set(displayedRows.map((row) => row.tableId));
   const displayedTables = displayedRows
+    .filter(
+      (row, index, rows) => rows.findIndex((candidate) => candidate.tableId === row.tableId) === index
+    )
     .map((row) => tableById.get(row.tableId))
     .filter((candidate): candidate is EncounterTableRecord => candidate !== undefined);
   const visibleEncounterGroups = encounterGroups.filter((group) =>
     group.placements.some((placement) => displayedTableIds.has(placement.table.tableId))
   );
   const rowByTableId = new Map(
-    [...spawnerRows, ...(dimensionWildData?.rows ?? [])].map((row) => [row.tableId, row])
+    [...spawnerRows, ...(dimensionWildData?.rows ?? []), ...displayedRows].map((row) => [
+      row.tableId,
+      row
+    ])
   );
   const selectedGroup =
     visibleEncounterGroups.find((group) =>
@@ -27460,11 +27499,14 @@ function ZaEncounterGroupBrowser({
     (total, displayedTable) => total + displayedTable.slots.length,
     0
   );
+  const activeBossCategoryKey = spawnerCategoryData?.categoryTabs
+    .find((categoryTab) => categoryTab.isSelected)
+    ?.key.match(/^boss:(.+)$/)?.[1] ?? null;
 
   return (
     <section className="za-encounter-group-browser" aria-label="Legends Z-A linked wild encounters">
       <div className="sv-encounter-browser-summary">
-        <span>{table.location}</span>
+        <span>{formatZaEncounterBrowserLocation(table, activeBossCategoryKey)}</span>
         <span>{formatZaEncounterGroupCount(visibleEncounterGroups.length)}</span>
         <span>{formatZaEncounterSpawnerCount(displayedTables.length)}</span>
         <span>
@@ -27536,6 +27578,10 @@ function ZaEncounterGroupBrowser({
               className="condition-tab-button"
               key={categoryTab.key}
               onClick={() => {
+                setSelectedSpawnerCategory({
+                  key: categoryTab.key,
+                  zoneKey: selectedZoneKey
+                });
                 if (categoryTab.tableId !== table.tableId) {
                   selectReferenceForTable(categoryTab.tableId);
                 }
@@ -27578,7 +27624,7 @@ function ZaEncounterGroupBrowser({
               : t(getZaWildZoneCompletionStatusKey(completionState));
           return (
             <button
-              aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}${
+              aria-label={`${groupLabel}, ${formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)}, levels ${group.slot.levelMin} to ${group.slot.levelMax}, source ${formatZaEncounterGroupSource(group)}${
                 completionLabel ? `, ${t('za.wildZoneCompletion.column')} ${completionLabel}` : ''
               }`}
               aria-pressed={isSelected}
@@ -27593,7 +27639,9 @@ function ZaEncounterGroupBrowser({
               type="button"
             >
               <span role="cell">{groupLabel}</span>
-              <span role="cell">{formatZaEncounterGroupUsage(group)}</span>
+              <span role="cell">
+                {formatZaEncounterGroupUsage(group, table, activeBossCategoryKey)}
+              </span>
               <span role="cell">
                 {group.slot.levelMin}-{group.slot.levelMax}
               </span>
@@ -27653,7 +27701,7 @@ function ZaEncounterGroupBrowser({
                 aria-label={`${placementLabel}, ${t('za.spawnSettings.slotAria', {
                   slot: placement.slot.slot + 1,
                   weight: placement.slot.weight
-                })}, ${formatZaEncounterPlacementConditions(placement)}${
+                })}, ${formatZaEncounterPlacementConditions(placement, t)}${
                   placementAlphaChanceLabel
                     ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
                     : ''
@@ -27676,7 +27724,7 @@ function ZaEncounterGroupBrowser({
                 <span role="cell">{placementLabel}</span>
                 <span role="cell">{placement.slot.slot + 1}</span>
                 <span role="cell">{placement.slot.weight}</span>
-                <span role="cell">{formatZaEncounterPlacementConditions(placement)}</span>
+                <span role="cell">{formatZaEncounterPlacementConditions(placement, t)}</span>
                 {placementAlphaChanceLabel ? (
                   <span role="cell">{placementAlphaChanceLabel}</span>
                 ) : null}
@@ -30638,7 +30686,7 @@ function SelectedPlacementPanel({
           <dl className="item-provenance-list">
             <div>
               <dt>Object</dt>
-              <dd>{placedObject.label}</dd>
+              <dd>{formatPlacementObjectDisplayLabel(placedObject)}</dd>
             </div>
             <div>
               <dt>Type</dt>
@@ -30646,7 +30694,7 @@ function SelectedPlacementPanel({
             </div>
             <div>
               <dt>Map</dt>
-              <dd>{placedObject.map}</dd>
+              <dd>{formatPlacementObjectDisplayMap(placedObject)}</dd>
             </div>
             <div>
               <dt>Archive member</dt>
@@ -30928,6 +30976,7 @@ function PlacementObjectGroupBrowser({
   selectedObjectId: string;
 }) {
   const subgroups = getPlacementObjectSubgroups(group);
+  const isBossBattleGroup = group.map === 'Boss Battles';
   const selectedSubgroup =
     subgroups.find((subgroup) =>
       subgroup.objects.some((object) => object.objectId === selectedObjectId)
@@ -30937,6 +30986,7 @@ function PlacementObjectGroupBrowser({
   const tabs = selectedSubgroup
     ? selectedSubgroup.tabs
     : getPlacementObjectGroupTabs(group);
+  const selectedTab = tabs.find((tab) => tab.objectId === selectedObjectId) ?? tabs[0] ?? null;
   const selectedSubgroupObjects = selectedSubgroup?.objects ?? group.objects;
   const useListPicker =
     selectedSubgroupObjects.length > 8 ||
@@ -30947,14 +30997,18 @@ function PlacementObjectGroupBrowser({
       <div className="sv-encounter-browser-summary">
         <span>{group.label}</span>
         <span>{group.objects.length} transforms</span>
-        {subgroups.length > 1 ? <span>{subgroups.length} locations</span> : null}
+        {subgroups.length > 1 ? (
+          <span>
+            {subgroups.length} {isBossBattleGroup ? 'battle contexts' : 'locations'}
+          </span>
+        ) : null}
         <span>{group.map}</span>
       </div>
       {subgroups.length > 1 ? (
         <div
           className="encounter-condition-tabs placement-object-tabs placement-location-tabs"
           role="tablist"
-          aria-label="Placement locations"
+          aria-label={isBossBattleGroup ? 'Boss battle contexts' : 'Placement locations'}
         >
           {subgroups.map((subgroup) => {
             const isSelected = subgroup.key === selectedSubgroup?.key;
@@ -31037,6 +31091,9 @@ function PlacementObjectGroupBrowser({
           ))}
         </div>
       )}
+      {selectedTab?.sharedUsage ? (
+        <p className="za-encounter-shared-scope-note">{selectedTab.sharedUsage}</p>
+      ) : null}
     </section>
   );
 }
@@ -38814,6 +38871,28 @@ function getEncounterTableLocationSort(table: EncounterTableRecord) {
 }
 
 const zaDimensionWildLocationKey = 'zdm_random_dimension_wilds';
+const zaRoseDedeStorySpawnerId = 'id_10rom_poke_spawner_rose_dede';
+
+function isZaBossEncounterTable(table: EncounterTableRecord) {
+  const key = table.locationKey ?? table.location;
+  return Boolean(table.bossBattleContextKey?.trim()) || /^boss_/i.test(key);
+}
+
+function isZaRoseDedeStoryEncounterTable(table: EncounterTableRecord) {
+  return [table.rawSpawnerId, table.locationKey]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLocaleLowerCase() === zaRoseDedeStorySpawnerId);
+}
+
+function isZaStoryEncounterTable(table: EncounterTableRecord) {
+  const key = table.locationKey ?? table.location;
+  return /^id_chapter/i.test(key) || isZaRoseDedeStoryEncounterTable(table);
+}
+
+function isZaDlcEventEncounterTable(table: EncounterTableRecord) {
+  const key = table.locationKey ?? table.location;
+  return key === 'dimension_mega_events' || /^id_dlc_/i.test(key);
+}
 
 function getZaEncounterZoneFamily(table: EncounterTableRecord): ZaEncounterZoneFamily {
   const key = table.locationKey ?? table.location;
@@ -38837,19 +38916,19 @@ function getZaEncounterZoneFamily(table: EncounterTableRecord): ZaEncounterZoneF
     return { label: 'Dungeons', rank: 4 };
   }
 
-  if (/^boss_/i.test(key)) {
+  if (isZaBossEncounterTable(table)) {
     return { label: 'Boss Battles', rank: 5 };
   }
 
   if (
-    /^id_chapter/i.test(key) ||
+    isZaStoryEncounterTable(table) ||
     /^id_(?:sub|rest)/i.test(key) ||
     /^id_spn_subq/i.test(key)
   ) {
     return { label: 'Event Encounters', rank: 6 };
   }
 
-  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
+  if (isZaDlcEventEncounterTable(table) || /^id_/i.test(key)) {
     return { label: 'Event Encounters', rank: 6 };
   }
 
@@ -38866,9 +38945,13 @@ function getZaEncounterDisplayZoneKey(table: EncounterTableRecord) {
     return 'd02';
   }
 
-  const bossMatch = key.match(/^(boss_\d+)/i);
-  if (bossMatch) {
-    return bossMatch[1]!.toLowerCase();
+  const bossLineageKey = getZaBossEncounterLineageKey(table);
+  if (bossLineageKey) {
+    return bossLineageKey;
+  }
+
+  if (isZaBossEncounterTable(table)) {
+    return `boss:${formatZaBossDisplayLocation(table.location).toLocaleLowerCase()}`;
   }
 
   const dimensionDungeonMatch = key.match(/^(zdm\d+)_/i);
@@ -38881,24 +38964,61 @@ function getZaEncounterDisplayZoneKey(table: EncounterTableRecord) {
     return dungeonMatch[1]!.toLowerCase();
   }
 
-  if (/^id_chapter/i.test(key)) {
-    return 'story-chapter-events';
+  if (isZaStoryEncounterTable(table)) {
+    return 'story-events';
   }
 
   if (/^id_(?:sub|rest)/i.test(key) || /^id_spn_subq/i.test(key)) {
     return 'side-mission-events';
   }
 
-  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
+  if (isZaDlcEventEncounterTable(table)) {
+    return 'dlc-events';
+  }
+
+  if (/^id_/i.test(key)) {
     return 'special-events';
   }
 
   return key;
 }
 
+function getZaBossEncounterLineageKey(table: EncounterTableRecord) {
+  const rawSpawnerId = table.rawSpawnerId?.trim();
+  const source = rawSpawnerId && /^(?:btl_)?spn_boss_/i.test(rawSpawnerId)
+    ? rawSpawnerId.replace(/^(?:btl_)?spn_boss_/i, '')
+    : (table.locationKey ?? '').replace(/^boss_/i, '');
+  const tokens = source.split('_').filter(Boolean);
+  if (tokens.length === 0 || !/^\d+$/.test(tokens[0]!)) {
+    return null;
+  }
+
+  const species = tokens.shift()!;
+  const followerIndex = tokens.findIndex((token) => /^follower\d*$/i.test(token));
+  if (followerIndex >= 0) {
+    tokens.splice(followerIndex);
+  }
+
+  if (
+    tokens.length >= 2 &&
+    /^re$/i.test(tokens[tokens.length - 2]!) &&
+    /^dim$/i.test(tokens[tokens.length - 1]!)
+  ) {
+    tokens.splice(-2);
+  } else if (tokens.length > 0 && /^(?:re|y|sim\d*|rus\d*|rush\d*)$/i.test(tokens.at(-1)!)) {
+    tokens.pop();
+  }
+
+  if (tokens.length === 1 && /^\d+$/.test(tokens[0]!)) {
+    tokens.pop();
+  }
+
+  return ['boss', species, ...tokens].join('_').toLocaleLowerCase();
+}
+
 function formatZaEncounterDisplayLocation(table: EncounterTableRecord) {
   const key = table.locationKey ?? table.location;
-  if (/^boss_/i.test(key)) {
+  if (isZaBossEncounterTable(table)) {
     return formatZaBossDisplayLocation(table.location);
   }
 
@@ -38924,25 +39044,50 @@ function formatZaEncounterDisplayLocation(table: EncounterTableRecord) {
     return 'Old Building';
   }
 
-  if (/^id_chapter/i.test(key)) {
-    return 'Story Chapter Events';
+  if (isZaStoryEncounterTable(table)) {
+    return 'Story Events';
   }
 
   if (/^id_(?:sub|rest)/i.test(key) || /^id_spn_subq/i.test(key)) {
     return 'Side Mission Events';
   }
 
-  if (key === 'dimension_mega_events' || /^id_/i.test(key)) {
-    return 'Special Event Encounters';
+  if (isZaDlcEventEncounterTable(table)) {
+    return 'DLC Events';
+  }
+
+  if (/^id_/i.test(key)) {
+    return 'Special Events';
   }
 
   return table.location;
 }
 
+function formatZaEncounterBrowserLocation(
+  table: EncounterTableRecord,
+  activeBossContextKey: string | null
+) {
+  if (!isZaBossEncounterTable(table)) {
+    return table.location;
+  }
+
+  const primaryContext = getZaBossEncounterContext(table);
+  const activeContext =
+    getZaBossEncounterContexts(table).find(
+      (context) => context.key === activeBossContextKey
+    ) ?? primaryContext;
+  const parts = [formatZaEncounterDisplayLocation(table), activeContext.label];
+  if (activeContext.key === primaryContext.key && table.bossBattleWaveLabel?.trim()) {
+    parts.push(table.bossBattleWaveLabel.trim());
+  }
+
+  return parts.filter((part, index) => parts.indexOf(part) === index).join(', ');
+}
+
 function formatZaBossDisplayLocation(location: string) {
   return location
     .replace(
-      /\s+(?:Phase\s+\d+|Rematch|Simulation(?:\s+\d+)?|Rush(?:\s+\d+)?|Variant\s+[A-Z]|Y|Z)(?:\s+.*)?$/i,
+      /\s+(?:Phase\s+\d+|Rematch|Simulation(?:\s+\d+)?|Rush(?:\s+\d+)?|Variant\s+[A-Z]|Y)(?:\s+.*)?$/i,
       ''
     )
     .trim();
@@ -38978,7 +39123,7 @@ function getZaEncounterDisplaySort(table: EncounterTableRecord) {
     return 2;
   }
 
-  const bossSort = key.match(/^boss_(\d+)/i);
+  const bossSort = key.match(/^boss_(\d+)/i) ?? table.rawSpawnerId?.match(/boss_(\d+)/i);
   if (bossSort) {
     return Number.parseInt(bossSort[1]!, 10);
   }
@@ -39055,6 +39200,7 @@ function buildZaDimensionWildBrowserData(
       categoryLabel: facets.rankLabel,
       categoryRank: facets.rank ?? 0,
       details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
+      isPrimaryContext: true,
       label: facets.spawnerLabel,
       sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
       slotCount: table.slots.length,
@@ -39065,43 +39211,63 @@ function buildZaDimensionWildBrowserData(
 
 function buildZaEncounterSpawnerRows(
   selectedTable: EncounterTableRecord,
-  tables: EncounterTableRecord[]
+  tables: EncounterTableRecord[],
+  translate: (key: string) => string
 ): ZaEncounterSpawnerRow[] {
   const selectedZoneKey = getEncounterTableZoneKey(selectedTable);
   const displayLocation = formatZaEncounterDisplayLocation(selectedTable);
   return tables
     .filter((table) => getEncounterTableZoneKey(table) === selectedZoneKey)
     .sort(compareZaEncounterSpawnerTables)
-    .map((table) => {
-      const category = getZaEncounterSpawnerCategory(table);
-      return {
-        categoryKey: category.key,
-        categoryLabel: category.label,
-        categoryRank: category.rank,
-        details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
-        label: formatZaEncounterSpawnerRowLabel(table, displayLocation, category.label),
-        slotCount: table.slots.length,
-        sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
-        tableId: table.tableId
-      };
+    .flatMap((table) => {
+      const primaryBossContext = isZaBossEncounterTable(table)
+        ? getZaBossEncounterContext(table)
+        : null;
+      const bossContexts = primaryBossContext ? getZaBossEncounterContexts(table) : [null];
+      return bossContexts.map((bossContext) => {
+        const category = getZaEncounterSpawnerCategory(table, bossContext, translate);
+        return {
+          categoryKey: category.key,
+          categoryLabel: category.label,
+          categoryRank: category.rank,
+          details: table.tableDetails ?? formatZaEncounterZonePreview([table]),
+          isPrimaryContext:
+            bossContext === null || bossContext.key === primaryBossContext?.key,
+          label: formatZaEncounterSpawnerRowLabel(table, displayLocation, category.label),
+          slotCount: table.slots.length,
+          sourceLayer: formatSourceLayer(table.provenance.sourceLayer),
+          tableId: table.tableId
+        };
+      });
     });
 }
 
 function buildZaEncounterSpawnerCategoryData(
   selectedTable: EncounterTableRecord,
-  rows: ZaEncounterSpawnerRow[]
+  rows: ZaEncounterSpawnerRow[],
+  preferredCategoryKey: string | null = null
 ): ZaEncounterSpawnerCategoryData | null {
   if (rows.length === 0) {
     return null;
   }
 
-  const selectedRow = rows.find((row) => row.tableId === selectedTable.tableId) ?? rows[0]!;
+  const selectedRows = rows.filter((row) => row.tableId === selectedTable.tableId);
+  const preferredSelectedRow = preferredCategoryKey
+    ? selectedRows.find((row) => row.categoryKey === preferredCategoryKey)
+    : null;
+  const selectedRow =
+    preferredSelectedRow ??
+    selectedRows.find((row) => row.isPrimaryContext) ??
+    selectedRows[0] ??
+    rows[0]!;
   const selectedCategoryKey = selectedRow.categoryKey;
   const categoryTabs = Array.from(new Set(rows.map((row) => row.categoryKey)))
     .map((categoryKey) => {
       const categoryRows = rows.filter((row) => row.categoryKey === categoryKey);
       const preferredRow =
-        categoryRows.find((row) => row.tableId === selectedTable.tableId) ?? categoryRows[0]!;
+        categoryRows.find((row) => row.tableId === selectedTable.tableId) ??
+        categoryRows.find((row) => row.isPrimaryContext) ??
+        categoryRows[0]!;
       const firstRow = categoryRows[0]!;
       return {
         isSelected: categoryKey === selectedCategoryKey,
@@ -39120,7 +39286,11 @@ function buildZaEncounterSpawnerCategoryData(
   };
 }
 
-function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounterSpawnerCategory {
+function getZaEncounterSpawnerCategory(
+  table: EncounterTableRecord,
+  bossContext: ZaBossEncounterContext | null = null,
+  translate: ((key: string) => string) | null = null
+): ZaEncounterSpawnerCategory {
   const key = table.locationKey ?? table.location;
   if (/^outzone_/i.test(key)) {
     switch (table.spawnerCategory) {
@@ -39129,7 +39299,18 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
       case 'spawnPoint':
         return { key: 'outzone:points', label: 'Spawn Points', rank: 1 };
       case 'specialEncounter':
-        return { key: 'outzone:special', label: 'Special Encounters', rank: 2 };
+        return table.isPostgame === true
+          ? {
+              key: 'outzone:special:postgame',
+              label: translate?.('za.encounters.category.postgameSpecial') ??
+                'Postgame Special Encounters',
+              rank: 2
+            }
+          : {
+              key: 'outzone:special',
+              label: translate?.('za.encounters.category.special') ?? 'Special Encounters',
+              rank: 2
+            };
       case 'alpha':
         return { key: 'outzone:alpha', label: 'Alpha', rank: 3 };
       case 'other':
@@ -39138,13 +39319,12 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
     }
   }
 
-  if (/^boss_/i.test(key)) {
-    const displayLocation = formatZaEncounterDisplayLocation(table);
-    const variant = stripZaEncounterLabelPrefix(table.location, displayLocation);
+  if (isZaBossEncounterTable(table)) {
+    const context = bossContext ?? getZaBossEncounterContext(table);
     return {
-      key: `boss:${variant || 'main'}`,
-      label: variant || 'Main Battle',
-      rank: getZaBossCategoryRank(variant)
+      key: `boss:${context.key}`,
+      label: context.label,
+      rank: context.rank
     };
   }
 
@@ -39170,7 +39350,15 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
     };
   }
 
-  if (/^id_chapter/i.test(key)) {
+  if (isZaRoseDedeStoryEncounterTable(table)) {
+    return {
+      key: 'story:rose-dede',
+      label: 'Rose Dede',
+      rank: Number.MAX_SAFE_INTEGER
+    };
+  }
+
+  if (isZaStoryEncounterTable(table)) {
     const chapter = table.location.match(/^Story Chapter Event\s+(\d+)/i)?.[1] ?? 'Event';
     return {
       key: `story:${chapter}`,
@@ -39201,25 +39389,73 @@ function getZaEncounterSpawnerCategory(table: EncounterTableRecord): ZaEncounter
   return { key: 'spawners', label: 'Spawners', rank: 0 };
 }
 
+function getZaBossEncounterContext(table: EncounterTableRecord): ZaBossEncounterContext {
+  const contextKey = table.bossBattleContextKey?.trim();
+  const contextLabel = table.bossBattleContextLabel?.trim();
+  if (contextKey && contextLabel) {
+    return {
+      key: contextKey,
+      label: contextLabel,
+      rank: table.bossBattleContextRank ?? getZaBossCategoryRank(contextLabel)
+    };
+  }
+
+  const displayLocation = formatZaEncounterDisplayLocation(table);
+  const variant = stripZaEncounterLabelPrefix(table.location, displayLocation);
+  if (!variant || /^Phase\s+\d+$/i.test(variant)) {
+    return { key: 'story', label: 'Main Battle', rank: 0 };
+  }
+
+  if (/^Y$/i.test(variant)) {
+    return { key: 'simulator-mission', label: 'Simulator During Mission', rank: 1 };
+  }
+
+  if (/^Simulation\s+2$/i.test(variant)) {
+    return { key: 'simulation-dlc', label: 'Simulation 2', rank: 3 };
+  }
+
+  if (/^Simulation(?:\s+1)?$/i.test(variant)) {
+    return { key: 'simulation', label: 'Simulation', rank: 2 };
+  }
+
+  if (/^Rematch$/i.test(variant)) {
+    return { key: 'rematch', label: 'Rematch', rank: 4 };
+  }
+
+  if (/^Rush(?:\s+\d+)?$/i.test(variant)) {
+    return { key: 'rush', label: 'Rush', rank: 5 };
+  }
+
+  return {
+    key: variant.toLocaleLowerCase().replace(/\s+/g, '-'),
+    label: variant,
+    rank: getZaBossCategoryRank(variant)
+  };
+}
+
 function getZaBossCategoryRank(label: string) {
   if (!label) {
     return 0;
   }
 
-  if (/Phase/i.test(label)) {
+  if (/^(?:Main|Story) Battle$/i.test(label) || /Phase/i.test(label)) {
+    return 0;
+  }
+
+  if (/Simulator During Mission/i.test(label) || /^Y$/i.test(label)) {
     return 1;
   }
 
-  if (/Rematch/i.test(label)) {
-    return 2;
+  if (/Simulation/i.test(label)) {
+    return /\b2\b/.test(label) ? 3 : 2;
   }
 
-  if (/Simulation/i.test(label)) {
-    return 3;
+  if (/Rematch/i.test(label)) {
+    return 4;
   }
 
   if (/Rush/i.test(label)) {
-    return 4;
+    return 5;
   }
 
   return 9;
@@ -39230,6 +39466,29 @@ function formatZaEncounterSpawnerRowLabel(
   displayLocation: string,
   categoryLabel: string
 ) {
+  const bossWaveLabel = table.bossBattleWaveLabel?.trim();
+  const bossFollowerMatch = table.rawSpawnerId?.match(/_follower0*(\d+)\b/i);
+  const bossFollowerLabel = bossFollowerMatch?.[1]
+    ? `Follower ${Number.parseInt(bossFollowerMatch[1], 10)}`
+    : null;
+  if (bossWaveLabel) {
+    return bossFollowerLabel
+      ? `${bossWaveLabel}, ${bossFollowerLabel}`
+      : bossWaveLabel;
+  }
+
+  if (table.bossBattleContextKey) {
+    if (/^btl_spn_boss_/i.test(table.rawSpawnerId ?? '')) {
+      return 'Boss';
+    }
+
+    if (/^spn_boss_/i.test(table.rawSpawnerId ?? '')) {
+      return bossFollowerLabel ?? 'Support';
+    }
+
+    return 'Primary';
+  }
+
   const tableLabel = table.tableLabel ?? table.tableId;
   const withoutDisplayLocation = stripZaEncounterLabelPrefix(tableLabel, displayLocation);
   const withoutTableLocation = stripZaEncounterLabelPrefix(
@@ -39242,6 +39501,10 @@ function formatZaEncounterSpawnerRowLabel(
     /^id_spn_subq/i.test(table.locationKey ?? '')
   ) {
     return label;
+  }
+
+  if (isZaRoseDedeStoryEncounterTable(table)) {
+    return stripZaEncounterLabelPrefix(label, table.location) || categoryLabel;
   }
 
   const isGroupedEvent =
@@ -39310,6 +39573,14 @@ function compareZaEncounterSpawnerTables(
 
   if (leftCategory.label !== rightCategory.label) {
     return compareZaEncounterNaturalLabels(leftCategory.label, rightCategory.label);
+  }
+
+  const waveRank = compareNullableNumbers(
+    left.bossBattleWaveRank ?? null,
+    right.bossBattleWaveRank ?? null
+  );
+  if (waveRank !== 0) {
+    return waveRank;
   }
 
   const leftNumber = parseTrailingInteger(left.tableLabel);
@@ -39527,7 +39798,11 @@ function formatZaEncounterGroupLabel(group: ZaEncounterGroup) {
   );
 }
 
-function formatZaEncounterGroupUsage(group: ZaEncounterGroup) {
+function formatZaEncounterGroupUsage(
+  group: ZaEncounterGroup,
+  selectedTable: EncounterTableRecord | null = null,
+  activeBossContextKey: string | null = null
+) {
   const parts = [formatZaEncounterSpawnerCount(group.spawnerCount)];
   if (group.slotCount !== group.spawnerCount) {
     parts.push(`${group.slotCount} slots`);
@@ -39537,7 +39812,57 @@ function formatZaEncounterGroupUsage(group: ZaEncounterGroup) {
     parts.push(`${group.outsideScopeSpawnerCount} more elsewhere`);
   }
 
-  return parts.join(', ');
+  const contextsByKey = new Map<string, { key: string; label: string; rank: number }>();
+  for (const placement of group.placements) {
+    for (const context of getZaBossEncounterContexts(placement.table)) {
+      const current = contextsByKey.get(context.key);
+      if (!current || context.rank < current.rank) {
+        contextsByKey.set(context.key, context);
+      }
+    }
+  }
+
+  const contexts = [...contextsByKey.values()].sort(
+    (left, right) => left.rank - right.rank || left.label.localeCompare(right.label)
+  );
+  if (contexts.length === 0) {
+    return parts.join(', ');
+  }
+
+  const selectedContext = selectedTable && isZaBossEncounterTable(selectedTable)
+    ? getZaBossEncounterContext(selectedTable)
+    : null;
+  const primaryContext =
+    contexts.find((context) => context.key === activeBossContextKey) ??
+    contexts.find((context) => context.key === selectedContext?.key) ??
+    contexts[0]!;
+  const otherLabels = contexts
+    .filter((context) => context.key !== primaryContext.key)
+    .map((context) => context.label);
+  const contextUsage = otherLabels.length > 0
+    ? `${primaryContext.label}; Also used by ${otherLabels.join(', ')}`
+    : primaryContext.label;
+  return `${contextUsage} (${parts.join(', ')})`;
+}
+
+function getZaBossEncounterContexts(table: EncounterTableRecord): ZaBossEncounterContext[] {
+  const contexts = (table.bossBattleContexts ?? [])
+    .map((context) => ({
+      key: context.key.trim(),
+      label: context.label.trim(),
+      rank: context.rank
+    }))
+    .filter((context) => context.key.length > 0 && context.label.length > 0);
+  if (isZaBossEncounterTable(table)) {
+    const primaryContext = getZaBossEncounterContext(table);
+    if (!contexts.some((context) => context.key === primaryContext.key)) {
+      contexts.push(primaryContext);
+    }
+  }
+
+  return contexts.sort(
+    (left, right) => left.rank - right.rank || left.label.localeCompare(right.label)
+  );
 }
 
 function formatZaEncounterGroupSource(group: ZaEncounterGroup) {
@@ -39562,9 +39887,19 @@ function formatZaEncounterPlacementLabel(
   );
 }
 
-function formatZaEncounterPlacementConditions(placement: ZaEncounterPlacement) {
+function formatZaEncounterPlacementConditions(
+  placement: ZaEncounterPlacement,
+  translate: (key: string) => string
+) {
+  const timeOfDay = placement.slot.timeOfDay;
+  const localizedTimeOfDay =
+    timeOfDay === 'Day'
+      ? translate('za.encounters.time.day')
+      : timeOfDay === 'Night'
+        ? translate('za.encounters.time.night')
+        : timeOfDay ?? 'Any time';
   const conditions = [
-    placement.slot.timeOfDay ?? 'Any time',
+    localizedTimeOfDay,
     placement.slot.weather || 'Any weather',
     placement.slot.isAlpha ? 'Alpha' : null
   ].filter((condition): condition is string => condition !== null);
@@ -41353,6 +41688,7 @@ type ZaEncounterSpawnerRow = {
   categoryLabel: string;
   categoryRank: number;
   details: string;
+  isPrimaryContext: boolean;
   label: string;
   sourceLayer: string;
   slotCount: number;
@@ -41382,6 +41718,12 @@ type ZaEncounterSpawnerCategoryTab = {
 type ZaEncounterSpawnerCategoryData = {
   categoryTabs: ZaEncounterSpawnerCategoryTab[];
   rows: ZaEncounterSpawnerRow[];
+};
+
+type ZaBossEncounterContext = {
+  key: string;
+  label: string;
+  rank: number;
 };
 
 type ZaDimensionWildFacets = {
