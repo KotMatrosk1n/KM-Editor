@@ -61,6 +61,7 @@ internal sealed class ZaEncountersWorkflowService
         ZaWorkflowFile? bossBattleSource = null;
         var labels = ZaTextLabelLookup.None();
         var pokemonAvailability = ZaPokemonAvailability.Unfiltered;
+        var outzoneAvailability = ZaOutzoneEncounterAvailability.Unknown;
         var tables = Array.Empty<ZaEncounterTableRecord>();
 
         try
@@ -69,6 +70,7 @@ internal sealed class ZaEncountersWorkflowService
             pokemonAvailability = ZaPokemonAvailability.Load(project, fileSource, diagnostics, WorkflowLabel);
             encounterSource = fileSource.Read(project, ZaDataPaths.EncountDataArray);
             spawnerSource = fileSource.Read(project, ZaDataPaths.PokemonSpawnerDataArray);
+            outzoneAvailability = TryLoadOutzoneAvailability(project);
             var bossBattleConsumers = TryLoadBossBattleConsumers(
                 project,
                 diagnostics,
@@ -106,7 +108,106 @@ internal sealed class ZaEncountersWorkflowService
             diagnostics)
         {
             PokemonAvailability = pokemonAvailability,
+            OutzoneAvailability = outzoneAvailability,
         };
+    }
+
+    private ZaOutzoneEncounterAvailability TryLoadOutzoneAvailability(OpenedProject project)
+    {
+        try
+        {
+            return LoadOutzoneAvailability(project);
+        }
+        catch (Exception)
+        {
+            // Advisory-only base observations must never make the editable workflow unavailable.
+            return ZaOutzoneEncounterAvailability.Unknown;
+        }
+    }
+
+    private ZaOutzoneEncounterAvailability LoadOutzoneAvailability(OpenedProject project)
+    {
+        var encounterSource = fileSource.ReadBase(project, ZaDataPaths.EncountDataArray);
+        var spawnerSource = fileSource.ReadBase(project, ZaDataPaths.PokemonSpawnerDataArray);
+        var pokemonRowGroups = ZaEncounterDataDocument.Parse(encounterSource.Bytes)
+            .Entries
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Id))
+            .GroupBy(entry => entry.Id!, StringComparer.Ordinal)
+            .ToArray();
+        var ambiguousRow = pokemonRowGroups.FirstOrDefault(group => group
+            .Select(entry => (entry.DevNo, entry.FormNo))
+            .Distinct()
+            .Skip(1)
+            .Any());
+        if (ambiguousRow is not null)
+        {
+            throw new InvalidDataException(
+                $"Base encounter row id '{ambiguousRow.Key}' resolves to multiple Pokemon pairs.");
+        }
+
+        var pokemonRows = pokemonRowGroups
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var spawnerTable = PokemonSpawnerDataDBArray.GetRootAsPokemonSpawnerDataDBArray(
+            new ByteBuffer(spawnerSource.Bytes));
+        var displayOrder = ZaPokemonSpawnerDisplayOrder.Create(spawnerTable);
+        var observedPairs = new HashSet<(int SpeciesId, int Form)>();
+
+        for (var groupIndex = 0; groupIndex < spawnerTable.ValuesLength; groupIndex++)
+        {
+            var group = spawnerTable.Values(groupIndex);
+            if (group is null)
+            {
+                continue;
+            }
+
+            for (var spawnerIndex = 0; spawnerIndex < group.Value.RootLength; spawnerIndex++)
+            {
+                var spawner = group.Value.Root(spawnerIndex);
+                if (spawner is null)
+                {
+                    continue;
+                }
+
+                if (!displayOrder.TryGetValue(
+                        (groupIndex, spawnerIndex),
+                        out var displayPosition))
+                {
+                    throw new InvalidDataException(
+                        "A base Pokemon spawner could not be mapped to its location.");
+                }
+
+                if (displayPosition.LocationKey?.StartsWith(
+                        "outzone_",
+                        StringComparison.OrdinalIgnoreCase) != true)
+                {
+                    continue;
+                }
+
+                for (var slotIndex = 0;
+                     slotIndex < spawner.Value.EncountDataInfoListLength;
+                     slotIndex++)
+                {
+                    var slot = spawner.Value.EncountDataInfoList(slotIndex);
+                    var encounterDataId = slot?.EncountDataId ?? string.Empty;
+                    var pokemon = ResolvePokemonRow(encounterDataId, pokemonRows);
+                    if (pokemon is null)
+                    {
+                        throw new InvalidDataException(
+                            $"Base city spawner encounter row '{encounterDataId}' could not be resolved.");
+                    }
+
+                    observedPairs.Add((pokemon.DevNo, pokemon.FormNo));
+                }
+            }
+        }
+
+        if (observedPairs.Count == 0)
+        {
+            throw new InvalidDataException(
+                "Base Pokemon spawner data did not expose any Lumiose City encounter pairs.");
+        }
+
+        return ZaOutzoneEncounterAvailability.Create(observedPairs);
     }
 
     private IReadOnlyList<ZaBossBattleConsumerRecord>? TryLoadBossBattleConsumers(

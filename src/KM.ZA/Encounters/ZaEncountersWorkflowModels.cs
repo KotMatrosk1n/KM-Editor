@@ -119,6 +119,9 @@ public sealed record ZaEncountersWorkflow(
 {
     internal ZaPokemonAvailability PokemonAvailability { get; init; } =
         ZaPokemonAvailability.Unfiltered;
+
+    internal ZaOutzoneEncounterAvailability OutzoneAvailability { get; init; } =
+        ZaOutzoneEncounterAvailability.Unknown;
 }
 
 public sealed record ZaEncounterSlotFieldUpdate(
