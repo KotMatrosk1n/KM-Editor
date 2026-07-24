@@ -360,6 +360,7 @@ import {
 } from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import { formatPokemonEvolutionPendingValue } from './features/pokemon/pokemonPendingEditFormatting';
+import { resolveSpeciesChangeForm } from './features/pokemon/speciesFormDrafts';
 import {
   createShopInventoryUpdateValue,
   getNextShopInventoryDraftId,
@@ -1595,6 +1596,10 @@ const raidRewardValueFieldNames = [
   'star3Value',
   'star4Value',
   'star5Value'
+] as const;
+const placementSpeciesFormFieldPairs = [
+  { formField: 'fixed.form', speciesField: 'fixed.speciesId' },
+  { formField: 'coin.form', speciesField: 'coin.speciesId' }
 ] as const;
 const virtualTableInitialRect = { height: 480, width: 800 };
 const virtualTableOverscan = 8;
@@ -13808,6 +13813,60 @@ function SelectedPokemonPanel({
         evolutionMethodOptions,
         pokemonSpeciesOptions
       ));
+  const handleSelectedEvolutionSpeciesChange = (value: string) => {
+    const previousSpeciesId = parseEditableIntegerDraft(
+      evolutionSpeciesDraft,
+      pokemonSpeciesOptions
+    );
+    const targetSpeciesId = parseEditableIntegerDraft(value, pokemonSpeciesOptions);
+    const previousForm = parseOptionalInteger(evolutionFormDraft) ?? selectedEvolution?.form ?? 0;
+    const resolvedForm =
+      targetSpeciesId !== null && targetSpeciesId !== previousSpeciesId
+        ? resolveSpeciesChangeForm({
+            gameFamily: editorFamily,
+            pokemonRecords,
+            previousForm,
+            sourceForm: selectedEvolution?.form ?? 0,
+            sourceSpeciesId: selectedEvolution?.species ?? null,
+            speciesField: { options: pokemonSpeciesOptions },
+            targetSpeciesId
+          })
+        : null;
+
+    setEvolutionSpeciesDraft(value);
+    if (resolvedForm !== null) {
+      const formValue = resolvedForm.toString();
+      setEvolutionFormDraft(formValue);
+      updateSelectedEvolutionDraft({ form: formValue, species: value });
+    } else {
+      updateSelectedEvolutionDraft({ species: value });
+    }
+  };
+  const handleNewEvolutionSpeciesChange = (value: string) => {
+    const previousSpeciesId = parseEditableIntegerDraft(
+      newEvolutionSpeciesDraft,
+      pokemonSpeciesOptions
+    );
+    const targetSpeciesId = parseEditableIntegerDraft(value, pokemonSpeciesOptions);
+    const previousForm = parseOptionalInteger(newEvolutionFormDraft) ?? 0;
+    const resolvedForm =
+      targetSpeciesId !== null && targetSpeciesId !== previousSpeciesId
+        ? resolveSpeciesChangeForm({
+            gameFamily: editorFamily,
+            pokemonRecords,
+            previousForm,
+            sourceForm: 0,
+            sourceSpeciesId: null,
+            speciesField: { options: pokemonSpeciesOptions },
+            targetSpeciesId
+          })
+        : null;
+
+    setNewEvolutionSpeciesDraft(value);
+    if (resolvedForm !== null) {
+      setNewEvolutionFormDraft(resolvedForm.toString());
+    }
+  };
 
   return (
     <aside
@@ -14557,10 +14616,7 @@ function SelectedPokemonPanel({
                       <SearchableOptionInput
                         ariaLabel="Species"
                         disabled={!canEditEvolution}
-                        onChange={(value) => {
-                          setEvolutionSpeciesDraft(value);
-                          updateSelectedEvolutionDraft({ species: value });
-                        }}
+                        onChange={handleSelectedEvolutionSpeciesChange}
                         options={addCurrentPokemonFieldOption(
                           pokemonSpeciesOptions,
                           evolutionSpeciesDraft,
@@ -14574,10 +14630,9 @@ function SelectedPokemonPanel({
                         disabled={!canEditEvolution}
                         max={65535}
                         min={0}
-                        onChange={(event) => {
-                          setEvolutionSpeciesDraft(event.target.value);
-                          updateSelectedEvolutionDraft({ species: event.target.value });
-                        }}
+                        onChange={(event) =>
+                          handleSelectedEvolutionSpeciesChange(event.target.value)
+                        }
                         type="number"
                         value={evolutionSpeciesDraft}
                       />
@@ -14743,7 +14798,7 @@ function SelectedPokemonPanel({
                     <SearchableOptionInput
                       ariaLabel="New species"
                       disabled={!canEditEvolution}
-                      onChange={setNewEvolutionSpeciesDraft}
+                      onChange={handleNewEvolutionSpeciesChange}
                       options={addCurrentPokemonFieldOption(
                         pokemonSpeciesOptions,
                         newEvolutionSpeciesDraft,
@@ -14757,7 +14812,9 @@ function SelectedPokemonPanel({
                       disabled={!canEditEvolution}
                       max={65535}
                       min={0}
-                      onChange={(event) => setNewEvolutionSpeciesDraft(event.target.value)}
+                      onChange={(event) =>
+                        handleNewEvolutionSpeciesChange(event.target.value)
+                      }
                       type="number"
                       value={newEvolutionSpeciesDraft}
                     />
@@ -16705,6 +16762,48 @@ function SelectedTrainerPanel({
                                   ...pokemonDrafts,
                                   [field.field]: value
                                 };
+                                if (field.field === speciesIdFieldName) {
+                                  const speciesField = defaultContextualPokemonFields.find(
+                                    (candidate) => candidate.field === speciesIdFieldName
+                                  );
+                                  const formField = defaultContextualPokemonFields.find(
+                                    (candidate) => candidate.field === formFieldName
+                                  );
+                                  const previousSpeciesId =
+                                    parseEditableIntegerDraft(
+                                      pokemonDrafts[speciesIdFieldName] ??
+                                        selectedPokemon.speciesId.toString(),
+                                      speciesField?.options
+                                    );
+                                  const targetSpeciesId = parseEditableIntegerDraft(
+                                    value,
+                                    speciesField?.options
+                                  );
+                                  const previousForm =
+                                    parseOptionalInteger(
+                                      pokemonDrafts[formFieldName] ??
+                                        selectedPokemon.form.toString()
+                                    ) ?? selectedPokemon.form;
+
+                                  if (
+                                    formField &&
+                                    targetSpeciesId !== null &&
+                                    targetSpeciesId !== previousSpeciesId
+                                  ) {
+                                    const resolvedForm = resolveSpeciesChangeForm({
+                                      gameFamily: editorFamily,
+                                      pokemonRecords: pokemonWorkflow?.pokemon,
+                                      previousForm,
+                                      sourceForm: selectedPokemon.form,
+                                      sourceSpeciesId: selectedPokemon.speciesId,
+                                      speciesField,
+                                      targetSpeciesId
+                                    });
+                                    if (resolvedForm !== null) {
+                                      nextDrafts[formFieldName] = resolvedForm.toString();
+                                    }
+                                  }
+                                }
                                 if (field.field === canDynamaxFieldName && value === '0') {
                                   for (const dependentField of dynamaxDependentFieldNames) {
                                     nextDrafts[dependentField] =
@@ -20673,13 +20772,13 @@ function SelectedGiftPokemonPanel({
                               parseEditableIntegerDraft(
                                 giftDrafts[giftSpeciesFieldName] ?? gift.speciesId.toString(),
                                 speciesField?.options
-                              ) ?? gift.speciesId;
+                              );
                             const previousForm =
                               parseEditableIntegerDraft(
                                 giftDrafts[formFieldName] ?? gift.form.toString(),
                                 formField?.options
                               ) ?? gift.form;
-                            let nextSpeciesId = previousSpeciesId;
+                            let nextSpeciesId = previousSpeciesId ?? gift.speciesId;
                             let nextForm = previousForm;
                             let identityChanged = false;
 
@@ -20693,10 +20792,19 @@ function SelectedGiftPokemonPanel({
                                 parsedSpeciesId !== previousSpeciesId
                               ) {
                                 nextSpeciesId = parsedSpeciesId;
-                                nextForm = 0;
                                 identityChanged = true;
-                                if (formField) {
-                                  nextDrafts[formFieldName] = '0';
+                                const resolvedForm = resolveSpeciesChangeForm({
+                                  gameFamily: editorFamily,
+                                  pokemonRecords: pokemonWorkflow?.pokemon,
+                                  previousForm,
+                                  sourceForm: gift.form,
+                                  sourceSpeciesId: gift.speciesId,
+                                  speciesField,
+                                  targetSpeciesId: parsedSpeciesId
+                                });
+                                if (formField && resolvedForm !== null) {
+                                  nextForm = resolvedForm;
+                                  nextDrafts[formFieldName] = resolvedForm.toString();
                                 }
                               }
                             } else if (field.field === formFieldName) {
@@ -21404,13 +21512,13 @@ function SelectedTradePokemonPanel({
                               parseEditableIntegerDraft(
                                 tradeDrafts[giftSpeciesFieldName] ?? trade.speciesId.toString(),
                                 speciesField?.options
-                              ) ?? trade.speciesId;
+                              );
                             const previousForm =
                               parseEditableIntegerDraft(
                                 tradeDrafts[formFieldName] ?? trade.form.toString(),
                                 formField?.options
                               ) ?? trade.form;
-                            let nextSpeciesId = previousSpeciesId;
+                            let nextSpeciesId = previousSpeciesId ?? trade.speciesId;
                             let nextForm = previousForm;
                             let identityChanged = false;
 
@@ -21424,10 +21532,19 @@ function SelectedTradePokemonPanel({
                                 parsedSpeciesId !== previousSpeciesId
                               ) {
                                 nextSpeciesId = parsedSpeciesId;
-                                nextForm = 0;
                                 identityChanged = true;
-                                if (formField) {
-                                  nextDrafts[formFieldName] = '0';
+                                const resolvedForm = resolveSpeciesChangeForm({
+                                  gameFamily: editorFamily,
+                                  pokemonRecords: pokemonWorkflow?.pokemon,
+                                  previousForm,
+                                  sourceForm: trade.form,
+                                  sourceSpeciesId: trade.speciesId,
+                                  speciesField,
+                                  targetSpeciesId: parsedSpeciesId
+                                });
+                                if (formField && resolvedForm !== null) {
+                                  nextForm = resolvedForm;
+                                  nextDrafts[formFieldName] = resolvedForm.toString();
                                 }
                               }
                             } else if (field.field === formFieldName) {
@@ -21442,7 +21559,7 @@ function SelectedTradePokemonPanel({
                                   tradeDrafts[tradeRequiredSpeciesFieldName] ??
                                     trade.requiredSpeciesId.toString(),
                                   requestedSpeciesField?.options
-                                ) ?? trade.requiredSpeciesId;
+                                );
                               const parsedRequestedSpeciesId = parseEditableIntegerDraft(
                                 value,
                                 field.options
@@ -21452,7 +21569,24 @@ function SelectedTradePokemonPanel({
                                 parsedRequestedSpeciesId !== previousRequestedSpeciesId &&
                                 requestedFormField
                               ) {
-                                nextDrafts[tradeRequiredFormFieldName] = '0';
+                                const previousRequestedForm =
+                                  parseOptionalInteger(
+                                    tradeDrafts[tradeRequiredFormFieldName] ??
+                                      trade.requiredForm.toString()
+                                  ) ?? trade.requiredForm;
+                                const resolvedForm = resolveSpeciesChangeForm({
+                                  gameFamily: editorFamily,
+                                  pokemonRecords: pokemonWorkflow?.pokemon,
+                                  previousForm: previousRequestedForm,
+                                  sourceForm: trade.requiredForm,
+                                  sourceSpeciesId: trade.requiredSpeciesId,
+                                  speciesField: requestedSpeciesField,
+                                  targetSpeciesId: parsedRequestedSpeciesId
+                                });
+                                if (resolvedForm !== null) {
+                                  nextDrafts[tradeRequiredFormFieldName] =
+                                    resolvedForm.toString();
+                                }
                               }
                             }
 
@@ -22001,13 +22135,13 @@ function SelectedRentalPokemonPanel({
                                 rentalDrafts[giftSpeciesFieldName] ??
                                   rental.speciesId.toString(),
                                 speciesField?.options
-                              ) ?? rental.speciesId;
+                              );
                             const previousForm =
                               parseEditableIntegerDraft(
                                 rentalDrafts[formFieldName] ?? rental.form.toString(),
                                 formField?.options
                               ) ?? rental.form;
-                            let nextSpeciesId = previousSpeciesId;
+                            let nextSpeciesId = previousSpeciesId ?? rental.speciesId;
                             let nextForm = previousForm;
                             let identityChanged = false;
 
@@ -22021,10 +22155,19 @@ function SelectedRentalPokemonPanel({
                                 parsedSpeciesId !== previousSpeciesId
                               ) {
                                 nextSpeciesId = parsedSpeciesId;
-                                nextForm = 0;
                                 identityChanged = true;
-                                if (formField) {
-                                  nextDrafts[formFieldName] = '0';
+                                const resolvedForm = resolveSpeciesChangeForm({
+                                  gameFamily: 'swsh',
+                                  pokemonRecords: pokemonWorkflow?.pokemon,
+                                  previousForm,
+                                  sourceForm: rental.form,
+                                  sourceSpeciesId: rental.speciesId,
+                                  speciesField,
+                                  targetSpeciesId: parsedSpeciesId
+                                });
+                                if (formField && resolvedForm !== null) {
+                                  nextForm = resolvedForm;
+                                  nextDrafts[formFieldName] = resolvedForm.toString();
                                 }
                               }
                             } else if (field.field === formFieldName) {
@@ -23549,6 +23692,7 @@ function SelectedStaticEncounterPanel({
   ) => Promise<boolean>;
 }) {
   const { translateLiteral } = useLocalization();
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const [encounterDraftsByIndex, setEncounterDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -23666,23 +23810,48 @@ function SelectedStaticEncounterPanel({
 
     const nextDrafts = { ...encounterDrafts, [field.field]: value };
     if (field.field === giftSpeciesFieldName) {
+      const speciesField = encounterFields.find(
+        (candidate) => candidate.field === giftSpeciesFieldName
+      );
       const formField = encounterFields.find(
         (candidate) => candidate.field === formFieldName
       );
       const abilityField = encounterFields.find(
         (candidate) => candidate.field === abilityFieldName
       );
+      const previousSpeciesId =
+        parseEditableIntegerDraft(
+          encounterDrafts[giftSpeciesFieldName] ?? encounter.speciesId.toString(),
+          speciesField?.options
+        );
+      const targetSpeciesId = parseEditableIntegerDraft(value, speciesField?.options);
 
-      if (formField && !formField.isReadOnly) {
-        nextDrafts[formFieldName] = '0';
-      }
+      if (targetSpeciesId !== null && targetSpeciesId !== previousSpeciesId) {
+        const previousForm =
+          parseOptionalInteger(
+            encounterDrafts[formFieldName] ?? encounter.form.toString()
+          ) ?? encounter.form;
+        const resolvedForm = resolveSpeciesChangeForm({
+          gameFamily: encounter.editorFamily,
+          pokemonRecords: pokemonWorkflow?.pokemon,
+          previousForm,
+          sourceForm: encounter.form,
+          sourceSpeciesId: encounter.speciesId,
+          speciesField,
+          targetSpeciesId
+        });
 
-      if (
-        abilityField &&
-        !abilityField.isReadOnly &&
-        abilityField.options.some((option) => option.value === 0)
-      ) {
-        nextDrafts[abilityFieldName] = '0';
+        if (formField && !formField.isReadOnly && resolvedForm !== null) {
+          nextDrafts[formFieldName] = resolvedForm.toString();
+        }
+
+        if (
+          abilityField &&
+          !abilityField.isReadOnly &&
+          abilityField.options.some((option) => option.value === 0)
+        ) {
+          nextDrafts[abilityFieldName] = '0';
+        }
       }
     }
 
@@ -25852,6 +26021,7 @@ function SelectedEncounterPanel({
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const [zaSlotDraftsBySlotKey, setZaSlotDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -26951,16 +27121,49 @@ function SelectedEncounterPanel({
                                   ...slotDrafts,
                                   [field.field]: value
                                 };
-                                const nextSpeciesId = Number.parseInt(value, 10);
-                                if (
-                                  editorFamily === 'swsh' &&
-                                  field.field === encounterSpeciesFieldName &&
-                                  Number.isInteger(nextSpeciesId)
-                                ) {
-                                  nextSlotDrafts[encounterFormFieldName] =
-                                    nextSpeciesId === encounterSlot.speciesId
-                                      ? encounterSlot.form.toString()
-                                      : '0';
+                                if (field.field === encounterSpeciesFieldName) {
+                                  const speciesField = defaultEncounterFields.find(
+                                    (candidate) =>
+                                      candidate.field === encounterSpeciesFieldName
+                                  );
+                                  const formField = defaultEncounterFields.find(
+                                    (candidate) => candidate.field === encounterFormFieldName
+                                  );
+                                  const previousSpeciesId =
+                                    parseEditableIntegerDraft(
+                                      slotDrafts[encounterSpeciesFieldName] ??
+                                        encounterSlot.speciesId.toString(),
+                                      speciesField?.options
+                                    );
+                                  const targetSpeciesId = parseEditableIntegerDraft(
+                                    value,
+                                    speciesField?.options
+                                  );
+                                  const previousForm =
+                                    parseOptionalInteger(
+                                      slotDrafts[encounterFormFieldName] ??
+                                        encounterSlot.form.toString()
+                                    ) ?? encounterSlot.form;
+
+                                  if (
+                                    formField &&
+                                    targetSpeciesId !== null &&
+                                    targetSpeciesId !== previousSpeciesId
+                                  ) {
+                                    const resolvedForm = resolveSpeciesChangeForm({
+                                      gameFamily: editorFamily,
+                                      pokemonRecords: pokemonWorkflow?.pokemon,
+                                      previousForm,
+                                      sourceForm: encounterSlot.form,
+                                      sourceSpeciesId: encounterSlot.speciesId,
+                                      speciesField,
+                                      targetSpeciesId
+                                    });
+                                    if (resolvedForm !== null) {
+                                      nextSlotDrafts[encounterFormFieldName] =
+                                        resolvedForm.toString();
+                                    }
+                                  }
                                 }
 
                                 setDraftsBySlotKey((currentDrafts) =>
@@ -27905,6 +28108,7 @@ function TeraRaidsSection({
   workflow: TeraRaidsWorkflow | null;
 }) {
   const { translateLiteral } = useLocalization();
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const [draftsByRecordId, setDraftsByRecordId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -28222,6 +28426,7 @@ function TeraRaidsSection({
                         onChangeDrafts={setDraftsByRecordId}
                         onUpdateField={onUpdateTeraRaidField}
                         onUpdateFields={onUpdateTeraRaidFields}
+                        pokemonRecords={pokemonWorkflow?.pokemon}
                         saveLabel="Stage"
                       />
                     ) : (
@@ -28423,6 +28628,7 @@ function TeraRaidDraftPanel({
   onChangeDrafts,
   onUpdateField,
   onUpdateFields,
+  pokemonRecords,
   saveLabel
 }: {
   canEdit: boolean;
@@ -28444,6 +28650,7 @@ function TeraRaidDraftPanel({
     recordId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pokemonRecords?: readonly PokemonRecord[];
   saveLabel: string;
 }) {
   const { translateLiteral } = useLocalization();
@@ -28511,6 +28718,55 @@ function TeraRaidDraftPanel({
                         ...drafts,
                         [field.field]: value
                       };
+                      if (field.field === giftSpeciesFieldName && formOptionContext) {
+                        const speciesField = fields.find(
+                          (candidate) => candidate.field === giftSpeciesFieldName
+                        );
+                        const formField = fields.find(
+                          (candidate) => candidate.field === formFieldName
+                        );
+                        const sourceSpeciesId = speciesField
+                          ? getValue(speciesField.field)
+                          : null;
+                        const sourceForm = formField ? getValue(formField.field) : null;
+                        const previousSpeciesId =
+                          parseEditableIntegerDraft(
+                            drafts[giftSpeciesFieldName] ??
+                              sourceSpeciesId?.toString() ??
+                              '',
+                            speciesField?.options
+                          );
+                        const targetSpeciesId = parseEditableIntegerDraft(
+                          value,
+                          speciesField?.options
+                        );
+                        const previousForm =
+                          parseOptionalInteger(
+                            drafts[formFieldName] ?? sourceForm?.toString() ?? ''
+                          ) ?? sourceForm;
+
+                        if (
+                          formField &&
+                          sourceSpeciesId !== null &&
+                          sourceForm !== null &&
+                          previousForm !== null &&
+                          targetSpeciesId !== null &&
+                          targetSpeciesId !== previousSpeciesId
+                        ) {
+                          const resolvedForm = resolveSpeciesChangeForm({
+                            gameFamily: formOptionContext.gameFamily ?? 'sv',
+                            pokemonRecords,
+                            previousForm,
+                            sourceForm,
+                            sourceSpeciesId,
+                            speciesField,
+                            targetSpeciesId
+                          });
+                          if (resolvedForm !== null) {
+                            nextDrafts[formFieldName] = resolvedForm.toString();
+                          }
+                        }
+                      }
                       onChangeDrafts((currentDrafts) =>
                         setFieldDraftRecord(
                           currentDrafts,
@@ -28796,6 +29052,7 @@ function SelectedRaidBattlePanel({
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const raidBattleDraftKey = table && battleSlot ? `${table.tableId}:${battleSlot.slot}` : null;
   const storedRaidBattleDrafts = raidBattleDraftKey
@@ -29099,6 +29356,50 @@ function SelectedRaidBattlePanel({
                                   ...drafts,
                                   [field.field]: value
                                 };
+                                if (field.field === raidBattleSpeciesFieldName) {
+                                  const speciesField = raidBattleFields.find(
+                                    (candidate) =>
+                                      candidate.field === raidBattleSpeciesFieldName
+                                  );
+                                  const formField = raidBattleFields.find(
+                                    (candidate) => candidate.field === raidBattleFormFieldName
+                                  );
+                                  const previousSpeciesId =
+                                    parseEditableIntegerDraft(
+                                      drafts[raidBattleSpeciesFieldName] ??
+                                        battleSlot.speciesId.toString(),
+                                      speciesField?.options
+                                    );
+                                  const targetSpeciesId = parseEditableIntegerDraft(
+                                    value,
+                                    speciesField?.options
+                                  );
+                                  const previousForm =
+                                    parseOptionalInteger(
+                                      drafts[raidBattleFormFieldName] ??
+                                        battleSlot.form.toString()
+                                    ) ?? battleSlot.form;
+
+                                  if (
+                                    formField &&
+                                    targetSpeciesId !== null &&
+                                    targetSpeciesId !== previousSpeciesId
+                                  ) {
+                                    const resolvedForm = resolveSpeciesChangeForm({
+                                      gameFamily: 'swsh',
+                                      pokemonRecords: pokemonWorkflow?.pokemon,
+                                      previousForm,
+                                      sourceForm: battleSlot.form,
+                                      sourceSpeciesId: battleSlot.speciesId,
+                                      speciesField,
+                                      targetSpeciesId
+                                    });
+                                    if (resolvedForm !== null) {
+                                      nextDrafts[raidBattleFormFieldName] =
+                                        resolvedForm.toString();
+                                    }
+                                  }
+                                }
                                 setDraftsBySlotKey((currentDrafts) =>
                                   setFieldDraftRecord(
                                     currentDrafts,
@@ -29988,6 +30289,7 @@ function SelectedBehaviorPanel({
     Record<string, Record<string, string>>
   >({});
   const { translateLiteral } = useLocalization();
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const behaviorFieldGroups = useMemo(() => groupBehaviorFields(fields), [fields]);
   const behaviorDraftDefaults = useMemo(
@@ -30017,6 +30319,53 @@ function SelectedBehaviorPanel({
       pruneFieldDraftRecord(currentDrafts, entry.entryId, behaviorDraftDefaults)
     );
   }, [entry, behaviorDraftDefaults]);
+  const handleBehaviorDraftChange = (field: BehaviorField, value: string) => {
+    if (!entry) {
+      return;
+    }
+
+    const nextDrafts = {
+      ...drafts,
+      [field.field]: value
+    };
+    if (field.field === speciesIdFieldName) {
+      const formField = fields.find((candidate) => candidate.field === formFieldName);
+      const previousSpeciesId =
+        parseOptionalInteger(
+          drafts[speciesIdFieldName] ?? entry.speciesId.toString()
+        );
+      const targetSpeciesId = parseOptionalInteger(value);
+      const previousForm =
+        parseOptionalInteger(drafts[formFieldName] ?? entry.form.toString()) ?? entry.form;
+
+      if (
+        formField &&
+        targetSpeciesId !== null &&
+        targetSpeciesId !== previousSpeciesId
+      ) {
+        const resolvedForm = resolveSpeciesChangeForm({
+          gameFamily: 'swsh',
+          pokemonRecords: pokemonWorkflow?.pokemon,
+          previousForm,
+          sourceForm: entry.form,
+          sourceSpeciesId: entry.speciesId,
+          targetSpeciesId
+        });
+        if (resolvedForm !== null) {
+          nextDrafts[formFieldName] = resolvedForm.toString();
+        }
+      }
+    }
+
+    setDraftsByEntryId((currentDrafts) =>
+      setFieldDraftRecord(
+        currentDrafts,
+        entry.entryId,
+        nextDrafts,
+        behaviorDraftDefaults
+      )
+    );
+  };
 
   return (
     <aside
@@ -30142,20 +30491,9 @@ function SelectedBehaviorPanel({
                               aria-label={translateLiteral(field.label)}
                               disabled={isDisabled}
                               id={`behavior-field-${field.field}`}
-                              onChange={(event) => {
-                                const nextDrafts = {
-                                  ...drafts,
-                                  [field.field]: event.target.value
-                                };
-                                setDraftsByEntryId((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    entry.entryId,
-                                    nextDrafts,
-                                    behaviorDraftDefaults
-                                  )
-                                );
-                              }}
+                              onChange={(event) =>
+                                handleBehaviorDraftChange(field, event.target.value)
+                              }
                               title={translateLiteral(field.description)}
                               value={draftValue}
                             >
@@ -30186,20 +30524,9 @@ function SelectedBehaviorPanel({
                               id={`behavior-field-${field.field}`}
                               max={field.valueKind === 'string' ? undefined : field.maximumValue}
                               min={field.valueKind === 'string' ? undefined : field.minimumValue}
-                              onChange={(event) => {
-                                const nextDrafts = {
-                                  ...drafts,
-                                  [field.field]: event.target.value
-                                };
-                                setDraftsByEntryId((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    entry.entryId,
-                                    nextDrafts,
-                                    behaviorDraftDefaults
-                                  )
-                                );
-                              }}
+                              onChange={(event) =>
+                                handleBehaviorDraftChange(field, event.target.value)
+                              }
                               step={field.valueKind === 'integer' ? 1 : 'any'}
                               title={translateLiteral(field.description)}
                               type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
@@ -30606,6 +30933,7 @@ function SelectedPlacementPanel({
   const [draftsByObjectId, setDraftsByObjectId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const { translateLiteral } = useLocalization();
   const cancelActiveEditSession = useCancelActiveEditSession();
   const visibleFields = useMemo(
@@ -30673,6 +31001,76 @@ function SelectedPlacementPanel({
       pruneFieldDraftRecord(currentDrafts, placedObject.objectId, placementDraftDefaults)
     );
   }, [placedObject, placementDraftDefaults]);
+
+  const handlePlacementDraftChange = (
+    field: PlacementFieldControl,
+    value: string
+  ) => {
+    if (!placedObject) {
+      return;
+    }
+
+    const nextDrafts = {
+      ...drafts,
+      [field.field]: value
+    };
+    const speciesFormPair = placementSpeciesFormFieldPairs.find(
+      (pair) => pair.speciesField === field.field
+    );
+    if (speciesFormPair) {
+      const formField = visibleFields.find(
+        (candidate) => candidate.field === speciesFormPair.formField
+      );
+      const sourceSpeciesId = parseOptionalInteger(
+        getPlacementFieldValue(placedObject, speciesFormPair.speciesField) ?? ''
+      );
+      const sourceForm = parseOptionalInteger(
+        getPlacementFieldValue(placedObject, speciesFormPair.formField) ?? ''
+      );
+      const previousSpeciesId =
+        parseEditableIntegerDraft(
+          drafts[speciesFormPair.speciesField] ?? sourceSpeciesId?.toString() ?? '',
+          field.options
+        );
+      const targetSpeciesId = parseEditableIntegerDraft(value, field.options);
+      const previousForm =
+        parseOptionalInteger(
+          drafts[speciesFormPair.formField] ?? sourceForm?.toString() ?? ''
+        ) ?? sourceForm;
+
+      if (
+        formField &&
+        !formField.isReadOnly &&
+        sourceSpeciesId !== null &&
+        sourceForm !== null &&
+        previousForm !== null &&
+        targetSpeciesId !== null &&
+        targetSpeciesId !== previousSpeciesId
+      ) {
+        const resolvedForm = resolveSpeciesChangeForm({
+          gameFamily: 'sv',
+          pokemonRecords: pokemonWorkflow?.pokemon,
+          previousForm,
+          sourceForm,
+          sourceSpeciesId,
+          speciesField: field,
+          targetSpeciesId
+        });
+        if (resolvedForm !== null) {
+          nextDrafts[speciesFormPair.formField] = resolvedForm.toString();
+        }
+      }
+    }
+
+    setDraftsByObjectId((currentDrafts) =>
+      setFieldDraftRecord(
+        currentDrafts,
+        placedObject.objectId,
+        nextDrafts,
+        placementDraftDefaults
+      )
+    );
+  };
 
   return (
     <aside aria-label="Selected placement object provenance" className="encounter-inspector">
@@ -30823,20 +31221,9 @@ function SelectedPlacementPanel({
                                 isFieldReadOnly
                               }
                               id={`placement-field-${field.field}`}
-                              onChange={(value) => {
-                                const nextDrafts = {
-                                  ...drafts,
-                                  [field.field]: value
-                                };
-                                setDraftsByObjectId((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    placedObject.objectId,
-                                    nextDrafts,
-                                    placementDraftDefaults
-                                  )
-                                );
-                              }}
+                              onChange={(value) =>
+                                handlePlacementDraftChange(field, value)
+                              }
                               options={addDraftFallbackOption(
                                 fieldOptions,
                                 draftValue,
@@ -30855,20 +31242,9 @@ function SelectedPlacementPanel({
                                 isFieldReadOnly
                               }
                               id={`placement-field-${field.field}`}
-                              onChange={(event) => {
-                                const nextDrafts = {
-                                  ...drafts,
-                                  [field.field]: event.target.value
-                                };
-                                setDraftsByObjectId((currentDrafts) =>
-                                  setFieldDraftRecord(
-                                    currentDrafts,
-                                    placedObject.objectId,
-                                    nextDrafts,
-                                    placementDraftDefaults
-                                  )
-                                );
-                              }}
+                              onChange={(event) =>
+                                handlePlacementDraftChange(field, event.target.value)
+                              }
                               step={field.valueKind === 'integer' ? 1 : 'any'}
                               title={localizedFieldHelpText}
                               max={isTextLikePlacementField ? undefined : field.maximumValue}

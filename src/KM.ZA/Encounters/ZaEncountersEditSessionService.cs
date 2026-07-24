@@ -106,6 +106,7 @@ internal sealed class ZaEncountersEditSessionService
             }
         }
 
+        AppendOutzoneBehaviorWarnings(loadedWorkflow, candidateWorkflow, diagnostics);
         return new ZaEncountersEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -196,6 +197,7 @@ internal sealed class ZaEncountersEditSessionService
             return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
+        AppendOutzoneBehaviorWarnings(loadedWorkflow, effectiveWorkflow, diagnostics);
         return new ZaEncountersEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -239,12 +241,16 @@ internal sealed class ZaEncountersEditSessionService
         ValidateFinalSharedLevelRanges(effectiveWorkflow, sharedLevelRangeSources, diagnostics);
         ValidateFinalSpawnerCounts(effectiveWorkflow, session.PendingEdits, diagnostics);
 
-        if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Info,
-                "Pending Wild Encounters change is valid.",
-                ZaEditSessionSupport.EncountersDomain));
+            AppendOutzoneBehaviorWarnings(workflow, effectiveWorkflow, diagnostics);
+            if (session.PendingEdits.Count > 0)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    "Pending Wild Encounters change is valid.",
+                    ZaEditSessionSupport.EncountersDomain));
+            }
         }
 
         return new ZaEditSessionValidation(
@@ -1386,6 +1392,89 @@ internal sealed class ZaEncountersEditSessionService
                 diagnostics,
                 sourceSlot.PokemonProvenance.SourceFile,
                 ZaEncountersWorkflowService.FormField);
+        }
+    }
+
+    private static void AppendOutzoneBehaviorWarnings(
+        ZaEncountersWorkflow sourceWorkflow,
+        ZaEncountersWorkflow projectedWorkflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var projectedSlotsBySourceIndex = projectedWorkflow.Tables
+            .SelectMany(table => table.Slots)
+            .Where(slot => slot.PokemonDataSourceIndex >= 0)
+            .GroupBy(slot => slot.PokemonDataSourceIndex)
+            .ToDictionary(group => group.Key, group => group.First());
+        var sourceConsumersBySourceIndex = sourceWorkflow.Tables
+            .SelectMany(table => table.Slots
+                .Where(slot => slot.PokemonDataSourceIndex >= 0)
+                .Select(slot => (Table: table, Slot: slot)))
+            .GroupBy(consumer => consumer.Slot.PokemonDataSourceIndex);
+
+        foreach (var sourceConsumers in sourceConsumersBySourceIndex)
+        {
+            var sourceSlot = sourceConsumers.First().Slot;
+            if (!projectedSlotsBySourceIndex.TryGetValue(
+                    sourceSlot.PokemonDataSourceIndex,
+                    out var projectedSlot)
+                || sourceSlot.SpeciesId == projectedSlot.SpeciesId
+                    && sourceSlot.Form == projectedSlot.Form
+                || projectedSlot.SpeciesId == 0 && projectedSlot.Form == 0)
+            {
+                continue;
+            }
+
+            var cityConsumers = sourceConsumers
+                .Where(consumer => consumer.Table.LocationKey?.StartsWith(
+                    "outzone_",
+                    StringComparison.OrdinalIgnoreCase) == true)
+                .ToArray();
+            if (cityConsumers.Length == 0)
+            {
+                continue;
+            }
+
+            var availability = sourceWorkflow.OutzoneAvailability;
+            if (availability.HasKnownAvailability
+                && availability.IsObserved(projectedSlot.SpeciesId, projectedSlot.Form))
+            {
+                continue;
+            }
+
+            var linkedPlacements = string.Join(
+                ", ",
+                cityConsumers
+                    .Select(consumer =>
+                    {
+                        var location = string.IsNullOrWhiteSpace(consumer.Table.Location)
+                            ? consumer.Table.TableId
+                            : consumer.Table.Location;
+                        var identity = string.IsNullOrWhiteSpace(consumer.Table.RawSpawnerId)
+                            ? consumer.Table.TableId
+                            : consumer.Table.RawSpawnerId;
+                        return $"{location} [{identity}]";
+                    })
+                    .Distinct(StringComparer.Ordinal));
+            var message = availability.HasKnownAvailability
+                ? $"{projectedSlot.Species} (species {projectedSlot.SpeciesId}, "
+                    + $"form {projectedSlot.Form}) is not used by any immutable base Lumiose "
+                    + "City encounter outside Wild Zones. The game may not initialize its "
+                    + "usual awareness or attack behavior for the linked placements: "
+                    + $"{linkedPlacements}. KM Editor will keep this edit and write it unchanged."
+                : "City behavior compatibility could not be compared with immutable base "
+                    + $"encounters for {projectedSlot.Species} (species "
+                    + $"{projectedSlot.SpeciesId}, form {projectedSlot.Form}) at the linked "
+                    + $"placements: {linkedPlacements}. KM Editor will keep this edit and write "
+                    + "it unchanged.";
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                message,
+                ZaEditSessionSupport.EncountersDomain,
+                sourceSlot.PokemonProvenance.SourceFile,
+                sourceSlot.SpeciesId != projectedSlot.SpeciesId
+                    ? ZaEncountersWorkflowService.SpeciesIdField
+                    : ZaEncountersWorkflowService.FormField,
+                "An intentional custom city encounter; the edit remains allowed"));
         }
     }
 
