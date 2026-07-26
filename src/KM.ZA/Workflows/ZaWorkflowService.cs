@@ -421,6 +421,41 @@ public sealed class ZaWorkflowService
             targetSpeciesId);
     }
 
+    public ZaPokemonEditResult MovePokemonDexPlacement(
+        ProjectPaths paths,
+        EditSession? session,
+        int sourceSpeciesId,
+        string destinationDexKind,
+        int destinationDisplayedNumber)
+    {
+        return pokemonEditSessionService.MoveDexPlacement(
+            paths,
+            session,
+            sourceSpeciesId,
+            destinationDexKind,
+            destinationDisplayedNumber);
+    }
+
+    public ZaPokemonEditResult ResizePokemonDex(
+        ProjectPaths paths,
+        EditSession? session,
+        int regularCount)
+    {
+        return pokemonEditSessionService.ResizeDex(
+            paths,
+            session,
+            regularCount);
+    }
+
+    public ZaPokemonEditResult StagePokemonDexVanilla(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return pokemonEditSessionService.StageVanillaDexLayout(
+            paths,
+            session);
+    }
+
     public ZaMovesEditResult UpdateMoveField(
         ProjectPaths paths,
         EditSession? session,
@@ -526,6 +561,19 @@ public sealed class ZaWorkflowService
         return encountersEditSessionService.UpdateSlotFields(paths, session, updates);
     }
 
+    public ZaEncountersEditResult StageEncounterSlotVanilla(
+        ProjectPaths paths,
+        EditSession? session,
+        string tableId,
+        int slot)
+    {
+        return encountersEditSessionService.StageSlotVanilla(
+            paths,
+            session,
+            tableId,
+            slot);
+    }
+
     public ZaStaticEncountersEditResult UpdateStaticEncounterField(
         ProjectPaths paths,
         EditSession? session,
@@ -602,6 +650,11 @@ public sealed class ZaWorkflowService
 
     public ZaEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
+        if (IsMixedScopedDexLayoutSession(session))
+        {
+            return CreateScopedDexLayoutMixedValidation(session);
+        }
+
         var domain = GetDomain(session);
         return domain == ZaEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
             ? ValidateNormalDomains(paths, session, domains)
@@ -610,6 +663,11 @@ public sealed class ZaWorkflowService
 
     public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session, ZaOutputMode outputMode)
     {
+        if (IsMixedScopedDexLayoutSession(session))
+        {
+            return CreateScopedDexLayoutMixedChangePlan(session);
+        }
+
         var domain = GetDomain(session);
         return domain == ZaEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
             ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
@@ -618,6 +676,11 @@ public sealed class ZaWorkflowService
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan, ZaOutputMode outputMode)
     {
+        if (IsMixedScopedDexLayoutSession(session))
+        {
+            return CreateScopedDexLayoutMixedApplyResult(session);
+        }
+
         var domain = GetDomain(session);
         return domain == ZaEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
             ? ApplyNormalDomainChangePlan(paths, session, reviewedPlan, domains, outputMode)
@@ -966,6 +1029,51 @@ public sealed class ZaWorkflowService
     private static ZaEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {
         return new ZaEditSessionValidation(session, IsValid: false, [CreateMixedDiagnostic()]);
+    }
+
+    private static bool IsMixedScopedDexLayoutSession(EditSession session)
+    {
+        return session.PendingEdits.Count > 1
+            && session.PendingEdits.Any(ZaPokemonEditSessionService.IsScopedDexLayoutEdit);
+    }
+
+    private static ZaEditSessionValidation CreateScopedDexLayoutMixedValidation(EditSession session)
+    {
+        return new ZaEditSessionValidation(
+            session,
+            IsValid: false,
+            [CreateScopedDexLayoutMixedDiagnostic()]);
+    }
+
+    private static ChangePlan CreateScopedDexLayoutMixedChangePlan(EditSession session)
+    {
+        return new ChangePlan(
+            session.Id,
+            Array.Empty<PlannedFileWrite>(),
+            [CreateScopedDexLayoutMixedDiagnostic()]);
+    }
+
+    private static ApplyResult CreateScopedDexLayoutMixedApplyResult(EditSession session)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var plan = CreateScopedDexLayoutMixedChangePlan(session);
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            Array.Empty<ProjectFileReference>(),
+            new WriteManifest(applyId, appliedAt, plan.Writes),
+            plan.Diagnostics);
+    }
+
+    private static ValidationDiagnostic CreateScopedDexLayoutMixedDiagnostic()
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Dex Layout pending changes cannot share an edit session with other changes.",
+            ZaEditSessionSupport.PokemonDomain,
+            field: ZaPokemonWorkflowService.DexPlacementField,
+            expected: "A Dex Layout-only edit session");
     }
 
     private static ChangePlan CreateUnsupportedMixedChangePlan(EditSession session)

@@ -289,11 +289,24 @@ internal static class ZaEditSessionSupport
 
     public static ProjectFileReference GeneratedReference(
         string virtualPath,
-        ZaOutputMode outputMode = ZaOutputMode.Standalone)
+        ZaOutputMode outputMode = ZaOutputMode.Standalone,
+        bool isolateTrinityModManagerRomFs = false)
     {
-        var relativePath = outputMode == ZaOutputMode.TrinityModManager
-            ? virtualPath
-            : $"romfs/{virtualPath}";
+        if (isolateTrinityModManagerRomFs
+            && outputMode != ZaOutputMode.TrinityModManager)
+        {
+            throw new ArgumentException(
+                "Isolated Trinity Mod Manager RomFS references require Trinity Mod Manager output.",
+                nameof(isolateTrinityModManagerRomFs));
+        }
+
+        var relativePath = outputMode switch
+        {
+            ZaOutputMode.TrinityModManager when isolateTrinityModManagerRomFs =>
+                $"{ZaWorkflowFileSource.TrinityModManagerRomFsDirectory}/{virtualPath}",
+            ZaOutputMode.TrinityModManager => virtualPath,
+            _ => $"romfs/{virtualPath}",
+        };
         return new ProjectFileReference(ProjectFileLayer.Generated, relativePath);
     }
 

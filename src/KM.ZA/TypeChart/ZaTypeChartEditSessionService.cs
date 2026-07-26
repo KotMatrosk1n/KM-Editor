@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.ZA.ExeFs;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.TypeChart;
@@ -58,7 +59,7 @@ public sealed class ZaTypeChartEditSessionService
         var source = ZaTypeChartWorkflowService.ResolveWorkflowFile(project, ZaTypeChartWorkflowService.ExeFsMainPath);
         var sourceReferences = source is null
             ? [new ProjectFileReference(ProjectFileLayer.Base, ZaTypeChartWorkflowService.ExeFsMainPath)]
-            : new[] { CreateSourceReference(source.Entry) };
+            : new[] { source.Reference };
         var updatedSession = currentSession with
         {
             PendingEdits = currentSession.PendingEdits
@@ -235,7 +236,7 @@ public sealed class ZaTypeChartEditSessionService
                     new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath),
                     new ProjectFileReference(ProjectFileLayer.Base, ZaTypeChartWorkflowService.ExeFsMainPath),
                 ]
-                : [CreateSourceReference(source!.Entry)],
+                : [source!.Reference],
             File.Exists(targetPath),
             isUninstall
                 ? "Remove Pokemon Legends Z-A Type Chart output from exefs/main while preserving other generated ExeFS edits."
@@ -316,12 +317,23 @@ public sealed class ZaTypeChartEditSessionService
         try
         {
             var gameOrderValues = ZaTypeChartWorkflowService.ToGameOrder(values);
-            var output = ZaTypeChartMainPatcher.ApplyChart(
-                File.ReadAllBytes(source.AbsolutePath),
-                gameOrderValues,
-                paths.SelectedGame);
-            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            File.WriteAllBytes(targetPath, output);
+            ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
+                paths,
+                () =>
+                {
+                    var currentProject = projectWorkspaceService.Open(paths);
+                    var currentSource = ZaExeFsMainFileResolver.ResolveEffective(currentProject)
+                        ?? throw new FileNotFoundException(
+                            "Pokemon Legends Z-A exefs/main is no longer available.");
+                    var output = ZaTypeChartMainPatcher.ApplyChart(
+                        File.ReadAllBytes(currentSource.AbsolutePath),
+                        gameOrderValues,
+                        paths.SelectedGame);
+                    return new ZaStandaloneMixedBatch(
+                        Array.Empty<ZaWorkflowFileWrite>(),
+                        Array.Empty<string>(),
+                        [new ZaStandaloneOutputMutation(ZaTypeChartWorkflowService.ExeFsMainPath, output)]);
+                });
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
@@ -359,7 +371,7 @@ public sealed class ZaTypeChartEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var targetPath = ResolveOutputPath(paths, diagnostics);
-        var basePath = ResolveBaseSourcePath(paths, ZaTypeChartWorkflowService.ExeFsMainPath);
+        var basePath = ZaExeFsMainFileResolver.ResolveBasePath(paths);
         if (targetPath is null || basePath is null || !File.Exists(basePath))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -382,19 +394,41 @@ public sealed class ZaTypeChartEditSessionService
 
         try
         {
-            var baseBytes = File.ReadAllBytes(basePath);
-            var restored = ZaTypeChartMainPatcher.RestoreFromBase(
-                File.ReadAllBytes(targetPath),
-                baseBytes,
-                paths.SelectedGame);
-            if (restored.SequenceEqual(baseBytes))
-            {
-                File.Delete(targetPath);
-            }
-            else
-            {
-                File.WriteAllBytes(targetPath, restored);
-            }
+            ZaWorkflowFileSource.ApplyStandaloneMixedBatch(
+                paths,
+                () =>
+                {
+                    var currentTargetPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths)
+                        ?? throw new FileNotFoundException(
+                            "Pokemon Legends Z-A output exefs/main target is no longer available.");
+                    var currentBasePath = ZaExeFsMainFileResolver.ResolveBasePath(paths);
+                    if (currentBasePath is null || !File.Exists(currentBasePath))
+                    {
+                        throw new FileNotFoundException(
+                            "Pokemon Legends Z-A base exefs/main is no longer available.");
+                    }
+
+                    if (!File.Exists(currentTargetPath))
+                    {
+                        throw new FileNotFoundException(
+                            "Pokemon Legends Z-A output exefs/main target no longer exists.");
+                    }
+
+                    var baseBytes = File.ReadAllBytes(currentBasePath);
+                    var restored = ZaTypeChartMainPatcher.RestoreFromBase(
+                        File.ReadAllBytes(currentTargetPath),
+                        baseBytes,
+                        paths.SelectedGame);
+                    var outputBytes = ZaExeFsMainComparison.IsSemanticallyEquivalentToBase(restored, baseBytes)
+                        ? null
+                        : restored;
+                    return new ZaStandaloneMixedBatch(
+                        Array.Empty<ZaWorkflowFileWrite>(),
+                        Array.Empty<string>(),
+                        [new ZaStandaloneOutputMutation(
+                            ZaTypeChartWorkflowService.ExeFsMainPath,
+                            outputBytes)]);
+                });
 
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, ZaTypeChartWorkflowService.ExeFsMainPath));
             diagnostics.Add(CreateDiagnostic(
@@ -620,14 +654,6 @@ public sealed class ZaTypeChartEditSessionService
         return string.Equals(edit.RecordId, UninstallRecordId, StringComparison.Ordinal);
     }
 
-    private static ProjectFileReference CreateSourceReference(ProjectFileGraphEntry entry)
-    {
-        var layer = entry.LayeredFile is not null
-            ? ProjectFileLayer.Layered
-            : ProjectFileLayer.Base;
-        return new ProjectFileReference(layer, entry.RelativePath);
-    }
-
     private static string? ResolveOutputPath(
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -652,26 +678,6 @@ public sealed class ZaTypeChartEditSessionService
         }
 
         return targetPath;
-    }
-
-    private static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
-    {
-        if (targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..]);
-        }
-
-        return null;
-    }
-
-    private static string? CombineGraphPath(string? rootPath, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            return null;
-        }
-
-        return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

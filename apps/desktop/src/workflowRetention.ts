@@ -163,6 +163,16 @@ export function isRetainedWorkflowSection(
   return section === 'modMerger' || section in workflowStoreKeyBySection;
 }
 
+export function resolveRetainedWorkflowSection(
+  section: WorkbenchSection
+): RetainedWorkflowSection | null {
+  if (section === 'dexLayout') {
+    return 'pokemon';
+  }
+
+  return isRetainedWorkflowSection(section) ? section : null;
+}
+
 export function getLoadedWorkflowRetentionEntries(
   state: WorkflowRetentionState,
   modMergerWorkflow: unknown = null
@@ -214,8 +224,11 @@ export function getEditSessionOwnerSections(
   editSessionSection: WorkbenchSection | null
 ) {
   const sections = new Set<RetainedWorkflowSection>();
-  if (editSessionSection && isRetainedWorkflowSection(editSessionSection)) {
-    sections.add(editSessionSection);
+  if (editSessionSection) {
+    const retainedSection = resolveRetainedWorkflowSection(editSessionSection);
+    if (retainedSection) {
+      sections.add(retainedSection);
+    }
   }
 
   for (const edit of editSession?.pendingEdits ?? []) {

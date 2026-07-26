@@ -97,7 +97,7 @@ internal sealed class ZaEncountersWorkflowService
             WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
-        return new ZaEncountersWorkflow(
+        var workflow = new ZaEncountersWorkflow(
             summary,
             tables,
             CreateEditableFields(labels, pokemonAvailability),
@@ -109,6 +109,79 @@ internal sealed class ZaEncountersWorkflowService
         {
             PokemonAvailability = pokemonAvailability,
             OutzoneAvailability = outzoneAvailability,
+        };
+        return AddVanillaRestoreAvailability(project, workflow);
+    }
+
+    private ZaEncountersWorkflow AddVanillaRestoreAvailability(
+        OpenedProject project,
+        ZaEncountersWorkflow workflow)
+    {
+        if (workflow.Tables.Count == 0)
+        {
+            return workflow;
+        }
+
+        if (!ZaEncounterVanillaRestoreCatalog.TryCreate(
+                project,
+                fileSource,
+                out var catalog,
+                out var catalogBlockedReason))
+        {
+            return workflow with
+            {
+                Tables = workflow.Tables
+                    .Select(table => table with
+                    {
+                        Slots = table.Slots
+                            .Select(slot => slot with
+                            {
+                                CanRevertToVanilla = false,
+                                RevertToVanillaBlockedReason = catalogBlockedReason,
+                            })
+                            .ToArray(),
+                    })
+                    .ToArray(),
+            };
+        }
+
+        return workflow with
+        {
+            Tables = workflow.Tables
+                .Select(table => table with
+                {
+                    Slots = table.Slots
+                        .Select(slot =>
+                        {
+                            try
+                            {
+                                var canRevert = catalog!.TryResolve(
+                                    workflow,
+                                    table,
+                                    slot,
+                                    out _,
+                                    out var blockedReason);
+                                return slot with
+                                {
+                                    CanRevertToVanilla = canRevert,
+                                    RevertToVanillaBlockedReason = canRevert
+                                        ? null
+                                        : blockedReason,
+                                };
+                            }
+                            catch (Exception exception) when (exception is not OutOfMemoryException)
+                            {
+                                return slot with
+                                {
+                                    CanRevertToVanilla = false,
+                                    RevertToVanillaBlockedReason =
+                                        "This encounter cannot be matched exactly to the verified vanilla files.",
+                                };
+                            }
+                        })
+                        .ToArray(),
+                })
+                .ToArray(),
         };
     }
 
@@ -592,6 +665,8 @@ internal sealed class ZaEncountersWorkflowService
                 AppearanceMaxCount = appearanceCounts.Maximum,
                 AppearanceObjectCount = appearanceCounts.ObjectCount,
                 CanEditAppearanceCounts = appearanceCounts.CanEdit,
+                CanEditAppearanceMinCount = appearanceCounts.CanEditMinimum,
+                CanEditAppearanceMaxCount = appearanceCounts.CanEditMaximum,
                 FormOptions = CreateFormOptions(
                     speciesId,
                     labels.Pokemon(speciesId),
@@ -699,21 +774,22 @@ internal sealed class ZaEncountersWorkflowService
         var objectCount = spawner.AppearanceSpawnerObjectInfoListLength;
         if (objectCount == 0)
         {
-            return new AppearanceCountSummary(0, null, null, false);
+            return new AppearanceCountSummary(0, null, null, false, false);
         }
 
         int? minimum = null;
         int? maximum = null;
-        var canEdit = scalarSpawner is not null
-            && scalarSpawner.AppearanceSpawnerObjectInfoList.Count == objectCount
-            && scalarSpawner.CanEditAppearanceCounts;
+        var hasMatchingScalarShape = scalarSpawner is not null
+            && scalarSpawner.AppearanceSpawnerObjectInfoList.Count == objectCount;
+        var canEditMinimum = hasMatchingScalarShape;
+        var canEditMaximum = hasMatchingScalarShape;
         for (var index = 0; index < objectCount; index++)
         {
             var objectInfo = spawner.AppearanceSpawnerObjectInfoList(index);
             var appearanceInfo = objectInfo?.AppearanceInfo;
             if (appearanceInfo is null)
             {
-                return new AppearanceCountSummary(objectCount, null, null, false);
+                return new AppearanceCountSummary(objectCount, null, null, false, false);
             }
 
             var scalarObjectInfo = scalarSpawner is not null
@@ -729,7 +805,13 @@ internal sealed class ZaEncountersWorkflowService
                 || scalarAppearanceInfo.MinCount != appearanceInfo.Value.MinCount
                 || scalarAppearanceInfo.MaxCount != appearanceInfo.Value.MaxCount)
             {
-                canEdit = false;
+                canEditMinimum = false;
+                canEditMaximum = false;
+            }
+            else
+            {
+                canEditMinimum &= scalarAppearanceInfo.CanEditMinCount;
+                canEditMaximum &= scalarAppearanceInfo.CanEditMaxCount;
             }
 
             if (minimum is null)
@@ -742,11 +824,16 @@ internal sealed class ZaEncountersWorkflowService
             if (minimum.Value != appearanceInfo.Value.MinCount
                 || maximum!.Value != appearanceInfo.Value.MaxCount)
             {
-                return new AppearanceCountSummary(objectCount, null, null, false);
+                return new AppearanceCountSummary(objectCount, null, null, false, false);
             }
         }
 
-        return new AppearanceCountSummary(objectCount, minimum, maximum, canEdit);
+        return new AppearanceCountSummary(
+            objectCount,
+            minimum,
+            maximum,
+            canEditMinimum,
+            canEditMaximum);
     }
 
     private static IReadOnlyList<ZaEncounterEditableFieldOption> CreateIndexedOptions(
@@ -1037,8 +1124,11 @@ internal sealed class ZaEncountersWorkflowService
         int ObjectCount,
         int? Minimum,
         int? Maximum,
-        bool CanEdit)
+        bool CanEditMinimum,
+        bool CanEditMaximum)
     {
         public bool HasUniformReadableValues => Minimum is not null && Maximum is not null;
+
+        public bool CanEdit => CanEditMinimum && CanEditMaximum;
     }
 }

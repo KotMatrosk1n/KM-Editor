@@ -177,11 +177,20 @@ public sealed record ZaPokemonDexPlacement(
 public sealed record ZaPokemonDexEditor(
     bool CanEdit,
     string? BlockedReason,
+    bool CanEditAdvanced,
+    string? AdvancedBlockedReason,
+    bool IsVanillaLayout,
+    bool CanReturnToVanilla,
+    string? ReturnToVanillaBlockedReason,
+    string? ExecutableBuildId,
+    int? ExecutableRegularCount,
     int RegularCount,
     int HyperspaceCount,
     IReadOnlyList<ZaPokemonDexPlacement> Placements,
     ZaPokemonProvenance? PersonalProvenance,
-    ZaPokemonProvenance? ContentsProvenance);
+    ZaPokemonProvenance? ContentsProvenance,
+    ZaPokemonProvenance? ExecutableProvenance,
+    string? VanillaLayoutFingerprint);
 
 public sealed record ZaPokemonEditResult(
     ZaPokemonWorkflow Workflow,

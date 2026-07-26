@@ -54,6 +54,22 @@ public sealed record SwapPokemonDexPlacementRequest(
     int SourceSpeciesId,
     int TargetSpeciesId);
 
+public sealed record MovePokemonDexPlacementRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int SourceSpeciesId,
+    string DestinationDexKind,
+    int DestinationDisplayedNumber);
+
+public sealed record ResizePokemonDexRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int RegularCount);
+
+public sealed record StagePokemonDexVanillaRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session);
+
 public sealed record PokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -204,6 +220,13 @@ public sealed record PokemonDexPlacementDto(
 public sealed record PokemonDexEditorDto(
     bool CanEdit,
     string? BlockedReason,
+    bool CanEditAdvanced,
+    string? AdvancedBlockedReason,
+    bool IsVanillaLayout,
+    bool CanReturnToVanilla,
+    string? ReturnToVanillaBlockedReason,
+    string? ExecutableBuildId,
+    int? ExecutableRegularCount,
     int RegularCount,
     int HyperspaceCount,
     IReadOnlyList<PokemonDexPlacementDto> Placements);
@@ -249,6 +272,21 @@ public sealed record UpdatePokemonEvolutionResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record SwapPokemonDexPlacementResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record MovePokemonDexPlacementResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record ResizePokemonDexResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record StagePokemonDexVanillaResponse(
     PokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

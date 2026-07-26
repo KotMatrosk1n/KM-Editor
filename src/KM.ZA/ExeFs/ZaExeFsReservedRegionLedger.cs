@@ -35,11 +35,48 @@ internal sealed record ZaExeFsReservedRegion(
 
 internal static class ZaExeFsReservedRegionLedger
 {
+    public const string OwnerDexLayout = "Dex Layout";
     public const string OwnerTypeChart = "Type Chart";
     public const string ExeFsMainPath = "exefs/main";
 
     private static readonly ZaExeFsReservedRegion[] regions =
     [
+        new(
+            OwnerDexLayout,
+            "dex-layout-za",
+            ExeFsMainPath,
+            "main.text",
+            0x008D0EF0,
+            0x08,
+            "Pokemon Legends Z-A Pokédex number normalization",
+            "replace-immediate"),
+        new(
+            OwnerDexLayout,
+            "dex-layout-za",
+            ExeFsMainPath,
+            "main.text",
+            0x009F0C38,
+            0x08,
+            "Pokemon Legends Z-A Pokédex number normalization",
+            "replace-immediate"),
+        new(
+            OwnerDexLayout,
+            "dex-layout-za",
+            ExeFsMainPath,
+            "main.text",
+            0x00A027B0,
+            0x08,
+            "Pokemon Legends Z-A Pokédex number normalization",
+            "replace-immediate"),
+        new(
+            OwnerDexLayout,
+            "dex-layout-za",
+            ExeFsMainPath,
+            "main.text",
+            0x02C8D524,
+            0x08,
+            "Pokemon Legends Z-A Pokédex number normalization",
+            "replace-immediate"),
         new(
             OwnerTypeChart,
             "type-chart-za",

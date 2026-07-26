@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
@@ -11,6 +12,7 @@ using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
+using KM.ZA.ExeFs;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Pokemon;
@@ -27,7 +29,10 @@ internal sealed class ZaPokemonEditSessionService
     private const string MoveDownAction = "moveDown";
     private const string MoveToAction = "moveTo";
     private const string DexPlacementRecordId = "dex-placement";
-    private const string DexPlacementPayloadPrefix = "v1|";
+    private const string DexLayoutRecordId = "dex-layout";
+    private const string VanillaDexPlacementRecordId = "dex-placement-vanilla";
+    private const string DexPlacementPayloadV1Prefix = "v1|";
+    private const string DexPlacementPayloadV2Prefix = "v2|";
     private const int PersonalTableEntryFieldIndex = 0;
     private const int PersonalSpeciesFieldIndex = 0;
     private const int PersonalIsPresentFieldIndex = 1;
@@ -203,6 +208,17 @@ internal sealed class ZaPokemonEditSessionService
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
+        if (currentSession.PendingEdits.Any(IsScopedDexLayoutEdit))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Apply or discard pending Dex Layout changes before using the Pokemon editor Swap.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "No pending Dex Layout changes"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
         if (!ZaEditSessionSupport.CanEdit(
                 project,
                 workflow.Summary,
@@ -256,6 +272,20 @@ internal sealed class ZaPokemonEditSessionService
             return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
+        if (editor.RegularCount != loadedEditor.RegularCount
+            && (!loadedEditor.CanEditAdvanced
+                || loadedEditor.ExecutableProvenance is null))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                loadedEditor.AdvancedBlockedReason
+                    ?? "The staged Pokédex boundary cannot be preserved because advanced Pokédex editing is unavailable.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified matching Pokemon Legends Z-A exefs/main"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
         var assignments = editor.Placements.ToDictionary(
             placement => placement.SpeciesId,
             placement => placement.InternalIndex);
@@ -268,7 +298,11 @@ internal sealed class ZaPokemonEditSessionService
         var pendingEdits = currentSession.PendingEdits
             .Where(edit => !IsDexPlacementEdit(edit))
             .ToList();
-        if (!DexAssignmentsEqual(assignments, baseAssignments))
+        if (!DexPlacementStatesEqual(
+                assignments,
+                editor.RegularCount,
+                baseAssignments,
+                loadedEditor.RegularCount))
         {
             var changedSpeciesCount = assignments.Count(pair =>
                 !baseAssignments.TryGetValue(pair.Key, out var baseIndex)
@@ -280,13 +314,15 @@ internal sealed class ZaPokemonEditSessionService
             pendingEdits.Add(new PendingEdit(
                 ZaEditSessionSupport.PokemonDomain,
                 summary,
-                [
-                    ToSourceReference(loadedEditor.PersonalProvenance!),
-                    ToSourceReference(loadedEditor.ContentsProvenance!),
-                ],
+                CreateDexPlacementSources(
+                    loadedEditor,
+                    includeExecutable: editor.RegularCount != loadedEditor.RegularCount),
                 DexPlacementRecordId,
                 ZaPokemonWorkflowService.DexPlacementField,
-                EncodeDexAssignments(assignments)));
+                EncodeDexPlacementState(
+                    assignments,
+                    editor.RegularCount,
+                    loadedEditor.RegularCount)));
         }
 
         var updatedSession = currentSession with { PendingEdits = pendingEdits };
@@ -294,6 +330,502 @@ internal sealed class ZaPokemonEditSessionService
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
+    }
+
+    public ZaPokemonEditResult MoveDexPlacement(
+        ProjectPaths paths,
+        EditSession? session,
+        int sourceSpeciesId,
+        string destinationDexKind,
+        int destinationDisplayedNumber)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationDexKind);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanUseDexLayoutSession(currentSession, diagnostics)
+            || !ZaEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var editor = workflow.DexEditor;
+        var loadedEditor = loadedWorkflow.DexEditor;
+        if (editor is null
+            || loadedEditor is null
+            || !editor.CanEdit
+            || editor.PersonalProvenance is null
+            || editor.ContentsProvenance is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor?.BlockedReason ?? "Pokédex placement is not available for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified active Pokédex placement data"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var normalizedDexKind = destinationDexKind.Trim();
+        if (!string.Equals(
+                normalizedDexKind,
+                ZaPokemonWorkflowService.RegularDexKind,
+                StringComparison.Ordinal)
+            && !string.Equals(
+                normalizedDexKind,
+                ZaPokemonWorkflowService.HyperspaceDexKind,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokédex destination '{destinationDexKind}' is not supported.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "regular or hyperspace"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var sourcePlacement = editor.Placements
+            .FirstOrDefault(placement => placement.SpeciesId == sourceSpeciesId);
+        if (sourcePlacement is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement move targets a species that is not in the verified active Pokédex.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Active Pokédex species"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var regularPlacements = editor.Placements
+            .Where(placement => string.Equals(
+                placement.DexKind,
+                ZaPokemonWorkflowService.RegularDexKind,
+                StringComparison.Ordinal))
+            .OrderBy(placement => placement.DisplayedNumber)
+            .ToList();
+        var hyperspacePlacements = editor.Placements
+            .Where(placement => string.Equals(
+                placement.DexKind,
+                ZaPokemonWorkflowService.HyperspaceDexKind,
+                StringComparison.Ordinal))
+            .OrderBy(placement => placement.DisplayedNumber)
+            .ToList();
+        var sourceList = string.Equals(
+            sourcePlacement.DexKind,
+            ZaPokemonWorkflowService.RegularDexKind,
+            StringComparison.Ordinal)
+            ? regularPlacements
+            : hyperspacePlacements;
+        if (!sourceList.Remove(sourcePlacement))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement move could not resolve the source within its current Pokédex.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified source placement"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var destinationList = string.Equals(
+            normalizedDexKind,
+            ZaPokemonWorkflowService.RegularDexKind,
+            StringComparison.Ordinal)
+            ? regularPlacements
+            : hyperspacePlacements;
+        var maximumDestination = destinationList.Count + 1;
+        if (destinationDisplayedNumber <= 0 || destinationDisplayedNumber > maximumDestination)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Pokédex destination number {destinationDisplayedNumber} is outside the available 1-{maximumDestination} range."),
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Displayed destination number from 1 through {maximumDestination}")));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        destinationList.Insert(destinationDisplayedNumber - 1, sourcePlacement);
+        var orderedPlacements = regularPlacements
+            .Concat(hyperspacePlacements)
+            .ToArray();
+        var assignments = orderedPlacements
+            .Select((placement, index) => new
+            {
+                placement.SpeciesId,
+                InternalIndex = index + 1,
+            })
+            .ToDictionary(pair => pair.SpeciesId, pair => pair.InternalIndex);
+        var targetRegularCount = regularPlacements.Count;
+        if (targetRegularCount <= 0 || targetRegularCount >= assignments.Count)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement moves must leave at least one species in both the Regular and Hyperspace Pokédexes.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Two non-empty Pokédexes"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var currentAssignments = editor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        if (DexPlacementStatesEqual(
+                assignments,
+                targetRegularCount,
+                currentAssignments,
+                editor.RegularCount))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{GetSpeciesName(workflow, sourceSpeciesId)} already occupies the requested Pokédex placement.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "A different Pokédex or displayed number"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (targetRegularCount != loadedEditor.RegularCount
+            && (!loadedEditor.CanEditAdvanced
+                || loadedEditor.ExecutableProvenance is null))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                loadedEditor.AdvancedBlockedReason
+                    ?? "Changing the Regular and Hyperspace Pokédex sizes is unavailable for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified matching Pokemon Legends Z-A exefs/main"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var baseAssignments = loadedEditor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        var pendingEdits = currentSession.PendingEdits
+            .Where(edit => !IsDexPlacementEdit(edit))
+            .ToList();
+        if (!DexPlacementStatesEqual(
+                assignments,
+                targetRegularCount,
+                baseAssignments,
+                loadedEditor.RegularCount))
+        {
+            var destinationName = string.Equals(
+                normalizedDexKind,
+                ZaPokemonWorkflowService.RegularDexKind,
+                StringComparison.Ordinal)
+                ? "Regular Dex"
+                : "Hyperspace Dex";
+            pendingEdits.Add(new PendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Move {GetSpeciesName(workflow, sourceSpeciesId)} from {FormatDexPlacement(sourcePlacement)} "
+                    + $"to {destinationName} #{destinationDisplayedNumber}; shift occupied entries to keep Pokédex numbers contiguous."),
+                CreateDexPlacementSources(
+                    loadedEditor,
+                    includeExecutable: targetRegularCount != loadedEditor.RegularCount),
+                DexLayoutRecordId,
+                ZaPokemonWorkflowService.DexPlacementField,
+                EncodeDexPlacementState(
+                    assignments,
+                    targetRegularCount,
+                    loadedEditor.RegularCount)));
+        }
+
+        var updatedSession = currentSession with { PendingEdits = pendingEdits };
+        return new ZaPokemonEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
+    public ZaPokemonEditResult ResizeDex(
+        ProjectPaths paths,
+        EditSession? session,
+        int regularCount)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanUseDexLayoutSession(currentSession, diagnostics)
+            || !ZaEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var editor = workflow.DexEditor;
+        var loadedEditor = loadedWorkflow.DexEditor;
+        if (editor is null
+            || loadedEditor is null
+            || !editor.CanEdit
+            || editor.PersonalProvenance is null
+            || editor.ContentsProvenance is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor?.BlockedReason ?? "Pokédex resizing is not available for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified active Pokédex placement data"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (editor.Placements.Count != ZaDexLayoutMainPatcher.TotalDexSpeciesCount)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Pokédex resizing requires exactly {ZaDexLayoutMainPatcher.TotalDexSpeciesCount} active species, "
+                    + $"but this project has {editor.Placements.Count}."),
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{ZaDexLayoutMainPatcher.TotalDexSpeciesCount} active Pokédex species")));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var maximumRegularCount = ZaDexLayoutMainPatcher.TotalDexSpeciesCount - 1;
+        if (regularCount <= 0 || regularCount > maximumRegularCount)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Regular Dex size {regularCount} is outside the supported 1-{maximumRegularCount} range."),
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Regular Dex size from 1 through {maximumRegularCount}; "
+                    + $"Hyperspace Dex size is {ZaDexLayoutMainPatcher.TotalDexSpeciesCount} minus the Regular Dex size")));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (regularCount != loadedEditor.RegularCount
+            && (!loadedEditor.CanEditAdvanced
+                || loadedEditor.ExecutableProvenance is null))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                loadedEditor.AdvancedBlockedReason
+                    ?? "Changing the Regular and Hyperspace Pokédex sizes is unavailable for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified matching Pokemon Legends Z-A exefs/main"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var assignments = editor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        var baseAssignments = loadedEditor.Placements.ToDictionary(
+            placement => placement.SpeciesId,
+            placement => placement.InternalIndex);
+        var pendingEdits = currentSession.PendingEdits
+            .Where(edit => !IsDexPlacementEdit(edit))
+            .ToList();
+        if (!DexPlacementStatesEqual(
+                assignments,
+                regularCount,
+                baseAssignments,
+                loadedEditor.RegularCount))
+        {
+            var hyperspaceCount = ZaDexLayoutMainPatcher.TotalDexSpeciesCount - regularCount;
+            pendingEdits.Add(new PendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Resize the Regular Dex to {regularCount} entries and the Hyperspace Dex to {hyperspaceCount} entries; preserve the global Pokédex order."),
+                CreateDexPlacementSources(
+                    loadedEditor,
+                    includeExecutable: regularCount != loadedEditor.RegularCount),
+                DexLayoutRecordId,
+                ZaPokemonWorkflowService.DexPlacementField,
+                EncodeDexPlacementState(
+                    assignments,
+                    regularCount,
+                    loadedEditor.RegularCount)));
+        }
+
+        var updatedSession = currentSession with { PendingEdits = pendingEdits };
+        return new ZaPokemonEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
+    public ZaPokemonEditResult StageVanillaDexLayout(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanUseDexLayoutSession(currentSession, diagnostics)
+            || !ZaEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var editor = workflow.DexEditor;
+        var loadedEditor = loadedWorkflow.DexEditor;
+        if (editor is null
+            || loadedEditor is null
+            || !editor.CanEdit
+            || editor.PersonalProvenance is null
+            || editor.ContentsProvenance is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor?.BlockedReason ?? "Returning Dex Layout to vanilla is not available for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified active and base Pokédex placement data"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (editor.IsVanillaLayout)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dex Layout already matches the verified vanilla ordering, membership, and sizes.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "A modified Dex Layout"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (!editor.CanReturnToVanilla)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor.ReturnToVanillaBlockedReason
+                    ?? "Returning Dex Layout to vanilla is unavailable for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified current and base Dex Layout sources"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        try
+        {
+            var vanilla = ReadVerifiedVanillaDexLayout(project, loadedEditor);
+            var targetChangesRegularCount =
+                vanilla.RegularCount != loadedEditor.RegularCount;
+            if (targetChangesRegularCount
+                && (!loadedEditor.CanEditAdvanced
+                    || loadedEditor.ExecutableProvenance is null))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    loadedEditor.AdvancedBlockedReason
+                        ?? "Returning Dex Layout to vanilla requires a verified matching Pokemon Legends Z-A exefs/main.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: ZaPokemonWorkflowService.DexPlacementField,
+                    expected: "Verified matching Pokemon Legends Z-A exefs/main"));
+                return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+            }
+
+            var baseAssignments = loadedEditor.Placements.ToDictionary(
+                placement => placement.SpeciesId,
+                placement => placement.InternalIndex);
+            var pendingEdits = currentSession.PendingEdits
+                .Where(edit => !IsDexPlacementEdit(edit))
+                .ToList();
+            var stagesVanillaWrite = !DexPlacementStatesEqual(
+                vanilla.Assignments,
+                vanilla.RegularCount,
+                baseAssignments,
+                loadedEditor.RegularCount);
+            if (stagesVanillaWrite)
+            {
+                pendingEdits.Add(new PendingEdit(
+                    ZaEditSessionSupport.PokemonDomain,
+                    "Return Dex Layout to verified vanilla ordering, membership, and sizes.",
+                    CreateVanillaDexPlacementSources(
+                        project,
+                        loadedEditor,
+                        vanilla,
+                        targetChangesRegularCount),
+                    VanillaDexPlacementRecordId,
+                    ZaPokemonWorkflowService.DexPlacementField,
+                    EncodeDexPlacementState(
+                        vanilla.Assignments,
+                        vanilla.RegularCount,
+                        loadedEditor.RegularCount)));
+            }
+
+            var updatedSession = currentSession with { PendingEdits = pendingEdits };
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                stagesVanillaWrite
+                    ? "Return to Vanilla is staged for change-plan review."
+                    : "Pending Dex Layout changes were cleared because the effective layout already matches verified vanilla.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField));
+            return new ZaPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+                updatedSession,
+                diagnostics);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException
+                or OverflowException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Return to Vanilla could not be staged safely: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified current and base Dex Layout sources"));
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
     }
 
     public ZaPokemonEditResult UpdateLearnset(
@@ -437,11 +969,33 @@ internal sealed class ZaPokemonEditSessionService
             ZaEditSessionSupport.PokemonDomain,
             diagnostics);
 
+        var dexPlacementEditCount = session.PendingEdits.Count(IsDexPlacementEdit);
+        if (dexPlacementEditCount > 1)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "An edit session can contain only one complete Pokédex placement state.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "One canonical Pokédex placement edit"));
+        }
+
+        if (session.PendingEdits.Any(IsScopedDexLayoutEdit)
+            && session.PendingEdits.Any(edit => !IsDexPlacementEdit(edit)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dex Layout pending changes cannot share an edit session with ordinary Pokemon Data changes.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "A Dex Layout-only edit session"));
+        }
+
         var effectiveWorkflow = workflow;
         foreach (var edit in session.PendingEdits)
         {
             var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
+            ValidatePendingEdit(project, effectiveWorkflow, edit, diagnostics);
             if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
             {
                 effectiveWorkflow = OverlayPendingEdits(effectiveWorkflow, [edit]);
@@ -531,11 +1085,18 @@ internal sealed class ZaPokemonEditSessionService
                 return plan;
             }
 
+            var isolateTrinityModManagerRomFs =
+                outputMode == ZaOutputMode.TrinityModManager
+                && plan.Writes.Any(write => string.Equals(
+                    write.TargetRelativePath,
+                    ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                    StringComparison.OrdinalIgnoreCase));
             var writeInfo = ZaWorkflowFileSource.CreatePlannedWrite(
                 paths,
                 ZaDataPaths.EvolutionItemConversionArray,
                 [conversionState.SourceReference()],
-                outputMode);
+                outputMode,
+                isolateTrinityModManagerRomFs);
             var conversionWrite = new PlannedFileWrite(
                 writeInfo.TargetRelativePath,
                 writeInfo.Sources,
@@ -674,20 +1235,151 @@ internal sealed class ZaPokemonEditSessionService
                     contentsBytes));
             }
 
-            ZaWorkflowFileSource.WriteBatch(paths, outputWrites, outputMode);
+            if (dexApply.ChangesRegularCount)
+            {
+                var isolateTrinityModManagerRomFs =
+                    outputMode == ZaOutputMode.TrinityModManager;
+                var expectedMainFingerprint = currentPlan.Writes
+                    .Single(write => string.Equals(
+                        write.TargetRelativePath,
+                        ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                        StringComparison.OrdinalIgnoreCase))
+                    .SourceFingerprint
+                    ?? throw new InvalidDataException(
+                        "The reviewed exefs/main write is missing its source fingerprint.");
+                ZaWorkflowFileSource.ApplyHybridMixedBatch(
+                    paths,
+                    outputMode,
+                    isolateTrinityModManagerRomFs,
+                    () =>
+                    {
+                        var currentProject = projectWorkspaceService.Open(paths);
+                        if (isolateTrinityModManagerRomFs
+                            && fileSource.TryFindLegacyBareTrinityModManagerOutput(
+                                currentProject,
+                                [ZaDataPaths.PersonalArray, ZaDataPaths.PokedexContentsData],
+                                out _))
+                        {
+                            throw new InvalidDataException(
+                                "The Output Root now contains legacy bare Trinity Mod Manager RomFS files. Choose a clean or container Output Root before applying this hybrid Dex Layout package.");
+                        }
+
+                        var layeredBypassMainPath = outputMode == ZaOutputMode.TrinityBypass
+                            ? ZaExeFsMainFileResolver.ResolveOutputPath(paths)
+                            : null;
+                        if (outputMode == ZaOutputMode.TrinityBypass
+                            && (layeredBypassMainPath is null
+                                || !File.Exists(layeredBypassMainPath)))
+                        {
+                            throw new FileNotFoundException(
+                                "The layered Trinity bypass exefs/main disappeared after change-plan review.");
+                        }
+
+                        var effectiveMain = ZaExeFsMainFileResolver.ResolveEffective(currentProject)
+                            ?? throw new FileNotFoundException(
+                                "Pokemon Legends Z-A exefs/main is no longer available.");
+                        var pathComparison = OperatingSystem.IsWindows()
+                            ? StringComparison.OrdinalIgnoreCase
+                            : StringComparison.Ordinal;
+                        if (layeredBypassMainPath is not null
+                            && !string.Equals(
+                                Path.GetFullPath(effectiveMain.AbsolutePath),
+                                Path.GetFullPath(layeredBypassMainPath),
+                                pathComparison))
+                        {
+                            throw new InvalidDataException(
+                                "Trinity bypass Dex Layout output must compose onto the existing layered exefs/main.");
+                        }
+
+                        var effectiveMainBytes = File.ReadAllBytes(effectiveMain.AbsolutePath);
+                        if (!string.Equals(
+                                CreateSourceFingerprint(effectiveMainBytes),
+                                expectedMainFingerprint,
+                                StringComparison.Ordinal))
+                        {
+                            throw new InvalidDataException(
+                                "Pokemon Legends Z-A exefs/main changed after change-plan review.");
+                        }
+
+                        var effectiveAnalysis = ZaDexLayoutMainPatcher.Analyze(
+                            effectiveMainBytes,
+                            paths.SelectedGame);
+                        if (effectiveAnalysis.Kind is ZaDexLayoutMainKind.UnsupportedBuild
+                            or ZaDexLayoutMainKind.GameMismatch
+                            or ZaDexLayoutMainKind.Conflict
+                            || effectiveAnalysis.RegularCount != dexApply.CurrentRegularCount)
+                        {
+                            throw new InvalidDataException(
+                                "Pokemon Legends Z-A exefs/main no longer matches the verified current Pokédex boundary.");
+                        }
+
+                        var baseMain = ZaExeFsMainFileResolver.ResolveBase(currentProject)
+                            ?? throw new FileNotFoundException(
+                                "Pokemon Legends Z-A base exefs/main is no longer available.");
+                        var baseMainBytes = File.ReadAllBytes(baseMain.AbsolutePath);
+                        var baseAnalysis = ZaDexLayoutMainPatcher.Analyze(
+                            baseMainBytes,
+                            paths.SelectedGame);
+                        if (baseAnalysis.Kind != ZaDexLayoutMainKind.Vanilla
+                            || baseAnalysis.RegularCount
+                                != ZaDexLayoutMainPatcher.VanillaRegularCount
+                            || !string.Equals(
+                                baseAnalysis.BuildId,
+                                effectiveAnalysis.BuildId,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidDataException(
+                                "Pokemon Legends Z-A base exefs/main is not the verified clean build.");
+                        }
+
+                        var patchedMain = ZaDexLayoutMainPatcher.ApplyRegularCount(
+                            effectiveMainBytes,
+                            dexApply.TargetRegularCount,
+                            paths.SelectedGame);
+                        var mainOutputBytes =
+                            outputMode != ZaOutputMode.TrinityBypass
+                            && ZaExeFsMainComparison.IsSemanticallyEquivalentToBase(
+                                patchedMain,
+                                baseMainBytes)
+                                ? null
+                                : patchedMain;
+                        return new ZaStandaloneMixedBatch(
+                            outputWrites,
+                            Array.Empty<string>(),
+                            [new ZaStandaloneOutputMutation(
+                                ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                                mainOutputBytes)]);
+                    });
+            }
+            else
+            {
+                ZaWorkflowFileSource.WriteBatch(paths, outputWrites, outputMode);
+            }
+
             if (conversionBytes is not null)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
                     ZaDataPaths.EvolutionItemConversionArray,
-                    outputMode));
+                    outputMode,
+                    isolateTrinityModManagerRomFs:
+                        dexApply.ChangesRegularCount
+                        && outputMode == ZaOutputMode.TrinityModManager));
             }
 
-            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PersonalArray, outputMode));
+            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                ZaDataPaths.PersonalArray,
+                outputMode,
+                isolateTrinityModManagerRomFs:
+                    dexApply.ChangesRegularCount
+                    && outputMode == ZaOutputMode.TrinityModManager));
             if (contentsBytes is not null)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
                     ZaDataPaths.PokedexContentsData,
-                    outputMode));
+                    outputMode,
+                    isolateTrinityModManagerRomFs:
+                        dexApply.ChangesRegularCount
+                        && outputMode == ZaOutputMode.TrinityModManager));
             }
 
             if (outputMode == ZaOutputMode.Standalone)
@@ -695,10 +1387,33 @@ internal sealed class ZaPokemonEditSessionService
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
             }
 
+            if (dexApply.ChangesRegularCount)
+            {
+                writtenFiles.Add(new ProjectFileReference(
+                    ProjectFileLayer.Generated,
+                    ZaExeFsReservedRegionLedger.ExeFsMainPath));
+            }
+
             pokemonWorkflowService.ClearMemoryCache();
+            var applyMessage = dexApply.ChangesRegularCount
+                ? outputMode switch
+                {
+                    ZaOutputMode.Standalone =>
+                        "Pokemon Data RomFS output was written as a standalone LayeredFS override with a patched descriptor, and executable output was written to exefs/main.",
+                    ZaOutputMode.TrinityModManager =>
+                        "Pokemon Data RomFS output was written under trinity-mod-manager-romfs for Trinity Mod Manager, and executable output was written to exefs/main.",
+                    ZaOutputMode.TrinityBypass =>
+                        "Pokemon Data RomFS output was written in Trinity bypass layout, and executable output was composed into the existing exefs/main.",
+                    _ => ZaEditSessionSupport.CreateApplyOutputMessage(
+                        "Pokemon Data",
+                        outputMode),
+                }
+                : ZaEditSessionSupport.CreateApplyOutputMessage(
+                    "Pokemon Data",
+                    outputMode);
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                ZaEditSessionSupport.CreateApplyOutputMessage("Pokemon Data", outputMode),
+                applyMessage,
                 ZaEditSessionSupport.PokemonDomain));
         }
         catch (Exception exception)
@@ -791,7 +1506,8 @@ internal sealed class ZaPokemonEditSessionService
             parsed.Value.ToString(CultureInfo.InvariantCulture));
     }
 
-    private static void ValidatePendingEdit(
+    private void ValidatePendingEdit(
+        OpenedProject project,
         ZaPokemonWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -808,7 +1524,7 @@ internal sealed class ZaPokemonEditSessionService
 
         if (IsDexPlacementEdit(edit))
         {
-            ValidateDexPlacementEdit(workflow, edit, diagnostics);
+            ValidateDexPlacementEdit(project, workflow, edit, diagnostics);
             return;
         }
 
@@ -922,7 +1638,8 @@ internal sealed class ZaPokemonEditSessionService
         };
     }
 
-    private static void ValidateDexPlacementEdit(
+    private void ValidateDexPlacementEdit(
+        OpenedProject project,
         ZaPokemonWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -942,40 +1659,106 @@ internal sealed class ZaPokemonEditSessionService
             return;
         }
 
-        if (!string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
-            || !TryDecodeDexAssignments(edit.NewValue, out var assignments)
-            || !string.Equals(edit.NewValue, EncodeDexAssignments(assignments), StringComparison.Ordinal))
+        var isVanillaRestore = IsVanillaDexPlacementEdit(edit);
+        if ((!string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
+                && !string.Equals(edit.RecordId, DexLayoutRecordId, StringComparison.Ordinal)
+                && !isVanillaRestore)
+            || !TryDecodeDexPlacementPayload(edit.NewValue, out var payload)
+            || !IsCanonicalDexPlacementPayload(edit.NewValue, payload))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Pending Pokédex placement data is malformed or non-canonical.",
                 ZaEditSessionSupport.PokemonDomain,
                 field: ZaPokemonWorkflowService.DexPlacementField,
-                expected: "Canonical complete Pokédex placement map"));
+                expected: "Canonical complete Pokédex placement state"));
             return;
         }
 
-        var expectedSources = new[]
+        var targetRegularCount = payload.RegularCount ?? editor.RegularCount;
+        var assignments = payload.Assignments;
+        var targetChangesRegularCount = targetRegularCount != editor.RegularCount;
+        if (targetChangesRegularCount
+            && (!editor.CanEditAdvanced || editor.ExecutableProvenance is null))
         {
-            ToSourceReference(editor.PersonalProvenance),
-            ToSourceReference(editor.ContentsProvenance),
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                editor.AdvancedBlockedReason
+                    ?? "Changing the Regular and Hyperspace Pokédex sizes is unavailable for this project.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: "Verified matching Pokemon Legends Z-A exefs/main"));
+            return;
         }
+
+        ZaDexLayoutState? vanilla = null;
+        if (isVanillaRestore)
+        {
+            try
+            {
+                vanilla = ReadVerifiedVanillaDexLayout(project, editor);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or InvalidDataException
+                    or InvalidOperationException
+                    or UnauthorizedAccessException
+                    or ArgumentException
+                    or NotSupportedException
+                    or OverflowException)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending Return to Vanilla could not verify the base Dex Layout: {exception.Message}",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: ZaPokemonWorkflowService.DexPlacementField,
+                    expected: "Verified base Dex Layout"));
+                return;
+            }
+
+            if (!DexPlacementStatesEqual(
+                    assignments,
+                    targetRegularCount,
+                    vanilla.Assignments,
+                    vanilla.RegularCount))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Return to Vanilla does not exactly match the verified base Dex Layout.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: ZaPokemonWorkflowService.DexPlacementField,
+                    expected: "Exact base ordering, membership, and sizes"));
+                return;
+            }
+        }
+
+        var expectedSources = (isVanillaRestore
+                ? CreateVanillaDexPlacementSources(
+                    project,
+                    editor,
+                    vanilla!,
+                    targetChangesRegularCount)
+                : CreateDexPlacementSources(
+                    editor,
+                    includeExecutable: targetChangesRegularCount))
             .OrderBy(source => source.Layer)
             .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
             .ToArray();
         var actualSources = edit.Sources
-            .Distinct()
             .OrderBy(source => source.Layer)
             .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
             .ToArray();
-        if (!actualSources.SequenceEqual(expectedSources))
+        if (actualSources.Length != expectedSources.Length
+            || !actualSources.SequenceEqual(expectedSources))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending Pokédex placement sources do not match the loaded personal and contents data.",
+                "Pending Pokédex placement sources do not exactly match the loaded personal, contents, and required executable data.",
                 ZaEditSessionSupport.PokemonDomain,
                 field: ZaPokemonWorkflowService.DexPlacementField,
-                expected: "Current effective Pokédex source pair"));
+                expected: targetChangesRegularCount
+                    ? "Current effective personal, contents, and exefs/main sources"
+                    : "Current effective personal and contents sources"));
             return;
         }
 
@@ -984,34 +1767,38 @@ internal sealed class ZaPokemonEditSessionService
             .Order()
             .ToArray();
         var actualSpecies = assignments.Keys.Order().ToArray();
-        var expectedIndices = editor.Placements
-            .Select(placement => placement.InternalIndex)
-            .Order()
-            .ToArray();
+        var expectedIndices = Enumerable.Range(1, expectedSpecies.Length).ToArray();
         var actualIndices = assignments.Values.Order().ToArray();
         if (!actualSpecies.SequenceEqual(expectedSpecies)
-            || !actualIndices.SequenceEqual(expectedIndices))
+            || !actualIndices.SequenceEqual(expectedIndices)
+            || expectedSpecies.Length > ushort.MaxValue
+            || targetRegularCount <= 0
+            || targetRegularCount >= expectedSpecies.Length)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending Pokédex placement must preserve every active species and every unique slot.",
+                "Pending Pokédex placement must preserve every active species, every contiguous unique slot, and two non-empty Pokédexes.",
                 ZaEditSessionSupport.PokemonDomain,
                 field: ZaPokemonWorkflowService.DexPlacementField,
-                expected: "Complete one-to-one active Pokédex slot assignment"));
+                expected: "Complete one-to-one active Pokédex assignment with a Regular boundary from 1 through species count minus 1"));
             return;
         }
 
         var currentAssignments = editor.Placements.ToDictionary(
             placement => placement.SpeciesId,
             placement => placement.InternalIndex);
-        if (DexAssignmentsEqual(assignments, currentAssignments))
+        if (DexPlacementStatesEqual(
+                assignments,
+                targetRegularCount,
+                currentAssignments,
+                editor.RegularCount))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending Pokédex placement does not change any species slot.",
+                "Pending Pokédex placement does not change any species slot or Pokédex boundary.",
                 ZaEditSessionSupport.PokemonDomain,
                 field: ZaPokemonWorkflowService.DexPlacementField,
-                expected: "At least one staged slot swap"));
+                expected: "At least one staged placement change"));
         }
     }
 
@@ -1041,6 +1828,41 @@ internal sealed class ZaPokemonEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var workflow = pokemonWorkflowService.Load(project);
             var dexEdit = session.PendingEdits.Single(IsDexPlacementEdit);
+            var changesRegularCount = DexPlacementChangesRegularCount(workflow, dexEdit);
+            var isolateTrinityModManagerRomFs = changesRegularCount
+                && outputMode == ZaOutputMode.TrinityModManager;
+            if (isolateTrinityModManagerRomFs
+                && fileSource.TryFindLegacyBareTrinityModManagerOutput(
+                    project,
+                    [ZaDataPaths.PersonalArray, ZaDataPaths.PokedexContentsData],
+                    out var legacyBareRelativePath))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "This Output Root contains legacy bare Trinity Mod Manager RomFS files and cannot safely contain the required exefs/main beside them. Choose a clean or container Output Root; KM writes the Trinity Mod Manager RomFS package inside trinity-mod-manager-romfs.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    file: legacyBareRelativePath,
+                    field: ZaPokemonWorkflowService.DexPlacementField,
+                    expected: "Clean or container Output Root without legacy bare Trinity Mod Manager RomFS files"));
+                return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+            }
+
+            if (changesRegularCount && outputMode == ZaOutputMode.TrinityBypass)
+            {
+                var layeredBypassMainPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths);
+                if (layeredBypassMainPath is null || !File.Exists(layeredBypassMainPath))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Trinity bypass Dex Layout output requires an existing layered exefs/main in the configured Output Root so KM can preserve the installed bypass. Install the bypass first or choose another output mode.",
+                        ZaEditSessionSupport.PokemonDomain,
+                        file: ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                        field: ZaPokemonWorkflowService.DexPlacementField,
+                        expected: "Existing Output Root exefs/main containing the installed Trinity bypass"));
+                    return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+                }
+            }
+
             var writes = new List<PlannedFileWrite>();
             var personalSources = session.PendingEdits
                 .SelectMany(edit => edit.Sources)
@@ -1050,7 +1872,8 @@ internal sealed class ZaPokemonEditSessionService
                 paths,
                 ZaDataPaths.PersonalArray,
                 personalSources,
-                outputMode);
+                outputMode,
+                isolateTrinityModManagerRomFs);
             writes.Add(new PlannedFileWrite(
                 personalWriteInfo.TargetRelativePath,
                 personalWriteInfo.Sources,
@@ -1065,12 +1888,30 @@ internal sealed class ZaPokemonEditSessionService
                     paths,
                     ZaDataPaths.PokedexContentsData,
                     dexEdit.Sources,
-                    outputMode);
+                    outputMode,
+                    isolateTrinityModManagerRomFs);
                 writes.Add(new PlannedFileWrite(
                     contentsWriteInfo.TargetRelativePath,
                     contentsWriteInfo.Sources,
                     contentsWriteInfo.ReplacesExistingOutput,
-                    "Update Regular and Hyperspace Pokédex membership for the staged slot swap."));
+                    "Update Regular and Hyperspace Pokédex membership for the staged placement change."));
+            }
+
+            if (changesRegularCount)
+            {
+                var mainSource = ZaExeFsMainFileResolver.ResolveEffective(project)
+                    ?? throw new FileNotFoundException(
+                        "Pokemon Legends Z-A exefs/main is no longer available.");
+                var outputPath = ZaExeFsMainFileResolver.ResolveOutputPath(paths)
+                    ?? throw new InvalidOperationException(
+                        "Pokemon Legends Z-A output exefs/main target could not be resolved.");
+                var mainBytes = File.ReadAllBytes(mainSource.AbsolutePath);
+                writes.Add(new PlannedFileWrite(
+                    ZaExeFsReservedRegionLedger.ExeFsMainPath,
+                    [mainSource.Reference],
+                    File.Exists(outputPath),
+                    "Update the runtime Regular Dex boundary used by every verified Pokédex number normalization site.",
+                    CreateSourceFingerprint(mainBytes)));
             }
 
             if (outputMode == ZaOutputMode.Standalone)
@@ -1108,19 +1949,23 @@ internal sealed class ZaPokemonEditSessionService
         var editor = workflow.DexEditor;
         if (editor is null
             || !editor.CanEdit
-            || !TryDecodeDexAssignments(edit.NewValue, out var assignments))
+            || !TryDecodeDexPlacementPayload(edit.NewValue, out var payload))
         {
             throw new InvalidDataException(
                 "The staged Pokédex placement cannot be compared with the verified source mapping.");
         }
 
+        var assignments = payload.Assignments;
+        var targetRegularCount = payload.RegularCount ?? editor.RegularCount;
         var placementBySpecies = editor.Placements.ToDictionary(
             placement => placement.SpeciesId);
-        var slotByIndex = editor.Placements.ToDictionary(
-            placement => placement.InternalIndex);
         if (assignments.Count != placementBySpecies.Count
             || assignments.Keys.Any(speciesId => !placementBySpecies.ContainsKey(speciesId))
-            || assignments.Values.Any(internalIndex => !slotByIndex.ContainsKey(internalIndex)))
+            || !assignments.Values
+                .Order()
+                .SequenceEqual(Enumerable.Range(1, placementBySpecies.Count))
+            || targetRegularCount <= 0
+            || targetRegularCount >= placementBySpecies.Count)
         {
             throw new InvalidDataException(
                 "The staged Pokédex placement does not preserve the verified active slot mapping.");
@@ -1129,8 +1974,24 @@ internal sealed class ZaPokemonEditSessionService
         return assignments.Any(pair =>
             !string.Equals(
                 placementBySpecies[pair.Key].DexKind,
-                slotByIndex[pair.Value].DexKind,
+                GetDexKindForIndex(pair.Value, targetRegularCount),
                 StringComparison.Ordinal));
+    }
+
+    private static bool DexPlacementChangesRegularCount(
+        ZaPokemonWorkflow workflow,
+        PendingEdit edit)
+    {
+        var editor = workflow.DexEditor;
+        if (editor is null
+            || !editor.CanEdit
+            || !TryDecodeDexPlacementPayload(edit.NewValue, out var payload))
+        {
+            throw new InvalidDataException(
+                "The staged Pokédex placement boundary cannot be compared with the verified source mapping.");
+        }
+
+        return (payload.RegularCount ?? editor.RegularCount) != editor.RegularCount;
     }
 
     private static DexPlacementApplyResult ApplyDexPlacement(
@@ -1139,18 +2000,19 @@ internal sealed class ZaPokemonEditSessionService
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!TryDecodeDexAssignments(edit.NewValue, out var assignments)
-            || !string.Equals(edit.NewValue, EncodeDexAssignments(assignments), StringComparison.Ordinal))
+        if (!TryDecodeDexPlacementPayload(edit.NewValue, out var payload)
+            || !IsCanonicalDexPlacementPayload(edit.NewValue, payload))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Pending Pokédex placement data is malformed or non-canonical.",
                 ZaEditSessionSupport.PokemonDomain,
                 field: ZaPokemonWorkflowService.DexPlacementField,
-                expected: "Canonical complete Pokédex placement map"));
+                expected: "Canonical complete Pokédex placement state"));
             return DexPlacementApplyResult.None;
         }
 
+        var assignments = payload.Assignments;
         var presentRows = rows
             .Select((row, personalId) => (Row: row, PersonalId: personalId))
             .Where(pair =>
@@ -1196,9 +2058,11 @@ internal sealed class ZaPokemonEditSessionService
         var expectedIndices = currentIndexBySpecies.Values.Order().ToArray();
         var assignedIndices = assignments.Values.Order().ToArray();
         if (!contentSpecies.SequenceEqual(expectedSpecies)
+            || contentRows.Select(row => row.Species).Distinct().Count() != contentRows.Length
             || !assignedSpecies.SequenceEqual(expectedSpecies)
             || !expectedIndices.SequenceEqual(Enumerable.Range(1, expectedSpecies.Length))
-            || !assignedIndices.SequenceEqual(expectedIndices))
+            || !assignedIndices.SequenceEqual(Enumerable.Range(1, expectedSpecies.Length))
+            || expectedSpecies.Length > ushort.MaxValue)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -1237,13 +2101,27 @@ internal sealed class ZaPokemonEditSessionService
             return DexPlacementApplyResult.None;
         }
 
-        var slotGroupByIndex = currentIndexBySpecies.ToDictionary(
-            pair => pair.Value,
-            pair => groupBySpecies[pair.Key]);
+        var currentRegularCount = regularIndices.Length;
+        var targetRegularCount = payload.RegularCount ?? currentRegularCount;
+        if (targetRegularCount <= 0 || targetRegularCount >= expectedSpecies.Length)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The staged Regular Dex boundary would leave one Pokédex empty or exceed the active species range.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.DexPlacementField,
+                expected: string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Regular Dex count from 1 through {expectedSpecies.Length - 1}")));
+            return DexPlacementApplyResult.None;
+        }
+
         var groupUpdates = new Dictionary<int, ZaPokedexContentsGroup>();
         foreach (var assignment in assignments)
         {
-            var targetGroup = slotGroupByIndex[assignment.Value];
+            var targetGroup = assignment.Value <= targetRegularCount
+                ? ZaPokedexContentsGroup.Regular
+                : ZaPokedexContentsGroup.Hyperspace;
             if (groupBySpecies[assignment.Key] != targetGroup)
             {
                 groupUpdates.Add(assignment.Key, targetGroup);
@@ -1270,7 +2148,9 @@ internal sealed class ZaPokemonEditSessionService
         return new DexPlacementApplyResult(
             changedPersonalIds,
             groupUpdates,
-            requiresPersonalRebuild);
+            requiresPersonalRebuild,
+            currentRegularCount,
+            targetRegularCount);
     }
 
     private static ZaPokemonWorkflow OverlayDexPlacement(
@@ -1280,7 +2160,19 @@ internal sealed class ZaPokemonEditSessionService
         var editor = workflow.DexEditor;
         if (editor is null
             || !editor.CanEdit
-            || !TryDecodeDexAssignments(edit.NewValue, out var assignments))
+            || !TryDecodeDexPlacementPayload(edit.NewValue, out var payload))
+        {
+            return workflow;
+        }
+
+        var assignments = payload.Assignments;
+        var targetRegularCount = payload.RegularCount ?? editor.RegularCount;
+        if (assignments.Count != editor.Placements.Count
+            || targetRegularCount <= 0
+            || targetRegularCount >= assignments.Count
+            || !assignments.Values
+                .Order()
+                .SequenceEqual(Enumerable.Range(1, assignments.Count)))
         {
             return workflow;
         }
@@ -1305,8 +2197,6 @@ internal sealed class ZaPokemonEditSessionService
                 };
             })
             .ToArray();
-        var slotByIndex = editor.Placements.ToDictionary(
-            placement => placement.InternalIndex);
         var representativeBySpecies = updatedPokemon
             .Where(pokemon =>
                 pokemon.DexPresence.IsPresentInGame
@@ -1322,17 +2212,23 @@ internal sealed class ZaPokemonEditSessionService
         var placements = assignments
             .Select(pair =>
             {
-                if (!slotByIndex.TryGetValue(pair.Value, out var slot)
-                    || !representativeBySpecies.TryGetValue(pair.Key, out var representative))
+                if (!representativeBySpecies.TryGetValue(pair.Key, out var representative))
                 {
                     return null;
                 }
 
+                var dexKind = GetDexKindForIndex(pair.Value, targetRegularCount);
+                var displayedNumber = string.Equals(
+                    dexKind,
+                    ZaPokemonWorkflowService.RegularDexKind,
+                    StringComparison.Ordinal)
+                    ? pair.Value
+                    : pair.Value - targetRegularCount;
                 return new ZaPokemonDexPlacement(
                     pair.Key,
                     pair.Value,
-                    slot.DexKind,
-                    slot.DisplayedNumber,
+                    dexKind,
+                    displayedNumber,
                     representative.Name);
             })
             .Where(placement => placement is not null)
@@ -1344,17 +2240,70 @@ internal sealed class ZaPokemonEditSessionService
             return workflow;
         }
 
+        var isVanillaLayout = editor.VanillaLayoutFingerprint is not null
+            && string.Equals(
+                ZaDexLayoutStateReader.CreateFingerprint(
+                    targetRegularCount,
+                    assignments),
+                editor.VanillaLayoutFingerprint,
+                StringComparison.Ordinal);
         return workflow with
         {
             Pokemon = updatedPokemon,
-            DexEditor = editor with { Placements = placements },
+            DexEditor = editor with
+            {
+                IsVanillaLayout = isVanillaLayout,
+                CanReturnToVanilla = !isVanillaLayout
+                    && editor.ReturnToVanillaBlockedReason is null,
+                RegularCount = targetRegularCount,
+                HyperspaceCount = assignments.Count - targetRegularCount,
+                Placements = placements,
+            },
         };
     }
 
     private static bool IsDexPlacementEdit(PendingEdit edit)
     {
         return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
-            && string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
+            && (string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
+                || string.Equals(edit.RecordId, DexLayoutRecordId, StringComparison.Ordinal)
+                || string.Equals(edit.RecordId, VanillaDexPlacementRecordId, StringComparison.Ordinal))
+            && string.Equals(edit.Field, ZaPokemonWorkflowService.DexPlacementField, StringComparison.Ordinal);
+    }
+
+    internal static bool IsScopedDexLayoutEdit(PendingEdit edit)
+    {
+        if (!string.Equals(
+                edit.Domain,
+                ZaEditSessionSupport.PokemonDomain,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.DexPlacementField,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.Equals(edit.RecordId, DexLayoutRecordId, StringComparison.Ordinal)
+            || string.Equals(
+                edit.RecordId,
+                VanillaDexPlacementRecordId,
+                StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return string.Equals(edit.RecordId, DexPlacementRecordId, StringComparison.Ordinal)
+            && (!TryDecodeDexPlacementPayload(edit.NewValue, out var payload)
+                || payload.Version != 1
+                || payload.RegularCount is not null);
+    }
+
+    private static bool IsVanillaDexPlacementEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, VanillaDexPlacementRecordId, StringComparison.Ordinal)
             && string.Equals(edit.Field, ZaPokemonWorkflowService.DexPlacementField, StringComparison.Ordinal);
     }
 
@@ -1364,30 +2313,127 @@ internal sealed class ZaPokemonEditSessionService
             && string.Equals(edit.Field, ZaPokemonWorkflowService.IsPresentInGameField, StringComparison.Ordinal);
     }
 
-    private static string EncodeDexAssignments(IReadOnlyDictionary<int, int> assignments)
+    private static bool CanUseDexLayoutSession(
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
-        return DexPlacementPayloadPrefix + string.Join(
+        if (session.PendingEdits.All(IsDexPlacementEdit))
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Dex Layout needs its own edit session before staging.",
+            ZaEditSessionSupport.PokemonDomain,
+            field: ZaPokemonWorkflowService.DexPlacementField,
+            expected: "Apply or discard ordinary Pokemon Data changes first"));
+        return false;
+    }
+
+    private static string EncodeDexPlacementState(
+        IReadOnlyDictionary<int, int> assignments,
+        int regularCount,
+        int baseRegularCount)
+    {
+        return regularCount == baseRegularCount
+            ? EncodeDexPlacementPayload(new DexPlacementPayload(
+                Version: 1,
+                RegularCount: null,
+                assignments))
+            : EncodeDexPlacementPayload(new DexPlacementPayload(
+                Version: 2,
+                regularCount,
+                assignments));
+    }
+
+    private static string EncodeDexPlacementPayload(DexPlacementPayload payload)
+    {
+        var assignments = string.Join(
             ",",
-            assignments
+            payload.Assignments
                 .OrderBy(pair => pair.Key)
                 .Select(pair => string.Create(
                     CultureInfo.InvariantCulture,
                     $"{pair.Key}:{pair.Value}")));
+        return payload.Version switch
+        {
+            1 when payload.RegularCount is null =>
+                DexPlacementPayloadV1Prefix + assignments,
+            2 when payload.RegularCount is > 0 =>
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{DexPlacementPayloadV2Prefix}{payload.RegularCount.Value}|{assignments}"),
+            _ => string.Empty,
+        };
     }
 
-    private static bool TryDecodeDexAssignments(
+    private static bool TryDecodeDexPlacementPayload(
         string? payload,
-        out Dictionary<int, int> assignments)
+        out DexPlacementPayload decoded)
     {
-        assignments = [];
-        if (payload is null
-            || !payload.StartsWith(DexPlacementPayloadPrefix, StringComparison.Ordinal)
-            || payload.Length == DexPlacementPayloadPrefix.Length)
+        decoded = DexPlacementPayload.Invalid;
+        if (string.IsNullOrEmpty(payload))
         {
             return false;
         }
 
-        foreach (var assignment in payload[DexPlacementPayloadPrefix.Length..].Split(','))
+        if (payload.StartsWith(DexPlacementPayloadV1Prefix, StringComparison.Ordinal))
+        {
+            if (!TryDecodeDexAssignments(
+                    payload.AsSpan(DexPlacementPayloadV1Prefix.Length),
+                    out var assignments))
+            {
+                return false;
+            }
+
+            decoded = new DexPlacementPayload(
+                Version: 1,
+                RegularCount: null,
+                assignments);
+            return true;
+        }
+
+        if (!payload.StartsWith(DexPlacementPayloadV2Prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var versionedPayload = payload.AsSpan(DexPlacementPayloadV2Prefix.Length);
+        var regularCountSeparator = versionedPayload.IndexOf('|');
+        if (regularCountSeparator <= 0
+            || regularCountSeparator == versionedPayload.Length - 1
+            || !int.TryParse(
+                versionedPayload[..regularCountSeparator],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var regularCount)
+            || regularCount <= 0
+            || !TryDecodeDexAssignments(
+                versionedPayload[(regularCountSeparator + 1)..],
+                out var versionedAssignments))
+        {
+            return false;
+        }
+
+        decoded = new DexPlacementPayload(
+            Version: 2,
+            regularCount,
+            versionedAssignments);
+        return true;
+    }
+
+    private static bool TryDecodeDexAssignments(
+        ReadOnlySpan<char> payload,
+        out Dictionary<int, int> assignments)
+    {
+        assignments = [];
+        if (payload.IsEmpty)
+        {
+            return false;
+        }
+
+        foreach (var assignment in payload.ToString().Split(','))
         {
             var separator = assignment.IndexOf(':', StringComparison.Ordinal);
             if (separator <= 0
@@ -1415,6 +2461,13 @@ internal sealed class ZaPokemonEditSessionService
         return assignments.Count > 0;
     }
 
+    private static bool IsCanonicalDexPlacementPayload(
+        string? value,
+        DexPlacementPayload payload)
+    {
+        return string.Equals(value, EncodeDexPlacementPayload(payload), StringComparison.Ordinal);
+    }
+
     private static bool DexAssignmentsEqual(
         IReadOnlyDictionary<int, int> left,
         IReadOnlyDictionary<int, int> right)
@@ -1423,6 +2476,123 @@ internal sealed class ZaPokemonEditSessionService
             && left.All(pair =>
                 right.TryGetValue(pair.Key, out var rightIndex)
                 && rightIndex == pair.Value);
+    }
+
+    private static bool DexPlacementStatesEqual(
+        IReadOnlyDictionary<int, int> leftAssignments,
+        int leftRegularCount,
+        IReadOnlyDictionary<int, int> rightAssignments,
+        int rightRegularCount)
+    {
+        return leftRegularCount == rightRegularCount
+            && DexAssignmentsEqual(leftAssignments, rightAssignments);
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateDexPlacementSources(
+        ZaPokemonDexEditor editor,
+        bool includeExecutable)
+    {
+        if (editor.PersonalProvenance is null || editor.ContentsProvenance is null)
+        {
+            throw new InvalidDataException(
+                "Verified Pokédex placement sources are unavailable.");
+        }
+
+        var sources = new List<ProjectFileReference>
+        {
+            ToSourceReference(editor.PersonalProvenance),
+            ToSourceReference(editor.ContentsProvenance),
+        };
+        if (includeExecutable)
+        {
+            if (editor.ExecutableProvenance is null)
+            {
+                throw new InvalidDataException(
+                    "Verified exefs/main provenance is unavailable for a Pokédex boundary change.");
+            }
+
+            sources.Add(ToSourceReference(editor.ExecutableProvenance));
+        }
+
+        return sources;
+    }
+
+    private static IReadOnlyList<ProjectFileReference> CreateVanillaDexPlacementSources(
+        OpenedProject project,
+        ZaPokemonDexEditor editor,
+        ZaDexLayoutState vanilla,
+        bool includeExecutable)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(editor);
+        ArgumentNullException.ThrowIfNull(vanilla);
+
+        var sources = CreateDexPlacementSources(editor, includeExecutable)
+            .Concat(vanilla.SourceReferences)
+            .ToList();
+        if (includeExecutable)
+        {
+            var baseMain = ZaExeFsMainFileResolver.ResolveBase(project)
+                ?? throw new FileNotFoundException(
+                    "Verified base exefs/main is unavailable for Return to Vanilla.");
+            sources.Add(baseMain.Reference);
+        }
+
+        return sources
+            .Distinct()
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private ZaDexLayoutState ReadVerifiedVanillaDexLayout(
+        OpenedProject project,
+        ZaPokemonDexEditor editor)
+    {
+        var vanilla = ZaDexLayoutStateReader.ReadBase(project, fileSource);
+        if (vanilla.RegularCount != ZaDexLayoutMainPatcher.VanillaRegularCount)
+        {
+            throw new InvalidDataException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"The verified base Pokédex uses Regular boundary {vanilla.RegularCount}, "
+                    + $"not the expected vanilla boundary {ZaDexLayoutMainPatcher.VanillaRegularCount}."));
+        }
+
+        var currentSpecies = editor.Placements
+            .Select(placement => placement.SpeciesId)
+            .Order()
+            .ToArray();
+        if (!currentSpecies.SequenceEqual(vanilla.Assignments.Keys.Order()))
+        {
+            throw new InvalidDataException(
+                "The effective and base Pokédexes do not contain the same active species.");
+        }
+
+        if (editor.VanillaLayoutFingerprint is null
+            || !string.Equals(
+                editor.VanillaLayoutFingerprint,
+                vanilla.Fingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "The verified base Dex Layout changed after the workflow was loaded.");
+        }
+
+        return vanilla;
+    }
+
+    private static string GetDexKindForIndex(int internalIndex, int regularCount)
+    {
+        return internalIndex <= regularCount
+            ? ZaPokemonWorkflowService.RegularDexKind
+            : ZaPokemonWorkflowService.HyperspaceDexKind;
+    }
+
+    private static string CreateSourceFingerprint(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
     private static ProjectFileReference ToSourceReference(ZaPokemonProvenance provenance)
@@ -3905,15 +5075,32 @@ internal sealed class ZaPokemonEditSessionService
         IReadOnlyList<PersonalRow> Rows,
         bool RequiresLegacyDexOrderRepair);
 
+    private sealed record DexPlacementPayload(
+        int Version,
+        int? RegularCount,
+        IReadOnlyDictionary<int, int> Assignments)
+    {
+        public static readonly DexPlacementPayload Invalid = new(
+            Version: 0,
+            RegularCount: null,
+            new Dictionary<int, int>());
+    }
+
     private sealed record DexPlacementApplyResult(
         IReadOnlySet<int> ChangedPersonalIds,
         IReadOnlyDictionary<int, ZaPokedexContentsGroup> GroupUpdates,
-        bool RequiresPersonalRebuild)
+        bool RequiresPersonalRebuild,
+        int CurrentRegularCount,
+        int TargetRegularCount)
     {
+        public bool ChangesRegularCount => CurrentRegularCount != TargetRegularCount;
+
         public static readonly DexPlacementApplyResult None = new(
             new HashSet<int>(),
             new Dictionary<int, ZaPokedexContentsGroup>(),
-            false);
+            false,
+            CurrentRegularCount: 0,
+            TargetRegularCount: 0);
     }
 
     private sealed record SpeciesInfoRow(

@@ -20,6 +20,9 @@ public static class KmCommandNames
     public const string UpdatePokemonLearnset = "pokemon.learnset.update";
     public const string UpdatePokemonEvolution = "pokemon.evolution.update";
     public const string SwapPokemonDexPlacement = "pokemon.dex.swap";
+    public const string MovePokemonDexPlacement = "pokemon.dex.move";
+    public const string ResizePokemonDex = "pokemon.dex.resize";
+    public const string StagePokemonDexVanilla = "pokemon.dex.vanilla.stage";
     public const string LoadMovesWorkflow = "moves.load";
     public const string UpdateMoveField = "moves.field.update";
     public const string UpdateMoveFields = "moves.fields.update";
@@ -53,6 +56,7 @@ public static class KmCommandNames
     public const string LoadEncountersWorkflow = "encounters.load";
     public const string UpdateEncounterSlotField = "encounters.slot.update";
     public const string UpdateEncounterSlotFields = "encounters.slots.update";
+    public const string StageEncounterSlotVanilla = "encounters.slot.vanilla.stage";
     public const string LoadRaidBattlesWorkflow = "raidBattles.load";
     public const string UpdateRaidBattleSlotField = "raidBattles.slot.update";
     public const string UpdateRaidBattleSlotFields = "raidBattles.slots.update";

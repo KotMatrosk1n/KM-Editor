@@ -294,6 +294,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdatePokemonLearnset => DispatchUpdatePokemonLearnset(requestJson),
                 KmCommandNames.UpdatePokemonEvolution => DispatchUpdatePokemonEvolution(requestJson),
                 KmCommandNames.SwapPokemonDexPlacement => DispatchSwapPokemonDexPlacement(requestJson),
+                KmCommandNames.MovePokemonDexPlacement => DispatchMovePokemonDexPlacement(requestJson),
+                KmCommandNames.ResizePokemonDex => DispatchResizePokemonDex(requestJson),
+                KmCommandNames.StagePokemonDexVanilla => DispatchStagePokemonDexVanilla(requestJson),
                 KmCommandNames.LoadMovesWorkflow => DispatchLoadMovesWorkflow(requestJson),
                 KmCommandNames.UpdateMoveField => DispatchUpdateMoveField(requestJson),
                 KmCommandNames.UpdateMoveFields => DispatchUpdateMoveFields(requestJson),
@@ -327,6 +330,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
                 KmCommandNames.UpdateEncounterSlotField => DispatchUpdateEncounterSlotField(requestJson),
                 KmCommandNames.UpdateEncounterSlotFields => DispatchUpdateEncounterSlotFields(requestJson),
+                KmCommandNames.StageEncounterSlotVanilla => DispatchStageEncounterSlotVanilla(requestJson),
                 KmCommandNames.LoadRaidBattlesWorkflow => DispatchLoadRaidBattlesWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotFields => DispatchUpdateRaidBattleSlotFields(requestJson),
@@ -707,6 +711,55 @@ public sealed class ProjectBridgeDispatcher
                 session,
                 request.Payload.SourceSpeciesId,
                 request.Payload.TargetSpeciesId));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchMovePokemonDexPlacement(string requestJson)
+    {
+        var request = DeserializeRequest<MovePokemonDexPlacementRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDtoDexPlacementMove(
+            zaWorkflowService.MovePokemonDexPlacement(
+                paths,
+                session,
+                request.Payload.SourceSpeciesId,
+                request.Payload.DestinationDexKind,
+                request.Payload.DestinationDisplayedNumber));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchResizePokemonDex(string requestJson)
+    {
+        var request = DeserializeRequest<ResizePokemonDexRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDtoDexResize(
+            zaWorkflowService.ResizePokemonDex(
+                paths,
+                session,
+                request.Payload.RegularCount));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStagePokemonDexVanilla(string requestJson)
+    {
+        var request = DeserializeRequest<StagePokemonDexVanillaRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDtoDexVanilla(
+            zaWorkflowService.StagePokemonDexVanilla(
+                paths,
+                session));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1532,6 +1585,22 @@ public sealed class ProjectBridgeDispatcher
             response = SwShBridgeMapper.ToEncounterSlotFieldsDto(
                 encountersEditSessionService.UpdateSlotFields(paths, session, updates));
         }
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageEncounterSlotVanilla(string requestJson)
+    {
+        var request = DeserializeRequest<StageEncounterSlotVanillaRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = ZaBridgeMapper.ToEncounterSlotVanillaDto(
+            zaWorkflowService.StageEncounterSlotVanilla(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                session,
+                request.Payload.TableId,
+                request.Payload.Slot));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3896,6 +3965,10 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.ClearZaCache or
             KmCommandNames.WarmupZaCacheStep or
             KmCommandNames.SwapPokemonDexPlacement or
+            KmCommandNames.MovePokemonDexPlacement or
+            KmCommandNames.ResizePokemonDex or
+            KmCommandNames.StagePokemonDexVanilla or
+            KmCommandNames.StageEncounterSlotVanilla or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
             KmCommandNames.StageAngeFightUninstall or
@@ -3920,6 +3993,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdatePokemonLearnset or
             KmCommandNames.UpdatePokemonEvolution or
             KmCommandNames.SwapPokemonDexPlacement or
+            KmCommandNames.MovePokemonDexPlacement or
+            KmCommandNames.ResizePokemonDex or
+            KmCommandNames.StagePokemonDexVanilla or
             KmCommandNames.LoadTrainersWorkflow or
             KmCommandNames.UpdateTrainerField or
             KmCommandNames.UpdateTrainerFields or
@@ -3935,6 +4011,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadEncountersWorkflow or
             KmCommandNames.UpdateEncounterSlotField or
             KmCommandNames.UpdateEncounterSlotFields or
+            KmCommandNames.StageEncounterSlotVanilla or
             KmCommandNames.LoadStaticEncountersWorkflow or
             KmCommandNames.UpdateStaticEncounterField or
             KmCommandNames.UpdateStaticEncounterFields or

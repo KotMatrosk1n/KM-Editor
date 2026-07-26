@@ -68,6 +68,7 @@ const scarletVioletWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
 
 const pokemonLegendsZAWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   angeFight: 'Legends-Z-A-Ange-Fight',
+  dexLayout: 'Legends-Z-A-Dex-Layout',
   encounters: 'Legends-Z-A-Wild-Encounters-Editor',
   gameDump: 'Legends-Z-A-Game-Dump',
   giftPokemon: 'Legends-Z-A-Gift-Pokemon-Editor',

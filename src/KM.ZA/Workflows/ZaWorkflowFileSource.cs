@@ -14,11 +14,23 @@ namespace KM.ZA.Workflows;
 internal sealed class ZaWorkflowFileSource
 {
     public const string DescriptorVirtualPath = ZaTrinityDescriptorPatcher.DescriptorVirtualPath;
+    public const string TrinityModManagerRomFsDirectory = "trinity-mod-manager-romfs";
 
     private static readonly ConcurrentDictionary<string, object> OutputRootLocks = new(
         OperatingSystem.IsWindows()
             ? StringComparer.OrdinalIgnoreCase
             : StringComparer.Ordinal);
+    // All top-level RomFS roots emitted by current Z-A workflows, plus the Trinity descriptor root.
+    private static readonly string[] KnownBareTrinityModManagerRootDirectories =
+    [
+        "arc",
+        "avalon",
+        "ik_event",
+        "ik_message",
+        "message",
+        "param_ai",
+        "world",
+    ];
 
     private readonly ZaCacheManager cacheManager;
 
@@ -40,7 +52,13 @@ internal sealed class ZaWorkflowFileSource
         {
             var trinityModManagerPath = CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath);
             var standalonePath = CombineGraphPath(project.Paths.OutputRootPath, relativePath);
-            var looseOutput = SelectLatestLooseOutput(trinityModManagerPath, standalonePath);
+            var isolatedTrinityModManagerPath = CombineGraphPath(
+                project.Paths.OutputRootPath,
+                $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}");
+            var looseOutput = SelectLatestLooseOutput(
+                trinityModManagerPath,
+                isolatedTrinityModManagerPath,
+                standalonePath);
             if (looseOutput is not null)
             {
                 return new ZaWorkflowFile(
@@ -154,6 +172,9 @@ internal sealed class ZaWorkflowFileSource
         if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
         {
             if (File.Exists(CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath))
+                || File.Exists(CombineGraphPath(
+                    project.Paths.OutputRootPath,
+                    $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}"))
                 || File.Exists(CombineGraphPath(project.Paths.OutputRootPath, relativePath))
                 || TryOutputArchiveContains(project.Paths, normalizedVirtualPath))
             {
@@ -195,6 +216,56 @@ internal sealed class ZaWorkflowFileSource
         }
     }
 
+    internal bool TryFindLegacyBareTrinityModManagerOutput(
+        OpenedProject project,
+        IEnumerable<string> plannedVirtualPaths,
+        out string? relativePath)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(plannedVirtualPaths);
+
+        relativePath = null;
+        if (string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
+        {
+            return false;
+        }
+
+        var comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var virtualRootNames = plannedVirtualPaths
+            .Concat(KnownBareTrinityModManagerRootDirectories)
+            .Select(NormalizeVirtualPath)
+            .Select(GetFirstPathSegment)
+            .ToHashSet(comparer);
+        if (virtualRootNames.Count == 0)
+        {
+            return false;
+        }
+
+        var outputRoot = Path.GetFullPath(project.Paths.OutputRootPath);
+        if (!Directory.Exists(outputRoot))
+        {
+            return false;
+        }
+
+        foreach (var entryPath in Directory.EnumerateFileSystemEntries(
+                     outputRoot,
+                     "*",
+                     SearchOption.TopDirectoryOnly))
+        {
+            var entryName = Path.GetFileName(
+                Path.TrimEndingDirectorySeparator(entryPath));
+            if (virtualRootNames.Contains(entryName))
+            {
+                relativePath = entryName;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static ProjectFileReference CreateReference(ZaWorkflowFile file)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -205,7 +276,8 @@ internal sealed class ZaWorkflowFileSource
     public static string ResolveOutputPath(
         ProjectPaths paths,
         string virtualRomFsPath,
-        ZaOutputMode outputMode = ZaOutputMode.Standalone)
+        ZaOutputMode outputMode = ZaOutputMode.Standalone,
+        bool isolateTrinityModManagerRomFs = false)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
@@ -215,7 +287,10 @@ internal sealed class ZaWorkflowFileSource
             throw new InvalidOperationException("Set an output root before applying Pokemon Legends Z-A edits.");
         }
 
-        var targetRelativePath = ToOutputRelativePath(NormalizeVirtualPath(virtualRomFsPath), outputMode);
+        var targetRelativePath = ToOutputRelativePath(
+            NormalizeVirtualPath(virtualRomFsPath),
+            outputMode,
+            isolateTrinityModManagerRomFs);
         if (Path.IsPathRooted(targetRelativePath))
         {
             throw new InvalidOperationException($"Pokemon Legends Z-A target path '{targetRelativePath}' must be relative.");
@@ -237,10 +312,18 @@ internal sealed class ZaWorkflowFileSource
         ProjectPaths paths,
         string virtualRomFsPath,
         IReadOnlyList<ProjectFileReference> sources,
-        ZaOutputMode outputMode = ZaOutputMode.Standalone)
+        ZaOutputMode outputMode = ZaOutputMode.Standalone,
+        bool isolateTrinityModManagerRomFs = false)
     {
-        var targetRelativePath = ToOutputRelativePath(NormalizeVirtualPath(virtualRomFsPath), outputMode);
-        var targetPath = ResolveOutputPath(paths, virtualRomFsPath, outputMode);
+        var targetRelativePath = ToOutputRelativePath(
+            NormalizeVirtualPath(virtualRomFsPath),
+            outputMode,
+            isolateTrinityModManagerRomFs);
+        var targetPath = ResolveOutputPath(
+            paths,
+            virtualRomFsPath,
+            outputMode,
+            isolateTrinityModManagerRomFs);
 
         return new PlannedWriteInfo(
             targetRelativePath,
@@ -279,11 +362,25 @@ internal sealed class ZaWorkflowFileSource
                 paths,
                 effectiveFile.VirtualPath,
                 ZaOutputMode.TrinityModManager);
-            if (File.Exists(trinityModManagerPath))
-            {
-                return File.ReadAllBytes(trinityModManagerPath)
+            if (File.Exists(trinityModManagerPath)
+                && !File.ReadAllBytes(trinityModManagerPath)
                     .AsSpan()
-                    .SequenceEqual(vanillaBytes);
+                    .SequenceEqual(vanillaBytes))
+            {
+                return false;
+            }
+
+            var isolatedTrinityModManagerPath = ResolveOutputPath(
+                paths,
+                effectiveFile.VirtualPath,
+                ZaOutputMode.TrinityModManager,
+                isolateTrinityModManagerRomFs: true);
+            if (File.Exists(isolatedTrinityModManagerPath)
+                && !File.ReadAllBytes(isolatedTrinityModManagerPath)
+                    .AsSpan()
+                    .SequenceEqual(vanillaBytes))
+            {
+                return false;
             }
 
             if (!HasTrinityArchive(paths.OutputRootPath))
@@ -344,15 +441,154 @@ internal sealed class ZaWorkflowFileSource
         byte[]? reviewedStandaloneDescriptorBytes = null,
         bool deleteStandaloneDescriptor = false)
     {
+        ApplyBatchCore(
+            paths,
+            writes,
+            deletes,
+            Array.Empty<ZaStandaloneOutputMutation>(),
+            outputMode,
+            reviewedStandaloneDescriptorBytes,
+            deleteStandaloneDescriptor,
+            allowHybridExeFsOutput: false,
+            isolateTrinityModManagerRomFs: false);
+    }
+
+    internal static void ApplyStandaloneMixedBatch(
+        ProjectPaths paths,
+        IReadOnlyList<ZaWorkflowFileWrite> romFsWrites,
+        IReadOnlyList<string> romFsDeletes,
+        IReadOnlyList<ZaStandaloneOutputMutation> outputMutations,
+        byte[]? reviewedStandaloneDescriptorBytes = null,
+        bool deleteStandaloneDescriptor = false)
+    {
+        ApplyBatchCore(
+            paths,
+            romFsWrites,
+            romFsDeletes,
+            outputMutations,
+            ZaOutputMode.Standalone,
+            reviewedStandaloneDescriptorBytes,
+            deleteStandaloneDescriptor,
+            allowHybridExeFsOutput: false,
+            isolateTrinityModManagerRomFs: false);
+    }
+
+    internal static void ApplyStandaloneMixedBatch(
+        ProjectPaths paths,
+        Func<ZaStandaloneMixedBatch> prepareBatch)
+    {
         ArgumentNullException.ThrowIfNull(paths);
-        ArgumentNullException.ThrowIfNull(writes);
-        ArgumentNullException.ThrowIfNull(deletes);
+        ArgumentNullException.ThrowIfNull(prepareBatch);
+
         using var outputLock = AcquireOutputLock(paths);
-        if (writes.Count == 0 && deletes.Count == 0)
+        var batch = prepareBatch()
+            ?? throw new InvalidOperationException(
+                "Pokemon Legends Z-A standalone output preparation returned no batch.");
+        ApplyBatchCoreLocked(
+            paths,
+            batch.RomFsWrites,
+            batch.RomFsDeletes,
+            batch.OutputMutations,
+            ZaOutputMode.Standalone,
+            batch.ReviewedStandaloneDescriptorBytes,
+            batch.DeleteStandaloneDescriptor,
+            allowHybridExeFsOutput: false,
+            isolateTrinityModManagerRomFs: false);
+    }
+
+    internal static void ApplyHybridMixedBatch(
+        ProjectPaths paths,
+        ZaOutputMode outputMode,
+        bool isolateTrinityModManagerRomFs,
+        Func<ZaStandaloneMixedBatch> prepareBatch)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(prepareBatch);
+        if (isolateTrinityModManagerRomFs
+            && outputMode != ZaOutputMode.TrinityModManager)
         {
             throw new ArgumentException(
-                "Pokemon Legends Z-A output batch must contain at least one data-file write or deletion.",
+                "Isolated Trinity Mod Manager RomFS routing requires Trinity Mod Manager output.",
+                nameof(isolateTrinityModManagerRomFs));
+        }
+
+        using var outputLock = AcquireOutputLock(paths);
+        var batch = prepareBatch()
+            ?? throw new InvalidOperationException(
+                "Pokemon Legends Z-A hybrid output preparation returned no batch.");
+        ApplyBatchCoreLocked(
+            paths,
+            batch.RomFsWrites,
+            batch.RomFsDeletes,
+            batch.OutputMutations,
+            outputMode,
+            batch.ReviewedStandaloneDescriptorBytes,
+            batch.DeleteStandaloneDescriptor,
+            allowHybridExeFsOutput: true,
+            isolateTrinityModManagerRomFs);
+    }
+
+    private static void ApplyBatchCore(
+        ProjectPaths paths,
+        IReadOnlyList<ZaWorkflowFileWrite> writes,
+        IReadOnlyList<string> deletes,
+        IReadOnlyList<ZaStandaloneOutputMutation> outputMutations,
+        ZaOutputMode outputMode,
+        byte[]? reviewedStandaloneDescriptorBytes,
+        bool deleteStandaloneDescriptor,
+        bool allowHybridExeFsOutput,
+        bool isolateTrinityModManagerRomFs)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        using var outputLock = AcquireOutputLock(paths);
+        ApplyBatchCoreLocked(
+            paths,
+            writes,
+            deletes,
+            outputMutations,
+            outputMode,
+            reviewedStandaloneDescriptorBytes,
+            deleteStandaloneDescriptor,
+            allowHybridExeFsOutput,
+            isolateTrinityModManagerRomFs);
+    }
+
+    private static void ApplyBatchCoreLocked(
+        ProjectPaths paths,
+        IReadOnlyList<ZaWorkflowFileWrite> writes,
+        IReadOnlyList<string> deletes,
+        IReadOnlyList<ZaStandaloneOutputMutation> outputMutations,
+        ZaOutputMode outputMode,
+        byte[]? reviewedStandaloneDescriptorBytes,
+        bool deleteStandaloneDescriptor,
+        bool allowHybridExeFsOutput,
+        bool isolateTrinityModManagerRomFs)
+    {
+        ArgumentNullException.ThrowIfNull(writes);
+        ArgumentNullException.ThrowIfNull(deletes);
+        ArgumentNullException.ThrowIfNull(outputMutations);
+        if (writes.Count == 0 && deletes.Count == 0 && outputMutations.Count == 0)
+        {
+            throw new ArgumentException(
+                "Pokemon Legends Z-A output batch must contain at least one file write or deletion.",
                 nameof(writes));
+        }
+
+        if (outputMode != ZaOutputMode.Standalone
+            && outputMutations.Count > 0
+            && !allowHybridExeFsOutput)
+        {
+            throw new ArgumentException(
+                "Explicit ExeFS output mutations require standalone output.",
+                nameof(outputMutations));
+        }
+
+        if (isolateTrinityModManagerRomFs
+            && outputMode != ZaOutputMode.TrinityModManager)
+        {
+            throw new ArgumentException(
+                "Isolated Trinity Mod Manager RomFS routing requires Trinity Mod Manager output.",
+                nameof(isolateTrinityModManagerRomFs));
         }
 
         var normalizedWrites = writes
@@ -387,6 +623,22 @@ internal sealed class ZaWorkflowFileSource
                 return virtualPath;
             })
             .ToArray();
+        var normalizedOutputMutations = outputMutations
+            .Select(mutation =>
+            {
+                ArgumentNullException.ThrowIfNull(mutation);
+                ArgumentException.ThrowIfNullOrWhiteSpace(mutation.RelativePath);
+                var relativePath = NormalizeStandaloneOutputRelativePath(mutation.RelativePath);
+                if (!relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new ArgumentException(
+                        "Explicit standalone output mutations are limited to ExeFS paths.",
+                        nameof(outputMutations));
+                }
+
+                return new ZaStandaloneOutputMutation(relativePath, mutation.Bytes?.ToArray());
+            })
+            .ToArray();
         if (normalizedWrites
             .Select(write => write.VirtualPath)
             .Concat(normalizedDeletes)
@@ -398,19 +650,45 @@ internal sealed class ZaWorkflowFileSource
                 nameof(writes));
         }
 
+        if (normalizedOutputMutations
+            .GroupBy(
+                mutation => mutation.RelativePath,
+                OperatingSystem.IsWindows()
+                    ? StringComparer.OrdinalIgnoreCase
+                    : StringComparer.Ordinal)
+            .Any(group => group.Count() > 1))
+        {
+            throw new ArgumentException(
+                "Pokemon Legends Z-A output batch contains duplicate or conflicting ExeFS targets.",
+                nameof(outputMutations));
+        }
+
         List<ZaWorkflowOutputMutation> mutations;
         try
         {
             mutations = normalizedWrites
                 .Select(write => new ZaWorkflowOutputMutation(
-                    ResolveOutputPath(paths, write.VirtualPath, outputMode),
+                    ResolveOutputPath(
+                        paths,
+                        write.VirtualPath,
+                        outputMode,
+                        isolateTrinityModManagerRomFs),
                     write.Bytes))
                 .ToList();
             mutations.AddRange(normalizedDeletes.Select(delete =>
                 new ZaWorkflowOutputMutation(
-                    ResolveOutputPath(paths, delete, outputMode),
+                    ResolveOutputPath(
+                        paths,
+                        delete,
+                        outputMode,
+                        isolateTrinityModManagerRomFs),
                     Bytes: null)));
-            if (outputMode == ZaOutputMode.Standalone)
+            mutations.AddRange(normalizedOutputMutations.Select(mutation =>
+                new ZaWorkflowOutputMutation(
+                    ResolveStandaloneOutputPath(paths, mutation.RelativePath),
+                    mutation.Bytes)));
+            var hasRomFsMutations = normalizedWrites.Length > 0 || normalizedDeletes.Length > 0;
+            if (outputMode == ZaOutputMode.Standalone && hasRomFsMutations)
             {
                 var descriptorBytes = reviewedStandaloneDescriptorBytes?.ToArray()
                     ?? CreatePatchedDescriptorBytes(
@@ -435,10 +713,23 @@ internal sealed class ZaWorkflowFileSource
             else if (reviewedStandaloneDescriptorBytes is not null || deleteStandaloneDescriptor)
             {
                 throw new ArgumentException(
-                    "Standalone descriptor review and deletion can only be used with standalone output.",
+                    "Standalone descriptor review and deletion require standalone RomFS mutations.",
                     reviewedStandaloneDescriptorBytes is not null
                         ? nameof(reviewedStandaloneDescriptorBytes)
                         : nameof(deleteStandaloneDescriptor));
+            }
+
+            var targetComparer = OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+            if (mutations
+                .GroupBy(
+                    mutation => Path.GetFullPath(mutation.TargetPath),
+                    targetComparer)
+                .Any(group => group.Count() > 1))
+            {
+                throw new InvalidDataException(
+                    "Pokemon Legends Z-A output batch contains duplicate or conflicting resolved targets.");
             }
         }
         catch (Exception exception)
@@ -449,6 +740,33 @@ internal sealed class ZaWorkflowFileSource
         }
 
         PromotePreparedMutations(paths, mutations);
+    }
+
+    internal static string ResolveStandaloneOutputPath(
+        ProjectPaths paths,
+        string outputRelativePath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputRelativePath);
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            throw new InvalidOperationException(
+                "Set an output root before applying Pokemon Legends Z-A standalone edits.");
+        }
+
+        var normalizedRelativePath = NormalizeStandaloneOutputRelativePath(outputRelativePath);
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            normalizedRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (PathContainment.IsOutsideRoot(Path.GetRelativePath(outputRoot, targetPath)))
+        {
+            throw new InvalidOperationException(
+                $"Pokemon Legends Z-A target path '{normalizedRelativePath}' escapes the output root.");
+        }
+
+        EnsureNoLinkTraversal(outputRoot, targetPath);
+        return targetPath;
     }
 
     internal static IDisposable AcquireOutputLock(ProjectPaths paths)
@@ -864,11 +1182,24 @@ internal sealed class ZaWorkflowFileSource
         return $"romfs/{virtualRomFsPath}";
     }
 
-    private static string ToOutputRelativePath(string normalizedVirtualPath, ZaOutputMode outputMode)
+    private static string ToOutputRelativePath(
+        string normalizedVirtualPath,
+        ZaOutputMode outputMode,
+        bool isolateTrinityModManagerRomFs = false)
     {
+        if (isolateTrinityModManagerRomFs
+            && outputMode != ZaOutputMode.TrinityModManager)
+        {
+            throw new ArgumentException(
+                "Isolated Trinity Mod Manager RomFS routing requires Trinity Mod Manager output.",
+                nameof(isolateTrinityModManagerRomFs));
+        }
+
         return outputMode switch
         {
             ZaOutputMode.Standalone => ToRelativePath(normalizedVirtualPath),
+            ZaOutputMode.TrinityModManager when isolateTrinityModManagerRomFs =>
+                $"{TrinityModManagerRomFsDirectory}/{normalizedVirtualPath}",
             ZaOutputMode.TrinityModManager => normalizedVirtualPath,
             ZaOutputMode.TrinityBypass => ToRelativePath(normalizedVirtualPath),
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
@@ -892,6 +1223,42 @@ internal sealed class ZaWorkflowFileSource
             throw new ArgumentException(
                 $"Pokemon Legends Z-A virtual path '{virtualRomFsPath}' is not canonical.",
                 nameof(virtualRomFsPath));
+        }
+
+        return normalized;
+    }
+
+    private static string GetFirstPathSegment(string normalizedVirtualPath)
+    {
+        var separatorIndex = normalizedVirtualPath.IndexOf('/');
+        return separatorIndex < 0
+            ? normalizedVirtualPath
+            : normalizedVirtualPath[..separatorIndex];
+    }
+
+    private static string NormalizeStandaloneOutputRelativePath(string outputRelativePath)
+    {
+        if (Path.IsPathRooted(outputRelativePath)
+            || outputRelativePath.StartsWith('/')
+            || outputRelativePath.StartsWith('\\'))
+        {
+            throw new ArgumentException(
+                $"Pokemon Legends Z-A standalone output path '{outputRelativePath}' must be relative.",
+                nameof(outputRelativePath));
+        }
+
+        var normalized = outputRelativePath.Replace('\\', '/');
+        var invalidFileNameCharacters = Path.GetInvalidFileNameChars();
+        var segments = normalized.Split('/');
+        if (segments.Length == 0
+            || segments.Any(segment =>
+                string.IsNullOrWhiteSpace(segment)
+                || segment is "." or ".."
+                || segment.IndexOfAny(invalidFileNameCharacters) >= 0))
+        {
+            throw new ArgumentException(
+                $"Pokemon Legends Z-A standalone output path '{outputRelativePath}' is not canonical.",
+                nameof(outputRelativePath));
         }
 
         return normalized;
@@ -942,23 +1309,26 @@ internal sealed class ZaWorkflowFileSource
 
     private static (string Path, bool IsStandalone)? SelectLatestLooseOutput(
         string trinityModManagerPath,
+        string isolatedTrinityModManagerPath,
         string standalonePath)
     {
-        var trinityModManagerExists = File.Exists(trinityModManagerPath);
-        var standaloneExists = File.Exists(standalonePath);
-        if (!trinityModManagerExists)
+        var candidates = new[]
         {
-            return standaloneExists ? (standalonePath, true) : null;
+            new LooseOutputCandidate(trinityModManagerPath, IsStandalone: false, Priority: 2),
+            new LooseOutputCandidate(isolatedTrinityModManagerPath, IsStandalone: false, Priority: 3),
+            new LooseOutputCandidate(standalonePath, IsStandalone: true, Priority: 1),
+        };
+        var selected = candidates
+            .Where(candidate => File.Exists(candidate.Path))
+            .OrderByDescending(candidate => File.GetLastWriteTimeUtc(candidate.Path))
+            .ThenByDescending(candidate => candidate.Priority)
+            .FirstOrDefault();
+        if (selected is null)
+        {
+            return null;
         }
 
-        if (!standaloneExists)
-        {
-            return (trinityModManagerPath, false);
-        }
-
-        return File.GetLastWriteTimeUtc(standalonePath) > File.GetLastWriteTimeUtc(trinityModManagerPath)
-            ? (standalonePath, true)
-            : (trinityModManagerPath, false);
+        return (selected.Path, selected.IsStandalone);
     }
 
     private static bool TryReadOutputArchive(ProjectPaths paths, string virtualPath, out byte[] bytes)
@@ -1021,6 +1391,11 @@ internal sealed class ZaWorkflowFileSource
         return File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfd"))
             && File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfs"));
     }
+
+    private sealed record LooseOutputCandidate(
+        string Path,
+        bool IsStandalone,
+        int Priority);
 }
 
 internal sealed record ZaWorkflowFile(
@@ -1048,6 +1423,17 @@ internal sealed record PlannedWriteInfo(
 internal sealed record ZaWorkflowFileWrite(
     string VirtualPath,
     byte[] Bytes);
+
+internal sealed record ZaStandaloneOutputMutation(
+    string RelativePath,
+    byte[]? Bytes);
+
+internal sealed record ZaStandaloneMixedBatch(
+    IReadOnlyList<ZaWorkflowFileWrite> RomFsWrites,
+    IReadOnlyList<string> RomFsDeletes,
+    IReadOnlyList<ZaStandaloneOutputMutation> OutputMutations,
+    byte[]? ReviewedStandaloneDescriptorBytes = null,
+    bool DeleteStandaloneDescriptor = false);
 
 internal sealed record ZaWorkflowOutputMutation(
     string TargetPath,

@@ -26,6 +26,7 @@ import {
   HandCoins,
   Languages,
   Layers,
+  ListOrdered,
   ListChecks,
   MapPinned,
   MapPin,
@@ -281,14 +282,14 @@ import {
   getMoveEditableFieldGroup,
   getMoveEditableFieldLabel
 } from './movesEditor';
-import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, resolveWorkflowDataSection, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
   WorkflowLoadGeneration,
   createWorkflowRetentionSizeHint,
   getEditSessionOwnerSections,
   getLoadedWorkflowRetentionEntries,
-  isRetainedWorkflowSection,
   removeWorkflowRecency,
+  resolveRetainedWorkflowSection,
   selectWorkflowSectionsToEvict,
   selectWorkflowSectionsToRefresh,
   storedRetainedWorkflowSections,
@@ -307,6 +308,7 @@ import {
   type WorkflowPanelOutput
 } from './components/workflowPanels';
 import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
+import { completeSuccessfulApplyResult } from './applyResultDiagnostics';
 import { useModalDialog } from './components/useModalDialog';
 import {
   type FairyGymBoostSelection,
@@ -338,6 +340,7 @@ import {
 import { getIvScreenPendingOperation } from './features/iv-screen/ivScreenPending';
 import { canStageAdvancedEditorAction } from './features/advanced-editors/stageActionGuard';
 import { GameDumpSection } from './features/game-dump/GameDumpSection';
+import { ZaDexLayoutSection } from './features/dex-layout/ZaDexLayoutSection';
 import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
 import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
 import {
@@ -678,6 +681,11 @@ const sections: Array<{
     id: 'typeChart',
     label: 'Type Chart',
     icon: Table2
+  },
+  {
+    id: 'dexLayout',
+    label: 'Dex Layout',
+    icon: ListOrdered
   },
   {
     id: 'angeFight',
@@ -2574,9 +2582,14 @@ export function App({
       activeSectionOwnsEditSession ||
       isPokemonLegendsZAAdvancedEditorSection(activeSection, selectedGame)
     );
+  const activeSectionOwnsDexLayoutEditSession =
+    activeSection === 'dexLayout' &&
+    editSessionSection === 'dexLayout' &&
+    editSession !== null;
   const activeSectionOwnsAdvancedEditSession =
     activeSectionOwnsScarletVioletAdvancedEditSession ||
-    activeSectionOwnsPokemonLegendsZAAdvancedEditSession;
+    activeSectionOwnsPokemonLegendsZAAdvancedEditSession ||
+    activeSectionOwnsDexLayoutEditSession;
   const getEditSessionForSection = useCallback(
     (section: WorkbenchSection) =>
       editSessionSection === section ||
@@ -2624,6 +2637,16 @@ export function App({
     clearScopedEditorPanelState(section);
   };
 
+  const prepareDexLayoutStagingAction = () => {
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+    setValidatedEditSessionSignature(null);
+    setChangePlanSessionSignature(null);
+    clearScopedEditorPanelState('dexLayout');
+  };
+
   const getScopedEditorOutputMode = (section: WorkbenchSection): ChangePlanOutputMode | undefined =>
     isScarletVioletAdvancedEditorSection(section, selectedGame) ||
     isPokemonLegendsZAAdvancedEditorSection(section, selectedGame)
@@ -2636,16 +2659,18 @@ export function App({
         getEditSessionOwnerSections(editSession, editSessionSection)
       );
       for (const section of editorDraftDirtySections) {
-        if (isRetainedWorkflowSection(section)) {
-          protectedSections.add(section);
+        const retainedSection = resolveRetainedWorkflowSection(section);
+        if (retainedSection) {
+          protectedSections.add(retainedSection);
         }
       }
       if (hasModMergerLocalState) {
         protectedSections.add('modMerger');
       }
 
-      if (includeActiveSection && isRetainedWorkflowSection(activeSection)) {
-        protectedSections.add(activeSection);
+      const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
+      if (includeActiveSection && activeRetainedSection) {
+        protectedSections.add(activeRetainedSection);
       }
 
       return protectedSections;
@@ -2661,9 +2686,13 @@ export function App({
 
   const evictWorkflowPayloads = useCallback(
     (sections: Iterable<WorkbenchSection>) => {
-      const evictedSections = new Set(
-        [...sections].filter(isRetainedWorkflowSection)
-      );
+      const evictedSections = new Set<RetainedWorkflowSection>();
+      for (const section of sections) {
+        const retainedSection = resolveRetainedWorkflowSection(section);
+        if (retainedSection) {
+          evictedSections.add(retainedSection);
+        }
+      }
       if (evictedSections.size === 0) {
         return;
       }
@@ -2791,13 +2820,16 @@ export function App({
   );
 
   useEffect(() => {
+    const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
     if (
-      isRetainedWorkflowSection(activeSection) &&
-      loadedWorkflowRetentionEntries.some((entry) => entry.section === activeSection)
+      activeRetainedSection &&
+      loadedWorkflowRetentionEntries.some(
+        (entry) => entry.section === activeRetainedSection
+      )
     ) {
       workflowRecencyRef.current = touchWorkflowRecency(
         workflowRecencyRef.current,
-        activeSection
+        activeRetainedSection
       );
     }
 
@@ -2817,23 +2849,27 @@ export function App({
   useEffect(() => {
     const previousSection = previousActiveWorkflowSectionRef.current;
     previousActiveWorkflowSectionRef.current = activeSection;
+    const previousRetainedSection = resolveRetainedWorkflowSection(previousSection);
+    const activeRetainedSection = resolveRetainedWorkflowSection(activeSection);
     if (
-      previousSection === activeSection ||
-      !isRetainedWorkflowSection(previousSection) ||
-      getProtectedWorkflowSections().has(previousSection) ||
-      loadedWorkflowRetentionEntries.some((entry) => entry.section === previousSection)
+      previousRetainedSection === activeRetainedSection ||
+      previousRetainedSection === null ||
+      getProtectedWorkflowSections().has(previousRetainedSection) ||
+      loadedWorkflowRetentionEntries.some(
+        (entry) => entry.section === previousRetainedSection
+      )
     ) {
       return;
     }
 
-    workflowLoadGenerationRef.current.invalidate(previousSection);
+    workflowLoadGenerationRef.current.invalidate(previousRetainedSection);
     setLazyLoadedWorkflowSections((currentSections) => {
-      if (!currentSections.has(previousSection)) {
+      if (!currentSections.has(previousRetainedSection)) {
         return currentSections;
       }
 
       const nextSections = new Set(currentSections);
-      nextSections.delete(previousSection);
+      nextSections.delete(previousRetainedSection);
       return nextSections;
     });
   }, [activeSection, getProtectedWorkflowSections, loadedWorkflowRetentionEntries]);
@@ -2965,7 +3001,8 @@ export function App({
           destination,
           discardPendingSession: activeSectionOwnsAdvancedEditSession,
           kind,
-          mode: 'confirm'
+          mode: 'confirm',
+          stageOnlyDexLayout: activeSection === 'dexLayout'
         });
         return;
       }
@@ -2975,6 +3012,7 @@ export function App({
       }
     },
     [
+      activeSection,
       activeEditorHasLocalDrafts,
       activeSectionOwnsAdvancedEditSession,
       editSession,
@@ -3003,6 +3041,47 @@ export function App({
         return;
       }
 
+      const isCrossingDexLayoutBoundary =
+        (activeSection === 'dexLayout') !== (destination === 'dexLayout');
+      const isLeavingEmptyDexLayoutSession =
+        isCrossingDexLayoutBoundary &&
+        activeSectionOwnsDexLayoutEditSession &&
+        pendingEditCount === 0 &&
+        !activeEditorHasLocalDrafts;
+      if (isLeavingEmptyDexLayoutSession) {
+        clearPendingEditState();
+        setActiveSection(destination);
+        return;
+      }
+
+      const isMovingStagedDexLayoutToChanges =
+        activeSection === 'dexLayout' &&
+        destination === 'changes' &&
+        pendingEditCount > 0 &&
+        !activeEditorHasLocalDrafts;
+      const hasDexLayoutBoundaryEdits =
+        pendingEditCount > 0 ||
+        (activeSection === 'dexLayout' && activeEditorHasLocalDrafts);
+      if (
+        isCrossingDexLayoutBoundary &&
+        hasDexLayoutBoundaryEdits &&
+        !isMovingStagedDexLayoutToChanges
+      ) {
+        setExitPrompt({
+          allowGoToChanges:
+            activeSection !== 'dexLayout' &&
+            !activeSectionOwnsAdvancedEditSession &&
+            !activeEditorHasLocalDrafts,
+          destination,
+          discardPendingSession:
+            pendingEditCount > 0 || activeSectionOwnsDexLayoutEditSession,
+          kind: 'editorSwitch',
+          mode: 'confirm',
+          stageOnlyDexLayout: activeSection === 'dexLayout'
+        });
+        return;
+      }
+
       const destinationOwnsEditSession =
         editSession !== null &&
         (destination === editSessionSection ||
@@ -3018,7 +3097,9 @@ export function App({
           activeSectionIsEditor
         );
       const isLeavingAdvancedEditorForChanges =
-        destination === 'changes' && activeSectionOwnsAdvancedEditSession;
+        destination === 'changes' &&
+        activeSectionOwnsAdvancedEditSession &&
+        !isMovingStagedDexLayoutToChanges;
 
       if (isLeavingActiveEditSession || isLeavingAdvancedEditorForChanges) {
         setExitPrompt({
@@ -3027,7 +3108,8 @@ export function App({
           destination,
           discardPendingSession: true,
           kind: 'editorSwitch',
-          mode: 'confirm'
+          mode: 'confirm',
+          stageOnlyDexLayout: activeSection === 'dexLayout'
         });
         return;
       }
@@ -3049,12 +3131,15 @@ export function App({
       activeSectionIsEditor,
       activeSectionOwnsEditSession,
       activeSectionOwnsAdvancedEditSession,
+      activeSectionOwnsDexLayoutEditSession,
       availableWorkflowSectionIds,
+      clearPendingEditState,
       editSession,
       editSessionCanBeSharedAcrossNormalEditors,
       editSessionSection,
       hasCriticalWriteOperation,
       isEditSessionOperationBusy,
+      pendingEditCount,
       selectedGame,
       setActiveSection
     ]
@@ -3683,7 +3768,8 @@ export function App({
           allowGoToChanges: !hasLocalDrafts,
           destination: null,
           kind: 'window',
-          mode: 'confirm'
+          mode: 'confirm',
+          stageOnlyDexLayout: editorDraftDirtySectionsRef.current.has('dexLayout')
         });
       }
     })
@@ -5643,6 +5729,7 @@ export function App({
   };
 
   useEffect(() => {
+    const workflowDataSection = resolveWorkflowDataSection(activeSection);
     if (
       !canAccessWorkflowSectionForHealth(
         activeSection,
@@ -5650,12 +5737,14 @@ export function App({
         health?.canOpenEditableWorkflows ?? false
       ) ||
       !isWorkflowSupportedForGame(activeSection, selectedGame) ||
-      lazyLoadedWorkflowSections.has(activeSection)
+      lazyLoadedWorkflowSections.has(workflowDataSection)
     ) {
       return;
     }
 
-    const workflowSummary = gameScopedWorkflows.find((workflow) => workflow.id === activeSection);
+    const workflowSummary = gameScopedWorkflows.find(
+      (workflow) => workflow.id === workflowDataSection
+    );
     if (
       !workflowSummary &&
       !activeSectionHasLoadedWorkflow &&
@@ -5671,7 +5760,7 @@ export function App({
     const markLazyLoadStarted = () =>
       setLazyLoadedWorkflowSections((currentSections) => {
         const nextSections = new Set(currentSections);
-        nextSections.add(activeSection);
+        nextSections.add(workflowDataSection);
         return nextSections;
       });
 
@@ -5682,6 +5771,7 @@ export function App({
           void handleOpenItemsWorkflow();
         }
         break;
+      case 'dexLayout':
       case 'pokemon':
         if (!pokemonWorkflow && !isPokemonLoading) {
           markLazyLoadStarted();
@@ -7297,6 +7387,157 @@ export function App({
     }
   };
 
+  const handleMovePokemonDexPlacement = async (
+    sourceSpeciesId: number,
+    destinationDexKind: PokemonDexPlacement['dexKind'],
+    destinationDisplayedNumber: number
+  ) => {
+    setIsPokemonUpdating(true);
+    prepareDexLayoutStagingAction();
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.movePokemonDexPlacement({
+            destinationDexKind,
+            destinationDisplayedNumber,
+            paths: createProjectPaths(draftPaths),
+            session,
+            sourceSpeciesId
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session:
+              didSucceed && updateResponse.session.pendingEdits.length > 0
+                ? updateResponse.session
+                : didSucceed
+                  ? null
+                  : session,
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (
+            updateResponse.didSucceed &&
+            updateResponse.workflow
+          ) {
+            setPokemonWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.session ? 'dexLayout' : null);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
+  const handleResizePokemonDex = async (regularCount: number) => {
+    setIsPokemonUpdating(true);
+    prepareDexLayoutStagingAction();
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.resizePokemonDex({
+            paths: createProjectPaths(draftPaths),
+            regularCount,
+            session
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session:
+              didSucceed && updateResponse.session.pendingEdits.length > 0
+                ? updateResponse.session
+                : didSucceed
+                  ? null
+                  : session,
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (
+            updateResponse.didSucceed &&
+            updateResponse.workflow
+          ) {
+            setPokemonWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.session ? 'dexLayout' : null);
+            registerEditorDraftDirty('dexLayout', false);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
+  const handleStagePokemonDexVanilla = async () => {
+    setIsPokemonUpdating(true);
+    prepareDexLayoutStagingAction();
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const updateResponse = await bridge.stagePokemonDexVanilla({
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session:
+              didSucceed && updateResponse.session.pendingEdits.length > 0
+                ? updateResponse.session
+                : didSucceed
+                  ? null
+                  : session,
+            workflow: didSucceed ? updateResponse.workflow : pokemonWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (
+            updateResponse.didSucceed &&
+            updateResponse.workflow
+          ) {
+            setPokemonWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.session ? 'dexLayout' : null);
+            registerEditorDraftDirty('dexLayout', false);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
   const handleUpdatePokemonLearnset = async (
     personalId: number,
     action: string,
@@ -8412,6 +8653,10 @@ export function App({
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
+      const completedApplyResult = completeSuccessfulApplyResult(
+        response.applyResult,
+        reviewedPlan
+      );
 
       if (!hasApplyErrors) {
         editSessionMutationGenerationRef.current += 1;
@@ -8428,7 +8673,7 @@ export function App({
         setChangePlanSessionSignature(null);
       }
 
-      setDynamaxAdventureApplyResult(response.applyResult);
+      setDynamaxAdventureApplyResult(completedApplyResult);
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
         setWorkProgress(createIndeterminateWorkProgress(
@@ -8441,7 +8686,7 @@ export function App({
           await refreshLoadedWorkflowsAfterApply(paths, isCurrentProjectOperation);
         } catch (error) {
           if (isCurrentProjectOperation()) {
-            setDynamaxAdventureApplyResult(response.applyResult);
+            setDynamaxAdventureApplyResult(completedApplyResult);
             setBridgeDiagnostics(toBridgeDiagnostics(error));
           }
         }
@@ -8632,6 +8877,66 @@ export function App({
         response !== null &&
         !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
       );
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsEncounterUpdating(false);
+    }
+  };
+
+  const handleStageEncounterSlotVanilla = async (tableId: string, slot: number) => {
+    setIsEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    const originalEditSessionSection = editSessionSection;
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const originalSession = session;
+          const originalWorkflow = encountersWorkflow;
+          const updateResponse = await bridge.stageEncounterSlotVanilla({
+            paths: createProjectPaths(draftPaths),
+            session,
+            slot,
+            tableId
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          const successfulSession =
+            updateResponse.session.pendingEdits.length > 0
+              ? updateResponse.session
+              : null;
+          const successfulSessionSection =
+            successfulSession?.pendingEdits.some(
+              (edit) => edit.domain === 'workflow.encounters'
+            ) === true
+              ? 'encounters'
+              : originalEditSessionSection;
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? successfulSession : originalSession,
+            sessionSection: didSucceed
+              ? successfulSession === null
+                ? null
+                : successfulSessionSection
+              : originalEditSessionSection,
+            workflow: didSucceed ? updateResponse.workflow : originalWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setEncountersWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.sessionSection);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -9237,9 +9542,13 @@ export function App({
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
+      const completedApplyResult = completeSuccessfulApplyResult(
+        response.applyResult,
+        planToApply
+      );
       const didWriteFiles =
-        !hasApplyErrors && response.applyResult.writtenFiles.length > 0;
-      const hasApplyWarnings = response.applyResult.diagnostics.some(
+        !hasApplyErrors && completedApplyResult.writtenFiles.length > 0;
+      const hasApplyWarnings = completedApplyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'warning'
       );
       const shouldRetainApplyResult =
@@ -9256,7 +9565,7 @@ export function App({
         setChangePlanSessionSignature(null);
       }
 
-      setApplyResult(response.applyResult);
+      setApplyResult(completedApplyResult);
 
       if (didWriteFiles) {
         setWorkProgress(
@@ -9914,6 +10223,7 @@ export function App({
       return;
     }
 
+    let completedApplyResult: ApplyResult | null = null;
     setIsChangePlanApplying(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -9947,6 +10257,10 @@ export function App({
       );
 
       if (!hasApplyErrors) {
+        completedApplyResult = completeSuccessfulApplyResult(
+          response.applyResult,
+          panelOutput.changePlan
+        );
         setEditSession(null);
         setEditSessionSection(null);
         setChangePlan(null);
@@ -9956,7 +10270,7 @@ export function App({
           ...currentStates,
           [section]: {
             actionDiagnostics: [],
-            applyResult: response.applyResult,
+            applyResult: completedApplyResult,
             changePlan: null,
             changePlanSessionSignature: null
           }
@@ -9983,7 +10297,20 @@ export function App({
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      setScopedEditorPanelDiagnostics(section, toBridgeDiagnostics(error));
+      const refreshDiagnostics = toBridgeDiagnostics(error);
+      if (completedApplyResult) {
+        setScopedEditorPanelStates((currentStates) => ({
+          ...currentStates,
+          [section]: {
+            actionDiagnostics: refreshDiagnostics,
+            applyResult: completedApplyResult,
+            changePlan: null,
+            changePlanSessionSignature: null
+          }
+        }));
+      } else {
+        setScopedEditorPanelDiagnostics(section, refreshDiagnostics);
+      }
     } finally {
       setIsChangePlanApplying(false);
       setWorkProgress(null);
@@ -10471,6 +10798,29 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'dexLayout' ? (
+            isPokemonLoading && !pokemonWorkflow ? (
+              <WorkflowLoadingPanel label="Dex Layout" />
+            ) : (
+              <ZaDexLayoutSection
+                diagnostics={editValidationDiagnostics}
+                editSession={getEditSessionForSection('dexLayout')}
+                isEditStarting={isEditStarting}
+                isPokemonUpdating={isPokemonUpdating}
+                onDirtyChange={(isDirty) =>
+                  registerEditorDraftDirty('dexLayout', isDirty)
+                }
+                onMovePlacement={handleMovePokemonDexPlacement}
+                onOpenChanges={() => handleNavigateSection('changes')}
+                onResizeDex={handleResizePokemonDex}
+                onStageReturnToVanilla={() =>
+                  void handleStagePokemonDexVanilla()
+                }
+                onStartEditSession={handleStartEditSession}
+                workflow={pokemonWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'moves' ? (
             isMovesLoading && !movesWorkflow ? (
               <WorkflowLoadingPanel label="Moves" />
@@ -10718,6 +11068,7 @@ export function App({
                 isEncounterUpdating={isEncounterUpdating}
                 onSearchChange={setEncounterSearchText}
                 onSelectTable={setSelectedEncounterTableId}
+                onStageEncounterVanilla={handleStageEncounterSlotVanilla}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
@@ -11404,7 +11755,7 @@ export function App({
               isSessionValidating={isSessionValidating}
               supportsTrinityOutput={supportsTrinityOutput}
               onCancelEditSession={handleCancelEditSession}
-              onOpenEditor={setActiveSection}
+              onOpenEditor={handleNavigateSection}
               onRemovePendingEdit={handleRemovePendingEdit}
               onRequestTrinityOutput={(mode) => setTrinityOutputConfirmation({ mode })}
               onSaveValidatedChanges={() => handleSaveValidatedChanges()}
@@ -11457,6 +11808,7 @@ export function App({
       ) : null}
       {trinityOutputConfirmation ? (
         <TrinityOutputConfirmationModal
+          includesExeFsOutput={getExeFsPlanWrite(visibleChangePlan) !== null}
           isApplying={isChangePlanApplying}
           mode={trinityOutputConfirmation.mode}
           onCancel={() => setTrinityOutputConfirmation(null)}
@@ -11476,6 +11828,7 @@ export function App({
             isSessionValidating || isChangePlanCreating || isChangePlanApplying
           }
           mode={exitPrompt.mode}
+          stageOnlyDexLayout={exitPrompt.stageOnlyDexLayout ?? false}
           onConfirmDiscard={handleConfirmExitDiscard}
           onDeclineDiscard={handleDeclineExitDiscard}
           onGoToChanges={handleGoToChangesAfterExitDecline}
@@ -18417,6 +18770,21 @@ function formatDraftSummary(summary: {
   return `${summary.changedFields.length} changed`;
 }
 
+const dexLayoutPendingRecordIds = new Set([
+  'dex-layout',
+  'dex-placement-vanilla'
+]);
+
+function isDexLayoutPendingEdit(edit: PendingEdit) {
+  return (
+    edit.domain === 'workflow.pokemon' &&
+    edit.field === 'dexPlacement' &&
+    edit.recordId !== null &&
+    edit.recordId !== undefined &&
+    dexLayoutPendingRecordIds.has(edit.recordId)
+  );
+}
+
 function formatPendingEditDomain(domain: string) {
   const labels: Record<string, string> = {
     'workflow.angeFight': 'Ange Fight',
@@ -18458,7 +18826,17 @@ function formatPendingEditDomain(domain: string) {
   return labels[domain] ?? domain;
 }
 
-function getPendingEditSection(domain: string): WorkbenchSection | null {
+function getPendingEditEditorLabel(edit: PendingEdit) {
+  return isDexLayoutPendingEdit(edit)
+    ? 'Dex Layout'
+    : formatPendingEditDomain(edit.domain);
+}
+
+function getPendingEditSection(edit: PendingEdit): WorkbenchSection | null {
+  if (isDexLayoutPendingEdit(edit)) {
+    return 'dexLayout';
+  }
+
   const sectionsByDomain: Record<string, WorkbenchSection> = {
     'workflow.angeFight': 'angeFight',
     'workflow.bagHook': 'bagHook',
@@ -18494,7 +18872,7 @@ function getPendingEditSection(domain: string): WorkbenchSection | null {
     'workflow.typeChart': 'typeChart'
   };
 
-  return sectionsByDomain[domain] ?? null;
+  return sectionsByDomain[edit.domain] ?? null;
 }
 
 type PendingEditableOption = {
@@ -18523,7 +18901,7 @@ function getPendingEditDisplayDetails(
   edit: PendingEdit,
   context: PendingEditContext
 ): PendingEditDisplayDetails {
-  const editorLabel = formatPendingEditDomain(edit.domain);
+  const editorLabel = getPendingEditEditorLabel(edit);
 
   switch (edit.domain) {
     case 'workflow.items': {
@@ -19126,7 +19504,7 @@ function getPokemonPendingEditDisplayDetails(
     return createPendingEditDisplayDetails(edit, {
       editorLabel,
       fieldLabel: 'Pokédex placement',
-      newValueLabel: 'Safe slot swap staged',
+      newValueLabel: 'Pokédex layout staged',
       recordLabel: 'Regular and Hyperspace Pokédexes'
     });
   }
@@ -25759,6 +26137,7 @@ type EncountersSectionProps = {
   isEncounterUpdating: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectTable: (tableId: string | null) => void;
+  onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
   onStartEditSession: () => void;
   onUpdateEncounterSlotFields: (
     tableId: string,
@@ -25792,6 +26171,7 @@ function EncountersSection({
   isEncounterUpdating,
   onSearchChange,
   onSelectTable,
+  onStageEncounterVanilla,
   onStartEditSession,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
@@ -25956,6 +26336,7 @@ function EncountersSection({
               isEncounterUpdating={isEncounterUpdating}
               onSelectSlot={setSelectedSlot}
               onSelectTable={onSelectTable}
+              onStageEncounterVanilla={onStageEncounterVanilla}
               onStartEditSession={onStartEditSession}
               onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}
               onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
@@ -25987,6 +26368,7 @@ function SelectedEncounterPanel({
   isEncounterUpdating,
   onSelectSlot,
   onSelectTable,
+  onStageEncounterVanilla,
   onStartEditSession,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
@@ -26006,6 +26388,7 @@ function SelectedEncounterPanel({
   isEncounterUpdating: boolean;
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
+  onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
   onStartEditSession: () => void;
   onUpdateEncounterSlotFields: (
     tableId: string,
@@ -26033,7 +26416,7 @@ function SelectedEncounterPanel({
   >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
-  const { language, t } = useLocalization();
+  const { language, t, translateLiteral } = useLocalization();
   const defaultEncounterFields = useMemo(
     () =>
       editableFields.map((field) => {
@@ -26347,6 +26730,27 @@ function SelectedEncounterPanel({
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
   const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
+  const selectedEncounterHasLocalDrafts =
+    (encounterDraftKey !== null && draftsBySlotKey[encounterDraftKey] !== undefined) ||
+    (zaEncounterSlotDraftKey !== null &&
+      zaSlotDraftsBySlotKey[zaEncounterSlotDraftKey] !== undefined) ||
+    (zaEncounterAppearanceDraftKey !== null &&
+      zaAppearanceDraftsByTableId[zaEncounterAppearanceDraftKey] !== undefined) ||
+    (encounterLevelDraftKey !== null &&
+      levelDraftsByScopeKey[encounterLevelDraftKey] !== undefined);
+  const selectedEncounterRevertMessage = selectedEncounterHasLocalDrafts
+    ? t('za.encounters.revertDraftBlocked')
+    : encounterSlot?.revertToVanillaBlockedReason
+      ? translateLiteral(encounterSlot.revertToVanillaBlockedReason)
+      : t('za.encounters.revertHelp');
+  const canRevertSelectedZaEncounter =
+    isZaEncounterTable &&
+    onStageEncounterVanilla !== undefined &&
+    encounterSlot?.canRevertToVanilla === true &&
+    canEditEncounters &&
+    !selectedEncounterHasLocalDrafts &&
+    !isEditStarting &&
+    !isEncounterUpdating;
   const draftedZaWeight = getEncounterDraftInteger(
     selectedPlacementDrafts[zaEncounterWeightFieldName],
     encounterSlot?.weight ?? null
@@ -27432,6 +27836,70 @@ function SelectedEncounterPanel({
                   label="Edit"
                 />
               </button>
+            ) : null}
+            {isZaEncounterTable && onStageEncounterVanilla ? (
+              <div className="za-encounter-revert-action">
+                <button
+                  aria-busy={isEncounterUpdating || undefined}
+                  className="danger-button"
+                  disabled={!canRevertSelectedZaEncounter}
+                  onClick={async () => {
+                    if (!table || !encounterSlot) {
+                      return;
+                    }
+
+                    const didSave = await onStageEncounterVanilla(
+                      table.tableId,
+                      encounterSlot.slot
+                    );
+                    if (!didSave) {
+                      return;
+                    }
+
+                    if (encounterDraftKey) {
+                      setDraftsBySlotKey((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, encounterDraftKey)
+                      );
+                    }
+                    if (zaEncounterSlotDraftKey) {
+                      setZaSlotDraftsBySlotKey((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, zaEncounterSlotDraftKey)
+                      );
+                    }
+                    if (zaEncounterAppearanceDraftKey) {
+                      setZaAppearanceDraftsByTableId((currentDrafts) =>
+                        deleteFieldDraftRecord(
+                          currentDrafts,
+                          zaEncounterAppearanceDraftKey
+                        )
+                      );
+                    }
+                    if (encounterLevelDraftKey) {
+                      setLevelDraftsByScopeKey((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, encounterLevelDraftKey)
+                      );
+                    }
+                  }}
+                  title={selectedEncounterRevertMessage}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={t('za.encounters.reverting')}
+                    icon={<RotateCcw aria-hidden="true" size={16} />}
+                    isBusy={isEncounterUpdating}
+                    label={t('za.encounters.revertToVanilla')}
+                  />
+                </button>
+                <small
+                  className={
+                    selectedEncounterHasLocalDrafts
+                      ? 'editable-field-error'
+                      : 'editable-field-status'
+                  }
+                >
+                  {selectedEncounterRevertMessage}
+                </small>
+              </div>
             ) : null}
           </div>
           {areaCopyRequest ? (
@@ -36505,6 +36973,18 @@ function deduplicateDiagnostics(diagnostics: ApiDiagnostic[]): ApiDiagnostic[] {
   });
 }
 
+function getExeFsPlanWrite(changePlan: ChangePlan | null) {
+  return changePlan?.writes.find((write) => {
+    const normalizedTarget = write.targetRelativePath
+      .replaceAll('\\', '/')
+      .toLocaleLowerCase();
+    return (
+      normalizedTarget.startsWith('exefs/') ||
+      normalizedTarget.includes('/exefs/')
+    );
+  }) ?? null;
+}
+
 function ChangesSection({
   applyResult,
   canSaveValidatedChanges,
@@ -36548,23 +37028,26 @@ function ChangesSection({
   const pendingEdits = editSession?.pendingEdits ?? [];
   const isPendingValidationBusy = isSessionValidating || isChangePlanCreating;
   const pendingEditGroups: Array<{
-    domain: string;
     editorLabel: string;
     edits: Array<{ details: PendingEditDisplayDetails; edit: PendingEdit; index: number }>;
+    key: string;
     section: WorkbenchSection | null;
   }> = [];
   pendingEdits.forEach((edit, index) => {
-    let group = pendingEditGroups.find((candidate) => candidate.domain === edit.domain);
+    const details = getPendingEditDisplayDetails(edit, pendingEditContext);
+    const section = getPendingEditSection(edit);
+    const groupKey = `${edit.domain}:${section ?? 'none'}:${details.editorLabel}`;
+    let group = pendingEditGroups.find((candidate) => candidate.key === groupKey);
     if (!group) {
       group = {
-        domain: edit.domain,
-        editorLabel: formatPendingEditDomain(edit.domain),
+        editorLabel: details.editorLabel,
         edits: [],
-        section: getPendingEditSection(edit.domain)
+        key: groupKey,
+        section
       };
       pendingEditGroups.push(group);
     }
-    group.edits.push({ details: getPendingEditDisplayDetails(edit, pendingEditContext), edit, index });
+    group.edits.push({ details, edit, index });
   });
   const hasWriteErrors =
     applyResult?.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ?? false;
@@ -36589,6 +37072,15 @@ function ChangesSection({
     ...(changePlan?.diagnostics ?? []),
     ...(applyResult?.diagnostics ?? [])
   ]);
+  const exeFsPlanWrite = getExeFsPlanWrite(changePlan);
+  const includesExeFsOutput = exeFsPlanWrite !== null;
+  const canPreserveTrinityBypass =
+    !includesExeFsOutput ||
+    exeFsPlanWrite.sources.some((source) => source.layer === 'layered');
+  const hybridOutputExplanation =
+    'This reviewed plan includes ExeFS output. The output choice changes RomFS packaging only. KM Editor will also update standard exefs/main, and both parts are required.';
+  const bypassOutputExplanation =
+    'Trinity Bypass output requires Output Root to already contain the compatible bypass exefs/main so KM Editor can preserve it.';
 
   return (
     <>
@@ -36683,8 +37175,13 @@ function ChangesSection({
               <button
                 aria-busy={isChangePlanApplying || undefined}
                 className="secondary-button"
-                disabled={!canSaveValidatedChanges}
+                disabled={!canSaveValidatedChanges || !canPreserveTrinityBypass}
                 onClick={() => onRequestTrinityOutput('trinityBypass')}
+                title={
+                  !canPreserveTrinityBypass
+                    ? translateLiteral(bypassOutputExplanation)
+                    : undefined
+                }
                 type="button"
               >
                 <BusyActionContent
@@ -36730,6 +37227,21 @@ function ChangesSection({
           </button>
         </div>
 
+        {supportsTrinityOutput && includesExeFsOutput ? (
+          <div className="changes-output-restriction" role="note">
+            <AlertTriangle aria-hidden="true" size={16} />
+            <span>
+              {translateLiteral(hybridOutputExplanation)}
+              {!canPreserveTrinityBypass ? (
+                <>
+                  {' '}
+                  {translateLiteral(bypassOutputExplanation)}
+                </>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
+
         {pendingEdits.length > 0 ? (
           <div
             aria-label={`Pending changes (${pendingEdits.length})`}
@@ -36742,7 +37254,7 @@ function ChangesSection({
                 <section
                   aria-labelledby={headingId}
                   className="pending-edit-group"
-                  key={group.domain}
+                  key={group.key}
                 >
                   <div className="pending-edit-group-heading">
                     <div>
@@ -37335,7 +37847,8 @@ function ExitPromptModal({
   onConfirmDiscard,
   onDeclineDiscard,
   onGoToChanges,
-  onStay
+  onStay,
+  stageOnlyDexLayout
 }: {
   allowGoToChanges: boolean;
   isDiscardBlocked: boolean;
@@ -37345,7 +37858,9 @@ function ExitPromptModal({
   onDeclineDiscard: () => void;
   onGoToChanges: () => void;
   onStay: () => void;
+  stageOnlyDexLayout: boolean;
 }) {
+  const { translateLiteral } = useLocalization();
   const isConfirmMode = mode === 'confirm';
   const isCancelPrompt = kind === 'cancel';
   const isEditorSwitchPrompt = kind === 'editorSwitch';
@@ -37378,12 +37893,20 @@ function ExitPromptModal({
             ? isEditorSwitchPrompt
               ? allowGoToChanges
                 ? 'This editor has unsaved changes. Switching editors now will revert those edits.'
-                : 'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
+                : stageOnlyDexLayout
+                  ? translateLiteral(
+                      'Finish or reset any local Dex Layout draft here. Review and output staged changes from Changes, or discard them before leaving.'
+                    )
+                  : 'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
               : isCancelPrompt
               ? 'Canceling will discard every pending edit in this edit session. Are you sure you want to discard all changes?'
               : allowGoToChanges
                 ? 'This editor has pending changes or an active edit session. Exiting will discard those pending edits.'
-                : 'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
+                : stageOnlyDexLayout
+                  ? translateLiteral(
+                      'Finish or reset any local Dex Layout draft here. Review and output staged changes from Changes, or discard them before leaving.'
+                    )
+                  : 'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
             : 'You can stay on this editor or go to Changes to validate and save the pending edits.'}
         </p>
         <div className="modal-actions">
@@ -42220,6 +42743,7 @@ type ExitPromptState = {
   discardPendingSession?: boolean;
   kind: 'cancel' | 'editor' | 'editorSwitch' | 'window';
   mode: 'confirm' | 'redirect';
+  stageOnlyDexLayout?: boolean;
 };
 
 type DependencyWarningState = {

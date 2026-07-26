@@ -163,6 +163,19 @@ export const updateEncounterSlotFieldsResponseSchema = z.strictObject({
   workflow: encountersWorkflowSchema
 });
 
+export const stageEncounterSlotVanillaRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  slot: z.number().int().nonnegative(),
+  tableId: z.string().min(1)
+});
+
+export const stageEncounterSlotVanillaResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: encountersWorkflowSchema
+});
+
 export const placementObjectFieldUpdateSchema = z.strictObject({
   field: z.string(),
   objectId: z.string(),
@@ -221,6 +234,12 @@ export type UpdateEncounterSlotFieldsRequest = z.infer<
 >;
 export type UpdateEncounterSlotFieldsResponse = z.infer<
   typeof updateEncounterSlotFieldsResponseSchema
+>;
+export type StageEncounterSlotVanillaRequest = z.infer<
+  typeof stageEncounterSlotVanillaRequestSchema
+>;
+export type StageEncounterSlotVanillaResponse = z.infer<
+  typeof stageEncounterSlotVanillaResponseSchema
 >;
 export type PlacementObjectFieldUpdate = z.infer<typeof placementObjectFieldUpdateSchema>;
 export type UpdatePlacementObjectFieldsRequest = z.infer<
