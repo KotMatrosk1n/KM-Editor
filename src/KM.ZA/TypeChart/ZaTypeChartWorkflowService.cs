@@ -110,7 +110,7 @@ public sealed class ZaTypeChartWorkflowService
                 diagnostics);
         }
 
-        var source = CreateSource(mainSource.Entry, "available");
+        var source = CreateSource(mainSource, "available");
         try
         {
             var analysis = ZaTypeChartMainPatcher.Analyze(
@@ -169,56 +169,20 @@ public sealed class ZaTypeChartWorkflowService
         }
     }
 
-    internal static ZaTypeChartWorkflowFileSource? ResolveWorkflowFile(
+    internal static ZaExeFsMainFile? ResolveWorkflowFile(
         OpenedProject project,
         string relativePath)
     {
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
-        if (graphEntry is null)
-        {
-            return null;
-        }
-
-        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
-        return sourcePath is not null && File.Exists(sourcePath)
-            ? new ZaTypeChartWorkflowFileSource(graphEntry, sourcePath)
+        return string.Equals(relativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
+            ? ZaExeFsMainFileResolver.ResolveEffective(project)
             : null;
-    }
-
-    internal static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
-    {
-        if (entry.LayeredFile is not null && !string.IsNullOrWhiteSpace(paths.OutputRootPath))
-        {
-            return CombineGraphPath(paths.OutputRootPath, entry.RelativePath);
-        }
-
-        if (entry.BaseFile is not null && entry.RelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseExeFsPath, entry.RelativePath["exefs/".Length..]);
-        }
-
-        return null;
     }
 
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
     {
-        if (string.IsNullOrWhiteSpace(paths.OutputRootPath) || Path.IsPathRooted(targetRelativePath))
-        {
-            return null;
-        }
-
-        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
-        var targetPath = Path.GetFullPath(Path.Combine(
-            outputRoot,
-            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        var pathFromOutputRoot = Path.GetRelativePath(outputRoot, targetPath);
-        if (PathContainment.IsOutsideRoot(pathFromOutputRoot))
-        {
-            return null;
-        }
-
-        return targetPath;
+        return string.Equals(targetRelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
+            ? ZaExeFsMainFileResolver.ResolveOutputPath(paths)
+            : null;
     }
 
     public static IReadOnlyList<ZaTypeChartTypeDefinition> Types => TypeDefinitions;
@@ -308,18 +272,17 @@ public sealed class ZaTypeChartWorkflowService
             DetectedGame: null);
     }
 
-    private static ZaTypeChartSourceRecord CreateSource(ProjectFileGraphEntry entry, string status)
+    private static ZaTypeChartSourceRecord CreateSource(ZaExeFsMainFile source, string status)
     {
-        var sourceLayer = entry.LayeredFile is not null
-            ? ProjectFileLayer.Layered
-            : ProjectFileLayer.Base;
-
         return new ZaTypeChartSourceRecord(
             "exefs-main",
             "ExeFS main",
-            entry.RelativePath,
+            source.Reference.RelativePath,
             status,
-            new ZaTypeChartProvenance(entry.RelativePath, sourceLayer, entry.State));
+            new ZaTypeChartProvenance(
+                source.Reference.RelativePath,
+                source.Reference.Layer,
+                source.FileState));
     }
 
     private static ZaTypeChartSourceRecord CreateMissingSource()
@@ -333,16 +296,6 @@ public sealed class ZaTypeChartWorkflowService
                 ExeFsMainPath,
                 ProjectFileLayer.Generated,
                 ProjectFileGraphEntryState.BaseOnly));
-    }
-
-    private static string? CombineGraphPath(string? rootPath, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            return null;
-        }
-
-        return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static ZaWorkflowSummary CreateSummary(
@@ -371,7 +324,3 @@ public sealed class ZaTypeChartWorkflowService
             Expected: expected);
     }
 }
-
-internal sealed record ZaTypeChartWorkflowFileSource(
-    ProjectFileGraphEntry Entry,
-    string AbsolutePath);

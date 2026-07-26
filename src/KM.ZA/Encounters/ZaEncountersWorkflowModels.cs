@@ -54,6 +54,14 @@ public sealed record ZaEncounterSlotRecord(
     public int AppearanceObjectCount { get; init; }
 
     public bool CanEditAppearanceCounts { get; init; }
+
+    internal bool CanEditAppearanceMinCount { get; init; }
+
+    internal bool CanEditAppearanceMaxCount { get; init; }
+
+    public bool CanRevertToVanilla { get; init; }
+
+    public string? RevertToVanillaBlockedReason { get; init; }
 }
 
 public sealed record ZaEncounterTableRecord(

@@ -12,6 +12,9 @@ export const kmCommandNameValues = [
   'pokemon.learnset.update',
   'pokemon.evolution.update',
   'pokemon.dex.swap',
+  'pokemon.dex.move',
+  'pokemon.dex.resize',
+  'pokemon.dex.vanilla.stage',
   'moves.load',
   'moves.field.update', 'moves.fields.update',
   'text.load',
@@ -36,6 +39,7 @@ export const kmCommandNameValues = [
   'shops.inventory.update',
   'encounters.load',
   'encounters.slots.update',
+  'encounters.slot.vanilla.stage',
   'raidBattles.load',
   'raidBattles.slot.update',
   'raidBattles.slots.update',
@@ -129,6 +133,9 @@ export const kmCommandNames = {
   updatePokemonLearnset: 'pokemon.learnset.update',
   updatePokemonEvolution: 'pokemon.evolution.update',
   swapPokemonDexPlacement: 'pokemon.dex.swap',
+  movePokemonDexPlacement: 'pokemon.dex.move',
+  resizePokemonDex: 'pokemon.dex.resize',
+  stagePokemonDexVanilla: 'pokemon.dex.vanilla.stage',
   loadMovesWorkflow: 'moves.load',
   updateMoveField: 'moves.field.update',
   updateMoveFields: 'moves.fields.update',
@@ -157,6 +164,7 @@ export const kmCommandNames = {
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
   updateEncounterSlotFields: 'encounters.slots.update',
+  stageEncounterSlotVanilla: 'encounters.slot.vanilla.stage',
   loadRaidBattlesWorkflow: 'raidBattles.load',
   updateRaidBattleSlotField: 'raidBattles.slot.update',
   updateRaidBattleSlotFields: 'raidBattles.slots.update',
@@ -1032,11 +1040,18 @@ export const pokemonDexPlacementSchema = z.strictObject({
 });
 
 export const pokemonDexEditorSchema = z.strictObject({
+  advancedBlockedReason: z.string().nullable(),
   blockedReason: z.string().nullable(),
+  canReturnToVanilla: z.boolean(),
+  canEditAdvanced: z.boolean(),
   canEdit: z.boolean(),
+  executableBuildId: z.string().nullable(),
+  executableRegularCount: z.number().int().nonnegative().nullable(),
   hyperspaceCount: z.number().int().nonnegative(),
+  isVanillaLayout: z.boolean(),
   placements: z.array(pokemonDexPlacementSchema),
-  regularCount: z.number().int().nonnegative()
+  regularCount: z.number().int().nonnegative(),
+  returnToVanillaBlockedReason: z.string().nullable()
 });
 
 export const pokemonRecordSchema = z.strictObject({
@@ -1145,6 +1160,43 @@ export const swapPokemonDexPlacementRequestSchema = z.strictObject({
 });
 
 export const swapPokemonDexPlacementResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
+export const movePokemonDexPlacementRequestSchema = z.strictObject({
+  destinationDexKind: z.enum(['regular', 'hyperspace']),
+  destinationDisplayedNumber: z.number().int().positive(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  sourceSpeciesId: z.number().int().positive()
+});
+
+export const movePokemonDexPlacementResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
+export const resizePokemonDexRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  regularCount: z.number().int().min(1).max(363),
+  session: editSessionSchema.nullable()
+});
+
+export const resizePokemonDexResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
+export const stagePokemonDexVanillaRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stagePokemonDexVanillaResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: pokemonWorkflowSchema
@@ -2801,6 +2853,7 @@ export const encounterSlotRecordSchema = z.strictObject({
   canEditAppearanceCounts: z.boolean().nullable().optional(),
   canEditSlotMaxCount: z.boolean().nullable().optional(),
   canEditWeight: z.boolean().nullable().optional(),
+  canRevertToVanilla: z.boolean().nullable().optional(),
   contributesToWildZoneCompletion: z.boolean().nullable().optional(),
   encounterDataId: z.string().nullable().optional(),
   encounterKind: z.string().nullable().optional(),
@@ -2810,6 +2863,7 @@ export const encounterSlotRecordSchema = z.strictObject({
   isAlpha: z.boolean().optional(),
   levelMax: z.number().int().nonnegative(),
   levelMin: z.number().int().nonnegative(),
+  revertToVanillaBlockedReason: z.string().nullable().optional(),
   slot: z.number().int().nonnegative(),
   slotMaxCount: z.number().int().nonnegative().nullable().optional(),
   speciesId: z.number().int().nonnegative(),
@@ -5212,6 +5266,20 @@ export type SwapPokemonDexPlacementRequest = z.infer<
 >;
 export type SwapPokemonDexPlacementResponse = z.infer<
   typeof swapPokemonDexPlacementResponseSchema
+>;
+export type MovePokemonDexPlacementRequest = z.infer<
+  typeof movePokemonDexPlacementRequestSchema
+>;
+export type MovePokemonDexPlacementResponse = z.infer<
+  typeof movePokemonDexPlacementResponseSchema
+>;
+export type ResizePokemonDexRequest = z.infer<typeof resizePokemonDexRequestSchema>;
+export type ResizePokemonDexResponse = z.infer<typeof resizePokemonDexResponseSchema>;
+export type StagePokemonDexVanillaRequest = z.infer<
+  typeof stagePokemonDexVanillaRequestSchema
+>;
+export type StagePokemonDexVanillaResponse = z.infer<
+  typeof stagePokemonDexVanillaResponseSchema
 >;
 export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;

@@ -9,6 +9,7 @@ using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
+using KM.ZA.ExeFs;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Pokemon;
@@ -405,14 +406,16 @@ internal sealed class ZaPokemonWorkflowService
             try
             {
                 pokedexSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
-                dexEditor = CreateDexEditor(pokemon, source, pokedexSource);
+                dexEditor = AddVanillaLayoutStatus(
+                    project,
+                    CreateDexEditor(project, pokemon, source, pokedexSource));
             }
             catch (Exception exception) when (
                 exception is IOException or InvalidDataException or ArgumentException or OverflowException)
             {
                 var blockedReason =
                     $"Pokédex placement is unavailable because its active slot mapping could not be verified: {exception.Message}";
-                dexEditor = CreateBlockedDexEditor(blockedReason, source, pokedexSource);
+                dexEditor = CreateBlockedDexEditor(project, blockedReason, source, pokedexSource);
                 diagnostics.Add(ZaWorkflowSupport.Warning(
                     blockedReason,
                     $"romfs/{ZaDataPaths.PokedexContentsData}"));
@@ -451,6 +454,7 @@ internal sealed class ZaPokemonWorkflowService
     }
 
     private static ZaPokemonDexEditor CreateDexEditor(
+        OpenedProject project,
         IReadOnlyList<ZaPokemonRecord> pokemon,
         ZaWorkflowFile personalSource,
         ZaWorkflowFile contentsSource)
@@ -551,29 +555,265 @@ internal sealed class ZaPokemonWorkflowService
             .OrderBy(placement => placement.InternalIndex)
             .ToArray();
 
+        var executable = AnalyzeDexExecutable(
+            project,
+            regularIndices.Length,
+            activeSpecies.Length);
         return new ZaPokemonDexEditor(
             CanEdit: true,
             BlockedReason: null,
-            regularIndices.Length,
-            hyperspaceIndices.Length,
-            placements,
-            ToProvenance(personalSource),
-            ToProvenance(contentsSource));
+            CanEditAdvanced: executable.CanEditAdvanced,
+            AdvancedBlockedReason: executable.AdvancedBlockedReason,
+            IsVanillaLayout: false,
+            CanReturnToVanilla: false,
+            ReturnToVanillaBlockedReason: null,
+            ExecutableBuildId: executable.BuildId,
+            ExecutableRegularCount: executable.RegularCount,
+            RegularCount: regularIndices.Length,
+            HyperspaceCount: hyperspaceIndices.Length,
+            Placements: placements,
+            PersonalProvenance: ToProvenance(personalSource),
+            ContentsProvenance: ToProvenance(contentsSource),
+            ExecutableProvenance: executable.Provenance,
+            VanillaLayoutFingerprint: null);
     }
 
     private static ZaPokemonDexEditor CreateBlockedDexEditor(
+        OpenedProject project,
         string blockedReason,
         ZaWorkflowFile? personalSource,
         ZaWorkflowFile? contentsSource)
     {
+        var executable = AnalyzeDexExecutable(
+            project,
+            expectedRegularCount: null,
+            activeSpeciesCount: null);
         return new ZaPokemonDexEditor(
             CanEdit: false,
-            blockedReason,
+            BlockedReason: blockedReason,
+            CanEditAdvanced: false,
+            AdvancedBlockedReason: executable.AdvancedBlockedReason,
+            IsVanillaLayout: false,
+            CanReturnToVanilla: false,
+            ReturnToVanillaBlockedReason: blockedReason,
+            ExecutableBuildId: executable.BuildId,
+            ExecutableRegularCount: executable.RegularCount,
             RegularCount: 0,
             HyperspaceCount: 0,
-            Array.Empty<ZaPokemonDexPlacement>(),
-            personalSource is null ? null : ToProvenance(personalSource),
-            contentsSource is null ? null : ToProvenance(contentsSource));
+            Placements: Array.Empty<ZaPokemonDexPlacement>(),
+            PersonalProvenance: personalSource is null ? null : ToProvenance(personalSource),
+            ContentsProvenance: contentsSource is null ? null : ToProvenance(contentsSource),
+            ExecutableProvenance: executable.Provenance,
+            VanillaLayoutFingerprint: null);
+    }
+
+    private ZaPokemonDexEditor AddVanillaLayoutStatus(
+        OpenedProject project,
+        ZaPokemonDexEditor editor)
+    {
+        try
+        {
+            var vanilla = ZaDexLayoutStateReader.ReadBase(project, fileSource);
+            if (vanilla.RegularCount != ZaDexLayoutMainPatcher.VanillaRegularCount)
+            {
+                throw new InvalidDataException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"The verified base Pokédex uses Regular boundary {vanilla.RegularCount}, "
+                        + $"not the expected vanilla boundary {ZaDexLayoutMainPatcher.VanillaRegularCount}."));
+            }
+
+            var currentAssignments = editor.Placements.ToDictionary(
+                placement => placement.SpeciesId,
+                placement => placement.InternalIndex);
+            if (!currentAssignments.Keys.Order().SequenceEqual(
+                    vanilla.Assignments.Keys.Order()))
+            {
+                throw new InvalidDataException(
+                    "The effective and base Pokédexes do not contain the same active species.");
+            }
+
+            var vanillaFingerprint = vanilla.Fingerprint;
+            var isVanilla = string.Equals(
+                ZaDexLayoutStateReader.CreateFingerprint(
+                    editor.RegularCount,
+                    currentAssignments),
+                vanillaFingerprint,
+                StringComparison.Ordinal);
+            string? blockedReason = null;
+            if (!isVanilla
+                && editor.RegularCount != vanilla.RegularCount
+                && (!editor.CanEditAdvanced || editor.ExecutableProvenance is null))
+            {
+                blockedReason = editor.AdvancedBlockedReason
+                    ?? "Returning Dex Layout to vanilla requires a verified matching Pokemon Legends Z-A exefs/main.";
+            }
+
+            return editor with
+            {
+                IsVanillaLayout = isVanilla,
+                CanReturnToVanilla = !isVanilla && blockedReason is null,
+                ReturnToVanillaBlockedReason = blockedReason,
+                VanillaLayoutFingerprint = vanillaFingerprint,
+            };
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException
+                or OverflowException)
+        {
+            return editor with
+            {
+                IsVanillaLayout = false,
+                CanReturnToVanilla = false,
+                ReturnToVanillaBlockedReason =
+                    $"Returning Dex Layout to vanilla is unavailable because the base layout could not be verified: {exception.Message}",
+                VanillaLayoutFingerprint = null,
+            };
+        }
+    }
+
+    private static DexExecutableStatus AnalyzeDexExecutable(
+        OpenedProject project,
+        int? expectedRegularCount,
+        int? activeSpeciesCount)
+    {
+        ZaExeFsMainFile? effectiveMain;
+        try
+        {
+            effectiveMain = ZaExeFsMainFileResolver.ResolveEffective(project);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            return new DexExecutableStatus(
+                CanEditAdvanced: false,
+                AdvancedBlockedReason: $"Changing Pokédex sizes is unavailable because exefs/main could not be resolved: {exception.Message}",
+                BuildId: null,
+                RegularCount: null,
+                Provenance: null);
+        }
+
+        if (effectiveMain is null)
+        {
+            return new DexExecutableStatus(
+                CanEditAdvanced: false,
+                AdvancedBlockedReason: "Changing the Regular and Hyperspace Pokédex sizes requires a readable Pokemon Legends Z-A exefs/main.",
+                BuildId: null,
+                RegularCount: null,
+                Provenance: null);
+        }
+
+        var provenance = new ZaPokemonProvenance(
+            effectiveMain.Reference.RelativePath,
+            effectiveMain.Reference.Layer,
+            effectiveMain.FileState);
+        try
+        {
+            var analysis = ZaDexLayoutMainPatcher.Analyze(
+                File.ReadAllBytes(effectiveMain.AbsolutePath),
+                project.Paths.SelectedGame);
+            if (analysis.Kind is ZaDexLayoutMainKind.UnsupportedBuild
+                or ZaDexLayoutMainKind.GameMismatch
+                or ZaDexLayoutMainKind.Conflict
+                || analysis.RegularCount is null)
+            {
+                return new DexExecutableStatus(
+                    CanEditAdvanced: false,
+                    AdvancedBlockedReason: analysis.Message,
+                    BuildId: analysis.BuildId,
+                    RegularCount: analysis.RegularCount,
+                    Provenance: provenance);
+            }
+
+            if (activeSpeciesCount != ZaDexLayoutMainPatcher.TotalDexSpeciesCount)
+            {
+                return new DexExecutableStatus(
+                    CanEditAdvanced: false,
+                    AdvancedBlockedReason: string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Changing Pokédex sizes requires exactly {ZaDexLayoutMainPatcher.TotalDexSpeciesCount} verified active species."),
+                    BuildId: analysis.BuildId,
+                    RegularCount: analysis.RegularCount,
+                    Provenance: provenance);
+            }
+
+            if (expectedRegularCount is null
+                || analysis.RegularCount.Value != expectedRegularCount.Value)
+            {
+                return new DexExecutableStatus(
+                    CanEditAdvanced: false,
+                    AdvancedBlockedReason: expectedRegularCount is null
+                        ? "Changing Pokédex sizes is unavailable until the active placement data can be verified."
+                        : string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"Pokédex contents use a Regular Dex boundary of {expectedRegularCount.Value}, "
+                            + $"but exefs/main uses {analysis.RegularCount.Value}. Repair the mismatch before changing Pokédex sizes."),
+                    BuildId: analysis.BuildId,
+                    RegularCount: analysis.RegularCount,
+                    Provenance: provenance);
+            }
+
+            var baseMain = ZaExeFsMainFileResolver.ResolveBase(project);
+            if (baseMain is null)
+            {
+                return new DexExecutableStatus(
+                    CanEditAdvanced: false,
+                    AdvancedBlockedReason: "Changing Pokédex sizes requires a readable clean base exefs/main for guarded patch verification.",
+                    BuildId: analysis.BuildId,
+                    RegularCount: analysis.RegularCount,
+                    Provenance: provenance);
+            }
+
+            var baseAnalysis = ZaDexLayoutMainPatcher.Analyze(
+                File.ReadAllBytes(baseMain.AbsolutePath),
+                project.Paths.SelectedGame);
+            if (baseAnalysis.Kind != ZaDexLayoutMainKind.Vanilla
+                || baseAnalysis.RegularCount != ZaDexLayoutMainPatcher.VanillaRegularCount
+                || !string.Equals(
+                    baseAnalysis.BuildId,
+                    analysis.BuildId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return new DexExecutableStatus(
+                    CanEditAdvanced: false,
+                    AdvancedBlockedReason: "Changing Pokédex sizes requires the verified clean base exefs/main with the vanilla Regular Dex boundary.",
+                    BuildId: analysis.BuildId,
+                    RegularCount: analysis.RegularCount,
+                    Provenance: provenance);
+            }
+
+            return new DexExecutableStatus(
+                CanEditAdvanced: true,
+                AdvancedBlockedReason: null,
+                BuildId: analysis.BuildId,
+                RegularCount: analysis.RegularCount,
+                Provenance: provenance);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or NotSupportedException)
+        {
+            return new DexExecutableStatus(
+                CanEditAdvanced: false,
+                AdvancedBlockedReason: $"Changing Pokédex sizes is unavailable because exefs/main could not be verified: {exception.Message}",
+                BuildId: null,
+                RegularCount: null,
+                Provenance: provenance);
+        }
     }
 
     private static ZaPokemonProvenance ToProvenance(ZaWorkflowFile source)
@@ -583,6 +823,13 @@ internal sealed class ZaPokemonWorkflowService
             source.SourceLayer,
             source.FileState);
     }
+
+    private sealed record DexExecutableStatus(
+        bool CanEditAdvanced,
+        string? AdvancedBlockedReason,
+        string? BuildId,
+        int? RegularCount,
+        ZaPokemonProvenance? Provenance);
 
     private IReadOnlyDictionary<int, string> LoadEvolutionItemArgumentLabels(
         OpenedProject project,

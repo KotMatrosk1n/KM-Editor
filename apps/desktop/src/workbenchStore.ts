@@ -52,6 +52,7 @@ export type WorkbenchSection =
   | 'workflows'
   | 'items'
   | 'pokemon'
+  | 'dexLayout'
   | 'moves'
   | 'text'
   | 'trainers'

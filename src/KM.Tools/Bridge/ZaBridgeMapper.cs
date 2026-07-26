@@ -482,6 +482,48 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StageEncounterSlotVanillaResponse ToEncounterSlotVanillaDto(
+        ZaEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageEncounterSlotVanillaResponse(
+            ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static MovePokemonDexPlacementResponse ToDtoDexPlacementMove(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new MovePokemonDexPlacementResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static ResizePokemonDexResponse ToDtoDexResize(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new ResizePokemonDexResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StagePokemonDexVanillaResponse ToDtoDexVanilla(
+        ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StagePokemonDexVanillaResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(ZaEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -522,6 +564,13 @@ public static class ZaBridgeMapper
                 : new PokemonDexEditorDto(
                     workflow.DexEditor.CanEdit,
                     workflow.DexEditor.BlockedReason,
+                    workflow.DexEditor.CanEditAdvanced,
+                    workflow.DexEditor.AdvancedBlockedReason,
+                    workflow.DexEditor.IsVanillaLayout,
+                    workflow.DexEditor.CanReturnToVanilla,
+                    workflow.DexEditor.ReturnToVanillaBlockedReason,
+                    workflow.DexEditor.ExecutableBuildId,
+                    workflow.DexEditor.ExecutableRegularCount,
                     workflow.DexEditor.RegularCount,
                     workflow.DexEditor.HyperspaceCount,
                     workflow.DexEditor.Placements
@@ -725,6 +774,8 @@ public static class ZaBridgeMapper
             slot.CanEditAppearanceCounts)
         {
             FormOptions = slot.FormOptions.Select(ToDto).ToArray(),
+            CanRevertToVanilla = slot.CanRevertToVanilla,
+            RevertToVanillaBlockedReason = slot.RevertToVanillaBlockedReason,
         };
     }
 

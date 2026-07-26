@@ -29,6 +29,12 @@ public sealed record UpdateEncounterSlotFieldsRequest(
     EditSessionDto? Session,
     IReadOnlyList<EncounterSlotFieldUpdateDto> Updates);
 
+public sealed record StageEncounterSlotVanillaRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    string TableId,
+    int Slot);
+
 public sealed record EncounterProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -66,6 +72,12 @@ public sealed record EncounterSlotRecordDto(
 {
     public IReadOnlyList<EncounterEditableFieldOptionDto> FormOptions { get; init; } =
         Array.Empty<EncounterEditableFieldOptionDto>();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CanRevertToVanilla { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RevertToVanillaBlockedReason { get; init; }
 }
 
 public sealed record EncounterTableRecordDto(
@@ -149,6 +161,11 @@ public sealed record UpdateEncounterSlotFieldResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateEncounterSlotFieldsResponse(
+    EncountersWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record StageEncounterSlotVanillaResponse(
     EncountersWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

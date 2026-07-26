@@ -90,6 +90,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'hyperTraining',
       'shinyRate',
       'typeChart',
+      'dexLayout',
       'angeFight',
       'fairyGymBoosts',
       'fashionUnlock',
@@ -172,6 +173,7 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'items',
   'placement',
   'shops',
+  'dexLayout',
   'typeChart',
   'angeFight',
   'spreadsheetImport',
@@ -209,7 +211,8 @@ export const scarletVioletAdvancedEditorDomains = new Set([
 ]);
 
 export const pokemonLegendsZAAdvancedEditorSectionIds = new Set<WorkbenchSection>([
-  'angeFight'
+  'angeFight',
+  'dexLayout'
 ]);
 
 export const pokemonLegendsZAAdvancedEditorDomains = new Set([
@@ -388,6 +391,8 @@ export function getLoadedWorkflowStateForSection(
       return state.catchCapWorkflow !== null;
     case 'dynamaxAdventures':
       return state.dynamaxAdventuresWorkflow !== null;
+    case 'dexLayout':
+      return state.pokemonWorkflow !== null;
     case 'encounters':
       return state.encountersWorkflow !== null;
     case 'exefsPatches':
@@ -467,6 +472,10 @@ export function isWorkflowSection(section: WorkbenchSection) {
   );
 }
 
+export function resolveWorkflowDataSection(section: WorkbenchSection): WorkbenchSection {
+  return section === 'dexLayout' ? 'pokemon' : section;
+}
+
 export function isWorkflowNavigationVisibleForGame(
   section: WorkbenchSection,
   game: ProjectGame | null | undefined,
@@ -475,6 +484,9 @@ export function isWorkflowNavigationVisibleForGame(
   return (
     !hiddenWorkflowSectionIds.has(section) &&
     isWorkflowSupportedForGame(section, game) &&
-    (availableWorkflowSectionIds.has(section) || standaloneWorkflowSectionIds.has(section))
+    (
+      availableWorkflowSectionIds.has(resolveWorkflowDataSection(section)) ||
+      standaloneWorkflowSectionIds.has(section)
+    )
   );
 }

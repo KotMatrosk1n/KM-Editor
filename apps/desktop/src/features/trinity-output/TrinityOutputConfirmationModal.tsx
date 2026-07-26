@@ -6,6 +6,7 @@ import { useModalDialog } from '../../components/useModalDialog';
 import { useLocalization } from '../../localization';
 
 type TrinityOutputConfirmationModalProps = {
+  includesExeFsOutput: boolean;
   isApplying: boolean;
   mode: ChangePlanOutputMode;
   onCancel: () => void;
@@ -14,6 +15,7 @@ type TrinityOutputConfirmationModalProps = {
 };
 
 export function TrinityOutputConfirmationModal({
+  includesExeFsOutput,
   isApplying,
   mode,
   onCancel,
@@ -60,13 +62,22 @@ export function TrinityOutputConfirmationModal({
               {translateLiteral('as standalone LayeredFS output.')}
             </p>
             <p className="modal-copy modal-copy-muted">
-              {translateLiteral('This will create or replace loose files under')}{' '}
-              <code>romfs/</code> {translateLiteral('and patch')}{' '}
-              <span>{translateLiteral('the Trinity file index')}</span>{' '}
-              {translateLiteral(
-                'so the output can be installed directly without Trinity Mod Manager.'
-              )}
+              <>
+                {translateLiteral('This will create or replace loose files under')}{' '}
+                <code>romfs/</code> {translateLiteral('and patch')}{' '}
+                <span>{translateLiteral('the Trinity file index')}</span>{' '}
+                {translateLiteral(
+                  'so the output can be installed directly without Trinity Mod Manager.'
+                )}
+              </>
             </p>
+            {includesExeFsOutput ? (
+              <p className="modal-copy modal-copy-muted">
+                {translateLiteral(
+                  'The reviewed plan may create or replace standard exefs/main, or remove that loose override when the executable returns to vanilla.'
+                )}
+              </p>
+            ) : null}
           </>
         ) : isTrinityBypass ? (
           <>
@@ -78,13 +89,29 @@ export function TrinityOutputConfirmationModal({
               {translateLiteral('as loose LayeredFS RomFS files for Trinity Bypass.')}
             </p>
             <p className="modal-copy modal-copy-muted">
-              {translateLiteral('This creates or replaces files under')} <code>romfs/</code>{' '}
-              {translateLiteral('and does not patch')}{' '}
-              <span>{translateLiteral('the Trinity file index')}</span>
-              {translateLiteral(
-                '. Use this only when Trinity Bypass is already installed for the selected game.'
-              )}
+              {includesExeFsOutput
+                ? translateLiteral(
+                    'This writes or replaces files under romfs/ without patching the Trinity file index, and updates the existing exefs/main in Output Root. Both parts are required.'
+                  )
+                : (
+                    <>
+                      {translateLiteral('This creates or replaces files under')}{' '}
+                      <code>romfs/</code>{' '}
+                      {translateLiteral('and does not patch')}{' '}
+                      <span>{translateLiteral('the Trinity file index')}</span>
+                      {translateLiteral(
+                        '. Use this only when Trinity Bypass is already installed for the selected game.'
+                      )}
+                    </>
+                  )}
             </p>
+            {includesExeFsOutput ? (
+              <p className="modal-copy modal-copy-muted">
+                {translateLiteral(
+                  'Use this only when the compatible Trinity Bypass exefs/main is already installed in this Output Root.'
+                )}
+              </p>
+            ) : null}
           </>
         ) : (
           <>
@@ -93,16 +120,36 @@ export function TrinityOutputConfirmationModal({
               <strong data-localization-ignore={Boolean(outputRootPath)}>
                 {outputRootPath ? outputRootLabel : translateLiteral(outputRootLabel)}
               </strong>{' '}
-              {translateLiteral('as a Trinity Mod Manager folder mod.')}
-            </p>
-            <p className="modal-copy modal-copy-muted">
-              {translateLiteral('This writes RomFS-relative files such as')}{' '}
-              <code>world/data/...</code> {translateLiteral('and does not patch')}{' '}
-              <span>{translateLiteral('the Trinity file index')}</span>
               {translateLiteral(
-                '. Run this folder through Trinity Mod Manager before installing it in game or in an emulator.'
+                includesExeFsOutput
+                  ? 'as split Trinity Mod Manager RomFS source with standard ExeFS handling.'
+                  : 'as a Trinity Mod Manager folder mod.'
               )}
             </p>
+            <p className="modal-copy modal-copy-muted">
+              {includesExeFsOutput
+                ? translateLiteral(
+                    'The RomFS source is in trinity-mod-manager-romfs/. Add only that inner folder to Trinity Mod Manager. Then install its generated romfs/ beside Output Root exefs/ when that folder contains output. Do not add the whole Output Root to Trinity Mod Manager.'
+                  )
+                : (
+                    <>
+                      {translateLiteral('This writes RomFS-relative files such as')}{' '}
+                      <code>world/data/...</code>{' '}
+                      {translateLiteral('and does not patch')}{' '}
+                      <span>{translateLiteral('the Trinity file index')}</span>
+                      {translateLiteral(
+                        '. Run this folder through Trinity Mod Manager before installing it in game or in an emulator.'
+                      )}
+                    </>
+                  )}
+            </p>
+            {includesExeFsOutput ? (
+              <p className="modal-copy modal-copy-muted">
+                {translateLiteral(
+                  'The reviewed plan may create or replace standard exefs/main, or remove that loose override when the executable returns to vanilla.'
+                )}
+              </p>
+            ) : null}
           </>
         )}
         <p className="modal-copy modal-copy-muted">

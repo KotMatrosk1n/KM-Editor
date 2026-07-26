@@ -54,6 +54,12 @@ import {
   type LoadTeraRaidsWorkflowResponse,
   type UpdatePokemonEvolutionRequest,
   type UpdatePokemonEvolutionResponse,
+  type MovePokemonDexPlacementRequest,
+  type MovePokemonDexPlacementResponse,
+  type ResizePokemonDexRequest,
+  type ResizePokemonDexResponse,
+  type StagePokemonDexVanillaRequest,
+  type StagePokemonDexVanillaResponse,
   type SwapPokemonDexPlacementRequest,
   type SwapPokemonDexPlacementResponse,
   type UpdatePokemonFieldRequest,
@@ -254,6 +260,9 @@ import {
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionResponseSchema,
+  movePokemonDexPlacementResponseSchema,
+  resizePokemonDexResponseSchema,
+  stagePokemonDexVanillaResponseSchema,
   swapPokemonDexPlacementResponseSchema,
   updatePokemonLearnsetResponseSchema,
   updateBehaviorEntryFieldResponseSchema,
@@ -419,6 +428,15 @@ export type ProjectBridge = {
   updatePokemonEvolution: (
     request: UpdatePokemonEvolutionRequest
   ) => Promise<UpdatePokemonEvolutionResponse>;
+  movePokemonDexPlacement: (
+    request: MovePokemonDexPlacementRequest
+  ) => Promise<MovePokemonDexPlacementResponse>;
+  resizePokemonDex: (
+    request: ResizePokemonDexRequest
+  ) => Promise<ResizePokemonDexResponse>;
+  stagePokemonDexVanilla: (
+    request: StagePokemonDexVanillaRequest
+  ) => Promise<StagePokemonDexVanillaResponse>;
   swapPokemonDexPlacement: (
     request: SwapPokemonDexPlacementRequest
   ) => Promise<SwapPokemonDexPlacementResponse>;
@@ -1367,6 +1385,27 @@ export function createProjectBridge(
         kmCommandNames.updatePokemonEvolution,
         request,
         updatePokemonEvolutionResponseSchema
+      ),
+    movePokemonDexPlacement: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.movePokemonDexPlacement,
+        request,
+        movePokemonDexPlacementResponseSchema
+      ),
+    resizePokemonDex: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.resizePokemonDex,
+        request,
+        resizePokemonDexResponseSchema
+      ),
+    stagePokemonDexVanilla: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stagePokemonDexVanilla,
+        request,
+        stagePokemonDexVanillaResponseSchema
       ),
     swapPokemonDexPlacement: (request) =>
       sendProjectBridgeRequest(
