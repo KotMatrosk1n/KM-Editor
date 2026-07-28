@@ -731,6 +731,13 @@ public static class ZaBridgeMapper
             LocationDetails = table.LocationDetails,
             SpawnerCategory = table.SpawnerCategory,
             RawSpawnerId = table.RawSpawnerId,
+            PhaseConditions = table.PhaseConditions.Count > 0
+                ? table.PhaseConditions
+                    .Select(condition => new EncounterPhaseConditionDto(
+                        condition.Operator,
+                        condition.Values))
+                    .ToArray()
+                : null,
             IsPostgame = table.IsPostgame ? true : null,
             BossBattleContextKey = table.BossBattleContextKey,
             BossBattleContextLabel = table.BossBattleContextLabel,

@@ -551,6 +551,7 @@ internal sealed class ZaEncountersWorkflowService
                 {
                     SpawnerCategory = spawnerCategory,
                     RawSpawnerId = spawner.Value.Id,
+                    PhaseConditions = ReadPhaseConditions(spawner.Value),
                     IsPostgame = HasPostgamePhaseCondition(spawner.Value),
                     BossBattleContextKey = bossBattleContext?.PrimaryContext.Key,
                     BossBattleContextLabel = bossBattleContext?.PrimaryContext.Label,
@@ -940,6 +941,53 @@ internal sealed class ZaEncountersWorkflowService
     private static bool IsNumberedWildZone(string locationKey)
     {
         return ZaLumioseLocationLabels.IsNumberedWildZone(locationKey);
+    }
+
+    private static IReadOnlyList<ZaEncounterPhaseCondition> ReadPhaseConditions(
+        PokemonSpawnerData spawner)
+    {
+        var phaseConditions = new List<ZaEncounterPhaseCondition>();
+        for (var conditionIndex = 0; conditionIndex < spawner.ActivationConditionLength; conditionIndex++)
+        {
+            var condition = spawner.ActivationCondition(conditionIndex);
+            if (condition is null)
+            {
+                continue;
+            }
+
+            for (var elementIndex = 0; elementIndex < condition.Value.ElementLength; elementIndex++)
+            {
+                var element = condition.Value.Element(elementIndex);
+                if (element is null)
+                {
+                    continue;
+                }
+
+                for (var parameterIndex = 0; parameterIndex < element.Value.ParamLength; parameterIndex++)
+                {
+                    var parameter = element.Value.Param(parameterIndex);
+                    if (parameter is null
+                        || !string.Equals(parameter.Value.Condition, PhaseCondition, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var values = new List<string>(parameter.Value.ParamLength);
+                    for (var valueIndex = 0; valueIndex < parameter.Value.ParamLength; valueIndex++)
+                    {
+                        var value = parameter.Value.Param(valueIndex);
+                        if (value is not null)
+                        {
+                            values.Add(value);
+                        }
+                    }
+
+                    phaseConditions.Add(new ZaEncounterPhaseCondition(parameter.Value.Op, values));
+                }
+            }
+        }
+
+        return phaseConditions;
     }
 
     private static bool HasPostgamePhaseCondition(PokemonSpawnerData spawner)

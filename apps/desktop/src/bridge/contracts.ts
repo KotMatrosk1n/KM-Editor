@@ -2879,6 +2879,11 @@ const bossBattleContextSchema = z.strictObject({
   rank: z.number().int()
 });
 
+const encounterPhaseConditionSchema = z.strictObject({
+  operator: z.number().int(),
+  values: z.array(z.string())
+});
+
 export const encounterTableRecordSchema = z.strictObject({
   archiveMember: z.string(),
   area: z.string(),
@@ -2895,6 +2900,7 @@ export const encounterTableRecordSchema = z.strictObject({
   locationDetails: z.string().nullable().optional(),
   locationKey: z.string().nullable().optional(),
   locationSort: z.number().int().nullable().optional(),
+  phaseConditions: z.array(encounterPhaseConditionSchema).nullable().optional(),
   provenance: encounterProvenanceSchema,
   rawSpawnerId: z.string().nullable().optional(),
   slots: z.array(encounterSlotRecordSchema),

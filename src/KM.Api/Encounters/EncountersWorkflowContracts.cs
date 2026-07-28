@@ -104,6 +104,9 @@ public sealed record EncounterTableRecordDto(
     public string? RawSpawnerId { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<EncounterPhaseConditionDto>? PhaseConditions { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? IsPostgame { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -124,6 +127,10 @@ public sealed record EncounterTableRecordDto(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<BossBattleContextDto>? BossBattleContexts { get; init; }
 }
+
+public sealed record EncounterPhaseConditionDto(
+    int Operator,
+    IReadOnlyList<string> Values);
 
 public sealed record EncounterEditableFieldDto(
     string Field,
