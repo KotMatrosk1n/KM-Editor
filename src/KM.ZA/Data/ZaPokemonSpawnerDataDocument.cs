@@ -7,7 +7,8 @@ namespace KM.ZA.Data;
 
 /// <summary>
 /// Preserves a Pokémon spawner FlatBuffer byte-for-byte while allowing edits to
-/// materialized scalar fields whose inline storage already exists.
+/// materialized scalar fields and verified owned vector lengths whose storage
+/// already exists.
 /// </summary>
 internal sealed class ZaPokemonSpawnerDataDocument
 {
@@ -90,7 +91,7 @@ internal sealed class ZaPokemonSpawnerDataDocument
         }
 
         var document = new ZaPokemonSpawnerDataDocument(originalBytes, groups);
-        document.DisableAliasedEditableScalars();
+        document.DisableAliasedEditableFields(reader);
         return document;
     }
 
@@ -247,6 +248,90 @@ internal sealed class ZaPokemonSpawnerDataDocument
         return true;
     }
 
+    public bool TrySetSlotWebSpawnEnabled(
+        int groupIndex,
+        int spawnerIndex,
+        int slotIndex,
+        ZaPokemonSpawnerEncountDataInfo baseSlot,
+        bool enabled,
+        out bool changed,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(baseSlot);
+
+        changed = false;
+        if (!TryGetSlot(groupIndex, spawnerIndex, slotIndex, out var slot, out error))
+        {
+            return false;
+        }
+
+        if (baseSlot.PopActionId == 0
+            || baseSlot.Tags.Count != 2
+            || baseSlot.Tags.Any(string.IsNullOrEmpty))
+        {
+            error = "The verified base slot does not have a recoverable web-spawn signature.";
+            return false;
+        }
+
+        if (slot.PopActionId != 0 && slot.PopActionId != baseSlot.PopActionId)
+        {
+            error = "The current slot uses an unrelated pop action and cannot be converted safely.";
+            return false;
+        }
+
+        var hasFullTagList = slot.Tags.SequenceEqual(baseSlot.Tags, StringComparer.Ordinal);
+        var hasNormalizedTagList = slot.Tags.Count == 1
+            && string.Equals(slot.Tags[0], baseSlot.Tags[0], StringComparison.Ordinal);
+        if (!hasFullTagList && !hasNormalizedTagList)
+        {
+            error = "The current slot tags do not match the verified web or normalized spawn shape.";
+            return false;
+        }
+
+        var targetPopActionId = enabled ? baseSlot.PopActionId : 0;
+        var targetTagCount = enabled ? baseSlot.Tags.Count : 1;
+        var changesPopAction = slot.PopActionId != targetPopActionId;
+        var changesTagCount = slot.Tags.Count != targetTagCount;
+
+        if (changesPopAction && slot.PopActionIdPosition is null)
+        {
+            error = "The slot pop action uses an omitted or shared FlatBuffer field and cannot be patched safely.";
+            return false;
+        }
+
+        if (changesTagCount && slot.TagListLengthPosition is null)
+        {
+            error = "The slot tag list uses shared FlatBuffer storage and cannot be patched safely.";
+            return false;
+        }
+
+        if (enabled
+            && changesTagCount
+            && !CanRestoreTrailingTag(slot, baseSlot))
+        {
+            error = "The preserved web tag cannot be verified against the clean base slot.";
+            return false;
+        }
+
+        if (changesPopAction)
+        {
+            SetInt32(slot.PopActionIdPosition!.Value, targetPopActionId);
+            slot.PopActionId = targetPopActionId;
+        }
+
+        if (changesTagCount)
+        {
+            SetInt32(slot.TagListLengthPosition!.Value, targetTagCount);
+            slot.Tags = enabled
+                ? baseSlot.Tags.ToArray()
+                : [baseSlot.Tags[0]];
+        }
+
+        changed = changesPopAction || changesTagCount;
+        error = null;
+        return true;
+    }
+
     private static ZaPokemonSpawnerDataEntry ReadSpawner(
         ZaPokemonSpawnerFlatBufferReader reader,
         int spawnerPosition,
@@ -285,6 +370,7 @@ internal sealed class ZaPokemonSpawnerDataDocument
                 continue;
             }
 
+            _ = reader.GetStringVector(appearancePosition.Value, fieldIndex: 5);
             var appearanceInfoPosition = reader.GetTable(
                 appearancePosition.Value,
                 fieldIndex: 8);
@@ -335,13 +421,29 @@ internal sealed class ZaPokemonSpawnerDataDocument
 
             var weight = reader.GetInt32(slotPosition.Value, fieldIndex: 1);
             var maxCount = reader.GetInt32(slotPosition.Value, fieldIndex: 2);
+            var tagVector = reader.GetStringVector(slotPosition.Value, fieldIndex: 4);
+            var tags = tagVector is null
+                ? Array.Empty<string?>()
+                : Enumerable
+                    .Range(0, tagVector.Value.Length)
+                    .Select(index => reader.GetStringVectorElement(tagVector.Value, index))
+                    .ToArray();
+            var aiInfoPosition = reader.GetTable(slotPosition.Value, fieldIndex: 8);
+            var popActionId = aiInfoPosition is null
+                ? new ZaPokemonSpawnerInt32Field(0, null)
+                : reader.GetInt32(aiInfoPosition.Value, fieldIndex: 5);
             slots.Add(new ZaPokemonSpawnerEncountDataInfo(
                 slotIndex,
                 reader.GetString(slotPosition.Value, fieldIndex: 0),
                 weight.Value,
                 maxCount.Value,
                 weight.Position,
-                maxCount.Position));
+                maxCount.Position,
+                tags,
+                tagVector?.LengthPosition,
+                tagVector?.DataPosition,
+                popActionId.Value,
+                popActionId.Position));
         }
 
         return slots;
@@ -467,9 +569,49 @@ internal sealed class ZaPokemonSpawnerDataDocument
         }
     }
 
-    private void DisableAliasedEditableScalars()
+    private bool CanRestoreTrailingTag(
+        ZaPokemonSpawnerEncountDataInfo slot,
+        ZaPokemonSpawnerEncountDataInfo baseSlot)
     {
-        var owners = new List<(int Position, string Scope, Action Disable)>();
+        if (slot.TagListLengthPosition is null
+            || slot.TagListDataPosition is null
+            || baseSlot.TagListLengthPosition is null
+            || baseSlot.TagListDataPosition is null
+            || slot.TagListLengthPosition != baseSlot.TagListLengthPosition
+            || slot.TagListDataPosition != baseSlot.TagListDataPosition)
+        {
+            return false;
+        }
+
+        try
+        {
+            var reader = new ZaPokemonSpawnerFlatBufferReader(originalBytes);
+            return string.Equals(
+                reader.GetStringVectorElement(
+                    new ZaPokemonSpawnerStringVector(
+                        slot.TagListLengthPosition.Value,
+                        slot.TagListDataPosition.Value,
+                        baseSlot.Tags.Count),
+                    index: 1),
+                baseSlot.Tags[1],
+                StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException
+                or ArgumentOutOfRangeException
+                or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private void DisableAliasedEditableFields(ZaPokemonSpawnerFlatBufferReader reader)
+    {
+        var owners = new List<(
+            int Position,
+            string Scope,
+            bool OwnsLengthPrefix,
+            Action Disable)>();
 
         foreach (var group in Groups.OfType<ZaPokemonSpawnerDataGroup>())
         {
@@ -482,6 +624,7 @@ internal sealed class ZaPokemonSpawnerDataDocument
                         owners.Add((
                             weightPosition,
                             $"slot:{group.GroupIndex}:{spawner.SpawnerIndex}:{slot.SlotIndex}:weight",
+                            false,
                             () => slot.WeightPosition = null));
                     }
 
@@ -490,7 +633,26 @@ internal sealed class ZaPokemonSpawnerDataDocument
                         owners.Add((
                             maxCountPosition,
                             $"slot:{group.GroupIndex}:{spawner.SpawnerIndex}:{slot.SlotIndex}:max",
+                            false,
                             () => slot.MaxCountPosition = null));
+                    }
+
+                    if (slot.PopActionIdPosition is { } popActionIdPosition)
+                    {
+                        owners.Add((
+                            popActionIdPosition,
+                            $"slot:{group.GroupIndex}:{spawner.SpawnerIndex}:{slot.SlotIndex}:pop-action",
+                            false,
+                            () => slot.PopActionIdPosition = null));
+                    }
+
+                    if (slot.TagListLengthPosition is { } tagListLengthPosition)
+                    {
+                        owners.Add((
+                            tagListLengthPosition,
+                            $"slot:{group.GroupIndex}:{spawner.SpawnerIndex}:{slot.SlotIndex}:tag-list",
+                            true,
+                            () => slot.TagListLengthPosition = null));
                     }
                 }
 
@@ -503,6 +665,7 @@ internal sealed class ZaPokemonSpawnerDataDocument
                         owners.Add((
                             minCountPosition,
                             $"appearance:{group.GroupIndex}:{spawner.SpawnerIndex}:min",
+                            false,
                             () => appearanceInfo.MinCountPosition = null));
                     }
 
@@ -512,6 +675,7 @@ internal sealed class ZaPokemonSpawnerDataDocument
                         owners.Add((
                             maxCountPosition,
                             $"appearance:{group.GroupIndex}:{spawner.SpawnerIndex}:max",
+                            false,
                             () => appearanceInfo.MaxCountPosition = null));
                     }
                 }
@@ -520,9 +684,18 @@ internal sealed class ZaPokemonSpawnerDataDocument
 
         foreach (var positionOwners in owners.GroupBy(owner => owner.Position))
         {
-            if (positionOwners.Select(owner => owner.Scope).Distinct(StringComparer.Ordinal).Skip(1).Any())
+            var aliasesEditableField = positionOwners
+                .Select(owner => owner.Scope)
+                .Distinct(StringComparer.Ordinal)
+                .Skip(1)
+                .Any();
+            foreach (var owner in positionOwners)
             {
-                foreach (var owner in positionOwners)
+                var lengthPrefixReferenceCount =
+                    reader.GetLengthPrefixReferenceCount(owner.Position);
+                if (aliasesEditableField
+                    || owner.OwnsLengthPrefix && lengthPrefixReferenceCount != 1
+                    || !owner.OwnsLengthPrefix && lengthPrefixReferenceCount != 0)
                 {
                     owner.Disable();
                 }
@@ -652,7 +825,12 @@ internal sealed class ZaPokemonSpawnerEncountDataInfo
         int weight,
         int maxCount,
         int? weightPosition,
-        int? maxCountPosition)
+        int? maxCountPosition,
+        IReadOnlyList<string?> tags,
+        int? tagListLengthPosition,
+        int? tagListDataPosition,
+        int popActionId,
+        int? popActionIdPosition)
     {
         SlotIndex = slotIndex;
         EncountDataId = encountDataId;
@@ -660,6 +838,11 @@ internal sealed class ZaPokemonSpawnerEncountDataInfo
         MaxCount = maxCount;
         WeightPosition = weightPosition;
         MaxCountPosition = maxCountPosition;
+        Tags = tags;
+        TagListLengthPosition = tagListLengthPosition;
+        TagListDataPosition = tagListDataPosition;
+        PopActionId = popActionId;
+        PopActionIdPosition = popActionIdPosition;
     }
 
     public int SlotIndex { get; }
@@ -670,6 +853,10 @@ internal sealed class ZaPokemonSpawnerEncountDataInfo
 
     public int MaxCount { get; internal set; }
 
+    public IReadOnlyList<string?> Tags { get; internal set; }
+
+    public int PopActionId { get; internal set; }
+
     public bool CanEditWeight => WeightPosition is not null;
 
     public bool CanEditMaxCount => MaxCountPosition is not null;
@@ -677,11 +864,22 @@ internal sealed class ZaPokemonSpawnerEncountDataInfo
     internal int? WeightPosition { get; set; }
 
     internal int? MaxCountPosition { get; set; }
+
+    internal int? TagListLengthPosition { get; set; }
+
+    internal int? TagListDataPosition { get; }
+
+    internal int? PopActionIdPosition { get; set; }
 }
 
 internal readonly record struct ZaPokemonSpawnerInt32Field(int Value, int? Position);
 
 internal readonly record struct ZaPokemonSpawnerTableVector(int DataPosition, int Length);
+
+internal readonly record struct ZaPokemonSpawnerStringVector(
+    int LengthPosition,
+    int DataPosition,
+    int Length);
 
 internal sealed class ZaPokemonSpawnerFlatBufferReader
 {
@@ -690,6 +888,7 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
     private const int VTableFieldSize = sizeof(ushort);
 
     private readonly byte[] bytes;
+    private readonly Dictionary<int, int> lengthPrefixReferenceCounts = [];
 
     public ZaPokemonSpawnerFlatBufferReader(byte[] bytes)
     {
@@ -719,6 +918,7 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
         }
 
         var vectorPosition = FollowOffset(fieldPosition.Value, "table vector");
+        RecordLengthPrefixReference(vectorPosition);
         EnsureRange(vectorPosition, sizeof(uint), "table vector length");
         var lengthValue = ReadUInt32(vectorPosition);
         if (lengthValue > int.MaxValue)
@@ -751,6 +951,52 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
         return tablePosition;
     }
 
+    public ZaPokemonSpawnerStringVector? GetStringVector(int tablePosition, int fieldIndex)
+    {
+        var fieldPosition = GetFieldPosition(tablePosition, fieldIndex);
+        if (fieldPosition is null)
+        {
+            return null;
+        }
+
+        var vectorPosition = FollowOffset(fieldPosition.Value, "string vector");
+        RecordLengthPrefixReference(vectorPosition);
+        if ((vectorPosition & (sizeof(uint) - 1)) != 0)
+        {
+            throw new InvalidDataException("A Pokémon spawner string vector is unaligned.");
+        }
+
+        EnsureRange(vectorPosition, sizeof(uint), "string vector length");
+        var lengthValue = ReadUInt32(vectorPosition);
+        if (lengthValue > int.MaxValue)
+        {
+            throw new InvalidDataException("A Pokémon spawner string vector is too large to load.");
+        }
+
+        var length = (int)lengthValue;
+        var dataPosition = checked(vectorPosition + sizeof(uint));
+        EnsureElementRange(dataPosition, length, UOffsetSize, "string vector data");
+        return new ZaPokemonSpawnerStringVector(vectorPosition, dataPosition, length);
+    }
+
+    public string? GetStringVectorElement(ZaPokemonSpawnerStringVector vector, int index)
+    {
+        if ((uint)index >= (uint)vector.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        var elementPosition = checked(vector.DataPosition + (index * UOffsetSize));
+        EnsureRange(elementPosition, UOffsetSize, "string vector element");
+        var elementOffset = ReadUInt32(elementPosition);
+        if (elementOffset == 0)
+        {
+            return null;
+        }
+
+        return ReadString(AddOffset(elementPosition, elementOffset, "string vector element"));
+    }
+
     public int? GetTable(int tablePosition, int fieldIndex)
     {
         var fieldPosition = GetFieldPosition(tablePosition, fieldIndex);
@@ -772,7 +1018,12 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
             return null;
         }
 
-        var stringPosition = FollowOffset(fieldPosition.Value, "string");
+        return ReadString(FollowOffset(fieldPosition.Value, "string"));
+    }
+
+    private string ReadString(int stringPosition)
+    {
+        RecordLengthPrefixReference(stringPosition);
         EnsureRange(stringPosition, sizeof(uint), "string length");
         var lengthValue = ReadUInt32(stringPosition);
         if (lengthValue > int.MaxValue)
@@ -784,6 +1035,17 @@ internal sealed class ZaPokemonSpawnerFlatBufferReader
         var dataPosition = checked(stringPosition + sizeof(uint));
         EnsureRange(dataPosition, length, "string data");
         return Encoding.UTF8.GetString(bytes, dataPosition, length);
+    }
+
+    public int GetLengthPrefixReferenceCount(int position)
+    {
+        return lengthPrefixReferenceCounts.GetValueOrDefault(position);
+    }
+
+    private void RecordLengthPrefixReference(int position)
+    {
+        lengthPrefixReferenceCounts[position] =
+            lengthPrefixReferenceCounts.GetValueOrDefault(position) + 1;
     }
 
     public ZaPokemonSpawnerInt32Field GetInt32(int tablePosition, int fieldIndex)
