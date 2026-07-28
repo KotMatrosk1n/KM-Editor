@@ -26939,28 +26939,7 @@ function SelectedEncounterPanel({
       : undefined;
   const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
   const zaPhaseConditionDisplay =
-    isZaEncounterTable && table?.phaseConditions && table.phaseConditions.length > 0
-      ? table.phaseConditions
-          .map((condition) => {
-            const descriptionKey =
-              condition.operator !== 8 || condition.values.length === 2
-                ? getZaPhaseConditionDescriptionKey(condition.operator)
-                : null;
-            const values =
-              condition.values.length === 0
-                ? '[]'
-                : condition.operator === 8
-                  ? condition.values.join('-')
-                  : condition.values.join(', ');
-            return descriptionKey
-              ? t(descriptionKey, { values })
-              : t('za.encounters.phaseConditionFormat', {
-                  operator: condition.operator,
-                  values
-                });
-          })
-          .join('; ')
-      : null;
+    isZaEncounterTable ? formatZaPhaseConditions(table?.phaseConditions, t) : null;
   const displayedEncounterSlots = table?.slots ?? [];
   const encounterWeightTotal = displayedEncounterSlots.reduce(
     (total, slot) => total + slot.weight,
@@ -28363,7 +28342,7 @@ function ZaEncounterGroupBrowser({
         })}
       </div>
 
-      {selectedGroup.slotCount > 1 ? (
+      {selectedGroup.slotCount > 0 ? (
         <div
           className="za-encounter-placement-table"
           role="table"
@@ -40851,9 +40830,39 @@ function getZaPhaseConditionDescriptionKey(operator: number) {
   }
 }
 
+function formatZaPhaseConditions(
+  conditions: EncounterTableRecord['phaseConditions'],
+  translate: (key: string, params?: Record<string, string | number>) => string
+) {
+  if (!conditions || conditions.length === 0) {
+    return null;
+  }
+
+  return conditions
+    .map((condition) => {
+      const descriptionKey =
+        condition.operator !== 8 || condition.values.length === 2
+          ? getZaPhaseConditionDescriptionKey(condition.operator)
+          : null;
+      const values =
+        condition.values.length === 0
+          ? '[]'
+          : condition.operator === 8
+            ? condition.values.join('-')
+            : condition.values.join(', ');
+      return descriptionKey
+        ? translate(descriptionKey, { values })
+        : translate('za.encounters.phaseConditionFormat', {
+            operator: condition.operator,
+            values
+          });
+    })
+    .join('; ');
+}
+
 function formatZaEncounterPlacementConditions(
   placement: ZaEncounterPlacement,
-  translate: (key: string) => string
+  translate: (key: string, params?: Record<string, string | number>) => string
 ) {
   const timeOfDay = placement.slot.timeOfDay;
   const localizedTimeOfDay =
@@ -40862,9 +40871,11 @@ function formatZaEncounterPlacementConditions(
       : timeOfDay === 'Night'
         ? translate('za.encounters.time.night')
         : timeOfDay ?? 'Any time';
+  const phaseConditions = formatZaPhaseConditions(placement.table.phaseConditions, translate);
   const conditions = [
     localizedTimeOfDay,
     placement.slot.weather || 'Any weather',
+    phaseConditions,
     placement.slot.isAlpha ? 'Alpha' : null
   ].filter((condition): condition is string => condition !== null);
   return conditions.join(', ');
