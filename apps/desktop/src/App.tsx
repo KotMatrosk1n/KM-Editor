@@ -26938,6 +26938,29 @@ function SelectedEncounterPanel({
       ? 'No matching destination conditions or slots are available to copy.'
       : undefined;
   const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
+  const zaPhaseConditionDisplay =
+    isZaEncounterTable && table?.phaseConditions && table.phaseConditions.length > 0
+      ? table.phaseConditions
+          .map((condition) => {
+            const descriptionKey =
+              condition.operator !== 8 || condition.values.length === 2
+                ? getZaPhaseConditionDescriptionKey(condition.operator)
+                : null;
+            const values =
+              condition.values.length === 0
+                ? '[]'
+                : condition.operator === 8
+                  ? condition.values.join('-')
+                  : condition.values.join(', ');
+            return descriptionKey
+              ? t(descriptionKey, { values })
+              : t('za.encounters.phaseConditionFormat', {
+                  operator: condition.operator,
+                  values
+                });
+          })
+          .join('; ')
+      : null;
   const displayedEncounterSlots = table?.slots ?? [];
   const encounterWeightTotal = displayedEncounterSlots.reduce(
     (total, slot) => total + slot.weight,
@@ -27303,6 +27326,12 @@ function SelectedEncounterPanel({
                     <div>
                       <dt>Encounter data</dt>
                       <dd>{encounterSlot.encounterDataId}</dd>
+                    </div>
+                  ) : null}
+                  {zaPhaseConditionDisplay ? (
+                    <div>
+                      <dt>{t('za.encounters.phaseConditionsLabel')}</dt>
+                      <dd>{zaPhaseConditionDisplay}</dd>
                     </div>
                   ) : null}
                   <div>
@@ -28357,6 +28386,9 @@ function ZaEncounterGroupBrowser({
           </div>
           {selectedGroup.placements.map((placement) => {
             const placementLabel = formatZaEncounterPlacementLabel(placement, rowByTableId);
+            const placementConditions = formatZaEncounterPlacementConditions(placement, t);
+            const placementPhaseValues =
+              formatZaEncounterPlacementPhaseValues(placement);
             const isSelected =
               placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot;
             const placementCompletionState = getZaWildZoneCompletionState([placement.slot]);
@@ -28372,7 +28404,7 @@ function ZaEncounterGroupBrowser({
                 aria-label={`${placementLabel}, ${t('za.spawnSettings.slotAria', {
                   slot: placement.slot.slot + 1,
                   weight: placement.slot.weight
-                })}, ${formatZaEncounterPlacementConditions(placement, t)}${
+                })}, ${placementConditions}${
                   placementAlphaChanceLabel
                     ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
                     : ''
@@ -28392,10 +28424,14 @@ function ZaEncounterGroupBrowser({
                 role="row"
                 type="button"
               >
-                <span role="cell">{placementLabel}</span>
+                <span role="cell" title={placementPhaseValues ?? placementLabel}>
+                  {placementLabel}
+                </span>
                 <span role="cell">{placement.slot.slot + 1}</span>
                 <span role="cell">{placement.slot.weight}</span>
-                <span role="cell">{formatZaEncounterPlacementConditions(placement, t)}</span>
+                <span role="cell" title={placementConditions}>
+                  {placementConditions}
+                </span>
                 {placementAlphaChanceLabel ? (
                   <span role="cell">{placementAlphaChanceLabel}</span>
                 ) : null}
@@ -40784,6 +40820,35 @@ function formatZaEncounterPlacementLabel(
     placement.table.tableLabel ??
     placement.table.tableId
   );
+}
+
+function formatZaEncounterPlacementPhaseValues(placement: ZaEncounterPlacement) {
+  const predicates = (placement.table.phaseConditions ?? [])
+    .map((condition) => condition.values.join(', '))
+    .filter((values) => values.length > 0);
+  return predicates.length > 0 ? predicates.join('; ') : null;
+}
+
+function getZaPhaseConditionDescriptionKey(operator: number) {
+  // These codes are phase-condition-specific and do not use the shared comparison enum.
+  switch (operator) {
+    case 1:
+      return 'za.encounters.phaseCondition.exact';
+    case 2:
+      return 'za.encounters.phaseCondition.except';
+    case 3:
+      return 'za.encounters.phaseCondition.after';
+    case 4:
+      return 'za.encounters.phaseCondition.before';
+    case 5:
+      return 'za.encounters.phaseCondition.atOrAfter';
+    case 6:
+      return 'za.encounters.phaseCondition.atOrBefore';
+    case 8:
+      return 'za.encounters.phaseCondition.range';
+    default:
+      return null;
+  }
 }
 
 function formatZaEncounterPlacementConditions(

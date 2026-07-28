@@ -83,6 +83,9 @@ public sealed record ZaEncounterTableRecord(
 
     public string? RawSpawnerId { get; init; }
 
+    public IReadOnlyList<ZaEncounterPhaseCondition> PhaseConditions { get; init; } =
+        Array.Empty<ZaEncounterPhaseCondition>();
+
     public bool IsPostgame { get; init; }
 
     public string? BossBattleContextKey { get; init; }
@@ -97,6 +100,10 @@ public sealed record ZaEncounterTableRecord(
 
     public IReadOnlyList<ZaBossBattleContext>? BossBattleContexts { get; init; }
 }
+
+public sealed record ZaEncounterPhaseCondition(
+    int Operator,
+    IReadOnlyList<string> Values);
 
 public sealed record ZaEncounterEditableField(
     string Field,
