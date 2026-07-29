@@ -26,6 +26,7 @@
   --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 6%);
   --editor-list-column: minmax(420px, 560px);
   --editor-detail-column: minmax(0, 1fr);
+  --focused-editor-browser-width: 1320px;
   --inspector-section-column: minmax(260px, 1fr);
   --editor-visible-row-count: 5;
   --editor-row-height: 40px;
@@ -8098,6 +8099,127 @@ button.sv-encounter-condition-row:hover {
   font-weight: 700;
 }
 
+.layout-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.layout-option {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 132px;
+  align-items: center;
+  padding: 12px;
+  color: var(--color-text-soft);
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.layout-option:hover:not(:disabled),
+.layout-option-selected {
+  color: var(--color-text);
+  background: rgb(79 70 229 / 18%);
+  border-color: rgb(109 115 255 / 62%);
+}
+
+.layout-option-preview {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 92px;
+  padding: 8px;
+  background: #080d18;
+  border: 1px solid rgb(93 113 151 / 48%);
+  border-radius: 7px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+.layout-option-preview-classic {
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
+}
+
+.layout-option-preview-focused {
+  grid-template-rows: minmax(0, 0.42fr) minmax(0, 0.58fr);
+}
+
+.layout-option-preview-browser,
+.layout-option-preview-detail {
+  min-width: 0;
+  min-height: 0;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgb(200 211 231 / 18%) 0,
+      rgb(200 211 231 / 18%) 4px,
+      transparent 4px,
+      transparent 11px
+    ),
+    #131d31;
+  border: 1px solid #354562;
+  border-radius: 4px;
+}
+
+.layout-option-preview-focused .layout-option-preview-browser {
+  width: 72%;
+  justify-self: center;
+}
+
+.layout-option-preview-detail {
+  background:
+    linear-gradient(90deg, rgb(79 70 229 / 42%), transparent 42%),
+    repeating-linear-gradient(
+      180deg,
+      rgb(200 211 231 / 16%) 0,
+      rgb(200 211 231 / 16%) 4px,
+      transparent 4px,
+      transparent 12px
+    ),
+    #131d31;
+}
+
+.layout-option-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.layout-option-copy strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.layout-option-copy > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.layout-option-selected .layout-option-copy > span {
+  color: var(--color-text-soft);
+}
+
+.layout-option-selected-label {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--color-gold);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .sv-cache-mode-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -8230,6 +8352,86 @@ button.sv-encounter-condition-row:hover {
   font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.editor-layout-focused :is(
+  .items-layout,
+  .moves-layout,
+  .text-layout,
+  .trainers-layout,
+  .shops-layout,
+  .encounters-layout,
+  .flagwork-layout,
+  .placement-layout,
+  .behavior-layout,
+  .swsh-pokemon-layout,
+  .sv-pokemon-layout,
+  .za-pokemon-layout,
+  .za-dex-layout-workspace
+) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.editor-layout-focused :is(
+  .items-layout > .items-table,
+  .moves-layout > .moves-table,
+  .text-layout > .text-table,
+  .trainers-layout > .trainers-table,
+  .shops-layout > .shops-table-stack,
+  .encounters-layout > .encounters-table,
+  .encounters-layout > .raid-rewards-table,
+  .flagwork-layout > .flagwork-stack,
+  .flagwork-layout > .exefs-table,
+  .royal-candy-layout > .royal-candy-workflow-table,
+  .za-dex-layout-workspace > .za-dex-layout-dexes
+) {
+  width: 100%;
+  max-width: var(--focused-editor-browser-width);
+  justify-self: center;
+}
+
+.editor-layout-focused .dynamax-adventures-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "table"
+    "summary"
+    "editor";
+}
+
+.editor-layout-focused :is(
+  .swsh-pokemon-left-stack,
+  .sv-pokemon-left-stack,
+  .za-pokemon-left-stack
+) {
+  display: contents;
+}
+
+.editor-layout-focused :is(
+  .swsh-pokemon-selected-stack,
+  .sv-pokemon-selected-stack,
+  .za-pokemon-selected-stack
+) {
+  grid-column: 1;
+  order: 2;
+  width: 100%;
+}
+
+.editor-layout-focused .pokemon-table {
+  grid-column: 1;
+  order: 1;
+  width: 100%;
+  max-width: var(--focused-editor-browser-width);
+  justify-self: center;
+}
+
+.editor-layout-focused :is(
+  .swsh-pokemon-left-stack,
+  .sv-pokemon-left-stack,
+  .za-pokemon-left-stack
+) > :not(.pokemon-table) {
+  grid-column: 1;
+  order: 3;
+  width: 100%;
 }
 
 .sv-cache-settings-row {
@@ -9228,8 +9430,13 @@ input {
   }
 
   .language-options,
+  .layout-options,
   .sv-cache-mode-options {
     grid-template-columns: 1fr;
+  }
+
+  .layout-option {
+    grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1fr);
   }
 
   .swsh-pokemon-section .pokemon-toolbar,
