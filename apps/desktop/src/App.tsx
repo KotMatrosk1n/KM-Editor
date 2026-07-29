@@ -770,7 +770,36 @@ const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Edito
 const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
 const sidebarCompactStorageKey = 'km-editor.sidebar.compact.v1';
 const expandedWorkflowGroupsStorageKey = 'km-editor.workflow-groups.user-expanded.v2';
+const editorLayoutStorageKey = 'km-editor.editor-layout.v1';
 const constrainedSidebarMediaQuery = '(max-width: 1280px), (max-height: 720px)';
+
+type EditorLayoutPreference = 'classic' | 'focused';
+
+function readEditorLayoutPreference(): EditorLayoutPreference {
+  if (typeof window === 'undefined') {
+    return 'classic';
+  }
+
+  try {
+    return window.localStorage.getItem(editorLayoutStorageKey) === 'focused'
+      ? 'focused'
+      : 'classic';
+  } catch {
+    return 'classic';
+  }
+}
+
+function writeEditorLayoutPreference(layout: EditorLayoutPreference) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(editorLayoutStorageKey, layout);
+  } catch {
+    // The in-memory preference still applies when localStorage is unavailable.
+  }
+}
 
 function readSidebarCompactPreference() {
   if (typeof window === 'undefined') {
@@ -2312,6 +2341,9 @@ export function App({
   const [isSidebarCompactPreference, setIsSidebarCompactPreference] = useState(
     readSidebarCompactPreference
   );
+  const [editorLayout, setEditorLayout] = useState<EditorLayoutPreference>(
+    readEditorLayoutPreference
+  );
   const [isSidebarOverlayOpen, setIsSidebarOverlayOpen] = useState(false);
   const [suppressedActiveWorkflowGroup, setSuppressedActiveWorkflowGroup] = useState<
     WorkflowNavigationGroup['id'] | null
@@ -2324,6 +2356,10 @@ export function App({
   const [expandedWorkflowGroups, setExpandedWorkflowGroups] = useState<
     Set<WorkflowNavigationGroup['id']>
   >(() => readExpandedWorkflowGroups(selectedGame));
+  const handleChangeEditorLayout = useCallback((nextLayout: EditorLayoutPreference) => {
+    setEditorLayout(nextLayout);
+    writeEditorLayoutPreference(nextLayout);
+  }, []);
   const editSessionRef = useRef<EditSession | null>(editSession);
   const editorDraftDirtySectionsRef = useRef(editorDraftDirtySections);
   const moveEditBaselineValuesRef = useRef<{
@@ -10386,7 +10422,7 @@ export function App({
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
     <main
-      className={`app-shell${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
+      className={`app-shell editor-layout-${editorLayout}${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
     >
       <aside
         aria-label="Application navigation"
@@ -11765,9 +11801,11 @@ export function App({
           {activeSection === 'settings' ? (
             <SettingsSection
               appVersion={appVersion}
+              editorLayout={editorLayout}
               isSvCacheClearing={isSvCacheClearing}
               isSvCacheRefreshing={isSvCacheRefreshing}
               isSvCacheWarming={isSvCacheWarming}
+              onChangeEditorLayout={handleChangeEditorLayout}
               onChangeSvCacheLimit={handleChangeSvCacheLimit}
               onChangeSvCacheMode={handleChangeSvCacheMode}
               onCheckForUpdates={handleCheckForUpdates}
@@ -36709,9 +36747,11 @@ type PendingEditContext = {
 
 function SettingsSection({
   appVersion,
+  editorLayout,
   isSvCacheClearing,
   isSvCacheRefreshing,
   isSvCacheWarming,
+  onChangeEditorLayout,
   onChangeSvCacheLimit,
   onChangeSvCacheMode,
   onCheckForUpdates,
@@ -36723,9 +36763,11 @@ function SettingsSection({
   svCacheStatus
 }: {
   appVersion: string;
+  editorLayout: EditorLayoutPreference;
   isSvCacheClearing: boolean;
   isSvCacheRefreshing: boolean;
   isSvCacheWarming: boolean;
+  onChangeEditorLayout: (layout: EditorLayoutPreference) => void;
   onChangeSvCacheLimit: (maxCacheSizeBytes: number) => void;
   onChangeSvCacheMode: (mode: TrinityCacheMode) => void;
   onCheckForUpdates: () => void;
@@ -36812,6 +36854,55 @@ function SettingsSection({
           {status.message}
         </p>
       </div>
+
+      <section aria-labelledby="layout-settings-heading" className="settings-subsection">
+        <div className="settings-subsection-heading">
+          <Table2 aria-hidden="true" size={18} />
+          <div>
+            <h3 id="layout-settings-heading">{t('settings.layout.title')}</h3>
+            <p>{t('settings.layout.description')}</p>
+          </div>
+        </div>
+
+        <div
+          aria-label={t('settings.layout.groupLabel')}
+          className="layout-options"
+          role="radiogroup"
+        >
+          {(['classic', 'focused'] as const).map((layout) => {
+            const isSelected = editorLayout === layout;
+
+            return (
+              <button
+                aria-checked={isSelected}
+                className={`layout-option${isSelected ? ' layout-option-selected' : ''}`}
+                disabled={isSelected}
+                key={layout}
+                onClick={() => onChangeEditorLayout(layout)}
+                role="radio"
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`layout-option-preview layout-option-preview-${layout}`}
+                >
+                  <span className="layout-option-preview-browser" />
+                  <span className="layout-option-preview-detail" />
+                </span>
+                <span className="layout-option-copy">
+                  <strong>{t(`settings.layout.${layout}`)}</strong>
+                  <span>{t(`settings.layout.${layout}.description`)}</span>
+                </span>
+                {isSelected ? (
+                  <small className="layout-option-selected-label">
+                    {t('settings.language.selected')}
+                  </small>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {canShowSvCacheSettings ? (
         <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
