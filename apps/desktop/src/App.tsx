@@ -28366,8 +28366,6 @@ function ZaEncounterGroupBrowser({
           {selectedGroup.placements.map((placement) => {
             const placementLabel = formatZaEncounterPlacementLabel(placement, rowByTableId);
             const placementConditions = formatZaEncounterPlacementConditions(placement, t);
-            const placementPhaseValues =
-              formatZaEncounterPlacementPhaseValues(placement);
             const isSelected =
               placement.table.tableId === table.tableId && placement.slot.slot === selectedSlot;
             const placementCompletionState = getZaWildZoneCompletionState([placement.slot]);
@@ -28378,20 +28376,21 @@ function ZaEncounterGroupBrowser({
             const placementAlphaChanceLabel = showPlacementAlphaChance
               ? formatZaAlphaChance(placement.slot, t) ?? t('za.alphaSettings.unavailable')
               : null;
+            const placementSummary = `${placementLabel}, ${t('za.spawnSettings.slotAria', {
+              slot: placement.slot.slot + 1,
+              weight: placement.slot.weight
+            })}, ${placementConditions}${
+              placementAlphaChanceLabel
+                ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
+                : ''
+            }${
+              placementCompletionLabel
+                ? `, ${t('za.wildZoneCompletion.column')} ${placementCompletionLabel}`
+                : ''
+            }`;
             return (
               <button
-                aria-label={`${placementLabel}, ${t('za.spawnSettings.slotAria', {
-                  slot: placement.slot.slot + 1,
-                  weight: placement.slot.weight
-                })}, ${placementConditions}${
-                  placementAlphaChanceLabel
-                    ? `, ${t('za.alphaSettings.chanceLabel')} ${placementAlphaChanceLabel}`
-                    : ''
-                }${
-                  placementCompletionLabel
-                    ? `, ${t('za.wildZoneCompletion.column')} ${placementCompletionLabel}`
-                    : ''
-                }`}
+                aria-label={placementSummary}
                 aria-pressed={isSelected}
                 className={`za-encounter-placement-row ${
                   isSelected ? 'za-encounter-placement-row-selected' : ''
@@ -28401,16 +28400,13 @@ function ZaEncounterGroupBrowser({
                   onSelectReference(placement.table.tableId, placement.slot.slot)
                 }
                 role="row"
+                title={placementSummary}
                 type="button"
               >
-                <span role="cell" title={placementPhaseValues ?? placementLabel}>
-                  {placementLabel}
-                </span>
+                <span role="cell">{placementLabel}</span>
                 <span role="cell">{placement.slot.slot + 1}</span>
                 <span role="cell">{placement.slot.weight}</span>
-                <span role="cell" title={placementConditions}>
-                  {placementConditions}
-                </span>
+                <span role="cell">{placementConditions}</span>
                 {placementAlphaChanceLabel ? (
                   <span role="cell">{placementAlphaChanceLabel}</span>
                 ) : null}
@@ -40799,13 +40795,6 @@ function formatZaEncounterPlacementLabel(
     placement.table.tableLabel ??
     placement.table.tableId
   );
-}
-
-function formatZaEncounterPlacementPhaseValues(placement: ZaEncounterPlacement) {
-  const predicates = (placement.table.phaseConditions ?? [])
-    .map((condition) => condition.values.join(', '))
-    .filter((values) => values.length > 0);
-  return predicates.length > 0 ? predicates.join('; ') : null;
 }
 
 function getZaPhaseConditionDescriptionKey(operator: number) {
