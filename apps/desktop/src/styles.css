@@ -7988,6 +7988,116 @@ button.sv-encounter-condition-row:hover {
   color: #d8c79d;
 }
 
+.za-encounter-ownership-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.za-encounter-ownership-summary > span {
+  min-width: 0;
+  padding: 9px 10px;
+  color: var(--color-text-soft);
+  background: rgb(24 35 54 / 58%);
+  border: 1px solid rgb(124 148 184 / 28%);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.za-encounter-ownership-summary strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-text);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.za-encounter-advanced-data {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: rgb(13 20 36 / 72%);
+  border: 1px solid rgb(93 113 151 / 42%);
+  border-radius: 8px;
+}
+
+.za-encounter-field-group-wide {
+  grid-column: span 2;
+}
+
+.za-encounter-advanced-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.za-encounter-advanced-heading h4,
+.za-encounter-advanced-heading p {
+  margin: 0;
+}
+
+.za-encounter-advanced-heading h4 {
+  color: #f4f7fb;
+  font-size: 13px;
+}
+
+.za-encounter-advanced-heading p {
+  max-width: 760px;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.za-encounter-advanced-heading > span {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  color: #b9c7dc;
+  background: rgb(24 35 54 / 82%);
+  border: 1px solid rgb(124 148 184 / 34%);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.za-encounter-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.za-encounter-advanced-grid > div {
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgb(9 15 27 / 58%);
+  border: 1px solid rgb(93 113 151 / 28%);
+  border-radius: 6px;
+}
+
+.za-encounter-advanced-grid .za-encounter-advanced-wide {
+  grid-column: span 2;
+}
+
+.za-encounter-advanced-grid dt {
+  color: #9aa7bd;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.za-encounter-advanced-grid dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .encounter-slot-detail {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -9639,6 +9749,26 @@ input {
   .encounter-slot-detail,
   .trainer-editor-row {
     grid-template-columns: 1fr;
+  }
+
+  .za-encounter-field-group-wide {
+    grid-column: auto;
+  }
+
+  .za-encounter-ownership-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .za-encounter-advanced-heading {
+    display: grid;
+  }
+
+  .za-encounter-advanced-heading > span {
+    justify-self: start;
+  }
+
+  .za-encounter-advanced-grid .za-encounter-advanced-wide {
+    grid-column: auto;
   }
 }
 

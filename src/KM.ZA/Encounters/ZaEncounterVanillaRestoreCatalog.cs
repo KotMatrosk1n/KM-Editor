@@ -138,32 +138,13 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             return false;
         }
 
-        var fields = new List<ZaEncounterVanillaFieldValue>
-        {
-            CreateField(
-                ZaEncountersWorkflowService.SpeciesIdField,
-                baseRow.DevNo,
-                currentRow.DevNo != baseRow.DevNo),
-            CreateField(
-                ZaEncountersWorkflowService.FormField,
-                baseRow.FormNo,
-                currentRow.FormNo != baseRow.FormNo),
-            CreateField(
-                ZaEncountersWorkflowService.LevelMinField,
-                baseRow.MinLevel,
-                currentRow.MinLevel != baseRow.MinLevel),
-            CreateField(
-                ZaEncountersWorkflowService.LevelMaxField,
-                baseRow.MaxLevel,
-                currentRow.MaxLevel != baseRow.MaxLevel),
-            CreateField(
-                ZaEncountersWorkflowService.AlphaChancePercentField,
-                baseAlphaChance,
-                currentRow.OyabunProbability != baseAlphaChance),
-            CreateField(
-                ZaEncountersWorkflowService.AlphaLevelBonusField,
-                baseRow.OyabunAdditionalLevel,
-                currentRow.OyabunAdditionalLevel != baseRow.OyabunAdditionalLevel),
+        var fields = CreateSharedFields(
+                currentRow,
+                baseRow,
+                baseAlphaChance)
+            .ToList();
+        fields.AddRange(
+        [
             CreateField(
                 ZaEncountersWorkflowService.WeightField,
                 baseSpawnerSlot.Weight,
@@ -172,7 +153,7 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
                 ZaEncountersWorkflowService.SlotMaxCountField,
                 baseSpawnerSlot.MaxCount,
                 currentSpawnerSlot.MaxCount != baseSpawnerSlot.MaxCount),
-        };
+        ]);
 
         if (currentAppearance is not null && baseAppearance is not null)
         {
@@ -590,6 +571,21 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             && slot.Form == row.FormNo
             && slot.LevelMin == row.MinLevel
             && slot.LevelMax == row.MaxLevel
+            && slot.HeldItemId == (row.HoldItem ?? 0)
+            && slot.Ability == row.Tokusei
+            && slot.Nature == row.Seikaku
+            && slot.Gender == row.Sex
+            && slot.ShinyMode == row.Rare
+            && (slot.MoveIds ?? Array.Empty<int>())
+                .SequenceEqual(ReadMoves(row))
+            && slot.IvHp == ReadIv(row.TalentValue, stats => stats.HP)
+            && slot.IvAttack == ReadIv(row.TalentValue, stats => stats.Attack)
+            && slot.IvDefense == ReadIv(row.TalentValue, stats => stats.Defense)
+            && slot.IvSpecialAttack == ReadIv(row.TalentValue, stats => stats.SpecialAttack)
+            && slot.IvSpecialDefense == ReadIv(row.TalentValue, stats => stats.SpecialDefense)
+            && slot.IvSpeed == ReadIv(row.TalentValue, stats => stats.Speed)
+            && slot.TalentScale == row.TalentScale
+            && slot.TalentVCount == row.TalentVNum
             && alphaChanceMatches
             && alphaBonusMatches
             && slot.Weight == spawnerSlot.Weight
@@ -628,7 +624,98 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
                 ZaEncountersWorkflowService.AlphaLevelBonusField,
                 baseRow.OyabunAdditionalLevel,
                 currentRow.OyabunAdditionalLevel != baseRow.OyabunAdditionalLevel),
+            CreateField(
+                ZaEncountersWorkflowService.HeldItemIdField,
+                baseRow.HoldItem ?? 0,
+                (currentRow.HoldItem ?? 0) != (baseRow.HoldItem ?? 0)),
+            CreateField(
+                ZaEncountersWorkflowService.AbilityField,
+                baseRow.Tokusei,
+                currentRow.Tokusei != baseRow.Tokusei),
+            CreateField(
+                ZaEncountersWorkflowService.NatureField,
+                baseRow.Seikaku,
+                currentRow.Seikaku != baseRow.Seikaku),
+            CreateField(
+                ZaEncountersWorkflowService.GenderField,
+                baseRow.Sex,
+                currentRow.Sex != baseRow.Sex),
+            CreateField(
+                ZaEncountersWorkflowService.ShinyModeField,
+                baseRow.Rare,
+                currentRow.Rare != baseRow.Rare),
+            CreateField(
+                ZaEncountersWorkflowService.Move1IdField,
+                ReadMove(baseRow, 0),
+                ReadMove(currentRow, 0) != ReadMove(baseRow, 0)),
+            CreateField(
+                ZaEncountersWorkflowService.Move2IdField,
+                ReadMove(baseRow, 1),
+                ReadMove(currentRow, 1) != ReadMove(baseRow, 1)),
+            CreateField(
+                ZaEncountersWorkflowService.Move3IdField,
+                ReadMove(baseRow, 2),
+                ReadMove(currentRow, 2) != ReadMove(baseRow, 2)),
+            CreateField(
+                ZaEncountersWorkflowService.Move4IdField,
+                ReadMove(baseRow, 3),
+                ReadMove(currentRow, 3) != ReadMove(baseRow, 3)),
+            CreateField(
+                ZaEncountersWorkflowService.IvHpField,
+                ReadIv(baseRow.TalentValue, stats => stats.HP),
+                ReadIv(currentRow.TalentValue, stats => stats.HP)
+                    != ReadIv(baseRow.TalentValue, stats => stats.HP)),
+            CreateField(
+                ZaEncountersWorkflowService.IvAttackField,
+                ReadIv(baseRow.TalentValue, stats => stats.Attack),
+                ReadIv(currentRow.TalentValue, stats => stats.Attack)
+                    != ReadIv(baseRow.TalentValue, stats => stats.Attack)),
+            CreateField(
+                ZaEncountersWorkflowService.IvDefenseField,
+                ReadIv(baseRow.TalentValue, stats => stats.Defense),
+                ReadIv(currentRow.TalentValue, stats => stats.Defense)
+                    != ReadIv(baseRow.TalentValue, stats => stats.Defense)),
+            CreateField(
+                ZaEncountersWorkflowService.IvSpecialAttackField,
+                ReadIv(baseRow.TalentValue, stats => stats.SpecialAttack),
+                ReadIv(currentRow.TalentValue, stats => stats.SpecialAttack)
+                    != ReadIv(baseRow.TalentValue, stats => stats.SpecialAttack)),
+            CreateField(
+                ZaEncountersWorkflowService.IvSpecialDefenseField,
+                ReadIv(baseRow.TalentValue, stats => stats.SpecialDefense),
+                ReadIv(currentRow.TalentValue, stats => stats.SpecialDefense)
+                    != ReadIv(baseRow.TalentValue, stats => stats.SpecialDefense)),
+            CreateField(
+                ZaEncountersWorkflowService.IvSpeedField,
+                ReadIv(baseRow.TalentValue, stats => stats.Speed),
+                ReadIv(currentRow.TalentValue, stats => stats.Speed)
+                    != ReadIv(baseRow.TalentValue, stats => stats.Speed)),
+            CreateField(
+                ZaEncountersWorkflowService.VanillaTalentScaleField,
+                baseRow.TalentScale,
+                currentRow.TalentScale != baseRow.TalentScale),
+            CreateField(
+                ZaEncountersWorkflowService.VanillaTalentVCountField,
+                baseRow.TalentVNum,
+                currentRow.TalentVNum != baseRow.TalentVNum),
         ];
+    }
+
+    private static IReadOnlyList<int> ReadMoves(ZaPokemonDataEntry row)
+    {
+        return row.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0];
+    }
+
+    private static int ReadMove(ZaPokemonDataEntry row, int index)
+    {
+        return ReadMoves(row)[index];
+    }
+
+    private static int ReadIv(
+        ZaPokemonDataStatsRecord? stats,
+        Func<ZaPokemonDataStatsRecord, int> select)
+    {
+        return stats is null ? -1 : select(stats);
     }
 
     private static IReadOnlyList<ZaEncounterVanillaFieldValue> CreateSpawnerFields(
@@ -782,6 +869,12 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
         string field,
         int value)
     {
+        if (field is ZaEncountersWorkflowService.VanillaTalentScaleField
+            or ZaEncountersWorkflowService.VanillaTalentVCountField)
+        {
+            return true;
+        }
+
         var editableField = ZaEncountersWorkflowService.GetEditableField(
             workflow,
             field);
@@ -895,6 +988,57 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             case ZaEncountersWorkflowService.AlphaLevelBonusField:
                 value = row.OyabunAdditionalLevel;
                 return value is >= 0 and <= 100;
+            case ZaEncountersWorkflowService.HeldItemIdField:
+                value = row.HoldItem ?? 0;
+                return true;
+            case ZaEncountersWorkflowService.AbilityField:
+                value = row.Tokusei;
+                return true;
+            case ZaEncountersWorkflowService.NatureField:
+                value = row.Seikaku;
+                return true;
+            case ZaEncountersWorkflowService.GenderField:
+                value = row.Sex;
+                return true;
+            case ZaEncountersWorkflowService.ShinyModeField:
+                value = row.Rare;
+                return true;
+            case ZaEncountersWorkflowService.Move1IdField:
+                value = ReadMove(row, 0);
+                return true;
+            case ZaEncountersWorkflowService.Move2IdField:
+                value = ReadMove(row, 1);
+                return true;
+            case ZaEncountersWorkflowService.Move3IdField:
+                value = ReadMove(row, 2);
+                return true;
+            case ZaEncountersWorkflowService.Move4IdField:
+                value = ReadMove(row, 3);
+                return true;
+            case ZaEncountersWorkflowService.IvHpField:
+                value = ReadIv(row.TalentValue, stats => stats.HP);
+                return true;
+            case ZaEncountersWorkflowService.IvAttackField:
+                value = ReadIv(row.TalentValue, stats => stats.Attack);
+                return true;
+            case ZaEncountersWorkflowService.IvDefenseField:
+                value = ReadIv(row.TalentValue, stats => stats.Defense);
+                return true;
+            case ZaEncountersWorkflowService.IvSpecialAttackField:
+                value = ReadIv(row.TalentValue, stats => stats.SpecialAttack);
+                return true;
+            case ZaEncountersWorkflowService.IvSpecialDefenseField:
+                value = ReadIv(row.TalentValue, stats => stats.SpecialDefense);
+                return true;
+            case ZaEncountersWorkflowService.IvSpeedField:
+                value = ReadIv(row.TalentValue, stats => stats.Speed);
+                return true;
+            case ZaEncountersWorkflowService.VanillaTalentScaleField:
+                value = row.TalentScale;
+                return true;
+            case ZaEncountersWorkflowService.VanillaTalentVCountField:
+                value = row.TalentVNum;
+                return true;
             default:
                 value = 0;
                 return false;
@@ -917,7 +1061,24 @@ internal sealed class ZaEncounterVanillaRestoreCatalog
             or ZaEncountersWorkflowService.LevelMinField
             or ZaEncountersWorkflowService.LevelMaxField
             or ZaEncountersWorkflowService.AlphaChancePercentField
-            or ZaEncountersWorkflowService.AlphaLevelBonusField;
+            or ZaEncountersWorkflowService.AlphaLevelBonusField
+            or ZaEncountersWorkflowService.HeldItemIdField
+            or ZaEncountersWorkflowService.AbilityField
+            or ZaEncountersWorkflowService.NatureField
+            or ZaEncountersWorkflowService.GenderField
+            or ZaEncountersWorkflowService.ShinyModeField
+            or ZaEncountersWorkflowService.Move1IdField
+            or ZaEncountersWorkflowService.Move2IdField
+            or ZaEncountersWorkflowService.Move3IdField
+            or ZaEncountersWorkflowService.Move4IdField
+            or ZaEncountersWorkflowService.IvHpField
+            or ZaEncountersWorkflowService.IvAttackField
+            or ZaEncountersWorkflowService.IvDefenseField
+            or ZaEncountersWorkflowService.IvSpecialAttackField
+            or ZaEncountersWorkflowService.IvSpecialDefenseField
+            or ZaEncountersWorkflowService.IvSpeedField
+            or ZaEncountersWorkflowService.VanillaTalentScaleField
+            or ZaEncountersWorkflowService.VanillaTalentVCountField;
     }
 
     private static bool IsSpawnerSlotField(string? field)

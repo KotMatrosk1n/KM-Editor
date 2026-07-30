@@ -18,6 +18,24 @@ internal sealed class ZaEncountersWorkflowService
     public const string LevelMaxField = "levelMax";
     public const string AlphaChancePercentField = "alphaChancePercent";
     public const string AlphaLevelBonusField = "alphaLevelBonus";
+    public const string HeldItemIdField = "heldItemId";
+    public const string AbilityField = "ability";
+    public const string NatureField = "nature";
+    public const string GenderField = "gender";
+    public const string ShinyModeField = "shinyLock";
+    public const string Move1IdField = "move1Id";
+    public const string Move2IdField = "move2Id";
+    public const string Move3IdField = "move3Id";
+    public const string Move4IdField = "move4Id";
+    public const string FlawlessIvCountField = "flawlessIvCount";
+    public const string IvHpField = "ivHp";
+    public const string IvAttackField = "ivAttack";
+    public const string IvDefenseField = "ivDefense";
+    public const string IvSpecialAttackField = "ivSpecialAttack";
+    public const string IvSpecialDefenseField = "ivSpecialDefense";
+    public const string IvSpeedField = "ivSpeed";
+    internal const string VanillaTalentScaleField = "vanillaTalentScale";
+    internal const string VanillaTalentVCountField = "vanillaTalentVCount";
     public const string WeightField = "weight";
     public const string SlotMaxCountField = "slotMaxCount";
     public const string AppearanceMinCountField = "appearanceMinCount";
@@ -32,6 +50,73 @@ internal sealed class ZaEncountersWorkflowService
     private const string PhaseCondition = "phase_condition";
     private const int CurrentPhaseAtLeastComparison = 5;
     private const int PostgamePhaseThreshold = 100000;
+
+    private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> GenderOptions =
+    [
+        new(-1, "Game default"),
+        new(0, "Random"),
+        new(1, "Male"),
+        new(2, "Female"),
+    ];
+
+    private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> ShinyModeOptions =
+    [
+        new(ZaPokemonDataConstants.RareNotShiny, "Never Shiny"),
+        new(ZaPokemonDataConstants.RareForcedShiny, "Always Shiny"),
+        new(ZaPokemonDataConstants.RareDefaultShinyRoll, "Random"),
+    ];
+
+    private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> AbilityModeOptions =
+    [
+        new(0, "Random Ability 1 or 2"),
+        new(1, "Random Ability 1, 2, or Hidden"),
+        new(2, "Ability 1"),
+        new(3, "Ability 2"),
+        new(4, "Hidden Ability"),
+        new(255, "Game default"),
+    ];
+
+    private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> NatureOptions =
+    [
+        new(-1, "Random"),
+        new(0, "Default (game behavior)"),
+        new(1, "Hardy"),
+        new(2, "Lonely"),
+        new(3, "Brave"),
+        new(4, "Adamant"),
+        new(5, "Naughty"),
+        new(6, "Bold"),
+        new(7, "Docile"),
+        new(8, "Relaxed"),
+        new(9, "Impish"),
+        new(10, "Lax"),
+        new(11, "Timid"),
+        new(12, "Hasty"),
+        new(13, "Serious"),
+        new(14, "Jolly"),
+        new(15, "Naive"),
+        new(16, "Modest"),
+        new(17, "Mild"),
+        new(18, "Quiet"),
+        new(19, "Bashful"),
+        new(20, "Rash"),
+        new(21, "Calm"),
+        new(22, "Gentle"),
+        new(23, "Sassy"),
+        new(24, "Careful"),
+        new(25, "Quirky"),
+    ];
+
+    private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> FlawlessIvCountOptions =
+    [
+        new(0, "Random IVs"),
+        new(1, "1 Guaranteed Perfect IV"),
+        new(2, "2 Guaranteed Perfect IVs"),
+        new(3, "3 Guaranteed Perfect IVs"),
+        new(4, "4 Guaranteed Perfect IVs"),
+        new(5, "5 Guaranteed Perfect IVs"),
+        new(6, "6 Guaranteed Perfect IVs"),
+    ];
 
     private readonly ZaWorkflowFileSource fileSource;
 
@@ -599,6 +684,7 @@ internal sealed class ZaEncountersWorkflowService
                 && scalarSlot.MaxCount == encounter.Value.MaxCount;
             var hasStructuralAlphaReference = HasStructuralAlphaReference(encounterDataId);
             var pokemon = ResolvePokemonRow(encounterDataId, pokemonRows);
+            var encounterPokemon = pokemon as ZaEncounterDataEntry;
             var speciesId = pokemon?.DevNo ?? 0;
             var form = pokemon?.FormNo ?? 0;
             var alphaChancePercent = pokemon is not null
@@ -672,8 +758,97 @@ internal sealed class ZaEncountersWorkflowService
                     speciesId,
                     labels.Pokemon(speciesId),
                     pokemonAvailability),
+                HeldItemId = pokemon is null ? null : pokemon.HoldItem ?? 0,
+                Ability = pokemon?.Tokusei,
+                Nature = pokemon?.Seikaku,
+                Gender = pokemon?.Sex,
+                ShinyMode = pokemon?.Rare,
+                MoveIds = pokemon is null
+                    ? null
+                    : pokemon.WazaList?.Values.Take(4).ToArray() ?? [0, 0, 0, 0],
+                HasExplicitMoves = pokemon?.WazaList is not null,
+                FlawlessIvCount = pokemon is null
+                    ? null
+                    : ZaPokemonDataIvEncoding.ReadFlawlessIvCount(pokemon),
+                IvHp = ReadIv(pokemon?.TalentValue, stats => stats.HP),
+                IvAttack = ReadIv(pokemon?.TalentValue, stats => stats.Attack),
+                IvDefense = ReadIv(pokemon?.TalentValue, stats => stats.Defense),
+                IvSpecialAttack = ReadIv(pokemon?.TalentValue, stats => stats.SpecialAttack),
+                IvSpecialDefense = ReadIv(pokemon?.TalentValue, stats => stats.SpecialDefense),
+                IvSpeed = ReadIv(pokemon?.TalentValue, stats => stats.Speed),
+                TalentScale = pokemon?.TalentScale,
+                TalentVCount = pokemon?.TalentVNum,
+                EncounterActivationConditions = FormatEncounterActivationConditions(pokemon),
+                StrengthenValueSummary = FormatStats(encounterPokemon?.StrengthenValue),
+                ItemDropSummaries = FormatItemDrops(encounterPokemon),
             };
         }
+    }
+
+    private static int? ReadIv(
+        ZaPokemonDataStatsRecord? stats,
+        Func<ZaPokemonDataStatsRecord, int> select)
+    {
+        return stats is null ? -1 : select(stats);
+    }
+
+    private static IReadOnlyList<string> FormatEncounterActivationConditions(
+        ZaPokemonDataEntry? pokemon)
+    {
+        if (pokemon is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        return pokemon.ActivationConditions
+            .SelectMany((condition, conditionIndex) =>
+                condition.Elements.SelectMany((element, elementIndex) =>
+                    element.Params.Select(parameter =>
+                    {
+                        var name = string.IsNullOrWhiteSpace(parameter.Condition)
+                            ? "<unnamed>"
+                            : parameter.Condition;
+                        var values = parameter.Params
+                            .Where(value => !string.IsNullOrWhiteSpace(value))
+                            .Select(value => value!)
+                            .ToArray();
+                        var valueSummary = $"[{string.Join(", ", values)}]";
+                        return string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{name} | op={parameter.Op} | group={conditionIndex + 1}.{elementIndex + 1} | params={valueSummary}");
+                    })))
+            .ToArray();
+    }
+
+    private static string? FormatStats(ZaPokemonDataStatsRecord? stats)
+    {
+        return stats is null
+            ? null
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"HP {stats.HP} / Atk {stats.Attack} / Def {stats.Defense} / SpA {stats.SpecialAttack} / SpD {stats.SpecialDefense} / Spe {stats.Speed}");
+    }
+
+    private static IReadOnlyList<string> FormatItemDrops(ZaEncounterDataEntry? pokemon)
+    {
+        if (pokemon is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        return pokemon.ItemDrops.Select(drop =>
+        {
+            var itemTable = string.IsNullOrWhiteSpace(drop.ItemTableId)
+                ? "<none>"
+                : drop.ItemTableId;
+            var count = drop.MinCount == drop.MaxCount
+                ? drop.MinCount.ToString(CultureInfo.InvariantCulture)
+                : string.Create(CultureInfo.InvariantCulture, $"{drop.MinCount}-{drop.MaxCount}");
+            var conditions = $"[{string.Join(", ", drop.DropConditions)}]";
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{itemTable} | probability={drop.DropProbability} | count={count} | conditions={conditions}");
+        }).ToArray();
     }
 
     private static bool TryReadAlphaChancePercent(float value, out int wholePercent)
@@ -747,6 +922,8 @@ internal sealed class ZaEncountersWorkflowService
         var speciesMaximumValue = Math.Max(
             labels.PokemonNameCount - 1,
             speciesOptions.Count > 0 ? speciesOptions.Max(option => option.Value) : 0);
+        var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
+        var moveOptions = CreateMoveOptions(labels);
         return
         [
             new(
@@ -757,15 +934,55 @@ internal sealed class ZaEncountersWorkflowService
                 speciesMaximumValue,
                 speciesOptions),
             new(FormField, "Form", "integer", 0, short.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(HeldItemIdField, "Held item", "integer", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions),
+            new(GenderField, "Gender", "integer", -1, 2, GenderOptions),
+            new(AbilityField, "Ability mode", "integer", 0, 255, AbilityModeOptions),
+            new(NatureField, "Nature", "integer", -1, 25, NatureOptions),
+            new(
+                ShinyModeField,
+                "Shiny lock",
+                "integer",
+                ZaPokemonDataConstants.RareNotShiny,
+                ZaPokemonDataConstants.RareDefaultShinyRoll,
+                ShinyModeOptions),
             new(LevelMinField, "Min Level", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(LevelMaxField, "Max Level", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(AlphaChancePercentField, "Alpha Chance (%)", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(AlphaLevelBonusField, "Alpha Level Bonus", "integer", 0, 100, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(FlawlessIvCountField, "IV preset", "integer", 0, 6, FlawlessIvCountOptions),
+            new(IvHpField, "HP IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(IvAttackField, "Attack IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(IvDefenseField, "Defense IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(IvSpecialAttackField, "Sp. Atk IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(IvSpecialDefenseField, "Sp. Def IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(IvSpeedField, "Speed IV", "integer", -1, 31, Array.Empty<ZaEncounterEditableFieldOption>()),
+            new(Move1IdField, "Move 1", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            new(Move2IdField, "Move 2", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            new(Move3IdField, "Move 3", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
+            new(Move4IdField, "Move 4", "integer", -1, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions),
             new(WeightField, "Weight", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(SlotMaxCountField, "Slot Max Count", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(AppearanceMinCountField, "Overall Min Count", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
             new(AppearanceMaxCountField, "Overall Max Count", "integer", 0, int.MaxValue, Array.Empty<ZaEncounterEditableFieldOption>()),
         ];
+    }
+
+    private static IReadOnlyList<ZaEncounterEditableFieldOption> CreateMoveOptions(
+        ZaTextLabelLookup labels)
+    {
+        return
+        [
+            new(ZaPokemonDataConstants.MoveNone, ZaPokemonDataConstants.MoveNoneLabel),
+            new(ZaPokemonDataConstants.MoveAuto, "Default moves"),
+            .. CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: false),
+        ];
+    }
+
+    private static int MaximumOptionValue(
+        IReadOnlyList<ZaEncounterEditableFieldOption> options,
+        int fallback)
+    {
+        return options.Count == 0 ? fallback : options.Max(option => option.Value);
     }
 
     private static AppearanceCountSummary ReadAppearanceCounts(

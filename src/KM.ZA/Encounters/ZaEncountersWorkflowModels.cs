@@ -62,6 +62,46 @@ public sealed record ZaEncounterSlotRecord(
     public bool CanRevertToVanilla { get; init; }
 
     public string? RevertToVanillaBlockedReason { get; init; }
+
+    public int? HeldItemId { get; init; }
+
+    public int? Ability { get; init; }
+
+    public int? Nature { get; init; }
+
+    public int? Gender { get; init; }
+
+    public int? ShinyMode { get; init; }
+
+    public IReadOnlyList<int>? MoveIds { get; init; }
+
+    public bool HasExplicitMoves { get; init; }
+
+    public int? FlawlessIvCount { get; init; }
+
+    public int? IvHp { get; init; }
+
+    public int? IvAttack { get; init; }
+
+    public int? IvDefense { get; init; }
+
+    public int? IvSpecialAttack { get; init; }
+
+    public int? IvSpecialDefense { get; init; }
+
+    public int? IvSpeed { get; init; }
+
+    public int? TalentScale { get; init; }
+
+    public int? TalentVCount { get; init; }
+
+    public IReadOnlyList<string> EncounterActivationConditions { get; init; } =
+        Array.Empty<string>();
+
+    public string? StrengthenValueSummary { get; init; }
+
+    public IReadOnlyList<string> ItemDropSummaries { get; init; } =
+        Array.Empty<string>();
 }
 
 public sealed record ZaEncounterTableRecord(
