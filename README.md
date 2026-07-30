@@ -36,7 +36,9 @@ Changing a project path requires validation so every editor reloads from the new
 
 The game guides are the authoritative feature maps. Similar editor names do not mean the games share formats or output rules.
 
-In Legends Z-A Wild Encounters, phase-gated placements show their progression requirements and raw phase numbers, and the linked placement table remains available whether an encounter has one placement or several.
+In Legends Z-A Wild Encounters, phase-gated placements show their progression requirements and raw phase numbers, and the linked placement table remains available whether an encounter has one placement or several. Shared encounter records can edit species, form, held item, traits, levels, Alpha settings, IVs, and moves, while unknown structural values remain visible and read only.
+
+Settings offers Classic and Focused layouts. Classic preserves the original side-by-side editor arrangement and remains the default. Focused places record browsers above full-width selected details, and KM Editor remembers the selected layout across launches.
 
 The searchable Workflows page lists supported editor workflows for the selected game. Standalone tools and utility pages remain in the sidebar, which is the complete catalogue. Supported workflows and Settings open their matching wiki guides from inside the app.
 
