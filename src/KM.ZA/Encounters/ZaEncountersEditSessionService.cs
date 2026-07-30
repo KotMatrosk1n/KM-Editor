@@ -1216,7 +1216,10 @@ internal sealed class ZaEncountersEditSessionService
         bool allowVerifiedVanillaSharedValue = false)
     {
         var normalizedField = field.Trim();
-        var editableField = ZaEncountersWorkflowService.GetEditableField(workflow, normalizedField);
+        var editableField = ResolveEditableField(
+            workflow,
+            normalizedField,
+            allowVerifiedVanillaSharedValue);
         if (editableField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
@@ -1248,6 +1251,12 @@ internal sealed class ZaEncountersEditSessionService
             ZaEditSessionSupport.EncountersDomain,
             diagnostics);
         if (parsedValue is null)
+        {
+            return null;
+        }
+
+        if (!allowVerifiedVanillaSharedValue
+            && !ValidateOptionValue(editableField, parsedValue.Value, diagnostics))
         {
             return null;
         }
@@ -1323,7 +1332,10 @@ internal sealed class ZaEncountersEditSessionService
             return;
         }
 
-        var editableField = ZaEncountersWorkflowService.GetEditableField(workflow, edit.Field);
+        var editableField = ResolveEditableField(
+            workflow,
+            edit.Field,
+            isVerifiedVanillaValue);
         if (editableField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
@@ -1398,6 +1410,12 @@ internal sealed class ZaEncountersEditSessionService
             diagnostics);
         if (parsedValue is not null)
         {
+            if (!isVerifiedVanillaValue
+                && !ValidateOptionValue(editableField, parsedValue.Value, diagnostics))
+            {
+                return;
+            }
+
             if (AffectsSharedPokemonData(edit.Field) && !isVerifiedVanillaValue)
             {
                 ValidateSharedAlphaChance(
@@ -1413,6 +1431,63 @@ internal sealed class ZaEncountersEditSessionService
                     diagnostics);
             }
         }
+    }
+
+    private static bool ValidateOptionValue(
+        ZaEncounterEditableField field,
+        int value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (field.Options.Count == 0
+            || field.Options.Any(option => option.Value == value))
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Encounter field '{field.Label}' must use one of its supported options.",
+            ZaEditSessionSupport.EncountersDomain,
+            field: field.Field,
+            expected: field.Options.Count <= 12
+                ? string.Join(
+                    ", ",
+                    field.Options.Select(option => option.Value.ToString(CultureInfo.InvariantCulture)))
+                : $"One of {field.Options.Count.ToString(CultureInfo.InvariantCulture)} supported values"));
+        return false;
+    }
+
+    private static ZaEncounterEditableField? ResolveEditableField(
+        ZaEncountersWorkflow workflow,
+        string? field,
+        bool allowVerifiedVanillaSharedValue)
+    {
+        var editableField = ZaEncountersWorkflowService.GetEditableField(workflow, field);
+        if (editableField is not null || !allowVerifiedVanillaSharedValue)
+        {
+            return editableField;
+        }
+
+        return field switch
+        {
+            ZaEncountersWorkflowService.VanillaTalentScaleField =>
+                new ZaEncounterEditableField(
+                    field,
+                    "Talent scale",
+                    "integer",
+                    null,
+                    null,
+                    Array.Empty<ZaEncounterEditableFieldOption>()),
+            ZaEncountersWorkflowService.VanillaTalentVCountField =>
+                new ZaEncounterEditableField(
+                    field,
+                    "Talent V count",
+                    "integer",
+                    null,
+                    null,
+                    Array.Empty<ZaEncounterEditableFieldOption>()),
+            _ => null,
+        };
     }
 
     private static bool ValidateSharedAlphaChance(
@@ -1496,7 +1571,25 @@ internal sealed class ZaEncountersEditSessionService
             or ZaEncountersWorkflowService.LevelMinField
             or ZaEncountersWorkflowService.LevelMaxField
             or ZaEncountersWorkflowService.AlphaChancePercentField
-            or ZaEncountersWorkflowService.AlphaLevelBonusField;
+            or ZaEncountersWorkflowService.AlphaLevelBonusField
+            or ZaEncountersWorkflowService.HeldItemIdField
+            or ZaEncountersWorkflowService.AbilityField
+            or ZaEncountersWorkflowService.NatureField
+            or ZaEncountersWorkflowService.GenderField
+            or ZaEncountersWorkflowService.ShinyModeField
+            or ZaEncountersWorkflowService.Move1IdField
+            or ZaEncountersWorkflowService.Move2IdField
+            or ZaEncountersWorkflowService.Move3IdField
+            or ZaEncountersWorkflowService.Move4IdField
+            or ZaEncountersWorkflowService.FlawlessIvCountField
+            or ZaEncountersWorkflowService.IvHpField
+            or ZaEncountersWorkflowService.IvAttackField
+            or ZaEncountersWorkflowService.IvDefenseField
+            or ZaEncountersWorkflowService.IvSpecialAttackField
+            or ZaEncountersWorkflowService.IvSpecialDefenseField
+            or ZaEncountersWorkflowService.IvSpeedField
+            or ZaEncountersWorkflowService.VanillaTalentScaleField
+            or ZaEncountersWorkflowService.VanillaTalentVCountField;
     }
 
     private static bool AffectsSpawnerSlot(string? field)
@@ -2162,6 +2255,37 @@ internal sealed class ZaEncountersEditSessionService
                 },
             },
             ZaEncountersWorkflowService.AlphaLevelBonusField => slot with { AlphaLevelBonus = value },
+            ZaEncountersWorkflowService.HeldItemIdField => slot with { HeldItemId = value },
+            ZaEncountersWorkflowService.AbilityField => slot with { Ability = value },
+            ZaEncountersWorkflowService.NatureField => slot with { Nature = value },
+            ZaEncountersWorkflowService.GenderField => slot with { Gender = value },
+            ZaEncountersWorkflowService.ShinyModeField => slot with { ShinyMode = value },
+            ZaEncountersWorkflowService.Move1IdField => OverlayMove(slot, 0, value),
+            ZaEncountersWorkflowService.Move2IdField => OverlayMove(slot, 1, value),
+            ZaEncountersWorkflowService.Move3IdField => OverlayMove(slot, 2, value),
+            ZaEncountersWorkflowService.Move4IdField => OverlayMove(slot, 3, value),
+            ZaEncountersWorkflowService.FlawlessIvCountField => slot with
+            {
+                FlawlessIvCount = value,
+                IvHp = -1,
+                IvAttack = -1,
+                IvDefense = -1,
+                IvSpecialAttack = -1,
+                IvSpecialDefense = -1,
+                IvSpeed = -1,
+                TalentScale = value == 0
+                    ? ZaPokemonDataIvEncoding.GameDefaultRandomMode
+                    : ZaPokemonDataIvEncoding.FixedOrGuaranteedMode,
+                TalentVCount = value,
+            },
+            ZaEncountersWorkflowService.IvHpField => OverlayIv(slot, value, iv => slot with { IvHp = iv }),
+            ZaEncountersWorkflowService.IvAttackField => OverlayIv(slot, value, iv => slot with { IvAttack = iv }),
+            ZaEncountersWorkflowService.IvDefenseField => OverlayIv(slot, value, iv => slot with { IvDefense = iv }),
+            ZaEncountersWorkflowService.IvSpecialAttackField => OverlayIv(slot, value, iv => slot with { IvSpecialAttack = iv }),
+            ZaEncountersWorkflowService.IvSpecialDefenseField => OverlayIv(slot, value, iv => slot with { IvSpecialDefense = iv }),
+            ZaEncountersWorkflowService.IvSpeedField => OverlayIv(slot, value, iv => slot with { IvSpeed = iv }),
+            ZaEncountersWorkflowService.VanillaTalentScaleField => slot with { TalentScale = value },
+            ZaEncountersWorkflowService.VanillaTalentVCountField => slot with { TalentVCount = value },
             ZaEncountersWorkflowService.WeightField => slot with { Weight = value },
             ZaEncountersWorkflowService.SlotMaxCountField => slot with { SlotMaxCount = value },
             ZaEncountersWorkflowService.AppearanceMinCountField => slot with { AppearanceMinCount = value },
@@ -2179,6 +2303,38 @@ internal sealed class ZaEncountersEditSessionService
                     workflow.PokemonAvailability),
             }
             : updatedSlot;
+    }
+
+    private static ZaEncounterSlotRecord OverlayMove(
+        ZaEncounterSlotRecord slot,
+        int moveIndex,
+        int moveId)
+    {
+        var moves = (slot.MoveIds ?? [0, 0, 0, 0]).Take(4).ToArray();
+        if (moves.Length < 4)
+        {
+            Array.Resize(ref moves, 4);
+        }
+
+        moves[moveIndex] = moveId;
+        return slot with
+        {
+            MoveIds = moves,
+            HasExplicitMoves = moves.Any(move => move != ZaPokemonDataConstants.MoveAuto),
+        };
+    }
+
+    private static ZaEncounterSlotRecord OverlayIv(
+        ZaEncounterSlotRecord slot,
+        int value,
+        Func<int, ZaEncounterSlotRecord> update)
+    {
+        return update(value) with
+        {
+            FlawlessIvCount = null,
+            TalentScale = ZaPokemonDataIvEncoding.FixedOrGuaranteedMode,
+            TalentVCount = 0,
+        };
     }
 
     private static string ResolveSpeciesName(ZaEncountersWorkflow workflow, int speciesId)
@@ -2532,7 +2688,77 @@ internal sealed class ZaEncountersEditSessionService
             case ZaEncountersWorkflowService.AlphaLevelBonusField:
                 row.OyabunAdditionalLevel = value;
                 break;
+            case ZaEncountersWorkflowService.HeldItemIdField:
+                row.HoldItem = value == 0 ? null : value;
+                break;
+            case ZaEncountersWorkflowService.AbilityField:
+                row.Tokusei = value;
+                break;
+            case ZaEncountersWorkflowService.NatureField:
+                row.Seikaku = value;
+                break;
+            case ZaEncountersWorkflowService.GenderField:
+                row.Sex = value;
+                break;
+            case ZaEncountersWorkflowService.ShinyModeField:
+                row.Rare = value;
+                break;
+            case ZaEncountersWorkflowService.Move1IdField:
+                SetMove(row, 0, value);
+                break;
+            case ZaEncountersWorkflowService.Move2IdField:
+                SetMove(row, 1, value);
+                break;
+            case ZaEncountersWorkflowService.Move3IdField:
+                SetMove(row, 2, value);
+                break;
+            case ZaEncountersWorkflowService.Move4IdField:
+                SetMove(row, 3, value);
+                break;
+            case ZaEncountersWorkflowService.FlawlessIvCountField:
+                ZaPokemonDataIvEncoding.SetPreset(row, value);
+                break;
+            case ZaEncountersWorkflowService.IvHpField:
+                SetIv(row, ivs => ivs with { HP = value });
+                break;
+            case ZaEncountersWorkflowService.IvAttackField:
+                SetIv(row, ivs => ivs with { Attack = value });
+                break;
+            case ZaEncountersWorkflowService.IvDefenseField:
+                SetIv(row, ivs => ivs with { Defense = value });
+                break;
+            case ZaEncountersWorkflowService.IvSpecialAttackField:
+                SetIv(row, ivs => ivs with { SpecialAttack = value });
+                break;
+            case ZaEncountersWorkflowService.IvSpecialDefenseField:
+                SetIv(row, ivs => ivs with { SpecialDefense = value });
+                break;
+            case ZaEncountersWorkflowService.IvSpeedField:
+                SetIv(row, ivs => ivs with { Speed = value });
+                break;
+            case ZaEncountersWorkflowService.VanillaTalentScaleField:
+                row.TalentScale = value;
+                break;
+            case ZaEncountersWorkflowService.VanillaTalentVCountField:
+                row.TalentVNum = value;
+                break;
         }
+    }
+
+    private static void SetMove(ZaPokemonDataEntry row, int moveIndex, int moveId)
+    {
+        var moves = (row.WazaList ?? new ZaPokemonDataMovesRecord(0, 0, 0, 0))
+            .SetMove(moveIndex, moveId);
+        row.WazaList = moves.Values.All(move => move == ZaPokemonDataConstants.MoveAuto)
+            ? null
+            : moves;
+    }
+
+    private static void SetIv(
+        ZaPokemonDataEntry row,
+        Func<ZaPokemonDataStatsRecord, ZaPokemonDataStatsRecord> update)
+    {
+        ZaPokemonDataIvEncoding.SetFixedIvs(row, update);
     }
 
     private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)
@@ -2542,7 +2768,7 @@ internal sealed class ZaEncountersEditSessionService
             $"Encounter field '{field}' is not supported by Pokemon Legends Z-A Wild Encounters yet.",
             ZaEditSessionSupport.EncountersDomain,
             field: "field",
-            expected: "speciesId, form, levelMin, levelMax, alphaChancePercent, alphaLevelBonus, weight, slotMaxCount, appearanceMinCount, or appearanceMaxCount");
+            expected: "A supported shared Pokemon, spawner slot, or spawner population field");
     }
 
     private static ValidationDiagnostic CreateVanillaRestoreDiagnostic(
