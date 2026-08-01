@@ -229,6 +229,10 @@ internal sealed class ZaItemsWorkflowService
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+            var baseItems = ReadBaseItems(
+                fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
+            var compatibilityCounts = ReadTechnicalMachineCompatibilityCounts(
+                fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes);
             DetectMachineWazaLayout(source, diagnostics);
             var mintNatureRecovery = DetectMintNatureRecovery(project, source, diagnostics);
             var technicalMachineRecovery = DetectTechnicalMachineLegacyRecovery(project, source, diagnostics);
@@ -236,7 +240,9 @@ internal sealed class ZaItemsWorkflowService
                     source,
                     labels,
                     mintNatureRecovery.ItemIds,
-                    technicalMachineRecovery)
+                    technicalMachineRecovery,
+                    baseItems,
+                    compatibilityCounts)
                 .ToArray();
             var inconsistentMachineCount = items.Count(item =>
                 IsTechnicalMachineRecord(item)
@@ -306,6 +312,39 @@ internal sealed class ZaItemsWorkflowService
             CreateEditableFields(labels, items),
             new ZaItemsWorkflowStats(items.Length, source is null ? 0 : 1),
             diagnostics);
+    }
+
+    internal ZaItemRecord LoadVerifiedBaseItem(OpenedProject project, int itemId)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var diagnostics = new List<ValidationDiagnostic>();
+        var labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
+        var source = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
+        var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
+        var matches = Enumerable.Range(0, table.ValuesLength)
+            .Select(index => table.Values(index))
+            .Where(item => item is not null && item.Value.Id == itemId)
+            .Select(item => item!.Value)
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidDataException(
+                $"Verified vanilla item data contains {matches.Length} rows for item {itemId}; exactly one is required.");
+        }
+
+        var baseItems = ReadBaseItems(source.Bytes);
+        var compatibilityCounts = ReadTechnicalMachineCompatibilityCounts(
+            fileSource.ReadBase(project, ZaDataPaths.PersonalArray).Bytes);
+        var item = matches[0];
+        return ToRecord(
+            item,
+            labels,
+            source,
+            item.MintNature,
+            iconNameOverride: null,
+            baseItems.GetValueOrDefault(itemId),
+            compatibilityCounts.GetValueOrDefault(item.MachineWaza));
     }
 
     internal static string FormatItemType(int value) => FormatIndexed(value, ItemTypeNames, "Item type");
@@ -478,11 +517,52 @@ internal sealed class ZaItemsWorkflowService
         }
     }
 
+    private static IReadOnlyDictionary<int, BaseItemRecord> ReadBaseItems(
+        byte[] bytes)
+    {
+        var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
+        var items = new Dictionary<int, BaseItemRecord>();
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            if (table.Values(index) is { } item)
+            {
+                items[item.Id] = new BaseItemRecord(
+                    ZaTechnicalMachineCatalog.IsTechnicalMachine(item),
+                    item.MachineWaza,
+                    item.IconName ?? string.Empty);
+            }
+        }
+
+        return items;
+    }
+
+    private static IReadOnlyDictionary<int, int> ReadTechnicalMachineCompatibilityCounts(byte[] bytes)
+    {
+        var table = ZaPersonalTable.GetRootAsZaPersonalTable(new ByteBuffer(bytes));
+        var counts = new Dictionary<int, int>();
+        for (var index = 0; index < table.EntryLength; index++)
+        {
+            if (table.Entry(index) is not { } row)
+            {
+                continue;
+            }
+
+            foreach (var moveId in row.GetTmMovesArray().Distinct())
+            {
+                counts[moveId] = counts.GetValueOrDefault(moveId) + 1;
+            }
+        }
+
+        return counts;
+    }
+
     private static IEnumerable<ZaItemRecord> LoadRecords(
         ZaWorkflowFile source,
         ZaTextLabelLookup labels,
         IReadOnlySet<int> recoveredMintNatureItemIds,
-        ZaTechnicalMachineLegacyRecovery technicalMachineRecovery)
+        ZaTechnicalMachineLegacyRecovery technicalMachineRecovery,
+        IReadOnlyDictionary<int, BaseItemRecord> baseItems,
+        IReadOnlyDictionary<int, int> compatibilityCounts)
     {
         var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(source.Bytes));
         var iconRepairs = technicalMachineRecovery.IconRepairs.ToDictionary(
@@ -503,7 +583,9 @@ internal sealed class ZaItemsWorkflowService
                 labels,
                 source,
                 recoveredMintNatureItemIds.Contains(item.Value.Id) ? -1 : item.Value.MintNature,
-                iconRepairs.GetValueOrDefault(item.Value.Id));
+                iconRepairs.GetValueOrDefault(item.Value.Id),
+                baseItems.GetValueOrDefault(item.Value.Id),
+                compatibilityCounts.GetValueOrDefault(item.Value.MachineWaza));
             yield return technicalMachineRecovery.RepairItemId == item.Value.Id
                 ? WithTechnicalMachineNumber(
                     record,
@@ -517,7 +599,9 @@ internal sealed class ZaItemsWorkflowService
         ZaTextLabelLookup labels,
         ZaWorkflowFile source,
         int mintNature,
-        string? iconNameOverride)
+        string? iconNameOverride,
+        BaseItemRecord? baseItem,
+        int compatiblePokemonCount)
     {
         var machineMoveId = item.MachineWaza;
         var machineMoveName = machineMoveId > 0 ? labels.Move(machineMoveId) : null;
@@ -559,8 +643,16 @@ internal sealed class ZaItemsWorkflowService
             item.WorkFriendly3,
             MachineSlot: machineSlot,
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
-            MachineMoveName: machineMoveName);
+            MachineMoveName: machineMoveName)
+        {
+            BaseMachineMoveId = baseItem?.IsTechnicalMachine == true ? baseItem.MoveId : null,
+            BaseMachineMoveName = baseItem?.IsTechnicalMachine == true ? labels.Move(baseItem.MoveId) : null,
+            MachineAssignmentDiffersFromBase = baseItem?.IsTechnicalMachine == true
+                && machineMoveId != baseItem.MoveId,
+            CompatiblePokemonCount = compatiblePokemonCount,
+        };
 
+        var canRevertToVanilla = baseItem is not null;
         return new ZaItemRecord(
             item.Id,
             itemName,
@@ -573,7 +665,13 @@ internal sealed class ZaItemsWorkflowService
             metadata,
             SharedItemIds: [],
             CreateDetailGroups(item, labels, mintNature, iconNameOverride),
-            new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new ZaItemProvenance(source.RelativePath, source.SourceLayer, source.FileState))
+        {
+            CanRevertToVanilla = canRevertToVanilla,
+            RevertToVanillaBlockedReason = canRevertToVanilla
+                ? null
+                : "This item does not have an exact matching record in the verified vanilla item table.",
+        };
     }
 
     private static ZaItemRecord WithTechnicalMachineNumber(
@@ -844,6 +942,11 @@ internal sealed class ZaItemsWorkflowService
         item.Metadata.Pouch == 6
         && item.Metadata.ItemType == 5
         && item.Metadata.MachineMoveId is > 0;
+
+    private sealed record BaseItemRecord(
+        bool IsTechnicalMachine,
+        ushort MoveId,
+        string IconName);
 
     private static string FormatMachineNumberIssue(
         string label,

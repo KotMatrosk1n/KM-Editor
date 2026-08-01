@@ -278,9 +278,13 @@ import {
   formatMoveHitRange,
   formatMoveInflictedEffectTurns,
   formatMoveRecoilValue,
+  formatMoveRuntimeVariantLabel,
   getEditableMoveFieldValue,
   getMoveEditableFieldGroup,
-  getMoveEditableFieldLabel
+  getMoveEditableFieldLabel,
+  getMoveRelationalValidationIssues,
+  isMoveProjectileField,
+  parseMoveTimingField
 } from './movesEditor';
 import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, resolveWorkflowDataSection, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
@@ -7261,6 +7265,61 @@ export function App({
     }
   };
 
+  const handleStageItemVanilla = async (itemId: number) => {
+    setIsItemUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    const originalEditSessionSection = editSessionSection;
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const originalSession = session;
+          const originalWorkflow = itemsWorkflow;
+          const updateResponse = await bridge.stageItemVanilla({
+            itemId,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          const successfulSession =
+            updateResponse.session.pendingEdits.length > 0 ? updateResponse.session : null;
+          const successfulSessionSection =
+            successfulSession?.pendingEdits.some((edit) => edit.domain === 'workflow.items') === true
+              ? 'items'
+              : originalEditSessionSection;
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? successfulSession : originalSession,
+            sessionSection: didSucceed
+              ? successfulSession === null
+                ? null
+                : successfulSessionSection
+              : originalEditSessionSection,
+            workflow: didSucceed ? updateResponse.workflow : originalWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setItemsWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.sessionSection);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response?.didSucceed === true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsItemUpdating(false);
+    }
+  };
+
   const handleUpdatePokemonField = async (personalId: number, field: string, value: string) => {
     setIsPokemonUpdating(true);
     setBridgeDiagnostics([]);
@@ -7766,6 +7825,61 @@ export function App({
         }
       );
       return response?.shouldClearDrafts ?? false;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsMoveUpdating(false);
+    }
+  };
+
+  const handleStageMoveVanilla = async (moveId: number) => {
+    setIsMoveUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    const originalEditSessionSection = editSessionSection;
+
+    try {
+      const response = await runEditSessionMutation(
+        async (session) => {
+          const originalSession = session;
+          const originalWorkflow = movesWorkflow;
+          const updateResponse = await bridge.stageMoveVanilla({
+            moveId,
+            paths: createProjectPaths(draftPaths),
+            session
+          });
+          const didSucceed = !updateResponse.diagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error'
+          );
+          const successfulSession =
+            updateResponse.session.pendingEdits.length > 0 ? updateResponse.session : null;
+          const successfulSessionSection =
+            successfulSession?.pendingEdits.some((edit) => edit.domain === 'workflow.moves') === true
+              ? 'moves'
+              : originalEditSessionSection;
+
+          return {
+            ...updateResponse,
+            didSucceed,
+            session: didSucceed ? successfulSession : originalSession,
+            sessionSection: didSucceed
+              ? successfulSession === null
+                ? null
+                : successfulSessionSection
+              : originalEditSessionSection,
+            workflow: didSucceed ? updateResponse.workflow : originalWorkflow
+          };
+        },
+        (updateResponse) => {
+          if (updateResponse.didSucceed && updateResponse.workflow) {
+            setMovesWorkflow(updateResponse.workflow);
+            setEditSessionSection(updateResponse.sessionSection);
+          }
+          setEditValidationDiagnostics(updateResponse.diagnostics);
+        }
+      );
+      return response?.didSucceed === true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
       return false;
@@ -10755,6 +10869,7 @@ export function App({
                 onSearchChange={setItemSearchText}
                 onSelectItem={setSelectedItemId}
                 onStartEditSession={handleStartEditSession}
+                onStageItemVanilla={handleStageItemVanilla}
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
                 selectedItemId={selectedItemId}
@@ -10885,6 +11000,9 @@ export function App({
                 onSearchChange={setMovesSearchText}
                 onSelectMove={setSelectedMoveId}
                 onStartEditSession={handleStartEditSession}
+                onStageMoveVanilla={
+                  isPokemonLegendsZAProject ? handleStageMoveVanilla : undefined
+                }
                 onUpdateMoveFields={handleUpdateMoveFields}
                 searchText={movesSearchText}
                 selectedMoveId={selectedMoveId}
@@ -12432,6 +12550,7 @@ type ItemsSectionProps = {
   onSearchChange: (searchText: string) => void;
   onSelectItem: (itemId: number | null) => void;
   onStartEditSession: () => void;
+  onStageItemVanilla?: (itemId: number) => Promise<boolean>;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
@@ -12463,6 +12582,7 @@ function ItemsSection({
   onSearchChange,
   onSelectItem,
   onStartEditSession,
+  onStageItemVanilla,
   onUpdateItemFields,
   searchText,
   selectedItemId,
@@ -12638,6 +12758,7 @@ function ItemsSection({
               item={selectedItem}
               editableFields={workflow.editableFields}
               onStartEditSession={onStartEditSession}
+              onStageItemVanilla={onStageItemVanilla}
               onUpdateItemFields={onUpdateItemFields}
             />
           </div>
@@ -12671,6 +12792,7 @@ function SelectedItemPanel({
   isItemUpdating,
   item,
   onStartEditSession,
+  onStageItemVanilla,
   onUpdateItemFields
 }: {
   canEditItems: boolean;
@@ -12681,11 +12803,13 @@ function SelectedItemPanel({
   isItemUpdating: boolean;
   item: ItemRecord | null;
   onStartEditSession: () => void;
+  onStageItemVanilla?: (itemId: number) => Promise<boolean>;
   onUpdateItemFields: (
     itemId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
+  const { t } = useLocalization();
   const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -12740,6 +12864,20 @@ function SelectedItemPanel({
     !isItemUpdating &&
     itemDraftSummary.changedFields.length > 0 &&
     itemDraftSummary.invalidFields.length === 0;
+  const hasSelectedItemLocalDrafts =
+    itemDraftKey !== null && fieldDraftsByItemId[itemDraftKey] !== undefined;
+  const itemRevertMessage = hasSelectedItemLocalDrafts
+    ? 'Finish or discard the selected item drafts before reverting to vanilla.'
+    : item?.revertToVanillaBlockedReason ??
+      'Stages every verified base value for the selected item. Other items are preserved.';
+  const canRevertSelectedItem =
+    item !== null &&
+    onStageItemVanilla !== undefined &&
+    item.canRevertToVanilla &&
+    canEditItems &&
+    !hasSelectedItemLocalDrafts &&
+    !isEditStarting &&
+    !isItemUpdating;
 
   useEffect(() => {
     if (!item) {
@@ -12786,6 +12924,26 @@ function SelectedItemPanel({
               <dt>Shared row</dt>
               <dd>{formatSharedItemIds(item)}</dd>
             </div>
+            {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
+              <>
+                <div>
+                  <dt>Current TM move</dt>
+                  <dd>{item.metadata.machineMoveName ?? item.metadata.machineMoveId}</dd>
+                </div>
+                <div>
+                  <dt>Verified base move</dt>
+                  <dd>
+                    {item.metadata.baseMachineMoveName ??
+                      item.metadata.baseMachineMoveId ??
+                      'Unavailable'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Compatible Pokemon rows</dt>
+                  <dd>{item.metadata.compatiblePokemonCount}</dd>
+                </div>
+              </>
+            ) : null}
           </dl>
 
           <div className="item-edit-form">
@@ -12856,6 +13014,12 @@ function SelectedItemPanel({
             )}
 
             <div className="editable-field-groups">
+              {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
+                <p className="field-note">
+                  Changing a TM move migrates compatible Pokemon rows and synchronizes the disc icon in the same
+                  reviewed output.
+                </p>
+              ) : null}
               {itemFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
                   <legend>{group.group}</legend>
@@ -12911,6 +13075,41 @@ function SelectedItemPanel({
                 </fieldset>
               ))}
             </div>
+            {onStageItemVanilla ? (
+              <div className="za-encounter-revert-action">
+                <button
+                  aria-busy={isItemUpdating || undefined}
+                  className="danger-button"
+                  disabled={!canRevertSelectedItem}
+                  onClick={async () => {
+                    const didRestore = await onStageItemVanilla(item.itemId);
+                    if (didRestore) {
+                      setFieldDraftsByItemId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, getItemStorageDraftKey(item))
+                      );
+                    }
+                  }}
+                  title={itemRevertMessage}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={t('za.encounters.reverting')}
+                    icon={<RotateCcw aria-hidden="true" size={16} />}
+                    isBusy={isItemUpdating}
+                    label={t('za.encounters.revertToVanilla')}
+                  />
+                </button>
+                <small
+                  className={
+                    hasSelectedItemLocalDrafts
+                      ? 'editable-field-error'
+                      : 'editable-field-status'
+                  }
+                >
+                  {itemRevertMessage}
+                </small>
+              </div>
+            ) : null}
           </div>
 
           {item.detailGroups.map((group) => (
@@ -15291,6 +15490,7 @@ function MovesSection({
   onSearchChange,
   onSelectMove,
   onStartEditSession,
+  onStageMoveVanilla,
   onUpdateMoveFields,
   searchText,
   selectedMoveId,
@@ -15303,6 +15503,7 @@ function MovesSection({
   onSearchChange: (searchText: string) => void;
   onSelectMove: (moveId: number | null) => void;
   onStartEditSession: () => void;
+  onStageMoveVanilla?: (moveId: number) => Promise<boolean>;
   onUpdateMoveFields: (
     moveId: number,
     changes: Array<{ field: string; value: string }>
@@ -15323,6 +15524,7 @@ function MovesSection({
   );
   const canEditMoves = workflow?.summary.availability === 'available';
   const pendingMoveIds = useMemo(() => getPendingMoveIds(editSession), [editSession]);
+  const usesRuntimeMoveData = moves.some((move) => move.hasRuntimeData);
 
   return (
     <>
@@ -15374,8 +15576,8 @@ function MovesSection({
                 <span role="columnheader">Category</span>
                 <span role="columnheader">Power</span>
                 <span role="columnheader">Acc</span>
-                <span role="columnheader">PP</span>
-                <span role="columnheader">Flags</span>
+                <span role="columnheader">{usesRuntimeMoveData ? 'Cooldown' : 'PP'}</span>
+                <span role="columnheader">{usesRuntimeMoveData ? 'Variants' : 'Flags'}</span>
               </div>
               <VirtualTableBody
                 getKey={(move) => move.moveId}
@@ -15397,8 +15599,12 @@ function MovesSection({
                     <span role="cell">{move.categoryName}</span>
                     <span role="cell">{formatMovePower(move.power)}</span>
                     <span role="cell">{translateLiteral(formatMoveAccuracy(move.accuracy))}</span>
-                    <span role="cell">{move.pp}</span>
-                    <span role="cell">{formatMoveActiveFlags(move)}</span>
+                    <span role="cell">
+                      {move.hasRuntimeData ? `${move.timing?.cooldown ?? '-'}s` : move.pp}
+                    </span>
+                    <span role="cell">
+                      {move.hasRuntimeData ? move.runtimeVariants.length : formatMoveActiveFlags(move)}
+                    </span>
                   </button>
                 )}
               />
@@ -15417,7 +15623,9 @@ function MovesSection({
               isMoveUpdating={isMoveUpdating}
               move={selectedMove}
               onStartEditSession={onStartEditSession}
+              onStageMoveVanilla={onStageMoveVanilla}
               onUpdateMoveFields={onUpdateMoveFields}
+              projectileOptions={workflow.projectileOptions}
             />
           </div>
         ) : (
@@ -15439,7 +15647,9 @@ function SelectedMovePanel({
   isMoveUpdating,
   move,
   onStartEditSession,
-  onUpdateMoveFields
+  onStageMoveVanilla,
+  onUpdateMoveFields,
+  projectileOptions
 }: {
   baselineValues: Record<string, number | null> | null;
   canEditMoves: boolean;
@@ -15449,19 +15659,91 @@ function SelectedMovePanel({
   isMoveUpdating: boolean;
   move: MoveRecord | null;
   onStartEditSession: () => void;
+  onStageMoveVanilla?: (moveId: number) => Promise<boolean>;
   onUpdateMoveFields: (
     moveId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  projectileOptions: Array<{ label: string; value: number }>;
 }) {
   const [moveDraftsByMoveId, setMoveDraftsByMoveId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [runtimeVariantByMoveId, setRuntimeVariantByMoveId] = useState<Record<string, number>>({});
+  const [timingOccurrenceByMoveId, setTimingOccurrenceByMoveId] = useState<Record<string, number>>({});
   const cancelActiveEditSession = useCancelActiveEditSession();
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
+  const runtimeVariantOptions = useMemo(
+    () =>
+      move
+        ? Array.from(
+            new Map(move.runtimeVariants.map((variant) => [variant.variant, variant])).values()
+          )
+        : [],
+    [move]
+  );
+  const timingRowOptions = useMemo(
+    () =>
+      move
+        ? Array.from(
+            new Map(move.timingRows.map((timing) => [timing.occurrence, timing])).values()
+          )
+        : [],
+    [move]
+  );
+  const requestedRuntimeVariant = move
+    ? runtimeVariantByMoveId[move.moveId.toString()]
+    : undefined;
+  const selectedRuntimeVariant =
+    requestedRuntimeVariant !== undefined &&
+    runtimeVariantOptions.some((variant) => variant.variant === requestedRuntimeVariant)
+      ? requestedRuntimeVariant
+      : runtimeVariantOptions[0]?.variant ?? 0;
+  const requestedTimingOccurrence = move
+    ? timingOccurrenceByMoveId[move.moveId.toString()]
+    : undefined;
+  const selectedTimingOccurrence =
+    requestedTimingOccurrence !== undefined &&
+    timingRowOptions.some((timing) => timing.occurrence === requestedTimingOccurrence)
+      ? requestedTimingOccurrence
+      : timingRowOptions[0]?.occurrence ?? 0;
   const moveFields = useMemo(
-    () => editableFields.map((field) => toNumericEditableField(field)),
-    [editableFields]
+    () =>
+      editableFields
+        .map((field) => toNumericEditableField(field))
+        .map((field) =>
+          isMoveProjectileField(field.field) && projectileOptions.length > 0
+            ? { ...field, options: projectileOptions }
+            : field
+        )
+        .filter(
+          (field) => {
+            if (!move || getEditableMoveFieldValue(move, field.field) === null) {
+              return move === null;
+            }
+
+            if (
+              field.field.startsWith('battle.') &&
+              !field.field.startsWith(`battle.${selectedRuntimeVariant}.`)
+            ) {
+              return false;
+            }
+
+            const timingField = parseMoveTimingField(field.field);
+            return (
+              timingField === null ||
+              timingField.occurrence === null ||
+              timingField.occurrence === selectedTimingOccurrence
+            );
+          }
+        ),
+    [
+      editableFields,
+      move,
+      projectileOptions,
+      selectedRuntimeVariant,
+      selectedTimingOccurrence
+    ]
   );
   const moveFieldGroups = useMemo(
     () =>
@@ -15477,7 +15759,15 @@ function SelectedMovePanel({
         : {},
     [move, moveFields]
   );
-  const moveDrafts = move ? moveDraftsByMoveId[move.moveId.toString()] ?? moveDraftDefaults : {};
+  const moveDraftStorageKey = move
+    ? move.moveId.toString()
+    : null;
+  const moveDrafts = moveDraftStorageKey
+    ? {
+        ...moveDraftDefaults,
+        ...(moveDraftsByMoveId[moveDraftStorageKey] ?? {})
+      }
+    : {};
   const moveDraftContext = useMemo<DraftStateContext | undefined>(
     () =>
       move
@@ -15500,7 +15790,50 @@ function SelectedMovePanel({
       ),
     [baselineValues, move, moveDrafts, moveFields]
   );
+  const moveRelationalValidationIssues = useMemo(
+    () =>
+      move
+        ? getMoveRelationalValidationIssues(move, moveFields, moveDrafts)
+        : [],
+    [move, moveDrafts, moveFields]
+  );
+  const moveDecimalValidationIssues = useMemo(
+    () =>
+      moveFields.flatMap((field) => {
+        if (field.valueKind !== 'number') {
+          return [];
+        }
+
+        const normalizedValue = (moveDrafts[field.field] ?? '').trim();
+        if (normalizedValue.length === 0) {
+          return [{ field: field.field, message: 'Enter a value.' }];
+        }
+
+        if (field.options.length === 0) {
+          return [];
+        }
+
+        const parsedValue = Number(normalizedValue);
+        const currentValue = move ? getEditableMoveFieldValue(move, field.field) : null;
+        if (
+          !Number.isFinite(parsedValue) ||
+          parsedValue === currentValue ||
+          parsedValue === baselineValues?.[field.field] ||
+          field.options.some(
+            (option) => Math.abs(option.value - parsedValue) <= Number.EPSILON
+          )
+        ) {
+          return [];
+        }
+
+        return [{ field: field.field, message: 'Choose one of the available options.' }];
+      }),
+    [baselineValues, move, moveDrafts, moveFields]
+  );
   useRegisterEditorDraftDirty('moves', countFieldDraftRecords(moveDraftsByMoveId) > 0);
+  const hasCurrentMoveDrafts = move
+    ? Object.prototype.hasOwnProperty.call(moveDraftsByMoveId, move.moveId.toString())
+    : false;
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const qualityField = moveFields.find((field) => field.field === 'quality');
   const mappedQualityLabel = move
@@ -15518,17 +15851,21 @@ function SelectedMovePanel({
     canEditMoves &&
     !isMoveUpdating &&
     moveDraftSummary.changedFields.length > 0 &&
-    moveDraftSummary.invalidFields.length === 0;
-
-  useEffect(() => {
-    if (!move) {
-      return;
-    }
-
-    setMoveDraftsByMoveId((currentDrafts) =>
-      pruneFieldDraftRecord(currentDrafts, move.moveId, moveDraftDefaults)
-    );
-  }, [move, moveDraftDefaults]);
+    moveDraftSummary.invalidFields.length === 0 &&
+    moveRelationalValidationIssues.length === 0 &&
+    moveDecimalValidationIssues.length === 0;
+  const moveRevertMessage = hasCurrentMoveDrafts
+    ? 'Finish or discard the selected move drafts before reverting to vanilla.'
+    : move?.revertToVanillaBlockedReason ??
+      'Stages every verified base value for the selected move across all runtime variants and timing data. Other moves are preserved.';
+  const canRevertSelectedMove =
+    move !== null &&
+    onStageMoveVanilla !== undefined &&
+    move.canRevertToVanilla &&
+    canEditMoves &&
+    !hasCurrentMoveDrafts &&
+    !isEditStarting &&
+    !isMoveUpdating;
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
@@ -15595,6 +15932,62 @@ function SelectedMovePanel({
             ) : null}
 
             <div className="editable-field-groups">
+              {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
+                <fieldset className="editable-field-group">
+                  <legend>Runtime Variant</legend>
+                  <label className="path-field editable-field-control">
+                    <span>Variant</span>
+                    <select
+                      disabled={isMoveUpdating}
+                      onChange={(event) =>
+                        setRuntimeVariantByMoveId((current) => ({
+                          ...current,
+                          [move.moveId.toString()]: Number(event.target.value)
+                        }))
+                      }
+                      value={selectedRuntimeVariant}
+                    >
+                      {runtimeVariantOptions.map((variant) => (
+                        <option key={variant.variant} value={variant.variant}>
+                          {formatMoveRuntimeVariantLabel(variant.variant)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="field-note">
+                    Normal, Plus, and Boss Moves use separate runtime battle rows. Boss Moves are used
+                    by Rogue Mega and equivalent scripted boss attacks. Unknown variants remain numbered.
+                  </p>
+                </fieldset>
+              ) : null}
+              {move.hasRuntimeData && timingRowOptions.length > 1 ? (
+                <fieldset className="editable-field-group">
+                  <legend>Timing Row</legend>
+                  <label className="path-field editable-field-control">
+                    <span>Occurrence</span>
+                    <select
+                      disabled={isMoveUpdating}
+                      onChange={(event) =>
+                        setTimingOccurrenceByMoveId((current) => ({
+                          ...current,
+                          [move.moveId.toString()]: Number(event.target.value)
+                        }))
+                      }
+                      value={selectedTimingOccurrence}
+                    >
+                      {timingRowOptions.map((timing, index) => (
+                        <option key={timing.occurrence} value={timing.occurrence}>
+                          Timing row {index + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="field-note">
+                    Each occurrence has independent advanced timing data. Accuracy and cooldown are
+                    shared by all timing rows for this move.
+                  </p>
+                </fieldset>
+              ) : null}
               <fieldset className="editable-field-group">
                 <legend>Read-only</legend>
                 <div className="editable-field-grid">
@@ -15608,18 +16001,31 @@ function SelectedMovePanel({
                   </label>
                 </div>
               </fieldset>
-              {moveFieldGroups.map((group) => {
-                const isFlagsGroup = group.group === 'Flags';
+              {moveFieldGroups.map((group, groupIndex) => {
+                const isFlagsGroup = group.group.endsWith('Flags');
+                const isAdvancedGroup = group.group.startsWith('Advanced ');
+                const isFirstAdvancedGroup =
+                  isAdvancedGroup &&
+                  !moveFieldGroups
+                    .slice(0, groupIndex)
+                    .some((candidate) => candidate.group.startsWith('Advanced '));
                 return (
-                  <fieldset
-                    className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}`}
-                    key={group.group}
-                  >
-                    <legend>{translateLiteral(group.group)}</legend>
-                    <div
-                      className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}`}
+                  <Fragment key={group.group}>
+                    {isFirstAdvancedGroup ? (
+                      <p className="field-note move-advanced-editor-note">
+                        Advanced fields directly control runtime animation, motion, targeting, and
+                        projectile behavior. Values are bounded to verified game data; paired
+                        minimum, maximum, and projectile replacement fields are validated together.
+                      </p>
+                    ) : null}
+                    <fieldset
+                      className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}`}
                     >
-                      {group.fields.map((field) => {
+                      <legend>{translateLiteral(group.group)}</legend>
+                      <div
+                        className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}`}
+                      >
+                        {group.fields.map((field) => {
                         const currentValue = getEditableMoveFieldValue(move, field.field);
                         const draftValue = moveDrafts[field.field] ?? '';
                         const draftState = getTrainerFieldDraftState(
@@ -15628,36 +16034,58 @@ function SelectedMovePanel({
                           field,
                           moveDraftContext
                         );
+                        const relationalIssue = moveRelationalValidationIssues.find((issue) =>
+                          issue.fields.includes(field.field)
+                        );
+                        const decimalOptionIssue = moveDecimalValidationIssues.find(
+                          (issue) => issue.field === field.field
+                        )?.message ?? null;
+                        const effectiveDraftState = decimalOptionIssue || relationalIssue
+                          ? {
+                              ...draftState,
+                              error: decimalOptionIssue ?? relationalIssue?.message ?? null,
+                              isValid: false
+                            }
+                          : draftState;
 
                         return (
                           <GiftPokemonDraftField
                             currentValue={currentValue}
                             disabled={!canEditMoves || editSession === null || isMoveUpdating}
-                            draftState={draftState}
+                            draftState={effectiveDraftState}
                             draftValue={draftValue}
                             field={field}
                             idPrefix="move-field"
                             key={field.field}
                             onChange={(value) => {
-                              const nextDrafts = {
-                                ...moveDrafts,
-                                [field.field]: value
-                              };
-                              setMoveDraftsByMoveId((currentDrafts) =>
-                                setFieldDraftRecord(
-                                  currentDrafts,
-                                  move.moveId,
-                                  nextDrafts,
-                                  moveDraftDefaults
-                                )
-                              );
+                              setMoveDraftsByMoveId((currentDrafts) => {
+                                const recordKey = move.moveId.toString();
+                                const nextSparseDrafts = {
+                                  ...(currentDrafts[recordKey] ?? {})
+                                };
+                                const defaultValue = (currentValue ?? '').toString();
+                                if (value === defaultValue) {
+                                  delete nextSparseDrafts[field.field];
+                                } else {
+                                  nextSparseDrafts[field.field] = value;
+                                }
+
+                                const nextRecords = { ...currentDrafts };
+                                if (Object.keys(nextSparseDrafts).length === 0) {
+                                  delete nextRecords[recordKey];
+                                } else {
+                                  nextRecords[recordKey] = nextSparseDrafts;
+                                }
+                                return nextRecords;
+                              });
                             }}
                             preservedValue={baselineValues?.[field.field] ?? null}
                           />
                         );
-                      })}
-                    </div>
-                  </fieldset>
+                        })}
+                      </div>
+                    </fieldset>
+                  </Fragment>
                 );
               })}
             </div>
@@ -15669,6 +16097,9 @@ function SelectedMovePanel({
                   className="primary-button"
                   disabled={!canSaveMoveDrafts}
                   onClick={async () => {
+                    const stagedFields = moveDraftSummary.changedFields.map(
+                      (change) => change.field
+                    );
                     const didSave = await onUpdateMoveFields(
                       move.moveId,
                       moveDraftSummary.changedFields.map((change) => ({
@@ -15677,9 +16108,23 @@ function SelectedMovePanel({
                       }))
                     );
                     if (didSave) {
-                      setMoveDraftsByMoveId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, move.moveId)
-                      );
+                      setMoveDraftsByMoveId((currentDrafts) => {
+                        const recordKey = move.moveId.toString();
+                        const nextSparseDrafts = {
+                          ...(currentDrafts[recordKey] ?? {})
+                        };
+                        for (const field of stagedFields) {
+                          delete nextSparseDrafts[field];
+                        }
+
+                        const nextRecords = { ...currentDrafts };
+                        if (Object.keys(nextSparseDrafts).length === 0) {
+                          delete nextRecords[recordKey];
+                        } else {
+                          nextRecords[recordKey] = nextSparseDrafts;
+                        }
+                        return nextRecords;
+                      });
                     }
                   }}
                   type="button"
@@ -15707,8 +16152,45 @@ function SelectedMovePanel({
                 <span className="draft-action-summary">{formatDraftSummary(moveDraftSummary)}</span>
               </div>
             ) : null}
+            {onStageMoveVanilla ? (
+              <div className="za-encounter-revert-action">
+                <button
+                  aria-busy={isMoveUpdating || undefined}
+                  className="danger-button"
+                  disabled={!canRevertSelectedMove}
+                  onClick={async () => {
+                    const didRestore = await onStageMoveVanilla(move.moveId);
+                    if (didRestore) {
+                      setMoveDraftsByMoveId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, move.moveId)
+                      );
+                    }
+                  }}
+                  title={moveRevertMessage}
+                  type="button"
+                >
+                  <BusyActionContent
+                    busyLabel={t('za.encounters.reverting')}
+                    icon={<RotateCcw aria-hidden="true" size={16} />}
+                    isBusy={isMoveUpdating}
+                    label={t('za.encounters.revertToVanilla')}
+                  />
+                </button>
+                <small
+                  className={
+                    hasCurrentMoveDrafts
+                      ? 'editable-field-error'
+                      : 'editable-field-status'
+                  }
+                >
+                  {moveRevertMessage}
+                </small>
+              </div>
+            ) : null}
           </div>
 
+          {!move.hasRuntimeData ? (
+            <>
           <div className="inspector-block">
             <h4>Core Stats</h4>
             <dl className="item-provenance-list compact-dl">
@@ -15721,8 +16203,8 @@ function SelectedMovePanel({
                 <dd>{translateLiteral(formatMoveAccuracy(move.accuracy))}</dd>
               </div>
               <div>
-                <dt>PP</dt>
-                <dd>{move.pp}</dd>
+                <dt>{move.hasRuntimeData ? 'Cooldown' : 'PP'}</dt>
+                <dd>{move.hasRuntimeData ? `${move.timing?.cooldown ?? '-'}s` : move.pp}</dd>
               </div>
               <div>
                 <dt>Priority</dt>
@@ -15843,6 +16325,8 @@ function SelectedMovePanel({
               <p className="empty-copy">No active flags.</p>
             )}
           </div>
+            </>
+          ) : null}
         </>
       ) : (
         <p className="empty-copy">No move selected.</p>
@@ -20105,6 +20589,13 @@ function getItemEditableFieldGroup(field: ItemEditableField) {
   const fieldName = field.field.toLocaleLowerCase();
 
   if (
+    field.field === itemMachineMoveIdFieldName ||
+    field.field === itemTechnicalMachineNumberFieldName
+  ) {
+    return 'Technical Machine';
+  }
+
+  if (
     field.field === 'buyPrice' ||
     field.field === 'sellPrice' ||
     field.field === 'wattsPrice' ||
@@ -20118,7 +20609,7 @@ function getItemEditableFieldGroup(field: ItemEditableField) {
     fieldName.includes('sort') ||
     fieldName.includes('category')
   ) {
-    return 'Bag Metadata';
+    return 'Identity and Inventory';
   }
 
   if (field.valueKind === 'boolean') {
@@ -20144,17 +20635,67 @@ function toNumericEditableField(field: MoveEditableField): NumericEditableField 
     maximumValue: field.maximumValue,
     minimumValue: field.minimumValue,
     options: field.options,
-    valueKind: field.valueKind
+    valueKind: field.valueKind === 'decimal' ? 'number' : field.valueKind
   };
 }
 
 function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
   groups: Array<{ group: string; fields: TField[] }>
 ) {
-  return [
-    ...groups.filter((group) => group.group !== 'Flags'),
-    ...groups.filter((group) => group.group === 'Flags')
+  const runtimeOrder = [
+    'Runtime Core',
+    'Runtime Effects',
+    'Runtime Stat Changes',
+    'Runtime Flags',
+    'Timing'
   ];
+  const advancedOrder = [
+    'Advanced Battle Behavior',
+    'Advanced Animation and Motion',
+    'Advanced Spawn and Direction',
+    'Advanced Targeting and Range',
+    'Advanced Projectiles',
+    'Advanced Projectile Replacements',
+    'Advanced Effect Timing',
+    'Advanced Timing'
+  ];
+  const indexedGroups = groups.map((group, index) => ({ group, index }));
+  const ordinaryGroups = indexedGroups
+    .filter(({ group }) => !group.group.startsWith('Advanced '))
+    .sort((left, right) => {
+      const leftRuntimeIndex = runtimeOrder.indexOf(left.group.group);
+      const rightRuntimeIndex = runtimeOrder.indexOf(right.group.group);
+      if (leftRuntimeIndex >= 0 || rightRuntimeIndex >= 0) {
+        if (leftRuntimeIndex < 0) {
+          return 1;
+        }
+        if (rightRuntimeIndex < 0) {
+          return -1;
+        }
+        return leftRuntimeIndex - rightRuntimeIndex;
+      }
+
+      const leftIsFlags = left.group.group.endsWith('Flags');
+      const rightIsFlags = right.group.group.endsWith('Flags');
+      return leftIsFlags === rightIsFlags ? left.index - right.index : leftIsFlags ? 1 : -1;
+    })
+    .map(({ group }) => group);
+  const advancedGroups = indexedGroups
+    .filter(({ group }) => group.group.startsWith('Advanced '))
+    .sort((left, right) => {
+      const leftAdvancedIndex = advancedOrder.indexOf(left.group.group);
+      const rightAdvancedIndex = advancedOrder.indexOf(right.group.group);
+      if (leftAdvancedIndex < 0 || rightAdvancedIndex < 0) {
+        if (leftAdvancedIndex < 0 && rightAdvancedIndex < 0) {
+          return left.index - right.index;
+        }
+        return leftAdvancedIndex < 0 ? 1 : -1;
+      }
+      return leftAdvancedIndex - rightAdvancedIndex;
+    })
+    .map(({ group }) => group);
+
+  return [...ordinaryGroups, ...advancedGroups];
 }
 
 function getEncounterEditableFieldGroup(field: NumericEditableField) {
@@ -20486,7 +21027,7 @@ function getItemFieldDisabledReason(
 
   if (fieldName === itemMachineMoveIdFieldName) {
     if (isZaPhysicalTechnicalMachine) {
-      return 'Z-A TM moves are locked until Pokemon compatibility can be migrated with the move.';
+      return null;
     }
 
     if (!item || item.metadata.machineSlot === null) {
@@ -20633,6 +21174,13 @@ function GiftPokemonDraftField({
           max={field.maximumValue ?? undefined}
           min={field.minimumValue ?? undefined}
           onChange={(event) => onChange(event.target.value)}
+          step={
+            field.field === 'timing.cooldown'
+              ? 0.1
+              : field.valueKind === 'number'
+                ? 'any'
+                : 1
+          }
           title={localizedFieldHelpText}
           type="number"
           value={draftValue}
@@ -26691,7 +27239,7 @@ function SelectedEncounterPanel({
     typeof encounterSlot.alphaLevelBonus !== 'number';
   const isZaAlphaChanceReadOnly =
     isSelectedZaGuaranteedAlpha ||
-    linkedZaAlphaReferenceKinds.hasSpecial ||
+    hasMixedLinkedZaAlphaReferences ||
     isSelectedZaAlphaChanceUnavailable;
   const selectedPlacementDrafts = useMemo(() => {
     if (!encounterSlot) {
@@ -26728,9 +27276,7 @@ function SelectedEncounterPanel({
       ? t('za.alphaSettings.mixedDisabled')
       : isSelectedZaGuaranteedAlpha
         ? t('za.alphaSettings.guaranteedDisabled')
-        : linkedZaAlphaReferenceKinds.hasSpecial
-          ? t('za.alphaSettings.specialReferenceDisabled')
-          : undefined;
+        : undefined;
   const alphaLevelBonusDisabledReason = isSelectedZaAlphaLevelBonusUnavailable
     ? t('za.alphaSettings.levelBonusUnavailableDisabled')
     : undefined;
@@ -43968,30 +44514,51 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     [zaMegaEvolutionFieldName]: 'Whether this Z-A trainer battle enables Mega Evolution behavior.',
     [zaRankFieldName]: 'Z-A trainer rank value.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
+    conditionCount: 'Runtime condition duration mode. Use only the game-defined Effect-defined, Persistent, or Timed option.',
+    conditionId: 'Runtime condition identifier. Only condition IDs verified in the Z-A battle table are selectable.',
+    conditionTurnMax: 'Maximum runtime condition duration. Valid game values are 0 through 15; 0 is effect-defined.',
+    conditionTurnMin: 'Minimum runtime condition duration. Valid game values are 0 through 15; 0 is effect-defined.',
+    criticalRank: 'Runtime critical-hit tier. Z-A uses only ranks 0, 1, 2, and 6.',
+    damageDrainRatio: 'Percentage of damage converted into drained HP.',
+    damageRecoverRatio: 'Signed percentage of dealt damage returned to or taken from the user. Positive values recover HP; negative values cause recoil.',
+    effectCategory: 'Runtime battle-effect category. Only category IDs verified in the Z-A battle table are selectable.',
     effectSequence: 'Advanced raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet; preserve it unless the move has been verified in game.',
     [itemBattlePouchFieldName]: 'Controls the battle item category: none, Balls, or usable battle items.',
     [itemCureStatusFlagsFieldName]: 'Raw cure-status bitmask. Use the named cure controls so unrelated bits remain intact.',
     [itemFieldFlagsFieldName]: 'Legacy name for Battle pouch. It remains visible only for compatibility.',
     flinch: 'Percent chance that the move causes flinching.',
     gift: 'Unknown raw Gen 8 trainer header value. It is read-only because no game behavior has been verified for it.',
+    hpRecoverRatio: 'Percentage of maximum HP restored by the move. Valid values are 0 through 100.',
     inflictPercent: 'Percent chance to inflict the selected condition or secondary effect. Zero on a move with an inflict effect means it is a primary effect with no separate chance roll.',
     money: 'Stored trainer money value. Sword/Shield payout semantics are not verified, so KM exposes the raw rate.',
+    power: 'Move power is stored as an unsigned byte. The supported range is 0 through 255.',
     quality: 'Advanced effect-quality value. When named options are unavailable, preserve this raw value unless the move has been verified in game.',
     rawHealing: 'Advanced signed raw HP behavior. Positive values restore that percentage of HP; negative values cost that percentage of HP. Preserve the value unless the move has been verified in game.',
     rawInflictCount: 'Duration mode for the inflicted condition/effect. Sword/Shield exposes five known modes.',
     recoil: 'Signed drain/recoil percent. Positive values drain HP; negative values deal recoil. The effect sequence determines the exact battle behavior.',
     specialMoveId: 'Gift table special move field.',
-    stat1: 'First stat-change slot. There are three Sword/Shield move stat-change slots total.',
+    shrinkPercent: 'Runtime size-reduction percentage. Valid values are 0 through 100.',
+    stat1: 'First stat-change slot. Runtime moves support three stat-change slots.',
     stat1Percent: 'Percent chance for stat-change slot 1 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
     stat1Stage: 'Stage delta for stat-change slot 1. Positive raises the stat; negative lowers it.',
     stat2: 'Second stat-change slot. Use when a move changes more than one stat.',
     stat2Percent: 'Percent chance for stat-change slot 2 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
     stat2Stage: 'Stage delta for stat-change slot 2. Positive raises the stat; negative lowers it.',
-    stat3: 'Third and final Sword/Shield stat-change slot.',
+    stat3: 'Third and final runtime move stat-change slot.',
     stat3Percent: 'Percent chance for stat-change slot 3 to apply. Zero on an occupied slot means a primary effect with no separate chance roll.',
     turnMax: 'Maximum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
     turnMin: 'Minimum number of turns for an inflicted condition or effect. Zero means the duration is effect-defined.',
     stat3Stage: 'Stage delta for stat-change slot 3. Positive raises the stat; negative lowers it.',
+    'timing.cooldown': 'Cooldown in seconds between move uses. The verified range is 0 through 60; the step controls adjust it by 0.1 seconds.',
+    'timing.effectTime': 'Timing offset for the move effect. This is stored as a bounded 32-bit floating-point value.',
+    'timing.effectValue': 'Raw move-effect timing parameter, bounded to the values supported by the runtime table.',
+    'timing.projectileCountMax': 'Maximum number of projectiles. It must be at least the minimum projectile count.',
+    'timing.projectileCountMin': 'Minimum number of projectiles. It cannot exceed the maximum projectile count.',
+    'timing.rangeMax': 'Maximum targeting range. It must be at least the minimum range.',
+    'timing.rangeMin': 'Minimum targeting range. It cannot exceed the maximum range.',
+    'timing.spawnLocator': 'Verified spawn-locator entry. The editor stores the selected locator index and the backend resolves its exact game string.',
+    'timing.hitPercent': 'Runtime move accuracy as a percentage from 0 through 100.',
+    valueEffectRatio: 'Runtime value-effect ratio. It is editable only through the bounded values verified in the Z-A battle table.',
     [itemUseFlags1FieldName]: 'Raw item use bitmask. Locked from direct editing; use the decoded PP restore, HP restore, and EV flag fields instead.',
     [itemUseFlags2FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details; bits 5-7 remain unknown.',
     zaConditionKind: 'Z-A shop unlock condition type for this inventory slot.',
@@ -44006,13 +44573,16 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
         : `${field.minimumValue}-${field.maximumValue}`;
   const optionCount = field.options?.length ?? 0;
   const optionHint = optionCount > 0 ? `${optionCount} available option${optionCount === 1 ? '' : 's'}` : null;
+  const normalizedFieldName = field.field
+    ?.replace(/^battle\.\d+\./, '')
+    .replace(/^timing\.\d+\./, 'timing.');
   const specificText =
     field.field === healFieldName && field.label.toLocaleLowerCase().includes('flag')
       ? 'Unknown raw Gen 8 trainer header flag. It is read-only because no game behavior has been verified for it.'
       : field.field === healFieldName
         ? 'True if the move is treated as a healing move for battle rules and move interactions.'
-        : field.field
-          ? specificHelp[field.field]
+        : normalizedFieldName
+          ? specificHelp[normalizedFieldName]
           : null;
 
   return [

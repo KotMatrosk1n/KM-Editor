@@ -373,6 +373,14 @@ public sealed class ZaWorkflowService
         return itemsEditSessionService.UpdateFields(paths, session, updates);
     }
 
+    public ZaItemsEditResult StageItemVanilla(
+        ProjectPaths paths,
+        EditSession? session,
+        int itemId)
+    {
+        return itemsEditSessionService.StageItemVanilla(paths, session, itemId);
+    }
+
     public ZaPokemonEditResult UpdatePokemonFields(
         ProjectPaths paths,
         EditSession? session,
@@ -472,6 +480,14 @@ public sealed class ZaWorkflowService
         IReadOnlyList<ZaMoveFieldUpdate> updates)
     {
         return movesEditSessionService.UpdateFields(paths, session, updates);
+    }
+
+    public ZaMovesEditResult StageMoveVanilla(
+        ProjectPaths paths,
+        EditSession? session,
+        int moveId)
+    {
+        return movesEditSessionService.StageMoveVanilla(paths, session, moveId);
     }
 
     public ZaTextEditResult UpdateTextEntry(

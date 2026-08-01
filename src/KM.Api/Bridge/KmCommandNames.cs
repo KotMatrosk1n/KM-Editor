@@ -14,6 +14,7 @@ public static class KmCommandNames
     public const string LoadItemsWorkflow = "items.load";
     public const string UpdateItemField = "items.field.update";
     public const string UpdateItemFields = "items.fields.update";
+    public const string StageItemVanilla = "items.item.vanilla.stage";
     public const string LoadPokemonWorkflow = "pokemon.load";
     public const string UpdatePokemonField = "pokemon.field.update";
     public const string UpdatePokemonFields = "pokemon.fields.update";
@@ -26,6 +27,7 @@ public static class KmCommandNames
     public const string LoadMovesWorkflow = "moves.load";
     public const string UpdateMoveField = "moves.field.update";
     public const string UpdateMoveFields = "moves.fields.update";
+    public const string StageMoveVanilla = "moves.move.vanilla.stage";
     public const string LoadTextWorkflow = "text.load";
     public const string UpdateTextEntry = "text.entry.update";
     public const string LoadTrainersWorkflow = "trainers.load";

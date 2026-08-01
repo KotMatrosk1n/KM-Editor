@@ -367,6 +367,18 @@ public struct ZaPersonal : IFlatbufferObject
 
     public ushort[] GetTmMovesArray() => ReadUshortArray(48);
 
+    public bool MutateTmMove(int index, ushort value)
+    {
+        var offset = p.__offset(48);
+        if (offset == 0 || index < 0 || index >= p.__vector_len(offset))
+        {
+            return false;
+        }
+
+        p.bb.PutUshort(p.__vector(offset) + index * sizeof(ushort), value);
+        return true;
+    }
+
     public ushort EggMoves(int index) => ReadUshortVector(50, index);
 
     public int EggMovesLength => ReadVectorLength(50);

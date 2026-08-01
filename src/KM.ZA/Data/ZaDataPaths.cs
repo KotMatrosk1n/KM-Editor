@@ -11,6 +11,10 @@ public static class ZaDataPaths
     public const string PokedexContentsData =
         "world/exl/pokedex_contents_data/pokedex_contents_data/pokedex_contents_data.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";
+    public const string BattleMoveParameterArray =
+        "param_ai/data/battle/personal_waza_param/personal_waza_param_array.bin";
+    public const string MoveTimingParameterArray =
+        "param_ai/data/ai/waza/waza_param/waza_param_array.bin";
     public const string ItemDataArray = "world/exl/item_data/item_data/item_data.bin";
     public const string EvolutionItemConversionArray = "world/ik_data/battle/plib_item_conversion/plib_item_conversion_array.bin";
     public const string TrainerDataArray = "world/ik_data/trainer/trdata/trdata_array.bin";

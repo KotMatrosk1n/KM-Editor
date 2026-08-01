@@ -19,6 +19,9 @@ namespace KM.ZA.Items;
 
 internal sealed class ZaItemsEditSessionService
 {
+    private const string VerifiedBaseItemRowField = "verifiedBaseItemRow";
+    private const string VerifiedBaseItemRowValue = "1";
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
     private readonly ZaItemsWorkflowService itemsWorkflowService;
@@ -90,6 +93,12 @@ internal sealed class ZaItemsEditSessionService
         }
 
         updatedSession = RemoveSourceEquivalentPendingEdits(loadedWorkflow, updatedSession);
+        ValidateTechnicalMachineMoveAssignments(project, loadedWorkflow, updatedSession, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaItemsEditResult(workflow, currentSession, diagnostics);
+        }
+
         return new ZaItemsEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -173,8 +182,233 @@ internal sealed class ZaItemsEditSessionService
             effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
         }
 
+        ValidateTechnicalMachineMoveAssignments(project, loadedWorkflow, updatedSession, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaItemsEditResult(workflow, currentSession, diagnostics);
+        }
+
         return new ZaItemsEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
+    public ZaItemsEditResult StageItemVanilla(
+        ProjectPaths paths,
+        EditSession? session,
+        int itemId)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var currentWorkflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!ZaEditSessionSupport.CanEdit(
+                project,
+                loadedWorkflow.Summary,
+                loadedWorkflow.Diagnostics,
+                ZaEditSessionSupport.ItemsDomain,
+                diagnostics))
+        {
+            return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        var targetItem = loadedWorkflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
+        if (targetItem is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Item {itemId} is not present in the loaded Items workflow.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: "itemId",
+                expected: "Existing Z-A item record"));
+            return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        if (!targetItem.CanRevertToVanilla)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                targetItem.RevertToVanillaBlockedReason
+                    ?? "This item cannot be matched safely to verified vanilla item data.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: "itemId",
+                expected: "Exact matching item record in the verified vanilla item table"));
+            return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        IReadOnlyDictionary<string, int?> vanillaValues;
+        ZaItemRecord? vanillaProjection = null;
+        var restoresSerializedItemRow = false;
+        var baseIsTechnicalMachine = false;
+        var activeIsTechnicalMachine = ZaItemsWorkflowService.IsTechnicalMachineRecord(targetItem);
+        try
+        {
+            var baseItems = ReadItemRestoreSnapshots(
+                fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
+            var activeItems = ReadItemRestoreSnapshots(
+                fileSource.Read(project, ZaDataPaths.ItemDataArray).Bytes);
+            if (!baseItems.TryGetValue(itemId, out var baseItem))
+            {
+                throw new InvalidDataException(
+                    $"Verified vanilla item data does not contain item {itemId}.");
+            }
+            if (!activeItems.TryGetValue(itemId, out var activeItem))
+            {
+                throw new InvalidDataException(
+                    $"Active item data does not contain item {itemId}.");
+            }
+
+            vanillaValues = baseItem.FieldValues;
+            restoresSerializedItemRow = !activeItem.Row.HasSameSerializedValues(baseItem.Row);
+            baseIsTechnicalMachine = IsTechnicalMachine(baseItem.Row);
+            if (restoresSerializedItemRow)
+            {
+                vanillaProjection = itemsWorkflowService.LoadVerifiedBaseItem(project, itemId);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Verified vanilla item data could not be read: {exception.Message}",
+                ZaEditSessionSupport.ItemsDomain,
+                file: $"romfs/{ZaDataPaths.ItemDataArray}",
+                expected: "Readable verified vanilla item table with one matching item record"));
+            return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = RemovePendingEditsForItemRestore(
+            currentSession,
+            itemId,
+            preserveTechnicalMachineNumber:
+                activeIsTechnicalMachine
+                && baseIsTechnicalMachine
+                && targetItem.Metadata.MachineSlot is > 0);
+        var removedEditCount = currentSession.PendingEdits.Count - updatedSession.PendingEdits.Count;
+        var effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        var stagedFieldCount = 0;
+        var fieldsToRestore = loadedWorkflow.EditableFields
+            .Where(field => field.Field != ZaItemsWorkflowService.CanUseOnPokemonField)
+            .Where(field =>
+                !baseIsTechnicalMachine
+                || field.Field != ZaItemsWorkflowService.SortOrderField)
+            .OrderBy(field => GetVanillaRestoreFieldOrder(field.Field, vanillaValues))
+            .ThenBy(field => field.Field, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var field in fieldsToRestore)
+        {
+            if (!vanillaValues.TryGetValue(field.Field, out var vanillaValue)
+                || vanillaValue is null)
+            {
+                continue;
+            }
+
+            var effectiveItem = effectiveWorkflow.Items.First(candidate => candidate.ItemId == itemId);
+            var hasSelectedTechnicalMachineNumberEdit =
+                field.Field == ZaItemsWorkflowService.TechnicalMachineNumberField
+                && HasPendingItemFieldEdit(
+                    updatedSession,
+                    itemId,
+                    ZaItemsWorkflowService.TechnicalMachineNumberField);
+            if (effectiveItem.FieldValues.GetValueOrDefault(field.Field) == vanillaValue
+                && !hasSelectedTechnicalMachineNumberEdit)
+            {
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                effectiveItem,
+                field.Field,
+                vanillaValue.Value.ToString(CultureInfo.InvariantCulture),
+                diagnostics,
+                isVerifiedBaseRestore: true);
+            if (pendingEdit is null)
+            {
+                return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            pendingEdit = AddVanillaRestoreSource(pendingEdit);
+            if (!TryStagePendingEdit(
+                    effectiveWorkflow,
+                    updatedSession,
+                    pendingEdit,
+                    diagnostics,
+                    out updatedSession,
+                    out effectiveWorkflow,
+                    allowUnassignedTechnicalMachineNumber:
+                        baseIsTechnicalMachine
+                        && (!activeIsTechnicalMachine
+                            || targetItem.Metadata.MachineSlot is not > 0)))
+            {
+                return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            stagedFieldCount++;
+        }
+
+        if (restoresSerializedItemRow
+            && !HasPendingItemFieldEdit(updatedSession, itemId, VerifiedBaseItemRowField))
+        {
+            var rowRestoreMarker = AddVanillaRestoreSource(
+                ZaEditSessionSupport.CreatePendingEdit(
+                    ZaEditSessionSupport.ItemsDomain,
+                    $"Restore {targetItem.Name} from its complete verified vanilla item row.",
+                    new ProjectFileReference(
+                        targetItem.Provenance.SourceLayer,
+                        targetItem.Provenance.SourceFile),
+                    itemId.ToString(CultureInfo.InvariantCulture),
+                    VerifiedBaseItemRowField,
+                    VerifiedBaseItemRowValue));
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, rowRestoreMarker);
+        }
+
+        updatedSession = RemoveSourceEquivalentPendingEdits(loadedWorkflow, updatedSession);
+        ValidateTechnicalMachineNumberAssignments(loadedWorkflow, updatedSession, diagnostics);
+        ValidateTechnicalMachineMoveAssignments(project, loadedWorkflow, updatedSession, diagnostics);
+        ValidateEvolutionItemUseCompatibility(loadedWorkflow, updatedSession, diagnostics);
+        ValidateEvolutionItemConversions(project, updatedSession, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaItemsEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        var hasStagedSelectedItemChanges = updatedSession.PendingEdits.Any(edit =>
+            string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+            && string.Equals(
+                edit.RecordId,
+                itemId.ToString(CultureInfo.InvariantCulture),
+                StringComparison.Ordinal));
+        var message = hasStagedSelectedItemChanges && restoresSerializedItemRow
+            ? stagedFieldCount > 0
+                ? $"Staged {stagedFieldCount.ToString(CultureInfo.InvariantCulture)} verified vanilla field values and the complete verified item row for the selected item."
+                : "Staged the complete verified vanilla item row for the selected item."
+            : stagedFieldCount > 0 && hasStagedSelectedItemChanges
+                ? $"Staged {stagedFieldCount.ToString(CultureInfo.InvariantCulture)} verified vanilla field values for the selected item."
+            : removedEditCount > 0 || stagedFieldCount > 0
+                ? "The selected item already matches verified vanilla values. Its pending edits were cleared."
+                : "The selected item already matches verified vanilla values.";
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            message,
+            ZaEditSessionSupport.ItemsDomain));
+        var stagedWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        if (restoresSerializedItemRow && vanillaProjection is not null)
+        {
+            stagedWorkflow = ProjectVerifiedBaseItem(
+                stagedWorkflow,
+                vanillaProjection,
+                targetItem);
+        }
+
+        return new ZaItemsEditResult(
+            stagedWorkflow,
             updatedSession,
             diagnostics);
     }
@@ -196,15 +430,39 @@ internal sealed class ZaItemsEditSessionService
             ZaEditSessionSupport.ItemsDomain,
             diagnostics);
 
+        IReadOnlyDictionary<int, IReadOnlyDictionary<string, int?>>? vanillaValues = null;
+        if (effectiveSession.PendingEdits.Any(HasVanillaRestoreSourceMarker))
+        {
+            try
+            {
+                vanillaValues = ReadItemFieldValues(
+                    fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Verified vanilla item data could not be read: {exception.Message}",
+                    ZaEditSessionSupport.ItemsDomain,
+                    file: $"romfs/{ZaDataPaths.ItemDataArray}",
+                    expected: "Readable verified vanilla item table"));
+            }
+        }
+
         ValidateUniquePendingEditTargets(effectiveSession, diagnostics);
         foreach (var edit in effectiveSession.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdit(workflow, edit, diagnostics, vanillaValues);
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             ValidateTechnicalMachineNumberAssignments(workflow, effectiveSession, diagnostics);
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ValidateTechnicalMachineMoveAssignments(project, workflow, effectiveSession, diagnostics);
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -256,6 +514,11 @@ internal sealed class ZaItemsEditSessionService
             outputMode,
             effectiveSession.PendingEdits);
         plan = AddLegacyTechnicalMachineShopMigrationPlan(paths, plan, outputMode);
+        plan = AddTechnicalMachineCompatibilityMigrationPlan(
+            paths,
+            plan,
+            outputMode,
+            effectiveSession);
         if (!plan.CanApply || !HasEnabledEvolutionItemEdit(effectiveSession))
         {
             return AddStandaloneDescriptorFingerprint(paths, plan, outputMode);
@@ -447,6 +710,39 @@ internal sealed class ZaItemsEditSessionService
                     migratedShopLineupSource,
                     diagnostics,
                     out migratedShopReferenceCount);
+            IReadOnlyDictionary<int, ItemRow>? verifiedBaseItemRows = null;
+            if (effectiveSession.PendingEdits.Any(IsVerifiedBaseItemRowEdit))
+            {
+                baseItemSource ??= fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
+                verifiedBaseItemRows = ReadRows(baseItemSource.Bytes).ToDictionary(row => row.Id);
+                RestoreVerifiedBaseItemRows(
+                    rows,
+                    verifiedBaseItemRows,
+                    effectiveSession,
+                    diagnostics);
+            }
+
+            foreach (var edit in effectiveSession.PendingEdits)
+            {
+                ApplyEdit(rows, edit, diagnostics);
+            }
+
+            var personalBytes = ApplyTechnicalMachineMoveAssignments(
+                project,
+                itemsWorkflowService.Load(project),
+                effectiveSession,
+                rows,
+                currentPlan,
+                outputMode,
+                diagnostics);
+
+            ValidateVerifiedBaseItemRows(
+                rows,
+                verifiedBaseItemRows,
+                effectiveSession,
+                diagnostics,
+                "staged item rows");
+
             var expectedTechnicalMachines = rows
                 .Where(IsTechnicalMachine)
                 .ToDictionary(
@@ -454,10 +750,6 @@ internal sealed class ZaItemsEditSessionService
                     row => new PhysicalTechnicalMachineIdentity(
                         row.MachineWaza,
                         row.IconName));
-            foreach (var edit in effectiveSession.PendingEdits)
-            {
-                ApplyEdit(rows, edit, diagnostics);
-            }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
@@ -529,6 +821,12 @@ internal sealed class ZaItemsEditSessionService
                 expectedTechnicalMachines,
                 diagnostics,
                 "serialized item output");
+            ValidateVerifiedBaseItemRows(
+                ReadRows(itemBytes),
+                verifiedBaseItemRows,
+                effectiveSession,
+                diagnostics,
+                "serialized item output");
             ValidateMachineWazaLayout(itemBytes, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
@@ -555,6 +853,13 @@ internal sealed class ZaItemsEditSessionService
                 outputWrites.Add(new ZaWorkflowFileWrite(
                     ZaDataPaths.ShopItemLineupArray,
                     migratedShopLineupBytes));
+            }
+
+            if (personalBytes is not null)
+            {
+                outputWrites.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.PersonalArray,
+                    personalBytes));
             }
 
             byte[]? reviewedStandaloneDescriptorBytes = null;
@@ -608,6 +913,13 @@ internal sealed class ZaItemsEditSessionService
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
                     ZaDataPaths.ShopItemLineupArray,
+                    outputMode));
+            }
+
+            if (personalBytes is not null)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.PersonalArray,
                     outputMode));
             }
 
@@ -1289,6 +1601,10 @@ internal sealed class ZaItemsEditSessionService
         ushort MoveId,
         string IconName);
 
+    private sealed record ItemRestoreSnapshot(
+        IReadOnlyDictionary<string, int?> FieldValues,
+        ItemRow Row);
+
     private static string NormalizeFingerprintPath(string path)
     {
         var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
@@ -1582,7 +1898,8 @@ internal sealed class ZaItemsEditSessionService
         ZaItemRecord item,
         string field,
         string value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool isVerifiedBaseRestore = false)
     {
         var normalizedField = field.Trim();
         var parsedValue = TryParseEditableValue(workflow, normalizedField, value, diagnostics);
@@ -1592,12 +1909,14 @@ internal sealed class ZaItemsEditSessionService
         }
 
         var editableField = GetEditableField(workflow, normalizedField)!;
-        if (!CanEditTechnicalMachineField(item, editableField, diagnostics))
+        if (!isVerifiedBaseRestore
+            && !CanEditTechnicalMachineField(item, editableField, diagnostics))
         {
             return null;
         }
 
-        if (!CanStageTechnicalMachineShapeEdit(
+        if (!isVerifiedBaseRestore
+            && !CanStageTechnicalMachineShapeEdit(
                 item,
                 normalizedField,
                 parsedValue.Value,
@@ -1636,7 +1955,8 @@ internal sealed class ZaItemsEditSessionService
         PendingEdit pendingEdit,
         ICollection<ValidationDiagnostic> diagnostics,
         out EditSession updatedSession,
-        out ZaItemsWorkflow updatedWorkflow)
+        out ZaItemsWorkflow updatedWorkflow,
+        bool allowUnassignedTechnicalMachineNumber = false)
     {
         updatedSession = session;
         updatedWorkflow = workflow;
@@ -1661,9 +1981,7 @@ internal sealed class ZaItemsEditSessionService
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out var newNumber)
-            || workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId) is not { } item
-            || item.Metadata.MachineSlot is not { } previousNumber
-            || previousNumber <= 0)
+            || workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId) is not { } item)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -1672,6 +1990,39 @@ internal sealed class ZaItemsEditSessionService
                 field: ZaItemsWorkflowService.TechnicalMachineNumberField,
                 expected: "TM with a positive current number"));
             return false;
+        }
+
+        if (item.Metadata.MachineSlot is not { } previousNumber || previousNumber <= 0)
+        {
+            var unassignedNumberOwners = workflow.Items
+                .Where(candidate =>
+                    candidate.ItemId != itemId
+                    && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
+                    && candidate.Metadata.MachineSlot == newNumber)
+                .ToArray();
+            if (!allowUnassignedTechnicalMachineNumber || unassignedNumberOwners.Length != 0)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    allowUnassignedTechnicalMachineNumber
+                        ? $"Verified base TM number {newNumber} is already owned by another physical TM."
+                        : "The selected TM does not have a recoverable current number.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.TechnicalMachineNumberField,
+                    expected: allowUnassignedTechnicalMachineNumber
+                        ? "Verified base TM number not owned by another physical TM"
+                        : "TM with a positive current number"));
+                return false;
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+            updatedWorkflow = OverlayPendingEdit(workflow, pendingEdit);
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Staged verified base TM number {newNumber} for {item.Name}.",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.TechnicalMachineNumberField));
+            return true;
         }
 
         if (newNumber == previousNumber)
@@ -1750,7 +2101,8 @@ internal sealed class ZaItemsEditSessionService
     private static void ValidatePendingEdit(
         ZaItemsWorkflow workflow,
         PendingEdit edit,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlyDictionary<int, IReadOnlyDictionary<string, int?>>? vanillaValues = null)
     {
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal))
         {
@@ -1785,6 +2137,23 @@ internal sealed class ZaItemsEditSessionService
             return;
         }
 
+        if (IsVerifiedBaseItemRowEdit(edit))
+        {
+            if (!string.Equals(edit.NewValue, VerifiedBaseItemRowValue, StringComparison.Ordinal)
+                || !HasVanillaRestoreSourceMarker(edit)
+                || !item.CanRevertToVanilla)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The complete item-row restoration marker is not tied to an exact verified vanilla row.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: VerifiedBaseItemRowField,
+                    expected: "Exact item ID with the verified base item source"));
+            }
+
+            return;
+        }
+
         var editableField = GetEditableField(workflow, edit.Field);
         if (editableField is null)
         {
@@ -1797,7 +2166,10 @@ internal sealed class ZaItemsEditSessionService
             return;
         }
 
-        if (!CanEditTechnicalMachineField(item, editableField, diagnostics))
+        var isVerifiedBaseRestore = item.Provenance.SourceLayer != ProjectFileLayer.Base
+            && HasVanillaRestoreSourceMarker(edit);
+        if (!isVerifiedBaseRestore
+            && !CanEditTechnicalMachineField(item, editableField, diagnostics))
         {
             return;
         }
@@ -1809,11 +2181,36 @@ internal sealed class ZaItemsEditSessionService
 
         if (TryParseEditableValue(workflow, edit.Field, edit.NewValue, diagnostics) is { } value)
         {
-            _ = CanStageTechnicalMachineShapeEdit(
-                item,
-                editableField.Field,
-                value,
-                diagnostics);
+            if (!isVerifiedBaseRestore)
+            {
+                _ = CanStageTechnicalMachineShapeEdit(
+                    item,
+                    editableField.Field,
+                    value,
+                    diagnostics);
+            }
+
+            if (isVerifiedBaseRestore)
+            {
+                int? vanillaValue = null;
+                if (vanillaValues is not null
+                    && vanillaValues.TryGetValue(itemId, out var itemVanillaValues)
+                    && itemVanillaValues.TryGetValue(editableField.Field, out var resolvedVanillaValue))
+                {
+                    vanillaValue = resolvedVanillaValue;
+                }
+
+                if (vanillaValue != value)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "A staged item restoration no longer matches the verified vanilla value.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: editableField.Field,
+                        expected: vanillaValue?.ToString(CultureInfo.InvariantCulture)
+                            ?? "Matching verified vanilla item field"));
+                }
+            }
         }
     }
 
@@ -1844,6 +2241,576 @@ internal sealed class ZaItemsEditSessionService
             ZaEditSessionSupport.ItemsDomain,
             field: "pendingEdits",
             expected: "At most one pending edit per item and field"));
+    }
+
+    private ChangePlan AddTechnicalMachineCompatibilityMigrationPlan(
+        ProjectPaths paths,
+        ChangePlan plan,
+        ZaOutputMode outputMode,
+        EditSession session)
+    {
+        if (!plan.CanApply)
+        {
+            return plan;
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var workflow = itemsWorkflowService.Load(project);
+            var machineMoveEdits = session.PendingEdits
+                .Where(edit => string.Equals(
+                    edit.Field,
+                    ZaItemsWorkflowService.MachineMoveIdField,
+                    StringComparison.Ordinal))
+                .ToArray();
+            if (machineMoveEdits.Length == 0)
+            {
+                return plan;
+            }
+
+            var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
+            var basePersonalSource = fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+            var requiresMigration = machineMoveEdits.Any(edit =>
+            {
+                if (!string.Equals(edit.Field, ZaItemsWorkflowService.MachineMoveIdField, StringComparison.Ordinal)
+                    || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                    || !ushort.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+                    || workflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } item
+                    || item.Metadata.MachineMoveId is not { } oldMoveId
+                    || item.Metadata.BaseMachineMoveId is not { } baseMoveId
+                    || oldMoveId == moveId)
+                {
+                    return false;
+                }
+
+                if (moveId == baseMoveId)
+                {
+                    return ZaTechnicalMachineCompatibilityMigration.InspectBaseRestore(
+                        personalSource.Bytes,
+                        basePersonalSource.Bytes,
+                        checked((ushort)oldMoveId),
+                        checked((ushort)baseMoveId)).ChangedValues > 0;
+                }
+
+                var inspection = ZaTechnicalMachineCompatibilityMigration.Inspect(
+                    personalSource.Bytes,
+                    checked((ushort)oldMoveId),
+                    moveId);
+                return inspection.AffectedValues > 0 && inspection.ExistingTargetRows == 0;
+            });
+            if (!requiresMigration)
+            {
+                return plan;
+            }
+
+            var info = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.PersonalArray,
+                [
+                    new ProjectFileReference(personalSource.SourceLayer, personalSource.RelativePath),
+                    new ProjectFileReference(ProjectFileLayer.Base, basePersonalSource.RelativePath),
+                ],
+                outputMode);
+            var write = new PlannedFileWrite(
+                info.TargetRelativePath,
+                info.Sources,
+                info.ReplacesExistingOutput,
+                "Restore or migrate Pokemon TM compatibility for the reviewed item assignment.",
+                CreatePlanSourceFingerprint(
+                    paths,
+                    ZaDataPaths.PersonalArray,
+                    outputMode,
+                    [
+                        CreatePlanFingerprintSource(ZaDataPaths.PersonalArray, personalSource),
+                        CreatePlanFingerprintSource(
+                            $"{ZaDataPaths.PersonalArray}#base",
+                            basePersonalSource),
+                        ReadOptionalPlanFingerprintSource(project, ZaDataPaths.BattleMoveParameterArray),
+                        ReadOptionalPlanFingerprintSource(
+                            project,
+                            ZaDataPaths.ItemDataArray,
+                            $"{ZaDataPaths.ItemDataArray}#base",
+                            readBase: true),
+                    ]));
+            return new ChangePlan(plan.SessionId, [write, .. plan.Writes], plan.Diagnostics);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or InvalidOperationException or ArgumentException)
+        {
+            var diagnostics = plan.Diagnostics.Append(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"TM compatibility migration could not be planned: {exception.Message}",
+                ZaEditSessionSupport.ItemsDomain,
+                file: $"romfs/{ZaDataPaths.PersonalArray}",
+                expected: "Readable Pokemon personal table and writable output root")).ToArray();
+            return new ChangePlan(plan.SessionId, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+    }
+
+    private void ValidateTechnicalMachineMoveAssignments(
+        OpenedProject project,
+        ZaItemsWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        byte[]? baseItemBytes = null;
+        var verifiedRowRestores = session.PendingEdits
+            .Where(IsVerifiedBaseItemRowEdit)
+            .ToArray();
+        if (verifiedRowRestores.Length > 0)
+        {
+            baseItemBytes = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes;
+            var baseItems = ReadItemRestoreSnapshots(baseItemBytes);
+            foreach (var restore in verifiedRowRestores)
+            {
+                if (!int.TryParse(
+                        restore.RecordId,
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var restoredItemId)
+                    || !baseItems.TryGetValue(restoredItemId, out var baseItem)
+                    || !IsTechnicalMachine(baseItem.Row))
+                {
+                    continue;
+                }
+
+                var anotherBaseMoveOwner = workflow.Items.FirstOrDefault(candidate =>
+                    candidate.ItemId != restoredItemId
+                    && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
+                    && candidate.Metadata.MachineMoveId == baseItem.Row.MachineWaza);
+                if (anotherBaseMoveOwner is not null)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{anotherBaseMoveOwner.Name} already teaches the selected item's verified base move.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField,
+                        expected: "Verified base move not assigned to another physical TM"));
+                }
+            }
+        }
+
+        var edits = session.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Field,
+                ZaItemsWorkflowService.MachineMoveIdField,
+                StringComparison.Ordinal))
+            .ToArray();
+        if (edits.Length == 0)
+        {
+            return;
+        }
+
+        byte[]? personalBytes = null;
+        byte[]? basePersonalBytes = null;
+        byte[]? battleMoveBytes = null;
+        foreach (var edit in edits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || !ushort.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var newMoveId)
+                || workflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } item)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "TM move reassignment requires current and verified base assignments.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Physical TM with a unique current and clean base move"));
+                continue;
+            }
+
+            var restoresVerifiedBaseRow = HasVerifiedBaseItemRowEdit(session, itemId);
+            var activeIsTechnicalMachine = ZaItemsWorkflowService.IsTechnicalMachineRecord(item);
+            var baseIsTechnicalMachine = item.Metadata.BaseMachineMoveId is > 0;
+            if (restoresVerifiedBaseRow
+                && (!activeIsTechnicalMachine || !baseIsTechnicalMachine))
+            {
+                // Restoring into or out of physical-TM ownership is an exact item-row
+                // replacement. There is no current/base compatibility ownership pair to migrate.
+                continue;
+            }
+
+            if (item.Metadata.MachineMoveId is not { } oldMoveId
+                || item.Metadata.BaseMachineMoveId is not { } baseMoveId)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "TM move reassignment requires current and verified base assignments.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Physical TM with a unique current and clean base move"));
+                continue;
+            }
+
+            if (newMoveId == oldMoveId)
+            {
+                continue;
+            }
+
+            var restoringBase = newMoveId == baseMoveId;
+            if (!restoresVerifiedBaseRow || !restoringBase)
+            {
+                var anotherTargetOwner = workflow.Items.FirstOrDefault(candidate =>
+                    candidate.ItemId != itemId
+                    && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
+                    && candidate.Metadata.MachineMoveId == newMoveId);
+                if (anotherTargetOwner is not null)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{anotherTargetOwner.Name} already teaches the selected move.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField,
+                        expected: "Move not assigned to another physical TM"));
+                    continue;
+                }
+            }
+
+            if (!restoringBase)
+            {
+                var anotherOldOwner = workflow.Items.FirstOrDefault(candidate =>
+                    candidate.ItemId != itemId
+                    && ZaItemsWorkflowService.IsTechnicalMachineRecord(candidate)
+                    && candidate.Metadata.MachineMoveId == oldMoveId);
+                if (anotherOldOwner is not null)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{anotherOldOwner.Name} also teaches the current move, so compatibility ownership is ambiguous.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField,
+                        expected: "Current move assigned to exactly one physical TM"));
+                    continue;
+                }
+            }
+
+            personalBytes ??= fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes;
+            if (restoringBase)
+            {
+                basePersonalBytes ??= fileSource.ReadBase(project, ZaDataPaths.PersonalArray).Bytes;
+                ZaTechnicalMachineCompatibilityMigration.BaseRestoreInspection restoration;
+                try
+                {
+                    restoration = ZaTechnicalMachineCompatibilityMigration.InspectBaseRestore(
+                        personalBytes,
+                        basePersonalBytes,
+                        checked((ushort)oldMoveId),
+                        checked((ushort)baseMoveId));
+                }
+                catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Verified vanilla TM compatibility could not be restored safely: {exception.Message}",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField,
+                        expected: "Active compatibility matching either the current assignment or the exact verified vanilla position"));
+                    continue;
+                }
+
+                if (restoration.ChangedValues > 0)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Info,
+                        $"{item.Name} will restore its verified base move and {restoration.ChangedValues} compatibility position(s) from clean base data.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField));
+                }
+                else
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Info,
+                        $"{item.Name} will restore its verified base move and disc icon. Pokemon compatibility already matches the verified base positions for this TM.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField));
+                }
+
+                continue;
+            }
+
+            var inspection = ZaTechnicalMachineCompatibilityMigration.Inspect(
+                personalBytes,
+                checked((ushort)oldMoveId),
+                newMoveId);
+
+            baseItemBytes ??= fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes;
+            battleMoveBytes ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray).Bytes;
+            if (!ZaTechnicalMachineIconResolver.TryResolve(
+                    baseItemBytes,
+                    battleMoveBytes,
+                    newMoveId,
+                    out _))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The selected move does not have an unambiguous runtime type and canonical TM disc icon.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Move with a runtime battle row and verified elemental disc icon"));
+                continue;
+            }
+
+            if (inspection.AffectedValues == 0)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"No Pokemon compatibility entries reference {item.Metadata.MachineMoveName ?? oldMoveId.ToString(CultureInfo.InvariantCulture)}. "
+                    + "Restore the verified base assignment first if this TM came from an older item-only edit.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "At least one unambiguous compatibility entry for the current TM move"));
+                continue;
+            }
+
+            if (inspection.ExistingTargetRows > 0)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"The selected move already appears in {inspection.ExistingTargetRows} Pokemon compatibility row(s), so TM ownership is ambiguous.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Selected move absent from existing TM compatibility"));
+                continue;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"TM reassignment will migrate {inspection.AffectedValues} compatibility reference(s) across {inspection.AffectedRows} Pokemon row(s).",
+                ZaEditSessionSupport.ItemsDomain,
+                field: ZaItemsWorkflowService.MachineMoveIdField));
+        }
+    }
+
+    private byte[]? ApplyTechnicalMachineMoveAssignments(
+        OpenedProject project,
+        ZaItemsWorkflow sourceWorkflow,
+        EditSession session,
+        IReadOnlyList<ItemRow> rows,
+        ChangePlan currentPlan,
+        ZaOutputMode outputMode,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var edits = session.PendingEdits
+            .Where(edit => string.Equals(
+                edit.Field,
+                ZaItemsWorkflowService.MachineMoveIdField,
+                StringComparison.Ordinal))
+            .ToArray();
+        if (edits.Length == 0)
+        {
+            return null;
+        }
+
+        var baseItemSource = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
+        var baseItemBytes = baseItemSource.Bytes;
+        var baseRows = ReadRows(baseItemBytes).ToDictionary(row => row.Id);
+        ZaWorkflowFile? battleMoveSource = null;
+        ZaWorkflowFile? personalSource = null;
+        ZaWorkflowFile? basePersonalSource = null;
+        byte[]? personalBytes = null;
+        var migrationSourcesVerified = false;
+
+        foreach (var edit in edits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || sourceWorkflow.Items.FirstOrDefault(item => item.ItemId == itemId) is not { } sourceItem
+                || rows.FirstOrDefault(row => row.Id == itemId) is not { } row
+                || !baseRows.TryGetValue(itemId, out var baseRow))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "TM assignment output could not resolve its active and verified base rows.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Unique active and clean base physical TM rows"));
+                continue;
+            }
+
+            var restoresVerifiedBaseRow = HasVerifiedBaseItemRowEdit(session, itemId);
+            var activeIsTechnicalMachine = ZaItemsWorkflowService.IsTechnicalMachineRecord(sourceItem);
+            var baseIsTechnicalMachine = IsTechnicalMachine(baseRow);
+            if (restoresVerifiedBaseRow
+                && (!activeIsTechnicalMachine || !baseIsTechnicalMachine))
+            {
+                // The complete verified row copy already restored this item into or out
+                // of TM ownership. No current/base compatibility ownership pair exists.
+                continue;
+            }
+
+            if (sourceItem.Metadata.MachineMoveId is not { } oldMoveId
+                || sourceItem.Metadata.BaseMachineMoveId is not { } baseMoveId)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "TM assignment output could not resolve its active and verified base move ownership.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Physical TM with unique active and clean base moves"));
+                continue;
+            }
+
+            var newMoveId = row.MachineWaza;
+            var restoringBase = newMoveId == baseMoveId;
+            if (restoringBase && newMoveId == oldMoveId)
+            {
+                row.IconName = baseRow.IconName;
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    $"Restored {sourceItem.Name} to its verified base disc icon. The TM move assignment was already vanilla.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField));
+                continue;
+            }
+
+            var writesCompatibility = PlanContainsVirtualWrite(
+                project.Paths,
+                currentPlan,
+                ZaDataPaths.PersonalArray,
+                outputMode);
+            if (restoringBase)
+            {
+                row.IconName = baseRow.IconName;
+                personalSource ??= fileSource.Read(project, ZaDataPaths.PersonalArray);
+                basePersonalSource ??= fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+                ZaTechnicalMachineCompatibilityMigration.BaseRestoreInspection restorationInspection;
+                try
+                {
+                    restorationInspection = ZaTechnicalMachineCompatibilityMigration.InspectBaseRestore(
+                        personalBytes ?? personalSource.Bytes,
+                        basePersonalSource.Bytes,
+                        checked((ushort)oldMoveId),
+                        checked((ushort)baseMoveId));
+                }
+                catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Verified vanilla TM compatibility changed after review: {exception.Message}",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField,
+                        expected: "The exact reviewed active and verified vanilla compatibility positions"));
+                    continue;
+                }
+
+                if (restorationInspection.ChangedValues == 0)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Info,
+                        $"Restored {sourceItem.Name} to its verified base move and disc icon. Pokemon compatibility already matched the verified base positions for this TM.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        field: ZaItemsWorkflowService.MachineMoveIdField));
+                    continue;
+                }
+            }
+
+            if (!writesCompatibility)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The reviewed plan does not include the required Pokemon compatibility migration.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    file: $"romfs/{ZaDataPaths.PersonalArray}",
+                    expected: "Personal data write reviewed with the TM reassignment"));
+                continue;
+            }
+
+            battleMoveSource ??= fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+            personalSource ??= fileSource.Read(project, ZaDataPaths.PersonalArray);
+            basePersonalSource ??= fileSource.ReadBase(project, ZaDataPaths.PersonalArray);
+            if (!migrationSourcesVerified)
+            {
+                migrationSourcesVerified = CapturedSourcesMatchPlan(
+                    project.Paths,
+                    currentPlan,
+                    ZaDataPaths.PersonalArray,
+                    outputMode,
+                    [
+                        CreatePlanFingerprintSource(ZaDataPaths.PersonalArray, personalSource),
+                        CreatePlanFingerprintSource(
+                            $"{ZaDataPaths.PersonalArray}#base",
+                            basePersonalSource),
+                        CreatePlanFingerprintSource(ZaDataPaths.BattleMoveParameterArray, battleMoveSource),
+                        CreatePlanFingerprintSource($"{ZaDataPaths.ItemDataArray}#base", baseItemSource),
+                    ]);
+                if (!migrationSourcesVerified)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "TM compatibility, move type, or clean base item data changed after review. Review the change plan again before applying.",
+                        ZaEditSessionSupport.ItemsDomain,
+                        file: $"romfs/{ZaDataPaths.PersonalArray}",
+                        expected: "The exact reviewed compatibility, runtime move type, and base TM icon sources"));
+                    continue;
+                }
+            }
+
+            string iconName;
+            if (restoringBase)
+            {
+                iconName = baseRow.IconName;
+            }
+            else if (!ZaTechnicalMachineIconResolver.TryResolve(
+                         baseItemBytes,
+                         battleMoveSource.Bytes,
+                         newMoveId,
+                         out iconName))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"The selected move's TM disc icon could not be resolved unambiguously for {sourceItem.Name}.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField,
+                    expected: "Move with a uniquely mapped elemental TM icon"));
+                continue;
+            }
+
+            personalBytes ??= personalSource.Bytes;
+            try
+            {
+                int changedValues;
+                int changedRows;
+                if (restoringBase)
+                {
+                    personalBytes = ZaTechnicalMachineCompatibilityMigration.RestoreBaseAssignment(
+                        personalBytes,
+                        basePersonalSource.Bytes,
+                        checked((ushort)oldMoveId),
+                        checked((ushort)baseMoveId),
+                        out var restoration);
+                    changedValues = restoration.ChangedValues;
+                    changedRows = restoration.ChangedRows;
+                }
+                else
+                {
+                    personalBytes = ZaTechnicalMachineCompatibilityMigration.Apply(
+                        personalBytes,
+                        checked((ushort)oldMoveId),
+                        newMoveId,
+                        out var inspection);
+                    changedValues = inspection.AffectedValues;
+                    changedRows = inspection.AffectedRows;
+                }
+                row.IconName = iconName;
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Info,
+                    restoringBase
+                        ? $"Restored {sourceItem.Name} and {changedValues} compatibility position(s) across {changedRows} Pokemon row(s) from verified vanilla data."
+                        : $"Migrated {changedValues} TM compatibility reference(s) across {changedRows} Pokemon row(s) and synchronized the disc icon.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: ZaItemsWorkflowService.MachineMoveIdField));
+            }
+            catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException or ArgumentException)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"TM compatibility migration failed: {exception.Message}",
+                    ZaEditSessionSupport.ItemsDomain,
+                    file: $"romfs/{ZaDataPaths.PersonalArray}",
+                    expected: "Validated compatibility replacement with no duplicate move IDs"));
+            }
+        }
+
+        return personalBytes;
     }
 
     private static void ValidateTechnicalMachineNumberAssignments(
@@ -2031,6 +2998,151 @@ internal sealed class ZaItemsEditSessionService
         return false;
     }
 
+    private static IReadOnlyDictionary<int, IReadOnlyDictionary<string, int?>> ReadItemFieldValues(
+        byte[] bytes) =>
+        ReadItemRestoreSnapshots(bytes).ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.FieldValues);
+
+    private static IReadOnlyDictionary<int, ItemRestoreSnapshot> ReadItemRestoreSnapshots(
+        byte[] bytes)
+    {
+        var table = ZaItemDataArray.GetRootAsZaItemDataArray(new ByteBuffer(bytes));
+        var values = new Dictionary<int, ItemRestoreSnapshot>();
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            if (table.Values(index) is not { } item)
+            {
+                continue;
+            }
+
+            if (!values.TryAdd(
+                    item.Id,
+                    new ItemRestoreSnapshot(
+                        ZaItemsWorkflowService.CreateFieldValues(item, item.MintNature),
+                        ItemRow.From(item))))
+            {
+                throw new InvalidDataException(
+                    $"The item table contains duplicate item ID {item.Id}.");
+            }
+        }
+
+        return values;
+    }
+
+    private static ZaItemsWorkflow ProjectVerifiedBaseItem(
+        ZaItemsWorkflow workflow,
+        ZaItemRecord verifiedBaseItem,
+        ZaItemRecord activeItem)
+    {
+        var projectedItem = verifiedBaseItem with
+        {
+            Provenance = activeItem.Provenance,
+            CanRevertToVanilla = activeItem.CanRevertToVanilla,
+            RevertToVanillaBlockedReason = activeItem.RevertToVanillaBlockedReason,
+        };
+        return workflow with
+        {
+            Items = workflow.Items
+                .Select(item => item.ItemId == projectedItem.ItemId ? projectedItem : item)
+                .ToArray(),
+        };
+    }
+
+    private static EditSession RemovePendingEditsForItemRestore(
+        EditSession session,
+        int itemId,
+        bool preserveTechnicalMachineNumber)
+    {
+        var selectedRecordId = itemId.ToString(CultureInfo.InvariantCulture);
+
+        var pendingEdits = session.PendingEdits
+            .Where(edit =>
+                !string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.RecordId, selectedRecordId, StringComparison.Ordinal)
+                || preserveTechnicalMachineNumber
+                && string.Equals(
+                    edit.Field,
+                    ZaItemsWorkflowService.TechnicalMachineNumberField,
+                    StringComparison.Ordinal))
+            .ToArray();
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool HasPendingItemFieldEdit(EditSession session, int itemId, string field)
+    {
+        var recordId = itemId.ToString(CultureInfo.InvariantCulture);
+        return session.PendingEdits.Any(edit =>
+            string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, recordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, field, StringComparison.Ordinal));
+    }
+
+    private static PendingEdit AddVanillaRestoreSource(PendingEdit pendingEdit) =>
+        pendingEdit with
+        {
+            Sources = pendingEdit.Sources
+                .Append(new ProjectFileReference(
+                    ProjectFileLayer.Base,
+                    ZaDataPaths.ItemDataArray))
+                .Distinct()
+                .ToArray(),
+        };
+
+    private static bool HasVanillaRestoreSourceMarker(PendingEdit edit)
+    {
+        var virtualPath = ZaDataPaths.ItemDataArray;
+        var relativePath = $"romfs/{virtualPath}";
+        return edit.Sources.Any(source =>
+            source.Layer == ProjectFileLayer.Base
+            && (string.Equals(source.RelativePath, virtualPath, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(source.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool IsVerifiedBaseItemRowEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+        && string.Equals(edit.Field, VerifiedBaseItemRowField, StringComparison.Ordinal);
+
+    private static bool HasVerifiedBaseItemRowEdit(EditSession session, int itemId)
+    {
+        var recordId = itemId.ToString(CultureInfo.InvariantCulture);
+        return session.PendingEdits.Any(edit =>
+            IsVerifiedBaseItemRowEdit(edit)
+            && string.Equals(edit.RecordId, recordId, StringComparison.Ordinal));
+    }
+
+    private static int GetVanillaRestoreFieldOrder(
+        string field,
+        IReadOnlyDictionary<string, int?> vanillaValues)
+    {
+        if (field == ZaItemsWorkflowService.TechnicalMachineNumberField)
+        {
+            return 0;
+        }
+
+        var disablesTechnicalMachineShape = field switch
+        {
+            ZaItemsWorkflowService.PocketField =>
+                vanillaValues.GetValueOrDefault(field) != 6,
+            ZaItemsWorkflowService.ItemTypeField =>
+                vanillaValues.GetValueOrDefault(field) != 5,
+            ZaItemsWorkflowService.MachineMoveIdField =>
+                vanillaValues.GetValueOrDefault(field) is not > 0,
+            _ => false,
+        };
+        if (disablesTechnicalMachineShape)
+        {
+            return 1;
+        }
+
+        return field is
+            ZaItemsWorkflowService.PocketField
+            or ZaItemsWorkflowService.ItemTypeField
+            or ZaItemsWorkflowService.MachineMoveIdField
+                ? 2
+                : 3;
+    }
+
     private static bool CanStageTechnicalMachineShapeEdit(
         ZaItemRecord item,
         string field,
@@ -2061,18 +3173,6 @@ internal sealed class ZaItemsEditSessionService
                 ZaEditSessionSupport.ItemsDomain,
                 field: field,
                 expected: "Preserve the loaded set of physical TM item rows"));
-            return false;
-        }
-
-        if (currentlyTechnicalMachine
-            && field == ZaItemsWorkflowService.MachineMoveIdField)
-        {
-            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Changing a TM's move is not supported until Pokemon compatibility can be migrated with it.",
-                ZaEditSessionSupport.ItemsDomain,
-                field: field,
-                expected: "Preserve the TM move ID while changing its number or other independent fields"));
             return false;
         }
 
@@ -2113,6 +3213,17 @@ internal sealed class ZaItemsEditSessionService
             // A source-equivalent TM number is the explicit, no-data-loss marker used by
             // the desktop to request the reviewed legacy repair without inventing an
             // unrelated item change.
+            return false;
+        }
+
+        if (string.Equals(
+                edit.Field,
+                ZaItemsWorkflowService.MachineMoveIdField,
+                StringComparison.Ordinal)
+            && HasVanillaRestoreSourceMarker(edit))
+        {
+            // A source-equivalent vanilla TM move is the explicit marker that restores
+            // a stale or customized disc icon without inventing a move reassignment.
             return false;
         }
 
@@ -2198,6 +3309,7 @@ internal sealed class ZaItemsEditSessionService
                 {
                     MachineMoveId = value > 0 ? value : null,
                     MachineMoveName = value > 0 ? ResolveMoveName(workflow, value) : null,
+                    MachineAssignmentDiffersFromBase = metadata.BaseMachineMoveId != value,
                 },
             },
             ZaItemsWorkflowService.TechnicalMachineNumberField => item with
@@ -2340,11 +3452,90 @@ internal sealed class ZaItemsEditSessionService
             : flags & ~(1 << bit);
     }
 
+    private static void RestoreVerifiedBaseItemRows(
+        IReadOnlyList<ItemRow> rows,
+        IReadOnlyDictionary<int, ItemRow> baseRows,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var edit in session.PendingEdits.Where(IsVerifiedBaseItemRowEdit))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || rows.FirstOrDefault(row => row.Id == itemId) is not { } row
+                || !baseRows.TryGetValue(itemId, out var baseRow))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The selected item could not be matched to one complete verified vanilla row during apply.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: VerifiedBaseItemRowField,
+                    expected: "Unique active and verified base rows with the selected item ID"));
+                continue;
+            }
+
+            row.RestoreFrom(baseRow);
+        }
+    }
+
+    private static void ValidateVerifiedBaseItemRows(
+        IReadOnlyList<ItemRow> rows,
+        IReadOnlyDictionary<int, ItemRow>? baseRows,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics,
+        string context)
+    {
+        var restoreEdits = session.PendingEdits
+            .Where(IsVerifiedBaseItemRowEdit)
+            .ToArray();
+        if (restoreEdits.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var edit in restoreEdits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                || baseRows is null
+                || !baseRows.TryGetValue(itemId, out var baseRow)
+                || rows.FirstOrDefault(row => row.Id == itemId) is not { } row)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"The {context} could not verify the selected item's complete vanilla row.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: VerifiedBaseItemRowField,
+                    expected: "Unique selected item row and verified base row"));
+                continue;
+            }
+
+            var selectedEdits = session.PendingEdits.Where(candidate =>
+                string.Equals(candidate.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
+                && string.Equals(candidate.RecordId, edit.RecordId, StringComparison.Ordinal));
+            var isPureVanillaRestore = selectedEdits.All(candidate =>
+                IsVerifiedBaseItemRowEdit(candidate)
+                || HasVanillaRestoreSourceMarker(candidate));
+            if (isPureVanillaRestore && !row.HasSameSerializedValues(baseRow))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"The {context} does not match every serialized field in the selected item's verified vanilla row. No output was written.",
+                    ZaEditSessionSupport.ItemsDomain,
+                    field: VerifiedBaseItemRowField,
+                    expected: "All serialized selected-item fields equal their exact verified base values"));
+            }
+        }
+    }
+
     private static void ApplyEdit(
         List<ItemRow> rows,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (IsVerifiedBaseItemRowEdit(edit))
+        {
+            return;
+        }
+
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
             || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
             || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
@@ -2615,7 +3806,7 @@ internal sealed class ZaItemsEditSessionService
     {
         public int Id { get; init; }
         public int ItemType { get; set; }
-        public string InternalName { get; init; } = string.Empty;
+        public string InternalName { get; set; } = string.Empty;
         public string IconName { get; set; } = string.Empty;
         public int Price { get; set; }
         public int Pocket { get; set; }
@@ -2724,6 +3915,117 @@ internal sealed class ZaItemsEditSessionService
                 SwapIntoId = row.SwapIntoId,
             };
         }
+
+        public void RestoreFrom(ItemRow source)
+        {
+            if (Id != source.Id)
+            {
+                throw new InvalidDataException(
+                    $"Item {Id} cannot be restored from verified base row {source.Id}.");
+            }
+
+            ItemType = source.ItemType;
+            InternalName = source.InternalName;
+            IconName = source.IconName;
+            Price = source.Price;
+            Pocket = source.Pocket;
+            SlotMaxNum = source.SlotMaxNum;
+            SortNum = source.SortNum;
+            PriceMegaShard = source.PriceMegaShard;
+            PriceColorfulScrew = source.PriceColorfulScrew;
+            CanNotHold = source.CanNotHold;
+            MachineWaza = source.MachineWaza;
+            MachineIndex = source.MachineIndex;
+            WorkRecvSleep = source.WorkRecvSleep;
+            WorkRecvPoison = source.WorkRecvPoison;
+            WorkRecvBurn = source.WorkRecvBurn;
+            WorkRecvFreeze = source.WorkRecvFreeze;
+            WorkRecvParalyze = source.WorkRecvParalyze;
+            WorkRecvConfuse = source.WorkRecvConfuse;
+            WorkRecvMero = source.WorkRecvMero;
+            WorkAttack = source.WorkAttack;
+            WorkDefense = source.WorkDefense;
+            WorkSpAttack = source.WorkSpAttack;
+            WorkSpDefense = source.WorkSpDefense;
+            WorkSpeed = source.WorkSpeed;
+            WorkAccuracy = source.WorkAccuracy;
+            WorkCritical = source.WorkCritical;
+            WorkEffectGuard = source.WorkEffectGuard;
+            MintNature = source.MintNature;
+            WorkRecvPower = source.WorkRecvPower;
+            HealPercentage = source.HealPercentage;
+            WorkRevival = source.WorkRevival;
+            RevivePercentage = source.RevivePercentage;
+            ExpPointGain = source.ExpPointGain;
+            MaxUseLevel = source.MaxUseLevel;
+            WorkFriendly1 = source.WorkFriendly1;
+            WorkFriendly2 = source.WorkFriendly2;
+            WorkFriendly3 = source.WorkFriendly3;
+            WorkEvolutional = source.WorkEvolutional;
+            WorkFormChange = source.WorkFormChange;
+            WorkStatusHp = source.WorkStatusHp;
+            WorkStatusAtk = source.WorkStatusAtk;
+            WorkStatusDef = source.WorkStatusDef;
+            WorkStatusSpd = source.WorkStatusSpd;
+            WorkStatusSAtk = source.WorkStatusSAtk;
+            WorkStatusSDef = source.WorkStatusSDef;
+            EquipPower = source.EquipPower;
+            AutoHealPriority = source.AutoHealPriority;
+            CanUseInBattle = source.CanUseInBattle;
+            SwapIntoId = source.SwapIntoId;
+        }
+
+        public bool HasSameSerializedValues(ItemRow other) =>
+            Id == other.Id
+            && ItemType == other.ItemType
+            && string.Equals(InternalName, other.InternalName, StringComparison.Ordinal)
+            && string.Equals(IconName, other.IconName, StringComparison.Ordinal)
+            && Price == other.Price
+            && Pocket == other.Pocket
+            && SlotMaxNum == other.SlotMaxNum
+            && SortNum == other.SortNum
+            && PriceMegaShard == other.PriceMegaShard
+            && PriceColorfulScrew == other.PriceColorfulScrew
+            && CanNotHold == other.CanNotHold
+            && MachineWaza == other.MachineWaza
+            && MachineIndex == other.MachineIndex
+            && WorkRecvSleep == other.WorkRecvSleep
+            && WorkRecvPoison == other.WorkRecvPoison
+            && WorkRecvBurn == other.WorkRecvBurn
+            && WorkRecvFreeze == other.WorkRecvFreeze
+            && WorkRecvParalyze == other.WorkRecvParalyze
+            && WorkRecvConfuse == other.WorkRecvConfuse
+            && WorkRecvMero == other.WorkRecvMero
+            && WorkAttack == other.WorkAttack
+            && WorkDefense == other.WorkDefense
+            && WorkSpAttack == other.WorkSpAttack
+            && WorkSpDefense == other.WorkSpDefense
+            && WorkSpeed == other.WorkSpeed
+            && WorkAccuracy == other.WorkAccuracy
+            && WorkCritical == other.WorkCritical
+            && WorkEffectGuard == other.WorkEffectGuard
+            && MintNature == other.MintNature
+            && WorkRecvPower == other.WorkRecvPower
+            && HealPercentage == other.HealPercentage
+            && WorkRevival == other.WorkRevival
+            && RevivePercentage == other.RevivePercentage
+            && ExpPointGain == other.ExpPointGain
+            && MaxUseLevel == other.MaxUseLevel
+            && WorkFriendly1 == other.WorkFriendly1
+            && WorkFriendly2 == other.WorkFriendly2
+            && WorkFriendly3 == other.WorkFriendly3
+            && WorkEvolutional == other.WorkEvolutional
+            && WorkFormChange == other.WorkFormChange
+            && WorkStatusHp == other.WorkStatusHp
+            && WorkStatusAtk == other.WorkStatusAtk
+            && WorkStatusDef == other.WorkStatusDef
+            && WorkStatusSpd == other.WorkStatusSpd
+            && WorkStatusSAtk == other.WorkStatusSAtk
+            && WorkStatusSDef == other.WorkStatusSDef
+            && EquipPower == other.EquipPower
+            && AutoHealPriority == other.AutoHealPriority
+            && CanUseInBattle == other.CanUseInBattle
+            && SwapIntoId == other.SwapIntoId;
 
         public Offset<ZaItemData> Write(FlatBufferBuilder builder)
         {

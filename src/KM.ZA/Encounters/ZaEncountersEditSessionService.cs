@@ -1531,25 +1531,25 @@ internal sealed class ZaEncountersEditSessionService
         }
 
         var hasGuaranteedAlphaChance = linkedSlots.Any(slot => slot.AlphaChancePercent == 100);
-        if ((hasStructuralAlphaReference || hasGuaranteedAlphaChance) && value != 100)
+        if (hasGuaranteedAlphaChance && value != 100)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Guaranteed Alpha encounter rows must keep their shared Alpha chance at 100 percent.",
                 ZaEditSessionSupport.EncountersDomain,
                 field: ZaEncountersWorkflowService.AlphaChancePercentField,
-                expected: "100 for a structural _Alpha reference or an existing 100-percent encounter row"));
+                expected: "100 for an existing 100-percent encounter row"));
             return false;
         }
 
-        if (!hasStructuralAlphaReference && !hasGuaranteedAlphaChance && value > 99)
+        if (!hasGuaranteedAlphaChance && value > 99)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Ordinary encounter rows must keep their shared Alpha chance between 0 and 99 percent.",
+                "Non-guaranteed encounter rows must keep their shared Alpha chance between 0 and 99 percent.",
                 ZaEditSessionSupport.EncountersDomain,
                 field: ZaEncountersWorkflowService.AlphaChancePercentField,
-                expected: "Whole-number percent from 0 through 99 for an ordinary encounter row"));
+                expected: "Whole-number percent from 0 through 99 for a non-guaranteed encounter row"));
             return false;
         }
 

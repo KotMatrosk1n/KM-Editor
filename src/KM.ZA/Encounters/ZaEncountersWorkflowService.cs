@@ -51,12 +51,14 @@ internal sealed class ZaEncountersWorkflowService
     private const int CurrentPhaseAtLeastComparison = 5;
     private const int PostgamePhaseThreshold = 100000;
 
+    // Encounter PokemonData uses the actual-gender codes, not the separate
+    // payload SexType enum whose zero value means default.
     private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> GenderOptions =
     [
-        new(-1, "Game default"),
-        new(0, "Random"),
-        new(1, "Male"),
-        new(2, "Female"),
+        new(-1, "Random / species default"),
+        new(0, "Male"),
+        new(1, "Female"),
+        new(2, "Genderless"),
     ];
 
     private static readonly IReadOnlyList<ZaEncounterEditableFieldOption> ShinyModeOptions =
