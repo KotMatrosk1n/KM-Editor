@@ -36,7 +36,9 @@ Changing a project path requires validation so every editor reloads from the new
 
 The game guides are the authoritative feature maps. Similar editor names do not mean the games share formats or output rules.
 
-In Legends Z-A Wild Encounters, phase-gated placements show their progression requirements and raw phase numbers, and the linked placement table remains available whether an encounter has one placement or several. Shared encounter records can edit species, form, held item, traits, levels, Alpha settings, IVs, and moves, while unknown structural values remain visible and read only.
+Legends Z-A Moves edits the runtime battle and timing records used in battle. Normal Move, Plus Move, and Boss Move variants remain separate, and bounded controls cover cooldown, effects, animation, targeting, motion, range, and projectiles. Selected moves and items can be staged back to verified vanilla data, and physical TM move changes migrate Pokemon compatibility and keep disc icons synchronized.
+
+In Legends Z-A Wild Encounters, phase-gated placements show their progression requirements and raw phase numbers, and the linked placement table remains available whether an encounter has one placement or several. Shared encounter records can edit species, form, held item, traits, levels, Alpha settings, IVs, and moves, while unknown structural values remain visible and read only. Gender choices use the actual encounter values, and supported whole-number structural Alpha rows below 100 percent remain editable. Guaranteed rows stay fixed at 100 percent, while mixed or unreadable shared ownership remains read only.
 
 Settings offers Classic and Focused layouts. Classic preserves the original side-by-side editor arrangement and remains the default. Focused places record browsers above full-width selected details, and KM Editor remembers the selected layout across launches.
 
