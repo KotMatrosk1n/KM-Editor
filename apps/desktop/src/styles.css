@@ -3013,6 +3013,7 @@ h2 {
 
 .item-edit-form > .secondary-button,
 .item-edit-form > .draft-action-row,
+.item-edit-form > .za-encounter-revert-action,
 .text-edit-form > .secondary-button,
 .text-edit-form > .primary-button,
 .trainer-edit-form > .secondary-button,
@@ -3232,6 +3233,23 @@ h2 {
 
 .move-flags-field-group {
   grid-column: 1 / -1;
+}
+
+.move-advanced-field-group {
+  grid-column: 1 / -1;
+}
+
+.move-advanced-editor-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(214 168 66 / 28%);
+  border-radius: 8px;
+  background: rgb(214 168 66 / 6%);
+}
+
+.move-advanced-field-group .editable-field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
 }
 
 .move-flags-field-grid {

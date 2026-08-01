@@ -2,7 +2,9 @@
 
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.ZA.Generated.BattleMoves;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.Workflows;
@@ -13,7 +15,8 @@ namespace KM.ZA.Moves;
 internal sealed class ZaMovesWorkflowService
 {
     private const string WorkflowLabel = "Moves";
-    private const string WorkflowDescription = "Edit Pokemon Legends Z-A battle move data from avalon waza records.";
+    private const string WorkflowDescription =
+        "Edit Pokemon Legends Z-A runtime battle parameters, variants, accuracy, and cooldown data.";
 
     public const string CanUseMoveField = "canUseMove";
     public const string TypeField = "type";
@@ -142,6 +145,7 @@ internal sealed class ZaMovesWorkflowService
         [7] = "Infatuation",
         [8] = "Trap",
         [9] = "Nightmare",
+        [11] = "Taunt",
         [12] = "Torment",
         [13] = "Disable",
         [14] = "Drowsiness",
@@ -153,8 +157,28 @@ internal sealed class ZaMovesWorkflowService
         [21] = "Ingrain",
         [24] = "Throat Chop",
         [42] = "Tar Shot",
+        [46] = "Salt Cure",
         [65535] = "Tri Attack Status",
     };
+
+    private static readonly IReadOnlyDictionary<int, string> RuntimeConditionNames =
+        new Dictionary<int, string>
+        {
+            [0] = "None",
+            [1] = "Paralysis",
+            [2] = "Sleep",
+            [3] = "Freeze",
+            [4] = "Burn",
+            [5] = "Poison",
+            [6] = "Confusion",
+            [8] = "Trap / Bind",
+            [11] = "Taunt",
+            [12] = "Torment",
+            [15] = "Heal Block",
+            [18] = "Leech Seed",
+            [20] = "Perish Song",
+            [46] = "Salt Cure",
+        };
 
     private static readonly IReadOnlyList<string> StatNames =
     [
@@ -187,6 +211,72 @@ internal sealed class ZaMovesWorkflowService
 
     private static readonly IReadOnlyList<ZaMoveEditableFieldOption> StatOptions =
         [new(-1, "-1 Unused"), .. CreateIndexedOptions(StatNames)];
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeStatOptions =
+        CreateIndexedOptions(StatNames);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeCriticalRankOptions =
+    [
+        new(0, "0 Normal (1 in 24)"),
+        new(1, "1 High (1 in 8)"),
+        new(2, "2 Very high (1 in 2)"),
+        new(6, "6 Guaranteed"),
+    ];
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeConditionModeOptions =
+    [
+        new(0, "0 Effect-defined / none"),
+        new(1, "1 Persistent"),
+        new(2, "2 Timed"),
+    ];
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeConditionOptions =
+        RuntimeConditionNames
+            .OrderBy(entry => entry.Key)
+            .Select(entry => new ZaMoveEditableFieldOption(
+                entry.Key,
+                $"{entry.Key.ToString(CultureInfo.InvariantCulture)} {entry.Value}"))
+            .ToArray();
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeEffectCategoryOptions =
+        CreateRawOptions(0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeValueEffectRatioOptions =
+        CreateRawOptions(0, 2, 8, 15, 20);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeSpawnOriginOptions =
+        CreateRawOptions(0, 1, 2, 4, 5, 6, 7);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeSpawnLocatorOptions =
+        ZaRuntimeMoveData.SpawnLocators
+            .Select((locator, index) => new ZaMoveEditableFieldOption(
+                index,
+                index == 0
+                    ? "0 Empty / default"
+                    : $"{index.ToString(CultureInfo.InvariantCulture)} {locator}"))
+            .ToArray();
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeShotDirectionOptions =
+        CreateRawOptions(0, 1, 2);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeTargetCorrectionOptions =
+        CreateRawOptions(0, 1);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeMovementTypeOptions =
+        CreateRawOptions(0, 1, 3);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeHeightToleranceOptions =
+        CreateRawOptions(0, 2);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeEffectValueOptions =
+        CreateRawOptions(0);
+
+    private static readonly IReadOnlyList<ZaMoveEditableFieldOption> RuntimeMegaPowerBonusOptions =
+    [
+        new(0, "0"),
+        new(5, "5"),
+        new(5.75, "5.75"),
+    ];
 
     private static readonly IReadOnlyList<ZaMoveEditableFieldOption> InflictOptions =
         InflictNames
@@ -265,6 +355,18 @@ internal sealed class ZaMovesWorkflowService
         Field(CantUseTwiceField, "Cannot use twice in a row", "boolean", 0, 1, BooleanOptions),
     ];
 
+    private static readonly IReadOnlyList<ZaMoveEditableField> RuntimeBaseEditableFields =
+    [
+        .. CreateRuntimeVariantFields(0),
+        .. CreateRuntimeVariantFields(1),
+        .. CreateRuntimeVariantFields(2),
+        Field("timing.hitPercent", "Accuracy (%)", "integer", 0, 100),
+        Field("timing.cooldown", "Cooldown (seconds)", "decimal", 0, 60),
+    ];
+
+    private static readonly IReadOnlyList<ZaMoveEditableField> RuntimeAdvancedTimingTemplates =
+        CreateAdvancedTimingFields(0, ZaRuntimeMoveData.SpawnLocators, 3108);
+
     private readonly ZaWorkflowFileSource fileSource;
 
     public ZaMovesWorkflowService(ZaWorkflowFileSource? fileSource = null)
@@ -289,6 +391,12 @@ internal sealed class ZaMovesWorkflowService
 
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
+        ZaWorkflowFile? battleSource = null;
+        ZaWorkflowFile? timingSource = null;
+        IReadOnlyList<ZaMoveEditableFieldOption> projectileOptions = [];
+        IReadOnlyList<ProjectFileReference> projectileCatalogSources = [];
+        IReadOnlyList<string> spawnLocators = ZaRuntimeMoveData.SpawnLocators;
+        IReadOnlyList<ZaMoveEditableField> runtimeEditableFields = RuntimeBaseEditableFields;
         var labels = ZaTextLabelLookup.None();
         var moves = Array.Empty<ZaMoveRecord>();
 
@@ -296,13 +404,81 @@ internal sealed class ZaMovesWorkflowService
         {
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             source = fileSource.Read(project, ZaDataPaths.MoveDataArray);
-            moves = LoadRecords(source, labels).ToArray();
+            battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+            timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
+
+            var battleTable = ZaRuntimeMoveData.ReadBattle(battleSource.Bytes);
+            var timingTable = ZaRuntimeMoveData.ReadTiming(timingSource.Bytes);
+            var baseBattleTable = ZaRuntimeMoveData.ReadBattle(
+                fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray).Bytes);
+            var baseTimingTable = ZaRuntimeMoveData.ReadTiming(
+                fileSource.ReadBase(project, ZaDataPaths.MoveTimingParameterArray).Bytes);
+
+            try
+            {
+                var projectileSource = fileSource.Read(project, ZaDataPaths.AiBulletParamArray);
+                var baseProjectileSource = fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray);
+                projectileOptions = ZaMoveProjectileCatalog.ReadOptions(projectileSource.Bytes);
+                projectileCatalogSources =
+                [
+                    new ProjectFileReference(projectileSource.SourceLayer, projectileSource.RelativePath),
+                    new ProjectFileReference(baseProjectileSource.SourceLayer, baseProjectileSource.RelativePath),
+                ];
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Projectile override fields are unavailable because the bullet catalog could not be verified: {exception.Message}",
+                    $"romfs/{ZaDataPaths.AiBulletParamArray}",
+                    expected: "A structurally valid active and verified-base bullet parameter catalog"));
+            }
+
+            var battleByMove = ZaRuntimeMoveData.BattleRows(battleTable)
+                .GroupBy(row => checked((int)row.MoveId))
+                .ToDictionary(group => group.Key, group => group.OrderBy(row => row.VariantType).ToArray());
+            var timingByMove = ZaRuntimeMoveData.TimingRows(timingTable)
+                .GroupBy(row => row.MoveId)
+                .ToDictionary(group => group.Key, group => group.ToArray());
+            var baseBattleByMove = ZaRuntimeMoveData.BattleRows(baseBattleTable)
+                .GroupBy(row => checked((int)row.MoveId))
+                .ToDictionary(group => group.Key, group => group.OrderBy(row => row.VariantType).ToArray());
+            var baseTimingByMove = ZaRuntimeMoveData.TimingRows(baseTimingTable)
+                .GroupBy(row => row.MoveId)
+                .ToDictionary(group => group.Key, group => group.ToArray());
+
+            spawnLocators = ZaRuntimeMoveData.SpawnLocators
+                .Concat(ZaRuntimeMoveData.TimingRows(timingTable)
+                    .Select(row => row.SpawnLocator ?? string.Empty))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var maximumTimingOccurrences = timingByMove.Count == 0
+                ? 0
+                : timingByMove.Values.Max(rows => rows.Length);
+            runtimeEditableFields = CreateRuntimeEditableFields(
+                maximumTimingOccurrences,
+                spawnLocators,
+                projectileOptions);
+
+            moves = LoadRecords(source, labels)
+                .Select(move => AddRuntimeData(
+                    move,
+                    battleByMove.GetValueOrDefault(move.MoveId) ?? [],
+                    timingByMove.GetValueOrDefault(move.MoveId) ?? [],
+                    baseBattleByMove.GetValueOrDefault(move.MoveId) ?? [],
+                    baseTimingByMove.GetValueOrDefault(move.MoveId) ?? [],
+                    battleSource.RelativePath,
+                    battleSource.SourceLayer,
+                    timingSource.RelativePath,
+                    timingSource.SourceLayer,
+                    runtimeEditableFields,
+                    spawnLocators))
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(ZaWorkflowSupport.Error(
                 $"Moves could not be loaded: {exception.Message}",
-                $"romfs/{ZaDataPaths.MoveDataArray}"));
+                $"romfs/{ZaDataPaths.BattleMoveParameterArray}"));
         }
 
         var summary = ZaWorkflowSupport.CreateSummary(
@@ -315,19 +491,53 @@ internal sealed class ZaMovesWorkflowService
         return new ZaMovesWorkflow(
             summary,
             moves,
-            EditableFields,
+            runtimeEditableFields,
             new ZaMovesWorkflowStats(
                 moves.Length,
                 moves.Count(move => move.CanUseMove),
-                source is null ? 0 : 1,
+                new[] { source, battleSource, timingSource }.Count(file => file is not null),
                 moves.Sum(move => move.Flags.Count(flag => flag.Enabled))),
-            diagnostics);
+            diagnostics)
+        {
+            ProjectileOptions = projectileOptions,
+            ProjectileCatalogSources = projectileCatalogSources,
+            SpawnLocators = spawnLocators,
+        };
     }
 
     internal static ZaMoveEditableField? GetEditableField(string? field)
     {
-        return EditableFields.FirstOrDefault(candidate =>
+        var exact = RuntimeBaseEditableFields.FirstOrDefault(candidate =>
             string.Equals(candidate.Field, field, StringComparison.Ordinal));
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        if (!ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var member)
+            || occurrence is null)
+        {
+            return null;
+        }
+
+        var template = RuntimeAdvancedTimingTemplates.FirstOrDefault(candidate =>
+            ZaRuntimeMoveData.TryParseTimingField(candidate.Field, out _, out var candidateMember)
+            && string.Equals(candidateMember, member, StringComparison.Ordinal));
+        return template is null ? null : template with { Field = field! };
+    }
+
+    internal static ZaMoveEditableField? GetEditableField(ZaMovesWorkflow workflow, string? field)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        return workflow.EditableFields.FirstOrDefault(candidate =>
+            string.Equals(candidate.Field, field, StringComparison.Ordinal));
+    }
+
+    internal static bool IsProjectileField(string? field)
+    {
+        return ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var member)
+            && occurrence is not null
+            && ZaRuntimeMoveData.IsProjectileMember(member);
     }
 
     internal static string FormatType(int type) => FormatIndexed(type, TypeNames, "Type");
@@ -415,6 +625,166 @@ internal sealed class ZaMovesWorkflowService
             new ZaMoveProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
+    private static ZaMoveRecord AddRuntimeData(
+        ZaMoveRecord move,
+        IReadOnlyList<ZaBattleMoveParameterT> battleRows,
+        IReadOnlyList<ZaMoveTimingParameterT> timingRows,
+        IReadOnlyList<ZaBattleMoveParameterT> baseBattleRows,
+        IReadOnlyList<ZaMoveTimingParameterT> baseTimingRows,
+        string battleSourceFile,
+        ProjectFileLayer battleSourceLayer,
+        string timingSourceFile,
+        ProjectFileLayer timingSourceLayer,
+        IReadOnlyList<ZaMoveEditableField> runtimeEditableFields,
+        IReadOnlyList<string> spawnLocators)
+    {
+        var (variants, ambiguousVariantIds) = ProjectBattleRows(battleRows);
+        var (baseVariants, ambiguousBaseVariantIds) = ProjectBattleRows(baseBattleRows);
+        var timingRecords = timingRows
+            .Select((row, occurrence) => ZaRuntimeMoveData.ToRecord(row, occurrence, spawnLocators))
+            .ToArray();
+        var baseTimingRecords = baseTimingRows
+            .Select((row, occurrence) => ZaRuntimeMoveData.ToRecord(row, occurrence, spawnLocators))
+            .ToArray();
+        var timing = timingRecords.FirstOrDefault();
+        var primary = variants.FirstOrDefault(variant => variant.Variant == 0) ?? variants.FirstOrDefault();
+        var vanillaValues = new List<ZaMoveVanillaFieldValue>();
+        var currentVariantIds = battleRows
+            .Select(row => checked((int)row.VariantType))
+            .Order()
+            .ToArray();
+        var baseVariantIds = baseBattleRows
+            .Select(row => checked((int)row.VariantType))
+            .Order()
+            .ToArray();
+        var hasRuntimeData = variants.Count > 0 || timingRows.Count > 0;
+        var hasMatchingVariantShape = ambiguousVariantIds.Count == 0
+            && ambiguousBaseVariantIds.Count == 0
+            && currentVariantIds.SequenceEqual(baseVariantIds);
+        var hasMatchingTiming = timingRows.Count == baseTimingRows.Count;
+        var canRevertToVanilla = hasRuntimeData
+            && hasMatchingVariantShape
+            && hasMatchingTiming;
+        var battleVanillaFingerprint = baseBattleRows.Count == 0
+            ? null
+            : ZaRuntimeMoveData.CreateBattleRowsFingerprint(baseBattleRows);
+        var timingVanillaFingerprint = baseTimingRows.Count == 0
+            ? null
+            : ZaRuntimeMoveData.CreateTimingRowsFingerprint(baseTimingRows);
+        var battleDiffersFromVanilla = hasMatchingVariantShape
+            && battleVanillaFingerprint is not null
+            && !string.Equals(
+                ZaRuntimeMoveData.CreateBattleRowsFingerprint(battleRows),
+                battleVanillaFingerprint,
+                StringComparison.Ordinal);
+        var timingDiffersFromVanilla = hasMatchingTiming
+            && timingVanillaFingerprint is not null
+            && !string.Equals(
+                ZaRuntimeMoveData.CreateTimingRowsFingerprint(timingRows),
+                timingVanillaFingerprint,
+                StringComparison.Ordinal);
+        var revertBlockedReason = canRevertToVanilla
+            ? null
+            : !hasRuntimeData
+                ? "This move does not have editable runtime battle or timing data."
+                : !hasMatchingVariantShape
+                    ? "The active and verified vanilla files do not contain one exact matching occurrence shape of unambiguous runtime variants for this move."
+                    : "The active and verified vanilla files do not contain the same restorable timing-row shape for this move.";
+
+        foreach (var baseVariant in baseVariants)
+        {
+            foreach (var field in runtimeEditableFields.Where(candidate =>
+                         candidate.Field.StartsWith($"battle.{baseVariant.Variant}.", StringComparison.Ordinal)))
+            {
+                if (ZaRuntimeMoveData.TryParseBattleField(field.Field, out _, out var member)
+                    && ZaRuntimeMoveData.GetValue(baseVariant, member) is { } value)
+                {
+                    vanillaValues.Add(new ZaMoveVanillaFieldValue(field.Field, value));
+                }
+            }
+        }
+
+        foreach (var field in runtimeEditableFields.Where(candidate =>
+                     candidate.Field.StartsWith(ZaRuntimeMoveData.TimingPrefix, StringComparison.Ordinal)))
+        {
+            if (ZaRuntimeMoveData.TryParseTimingField(field.Field, out var occurrence, out var member)
+                && baseTimingRecords.ElementAtOrDefault(occurrence ?? 0) is { } baseTiming
+                && ZaRuntimeMoveData.GetValue(baseTiming, member) is { } value)
+            {
+                vanillaValues.Add(new ZaMoveVanillaFieldValue(field.Field, value));
+            }
+        }
+
+        return (primary is null
+                ? move
+                : move with
+                {
+                    Type = primary.Type,
+                    TypeName = primary.TypeName,
+                    Category = primary.DamageType,
+                    CategoryName = primary.DamageTypeName,
+                    Power = primary.Power,
+                    Accuracy = timing?.HitPercent ?? move.Accuracy,
+                    CritStage = primary.CriticalRank,
+                    HitMin = timing?.ProjectileCountMin ?? move.HitMin,
+                    HitMax = timing?.ProjectileCountMax ?? move.HitMax,
+                    TurnMin = primary.ConditionTurnMin,
+                    TurnMax = primary.ConditionTurnMax,
+                    Inflict = primary.ConditionId,
+                    InflictName = FormatInflict(primary.ConditionId),
+                    InflictPercent = primary.ConditionPercent,
+                    RawInflictCount = primary.ConditionCount,
+                    Recoil = primary.DamageDrainRatio,
+                    RawHealing = primary.HpRecoverRatio,
+                    StatChanges = primary.StatChanges,
+                }) with
+        {
+            RuntimeVariants = variants,
+            Timing = timing,
+            TimingRows = timingRecords,
+            VanillaValues = vanillaValues,
+            RuntimeSourceFiles = [battleSourceFile, timingSourceFile],
+            RuntimeBattleSourceLayer = battleSourceLayer,
+            RuntimeTimingSourceLayer = timingSourceLayer,
+            VanillaRuntimeVariants = baseVariants,
+            AmbiguousRuntimeVariantIds = ambiguousVariantIds,
+            VanillaTimingRows = baseTimingRecords,
+            RuntimeBattleVanillaFingerprint = battleVanillaFingerprint,
+            RuntimeTimingVanillaFingerprint = timingVanillaFingerprint,
+            RuntimeBattleDiffersFromVanilla = battleDiffersFromVanilla,
+            RuntimeTimingDiffersFromVanilla = timingDiffersFromVanilla,
+            CanRevertToVanilla = canRevertToVanilla,
+            RevertToVanillaBlockedReason = revertBlockedReason,
+        };
+    }
+
+    private static (
+        IReadOnlyList<ZaMoveRuntimeVariantRecord> Variants,
+        IReadOnlySet<int> AmbiguousVariantIds) ProjectBattleRows(
+        IReadOnlyList<ZaBattleMoveParameterT> rows)
+    {
+        var variants = new List<ZaMoveRuntimeVariantRecord>();
+        var ambiguous = new HashSet<int>();
+        foreach (var group in rows
+                     .GroupBy(row => checked((int)row.VariantType))
+                     .OrderBy(group => group.Key))
+        {
+            var occurrences = group.ToArray();
+            var fingerprints = occurrences
+                .Select(row => ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (fingerprints.Length > 1)
+            {
+                ambiguous.Add(group.Key);
+            }
+
+            variants.Add(ZaRuntimeMoveData.ToRecord(occurrences[0]));
+        }
+
+        return (variants, ambiguous);
+    }
+
     private static IReadOnlyList<ZaMoveStatChangeRecord> ToStatChangeRecords(ZaMoveStatChanges? statChanges)
     {
         if (statChanges is not { } row)
@@ -488,8 +858,8 @@ internal sealed class ZaMovesWorkflowService
         string field,
         string label,
         string valueKind,
-        int? minimumValue,
-        int? maximumValue,
+        double? minimumValue,
+        double? maximumValue,
         IReadOnlyList<ZaMoveEditableFieldOption>? options = null)
     {
         return new ZaMoveEditableField(
@@ -499,6 +869,128 @@ internal sealed class ZaMovesWorkflowService
             minimumValue,
             maximumValue,
             options ?? []);
+    }
+
+    private static IReadOnlyList<ZaMoveEditableField> CreateRuntimeVariantFields(int variant)
+    {
+        var prefix = $"battle.{variant.ToString(CultureInfo.InvariantCulture)}.";
+        return
+        [
+            Field(prefix + "effectCategory", "Effect category (raw)", "integer", 0, 13, RuntimeEffectCategoryOptions),
+            Field(prefix + "type", "Type", "integer", 0, 17, TypeOptions),
+            Field(prefix + "damageType", "Damage class", "integer", 0, 2, CategoryOptions),
+            Field(prefix + "power", "Power", "integer", 0, byte.MaxValue),
+            Field(prefix + "criticalRank", "Critical rank", "integer", 0, 6, RuntimeCriticalRankOptions),
+            Field(prefix + "hpRecoverRatio", "HP recovery (%)", "integer", 0, 100),
+            Field(prefix + "shrinkPercent", "Shrink (%)", "integer", 0, 100),
+            Field(prefix + "conditionId", "Condition", "integer", 0, 46, RuntimeConditionOptions),
+            Field(prefix + "conditionPercent", "Condition chance (%)", "integer", 0, 100),
+            Field(prefix + "conditionCount", "Condition duration mode", "integer", 0, 2, RuntimeConditionModeOptions),
+            Field(prefix + "conditionTurnMin", "Minimum condition turns", "integer", 0, 15),
+            Field(prefix + "conditionTurnMax", "Maximum condition turns", "integer", 0, 15),
+            Field(prefix + "stat1", "Stat change 1: Stat", "integer", 0, 9, RuntimeStatOptions),
+            Field(prefix + "stat1Stage", "Stat change 1: Stage delta", "integer", -6, 6),
+            Field(prefix + "stat1Percent", "Stat change 1: Chance (%)", "integer", 0, 100),
+            Field(prefix + "stat2", "Stat change 2: Stat", "integer", 0, 9, RuntimeStatOptions),
+            Field(prefix + "stat2Stage", "Stat change 2: Stage delta", "integer", -6, 6),
+            Field(prefix + "stat2Percent", "Stat change 2: Chance (%)", "integer", 0, 100),
+            Field(prefix + "stat3", "Stat change 3: Stat", "integer", 0, 9, RuntimeStatOptions),
+            Field(prefix + "stat3Stage", "Stat change 3: Stage delta", "integer", -6, 6),
+            Field(prefix + "stat3Percent", "Stat change 3: Chance (%)", "integer", 0, 100),
+            Field(prefix + "damageRecoverRatio", "Recovery / recoil (%)", "integer", -100, 100),
+            Field(prefix + "damageDrainRatio", "Damage drained as HP (%)", "integer", 0, 100),
+            Field(prefix + "isGuard", "Guard move", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "isAvoidedByFloating", "Avoided by floating", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "makesContact", "Makes contact", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "isSlicing", "Slicing move", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "isWind", "Wind move", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "bypassesSubstitute", "Bypasses substitute", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "thawsUser", "Thaws user", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "restoresHp", "Restores HP", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "allowedWhileHealBlocked", "Allowed while heal blocked", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "callableByMetronome", "Callable by Metronome", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "appliesCondition", "Applies condition", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "blockedByProtect", "Blocked by Protect", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "cannotKnockOut", "Cannot knock out", "boolean", 0, 1, BooleanOptions),
+            Field(prefix + "valueEffectRatio", "Value effect ratio (raw)", "integer", 0, 20, RuntimeValueEffectRatioOptions),
+        ];
+    }
+
+    private static IReadOnlyList<ZaMoveEditableField> CreateAdvancedTimingFields(
+        int occurrence,
+        IReadOnlyList<string> spawnLocators,
+        double projectileMaximum)
+    {
+        var prefix = $"timing.{occurrence.ToString(CultureInfo.InvariantCulture)}.";
+        var locatorOptions = spawnLocators
+            .Select((locator, index) => new ZaMoveEditableFieldOption(
+                index,
+                index == 0
+                    ? "0 Empty / default"
+                    : $"{index.ToString(CultureInfo.InvariantCulture)} {locator}"))
+            .ToArray();
+        return
+        [
+            Field(prefix + "chargeFrames", "Charge frames", "integer", 0, 500),
+            Field(prefix + "attackLoopFrames", "Attack loop frames", "integer", 0, 380),
+            Field(prefix + "spawnOrigin", "Spawn origin (raw)", "integer", 0, 7, RuntimeSpawnOriginOptions),
+            Field(prefix + "spawnLocator", "Spawn locator", "integer", 0, locatorOptions.Length - 1, locatorOptions),
+            Field(prefix + "spawnOffsetX", "Spawn offset X", "decimal", 0, 1),
+            Field(prefix + "spawnOffsetY", "Spawn offset Y", "decimal", -0.25, 60),
+            Field(prefix + "spawnOffsetZ", "Spawn offset Z", "decimal", -0.1, 5),
+            Field(prefix + "shotDirection", "Shot direction (raw)", "integer", 0, 2, RuntimeShotDirectionOptions),
+            Field(prefix + "targetCorrectionType", "Target correction (raw)", "integer", 0, 1, RuntimeTargetCorrectionOptions),
+            Field(prefix + "impactMotionSpeed", "Impact motion speed", "decimal", 0, 2),
+            Field(prefix + "movementType", "Movement type (raw)", "integer", 0, 3, RuntimeMovementTypeOptions),
+            Field(prefix + "rangeMin", "Minimum range", "decimal", 0, 4),
+            Field(prefix + "rangeMax", "Maximum range", "decimal", 0, 99),
+            Field(prefix + "heightTolerance", "Height tolerance", "decimal", 0, 2, RuntimeHeightToleranceOptions),
+            Field(prefix + "effectiveRange", "Effective range", "decimal", 0, 99),
+            Field(prefix + "projectileCountMin", "Minimum projectile count", "integer", 0, 6),
+            Field(prefix + "projectileCountMax", "Maximum projectile count", "integer", 0, 6),
+            Field(prefix + "effectTime", "Effect time", "decimal", 0, 45),
+            Field(prefix + "effectValue", "Effect value (raw)", "integer", 0, 0, RuntimeEffectValueOptions),
+            Field(prefix + "megaPowerBonus", "Mega Power bonus", "decimal", 0, 5.75, RuntimeMegaPowerBonusOptions),
+            Field(prefix + "playedMotionSpeed", "Played motion speed", "decimal", 0, 2),
+            Field(prefix + "overwriteProjectile1", "Projectile override 1", "integer", 0, projectileMaximum),
+            Field(prefix + "replacementProjectile1", "Projectile replacement 1", "integer", 0, projectileMaximum),
+            Field(prefix + "overwriteProjectile2", "Projectile override 2", "integer", 0, projectileMaximum),
+            Field(prefix + "replacementProjectile2", "Projectile replacement 2", "integer", 0, projectileMaximum),
+            Field(prefix + "overwriteProjectile3", "Projectile override 3", "integer", 0, projectileMaximum),
+            Field(prefix + "replacementProjectile3", "Projectile replacement 3", "integer", 0, projectileMaximum),
+            Field(prefix + "overwriteProjectile4", "Projectile override 4", "integer", 0, projectileMaximum),
+            Field(prefix + "replacementProjectile4", "Projectile replacement 4", "integer", 0, projectileMaximum),
+            Field(prefix + "overwriteProjectile5", "Projectile override 5", "integer", 0, projectileMaximum),
+            Field(prefix + "replacementProjectile5", "Projectile replacement 5", "integer", 0, projectileMaximum),
+            Field(prefix + "projectileCorrectionScale", "Projectile correction scale", "decimal", 0, 10),
+        ];
+    }
+
+    private static IReadOnlyList<ZaMoveEditableField> CreateRuntimeEditableFields(
+        int timingOccurrenceCount,
+        IReadOnlyList<string> spawnLocators,
+        IReadOnlyList<ZaMoveEditableFieldOption> projectileOptions)
+    {
+        var projectileMaximum = projectileOptions.Count == 0
+            ? 0
+            : projectileOptions.Max(option => option.Value);
+        return RuntimeBaseEditableFields
+            .Concat(Enumerable.Range(0, timingOccurrenceCount)
+                .SelectMany(occurrence => CreateAdvancedTimingFields(
+                    occurrence,
+                    spawnLocators,
+                    projectileMaximum)))
+            .Where(field => projectileOptions.Count > 0 || !IsProjectileField(field.Field))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ZaMoveEditableFieldOption> CreateRawOptions(params int[] values)
+    {
+        return values
+            .Select(value => new ZaMoveEditableFieldOption(
+                value,
+                value.ToString(CultureInfo.InvariantCulture)))
+            .ToArray();
     }
 
     private static IReadOnlyList<ZaMoveEditableFieldOption> CreateIndexedOptions(IReadOnlyList<string> names)

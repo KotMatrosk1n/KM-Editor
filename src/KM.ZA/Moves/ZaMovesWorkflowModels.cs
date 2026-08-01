@@ -24,16 +24,90 @@ public sealed record ZaMoveFlagRecord(
     bool Enabled);
 
 public sealed record ZaMoveEditableFieldOption(
-    int Value,
+    double Value,
     string Label);
 
 public sealed record ZaMoveEditableField(
     string Field,
     string Label,
     string ValueKind,
-    int? MinimumValue,
-    int? MaximumValue,
+    double? MinimumValue,
+    double? MaximumValue,
     IReadOnlyList<ZaMoveEditableFieldOption> Options);
+
+public sealed record ZaMoveRuntimeVariantRecord(
+    int Variant,
+    int Type,
+    string TypeName,
+    int EffectCategory,
+    int DamageType,
+    string DamageTypeName,
+    int Power,
+    int CriticalRank,
+    int HpRecoverRatio,
+    int ShrinkPercent,
+    int ConditionId,
+    int ConditionPercent,
+    int ConditionCount,
+    int ConditionTurnMin,
+    int ConditionTurnMax,
+    IReadOnlyList<ZaMoveStatChangeRecord> StatChanges,
+    int DamageRecoverRatio,
+    int DamageDrainRatio,
+    bool IsGuard,
+    bool IsAvoidedByFloating,
+    bool MakesContact,
+    bool IsSlicing,
+    bool IsWind,
+    bool BypassesSubstitute,
+    bool ThawsUser,
+    bool RestoresHp,
+    bool AllowedWhileHealBlocked,
+    bool CallableByMetronome,
+    bool AppliesCondition,
+    bool BlockedByProtect,
+    bool CannotKnockOut,
+    int ValueEffectRatio);
+
+public sealed record ZaMoveTimingRecord(
+    int Occurrence,
+    int ChargeFrames,
+    int AttackLoopFrames,
+    int SpawnOrigin,
+    string SpawnLocator,
+    int SpawnLocatorOption,
+    double SpawnOffsetX,
+    double SpawnOffsetY,
+    double SpawnOffsetZ,
+    int ShotDirection,
+    int TargetCorrectionType,
+    double ImpactMotionSpeed,
+    int MovementType,
+    double RangeMin,
+    double RangeMax,
+    double HeightTolerance,
+    double EffectiveRange,
+    int ProjectileCountMin,
+    int ProjectileCountMax,
+    int HitPercent,
+    double Cooldown,
+    double EffectTime,
+    int EffectValue,
+    double MegaPowerBonus,
+    double PlayedMotionSpeed,
+    int OverwriteProjectile1,
+    int ReplacementProjectile1,
+    int OverwriteProjectile2,
+    int ReplacementProjectile2,
+    int OverwriteProjectile3,
+    int ReplacementProjectile3,
+    int OverwriteProjectile4,
+    int ReplacementProjectile4,
+    int OverwriteProjectile5,
+    int ReplacementProjectile5,
+    double ProjectileCorrectionScale);
+
+public sealed record ZaMoveVanillaFieldValue(string Field, string Value);
 
 public sealed record ZaMoveRecord(
     int MoveId,
@@ -68,7 +142,42 @@ public sealed record ZaMoveRecord(
     int RawHealing,
     IReadOnlyList<ZaMoveStatChangeRecord> StatChanges,
     IReadOnlyList<ZaMoveFlagRecord> Flags,
-    ZaMoveProvenance Provenance);
+    ZaMoveProvenance Provenance)
+{
+    public IReadOnlyList<ZaMoveRuntimeVariantRecord> RuntimeVariants { get; init; } = [];
+
+    public ZaMoveTimingRecord? Timing { get; init; }
+
+    public IReadOnlyList<ZaMoveTimingRecord> TimingRows { get; init; } = [];
+
+    public IReadOnlyList<ZaMoveVanillaFieldValue> VanillaValues { get; init; } = [];
+
+    public IReadOnlyList<string> RuntimeSourceFiles { get; init; } = [];
+
+    public ProjectFileLayer RuntimeBattleSourceLayer { get; init; } = ProjectFileLayer.Base;
+
+    public ProjectFileLayer RuntimeTimingSourceLayer { get; init; } = ProjectFileLayer.Base;
+
+    internal IReadOnlyList<ZaMoveRuntimeVariantRecord> VanillaRuntimeVariants { get; init; } = [];
+
+    internal IReadOnlySet<int> AmbiguousRuntimeVariantIds { get; init; } = new HashSet<int>();
+
+    internal IReadOnlyList<ZaMoveTimingRecord> VanillaTimingRows { get; init; } = [];
+
+    internal string? RuntimeBattleVanillaFingerprint { get; init; }
+
+    internal string? RuntimeTimingVanillaFingerprint { get; init; }
+
+    internal bool RuntimeBattleDiffersFromVanilla { get; init; }
+
+    internal bool RuntimeTimingDiffersFromVanilla { get; init; }
+
+    public bool HasRuntimeData => RuntimeVariants.Count > 0 || TimingRows.Count > 0;
+
+    public bool CanRevertToVanilla { get; init; }
+
+    public string? RevertToVanillaBlockedReason { get; init; }
+}
 
 public sealed record ZaMovesWorkflowStats(
     int TotalMoveCount,
@@ -81,4 +190,11 @@ public sealed record ZaMovesWorkflow(
     IReadOnlyList<ZaMoveRecord> Moves,
     IReadOnlyList<ZaMoveEditableField> EditableFields,
     ZaMovesWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<ZaMoveEditableFieldOption> ProjectileOptions { get; init; } = [];
+
+    internal IReadOnlyList<ProjectFileReference> ProjectileCatalogSources { get; init; } = [];
+
+    internal IReadOnlyList<string> SpawnLocators { get; init; } = [];
+}

@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Generated.BattleMoves;
+
+table ZaMoveTimingParameter {
+  move_id:int;
+  charge_frame:int;
+  attack_loop_frame:int;
+  spawn_origin:int;
+  spawn_locator:string;
+  spawn_offset_x:float;
+  spawn_offset_y:float;
+  spawn_offset_z:float;
+  shot_direction:int;
+  target_correction_type:int;
+  impact_motion_speed:float;
+  movement_type:int;
+  range_min:float;
+  range_max:float;
+  height_tolerance:float;
+  effective_range:float;
+  projectile_count_min:int;
+  projectile_count_max:int;
+  hit_percent:int;
+  cooldown:float;
+  effect_time:float;
+  effect_value:int;
+  mega_power_bonus:float;
+  played_motion_speed:float;
+  overwrite_projectile1:int;
+  replacement_projectile1:int;
+  overwrite_projectile2:int;
+  replacement_projectile2:int;
+  overwrite_projectile3:int;
+  replacement_projectile3:int;
+  overwrite_projectile4:int;
+  replacement_projectile4:int;
+  overwrite_projectile5:int;
+  replacement_projectile5:int;
+  projectile_correction_scale:float;
+}
+
+table ZaMoveTimingParameterGroup {
+  root:[ZaMoveTimingParameter];
+}
+
+table ZaMoveTimingParameterArray {
+  values:[ZaMoveTimingParameterGroup];
+}
+
+root_type ZaMoveTimingParameterArray;

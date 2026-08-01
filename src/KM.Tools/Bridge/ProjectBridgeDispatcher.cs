@@ -288,6 +288,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
                 KmCommandNames.UpdateItemField => DispatchUpdateItemField(requestJson),
                 KmCommandNames.UpdateItemFields => DispatchUpdateItemFields(requestJson),
+                KmCommandNames.StageItemVanilla => DispatchStageItemVanilla(requestJson),
                 KmCommandNames.LoadPokemonWorkflow => DispatchLoadPokemonWorkflow(requestJson),
                 KmCommandNames.UpdatePokemonField => DispatchUpdatePokemonField(requestJson),
                 KmCommandNames.UpdatePokemonFields => DispatchUpdatePokemonFields(requestJson),
@@ -300,6 +301,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadMovesWorkflow => DispatchLoadMovesWorkflow(requestJson),
                 KmCommandNames.UpdateMoveField => DispatchUpdateMoveField(requestJson),
                 KmCommandNames.UpdateMoveFields => DispatchUpdateMoveFields(requestJson),
+                KmCommandNames.StageMoveVanilla => DispatchStageMoveVanilla(requestJson),
                 KmCommandNames.LoadTextWorkflow => DispatchLoadTextWorkflow(requestJson),
                 KmCommandNames.UpdateTextEntry => DispatchUpdateTextEntry(requestJson),
                 KmCommandNames.LoadTrainersWorkflow => DispatchLoadTrainersWorkflow(requestJson),
@@ -842,6 +844,21 @@ public sealed class ProjectBridgeDispatcher
             .ToArray();
         var response = SwShBridgeMapper.ToMoveFieldsDto(
             movesEditSessionService.UpdateFields(paths, session, swShUpdates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageMoveVanilla(string requestJson)
+    {
+        var request = DeserializeRequest<StageMoveVanillaRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = ZaBridgeMapper.ToMoveVanillaDto(
+            zaWorkflowService.StageMoveVanilla(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                session,
+                request.Payload.MoveId));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2968,6 +2985,21 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchStageItemVanilla(string requestJson)
+    {
+        var request = DeserializeRequest<StageItemVanillaRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var response = ZaBridgeMapper.ToItemVanillaDto(
+            zaWorkflowService.StageItemVanilla(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                session,
+                request.Payload.ItemId));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchStartEditSession(string requestJson)
     {
         var request = DeserializeRequest<StartEditSessionRequest>(requestJson);
@@ -3968,6 +4000,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.MovePokemonDexPlacement or
             KmCommandNames.ResizePokemonDex or
             KmCommandNames.StagePokemonDexVanilla or
+            KmCommandNames.StageItemVanilla or
+            KmCommandNames.StageMoveVanilla or
             KmCommandNames.StageEncounterSlotVanilla or
             KmCommandNames.LoadAngeFightWorkflow or
             KmCommandNames.StageAngeFight or
@@ -3987,6 +4021,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadItemsWorkflow or
             KmCommandNames.UpdateItemField or
             KmCommandNames.UpdateItemFields or
+            KmCommandNames.StageItemVanilla or
             KmCommandNames.LoadPokemonWorkflow or
             KmCommandNames.UpdatePokemonField or
             KmCommandNames.UpdatePokemonFields or
@@ -4018,6 +4053,7 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or
+            KmCommandNames.StageMoveVanilla or
             KmCommandNames.LoadTextWorkflow or
             KmCommandNames.UpdateTextEntry or
             KmCommandNames.LoadShopsWorkflow or

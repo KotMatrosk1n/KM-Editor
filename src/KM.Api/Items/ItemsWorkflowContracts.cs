@@ -26,6 +26,11 @@ public sealed record UpdateItemFieldsRequest(
     EditSessionDto? Session,
     IReadOnlyList<ItemFieldUpdateDto> Updates);
 
+public sealed record StageItemVanillaRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int ItemId);
+
 public sealed record UpdateItemFieldResponse(
     ItemsWorkflowDto Workflow,
     EditSessionDto Session,
@@ -81,7 +86,16 @@ public sealed record ItemMetadataDto(
     int FriendshipGain3,
     int? MachineSlot,
     int? MachineMoveId,
-    string? MachineMoveName);
+    string? MachineMoveName)
+{
+    public int? BaseMachineMoveId { get; init; }
+
+    public string? BaseMachineMoveName { get; init; }
+
+    public bool MachineAssignmentDiffersFromBase { get; init; }
+
+    public int CompatiblePokemonCount { get; init; }
+}
 
 public sealed record ItemRecordDto(
     int ItemId,
@@ -95,7 +109,12 @@ public sealed record ItemRecordDto(
     ItemMetadataDto Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<ItemDetailGroupDto> DetailGroups,
-    ItemProvenanceDto Provenance);
+    ItemProvenanceDto Provenance)
+{
+    public bool CanRevertToVanilla { get; init; }
+
+    public string? RevertToVanillaBlockedReason { get; init; }
+}
 
 public sealed record ItemEditableFieldOptionDto(
     int Value,
@@ -123,3 +142,8 @@ public sealed record ItemsWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadItemsWorkflowResponse(ItemsWorkflowDto Workflow);
+
+public sealed record StageItemVanillaResponse(
+    ItemsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

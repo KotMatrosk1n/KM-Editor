@@ -51,7 +51,16 @@ public sealed record ZaItemMetadata(
     int FriendshipGain3,
     int? MachineSlot,
     int? MachineMoveId,
-    string? MachineMoveName);
+    string? MachineMoveName)
+{
+    public int? BaseMachineMoveId { get; init; }
+
+    public string? BaseMachineMoveName { get; init; }
+
+    public bool MachineAssignmentDiffersFromBase { get; init; }
+
+    public int CompatiblePokemonCount { get; init; }
+}
 
 public sealed record ZaItemRecord(
     int ItemId,
@@ -65,7 +74,12 @@ public sealed record ZaItemRecord(
     ZaItemMetadata Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<ZaItemDetailGroup> DetailGroups,
-    ZaItemProvenance Provenance);
+    ZaItemProvenance Provenance)
+{
+    public bool CanRevertToVanilla { get; init; }
+
+    public string? RevertToVanillaBlockedReason { get; init; }
+}
 
 public sealed record ZaItemEditableFieldOption(
     int Value,

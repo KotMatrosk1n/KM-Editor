@@ -5,15 +5,21 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.ZA.Generated.BattleMoves;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.ZA.Moves;
 
 internal sealed class ZaMovesEditSessionService
 {
+    private const string BattleVanillaRestoreField = "runtime.restore.battle";
+    private const string TimingVanillaRestoreField = "runtime.restore.timing";
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
     private readonly ZaMovesWorkflowService movesWorkflowService;
@@ -67,7 +73,7 @@ internal sealed class ZaMovesEditSessionService
             return new ZaMovesEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(move, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(workflow, move, field, value, diagnostics);
         if (pendingEdit is null)
         {
             return new ZaMovesEditResult(workflow, currentSession, diagnostics);
@@ -131,7 +137,7 @@ internal sealed class ZaMovesEditSessionService
                 continue;
             }
 
-            var pendingEdit = CreatePendingEdit(move, update.Field, update.Value, diagnostics);
+            var pendingEdit = CreatePendingEdit(effectiveWorkflow, move, update.Field, update.Value, diagnostics);
             if (pendingEdit is null)
             {
                 continue;
@@ -143,6 +149,140 @@ internal sealed class ZaMovesEditSessionService
 
         ValidatePendingPairs(loadedWorkflow, updatedSession.PendingEdits, diagnostics);
 
+        return new ZaMovesEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
+    public ZaMovesEditResult StageMoveVanilla(
+        ProjectPaths paths,
+        EditSession? session,
+        int moveId)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = movesWorkflowService.Load(project);
+        var currentWorkflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!ZaEditSessionSupport.CanEdit(
+                project,
+                loadedWorkflow.Summary,
+                loadedWorkflow.Diagnostics,
+                ZaEditSessionSupport.MovesDomain,
+                diagnostics))
+        {
+            return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        var targetMove = loadedWorkflow.Moves.FirstOrDefault(candidate => candidate.MoveId == moveId);
+        if (targetMove is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Move {moveId} is not present in the loaded Moves workflow.",
+                ZaEditSessionSupport.MovesDomain,
+                field: "moveId",
+                expected: "Existing Z-A move record"));
+            return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        if (!targetMove.CanRevertToVanilla)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                targetMove.RevertToVanillaBlockedReason
+                    ?? "This move cannot be matched safely to verified vanilla runtime data.",
+                ZaEditSessionSupport.MovesDomain,
+                field: "moveId",
+                expected: "Matching runtime variants and timing rows in the active and verified vanilla files"));
+            return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        var recordId = moveId.ToString(CultureInfo.InvariantCulture);
+        var retainedEdits = currentSession.PendingEdits
+            .Where(edit =>
+                !string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+                || !string.Equals(edit.RecordId, recordId, StringComparison.Ordinal))
+            .ToArray();
+        var removedEditCount = currentSession.PendingEdits.Count - retainedEdits.Length;
+        var updatedSession = currentSession with { PendingEdits = retainedEdits };
+        var stagedTableCount = 0;
+
+        if (targetMove.RuntimeBattleDiffersFromVanilla)
+        {
+            if (targetMove.RuntimeBattleVanillaFingerprint is not { } fingerprint)
+            {
+                diagnostics.Add(CreateRestoreShapeDiagnostic(
+                    moveId,
+                    BattleVanillaRestoreField,
+                    "Verified vanilla battle rows are unavailable for the selected move."));
+                return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(
+                updatedSession,
+                CreateRuntimeRestoreEdit(
+                    targetMove,
+                    BattleVanillaRestoreField,
+                    ZaDataPaths.BattleMoveParameterArray,
+                    targetMove.RuntimeBattleSourceLayer,
+                    fingerprint,
+                    "battle parameter rows"));
+            stagedTableCount++;
+        }
+
+        if (targetMove.RuntimeTimingDiffersFromVanilla)
+        {
+            if (targetMove.RuntimeTimingVanillaFingerprint is not { } fingerprint)
+            {
+                diagnostics.Add(CreateRestoreShapeDiagnostic(
+                    moveId,
+                    TimingVanillaRestoreField,
+                    "Verified vanilla timing rows are unavailable for the selected move."));
+                return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            if (!ValidateTimingRestoreProjectileCatalog(
+                    loadedWorkflow,
+                    targetMove.MoveId,
+                    targetMove.VanillaTimingRows,
+                    diagnostics))
+            {
+                return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(
+                updatedSession,
+                CreateRuntimeRestoreEdit(
+                    targetMove,
+                    TimingVanillaRestoreField,
+                    ZaDataPaths.MoveTimingParameterArray,
+                    targetMove.RuntimeTimingSourceLayer,
+                    fingerprint,
+                    "timing rows",
+                    loadedWorkflow.ProjectileCatalogSources));
+            stagedTableCount++;
+        }
+
+        ValidatePendingPairs(loadedWorkflow, updatedSession.PendingEdits, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+        }
+
+        var message = stagedTableCount > 0
+            ? $"Staged complete verified vanilla runtime rows from {stagedTableCount.ToString(CultureInfo.InvariantCulture)} table{(stagedTableCount == 1 ? string.Empty : "s")} for the selected move."
+            : removedEditCount > 0
+                ? "The selected move already matches verified vanilla values. Its pending edits were cleared."
+                : "The selected move already matches verified vanilla values.";
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            message,
+            ZaEditSessionSupport.MovesDomain));
         return new ZaMovesEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -195,14 +335,110 @@ internal sealed class ZaMovesEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
-        return ZaEditSessionSupport.CreateSingleFileChangePlan(
-            paths,
-            session,
-            ZaEditSessionSupport.MovesDomain,
-            ZaDataPaths.MoveDataArray,
-            "Moves",
-            validation.Diagnostics,
-            outputMode);
+        var diagnostics = validation.Diagnostics.ToList();
+        if (session.PendingEdits.Count == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Moves edit before reviewing a change plan.",
+                ZaEditSessionSupport.MovesDomain,
+                expected: "Pending Moves edit"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var workflow = movesWorkflowService.Load(project);
+            var writes = new List<PlannedFileWrite>();
+            AddRuntimeWrite(ZaDataPaths.BattleMoveParameterArray, ZaRuntimeMoveData.BattlePrefix, "battle parameters", writes);
+            AddRuntimeWrite(ZaDataPaths.MoveTimingParameterArray, ZaRuntimeMoveData.TimingPrefix, "timing parameters", writes);
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                var descriptor = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(
+                    descriptor.TargetRelativePath,
+                    descriptor.Sources,
+                    descriptor.ReplacesExistingOutput,
+                    "Patch Pokemon Legends Z-A Trinity descriptor for standalone LayeredFS overrides."));
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Change plan preview contains {writes.Count} target files.",
+                ZaEditSessionSupport.MovesDomain));
+            return new ChangePlan(session.Id, writes, diagnostics);
+
+            void AddRuntimeWrite(
+                string path,
+                string prefix,
+                string label,
+                ICollection<PlannedFileWrite> target)
+            {
+                var edits = session.PendingEdits
+                    .Where(edit => IsRuntimeEditForPath(edit, path, prefix))
+                    .ToArray();
+                if (edits.Length == 0)
+                {
+                    return;
+                }
+
+                var source = fileSource.Read(project, path);
+                var baseSource = edits.Any(edit => IsRuntimeRestoreEditForPath(edit, path))
+                        ? fileSource.ReadBase(project, path)
+                        : null;
+                var dependencySources = edits.Any(RequiresProjectileCatalog)
+                    ? new[]
+                    {
+                        fileSource.Read(project, ZaDataPaths.AiBulletParamArray),
+                        fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray),
+                    }
+                    : [];
+                var sourceReferences = new[]
+                    {
+                        new ProjectFileReference(source.SourceLayer, source.RelativePath),
+                    }
+                    .Concat(edits.SelectMany(edit => edit.Sources)
+                        .Where(reference =>
+                            reference.Layer == ProjectFileLayer.Base
+                            && HasMatchingPath(reference.RelativePath, path)))
+                    .Concat(dependencySources.Select(dependency =>
+                        new ProjectFileReference(dependency.SourceLayer, dependency.RelativePath)))
+                    .Distinct()
+                    .ToArray();
+                var info = ZaWorkflowFileSource.CreatePlannedWrite(
+                    paths,
+                    path,
+                    sourceReferences,
+                    outputMode);
+                target.Add(new PlannedFileWrite(
+                    info.TargetRelativePath,
+                    info.Sources,
+                    info.ReplacesExistingOutput,
+                    $"Apply {edits.Length} pending move {label} edits.",
+                    CreateRuntimePlanFingerprint(
+                        paths,
+                        path,
+                        source,
+                        baseSource,
+                        dependencySources,
+                        edits,
+                        outputMode)));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Moves change plan could not resolve the output target: {exception.Message}",
+                ZaEditSessionSupport.MovesDomain,
+                expected: "Writable output root"));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
     }
 
     public ApplyResult ApplyChangePlan(
@@ -217,6 +453,30 @@ internal sealed class ZaMovesEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
+        IDisposable outputLock;
+        try
+        {
+            outputLock = ZaWorkflowFileSource.AcquireOutputLock(paths);
+        }
+        catch (Exception exception)
+        {
+            var lockDiagnostics = new[]
+            {
+                ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Moves output is busy or unavailable: {exception.Message}",
+                    ZaEditSessionSupport.MovesDomain,
+                    expected: "Exclusive access to the selected output root"),
+            };
+            return ZaEditSessionSupport.CreateApplyResult(
+                applyId,
+                appliedAt,
+                reviewedPlan,
+                Array.Empty<ProjectFileReference>(),
+                lockDiagnostics);
+        }
+
+        using var acquiredOutputLock = outputLock;
         var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -238,11 +498,86 @@ internal sealed class ZaMovesEditSessionService
         try
         {
             var project = projectWorkspaceService.Open(paths);
-            var source = fileSource.Read(project, ZaDataPaths.MoveDataArray);
-            var rows = ReadRows(source.Bytes);
-            foreach (var edit in session.PendingEdits)
+            var workflow = movesWorkflowService.Load(project);
+            var battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+            var timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
+            var battleEdits = session.PendingEdits
+                .Where(edit => IsRuntimeEditForPath(
+                    edit,
+                    ZaDataPaths.BattleMoveParameterArray,
+                    ZaRuntimeMoveData.BattlePrefix))
+                .ToArray();
+            var timingEdits = session.PendingEdits
+                .Where(edit => IsRuntimeEditForPath(
+                    edit,
+                    ZaDataPaths.MoveTimingParameterArray,
+                    ZaRuntimeMoveData.TimingPrefix))
+                .ToArray();
+            var battleBaseSource = battleEdits.Any(edit => IsBattleVanillaRestoreEdit(edit))
+                    ? fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray)
+                    : null;
+            var timingBaseSource = timingEdits.Any(edit => IsTimingVanillaRestoreEdit(edit))
+                    ? fileSource.ReadBase(project, ZaDataPaths.MoveTimingParameterArray)
+                    : null;
+            var timingDependencySources = timingEdits.Any(RequiresProjectileCatalog)
+                ? new[]
+                {
+                    fileSource.Read(project, ZaDataPaths.AiBulletParamArray),
+                    fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray),
+                }
+                : [];
+            if ((battleEdits.Length > 0
+                    && !RuntimeSourceMatchesPlan(
+                        paths,
+                        currentPlan,
+                        ZaDataPaths.BattleMoveParameterArray,
+                        battleSource,
+                        battleBaseSource,
+                        [],
+                        battleEdits,
+                        outputMode))
+                || (timingEdits.Length > 0
+                    && !RuntimeSourceMatchesPlan(
+                        paths,
+                        currentPlan,
+                        ZaDataPaths.MoveTimingParameterArray,
+                        timingSource,
+                        timingBaseSource,
+                        timingDependencySources,
+                        timingEdits,
+                        outputMode)))
             {
-                ApplyEdit(rows, edit, diagnostics);
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Move source or destination changed after review. Review the change plan again before applying.",
+                    ZaEditSessionSupport.MovesDomain,
+                    expected: "The exact reviewed runtime move source and output target"));
+                return ZaEditSessionSupport.CreateApplyResult(
+                    applyId,
+                    appliedAt,
+                    currentPlan,
+                    writtenFiles,
+                    diagnostics);
+            }
+
+            var battleTable = ZaRuntimeMoveData.ReadBattle(battleSource.Bytes);
+            var timingTable = ZaRuntimeMoveData.ReadTiming(timingSource.Bytes);
+            var baseBattleTable = battleBaseSource is null
+                ? null
+                : ZaRuntimeMoveData.ReadBattle(battleBaseSource.Bytes);
+            var baseTimingTable = timingBaseSource is null
+                ? null
+                : ZaRuntimeMoveData.ReadTiming(timingBaseSource.Bytes);
+            foreach (var edit in session.PendingEdits.OrderBy(edit => IsRuntimeRestoreEdit(edit) ? 0 : 1))
+            {
+                ApplyRuntimeEdit(
+                    workflow,
+                    battleTable,
+                    timingTable,
+                    baseBattleTable,
+                    baseTimingTable,
+                    edit,
+                    diagnostics);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -250,8 +585,56 @@ internal sealed class ZaMovesEditSessionService
                 return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            ZaWorkflowFileSource.Write(paths, ZaDataPaths.MoveDataArray, WriteRows(rows), outputMode);
-            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.MoveDataArray, outputMode));
+            var writes = new List<ZaWorkflowFileWrite>();
+            var expectedBattleRestores = CreateExpectedRestoreFingerprints(
+                battleTable,
+                null,
+                battleEdits);
+            var expectedTimingRestores = CreateExpectedRestoreFingerprints(
+                null,
+                timingTable,
+                timingEdits);
+            if (battleEdits.Length > 0)
+            {
+                var battleBytes = battleTable.SerializeToBinary();
+                ValidateRuntimeOutput(
+                    workflow,
+                    battleBytes,
+                    null,
+                    battleEdits,
+                    expectedBattleRestores,
+                    diagnostics);
+                writes.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.BattleMoveParameterArray,
+                    battleBytes));
+            }
+
+            if (timingEdits.Length > 0)
+            {
+                var timingBytes = timingTable.SerializeToBinary();
+                ValidateRuntimeOutput(
+                    workflow,
+                    null,
+                    timingBytes,
+                    timingEdits,
+                    expectedTimingRestores,
+                    diagnostics);
+                writes.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.MoveTimingParameterArray,
+                    timingBytes));
+            }
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, [], diagnostics);
+            }
+
+            ZaWorkflowFileSource.WriteBatch(paths, writes, outputMode);
+            foreach (var write in writes)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(write.VirtualPath, outputMode));
+            }
+
             if (outputMode == ZaOutputMode.Standalone)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
@@ -268,7 +651,7 @@ internal sealed class ZaMovesEditSessionService
                 DiagnosticSeverity.Error,
                 $"Moves output could not be written: {exception.Message}",
                 ZaEditSessionSupport.MovesDomain,
-                file: $"romfs/{ZaDataPaths.MoveDataArray}",
+                file: $"romfs/{ZaDataPaths.BattleMoveParameterArray}",
                 expected: "Readable source and writable output root"));
         }
 
@@ -276,31 +659,42 @@ internal sealed class ZaMovesEditSessionService
     }
 
     private static PendingEdit? CreatePendingEdit(
+        ZaMovesWorkflow workflow,
         ZaMoveRecord move,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
-        var parsedValue = TryParseEditableValue(normalizedField, value, diagnostics);
-        if (parsedValue is null)
+        var normalizedValue = TryNormalizeEditableValue(workflow, normalizedField, value, diagnostics);
+        if (normalizedValue is null)
         {
             return null;
         }
 
-        if (!ValidateImmediatePairs(move, normalizedField, parsedValue.Value, diagnostics))
+        if (!IsFieldPresent(move, normalizedField, diagnostics))
         {
             return null;
         }
 
-        var editableField = ZaMovesWorkflowService.GetEditableField(normalizedField)!;
-        return ZaEditSessionSupport.CreatePendingEdit(
+        var editableField = ZaMovesWorkflowService.GetEditableField(workflow, normalizedField)!;
+        var targetSource = new ProjectFileReference(
+                normalizedField.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
+                    ? move.RuntimeBattleSourceLayer
+                    : move.RuntimeTimingSourceLayer,
+                normalizedField.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
+                    ? ZaDataPaths.BattleMoveParameterArray
+                    : ZaDataPaths.MoveTimingParameterArray);
+        var sources = ZaMovesWorkflowService.IsProjectileField(normalizedField)
+            ? new[] { targetSource }.Concat(workflow.ProjectileCatalogSources).Distinct().ToArray()
+            : [targetSource];
+        return new PendingEdit(
             ZaEditSessionSupport.MovesDomain,
-            $"Set {move.Name} {editableField.Label.ToLowerInvariant()} to {parsedValue.Value}.",
-            new ProjectFileReference(move.Provenance.SourceLayer, move.Provenance.SourceFile),
+            $"Set {move.Name} {editableField.Label.ToLowerInvariant()} to {normalizedValue}.",
+            sources,
             move.MoveId.ToString(CultureInfo.InvariantCulture),
             normalizedField,
-            parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+            normalizedValue);
     }
 
     private static void ValidatePendingEdit(
@@ -319,7 +713,7 @@ internal sealed class ZaMovesEditSessionService
         }
 
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
-            || workflow.Moves.All(move => move.MoveId != moveId))
+            || workflow.Moves.FirstOrDefault(move => move.MoveId == moveId) is not { } move)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -330,7 +724,22 @@ internal sealed class ZaMovesEditSessionService
             return;
         }
 
-        _ = TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+        if (IsRuntimeRestoreEdit(edit))
+        {
+            ValidateRuntimeRestoreEdit(workflow, move, edit, diagnostics);
+            return;
+        }
+
+        _ = TryNormalizeEditableValue(workflow, edit.Field, edit.NewValue, diagnostics);
+        if (edit.Field is not null)
+        {
+            _ = IsFieldPresent(move, edit.Field, diagnostics);
+            if (ZaMovesWorkflowService.IsProjectileField(edit.Field))
+            {
+                ValidateProjectileCatalogProvenance(workflow, edit, diagnostics);
+            }
+            ValidateVanillaRestoreValue(move, edit, diagnostics);
+        }
     }
 
     private static void ValidatePendingPairs(
@@ -347,6 +756,14 @@ internal sealed class ZaMovesEditSessionService
             .Select(moveId => moveId!.Value)
             .Distinct()
             .ToHashSet();
+        var editedFieldsByMove = edits
+            .Where(edit => string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+                           && int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out _)
+                           && edit.Field is not null)
+            .GroupBy(edit => int.Parse(edit.RecordId!, NumberStyles.None, CultureInfo.InvariantCulture))
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(edit => edit.Field!).ToHashSet(StringComparer.Ordinal));
 
         if (editedMoveIds.Count == 0)
         {
@@ -356,7 +773,8 @@ internal sealed class ZaMovesEditSessionService
         var overlaidWorkflow = OverlayPendingEdits(workflow, edits);
         foreach (var move in overlaidWorkflow.Moves.Where(move => editedMoveIds.Contains(move.MoveId)))
         {
-            if (move.HitMin > move.HitMax)
+            var editedFields = editedFieldsByMove.GetValueOrDefault(move.MoveId) ?? [];
+            if (!move.HasRuntimeData && move.HitMin > move.HitMax)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -366,7 +784,7 @@ internal sealed class ZaMovesEditSessionService
                     expected: "Minimum hits less than or equal to maximum hits"));
             }
 
-            if (move.TurnMin > move.TurnMax)
+            if (!move.HasRuntimeData && move.TurnMin > move.TurnMax)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -375,7 +793,271 @@ internal sealed class ZaMovesEditSessionService
                     field: "turn",
                     expected: "Minimum turns less than or equal to maximum turns"));
             }
+            foreach (var variant in move.RuntimeVariants)
+            {
+                if (variant.ConditionTurnMin > variant.ConditionTurnMax)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} has a minimum condition turn count greater than its maximum.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: ZaRuntimeMoveData.BattleField(variant.Variant, "conditionTurnMin"),
+                        expected: "Minimum condition turns less than or equal to maximum condition turns"));
+                }
+
+
+                if ((editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, "damageRecoverRatio"))
+                     || editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, "damageDrainRatio")))
+                    && variant.DamageRecoverRatio != 0
+                    && variant.DamageDrainRatio != 0)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} cannot use recovery/recoil and damage drain together.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: ZaRuntimeMoveData.BattleField(variant.Variant, "damageRecoverRatio"),
+                        expected: "At most one nonzero damage recovery or drain ratio"));
+                }
+
+                if ((editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, "hpRecoverRatio"))
+                     || editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, "restoresHp")))
+                    && variant.HpRecoverRatio != 0
+                    && !variant.RestoresHp)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} has HP recovery but its Restores HP flag is disabled.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: ZaRuntimeMoveData.BattleField(variant.Variant, "restoresHp"),
+                        expected: "Restores HP enabled when HP recovery is nonzero"));
+                }
+
+                foreach (var stat in variant.StatChanges)
+                {
+                    var statPrefix = $"stat{stat.Slot}";
+                    if (!editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix))
+                        && !editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix + "Stage"))
+                        && !editedFields.Contains(ZaRuntimeMoveData.BattleField(variant.Variant, statPrefix + "Percent")))
+                    {
+                        continue;
+                    }
+
+                    var validUnused = stat.Stat == 0 && stat.Stage == 0 && stat.Percent == 0;
+                    var validOccupied = stat.Stat != 0 && stat.Stage != 0;
+                    if (!validUnused && !validOccupied)
+                    {
+                        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            $"{FormatRuntimeVariantLabel(variant.Variant)} data for move {move.MoveId} has an incomplete stat change in slot {stat.Slot}.",
+                            ZaEditSessionSupport.MovesDomain,
+                            field: ZaRuntimeMoveData.BattleField(variant.Variant, $"stat{stat.Slot}"),
+                            expected: "Unused stat with zero stage/chance, or occupied stat with a nonzero stage"));
+                    }
+                }
+            }
+
+            foreach (var timing in move.TimingRows)
+            {
+                if ((editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "rangeMin"))
+                     || editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "rangeMax")))
+                    && timing.RangeMin > timing.RangeMax)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Move {move.MoveId} timing occurrence {timing.Occurrence} has a minimum range greater than its maximum.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: ZaRuntimeMoveData.TimingField(timing.Occurrence, "rangeMin"),
+                        expected: "Minimum range less than or equal to maximum range"));
+                }
+
+                if ((editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "projectileCountMin"))
+                     || editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "projectileCountMax")))
+                    && timing.ProjectileCountMin > timing.ProjectileCountMax)
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Move {move.MoveId} timing occurrence {timing.Occurrence} has a minimum projectile count greater than its maximum.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: ZaRuntimeMoveData.TimingField(timing.Occurrence, "projectileCountMin"),
+                        expected: "Minimum projectile count less than or equal to maximum projectile count"));
+                }
+
+                if (editedFields.Any(field =>
+                        ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var member)
+                        && occurrence == timing.Occurrence
+                        && ZaRuntimeMoveData.IsProjectileMember(member)))
+                {
+                    ValidateProjectilePairs(move.MoveId, timing, diagnostics);
+                }
+            }
         }
+    }
+
+    private static void ValidateProjectilePairs(
+        int moveId,
+        ZaMoveTimingRecord timing,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var pairs = new[]
+        {
+            (timing.OverwriteProjectile1, timing.ReplacementProjectile1),
+            (timing.OverwriteProjectile2, timing.ReplacementProjectile2),
+            (timing.OverwriteProjectile3, timing.ReplacementProjectile3),
+            (timing.OverwriteProjectile4, timing.ReplacementProjectile4),
+            (timing.OverwriteProjectile5, timing.ReplacementProjectile5),
+        };
+        var encounteredEmpty = false;
+        for (var index = 0; index < pairs.Length; index++)
+        {
+            var (overwrite, replacement) = pairs[index];
+            var overwriteEmpty = overwrite == 0;
+            var replacementEmpty = replacement == 0;
+            var field = ZaRuntimeMoveData.TimingField(
+                timing.Occurrence,
+                $"overwriteProjectile{index + 1}");
+            if (overwriteEmpty != replacementEmpty)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Move {moveId} timing occurrence {timing.Occurrence} projectile pair {index + 1} must set both IDs or clear both.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: field,
+                    expected: "Both projectile IDs zero or both nonzero"));
+            }
+
+            if (overwriteEmpty && replacementEmpty)
+            {
+                encounteredEmpty = true;
+            }
+            else if (encounteredEmpty)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Move {moveId} timing occurrence {timing.Occurrence} projectile pairs must be populated contiguously from slot 1.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: field,
+                    expected: "No populated projectile pair after an empty slot"));
+            }
+        }
+    }
+
+    private static bool ValidateTimingRestoreProjectileCatalog(
+        ZaMovesWorkflow workflow,
+        int moveId,
+        IReadOnlyList<ZaMoveTimingRecord> timingRows,
+        ICollection<ValidationDiagnostic> diagnostics) =>
+        ValidateTimingRestoreProjectileCatalog(
+            workflow,
+            moveId,
+            timingRows.SelectMany(GetProjectileIds),
+            diagnostics);
+
+    private static bool ValidateTimingRestoreProjectileCatalog(
+        ZaMovesWorkflow workflow,
+        int moveId,
+        IReadOnlyList<ZaMoveTimingParameterT> timingRows,
+        ICollection<ValidationDiagnostic> diagnostics) =>
+        ValidateTimingRestoreProjectileCatalog(
+            workflow,
+            moveId,
+            timingRows.SelectMany(GetProjectileIds),
+            diagnostics);
+
+    private static bool ValidateTimingRestoreProjectileCatalog(
+        ZaMovesWorkflow workflow,
+        int moveId,
+        IEnumerable<int> projectileIds,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var activeProjectileIds = workflow.ProjectileOptions
+            .Where(option => option.Value >= 0
+                             && option.Value <= int.MaxValue
+                             && option.Value == Math.Truncate(option.Value))
+            .Select(option => checked((int)option.Value))
+            .ToHashSet();
+        if (!activeProjectileIds.Contains(0)
+            || workflow.ProjectileCatalogSources.Count == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Move {moveId} timing rows cannot be restored because the active bullet catalog could not be verified.",
+                ZaEditSessionSupport.MovesDomain,
+                field: TimingVanillaRestoreField,
+                expected: "A structurally valid active and verified-base bullet parameter catalog"));
+            return false;
+        }
+
+        var missingIds = projectileIds
+            .Where(projectileId => projectileId != 0 && !activeProjectileIds.Contains(projectileId))
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (missingIds.Length == 0)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Move {moveId} timing rows cannot be restored because verified vanilla projectile IDs "
+            + $"{string.Join(", ", missingIds.Select(id => id.ToString(CultureInfo.InvariantCulture)))} "
+            + "are absent from the active bullet catalog.",
+            ZaEditSessionSupport.MovesDomain,
+            field: TimingVanillaRestoreField,
+            expected: "Every nonzero restored projectile ID present in the active bullet catalog"));
+        return false;
+    }
+
+    private static bool ValidateProjectileCatalogProvenance(
+        ZaMovesWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var hasCompleteProvenance = workflow.ProjectileCatalogSources.Count > 0
+            && workflow.ProjectileCatalogSources.All(required =>
+                edit.Sources.Any(actual =>
+                    actual.Layer == required.Layer
+                    && HasMatchingPath(actual.RelativePath, required.RelativePath)));
+        if (hasCompleteProvenance)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "A projectile-dependent move edit is missing its reviewed active/base bullet-catalog provenance.",
+            ZaEditSessionSupport.MovesDomain,
+            field: edit.Field,
+            expected: "Current active and verified-base bullet parameter sources"));
+        return false;
+    }
+
+    private static IEnumerable<int> GetProjectileIds(ZaMoveTimingRecord timing)
+    {
+        yield return timing.OverwriteProjectile1;
+        yield return timing.ReplacementProjectile1;
+        yield return timing.OverwriteProjectile2;
+        yield return timing.ReplacementProjectile2;
+        yield return timing.OverwriteProjectile3;
+        yield return timing.ReplacementProjectile3;
+        yield return timing.OverwriteProjectile4;
+        yield return timing.ReplacementProjectile4;
+        yield return timing.OverwriteProjectile5;
+        yield return timing.ReplacementProjectile5;
+    }
+
+    private static IEnumerable<int> GetProjectileIds(ZaMoveTimingParameterT timing)
+    {
+        yield return timing.OverwriteProjectile1;
+        yield return timing.ReplacementProjectile1;
+        yield return timing.OverwriteProjectile2;
+        yield return timing.ReplacementProjectile2;
+        yield return timing.OverwriteProjectile3;
+        yield return timing.ReplacementProjectile3;
+        yield return timing.OverwriteProjectile4;
+        yield return timing.ReplacementProjectile4;
+        yield return timing.OverwriteProjectile5;
+        yield return timing.ReplacementProjectile5;
     }
 
     private static bool ValidateImmediatePairs(
@@ -415,11 +1097,14 @@ internal sealed class ZaMovesEditSessionService
     }
 
     private static int? TryParseEditableValue(
+        ZaMovesWorkflow? workflow,
         string? field,
         string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var editableField = ZaMovesWorkflowService.GetEditableField(field);
+        var editableField = workflow is null
+            ? ZaMovesWorkflowService.GetEditableField(field)
+            : ZaMovesWorkflowService.GetEditableField(workflow, field);
         if (editableField is null)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -460,7 +1145,318 @@ internal sealed class ZaMovesEditSessionService
             return null;
         }
 
+        if (editableField.Options.Count > 0
+            && editableField.Options.All(option => option.Value != parsedValue.Value))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must use one of the supported game values.",
+                ZaEditSessionSupport.MovesDomain,
+                field: editableField.Field,
+                expected: string.Join(
+                    ", ",
+                    editableField.Options.Select(option => option.Value.ToString(CultureInfo.InvariantCulture)))));
+            return null;
+        }
+
+        if (workflow is not null
+            && ZaMovesWorkflowService.IsProjectileField(field)
+            && workflow.ProjectileOptions.All(option => option.Value != parsedValue.Value))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must reference None or a BulletId in the active bullet catalog.",
+                ZaEditSessionSupport.MovesDomain,
+                field: editableField.Field,
+                expected: "0 or an active bullet parameter BulletId"));
+            return null;
+        }
+
         return parsedValue.Value;
+    }
+
+    private static string CreateRuntimePlanFingerprint(
+        ProjectPaths paths,
+        string virtualPath,
+        ZaWorkflowFile source,
+        ZaWorkflowFile? baseSource,
+        IReadOnlyList<ZaWorkflowFile> dependencySources,
+        IReadOnlyList<PendingEdit> edits,
+        ZaOutputMode outputMode)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Append(source.RelativePath);
+        Append(source.SourceLayer.ToString());
+        hash.AppendData(source.Bytes);
+        if (baseSource is not null)
+        {
+            Append("VerifiedBase");
+            Append(baseSource.RelativePath);
+            Append(baseSource.SourceLayer.ToString());
+            hash.AppendData(baseSource.Bytes);
+        }
+        foreach (var dependency in dependencySources
+                     .OrderBy(dependency => dependency.SourceLayer)
+                     .ThenBy(dependency => dependency.RelativePath, StringComparer.Ordinal))
+        {
+            Append("ReadOnlyDependency");
+            Append(dependency.RelativePath);
+            Append(dependency.SourceLayer.ToString());
+            hash.AppendData(dependency.Bytes);
+        }
+        foreach (var edit in edits.OrderBy(edit => edit.RecordId, StringComparer.Ordinal).ThenBy(edit => edit.Field, StringComparer.Ordinal))
+        {
+            Append(edit.RecordId);
+            Append(edit.Field);
+            Append(edit.NewValue);
+            foreach (var editSource in edit.Sources
+                .OrderBy(editSource => editSource.Layer)
+                .ThenBy(editSource => editSource.RelativePath, StringComparer.Ordinal))
+            {
+                Append(editSource.Layer.ToString());
+                Append(editSource.RelativePath);
+            }
+        }
+
+        var targetPath = ZaWorkflowFileSource.ResolveOutputPath(paths, virtualPath, outputMode);
+        Append(targetPath);
+        if (File.Exists(targetPath))
+        {
+            hash.AppendData(File.ReadAllBytes(targetPath));
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+
+        void Append(string? value)
+        {
+            hash.AppendData(Encoding.UTF8.GetBytes(value ?? "<null>"));
+            hash.AppendData([0]);
+        }
+    }
+
+    private static bool RuntimeSourceMatchesPlan(
+        ProjectPaths paths,
+        ChangePlan plan,
+        string virtualPath,
+        ZaWorkflowFile source,
+        ZaWorkflowFile? baseSource,
+        IReadOnlyList<ZaWorkflowFile> dependencySources,
+        IReadOnlyList<PendingEdit> edits,
+        ZaOutputMode outputMode)
+    {
+        var targetRelativePath = ZaWorkflowFileSource.CreatePlannedWrite(
+            paths,
+            virtualPath,
+            Array.Empty<ProjectFileReference>(),
+            outputMode).TargetRelativePath;
+        var write = plan.Writes.FirstOrDefault(candidate => string.Equals(
+            candidate.TargetRelativePath,
+            targetRelativePath,
+            StringComparison.Ordinal));
+        return write is not null
+            && string.Equals(
+                write.SourceFingerprint,
+                CreateRuntimePlanFingerprint(
+                    paths,
+                    virtualPath,
+                    source,
+                    baseSource,
+                    dependencySources,
+                    edits,
+                    outputMode),
+                StringComparison.Ordinal);
+    }
+
+    private static string? TryNormalizeEditableValue(
+        ZaMovesWorkflow? workflow,
+        string? field,
+        string? value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var editableField = workflow is null
+            ? ZaMovesWorkflowService.GetEditableField(field)
+            : ZaMovesWorkflowService.GetEditableField(workflow, field);
+        if (editableField?.ValueKind != "decimal")
+        {
+            var integer = TryParseEditableValue(workflow, field, value, diagnostics);
+            return integer?.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            || !float.IsFinite(parsed))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must be a valid decimal value.",
+                ZaEditSessionSupport.MovesDomain,
+                field: editableField.Field,
+                expected: $"Safe move {editableField.Label.ToLowerInvariant()}"));
+            return null;
+        }
+
+        // The table stores these values as float32. Compare against the same
+        // representation so decimal bounds such as -0.1 remain inclusive
+        // after parsing instead of being rejected by float-to-double drift.
+        var minimumValue = editableField.MinimumValue is { } minimum
+            ? checked((float)minimum)
+            : float.MinValue;
+        var maximumValue = editableField.MaximumValue is { } maximum
+            ? checked((float)maximum)
+            : float.MaxValue;
+        if (parsed < minimumValue || parsed > maximumValue)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must be between {editableField.MinimumValue} and {editableField.MaximumValue}.",
+                ZaEditSessionSupport.MovesDomain,
+                field: editableField.Field,
+                expected: $"Safe move {editableField.Label.ToLowerInvariant()}"));
+            return null;
+        }
+
+        if (editableField.Options.Count > 0
+            && editableField.Options.All(option => Math.Abs(option.Value - parsed) > 0.00001))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must use one of the supported game values.",
+                ZaEditSessionSupport.MovesDomain,
+                field: editableField.Field,
+                expected: string.Join(
+                    ", ",
+                    editableField.Options.Select(option => option.Value.ToString(CultureInfo.InvariantCulture)))));
+            return null;
+        }
+
+        return parsed.ToString("R", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatRuntimeVariantLabel(int variant) => variant switch
+    {
+        0 => "Normal Move",
+        1 => "Plus Move",
+        2 => "Boss Move",
+        _ => $"runtime variant {variant}"
+    };
+
+    private static string? GetEditableValue(ZaMoveRecord move, string field)
+    {
+        if (ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out var battleMember))
+        {
+            var runtimeVariant = move.RuntimeVariants.FirstOrDefault(candidate => candidate.Variant == variant);
+            return runtimeVariant is null
+                ? null
+                : ZaRuntimeMoveData.GetValue(runtimeVariant, battleMember);
+        }
+
+        if (ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var timingMember))
+        {
+            var timing = occurrence is null
+                ? move.Timing
+                : move.TimingRows.ElementAtOrDefault(occurrence.Value);
+            return timing is null ? null : ZaRuntimeMoveData.GetValue(timing, timingMember);
+        }
+
+        return null;
+    }
+
+    private static bool NumericValuesEqual(string left, string right)
+    {
+        return double.TryParse(left, NumberStyles.Float, CultureInfo.InvariantCulture, out var leftValue)
+            && double.TryParse(right, NumberStyles.Float, CultureInfo.InvariantCulture, out var rightValue)
+            && Math.Abs(leftValue - rightValue) <= 0.00001;
+    }
+
+    private static void ValidateVanillaRestoreValue(
+        ZaMoveRecord move,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (edit.Field is null
+            || !HasVanillaRestoreSourceMarker(edit, edit.Field))
+        {
+            return;
+        }
+
+        var activeSourceLayer = edit.Field.StartsWith(
+            ZaRuntimeMoveData.BattlePrefix,
+            StringComparison.Ordinal)
+                ? move.RuntimeBattleSourceLayer
+                : move.RuntimeTimingSourceLayer;
+        if (activeSourceLayer == ProjectFileLayer.Base)
+        {
+            return;
+        }
+
+        var vanillaValue = move.VanillaValues.FirstOrDefault(value =>
+            string.Equals(value.Field, edit.Field, StringComparison.Ordinal));
+        if (vanillaValue is not null
+            && edit.NewValue is not null
+            && NumericValuesEqual(vanillaValue.Value, edit.NewValue))
+        {
+            return;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "A staged move restoration no longer matches the verified vanilla value.",
+            ZaEditSessionSupport.MovesDomain,
+            field: edit.Field,
+            expected: vanillaValue?.Value ?? "Matching verified vanilla runtime field"));
+    }
+
+    private static bool HasVanillaRestoreSourceMarker(PendingEdit edit, string field)
+    {
+        var virtualPath = field.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
+            ? ZaDataPaths.BattleMoveParameterArray
+            : ZaDataPaths.MoveTimingParameterArray;
+        return HasBaseSource(edit, virtualPath);
+    }
+
+    private static bool HasBaseSource(PendingEdit edit, string virtualPath) =>
+        edit.Sources.Any(source =>
+            source.Layer == ProjectFileLayer.Base
+            && HasMatchingPath(source.RelativePath, virtualPath));
+
+    private static bool HasMatchingPath(string relativePath, string virtualPath) =>
+        string.Equals(relativePath, virtualPath, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(relativePath, $"romfs/{virtualPath}", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsFieldPresent(
+        ZaMoveRecord move,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var isBattle = ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out _);
+        if (isBattle && move.AmbiguousRuntimeVariantIds.Contains(variant))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{move.Name} contains divergent duplicate rows for {FormatRuntimeVariantLabel(variant)}; editing is disabled for that ambiguous variant.",
+                ZaEditSessionSupport.MovesDomain,
+                field: field,
+                expected: "Byte-identical duplicate rows for a shared runtime variant"));
+            return false;
+        }
+
+        var present = isBattle
+            ? move.RuntimeVariants.Any(candidate => candidate.Variant == variant)
+            : ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out _)
+              && (occurrence is null
+                  ? move.Timing is not null
+                  : occurrence.Value < move.TimingRows.Count);
+        if (present)
+        {
+            return true;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"{move.Name} does not contain the selected runtime move field.",
+            ZaEditSessionSupport.MovesDomain,
+            field: field,
+            expected: "A runtime variant or timing row present in the source data"));
+        return false;
     }
 
     private static bool TryParseBooleanValue(string? value, out int parsedValue)
@@ -491,7 +1487,7 @@ internal sealed class ZaMovesEditSessionService
         IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
-        foreach (var edit in edits)
+        foreach (var edit in edits.OrderBy(edit => IsRuntimeRestoreEdit(edit) ? 0 : 1))
         {
             updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
         }
@@ -502,8 +1498,22 @@ internal sealed class ZaMovesEditSessionService
     private static ZaMovesWorkflow OverlayPendingEdit(ZaMovesWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
-            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
-            || TryParseEditableValue(edit.Field, edit.NewValue, new List<ValidationDiagnostic>()) is not { } value)
+            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId))
+        {
+            return workflow;
+        }
+
+        if (IsRuntimeRestoreEdit(edit))
+        {
+            return workflow with
+            {
+                Moves = workflow.Moves
+                    .Select(move => move.MoveId == moveId ? OverlayRuntimeRestore(move, edit) : move)
+                    .ToArray(),
+            };
+        }
+
+        if (TryNormalizeEditableValue(workflow, edit.Field, edit.NewValue, new List<ValidationDiagnostic>()) is not { } value)
         {
             return workflow;
         }
@@ -511,8 +1521,170 @@ internal sealed class ZaMovesEditSessionService
         return workflow with
         {
             Moves = workflow.Moves
-                .Select(move => move.MoveId == moveId ? OverlayMoveField(move, edit.Field!, value) : move)
+                .Select(move => move.MoveId == moveId
+                    ? OverlayRuntimeMoveField(workflow, move, edit.Field!, value)
+                    : move)
                 .ToArray(),
+        };
+    }
+
+    private static ZaMoveRecord OverlayRuntimeRestore(ZaMoveRecord move, PendingEdit edit)
+    {
+        if (IsBattleVanillaRestoreEdit(edit))
+        {
+            var restored = move with { RuntimeVariants = move.VanillaRuntimeVariants };
+            var primary = restored.RuntimeVariants.FirstOrDefault(row => row.Variant == 0)
+                ?? restored.RuntimeVariants.FirstOrDefault();
+            return primary is null
+                ? restored
+                : restored with
+                {
+                    Type = primary.Type,
+                    TypeName = primary.TypeName,
+                    Category = primary.DamageType,
+                    CategoryName = primary.DamageTypeName,
+                    Power = primary.Power,
+                    CritStage = primary.CriticalRank,
+                    TurnMin = primary.ConditionTurnMin,
+                    TurnMax = primary.ConditionTurnMax,
+                    Inflict = primary.ConditionId,
+                    InflictName = ZaMovesWorkflowService.FormatInflict(primary.ConditionId),
+                    InflictPercent = primary.ConditionPercent,
+                    RawInflictCount = primary.ConditionCount,
+                    Recoil = primary.DamageDrainRatio,
+                    RawHealing = primary.HpRecoverRatio,
+                    StatChanges = primary.StatChanges,
+                };
+        }
+
+        if (IsTimingVanillaRestoreEdit(edit))
+        {
+            var timing = move.VanillaTimingRows.FirstOrDefault();
+            return move with
+            {
+                Timing = timing,
+                TimingRows = move.VanillaTimingRows,
+                Accuracy = timing?.HitPercent ?? move.Accuracy,
+                HitMin = timing?.ProjectileCountMin ?? move.HitMin,
+                HitMax = timing?.ProjectileCountMax ?? move.HitMax,
+            };
+        }
+
+        return move;
+    }
+
+    private static ZaMoveRecord OverlayRuntimeMoveField(
+        ZaMovesWorkflow workflow,
+        ZaMoveRecord move,
+        string field,
+        string value)
+    {
+        if (ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out var member)
+            && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+        {
+            var updatedVariants = move.RuntimeVariants
+                .Select(row => row.Variant == variant ? OverlayRuntimeVariant(row, member, integer) : row)
+                .ToArray();
+            var result = move with { RuntimeVariants = updatedVariants };
+            var primary = updatedVariants.FirstOrDefault(row => row.Variant == 0) ?? updatedVariants.FirstOrDefault();
+            return primary is null ? result : result with
+            {
+                Type = primary.Type,
+                TypeName = primary.TypeName,
+                Category = primary.DamageType,
+                CategoryName = primary.DamageTypeName,
+                Power = primary.Power,
+                CritStage = primary.CriticalRank,
+                TurnMin = primary.ConditionTurnMin,
+                TurnMax = primary.ConditionTurnMax,
+                Inflict = primary.ConditionId,
+                InflictName = ZaMovesWorkflowService.FormatInflict(primary.ConditionId),
+                InflictPercent = primary.ConditionPercent,
+                RawInflictCount = primary.ConditionCount,
+                Recoil = primary.DamageDrainRatio,
+                RawHealing = primary.HpRecoverRatio,
+                StatChanges = primary.StatChanges,
+            };
+        }
+
+        if (ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out member))
+        {
+            var updatedRows = move.TimingRows
+                .Select(row => occurrence is null || row.Occurrence == occurrence.Value
+                    ? OverlayTimingRecord(row, member, value, workflow.SpawnLocators)
+                    : row)
+                .ToArray();
+            var updatedTiming = updatedRows.FirstOrDefault();
+            return move with
+            {
+                Timing = updatedTiming,
+                TimingRows = updatedRows,
+                Accuracy = updatedTiming?.HitPercent ?? move.Accuracy,
+                HitMin = updatedTiming?.ProjectileCountMin ?? move.HitMin,
+                HitMax = updatedTiming?.ProjectileCountMax ?? move.HitMax,
+            };
+        }
+
+        return move;
+    }
+
+    private static ZaMoveTimingRecord OverlayTimingRecord(
+        ZaMoveTimingRecord row,
+        string member,
+        string value,
+        IReadOnlyList<string> spawnLocators)
+    {
+        var tableRow = ZaRuntimeMoveData.ToTableRow(row);
+        return ZaRuntimeMoveData.Apply(tableRow, member, value, spawnLocators)
+            ? ZaRuntimeMoveData.ToRecord(tableRow, row.Occurrence, spawnLocators)
+            : row;
+    }
+
+    private static ZaMoveRuntimeVariantRecord OverlayRuntimeVariant(
+        ZaMoveRuntimeVariantRecord row,
+        string member,
+        int value)
+    {
+        return member switch
+        {
+            "effectCategory" => row with { EffectCategory = value },
+            "type" => row with { Type = value, TypeName = ZaMovesWorkflowService.FormatType(value) },
+            "damageType" => row with { DamageType = value, DamageTypeName = ZaMovesWorkflowService.FormatCategory(value) },
+            "power" => row with { Power = value },
+            "criticalRank" => row with { CriticalRank = value },
+            "hpRecoverRatio" => row with { HpRecoverRatio = value },
+            "shrinkPercent" => row with { ShrinkPercent = value },
+            "conditionId" => row with { ConditionId = value },
+            "conditionPercent" => row with { ConditionPercent = value },
+            "conditionCount" => row with { ConditionCount = value },
+            "conditionTurnMin" => row with { ConditionTurnMin = value },
+            "conditionTurnMax" => row with { ConditionTurnMax = value },
+            "stat1" => row with { StatChanges = OverlayStatChange(row.StatChanges, 1, stat => stat with { Stat = value, StatName = ZaMovesWorkflowService.FormatStat(value) }) },
+            "stat1Stage" => row with { StatChanges = OverlayStatChange(row.StatChanges, 1, stat => stat with { Stage = value }) },
+            "stat1Percent" => row with { StatChanges = OverlayStatChange(row.StatChanges, 1, stat => stat with { Percent = value }) },
+            "stat2" => row with { StatChanges = OverlayStatChange(row.StatChanges, 2, stat => stat with { Stat = value, StatName = ZaMovesWorkflowService.FormatStat(value) }) },
+            "stat2Stage" => row with { StatChanges = OverlayStatChange(row.StatChanges, 2, stat => stat with { Stage = value }) },
+            "stat2Percent" => row with { StatChanges = OverlayStatChange(row.StatChanges, 2, stat => stat with { Percent = value }) },
+            "stat3" => row with { StatChanges = OverlayStatChange(row.StatChanges, 3, stat => stat with { Stat = value, StatName = ZaMovesWorkflowService.FormatStat(value) }) },
+            "stat3Stage" => row with { StatChanges = OverlayStatChange(row.StatChanges, 3, stat => stat with { Stage = value }) },
+            "stat3Percent" => row with { StatChanges = OverlayStatChange(row.StatChanges, 3, stat => stat with { Percent = value }) },
+            "damageRecoverRatio" => row with { DamageRecoverRatio = value },
+            "damageDrainRatio" => row with { DamageDrainRatio = value },
+            "isGuard" => row with { IsGuard = value != 0 },
+            "isAvoidedByFloating" => row with { IsAvoidedByFloating = value != 0 },
+            "makesContact" => row with { MakesContact = value != 0 },
+            "isSlicing" => row with { IsSlicing = value != 0 },
+            "isWind" => row with { IsWind = value != 0 },
+            "bypassesSubstitute" => row with { BypassesSubstitute = value != 0 },
+            "thawsUser" => row with { ThawsUser = value != 0 },
+            "restoresHp" => row with { RestoresHp = value != 0 },
+            "allowedWhileHealBlocked" => row with { AllowedWhileHealBlocked = value != 0 },
+            "callableByMetronome" => row with { CallableByMetronome = value != 0 },
+            "appliesCondition" => row with { AppliesCondition = value != 0 },
+            "blockedByProtect" => row with { BlockedByProtect = value != 0 },
+            "cannotKnockOut" => row with { CannotKnockOut = value != 0 },
+            "valueEffectRatio" => row with { ValueEffectRatio = value },
+            _ => row,
         };
     }
 
@@ -586,6 +1758,548 @@ internal sealed class ZaMovesEditSessionService
             .ToArray();
     }
 
+    private static PendingEdit CreateRuntimeRestoreEdit(
+        ZaMoveRecord move,
+        string field,
+        string virtualPath,
+        ProjectFileLayer activeSourceLayer,
+        string fingerprint,
+        string rowLabel,
+        IReadOnlyList<ProjectFileReference>? dependencySources = null)
+    {
+        return new PendingEdit(
+            ZaEditSessionSupport.MovesDomain,
+            $"Revert {move.Name} complete runtime {rowLabel} to verified vanilla data.",
+            new[]
+            {
+                new ProjectFileReference(activeSourceLayer, virtualPath),
+                new ProjectFileReference(ProjectFileLayer.Base, virtualPath),
+            }
+                .Concat(dependencySources ?? [])
+                .Distinct()
+                .ToArray(),
+            move.MoveId.ToString(CultureInfo.InvariantCulture),
+            field,
+            fingerprint);
+    }
+
+    private static ValidationDiagnostic CreateRestoreShapeDiagnostic(
+        int moveId,
+        string field,
+        string message)
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.MovesDomain,
+            field: field,
+            expected: $"Exact verified vanilla runtime row shape for move {moveId}");
+    }
+
+    private static void ValidateRuntimeRestoreEdit(
+        ZaMovesWorkflow workflow,
+        ZaMoveRecord move,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var isBattleRestore = IsBattleVanillaRestoreEdit(edit);
+        var expectedFingerprint = isBattleRestore
+            ? move.RuntimeBattleVanillaFingerprint
+            : move.RuntimeTimingVanillaFingerprint;
+        var virtualPath = isBattleRestore
+            ? ZaDataPaths.BattleMoveParameterArray
+            : ZaDataPaths.MoveTimingParameterArray;
+
+        if (!move.CanRevertToVanilla)
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                move.MoveId,
+                edit.Field!,
+                move.RevertToVanillaBlockedReason
+                    ?? "The selected move no longer has an exact restorable runtime row shape."));
+            return;
+        }
+
+        if (expectedFingerprint is null
+            || !string.Equals(edit.NewValue, expectedFingerprint, StringComparison.Ordinal))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "A staged complete move restoration no longer matches the verified vanilla rows.",
+                ZaEditSessionSupport.MovesDomain,
+                field: edit.Field,
+                expected: expectedFingerprint ?? "Current verified vanilla runtime row fingerprint"));
+        }
+
+        if (!HasBaseSource(edit, virtualPath))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "A staged complete move restoration is missing verified base provenance.",
+                ZaEditSessionSupport.MovesDomain,
+                field: edit.Field,
+                expected: $"Base source for {virtualPath}"));
+        }
+
+        if (!isBattleRestore)
+        {
+            ValidateTimingRestoreProjectileCatalog(
+                workflow,
+                move.MoveId,
+                move.VanillaTimingRows,
+                diagnostics);
+            ValidateProjectileCatalogProvenance(workflow, edit, diagnostics);
+        }
+    }
+
+    private static void ApplyBattleVanillaRestore(
+        ZaBattleMoveParameterArrayT activeTable,
+        ZaBattleMoveParameterArrayT? baseTable,
+        PendingEdit edit,
+        int moveId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (baseTable is null)
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                moveId,
+                BattleVanillaRestoreField,
+                "Verified vanilla battle rows were not loaded for the selected move restoration."));
+            return;
+        }
+
+        var activeRows = ZaRuntimeMoveData.BattleRows(activeTable)
+            .Where(row => row.MoveId == checked((uint)moveId))
+            .OrderBy(row => row.VariantType)
+            .ToArray();
+        var baseRows = ZaRuntimeMoveData.BattleRows(baseTable)
+            .Where(row => row.MoveId == checked((uint)moveId))
+            .OrderBy(row => row.VariantType)
+            .ToArray();
+        var activeVariantIds = activeRows.Select(row => row.VariantType).ToArray();
+        var baseVariantIds = baseRows.Select(row => row.VariantType).ToArray();
+        var hasExactShape = activeRows.Length > 0
+            && HasOnlyIdenticalDuplicateVariants(activeRows)
+            && HasOnlyIdenticalDuplicateVariants(baseRows)
+            && activeVariantIds.SequenceEqual(baseVariantIds);
+        var baseFingerprint = baseRows.Length == 0
+            ? null
+            : ZaRuntimeMoveData.CreateBattleRowsFingerprint(baseRows);
+        if (!hasExactShape
+            || baseFingerprint is null
+            || !string.Equals(edit.NewValue, baseFingerprint, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                moveId,
+                BattleVanillaRestoreField,
+                "The active and verified vanilla battle rows no longer have the exact reviewed identity and shape."));
+            return;
+        }
+
+        var replacements = baseRows
+            .GroupBy(row => row.VariantType)
+            .ToDictionary(
+                group => group.Key,
+                group => new Queue<ZaBattleMoveParameterT>(group.Select(ZaRuntimeMoveData.Clone)));
+        var replacementCount = 0;
+        foreach (var group in activeTable.Values ?? [])
+        {
+            if (group?.Root is not { } rows)
+            {
+                continue;
+            }
+
+            for (var index = 0; index < rows.Count; index++)
+            {
+                var row = rows[index];
+                if (row.MoveId == checked((uint)moveId))
+                {
+                    if (!replacements.TryGetValue(row.VariantType, out var queue) || queue.Count == 0)
+                    {
+                        diagnostics.Add(CreateRestoreShapeDiagnostic(
+                            moveId,
+                            BattleVanillaRestoreField,
+                            "The selected move battle occurrences changed while the verified vanilla rows were being restored."));
+                        return;
+                    }
+
+                    rows[index] = queue.Dequeue();
+                    replacementCount++;
+                }
+            }
+        }
+
+        if (replacementCount != baseRows.Length || replacements.Values.Any(queue => queue.Count != 0))
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                moveId,
+                BattleVanillaRestoreField,
+                "The selected move battle occurrences changed while the verified vanilla rows were being restored."));
+        }
+    }
+
+    private static bool HasOnlyIdenticalDuplicateVariants(
+        IReadOnlyList<ZaBattleMoveParameterT> rows)
+    {
+        return rows
+            .GroupBy(row => row.VariantType)
+            .All(group => group
+                .Select(row => ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .Count() <= 1);
+    }
+
+    private static void ApplyTimingVanillaRestore(
+        ZaMovesWorkflow workflow,
+        ZaMoveTimingParameterArrayT activeTable,
+        ZaMoveTimingParameterArrayT? baseTable,
+        PendingEdit edit,
+        int moveId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (baseTable is null)
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                moveId,
+                TimingVanillaRestoreField,
+                "Verified vanilla timing rows were not loaded for the selected move restoration."));
+            return;
+        }
+
+        var activeRows = ZaRuntimeMoveData.TimingRows(activeTable)
+            .Where(row => row.MoveId == moveId)
+            .ToArray();
+        var baseRows = ZaRuntimeMoveData.TimingRows(baseTable)
+            .Where(row => row.MoveId == moveId)
+            .ToArray();
+        if (!ValidateTimingRestoreProjectileCatalog(
+                workflow,
+                moveId,
+                baseRows,
+                diagnostics)
+            || !ValidateProjectileCatalogProvenance(workflow, edit, diagnostics))
+        {
+            return;
+        }
+
+        var baseFingerprint = baseRows.Length == 0
+            ? null
+            : ZaRuntimeMoveData.CreateTimingRowsFingerprint(baseRows);
+        if (activeRows.Length == 0
+            || activeRows.Length != baseRows.Length
+            || baseFingerprint is null
+            || !string.Equals(edit.NewValue, baseFingerprint, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                moveId,
+                TimingVanillaRestoreField,
+                "The active and verified vanilla timing rows no longer have the exact reviewed occurrence shape."));
+            return;
+        }
+
+        var replacementIndex = 0;
+        foreach (var group in activeTable.Values ?? [])
+        {
+            if (group?.Root is not { } rows)
+            {
+                continue;
+            }
+
+            for (var index = 0; index < rows.Count; index++)
+            {
+                if (rows[index].MoveId == moveId)
+                {
+                    rows[index] = ZaRuntimeMoveData.Clone(baseRows[replacementIndex]);
+                    replacementIndex++;
+                }
+            }
+        }
+
+        if (replacementIndex != baseRows.Length)
+        {
+            diagnostics.Add(CreateRestoreShapeDiagnostic(
+                moveId,
+                TimingVanillaRestoreField,
+                "The selected move timing occurrences changed while the verified vanilla rows were being restored."));
+        }
+    }
+
+    private static IReadOnlyDictionary<int, string> CreateExpectedRestoreFingerprints(
+        ZaBattleMoveParameterArrayT? battleTable,
+        ZaMoveTimingParameterArrayT? timingTable,
+        IReadOnlyList<PendingEdit> edits)
+    {
+        var fingerprints = new Dictionary<int, string>();
+        foreach (var edit in edits.Where(IsRuntimeRestoreEdit))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId))
+            {
+                continue;
+            }
+
+            if (IsBattleVanillaRestoreEdit(edit) && battleTable is not null)
+            {
+                fingerprints[moveId] = ZaRuntimeMoveData.CreateBattleRowsFingerprint(
+                    ZaRuntimeMoveData.BattleRows(battleTable)
+                        .Where(row => row.MoveId == checked((uint)moveId))
+                        .OrderBy(row => row.VariantType));
+            }
+            else if (IsTimingVanillaRestoreEdit(edit) && timingTable is not null)
+            {
+                fingerprints[moveId] = ZaRuntimeMoveData.CreateTimingRowsFingerprint(
+                    ZaRuntimeMoveData.TimingRows(timingTable).Where(row => row.MoveId == moveId));
+            }
+        }
+
+        return fingerprints;
+    }
+
+    private static bool IsRuntimeEditForPath(PendingEdit edit, string virtualPath, string editablePrefix)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+            && (edit.Field?.StartsWith(editablePrefix, StringComparison.Ordinal) == true
+                || IsRuntimeRestoreEditForPath(edit, virtualPath));
+    }
+
+    private static bool IsRuntimeRestoreEditForPath(PendingEdit edit, string virtualPath)
+    {
+        return string.Equals(virtualPath, ZaDataPaths.BattleMoveParameterArray, StringComparison.Ordinal)
+            ? IsBattleVanillaRestoreEdit(edit)
+            : string.Equals(virtualPath, ZaDataPaths.MoveTimingParameterArray, StringComparison.Ordinal)
+                && IsTimingVanillaRestoreEdit(edit);
+    }
+
+    private static bool IsRuntimeRestoreEdit(PendingEdit edit) =>
+        IsBattleVanillaRestoreEdit(edit) || IsTimingVanillaRestoreEdit(edit);
+
+    private static bool RequiresProjectileCatalog(PendingEdit edit) =>
+        ZaMovesWorkflowService.IsProjectileField(edit.Field) || IsTimingVanillaRestoreEdit(edit);
+
+    private static bool IsBattleVanillaRestoreEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+        && string.Equals(edit.Field, BattleVanillaRestoreField, StringComparison.Ordinal);
+
+    private static bool IsTimingVanillaRestoreEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+        && string.Equals(edit.Field, TimingVanillaRestoreField, StringComparison.Ordinal);
+
+    private static void ApplyRuntimeEdit(
+        ZaMovesWorkflow workflow,
+        ZaBattleMoveParameterArrayT battleTable,
+        ZaMoveTimingParameterArrayT timingTable,
+        ZaBattleMoveParameterArrayT? baseBattleTable,
+        ZaMoveTimingParameterArrayT? baseTimingTable,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending runtime move edit is not valid for apply.",
+                ZaEditSessionSupport.MovesDomain,
+                expected: "Valid Z-A runtime move edit"));
+            return;
+        }
+
+        if (IsBattleVanillaRestoreEdit(edit))
+        {
+            ApplyBattleVanillaRestore(battleTable, baseBattleTable, edit, moveId, diagnostics);
+            return;
+        }
+
+        if (IsTimingVanillaRestoreEdit(edit))
+        {
+            ApplyTimingVanillaRestore(
+                workflow,
+                timingTable,
+                baseTimingTable,
+                edit,
+                moveId,
+                diagnostics);
+            return;
+        }
+
+        if (TryNormalizeEditableValue(workflow, edit.Field, edit.NewValue, diagnostics) is not { } value)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending runtime move edit is not valid for apply.",
+                ZaEditSessionSupport.MovesDomain,
+                expected: "Valid Z-A runtime move edit"));
+            return;
+        }
+
+        if (ZaRuntimeMoveData.TryParseBattleField(edit.Field, out var variant, out var member))
+        {
+            var rows = ZaRuntimeMoveData.BattleRows(battleTable)
+                .Where(candidate =>
+                    candidate.MoveId == checked((uint)moveId) && candidate.VariantType == variant)
+                .ToArray();
+            var rowsAreIdentical = rows
+                .Select(row => ZaRuntimeMoveData.CreateBattleRowsFingerprint([row]))
+                .Distinct(StringComparer.Ordinal)
+                .Take(2)
+                .Count() <= 1;
+            if (rows.Length == 0
+                || !rowsAreIdentical
+                || !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer)
+                || rows.Any(row => !ZaRuntimeMoveData.Apply(row, member, integer)))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{FormatRuntimeVariantLabel(variant)} data for move {moveId} could not apply field '{member}'.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: edit.Field,
+                    expected: "Existing writable battle parameter"));
+            }
+
+            return;
+        }
+
+        if (ZaRuntimeMoveData.TryParseTimingField(edit.Field, out var occurrence, out member))
+        {
+            var rows = ZaRuntimeMoveData.TimingRows(timingTable)
+                .Where(candidate => candidate.MoveId == moveId)
+                .ToArray();
+            var targets = occurrence is null
+                ? rows
+                : rows.ElementAtOrDefault(occurrence.Value) is { } target
+                    ? [target]
+                    : [];
+            if (targets.Length == 0
+                || (occurrence is null && member is not ("hitPercent" or "cooldown"))
+                || targets.Any(row => !ZaRuntimeMoveData.Apply(row, member, value, workflow.SpawnLocators)))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Move {moveId} could not apply timing field '{member}'.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: edit.Field,
+                    expected: "Existing writable timing parameter"));
+            }
+
+            return;
+        }
+
+        diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Move field '{edit.Field}' is not a runtime battle or timing field.",
+            ZaEditSessionSupport.MovesDomain,
+            field: edit.Field,
+            expected: "Supported runtime move field"));
+    }
+
+    private static void ValidateRuntimeOutput(
+        ZaMovesWorkflow workflow,
+        byte[]? battleBytes,
+        byte[]? timingBytes,
+        IReadOnlyList<PendingEdit> edits,
+        IReadOnlyDictionary<int, string> expectedRestoreFingerprints,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var battleRows = battleBytes is null
+            ? []
+            : ZaRuntimeMoveData.BattleRows(ZaRuntimeMoveData.ReadBattle(battleBytes)).ToArray();
+        var timingRows = timingBytes is null
+            ? []
+            : ZaRuntimeMoveData.TimingRows(ZaRuntimeMoveData.ReadTiming(timingBytes)).ToArray();
+        foreach (var edit in edits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId))
+            {
+                continue;
+            }
+
+            if (IsRuntimeRestoreEdit(edit))
+            {
+                _ = expectedRestoreFingerprints.TryGetValue(moveId, out var expectedFingerprint);
+                var actualFingerprint = IsBattleVanillaRestoreEdit(edit) && battleBytes is not null
+                    ? ZaRuntimeMoveData.CreateBattleRowsFingerprint(
+                        battleRows
+                            .Where(row => row.MoveId == checked((uint)moveId))
+                            .OrderBy(row => row.VariantType))
+                    : IsTimingVanillaRestoreEdit(edit) && timingBytes is not null
+                        ? ZaRuntimeMoveData.CreateTimingRowsFingerprint(
+                            timingRows.Where(row => row.MoveId == moveId))
+                        : null;
+                if (actualFingerprint is null
+                    || expectedFingerprint is null
+                    || !string.Equals(actualFingerprint, expectedFingerprint, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Serialized runtime move output did not retain the complete vanilla row restoration for move {moveId}.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: edit.Field,
+                        expected: expectedFingerprint ?? "Complete verified vanilla runtime rows"));
+                }
+
+                continue;
+            }
+
+            var isBattleEdit = ZaRuntimeMoveData.TryParseBattleField(
+                edit.Field,
+                out var variant,
+                out var battleMember);
+            var isTimingEdit = ZaRuntimeMoveData.TryParseTimingField(
+                edit.Field,
+                out var timingOccurrence,
+                out var timingMember);
+            if ((isBattleEdit && battleBytes is null)
+                || (isTimingEdit && timingBytes is null)
+                || (!isBattleEdit && !isTimingEdit))
+            {
+                continue;
+            }
+
+            IReadOnlyList<string?> actualValues = [];
+            if (battleBytes is not null
+                && isBattleEdit)
+            {
+                actualValues = battleRows
+                    .Where(row => row.MoveId == checked((uint)moveId) && row.VariantType == variant)
+                    .Select(row => ZaRuntimeMoveData.GetValue(ZaRuntimeMoveData.ToRecord(row), battleMember))
+                    .ToArray();
+            }
+            else if (timingBytes is not null
+                     && isTimingEdit)
+            {
+                var moveTimingRows = timingRows
+                    .Where(row => row.MoveId == moveId)
+                    .ToArray();
+                actualValues = timingOccurrence is null
+                    ? moveTimingRows
+                        .Select((row, index) => ZaRuntimeMoveData.GetValue(
+                            ZaRuntimeMoveData.ToRecord(row, index, workflow.SpawnLocators),
+                            timingMember))
+                        .ToArray()
+                    : moveTimingRows.ElementAtOrDefault(timingOccurrence.Value) is { } row
+                        ? [ZaRuntimeMoveData.GetValue(
+                            ZaRuntimeMoveData.ToRecord(row, timingOccurrence.Value, workflow.SpawnLocators),
+                            timingMember)]
+                        : [];
+            }
+
+            if (!double.TryParse(edit.NewValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var expectedNumber)
+                || actualValues.Count == 0
+                || actualValues.Any(actual =>
+                    actual is null
+                    || !double.TryParse(actual, NumberStyles.Float, CultureInfo.InvariantCulture, out var actualNumber)
+                    || Math.Abs(actualNumber - expectedNumber) > 0.00001))
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Serialized runtime move output did not retain field '{edit.Field}' for move {moveId}.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: edit.Field,
+                    expected: edit.NewValue));
+            }
+        }
+    }
+
     private static void ApplyEdit(
         IReadOnlyList<MoveRow> rows,
         PendingEdit edit,
@@ -593,7 +2307,7 @@ internal sealed class ZaMovesEditSessionService
     {
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
             || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
-            || TryParseEditableValue(edit.Field, edit.NewValue, diagnostics) is not { } value)
+            || TryParseEditableValue(null, edit.Field, edit.NewValue, diagnostics) is not { } value)
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,

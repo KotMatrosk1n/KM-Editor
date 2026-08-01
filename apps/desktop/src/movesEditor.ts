@@ -20,6 +20,11 @@ export type NumericMoveEditableField = {
   valueKind: string;
 };
 
+export type MoveRelationalValidationIssue = {
+  fields: string[];
+  message: string;
+};
+
 export const moveFieldsNotStagedAtomicallyMessage =
   'Move changes were not staged atomically. No move drafts were cleared.';
 
@@ -43,10 +48,13 @@ export function evaluateMoveFieldsUpdate({
   const stagedMove = response.workflow.moves.find((candidate) => candidate.moveId === moveId);
   const workflowStagedAllChanges =
     stagedMove !== undefined &&
-    changes.every(
-      (change) =>
-        getEditableMoveFieldValue(stagedMove, change.field)?.toString() === change.value
-    );
+    changes.every((change) => {
+      const actualValue = getEditableMoveFieldValue(stagedMove, change.field);
+      const expectedValue = Number(change.value);
+      return actualValue !== null &&
+        Number.isFinite(expectedValue) &&
+        Math.abs(actualValue - expectedValue) <= 0.00001;
+    });
   const sessionStagedAllChanges = changes.every((change) => {
     const matchingPendingEdits = response.session.pendingEdits.filter(
       (edit) =>
@@ -55,15 +63,19 @@ export function evaluateMoveFieldsUpdate({
         edit.field === change.field
     );
     const baselineValue = baselineValues[change.field];
+    const parsedChangeValue = Number(change.value);
     const restoresBaseline =
       baselineValue !== null &&
       baselineValue !== undefined &&
-      baselineValue.toString() === change.value;
+      Number.isFinite(parsedChangeValue) &&
+      Math.abs(baselineValue - parsedChangeValue) <= 0.00001;
 
     return restoresBaseline && baselineRestoresRemovePendingEdit
       ? matchingPendingEdits.length === 0
       : matchingPendingEdits.length === 1 &&
-          matchingPendingEdits[0]?.newValue === change.value;
+          Number.isFinite(Number(matchingPendingEdits[0]?.newValue)) &&
+          Number.isFinite(parsedChangeValue) &&
+          Math.abs(Number(matchingPendingEdits[0]?.newValue) - parsedChangeValue) <= 0.00001;
   });
   const stagedAllChanges = workflowStagedAllChanges && sessionStagedAllChanges;
   const responseHasErrors = response.diagnostics.some(
@@ -92,6 +104,111 @@ export function evaluateMoveFieldsUpdate({
 }
 
 export function getEditableMoveFieldValue(move: MoveRecord, field: string) {
+  if (field.startsWith('battle.')) {
+    const [, variantText, member] = field.split('.', 3);
+    const variant = move.runtimeVariants.find(
+      (candidate) => candidate.variant === Number(variantText)
+    );
+    if (!variant || !member) {
+      return null;
+    }
+
+    const statMatch = /^stat([123])(Stage|Percent)?$/.exec(member);
+    if (statMatch) {
+      const stat = variant.statChanges.find((candidate) => candidate.slot === Number(statMatch[1]));
+      if (!stat) {
+        return null;
+      }
+
+      return statMatch[2] === 'Stage'
+        ? stat.stage
+        : statMatch[2] === 'Percent'
+          ? stat.percent
+          : stat.stat;
+    }
+
+    const runtimeValues: Record<string, number> = {
+      allowedWhileHealBlocked: variant.allowedWhileHealBlocked ? 1 : 0,
+      appliesCondition: variant.appliesCondition ? 1 : 0,
+      blockedByProtect: variant.blockedByProtect ? 1 : 0,
+      bypassesSubstitute: variant.bypassesSubstitute ? 1 : 0,
+      callableByMetronome: variant.callableByMetronome ? 1 : 0,
+      cannotKnockOut: variant.cannotKnockOut ? 1 : 0,
+      conditionCount: variant.conditionCount,
+      conditionId: variant.conditionId,
+      conditionPercent: variant.conditionPercent,
+      conditionTurnMax: variant.conditionTurnMax,
+      conditionTurnMin: variant.conditionTurnMin,
+      criticalRank: variant.criticalRank,
+      damageDrainRatio: variant.damageDrainRatio,
+      damageRecoverRatio: variant.damageRecoverRatio,
+      damageType: variant.damageType,
+      effectCategory: variant.effectCategory,
+      hpRecoverRatio: variant.hpRecoverRatio,
+      isAvoidedByFloating: variant.isAvoidedByFloating ? 1 : 0,
+      isGuard: variant.isGuard ? 1 : 0,
+      isSlicing: variant.isSlicing ? 1 : 0,
+      isWind: variant.isWind ? 1 : 0,
+      makesContact: variant.makesContact ? 1 : 0,
+      power: variant.power,
+      restoresHp: variant.restoresHp ? 1 : 0,
+      shrinkPercent: variant.shrinkPercent,
+      thawsUser: variant.thawsUser ? 1 : 0,
+      type: variant.type,
+      valueEffectRatio: variant.valueEffectRatio
+    };
+    return runtimeValues[member] ?? null;
+  }
+
+  const timingField = parseMoveTimingField(field);
+  if (timingField) {
+    const timing = timingField.occurrence === null
+      ? move.timing ?? move.timingRows[0] ?? null
+      : move.timingRows.find((candidate) => candidate.occurrence === timingField.occurrence) ?? null;
+    if (!timing) {
+      return null;
+    }
+
+    const timingValues: Record<string, number> = {
+      attackLoopFrames: timing.attackLoopFrames,
+      chargeFrames: timing.chargeFrames,
+      cooldown: timing.cooldown,
+      effectTime: timing.effectTime,
+      effectValue: timing.effectValue,
+      effectiveRange: timing.effectiveRange,
+      heightTolerance: timing.heightTolerance,
+      hitPercent: timing.hitPercent,
+      impactMotionSpeed: timing.impactMotionSpeed,
+      megaPowerBonus: timing.megaPowerBonus,
+      movementType: timing.movementType,
+      overwriteProjectile1: timing.overwriteProjectile1,
+      overwriteProjectile2: timing.overwriteProjectile2,
+      overwriteProjectile3: timing.overwriteProjectile3,
+      overwriteProjectile4: timing.overwriteProjectile4,
+      overwriteProjectile5: timing.overwriteProjectile5,
+      playedMotionSpeed: timing.playedMotionSpeed,
+      projectileCorrectionScale: timing.projectileCorrectionScale,
+      projectileCountMax: timing.projectileCountMax,
+      projectileCountMin: timing.projectileCountMin,
+      rangeMax: timing.rangeMax,
+      rangeMin: timing.rangeMin,
+      replacementProjectile1: timing.replacementProjectile1,
+      replacementProjectile2: timing.replacementProjectile2,
+      replacementProjectile3: timing.replacementProjectile3,
+      replacementProjectile4: timing.replacementProjectile4,
+      replacementProjectile5: timing.replacementProjectile5,
+      shotDirection: timing.shotDirection,
+      spawnLocator: timing.spawnLocatorOption,
+      spawnLocatorOption: timing.spawnLocatorOption,
+      spawnOffsetX: timing.spawnOffsetX,
+      spawnOffsetY: timing.spawnOffsetY,
+      spawnOffsetZ: timing.spawnOffsetZ,
+      spawnOrigin: timing.spawnOrigin,
+      targetCorrectionType: timing.targetCorrectionType
+    };
+    return timingValues[timingField.member] ?? null;
+  }
+
   switch (field) {
     case 'canUseMove':
       return move.canUseMove ? 1 : 0;
@@ -163,7 +280,12 @@ export function getEditableMoveFieldValue(move: MoveRecord, field: string) {
 }
 
 export function getMoveEditableFieldLabel(field: MoveEditableField) {
-  switch (field.field) {
+  const fieldName = field.field
+    .replace(/^battle\.\d+\./, '')
+    .replace(/^timing\.\d+\./, '')
+    .replace(/^timing\./, '');
+
+  switch (fieldName) {
     case 'turnMin':
       return 'Minimum inflicted-effect turns';
     case 'turnMax':
@@ -172,12 +294,106 @@ export function getMoveEditableFieldLabel(field: MoveEditableField) {
       return field.options.length > 0 ? 'Effect quality' : 'Quality (raw)';
     case 'rawHealing':
       return 'HP recovery / cost (raw)';
+    case 'damageRecoverRatio':
+      return 'Damage recovery / recoil (%)';
+    case 'damageDrainRatio':
+      return 'Drained HP (%)';
+    case 'cooldown':
+      return 'Cooldown (seconds)';
     default:
       return field.label;
   }
 }
 
 export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
+  const timingField = parseMoveTimingField(field.field);
+  if (timingField) {
+    if (timingField.occurrence === null) {
+      return 'Timing';
+    }
+
+    if (
+      timingField.member === 'chargeFrames' ||
+      timingField.member === 'attackLoopFrames' ||
+      timingField.member === 'impactMotionSpeed' ||
+      timingField.member === 'movementType' ||
+      timingField.member === 'playedMotionSpeed'
+    ) {
+      return 'Advanced Animation and Motion';
+    }
+
+    if (
+      timingField.member === 'spawnOrigin' ||
+      timingField.member === 'spawnLocator' ||
+      timingField.member === 'spawnLocatorOption' ||
+      timingField.member.startsWith('spawnOffset') ||
+      timingField.member === 'shotDirection' ||
+      timingField.member === 'targetCorrectionType'
+    ) {
+      return 'Advanced Spawn and Direction';
+    }
+
+    if (
+      timingField.member === 'rangeMin' ||
+      timingField.member === 'rangeMax' ||
+      timingField.member === 'heightTolerance' ||
+      timingField.member === 'effectiveRange'
+    ) {
+      return 'Advanced Targeting and Range';
+    }
+
+    if (
+      timingField.member === 'projectileCountMin' ||
+      timingField.member === 'projectileCountMax' ||
+      timingField.member === 'projectileCorrectionScale'
+    ) {
+      return 'Advanced Projectiles';
+    }
+
+    if (
+      timingField.member.startsWith('overwriteProjectile') ||
+      timingField.member.startsWith('replacementProjectile')
+    ) {
+      return 'Advanced Projectile Replacements';
+    }
+
+    if (
+      timingField.member === 'effectTime' ||
+      timingField.member === 'effectValue' ||
+      timingField.member === 'megaPowerBonus'
+    ) {
+      return 'Advanced Effect Timing';
+    }
+
+    return 'Advanced Timing';
+  }
+
+  if (field.field.startsWith('battle.')) {
+    const [, , member = ''] = field.field.split('.', 3);
+    if (member.startsWith('stat')) {
+      return 'Runtime Stat Changes';
+    }
+
+    if (field.valueKind === 'boolean') {
+      return 'Runtime Flags';
+    }
+
+    if (
+      member.startsWith('condition') ||
+      member.includes('Recover') ||
+      member.includes('Drain') ||
+      member === 'hpRecoverRatio'
+    ) {
+      return 'Runtime Effects';
+    }
+
+    if (member === 'effectCategory' || member === 'valueEffectRatio') {
+      return 'Advanced Battle Behavior';
+    }
+
+    return 'Runtime Core';
+  }
+
   if (
     field.field === 'type' ||
     field.field === 'category' ||
@@ -227,12 +443,142 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
   return 'Move Data';
 }
 
+export function parseMoveTimingField(field: string) {
+  if (field === 'timing.hitPercent' || field === 'timing.cooldown') {
+    return { member: field.slice('timing.'.length), occurrence: null };
+  }
+
+  const match = /^timing\.(\d+)\.([A-Za-z][A-Za-z0-9]*)$/.exec(field);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    member: match[2],
+    occurrence: Number(match[1])
+  };
+}
+
+export function isMoveProjectileField(field: string) {
+  const member = parseMoveTimingField(field)?.member ?? '';
+  return member.startsWith('overwriteProjectile') || member.startsWith('replacementProjectile');
+}
+
+export function getMoveRelationalValidationIssues(
+  move: MoveRecord,
+  fields: NumericMoveEditableField[],
+  drafts: Readonly<Record<string, string>>
+): MoveRelationalValidationIssue[] {
+  const visibleFieldNames = new Set(fields.map((field) => field.field));
+  const projectedValue = (field: string) => {
+    const draft = drafts[field]?.trim();
+    if (draft !== undefined && draft.length > 0) {
+      const parsed = Number(draft);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return getEditableMoveFieldValue(move, field);
+  };
+  const issues: MoveRelationalValidationIssue[] = [];
+  const addOrderedPairIssue = (minimumField: string, maximumField: string, label: string) => {
+    if (!visibleFieldNames.has(minimumField) || !visibleFieldNames.has(maximumField)) {
+      return;
+    }
+
+    const minimum = projectedValue(minimumField);
+    const maximum = projectedValue(maximumField);
+    if (minimum !== null && maximum !== null && minimum > maximum) {
+      issues.push({
+        fields: [minimumField, maximumField],
+        message: `${label} minimum cannot be greater than its maximum.`
+      });
+    }
+  };
+
+  for (const field of fields) {
+    const battleMatch = /^battle\.(\d+)\.conditionTurnMin$/.exec(field.field);
+    if (battleMatch) {
+      const prefix = `battle.${battleMatch[1]}.`;
+      addOrderedPairIssue(
+        `${prefix}conditionTurnMin`,
+        `${prefix}conditionTurnMax`,
+        'Condition turn'
+      );
+    }
+  }
+
+  const timingOccurrences = new Set(
+    fields
+      .map((field) => parseMoveTimingField(field.field)?.occurrence ?? null)
+      .filter((occurrence): occurrence is number => occurrence !== null)
+  );
+  for (const occurrence of timingOccurrences) {
+    const prefix = `timing.${occurrence}.`;
+    addOrderedPairIssue(`${prefix}rangeMin`, `${prefix}rangeMax`, 'Range');
+    addOrderedPairIssue(
+      `${prefix}projectileCountMin`,
+      `${prefix}projectileCountMax`,
+      'Projectile count'
+    );
+
+    let foundEmptyPair = false;
+    for (let pair = 1; pair <= 5; pair += 1) {
+      const overwriteField = `${prefix}overwriteProjectile${pair}`;
+      const replacementField = `${prefix}replacementProjectile${pair}`;
+      if (!visibleFieldNames.has(overwriteField) || !visibleFieldNames.has(replacementField)) {
+        continue;
+      }
+
+      const overwrite = projectedValue(overwriteField);
+      const replacement = projectedValue(replacementField);
+      if (overwrite === null || replacement === null) {
+        continue;
+      }
+
+      const overwriteIsEmpty = overwrite === 0;
+      const replacementIsEmpty = replacement === 0;
+      if (overwriteIsEmpty !== replacementIsEmpty) {
+        issues.push({
+          fields: [overwriteField, replacementField],
+          message: `Projectile replacement ${pair} must specify both projectiles or leave both as None.`
+        });
+      }
+
+      const pairIsEmpty = overwriteIsEmpty && replacementIsEmpty;
+      if (!pairIsEmpty && foundEmptyPair) {
+        issues.push({
+          fields: [overwriteField, replacementField],
+          message: `Projectile replacement ${pair} cannot follow an empty replacement slot.`
+        });
+      }
+      foundEmptyPair ||= pairIsEmpty;
+    }
+  }
+
+  return issues;
+}
+
 export function formatMoveAccuracy(accuracy: number) {
   if (accuracy === 0) {
     return '-';
   }
 
   return accuracy === 101 ? 'Always hits' : accuracy.toString();
+}
+
+export function formatMoveRuntimeVariantLabel(variant: number) {
+  switch (variant) {
+    case 0:
+      return 'Normal Move';
+    case 1:
+      return 'Plus Move';
+    case 2:
+      return 'Boss Move';
+    default:
+      return `Variant ${variant}`;
+  }
 }
 
 export function formatMoveHitRange(hitMin: number, hitMax: number) {

@@ -53,6 +53,18 @@ export const updateItemFieldsResponseSchema = z.strictObject({
   workflow: itemsWorkflowSchema
 });
 
+export const stageItemVanillaRequestSchema = z.strictObject({
+  itemId: z.number().int().nonnegative(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageItemVanillaResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: itemsWorkflowSchema
+});
+
 export const moveFieldUpdateSchema = z.strictObject({
   field: z.string(),
   moveId: z.number().int().nonnegative(),
@@ -66,6 +78,18 @@ export const updateMoveFieldsRequestSchema = z.strictObject({
 });
 
 export const updateMoveFieldsResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: movesWorkflowSchema
+});
+
+export const stageMoveVanillaRequestSchema = z.strictObject({
+  moveId: z.number().int().nonnegative(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageMoveVanillaResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: movesWorkflowSchema
@@ -201,9 +225,13 @@ export type UpdatePokemonFieldsResponse = z.infer<typeof updatePokemonFieldsResp
 export type MoveFieldUpdate = z.infer<typeof moveFieldUpdateSchema>;
 export type UpdateMoveFieldsRequest = z.infer<typeof updateMoveFieldsRequestSchema>;
 export type UpdateMoveFieldsResponse = z.infer<typeof updateMoveFieldsResponseSchema>;
+export type StageMoveVanillaRequest = z.infer<typeof stageMoveVanillaRequestSchema>;
+export type StageMoveVanillaResponse = z.infer<typeof stageMoveVanillaResponseSchema>;
 export type ItemFieldUpdate = z.infer<typeof itemFieldUpdateSchema>;
 export type UpdateItemFieldsRequest = z.infer<typeof updateItemFieldsRequestSchema>;
 export type UpdateItemFieldsResponse = z.infer<typeof updateItemFieldsResponseSchema>;
+export type StageItemVanillaRequest = z.infer<typeof stageItemVanillaRequestSchema>;
+export type StageItemVanillaResponse = z.infer<typeof stageItemVanillaResponseSchema>;
 export type TrainerFieldUpdate = z.infer<typeof trainerFieldUpdateSchema>;
 export type UpdateTrainerFieldsRequest = z.infer<typeof updateTrainerFieldsRequestSchema>;
 export type UpdateTrainerFieldsResponse = z.infer<typeof updateTrainerFieldsResponseSchema>;

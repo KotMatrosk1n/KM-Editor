@@ -230,6 +230,16 @@ public static class ZaBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StageItemVanillaResponse ToItemVanillaDto(ZaItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageItemVanillaResponse(
+            ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateMoveFieldResponse ToDto(ZaMovesEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -245,6 +255,16 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdateMoveFieldsResponse(
+            ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageMoveVanillaResponse ToMoveVanillaDto(ZaMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageMoveVanillaResponse(
             ToMovesWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -606,7 +626,10 @@ public static class ZaBridgeMapper
                 workflow.Stats.EnabledMoveCount,
                 workflow.Stats.SourceFileCount,
                 workflow.Stats.ActiveFlagCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            ProjectileOptions = workflow.ProjectileOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static TextWorkflowDto ToTextWorkflowDto(ZaTextWorkflow workflow)
@@ -1243,7 +1266,11 @@ public static class ZaBridgeMapper
             ToDto(item.Metadata),
             item.SharedItemIds.ToArray(),
             item.DetailGroups.Select(ToDto).ToArray(),
-            ToDto(item.Provenance));
+            ToDto(item.Provenance))
+        {
+            CanRevertToVanilla = item.CanRevertToVanilla,
+            RevertToVanillaBlockedReason = item.RevertToVanillaBlockedReason,
+        };
     }
 
     private static ItemMetadataDto ToDto(ZaItemMetadata metadata)
@@ -1280,7 +1307,13 @@ public static class ZaBridgeMapper
             metadata.FriendshipGain3,
             metadata.MachineSlot,
             metadata.MachineMoveId,
-            metadata.MachineMoveName);
+            metadata.MachineMoveName)
+        {
+            BaseMachineMoveId = metadata.BaseMachineMoveId,
+            BaseMachineMoveName = metadata.BaseMachineMoveName,
+            MachineAssignmentDiffersFromBase = metadata.MachineAssignmentDiffersFromBase,
+            CompatiblePokemonCount = metadata.CompatiblePokemonCount,
+        };
     }
 
     private static ItemDetailGroupDto ToDto(ZaItemDetailGroup group)
@@ -1426,7 +1459,19 @@ public static class ZaBridgeMapper
             move.RawHealing,
             move.StatChanges.Select(ToDto).ToArray(),
             move.Flags.Select(ToDto).ToArray(),
-            ToDto(move.Provenance));
+            ToDto(move.Provenance))
+        {
+            RuntimeVariants = move.RuntimeVariants.Select(ToDto).ToArray(),
+            Timing = move.Timing is null ? null : ToDto(move.Timing),
+            TimingRows = move.TimingRows.Select(ToDto).ToArray(),
+            VanillaValues = move.VanillaValues
+                .Select(value => new MoveVanillaFieldValueDto(value.Field, value.Value))
+                .ToArray(),
+            RuntimeSourceFiles = move.RuntimeSourceFiles.ToArray(),
+            HasRuntimeData = move.HasRuntimeData,
+            CanRevertToVanilla = move.CanRevertToVanilla,
+            RevertToVanillaBlockedReason = move.RevertToVanillaBlockedReason,
+        };
     }
 
     private static MoveEditableFieldDto ToDto(ZaMoveEditableField field)
@@ -1443,6 +1488,84 @@ public static class ZaBridgeMapper
     private static MoveEditableFieldOptionDto ToDto(ZaMoveEditableFieldOption option)
     {
         return new MoveEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static MoveRuntimeVariantRecordDto ToDto(ZaMoveRuntimeVariantRecord variant)
+    {
+        return new MoveRuntimeVariantRecordDto(
+            variant.Variant,
+            variant.Type,
+            variant.TypeName,
+            variant.EffectCategory,
+            variant.DamageType,
+            variant.DamageTypeName,
+            variant.Power,
+            variant.CriticalRank,
+            variant.HpRecoverRatio,
+            variant.ShrinkPercent,
+            variant.ConditionId,
+            variant.ConditionPercent,
+            variant.ConditionCount,
+            variant.ConditionTurnMin,
+            variant.ConditionTurnMax,
+            variant.StatChanges.Select(ToDto).ToArray(),
+            variant.DamageRecoverRatio,
+            variant.DamageDrainRatio,
+            variant.IsGuard,
+            variant.IsAvoidedByFloating,
+            variant.MakesContact,
+            variant.IsSlicing,
+            variant.IsWind,
+            variant.BypassesSubstitute,
+            variant.ThawsUser,
+            variant.RestoresHp,
+            variant.AllowedWhileHealBlocked,
+            variant.CallableByMetronome,
+            variant.AppliesCondition,
+            variant.BlockedByProtect,
+            variant.CannotKnockOut,
+            variant.ValueEffectRatio);
+    }
+
+    private static MoveTimingRecordDto ToDto(ZaMoveTimingRecord timing)
+    {
+        return new MoveTimingRecordDto(
+            timing.Occurrence,
+            timing.ChargeFrames,
+            timing.AttackLoopFrames,
+            timing.SpawnOrigin,
+            timing.SpawnLocator,
+            timing.SpawnLocatorOption,
+            timing.SpawnOffsetX,
+            timing.SpawnOffsetY,
+            timing.SpawnOffsetZ,
+            timing.ShotDirection,
+            timing.TargetCorrectionType,
+            timing.ImpactMotionSpeed,
+            timing.MovementType,
+            timing.RangeMin,
+            timing.RangeMax,
+            timing.HeightTolerance,
+            timing.EffectiveRange,
+            timing.ProjectileCountMin,
+            timing.ProjectileCountMax,
+            timing.HitPercent,
+            timing.Cooldown,
+            timing.EffectTime,
+            timing.EffectValue,
+            timing.MegaPowerBonus,
+            timing.PlayedMotionSpeed,
+            timing.OverwriteProjectile1,
+            timing.ReplacementProjectile1,
+            timing.OverwriteProjectile2,
+            timing.ReplacementProjectile2,
+            timing.OverwriteProjectile3,
+            timing.ReplacementProjectile3,
+            timing.OverwriteProjectile4,
+            timing.ReplacementProjectile4,
+            timing.OverwriteProjectile5,
+            timing.ReplacementProjectile5,
+            timing.ProjectileCorrectionScale);
     }
 
     private static MoveStatChangeRecordDto ToDto(ZaMoveStatChangeRecord statChange)

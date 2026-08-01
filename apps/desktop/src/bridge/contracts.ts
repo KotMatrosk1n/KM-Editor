@@ -6,7 +6,7 @@ export const kmCommandNameValues = [
   'project.fileGraph.refresh',
   'workflow.list',
   'items.load',
-  'items.field.update', 'items.fields.update',
+  'items.field.update', 'items.fields.update', 'items.item.vanilla.stage',
   'pokemon.load',
   'pokemon.field.update', 'pokemon.fields.update',
   'pokemon.learnset.update',
@@ -16,7 +16,7 @@ export const kmCommandNameValues = [
   'pokemon.dex.resize',
   'pokemon.dex.vanilla.stage',
   'moves.load',
-  'moves.field.update', 'moves.fields.update',
+  'moves.field.update', 'moves.fields.update', 'moves.move.vanilla.stage',
   'text.load',
   'text.entry.update',
   'trainers.load',
@@ -126,6 +126,7 @@ export const kmCommandNames = {
   getEditSession: 'editSession.get',
   listWorkflows: 'workflow.list',
   loadItemsWorkflow: 'items.load',
+  stageItemVanilla: 'items.item.vanilla.stage',
   updateItemFields: 'items.fields.update',
   loadPokemonWorkflow: 'pokemon.load',
   updatePokemonField: 'pokemon.field.update',
@@ -137,6 +138,7 @@ export const kmCommandNames = {
   resizePokemonDex: 'pokemon.dex.resize',
   stagePokemonDexVanilla: 'pokemon.dex.vanilla.stage',
   loadMovesWorkflow: 'moves.load',
+  stageMoveVanilla: 'moves.move.vanilla.stage',
   updateMoveField: 'moves.field.update',
   updateMoveFields: 'moves.fields.update',
   loadTextWorkflow: 'text.load',
@@ -816,6 +818,8 @@ export const itemDetailGroupSchema = z.strictObject({
 });
 
 export const itemMetadataSchema = z.strictObject({
+  baseMachineMoveId: z.number().int().nullable(),
+  baseMachineMoveName: z.string().nullable(),
   boost0: z.number().int(),
   boost1: z.number().int(),
   boost2: z.number().int(),
@@ -842,10 +846,12 @@ export const itemMetadataSchema = z.strictObject({
   machineMoveId: z.number().int().nullable(),
   machineMoveName: z.string().nullable(),
   machineSlot: z.number().int().nullable(),
+  machineAssignmentDiffersFromBase: z.boolean(),
   pouch: z.number().int(),
   pouchFlags: z.number().int(),
   ppGain: z.number().int(),
   sortIndex: z.number().int(),
+  compatiblePokemonCount: z.number().int().nonnegative(),
   useFlags1: z.number().int(),
   useFlags2: z.number().int()
 });
@@ -853,6 +859,7 @@ export const itemMetadataSchema = z.strictObject({
 export const itemRecordSchema = z.strictObject({
   alternatePrice: z.number().int().nonnegative(),
   buyPrice: z.number().int().nonnegative(),
+  canRevertToVanilla: z.boolean(),
   category: z.string(),
   detailGroups: z.array(itemDetailGroupSchema),
   fieldValues: z.record(z.string(), z.number().int().nullable()).optional(),
@@ -860,6 +867,7 @@ export const itemRecordSchema = z.strictObject({
   metadata: itemMetadataSchema,
   name: z.string(),
   provenance: itemProvenanceSchema,
+  revertToVanillaBlockedReason: z.string().nullable(),
   sellPrice: z.number().int().nonnegative(),
   sharedItemIds: z.array(z.number().int().nonnegative()),
   wattsPrice: z.number().int().nonnegative()
@@ -1224,20 +1232,100 @@ export const moveFlagRecordSchema = z.strictObject({
 
 export const moveEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
-  value: z.number().int()
+  value: z.number().finite()
 });
 
 export const moveEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
-  maximumValue: z.number().int().nullable(),
-  minimumValue: z.number().int().nullable(),
+  maximumValue: z.number().finite().nullable(),
+  minimumValue: z.number().finite().nullable(),
   options: z.array(moveEditableFieldOptionSchema).default([]),
   valueKind: z.string()
 });
 
+export const moveRuntimeVariantRecordSchema = z.strictObject({
+  allowedWhileHealBlocked: z.boolean(),
+  appliesCondition: z.boolean(),
+  blockedByProtect: z.boolean(),
+  bypassesSubstitute: z.boolean(),
+  callableByMetronome: z.boolean(),
+  cannotKnockOut: z.boolean(),
+  conditionCount: z.number().int().nonnegative(),
+  conditionId: z.number().int().nonnegative(),
+  conditionPercent: z.number().int().nonnegative(),
+  conditionTurnMax: z.number().int().nonnegative(),
+  conditionTurnMin: z.number().int().nonnegative(),
+  criticalRank: z.number().int().nonnegative(),
+  damageDrainRatio: z.number().int(),
+  damageRecoverRatio: z.number().int(),
+  damageType: z.number().int().nonnegative(),
+  damageTypeName: z.string(),
+  effectCategory: z.number().int().nonnegative(),
+  hpRecoverRatio: z.number().int(),
+  isAvoidedByFloating: z.boolean(),
+  isGuard: z.boolean(),
+  isSlicing: z.boolean(),
+  isWind: z.boolean(),
+  makesContact: z.boolean(),
+  power: z.number().int().nonnegative(),
+  restoresHp: z.boolean(),
+  shrinkPercent: z.number().int().nonnegative(),
+  statChanges: z.array(moveStatChangeRecordSchema),
+  thawsUser: z.boolean(),
+  type: z.number().int().nonnegative(),
+  typeName: z.string(),
+  valueEffectRatio: z.number().int(),
+  variant: z.number().int().nonnegative()
+});
+
+export const moveTimingRecordSchema = z.strictObject({
+  attackLoopFrames: z.number().int(),
+  chargeFrames: z.number().int(),
+  cooldown: z.number(),
+  effectTime: z.number(),
+  effectValue: z.number().int(),
+  effectiveRange: z.number(),
+  heightTolerance: z.number(),
+  hitPercent: z.number().int(),
+  impactMotionSpeed: z.number(),
+  megaPowerBonus: z.number(),
+  movementType: z.number().int(),
+  occurrence: z.number().int().nonnegative(),
+  overwriteProjectile1: z.number().int(),
+  overwriteProjectile2: z.number().int(),
+  overwriteProjectile3: z.number().int(),
+  overwriteProjectile4: z.number().int(),
+  overwriteProjectile5: z.number().int(),
+  playedMotionSpeed: z.number(),
+  projectileCorrectionScale: z.number(),
+  projectileCountMax: z.number().int(),
+  projectileCountMin: z.number().int(),
+  replacementProjectile1: z.number().int(),
+  replacementProjectile2: z.number().int(),
+  replacementProjectile3: z.number().int(),
+  replacementProjectile4: z.number().int(),
+  replacementProjectile5: z.number().int(),
+  rangeMax: z.number(),
+  rangeMin: z.number(),
+  shotDirection: z.number().int(),
+  spawnLocator: z.string(),
+  spawnLocatorOption: z.number().int(),
+  spawnOffsetX: z.number(),
+  spawnOffsetY: z.number(),
+  spawnOffsetZ: z.number(),
+  spawnOrigin: z.number().int(),
+  targetCorrectionType: z.number().int()
+});
+
+export const moveVanillaFieldValueSchema = z.strictObject({
+  field: z.string(),
+  value: z.string()
+});
+
 export const moveRecordSchema = z.strictObject({
   accuracy: z.number().int().nonnegative(),
+  canRevertToVanilla: z.boolean(),
   canUseMove: z.boolean(),
   category: z.number().int().nonnegative(),
   categoryName: z.string(),
@@ -1248,6 +1336,7 @@ export const moveRecordSchema = z.strictObject({
   flinch: z.number().int().nonnegative(),
   hitMax: z.number().int().nonnegative(),
   hitMin: z.number().int().nonnegative(),
+  hasRuntimeData: z.boolean(),
   inflict: z.number().int().nonnegative(),
   inflictName: z.string(),
   inflictPercent: z.number().int().nonnegative(),
@@ -1262,13 +1351,19 @@ export const moveRecordSchema = z.strictObject({
   rawHealing: z.number().int(),
   rawInflictCount: z.number().int().nonnegative(),
   recoil: z.number().int(),
+  revertToVanillaBlockedReason: z.string().nullable(),
+  runtimeSourceFiles: z.array(z.string()),
+  runtimeVariants: z.array(moveRuntimeVariantRecordSchema),
   statChanges: z.array(moveStatChangeRecordSchema),
   target: z.number().int().nonnegative(),
   targetName: z.string(),
+  timing: moveTimingRecordSchema.nullable(),
+  timingRows: z.array(moveTimingRecordSchema),
   turnMax: z.number().int().nonnegative(),
   turnMin: z.number().int().nonnegative(),
   type: z.number().int().nonnegative(),
   typeName: z.string(),
+  vanillaValues: z.array(moveVanillaFieldValueSchema),
   version: z.number().int().nonnegative()
 });
 
@@ -1283,6 +1378,7 @@ export const movesWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(moveEditableFieldSchema),
   moves: z.array(moveRecordSchema),
+  projectileOptions: z.array(moveEditableFieldOptionSchema).default([]),
   stats: movesWorkflowStatsSchema,
   summary: workflowSummarySchema
 });

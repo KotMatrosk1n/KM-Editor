@@ -26,6 +26,11 @@ public sealed record UpdateMoveFieldsRequest(
     EditSessionDto? Session,
     IReadOnlyList<MoveFieldUpdateDto> Updates);
 
+public sealed record StageMoveVanillaRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int MoveId);
+
 public sealed record MoveProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -44,16 +49,90 @@ public sealed record MoveFlagRecordDto(
     bool Enabled);
 
 public sealed record MoveEditableFieldOptionDto(
-    int Value,
+    double Value,
     string Label);
 
 public sealed record MoveEditableFieldDto(
     string Field,
     string Label,
     string ValueKind,
-    int? MinimumValue,
-    int? MaximumValue,
+    double? MinimumValue,
+    double? MaximumValue,
     IReadOnlyList<MoveEditableFieldOptionDto> Options);
+
+public sealed record MoveRuntimeVariantRecordDto(
+    int Variant,
+    int Type,
+    string TypeName,
+    int EffectCategory,
+    int DamageType,
+    string DamageTypeName,
+    int Power,
+    int CriticalRank,
+    int HpRecoverRatio,
+    int ShrinkPercent,
+    int ConditionId,
+    int ConditionPercent,
+    int ConditionCount,
+    int ConditionTurnMin,
+    int ConditionTurnMax,
+    IReadOnlyList<MoveStatChangeRecordDto> StatChanges,
+    int DamageRecoverRatio,
+    int DamageDrainRatio,
+    bool IsGuard,
+    bool IsAvoidedByFloating,
+    bool MakesContact,
+    bool IsSlicing,
+    bool IsWind,
+    bool BypassesSubstitute,
+    bool ThawsUser,
+    bool RestoresHp,
+    bool AllowedWhileHealBlocked,
+    bool CallableByMetronome,
+    bool AppliesCondition,
+    bool BlockedByProtect,
+    bool CannotKnockOut,
+    int ValueEffectRatio);
+
+public sealed record MoveTimingRecordDto(
+    int Occurrence,
+    int ChargeFrames,
+    int AttackLoopFrames,
+    int SpawnOrigin,
+    string SpawnLocator,
+    int SpawnLocatorOption,
+    double SpawnOffsetX,
+    double SpawnOffsetY,
+    double SpawnOffsetZ,
+    int ShotDirection,
+    int TargetCorrectionType,
+    double ImpactMotionSpeed,
+    int MovementType,
+    double RangeMin,
+    double RangeMax,
+    double HeightTolerance,
+    double EffectiveRange,
+    int ProjectileCountMin,
+    int ProjectileCountMax,
+    int HitPercent,
+    double Cooldown,
+    double EffectTime,
+    int EffectValue,
+    double MegaPowerBonus,
+    double PlayedMotionSpeed,
+    int OverwriteProjectile1,
+    int ReplacementProjectile1,
+    int OverwriteProjectile2,
+    int ReplacementProjectile2,
+    int OverwriteProjectile3,
+    int ReplacementProjectile3,
+    int OverwriteProjectile4,
+    int ReplacementProjectile4,
+    int OverwriteProjectile5,
+    int ReplacementProjectile5,
+    double ProjectileCorrectionScale);
+
+public sealed record MoveVanillaFieldValueDto(string Field, string Value);
 
 public sealed record MoveRecordDto(
     int MoveId,
@@ -88,7 +167,24 @@ public sealed record MoveRecordDto(
     int RawHealing,
     IReadOnlyList<MoveStatChangeRecordDto> StatChanges,
     IReadOnlyList<MoveFlagRecordDto> Flags,
-    MoveProvenanceDto Provenance);
+    MoveProvenanceDto Provenance)
+{
+    public IReadOnlyList<MoveRuntimeVariantRecordDto> RuntimeVariants { get; init; } = [];
+
+    public MoveTimingRecordDto? Timing { get; init; }
+
+    public IReadOnlyList<MoveTimingRecordDto> TimingRows { get; init; } = [];
+
+    public IReadOnlyList<MoveVanillaFieldValueDto> VanillaValues { get; init; } = [];
+
+    public IReadOnlyList<string> RuntimeSourceFiles { get; init; } = [];
+
+    public bool HasRuntimeData { get; init; }
+
+    public bool CanRevertToVanilla { get; init; }
+
+    public string? RevertToVanillaBlockedReason { get; init; }
+}
 
 public sealed record MovesWorkflowStatsDto(
     int TotalMoveCount,
@@ -101,7 +197,10 @@ public sealed record MovesWorkflowDto(
     IReadOnlyList<MoveRecordDto> Moves,
     IReadOnlyList<MoveEditableFieldDto> EditableFields,
     MovesWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<MoveEditableFieldOptionDto> ProjectileOptions { get; init; } = [];
+}
 
 public sealed record LoadMovesWorkflowResponse(MovesWorkflowDto Workflow);
 
@@ -111,6 +210,11 @@ public sealed record UpdateMoveFieldResponse(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateMoveFieldsResponse(
+    MovesWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record StageMoveVanillaResponse(
     MovesWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

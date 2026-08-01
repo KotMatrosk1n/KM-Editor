@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.ZA.Generated.BattleMoves;
+
+table ZaBattleMoveParameter {
+  move_id:uint;
+  variant_type:ubyte;
+  type:ubyte;
+  category:ubyte;
+  damage_type:ubyte;
+  power:ubyte;
+  critical_rank:ubyte;
+  hp_recover_ratio:byte;
+  shrink_percent:ubyte;
+  condition_id:ushort;
+  condition_percent:ubyte;
+  condition_count:ubyte;
+  condition_turn_min:ubyte;
+  condition_turn_max:ubyte;
+  stat1:ubyte;
+  stat1_stage:byte;
+  stat1_percent:ubyte;
+  stat2:ubyte;
+  stat2_stage:byte;
+  stat2_percent:ubyte;
+  stat3:ubyte;
+  stat3_stage:byte;
+  stat3_percent:ubyte;
+  damage_recover_ratio:byte;
+  damage_drain_ratio:byte;
+  is_guard:bool;
+  is_avoided_by_floating:bool;
+  makes_contact:bool;
+  is_slicing:bool;
+  is_wind:bool;
+  bypasses_substitute:bool;
+  thaws_user:bool;
+  restores_hp:bool;
+  allowed_while_heal_blocked:bool;
+  callable_by_metronome:bool;
+  applies_condition:bool;
+  blocked_by_protect:bool;
+  cannot_knock_out:bool;
+  value_effect_ratio:byte;
+}
+
+table ZaBattleMoveParameterGroup {
+  root:[ZaBattleMoveParameter];
+}
+
+table ZaBattleMoveParameterArray {
+  values:[ZaBattleMoveParameterGroup];
+}
+
+root_type ZaBattleMoveParameterArray;
