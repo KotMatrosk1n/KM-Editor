@@ -332,7 +332,8 @@ internal static class ZaEditSessionSupport
         string domain,
         string? file = null,
         string? field = null,
-        string? expected = null)
+        string? expected = null,
+        string? code = null)
     {
         return new ValidationDiagnostic(
             severity,
@@ -340,7 +341,10 @@ internal static class ZaEditSessionSupport
             file,
             domain,
             field,
-            expected);
+            expected)
+        {
+            Code = code,
+        };
     }
 
     private static bool IsSamePendingEdit(PendingEdit existing, PendingEdit candidate)

@@ -135,6 +135,7 @@ public sealed class SwShGameDumpService
                 }),
                 diagnostics = diagnostics.Select(diagnostic => new
                 {
+                    diagnostic.Code,
                     severity = diagnostic.Severity.ToString(),
                     diagnostic.Message,
                     diagnostic.File,

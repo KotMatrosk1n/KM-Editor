@@ -101,10 +101,12 @@ public sealed class SwShBagHookWorkflowService
         try
         {
             var analysis = SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(sourcePath));
-            var hasLegacyCodeMarker = analysis.Message.Contains("legacy code-section marker", StringComparison.Ordinal);
             var installStatus = analysis.Kind switch
             {
-                SwShBagHookInstallKind.InstalledV2 => hasLegacyCodeMarker ? RepairableStatus : InstalledStatus,
+                SwShBagHookInstallKind.InstalledV2 =>
+                    analysis.MarkerPlacement == SwShBagHookMarkerPlacement.LegacyCodeSection
+                        ? RepairableStatus
+                        : InstalledStatus,
                 SwShBagHookInstallKind.NotInstalled => summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly",
                 SwShBagHookInstallKind.LegacySingleGrant => "legacy",
                 _ => "blocked",

@@ -1,6 +1,11 @@
 {
   "keys": {
     "Pending changes ({count})": "Pending changes ({count})",
+    "moves.runtimeVariant.help": "Normal, Plus, and Boss Moves use separate battle and timing profiles. Boss Moves are used by Rogue Mega and equivalent scripted boss attacks. Unknown variants remain numbered.",
+    "moves.timingOccurrence.help": "Each occurrence has independent advanced timing data. Accuracy and cooldown are shared by all occurrences in the selected timing profile.",
+    "moves.timingProfile.heading": "Timing Profile",
+    "moves.timingProfile.help": "This runtime variant has multiple independent timing profiles. The raw timing move ID identifies the profile stored by the game.",
+    "moves.timingProfile.option": "Timing profile {id}",
     "royalCandy.cap.afterDefeating": "After defeating {label}",
     "royalCandy.cap.emptyError": "Enter a level cap.",
     "royalCandy.cap.levelAria": "Level cap after defeating {label}",
@@ -1082,6 +1087,7 @@
     "Equal to": "Equal to",
     "Error": "Error",
     "Error code": "Error code",
+    "Incident fingerprint": "Incident fingerprint",
     "Escape - flees from the player": "Escape - flees from the player",
     "Evasion": "Evasion",
     "Event": "Event",

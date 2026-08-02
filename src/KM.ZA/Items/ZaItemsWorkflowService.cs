@@ -377,7 +377,10 @@ internal sealed class ZaItemsWorkflowService
             + "repair those rows while preserving TM numbers, moves, prices, icons, and unrelated item edits.",
             $"romfs/{ZaDataPaths.ItemDataArray}",
             TechnicalMachineNumberField,
-            "TM move IDs stored with a zero upper 16-bit half for game compatibility"));
+            "TM move IDs stored with a zero upper 16-bit half for game compatibility") with
+        {
+            Code = ZaItemsDiagnosticCodes.LegacyTechnicalMachinePickupLayout,
+        });
     }
 
     private ZaItemMintNatureRecovery DetectMintNatureRecovery(
@@ -492,7 +495,10 @@ internal sealed class ZaItemsWorkflowService
                     + $"The next Items output will {action}{iconAction} while preserving moves, prices, custom icons, and unrelated item edits.",
                     $"romfs/{ZaDataPaths.ItemDataArray}",
                     TechnicalMachineNumberField,
-                    $"Physical TM numbers 1 through {recovery.PhysicalTechnicalMachineCount} assigned exactly once"));
+                    $"Physical TM numbers 1 through {recovery.PhysicalTechnicalMachineCount} assigned exactly once") with
+                {
+                    Code = ZaItemsDiagnosticCodes.LegacyTechnicalMachineNumbering,
+                });
             }
 
             if (!string.IsNullOrWhiteSpace(recovery.IconRepairWarning))

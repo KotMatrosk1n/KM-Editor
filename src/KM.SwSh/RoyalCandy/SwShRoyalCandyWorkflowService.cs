@@ -1351,7 +1351,8 @@ public sealed class SwShRoyalCandyWorkflowService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Royal Candy preflight is blocked by missing or incompatible project inputs.",
-                expected: "Required RomFS/ExeFS files and compatible patch anchors"));
+                expected: "Required RomFS/ExeFS files and compatible patch anchors",
+                code: SwShRoyalCandyDiagnosticCodes.PreflightBlocked));
             return;
         }
 
@@ -1360,7 +1361,8 @@ public sealed class SwShRoyalCandyWorkflowService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Royal Candy preflight loaded with warnings that need review before output can be generated.",
-                expected: "Known Sword/Shield project flavor, output root, and clean compatibility checks"));
+                expected: "Known Sword/Shield project flavor, output root, and clean compatibility checks",
+                code: SwShRoyalCandyDiagnosticCodes.PreflightWarning));
         }
     }
 
@@ -2125,14 +2127,18 @@ public sealed class SwShRoyalCandyWorkflowService
         DiagnosticSeverity severity,
         string message,
         string? file = null,
-        string? expected = null)
+        string? expected = null,
+        string? code = null)
     {
         return new ValidationDiagnostic(
             severity,
             message,
             File: file,
             Domain: "workflow.royalCandy",
-            Expected: expected);
+            Expected: expected)
+        {
+            Code = code,
+        };
     }
 
     private sealed record FileRequirement(

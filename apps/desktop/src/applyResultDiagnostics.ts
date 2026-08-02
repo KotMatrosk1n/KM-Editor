@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 type DiagnosticShape = {
+  code?: string | null;
   domain?: string | null;
   expected?: string | null;
   field?: string | null;
@@ -47,6 +48,7 @@ function areDiagnosticsEquivalent(left: DiagnosticShape, right: DiagnosticShape)
   return (
     left.severity === right.severity &&
     left.message === right.message &&
+    (left.code ?? null) === (right.code ?? null) &&
     (left.domain ?? null) === (right.domain ?? null) &&
     (left.expected ?? null) === (right.expected ?? null) &&
     (left.field ?? null) === (right.field ?? null) &&

@@ -858,33 +858,38 @@ internal sealed class ZaMovesEditSessionService
 
             foreach (var timing in move.TimingRows)
             {
-                if ((editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "rangeMin"))
-                     || editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "rangeMax")))
+                if ((IsTimingMemberEdited(editedFields, move.MoveId, timing, "rangeMin")
+                     || IsTimingMemberEdited(editedFields, move.MoveId, timing, "rangeMax"))
                     && timing.RangeMin > timing.RangeMax)
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        $"Move {move.MoveId} timing occurrence {timing.Occurrence} has a minimum range greater than its maximum.",
+                        $"Move {move.MoveId} {FormatTimingProfileLabel(timing)} has a minimum range greater than its maximum.",
                         ZaEditSessionSupport.MovesDomain,
-                        field: ZaRuntimeMoveData.TimingField(timing.Occurrence, "rangeMin"),
+                        field: ZaRuntimeMoveData.TimingField(
+                            timing.TimingMoveId,
+                            timing.Occurrence,
+                            "rangeMin"),
                         expected: "Minimum range less than or equal to maximum range"));
                 }
 
-                if ((editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "projectileCountMin"))
-                     || editedFields.Contains(ZaRuntimeMoveData.TimingField(timing.Occurrence, "projectileCountMax")))
+                if ((IsTimingMemberEdited(editedFields, move.MoveId, timing, "projectileCountMin")
+                     || IsTimingMemberEdited(editedFields, move.MoveId, timing, "projectileCountMax"))
                     && timing.ProjectileCountMin > timing.ProjectileCountMax)
                 {
                     diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        $"Move {move.MoveId} timing occurrence {timing.Occurrence} has a minimum projectile count greater than its maximum.",
+                        $"Move {move.MoveId} {FormatTimingProfileLabel(timing)} has a minimum projectile count greater than its maximum.",
                         ZaEditSessionSupport.MovesDomain,
-                        field: ZaRuntimeMoveData.TimingField(timing.Occurrence, "projectileCountMin"),
+                        field: ZaRuntimeMoveData.TimingField(
+                            timing.TimingMoveId,
+                            timing.Occurrence,
+                            "projectileCountMin"),
                         expected: "Minimum projectile count less than or equal to maximum projectile count"));
                 }
 
                 if (editedFields.Any(field =>
-                        ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var member)
-                        && occurrence == timing.Occurrence
+                        TimingFieldTargetsRecord(move.MoveId, timing, field, out var member)
                         && ZaRuntimeMoveData.IsProjectileMember(member)))
                 {
                     ValidateProjectilePairs(move.MoveId, timing, diagnostics);
@@ -913,13 +918,14 @@ internal sealed class ZaMovesEditSessionService
             var overwriteEmpty = overwrite == 0;
             var replacementEmpty = replacement == 0;
             var field = ZaRuntimeMoveData.TimingField(
+                timing.TimingMoveId,
                 timing.Occurrence,
                 $"overwriteProjectile{index + 1}");
             if (overwriteEmpty != replacementEmpty)
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Move {moveId} timing occurrence {timing.Occurrence} projectile pair {index + 1} must set both IDs or clear both.",
+                    $"Move {moveId} {FormatTimingProfileLabel(timing)} projectile pair {index + 1} must set both IDs or clear both.",
                     ZaEditSessionSupport.MovesDomain,
                     field: field,
                     expected: "Both projectile IDs zero or both nonzero"));
@@ -933,7 +939,7 @@ internal sealed class ZaMovesEditSessionService
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Move {moveId} timing occurrence {timing.Occurrence} projectile pairs must be populated contiguously from slot 1.",
+                    $"Move {moveId} {FormatTimingProfileLabel(timing)} projectile pairs must be populated contiguously from slot 1.",
                     ZaEditSessionSupport.MovesDomain,
                     field: field,
                     expected: "No populated projectile pair after an empty slot"));
@@ -1339,6 +1345,38 @@ internal sealed class ZaMovesEditSessionService
         _ => $"runtime variant {variant}"
     };
 
+    private static string FormatTimingProfileLabel(ZaMoveTimingRecord timing) =>
+        $"{FormatRuntimeVariantLabel(timing.Variant)} timing profile "
+        + $"{timing.TimingMoveId}, occurrence {timing.Occurrence}";
+
+    private static int ResolveTimingMoveId(int moveId, int? timingMoveId) =>
+        timingMoveId ?? moveId;
+
+    private static bool TimingFieldTargetsRecord(
+        int moveId,
+        ZaMoveTimingRecord timing,
+        string field,
+        out string member)
+    {
+        member = string.Empty;
+        return ZaRuntimeMoveData.TryParseTimingField(
+                field,
+                out var timingMoveId,
+                out var occurrence,
+                out member)
+            && ResolveTimingMoveId(moveId, timingMoveId) == timing.TimingMoveId
+            && (occurrence is null || occurrence.Value == timing.Occurrence);
+    }
+
+    private static bool IsTimingMemberEdited(
+        IReadOnlySet<string> editedFields,
+        int moveId,
+        ZaMoveTimingRecord timing,
+        string member) =>
+        editedFields.Any(field =>
+            TimingFieldTargetsRecord(moveId, timing, field, out var parsedMember)
+            && string.Equals(parsedMember, member, StringComparison.Ordinal));
+
     private static string? GetEditableValue(ZaMoveRecord move, string field)
     {
         if (ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out var battleMember))
@@ -1349,11 +1387,16 @@ internal sealed class ZaMovesEditSessionService
                 : ZaRuntimeMoveData.GetValue(runtimeVariant, battleMember);
         }
 
-        if (ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var timingMember))
+        if (ZaRuntimeMoveData.TryParseTimingField(
+                field,
+                out var timingMoveId,
+                out var occurrence,
+                out var timingMember))
         {
-            var timing = occurrence is null
-                ? move.Timing
-                : move.TimingRows.ElementAtOrDefault(occurrence.Value);
+            var resolvedTimingMoveId = ResolveTimingMoveId(move.MoveId, timingMoveId);
+            var timing = move.TimingRows.FirstOrDefault(candidate =>
+                candidate.TimingMoveId == resolvedTimingMoveId
+                && (occurrence is null || candidate.Occurrence == occurrence.Value));
             return timing is null ? null : ZaRuntimeMoveData.GetValue(timing, timingMember);
         }
 
@@ -1435,16 +1478,21 @@ internal sealed class ZaMovesEditSessionService
                 $"{move.Name} contains divergent duplicate rows for {FormatRuntimeVariantLabel(variant)}; editing is disabled for that ambiguous variant.",
                 ZaEditSessionSupport.MovesDomain,
                 field: field,
-                expected: "Byte-identical duplicate rows for a shared runtime variant"));
+                expected: "Byte-identical duplicate rows for a shared runtime variant",
+                code: ZaMovesDiagnosticCodes.RuntimeVariantAmbiguous));
             return false;
         }
 
+        var isTiming = ZaRuntimeMoveData.TryParseTimingField(
+            field,
+            out var timingMoveId,
+            out var occurrence,
+            out _);
         var present = isBattle
             ? move.RuntimeVariants.Any(candidate => candidate.Variant == variant)
-            : ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out _)
-              && (occurrence is null
-                  ? move.Timing is not null
-                  : occurrence.Value < move.TimingRows.Count);
+            : isTiming && move.TimingRows.Any(candidate =>
+                  candidate.TimingMoveId == ResolveTimingMoveId(move.MoveId, timingMoveId)
+                  && (occurrence is null || candidate.Occurrence == occurrence.Value));
         if (present)
         {
             return true;
@@ -1455,7 +1503,10 @@ internal sealed class ZaMovesEditSessionService
             $"{move.Name} does not contain the selected runtime move field.",
             ZaEditSessionSupport.MovesDomain,
             field: field,
-            expected: "A runtime variant or timing row present in the source data"));
+            expected: "A runtime variant or timing row present in the source data",
+            code: isTiming
+                ? ZaMovesDiagnosticCodes.TimingProfileMissing
+                : ZaMovesDiagnosticCodes.RuntimeFieldMissing));
         return false;
     }
 
@@ -1559,7 +1610,8 @@ internal sealed class ZaMovesEditSessionService
 
         if (IsTimingVanillaRestoreEdit(edit))
         {
-            var timing = move.VanillaTimingRows.FirstOrDefault();
+            var timing = move.VanillaTimingRows.FirstOrDefault(row => row.TimingMoveId == move.MoveId)
+                ?? move.VanillaTimingRows.FirstOrDefault();
             return move with
             {
                 Timing = timing,
@@ -1607,14 +1659,21 @@ internal sealed class ZaMovesEditSessionService
             };
         }
 
-        if (ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out member))
+        if (ZaRuntimeMoveData.TryParseTimingField(
+                field,
+                out var timingMoveId,
+                out var occurrence,
+                out member))
         {
+            var resolvedTimingMoveId = ResolveTimingMoveId(move.MoveId, timingMoveId);
             var updatedRows = move.TimingRows
-                .Select(row => occurrence is null || row.Occurrence == occurrence.Value
+                .Select(row => row.TimingMoveId == resolvedTimingMoveId
+                               && (occurrence is null || row.Occurrence == occurrence.Value)
                     ? OverlayTimingRecord(row, member, value, workflow.SpawnLocators)
                     : row)
                 .ToArray();
-            var updatedTiming = updatedRows.FirstOrDefault();
+            var updatedTiming = updatedRows.FirstOrDefault(row => row.TimingMoveId == move.MoveId)
+                ?? updatedRows.FirstOrDefault();
             return move with
             {
                 Timing = updatedTiming,
@@ -1968,10 +2027,10 @@ internal sealed class ZaMovesEditSessionService
         }
 
         var activeRows = ZaRuntimeMoveData.TimingRows(activeTable)
-            .Where(row => row.MoveId == moveId)
+            .Where(row => ZaRuntimeMoveData.IsTimingForMove(row.MoveId, moveId))
             .ToArray();
         var baseRows = ZaRuntimeMoveData.TimingRows(baseTable)
-            .Where(row => row.MoveId == moveId)
+            .Where(row => ZaRuntimeMoveData.IsTimingForMove(row.MoveId, moveId))
             .ToArray();
         if (!ValidateTimingRestoreProjectileCatalog(
                 workflow,
@@ -1986,8 +2045,11 @@ internal sealed class ZaMovesEditSessionService
         var baseFingerprint = baseRows.Length == 0
             ? null
             : ZaRuntimeMoveData.CreateTimingRowsFingerprint(baseRows);
-        if (activeRows.Length == 0
-            || activeRows.Length != baseRows.Length
+        var hasExactOccurrenceShape = activeRows.Length > 0
+            && activeRows
+                .Select(row => row.MoveId)
+                .SequenceEqual(baseRows.Select(row => row.MoveId));
+        if (!hasExactOccurrenceShape
             || baseFingerprint is null
             || !string.Equals(edit.NewValue, baseFingerprint, StringComparison.Ordinal))
         {
@@ -2008,7 +2070,7 @@ internal sealed class ZaMovesEditSessionService
 
             for (var index = 0; index < rows.Count; index++)
             {
-                if (rows[index].MoveId == moveId)
+                if (ZaRuntimeMoveData.IsTimingForMove(rows[index].MoveId, moveId))
                 {
                     rows[index] = ZaRuntimeMoveData.Clone(baseRows[replacementIndex]);
                     replacementIndex++;
@@ -2048,7 +2110,8 @@ internal sealed class ZaMovesEditSessionService
             else if (IsTimingVanillaRestoreEdit(edit) && timingTable is not null)
             {
                 fingerprints[moveId] = ZaRuntimeMoveData.CreateTimingRowsFingerprint(
-                    ZaRuntimeMoveData.TimingRows(timingTable).Where(row => row.MoveId == moveId));
+                    ZaRuntimeMoveData.TimingRows(timingTable).Where(row =>
+                        ZaRuntimeMoveData.IsTimingForMove(row.MoveId, moveId)));
             }
         }
 
@@ -2159,10 +2222,17 @@ internal sealed class ZaMovesEditSessionService
             return;
         }
 
-        if (ZaRuntimeMoveData.TryParseTimingField(edit.Field, out var occurrence, out member))
+        if (ZaRuntimeMoveData.TryParseTimingField(
+                edit.Field,
+                out var timingMoveId,
+                out var occurrence,
+                out member))
         {
+            var resolvedTimingMoveId = ResolveTimingMoveId(moveId, timingMoveId);
             var rows = ZaRuntimeMoveData.TimingRows(timingTable)
-                .Where(candidate => candidate.MoveId == moveId)
+                .Where(candidate =>
+                    ZaRuntimeMoveData.IsTimingForMove(resolvedTimingMoveId, moveId)
+                    && candidate.MoveId == resolvedTimingMoveId)
                 .ToArray();
             var targets = occurrence is null
                 ? rows
@@ -2175,10 +2245,11 @@ internal sealed class ZaMovesEditSessionService
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Move {moveId} could not apply timing field '{member}'.",
+                    $"Move {moveId} timing profile {resolvedTimingMoveId} could not apply field '{member}'.",
                     ZaEditSessionSupport.MovesDomain,
                     field: edit.Field,
-                    expected: "Existing writable timing parameter"));
+                    expected: "Existing writable timing parameter",
+                    code: ZaMovesDiagnosticCodes.TimingProfileApplyFailed));
             }
 
             return;
@@ -2223,7 +2294,8 @@ internal sealed class ZaMovesEditSessionService
                             .OrderBy(row => row.VariantType))
                     : IsTimingVanillaRestoreEdit(edit) && timingBytes is not null
                         ? ZaRuntimeMoveData.CreateTimingRowsFingerprint(
-                            timingRows.Where(row => row.MoveId == moveId))
+                            timingRows.Where(row =>
+                                ZaRuntimeMoveData.IsTimingForMove(row.MoveId, moveId)))
                         : null;
                 if (actualFingerprint is null
                     || expectedFingerprint is null
@@ -2234,7 +2306,8 @@ internal sealed class ZaMovesEditSessionService
                         $"Serialized runtime move output did not retain the complete vanilla row restoration for move {moveId}.",
                         ZaEditSessionSupport.MovesDomain,
                         field: edit.Field,
-                        expected: expectedFingerprint ?? "Complete verified vanilla runtime rows"));
+                        expected: expectedFingerprint ?? "Complete verified vanilla runtime rows",
+                        code: ZaMovesDiagnosticCodes.RuntimeRestoreVerificationFailed));
                 }
 
                 continue;
@@ -2246,6 +2319,7 @@ internal sealed class ZaMovesEditSessionService
                 out var battleMember);
             var isTimingEdit = ZaRuntimeMoveData.TryParseTimingField(
                 edit.Field,
+                out var timingMoveId,
                 out var timingOccurrence,
                 out var timingMember);
             if ((isBattleEdit && battleBytes is null)
@@ -2267,8 +2341,11 @@ internal sealed class ZaMovesEditSessionService
             else if (timingBytes is not null
                      && isTimingEdit)
             {
+                var resolvedTimingMoveId = ResolveTimingMoveId(moveId, timingMoveId);
                 var moveTimingRows = timingRows
-                    .Where(row => row.MoveId == moveId)
+                    .Where(row =>
+                        ZaRuntimeMoveData.IsTimingForMove(resolvedTimingMoveId, moveId)
+                        && row.MoveId == resolvedTimingMoveId)
                     .ToArray();
                 actualValues = timingOccurrence is null
                     ? moveTimingRows
@@ -2295,7 +2372,10 @@ internal sealed class ZaMovesEditSessionService
                     $"Serialized runtime move output did not retain field '{edit.Field}' for move {moveId}.",
                     ZaEditSessionSupport.MovesDomain,
                     field: edit.Field,
-                    expected: edit.NewValue));
+                    expected: edit.NewValue,
+                    code: isTimingEdit
+                        ? ZaMovesDiagnosticCodes.TimingProfileVerificationFailed
+                        : ZaMovesDiagnosticCodes.RuntimeVariantVerificationFailed));
             }
         }
     }

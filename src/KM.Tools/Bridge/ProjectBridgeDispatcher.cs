@@ -105,6 +105,12 @@ namespace KM.Tools.Bridge;
 public sealed class ProjectBridgeDispatcher
 {
     private static readonly object SwShApplySyncRoot = new();
+    private static readonly JsonSerializerOptions RequestSerializerOptions =
+        new(BridgeJson.SerializerOptions)
+        {
+            RespectNullableAnnotations = true,
+            RespectRequiredConstructorParameters = true,
+        };
 
     internal Action<int, string>? NormalSwShApplyMutationHook { get; init; }
 
@@ -250,19 +256,32 @@ public sealed class ProjectBridgeDispatcher
 
     public string Dispatch(string requestJson)
     {
+        return DispatchForLongLivedRunner(requestJson).ResponseJson;
+    }
+
+    internal (string ResponseJson, bool RequiresDispatcherReset) DispatchForLongLivedRunner(
+        string requestJson)
+    {
         if (string.IsNullOrWhiteSpace(requestJson))
         {
-            return SerializeFailure("bridge.emptyRequest", "Bridge request JSON cannot be empty.", requestId: null);
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.EmptyRequest,
+                    "Bridge request JSON cannot be empty.",
+                    requestId: null),
+                RequiresDispatcherReset: false);
         }
 
+        string? requestId = null;
         try
         {
             // Read the minimal envelope first so the payload can be deserialized into the command-specific DTO.
-            var envelope = JsonSerializer.Deserialize<BridgeCommandEnvelope>(requestJson, BridgeJson.SerializerOptions);
+            var envelope = DeserializeEnvelope(requestJson);
+            requestId = envelope?.RequestId;
             var gameScopeFailure = ValidateCommandGameScope(envelope, requestJson);
             if (gameScopeFailure is not null)
             {
-                return gameScopeFailure;
+                return (gameScopeFailure, RequiresDispatcherReset: false);
             }
 
             var command = envelope?.Command;
@@ -424,9 +443,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
                 KmCommandNames.ApplyChangePlan => DispatchApplyChangePlan(requestJson),
-                null => SerializeFailure("bridge.missingCommand", "Bridge request is missing a command.", envelope?.RequestId),
+                null => SerializeFailure(BridgeErrorCodes.MissingCommand, "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
-                    "bridge.unsupportedCommand",
+                    BridgeErrorCodes.UnsupportedCommand,
                     $"Bridge command '{command}' is not supported.",
                     envelope?.RequestId),
             };
@@ -436,11 +455,25 @@ public sealed class ProjectBridgeDispatcher
                 ClearWorkflowMemoryCaches(clearReusableDataCaches: false);
             }
 
-            return response;
+            return (response, RequiresDispatcherReset: false);
         }
-        catch (JsonException exception)
+        catch (BridgeRequestException exception)
         {
-            return SerializeFailure("bridge.invalidJson", $"Bridge request JSON is invalid: {exception.Message}", requestId: null);
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.InvalidJson,
+                    $"Bridge request JSON is invalid: {exception.Message}",
+                    requestId),
+                RequiresDispatcherReset: false);
+        }
+        catch (Exception exception) when (!IsFatal(exception))
+        {
+            return (
+                SerializeFailure(
+                    BridgeErrorCodes.Unexpected,
+                    "The project bridge hit an unexpected internal error while processing the request.",
+                    requestId),
+                RequiresDispatcherReset: true);
         }
     }
 
@@ -994,7 +1027,7 @@ public sealed class ProjectBridgeDispatcher
         if (!IsScarletViolet(paths))
         {
             return SerializeFailure(
-                "bridge.gameMismatch",
+                BridgeErrorCodes.GameMismatch,
                 "Bridge command 'trainers.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
                 request.RequestId);
         }
@@ -1400,7 +1433,7 @@ public sealed class ProjectBridgeDispatcher
         if (!TryParseSeed(request.Payload.Seed, out var seed))
         {
             return SerializeFailure(
-                "dynamaxAdventures.seed.invalid",
+                DynamaxAdventuresErrorCodes.SeedInvalid,
                 $"Dynamax Adventures seed '{request.Payload.Seed}' is not a valid 64-bit seed.",
                 request.RequestId);
         }
@@ -1421,7 +1454,7 @@ public sealed class ProjectBridgeDispatcher
         if (!TryParseSeed(request.Payload.StartSeed, out var startSeed))
         {
             return SerializeFailure(
-                "dynamaxAdventures.seed.invalidStart",
+                DynamaxAdventuresErrorCodes.StartSeedInvalid,
                 $"Dynamax Adventures start seed '{request.Payload.StartSeed}' is not a valid 64-bit seed.",
                 request.RequestId);
         }
@@ -1429,7 +1462,7 @@ public sealed class ProjectBridgeDispatcher
         if (!TryParseSeed(request.Payload.Limit, out var limit))
         {
             return SerializeFailure(
-                "dynamaxAdventures.seed.invalidLimit",
+                DynamaxAdventuresErrorCodes.SeedLimitInvalid,
                 $"Dynamax Adventures seed search limit '{request.Payload.Limit}' is not a valid 64-bit value.",
                 request.RequestId);
         }
@@ -1452,7 +1485,7 @@ public sealed class ProjectBridgeDispatcher
         if (!TryParseSeed(request.Payload.Seed, out var seed))
         {
             return SerializeFailure(
-                "dynamaxAdventures.seed.invalid",
+                DynamaxAdventuresErrorCodes.SeedInvalid,
                 $"Dynamax Adventures seed '{request.Payload.Seed}' is not a valid 64-bit seed.",
                 request.RequestId);
         }
@@ -1931,7 +1964,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadBehaviorWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Behavior load paths are required.");
+            ?? throw new BridgeRequestException("Behavior load paths are required.");
         var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -1942,7 +1975,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<UpdateBehaviorEntryFieldRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Behavior update paths are required.");
+            ?? throw new BridgeRequestException("Behavior update paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -1961,7 +1994,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<UpdateBehaviorEntryFieldsRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Behavior batch update paths are required.");
+            ?? throw new BridgeRequestException("Behavior batch update paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2027,7 +2060,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadCatchCapWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Catch Cap project paths are required.");
+            ?? throw new BridgeRequestException("Catch Cap project paths are required.");
         var workflow = swShWorkflowService.LoadCatchCap(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -2038,9 +2071,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageCatchCapRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Catch Cap stage paths are required.");
+            ?? throw new BridgeRequestException("Catch Cap stage paths are required.");
         var caps = request.Payload.Caps
-            ?? throw new JsonException("Catch Cap selections are required.");
+            ?? throw new BridgeRequestException("Catch Cap selections are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2049,7 +2082,7 @@ public sealed class ProjectBridgeDispatcher
             caps.Select(selection =>
             {
                 var cap = selection
-                    ?? throw new JsonException("Catch Cap selection entries are required.");
+                    ?? throw new BridgeRequestException("Catch Cap selection entries are required.");
                 return new SwShCatchCapSelection(cap.BadgeCount, cap.LevelCap);
             }).ToArray(),
             session);
@@ -2062,7 +2095,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageCatchCapUninstallRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Catch Cap uninstall paths are required.");
+            ?? throw new BridgeRequestException("Catch Cap uninstall paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2392,7 +2425,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadIvScreenWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("IV Screen project paths are required.");
+            ?? throw new BridgeRequestException("IV Screen project paths are required.");
         var workflow = swShWorkflowService.LoadIvScreen(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -2403,7 +2436,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageIvScreenInstallRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("IV Screen install paths are required.");
+            ?? throw new BridgeRequestException("IV Screen install paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2419,7 +2452,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageIvScreenUninstallRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("IV Screen uninstall paths are required.");
+            ?? throw new BridgeRequestException("IV Screen uninstall paths are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2435,7 +2468,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadExeFsPatchWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("ExeFS patch load paths are required.");
+            ?? throw new BridgeRequestException("ExeFS patch load paths are required.");
         var workflow = swShWorkflowService.LoadExeFsPatches(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -2446,9 +2479,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageExeFsPatchRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("ExeFS patch stage paths are required.");
+            ?? throw new BridgeRequestException("ExeFS patch stage paths are required.");
         var patchId = string.IsNullOrWhiteSpace(request.Payload.PatchId)
-            ? throw new JsonException("ExeFS patch ID is required.")
+            ? throw new BridgeRequestException("ExeFS patch ID is required.")
             : request.Payload.PatchId.Trim();
         var session = request.Payload.Session is null
             ? null
@@ -2466,7 +2499,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadRoyalCandyWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Royal Candy load paths are required.");
+            ?? throw new BridgeRequestException("Royal Candy load paths are required.");
         var workflow = swShWorkflowService.LoadRoyalCandy(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -2477,9 +2510,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageRoyalCandyWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Royal Candy stage paths are required.");
+            ?? throw new BridgeRequestException("Royal Candy stage paths are required.");
         var workflowId = string.IsNullOrWhiteSpace(request.Payload.WorkflowId)
-            ? throw new JsonException("Royal Candy workflow ID is required.")
+            ? throw new BridgeRequestException("Royal Candy workflow ID is required.")
             : request.Payload.WorkflowId.Trim();
         var session = request.Payload.Session is null
             ? null
@@ -2500,7 +2533,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadStartingItemsWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Starting Items load paths are required.");
+            ?? throw new BridgeRequestException("Starting Items load paths are required.");
         var workflow = swShWorkflowService.LoadStartingItems(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -2511,9 +2544,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageStartingItemsRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("Starting Items stage paths are required.");
+            ?? throw new BridgeRequestException("Starting Items stage paths are required.");
         var grants = request.Payload.Grants
-            ?? throw new JsonException("Starting Items grants are required.");
+            ?? throw new BridgeRequestException("Starting Items grants are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2533,7 +2566,7 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadNpcItemGiftWorkflowRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("NPC Item Gift project paths are required.");
+            ?? throw new BridgeRequestException("NPC Item Gift project paths are required.");
         var workflow = swShWorkflowService.LoadNpcItemGift(ProjectBridgeMapper.ToCore(paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
@@ -2544,9 +2577,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<StageNpcItemGiftRequest>(requestJson);
         var paths = request.Payload.Paths
-            ?? throw new JsonException("NPC Item Gift project paths are required.");
+            ?? throw new BridgeRequestException("NPC Item Gift project paths are required.");
         var gifts = request.Payload.Gifts
-            ?? throw new JsonException("NPC Item Gift selections are required.");
+            ?? throw new BridgeRequestException("NPC Item Gift selections are required.");
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
@@ -2555,16 +2588,16 @@ public sealed class ProjectBridgeDispatcher
             gifts.Select(selection =>
             {
                 var gift = selection
-                    ?? throw new JsonException("NPC Item Gift selection entries are required.");
+                    ?? throw new BridgeRequestException("NPC Item Gift selection entries are required.");
                 var items = gift.Items
-                    ?? throw new JsonException("NPC Item Gift item selections are required.");
+                    ?? throw new BridgeRequestException("NPC Item Gift item selections are required.");
                 return new SwShNpcItemGiftSelection(
                     gift.GiftId,
                     gift.Quantity,
                     items.Select(item =>
                     {
                         var selectedItem = item
-                            ?? throw new JsonException("NPC Item Gift item selection entries are required.");
+                            ?? throw new BridgeRequestException("NPC Item Gift item selection entries are required.");
                         return new SwShNpcItemGiftItemSelection(
                             selectedItem.SlotId,
                             selectedItem.ItemId);
@@ -3788,7 +3821,7 @@ public sealed class ProjectBridgeDispatcher
                 && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
-                "bridge.gameMismatch",
+                BridgeErrorCodes.GameMismatch,
                 $"Bridge command '{command}' is only available for Sword/Shield projects.",
                 envelope.RequestId);
         }
@@ -3807,7 +3840,7 @@ public sealed class ProjectBridgeDispatcher
             && !(command is KmCommandNames.StageTypeChartUninstall && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
-                "bridge.gameMismatch",
+                BridgeErrorCodes.GameMismatch,
                 $"Bridge command '{command}' is only available for Scarlet/Violet projects.",
                 envelope.RequestId);
         }
@@ -3815,7 +3848,7 @@ public sealed class ProjectBridgeDispatcher
         if (IsPokemonLegendsZAOnlyCommand(command) && !IsPokemonLegendsZA(selectedGame))
         {
             return SerializeFailure(
-                "bridge.gameMismatch",
+                BridgeErrorCodes.GameMismatch,
                 $"Bridge command '{command}' is only available for Pokemon Legends Z-A projects.",
                 envelope.RequestId);
         }
@@ -3823,7 +3856,7 @@ public sealed class ProjectBridgeDispatcher
         if (IsPokemonLegendsZA(selectedGame) && !IsPokemonLegendsZAAllowedCommand(command))
         {
             return SerializeFailure(
-                "bridge.gameMismatch",
+                BridgeErrorCodes.GameMismatch,
                 $"Bridge command '{command}' is not available for Pokemon Legends Z-A projects yet.",
                 envelope.RequestId);
         }
@@ -3835,7 +3868,7 @@ public sealed class ProjectBridgeDispatcher
     {
         selectedGame = default;
 
-        var request = JsonSerializer.Deserialize<BridgeRequest<JsonElement>>(requestJson, BridgeJson.SerializerOptions);
+        var request = DeserializeRequest<JsonElement>(requestJson);
         if (request?.Payload.ValueKind is not JsonValueKind.Object
             || !request.Payload.TryGetProperty("paths", out var paths)
             || paths.ValueKind is not JsonValueKind.Object
@@ -3845,7 +3878,16 @@ public sealed class ProjectBridgeDispatcher
             return false;
         }
 
-        var parsedGame = selectedGameJson.Deserialize<ProjectGameDto?>(BridgeJson.SerializerOptions);
+        ProjectGameDto? parsedGame;
+        try
+        {
+            parsedGame = selectedGameJson.Deserialize<ProjectGameDto?>(BridgeJson.SerializerOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception);
+        }
+
         if (parsedGame is null)
         {
             return false;
@@ -4276,19 +4318,62 @@ public sealed class ProjectBridgeDispatcher
 
     private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)
     {
-        var request = JsonSerializer.Deserialize<BridgeRequest<TPayload>>(requestJson, BridgeJson.SerializerOptions);
+        BridgeRequest<TPayload>? request;
+        try
+        {
+            request = JsonSerializer.Deserialize<BridgeRequest<TPayload>>(
+                requestJson,
+                RequestSerializerOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception);
+        }
 
         if (request is null)
         {
-            throw new JsonException("Bridge request could not be deserialized.");
+            throw new BridgeRequestException("Bridge request could not be deserialized.");
         }
 
         if (request.Payload is null)
         {
-            throw new JsonException("Bridge request payload is missing.");
+            throw new BridgeRequestException("Bridge request payload is missing.");
         }
 
         return request;
+    }
+
+    private static BridgeCommandEnvelope? DeserializeEnvelope(string requestJson)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<BridgeCommandEnvelope>(
+                requestJson,
+                BridgeJson.SerializerOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception);
+        }
+    }
+
+    private static bool IsFatal(Exception exception)
+    {
+        if (exception is OutOfMemoryException
+            or StackOverflowException
+            or AccessViolationException
+            or AppDomainUnloadedException)
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregateException
+            && aggregateException.InnerExceptions.Any(IsFatal))
+        {
+            return true;
+        }
+
+        return exception.InnerException is not null && IsFatal(exception.InnerException);
     }
 
     private static string SerializeSuccess<TPayload>(TPayload payload, string? requestId)
@@ -4303,6 +4388,14 @@ public sealed class ProjectBridgeDispatcher
         var response = BridgeResponse<object>.Failure(ApiError.Create(code, message), requestId);
 
         return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
+    }
+
+    private sealed class BridgeRequestException : Exception
+    {
+        public BridgeRequestException(string message, Exception? innerException = null)
+            : base(message, innerException)
+        {
+        }
     }
 
     private sealed record BridgeCommandEnvelope(string? Command, string? RequestId);

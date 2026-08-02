@@ -1,6 +1,11 @@
 {
   "keys": {
     "Pending changes ({count})": "Changements en attente ({count})",
+    "moves.runtimeVariant.help": "Les capacités Normal, Plus et Boss utilisent des profils de combat et de temporisation distincts. Les capacités Boss sont utilisées par Rogue Mega et les attaques de boss scriptées équivalentes. Les variantes inconnues restent numérotées.",
+    "moves.timingOccurrence.help": "Chaque occurrence possède des données de temporisation avancées indépendantes. La précision et le temps de recharge sont partagés par toutes les occurrences du profil de temporisation sélectionné.",
+    "moves.timingProfile.heading": "Profil de temporisation",
+    "moves.timingProfile.help": "Cette variante d'exécution possède plusieurs profils de temporisation indépendants. L'ID brut de la capacité de temporisation identifie le profil stocké par le jeu.",
+    "moves.timingProfile.option": "Profil de temporisation {id}",
     "royalCandy.cap.afterDefeating": "Après avoir vaincu {label}",
     "royalCandy.cap.emptyError": "Saisissez une limite de niveau.",
     "royalCandy.cap.levelAria": "Limite de niveau après avoir vaincu {label}",
@@ -1082,6 +1087,7 @@
     "Equal to": "Égal à",
     "Error": "Erreur",
     "Error code": "Code d'erreur",
+    "Incident fingerprint": "Empreinte de l'incident",
     "Escape - flees from the player": "Escape - s'enfuit du joueur",
     "Evasion": "Évasion",
     "Event": "Événement",

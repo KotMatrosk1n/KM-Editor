@@ -1207,7 +1207,8 @@ public sealed class SwShPlacementWorkflowService
                 $"Static Encounter labels: {diagnostic.Message}",
                 file: diagnostic.File,
                 field: diagnostic.Field,
-                expected: diagnostic.Expected));
+                expected: diagnostic.Expected,
+                code: diagnostic.Code));
         }
 
         foreach (var encounter in staticWorkflow.Encounters)
@@ -1534,7 +1535,8 @@ public sealed class SwShPlacementWorkflowService
         string message,
         string? file = null,
         string? field = null,
-        string? expected = null)
+        string? expected = null,
+        string? code = null)
     {
         return new ValidationDiagnostic(
             severity,
@@ -1542,7 +1544,10 @@ public sealed class SwShPlacementWorkflowService
             File: file,
             Field: field,
             Domain: "workflow.placement",
-            Expected: expected);
+            Expected: expected)
+        {
+            Code = code,
+        };
     }
 }
 

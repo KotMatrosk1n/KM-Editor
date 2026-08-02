@@ -1530,6 +1530,8 @@ public static class ZaBridgeMapper
     private static MoveTimingRecordDto ToDto(ZaMoveTimingRecord timing)
     {
         return new MoveTimingRecordDto(
+            timing.TimingMoveId,
+            timing.Variant,
             timing.Occurrence,
             timing.ChargeFrames,
             timing.AttackLoopFrames,

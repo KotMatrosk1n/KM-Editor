@@ -1,6 +1,11 @@
 {
   "keys": {
     "Pending changes ({count})": "Ausstehende Änderungen ({count})",
+    "moves.runtimeVariant.help": "Normale, Plus- und Boss-Attacken verwenden getrennte Kampf- und Timing-Profile. Boss-Attacken werden von Rogue Mega und vergleichbaren geskripteten Bossangriffen verwendet. Unbekannte Varianten bleiben nummeriert.",
+    "moves.timingOccurrence.help": "Jedes Vorkommen besitzt unabhängige erweiterte Timing-Daten. Genauigkeit und Abklingzeit gelten gemeinsam für alle Vorkommen im ausgewählten Timing-Profil.",
+    "moves.timingProfile.heading": "Timing-Profil",
+    "moves.timingProfile.help": "Diese Laufzeitvariante besitzt mehrere unabhängige Timing-Profile. Die rohe Timing-Attacken-ID kennzeichnet das vom Spiel gespeicherte Profil.",
+    "moves.timingProfile.option": "Timing-Profil {id}",
     "royalCandy.cap.afterDefeating": "Nach dem Sieg über {label}",
     "royalCandy.cap.emptyError": "Gib eine Level-Obergrenze ein.",
     "royalCandy.cap.levelAria": "Level-Obergrenze nach dem Sieg über {label}",
@@ -1082,6 +1087,7 @@
     "Equal to": "Gleich",
     "Error": "Fehler",
     "Error code": "Fehlercode",
+    "Incident fingerprint": "Vorfallsignatur",
     "Escape - flees from the player": "Escape – flieht vor dem Spieler",
     "Evasion": "Ausweichen",
     "Event": "Event",

@@ -1,6 +1,11 @@
 {
   "keys": {
     "Pending changes ({count})": "Cambios pendientes ({count})",
+    "moves.runtimeVariant.help": "Los movimientos normales, Plus y de jefe usan perfiles de combate y de temporización separados. Los movimientos de jefe se usan para Rogue Mega y ataques de jefe con guion equivalentes. Las variantes desconocidas conservan su número.",
+    "moves.timingOccurrence.help": "Cada aparición tiene datos avanzados de temporización independientes. La precisión y el tiempo de recarga se comparten entre todas las apariciones del perfil de temporización seleccionado.",
+    "moves.timingProfile.heading": "Perfil de temporización",
+    "moves.timingProfile.help": "Esta variante de ejecución tiene varios perfiles de temporización independientes. El ID de movimiento de temporización sin procesar identifica el perfil almacenado por el juego.",
+    "moves.timingProfile.option": "Perfil de temporización {id}",
     "royalCandy.cap.afterDefeating": "Después de derrotar a {label}",
     "royalCandy.cap.emptyError": "Introduce un límite de nivel.",
     "royalCandy.cap.levelAria": "Límite de nivel después de derrotar a {label}",
@@ -1082,6 +1087,7 @@
     "Equal to": "Igual a",
     "Error": "Error",
     "Error code": "Código de error",
+    "Incident fingerprint": "Huella del incidente",
     "Escape - flees from the player": "Escape - huye del jugador",
     "Evasion": "Evasión",
     "Event": "Evento",

@@ -69,7 +69,10 @@ public static class ProjectBridgeMapper
             diagnostic.File,
             diagnostic.Domain,
             diagnostic.Field,
-            diagnostic.Expected);
+            diagnostic.Expected)
+        {
+            Code = diagnostic.Code,
+        };
     }
 
     public static GameDumpWorkflowDto ToDto(GameDumpWorkflow workflow)

@@ -32,6 +32,7 @@ import {
 } from '../../bridge/contracts';
 import { ApplyResultSection, DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization/LocalizationProvider';
+import { toProjectBridgeDiagnostics } from '../../uiErrorDiagnostics';
 import { RandomizerConfirmationModal } from './RandomizerConfirmationModal';
 import { RandomizerRestoreResultSection } from './RandomizerRestoreResultSection';
 import './RandomizerSection.css';
@@ -459,9 +460,14 @@ export function RandomizerSection({
   };
 
   const handleOperationFailure = (operation: RandomizerOperation, error: unknown) => {
+    const failureDiagnostics = createOperationFailureDiagnostics(operation, error);
+    if (failureDiagnostics.length === 0) {
+      return;
+    }
+
     setSeedOutput('');
     setApplyResult(null);
-    setDiagnostics([createOperationFailureDiagnostic(operation, error)]);
+    setDiagnostics(failureDiagnostics);
     setLastOperation(operation);
   };
 
@@ -988,16 +994,13 @@ export function RandomizerSection({
   );
 }
 
-function createOperationFailureDiagnostic(
+function createOperationFailureDiagnostics(
   operation: RandomizerOperation,
   error: unknown
-): ApiDiagnostic {
+): ApiDiagnostic[] {
   const fallbackMessage =
     operation === 'restore' ? 'Restore needs attention' : 'Randomizer needs attention';
-  return {
-    message: error instanceof Error && error.message.trim() ? error.message : fallbackMessage,
-    severity: 'error'
-  };
+  return toProjectBridgeDiagnostics(error, fallbackMessage);
 }
 
 function ensureErrorDiagnostic(
