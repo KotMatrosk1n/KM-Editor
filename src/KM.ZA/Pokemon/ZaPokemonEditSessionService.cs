@@ -3,6 +3,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
@@ -31,6 +32,7 @@ internal sealed class ZaPokemonEditSessionService
     private const string DexPlacementRecordId = "dex-placement";
     private const string DexLayoutRecordId = "dex-layout";
     private const string VanillaDexPlacementRecordId = "dex-placement-vanilla";
+    private const string AlphaMoveRecordIdPrefix = "alpha:";
     private const string DexPlacementPayloadV1Prefix = "v1|";
     private const string DexPlacementPayloadV2Prefix = "v2|";
     private const int PersonalTableEntryFieldIndex = 0;
@@ -120,7 +122,21 @@ internal sealed class ZaPokemonEditSessionService
             return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = ZaEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplaceOrRemoveAlphaNoOp(
+            loadedWorkflow,
+            currentSession,
+            pendingEdit);
+        var interactionDiagnostics = new List<ValidationDiagnostic>();
+        ValidateAlphaSessionInteractions(loadedWorkflow, updatedSession, interactionDiagnostics);
+        if (interactionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            diagnostics.AddRange(interactionDiagnostics);
+            return new ZaPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits),
+                currentSession,
+                diagnostics);
+        }
+
         return new ZaPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -184,8 +200,22 @@ internal sealed class ZaPokemonEditSessionService
                 continue;
             }
 
-            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            updatedSession = ReplaceOrRemoveAlphaNoOp(
+                loadedWorkflow,
+                updatedSession,
+                pendingEdit);
             effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        }
+
+        var interactionDiagnostics = new List<ValidationDiagnostic>();
+        ValidateAlphaSessionInteractions(loadedWorkflow, updatedSession, interactionDiagnostics);
+        if (interactionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            diagnostics.AddRange(interactionDiagnostics);
+            return new ZaPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits),
+                currentSession,
+                diagnostics);
         }
 
         return new ZaPokemonEditResult(
@@ -326,6 +356,14 @@ internal sealed class ZaPokemonEditSessionService
         }
 
         var updatedSession = currentSession with { PendingEdits = pendingEdits };
+        var interactionDiagnostics = new List<ValidationDiagnostic>();
+        ValidateAlphaSessionInteractions(loadedWorkflow, updatedSession, interactionDiagnostics);
+        if (interactionDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            diagnostics.AddRange(interactionDiagnostics);
+            return new ZaPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
         return new ZaPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -958,6 +996,11 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
+        if (session.PendingEdits.Any(IsAlphaMoveEdit))
+        {
+            pokemonWorkflowService.ClearMemoryCache();
+        }
+
         var project = projectWorkspaceService.Open(paths);
         var workflow = pokemonWorkflowService.Load(project);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -1013,6 +1056,8 @@ internal sealed class ZaPokemonEditSessionService
                 expected: "Apply or discard Present In Game changes before staging a Pokédex placement swap"));
         }
 
+        ValidateAlphaSessionInteractions(workflow, session, diagnostics);
+
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -1027,6 +1072,113 @@ internal sealed class ZaPokemonEditSessionService
             diagnostics);
     }
 
+    private static void ValidateAlphaSessionInteractions(
+        ZaPokemonWorkflow workflow,
+        EditSession session,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var alphaEdits = session.PendingEdits.Where(IsAlphaMoveEdit).ToArray();
+        if (alphaEdits.Length == 0)
+        {
+            return;
+        }
+
+        if (session.PendingEdits.Any(edit => !string.Equals(
+                edit.Domain,
+                ZaEditSessionSupport.PokemonDomain,
+                StringComparison.Ordinal)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Alpha-exclusive move changes must be applied separately from other editor domains.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "An alpha-exclusive move-only Pokemon editor session",
+                code: ZaPokemonDiagnosticCodes.AlphaSessionConflict));
+        }
+
+        if (session.PendingEdits.Any(IsDexPlacementEdit))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokédex placement and alpha-exclusive move changes must be applied separately.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "An edit session without Pokédex placement changes",
+                code: ZaPokemonDiagnosticCodes.AlphaSessionConflict));
+        }
+
+        var alphaTargets = new HashSet<(int SpeciesId, int FormId)>();
+        foreach (var alphaEdit in alphaEdits)
+        {
+            if (TryParseAlphaMoveRecordId(alphaEdit.RecordId, out var speciesId, out var formId))
+            {
+                alphaTargets.Add((speciesId, formId));
+            }
+        }
+
+        var hasBindingConflict = session.PendingEdits.Any(edit =>
+        {
+            var changesForm = string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.FormField,
+                StringComparison.Ordinal);
+            var changesTechnicalMachineCompatibility =
+                TryParseCompatibilityField(edit.Field, out var groupId, out _)
+                && string.Equals(
+                    groupId,
+                    ZaPokemonWorkflowService.TechnicalMachineCompatibilityGroupId,
+                    StringComparison.Ordinal);
+            if ((!changesForm && !changesTechnicalMachineCompatibility)
+                || !int.TryParse(
+                    edit.RecordId,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var personalId))
+            {
+                return false;
+            }
+
+            var target = workflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == personalId);
+            if (target is null)
+            {
+                return false;
+            }
+
+            if (changesForm)
+            {
+                return alphaTargets.Any(alphaTarget => alphaTarget.SpeciesId == target.SpeciesId);
+            }
+
+            var effectiveForm = session.PendingEdits
+                .Where(candidate =>
+                    string.Equals(candidate.RecordId, edit.RecordId, StringComparison.Ordinal)
+                    && string.Equals(
+                        candidate.Field,
+                        ZaPokemonWorkflowService.FormField,
+                        StringComparison.Ordinal))
+                .Select(candidate => int.TryParse(
+                    candidate.NewValue,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var stagedForm)
+                        ? stagedForm
+                        : target.Form)
+                .LastOrDefault(target.Form);
+            return alphaTargets.Contains((target.SpeciesId, effectiveForm));
+        });
+        if (hasBindingConflict)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Form, TM compatibility, and alpha-exclusive move changes for the same Pokemon must be applied separately.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Apply Form or TM compatibility changes before staging the alpha-exclusive move",
+                code: ZaPokemonDiagnosticCodes.AlphaSessionConflict));
+        }
+    }
+
     public ChangePlan CreateChangePlan(
         ProjectPaths paths,
         EditSession session,
@@ -1036,6 +1188,15 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var validation = Validate(paths, session);
+        if (session.PendingEdits.Any(IsAlphaMoveEdit))
+        {
+            return CreateAlphaAwareChangePlan(
+                paths,
+                session,
+                validation.Diagnostics,
+                outputMode);
+        }
+
         var plan = session.PendingEdits.Any(IsDexPlacementEdit)
             ? CreateDexAwareChangePlan(
                 paths,
@@ -1121,6 +1282,259 @@ internal sealed class ZaPokemonEditSessionService
         }
     }
 
+    private ChangePlan CreateAlphaAwareChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<ValidationDiagnostic> validationDiagnostics,
+        ZaOutputMode outputMode)
+    {
+        var diagnostics = validationDiagnostics.ToList();
+        var alphaEdits = session.PendingEdits.Where(IsAlphaMoveEdit).ToArray();
+        var ordinaryEdits = session.PendingEdits
+            .Where(edit => !IsAlphaMoveEdit(edit) && !IsDexPlacementEdit(edit))
+            .ToArray();
+        if (alphaEdits.Length == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending alpha-exclusive move edit before reviewing this change plan.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Pending alpha-exclusive move edit"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var writes = new List<PlannedFileWrite>();
+            if (ordinaryEdits.Length > 0)
+            {
+                var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
+                var rows = ReadRows(project, personalSource).Rows;
+                var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+                PrepareEvolutionItemConversions(rows, ordinaryEdits, conversionState);
+                if (conversionState.Modified)
+                {
+                    var conversionWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                        paths,
+                        ZaDataPaths.EvolutionItemConversionArray,
+                        [conversionState.SourceReference()],
+                        outputMode);
+                    writes.Add(new PlannedFileWrite(
+                        conversionWriteInfo.TargetRelativePath,
+                        conversionWriteInfo.Sources,
+                        conversionWriteInfo.ReplacesExistingOutput,
+                        "Assign custom Pokemon evolution items to game conversion parameters."));
+                }
+
+                var personalWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                    paths,
+                    ZaDataPaths.PersonalArray,
+                    ordinaryEdits.SelectMany(edit => edit.Sources).Distinct().ToArray(),
+                    outputMode);
+                writes.Add(new PlannedFileWrite(
+                    personalWriteInfo.TargetRelativePath,
+                    personalWriteInfo.Sources,
+                    personalWriteInfo.ReplacesExistingOutput,
+                    ordinaryEdits.Length == 1
+                        ? $"Apply pending Pokemon Data edit: {ordinaryEdits[0].Summary}"
+                        : $"Apply {ordinaryEdits.Length.ToString(CultureInfo.InvariantCulture)} pending Pokemon Data edits."));
+            }
+
+            var alphaWriteInfo = ZaWorkflowFileSource.CreatePlannedWrite(
+                paths,
+                ZaDataPaths.AlphaMoveTable,
+                alphaEdits.SelectMany(edit => edit.Sources).Distinct().ToArray(),
+                outputMode);
+            writes.Add(new PlannedFileWrite(
+                alphaWriteInfo.TargetRelativePath,
+                alphaWriteInfo.Sources,
+                alphaWriteInfo.ReplacesExistingOutput,
+                alphaEdits.Length == 1
+                    ? $"Apply pending alpha-exclusive move edit: {alphaEdits[0].Summary}"
+                    : $"Apply {alphaEdits.Length.ToString(CultureInfo.InvariantCulture)} pending alpha-exclusive move edits.",
+                CreateAlphaMovePlanFingerprint(
+                    paths,
+                    project,
+                    session.PendingEdits,
+                    ordinaryEdits.Length > 0,
+                    outputMode)));
+
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                var descriptorWriteInfo = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                writes.Add(new PlannedFileWrite(
+                    descriptorWriteInfo.TargetRelativePath,
+                    descriptorWriteInfo.Sources,
+                    descriptorWriteInfo.ReplacesExistingOutput,
+                    "Patch Pokemon Legends Z-A Trinity descriptor for standalone LayeredFS overrides."));
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Change plan preview contains {writes.Count.ToString(CultureInfo.InvariantCulture)} target files.",
+                ZaEditSessionSupport.PokemonDomain));
+            return new ChangePlan(session.Id, writes, diagnostics);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or InvalidDataException
+                or InvalidOperationException
+                or UnauthorizedAccessException
+                or ArgumentException
+                or OverflowException)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Alpha-exclusive move change plan could not verify its sources and output target: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                file: $"romfs/{ZaDataPaths.AlphaMoveTable}",
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Readable current and clean validation sources with a writable output root",
+                code: ZaPokemonDiagnosticCodes.AlphaPlanVerificationFailed));
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+    }
+
+    private string CreateAlphaMovePlanFingerprint(
+        ProjectPaths paths,
+        OpenedProject project,
+        IReadOnlyList<PendingEdit> pendingEdits,
+        bool includeOrdinaryPokemonState,
+        ZaOutputMode outputMode)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendFingerprintText(hash, "KM alpha-exclusive move plan v1");
+        AppendFingerprintText(hash, outputMode.ToString());
+        AppendFingerprintBytes(
+            hash,
+            "active-alpha",
+            fileSource.Read(project, ZaDataPaths.AlphaMoveTable).Bytes);
+        AppendFingerprintBytes(
+            hash,
+            "base-alpha",
+            fileSource.ReadBase(project, ZaDataPaths.AlphaMoveTable).Bytes);
+        AppendFingerprintBytes(
+            hash,
+            "active-personal",
+            fileSource.Read(project, ZaDataPaths.PersonalArray).Bytes);
+        AppendFingerprintBytes(
+            hash,
+            "active-battle",
+            fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray).Bytes);
+        AppendFingerprintBytes(
+            hash,
+            "base-battle",
+            fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray).Bytes);
+        AppendFingerprintBytes(
+            hash,
+            "active-items",
+            fileSource.Read(project, ZaDataPaths.ItemDataArray).Bytes);
+        AppendFingerprintBytes(
+            hash,
+            "base-items",
+            fileSource.ReadBase(project, ZaDataPaths.ItemDataArray).Bytes);
+
+        AppendFingerprintTarget(
+            hash,
+            paths,
+            "target-alpha",
+            ZaDataPaths.AlphaMoveTable,
+            outputMode);
+        if (outputMode == ZaOutputMode.Standalone)
+        {
+            AppendFingerprintTarget(
+                hash,
+                paths,
+                "target-descriptor",
+                ZaWorkflowFileSource.DescriptorVirtualPath,
+                outputMode);
+        }
+
+        if (includeOrdinaryPokemonState)
+        {
+            AppendFingerprintBytes(
+                hash,
+                "base-personal",
+                fileSource.ReadBase(project, ZaDataPaths.PersonalArray).Bytes);
+            AppendFingerprintBytes(
+                hash,
+                "active-evolution-conversions",
+                fileSource.Read(project, ZaDataPaths.EvolutionItemConversionArray).Bytes);
+            AppendFingerprintTarget(
+                hash,
+                paths,
+                "target-personal",
+                ZaDataPaths.PersonalArray,
+                outputMode);
+            AppendFingerprintTarget(
+                hash,
+                paths,
+                "target-evolution-conversions",
+                ZaDataPaths.EvolutionItemConversionArray,
+                outputMode);
+        }
+
+        foreach (var edit in pendingEdits
+                     .OrderBy(edit => edit.Domain, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+                     .ThenBy(edit => edit.NewValue, StringComparer.Ordinal))
+        {
+            AppendFingerprintText(hash, edit.Domain);
+            AppendFingerprintText(hash, edit.RecordId ?? string.Empty);
+            AppendFingerprintText(hash, edit.Field ?? string.Empty);
+            AppendFingerprintText(hash, edit.NewValue ?? string.Empty);
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static void AppendFingerprintTarget(
+        IncrementalHash hash,
+        ProjectPaths paths,
+        string label,
+        string virtualPath,
+        ZaOutputMode outputMode)
+    {
+        var outputPath = ZaWorkflowFileSource.ResolveOutputPath(paths, virtualPath, outputMode);
+        var normalizedPath = Path.GetFullPath(outputPath);
+        if (OperatingSystem.IsWindows())
+        {
+            normalizedPath = normalizedPath.ToUpperInvariant();
+        }
+
+        AppendFingerprintText(hash, $"{label}:path:{normalizedPath}");
+        var outputExists = File.Exists(outputPath);
+        AppendFingerprintText(hash, $"{label}:{(outputExists ? "present" : "missing")}");
+        if (outputExists)
+        {
+            AppendFingerprintBytes(hash, label, File.ReadAllBytes(outputPath));
+        }
+    }
+
+    private static void AppendFingerprintText(IncrementalHash hash, string value)
+    {
+        AppendFingerprintBytes(hash, "text", Encoding.UTF8.GetBytes(value));
+    }
+
+    private static void AppendFingerprintBytes(IncrementalHash hash, string label, byte[] value)
+    {
+        var labelBytes = Encoding.UTF8.GetBytes(label);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(length, labelBytes.Length);
+        hash.AppendData(length);
+        hash.AppendData(labelBytes);
+        BinaryPrimitives.WriteInt32LittleEndian(length, value.Length);
+        hash.AppendData(length);
+        hash.AppendData(value);
+    }
+
     public ApplyResult ApplyChangePlan(
         ProjectPaths paths,
         EditSession session,
@@ -1130,6 +1544,15 @@ internal sealed class ZaPokemonEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(reviewedPlan);
+
+        if (session.PendingEdits.Any(IsAlphaMoveEdit))
+        {
+            return ApplyAlphaAwareChangePlan(
+                paths,
+                session,
+                reviewedPlan,
+                outputMode);
+        }
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
@@ -1428,6 +1851,212 @@ internal sealed class ZaPokemonEditSessionService
         return ZaEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
+    private ApplyResult ApplyAlphaAwareChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        ZaOutputMode outputMode)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var currentPlan = CreateChangePlan(paths, session, outputMode);
+        var diagnostics = currentPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+        if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Reviewed change plan is stale. Review the change plan again before applying.",
+                ZaEditSessionSupport.PokemonDomain,
+                expected: "Current reviewed Pokemon Data change plan",
+                code: ZaPokemonDiagnosticCodes.AlphaPlanStale));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return ZaEditSessionSupport.CreateApplyResult(
+                applyId,
+                appliedAt,
+                currentPlan,
+                writtenFiles,
+                diagnostics);
+        }
+
+        var alphaEdits = session.PendingEdits.Where(IsAlphaMoveEdit).ToArray();
+        var ordinaryEdits = session.PendingEdits
+            .Where(edit => !IsAlphaMoveEdit(edit) && !IsDexPlacementEdit(edit))
+            .ToArray();
+        var wrotePersonal = false;
+        var wroteConversion = false;
+        var planBecameStale = false;
+        var outputVerificationFailed = false;
+        try
+        {
+            ZaWorkflowFileSource.ApplyHybridMixedBatch(
+                paths,
+                outputMode,
+                isolateTrinityModManagerRomFs: false,
+                () =>
+                {
+                    var lockedPlan = CreateChangePlan(paths, session, outputMode);
+                    if (!ZaEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, lockedPlan))
+                    {
+                        planBecameStale = true;
+                        throw new InvalidDataException(
+                            "Reviewed alpha-exclusive move change plan became stale before the output lock was acquired.");
+                    }
+
+                    currentPlan = lockedPlan;
+                    var project = projectWorkspaceService.Open(paths);
+                    var alphaSource = fileSource.Read(project, ZaDataPaths.AlphaMoveTable);
+                    var alphaDocument = ZaAlphaMoveTableDocument.Parse(alphaSource.Bytes);
+                    var replacements = new List<ZaAlphaMoveReplacement>(alphaEdits.Length);
+                    foreach (var edit in alphaEdits)
+                    {
+                        if (!TryParseAlphaMoveRecordId(edit.RecordId, out var speciesId, out var formId)
+                            || !ushort.TryParse(
+                                edit.NewValue,
+                                NumberStyles.None,
+                                CultureInfo.InvariantCulture,
+                                out var moveId))
+                        {
+                            throw new InvalidDataException(
+                                "A staged alpha-exclusive move replacement is malformed.");
+                        }
+
+                        replacements.Add(new ZaAlphaMoveReplacement(
+                            checked((ushort)speciesId),
+                            checked((ushort)formId),
+                            moveId));
+                    }
+
+                    if (!alphaDocument.TryApplyReplacements(
+                            replacements,
+                            out var alphaOutput,
+                            out var alphaError))
+                    {
+                        outputVerificationFailed = true;
+                        throw new InvalidDataException(
+                            alphaError ?? "The alpha-exclusive move table could not be patched safely.");
+                    }
+
+                    var outputWrites = new List<ZaWorkflowFileWrite>();
+                    if (ordinaryEdits.Length > 0)
+                    {
+                        var personalSource = fileSource.Read(project, ZaDataPaths.PersonalArray);
+                        var personalArray = ReadRows(project, personalSource);
+                        var rows = personalArray.Rows;
+                        var conversionState = ZaEvolutionItemConversionState.Load(project, fileSource);
+                        var migratedLegacyArguments = PrepareEvolutionItemConversions(
+                            rows,
+                            ordinaryEdits,
+                            conversionState);
+                        var requiresRebuild = personalArray.RequiresLegacyDexOrderRepair
+                            || RequiresPersonalArrayRebuild(rows, ordinaryEdits)
+                            || migratedLegacyArguments
+                            || RequiresEncodedEvolutionRebuild(ordinaryEdits);
+                        foreach (var edit in ordinaryEdits)
+                        {
+                            ApplyEdit(rows, edit, conversionState, diagnostics);
+                        }
+
+                        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                        {
+                            throw new InvalidDataException(
+                                "A staged Pokemon Data edit failed final validation under the output lock.");
+                        }
+
+                        var personalOutput = requiresRebuild
+                            ? WriteRows(rows)
+                            : ApplyPersonalArrayBinaryPatch(
+                                personalSource.Bytes,
+                                ordinaryEdits,
+                                diagnostics);
+                        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                        {
+                            throw new InvalidDataException(
+                                "Pokemon personal data could not be patched under the output lock.");
+                        }
+
+                        if (conversionState.Modified)
+                        {
+                            outputWrites.Add(new ZaWorkflowFileWrite(
+                                ZaDataPaths.EvolutionItemConversionArray,
+                                conversionState.Write()));
+                            wroteConversion = true;
+                        }
+
+                        outputWrites.Add(new ZaWorkflowFileWrite(
+                            ZaDataPaths.PersonalArray,
+                            personalOutput));
+                        wrotePersonal = true;
+                    }
+
+                    outputWrites.Add(new ZaWorkflowFileWrite(
+                        ZaDataPaths.AlphaMoveTable,
+                        alphaOutput));
+                    return new ZaStandaloneMixedBatch(
+                        outputWrites,
+                        Array.Empty<string>(),
+                        Array.Empty<ZaStandaloneOutputMutation>());
+                });
+
+            if (wroteConversion)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.EvolutionItemConversionArray,
+                    outputMode));
+            }
+
+            if (wrotePersonal)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.PersonalArray,
+                    outputMode));
+            }
+
+            writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                ZaDataPaths.AlphaMoveTable,
+                outputMode));
+            if (outputMode == ZaOutputMode.Standalone)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedDescriptorReference());
+            }
+
+            pokemonWorkflowService.ClearMemoryCache();
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                ZaEditSessionSupport.CreateApplyOutputMessage(
+                    ordinaryEdits.Length == 0
+                        ? "Pokemon alpha-exclusive moves"
+                        : "Pokemon Data and alpha-exclusive moves",
+                    outputMode),
+                ZaEditSessionSupport.PokemonDomain));
+        }
+        catch (Exception exception)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Alpha-exclusive move output could not be written: {exception.Message}",
+                ZaEditSessionSupport.PokemonDomain,
+                file: $"romfs/{ZaDataPaths.AlphaMoveTable}",
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Unchanged verified sources and a writable output root",
+                code: planBecameStale
+                    ? ZaPokemonDiagnosticCodes.AlphaPlanStale
+                    : outputVerificationFailed
+                        ? ZaPokemonDiagnosticCodes.AlphaOutputVerificationFailed
+                        : ZaPokemonDiagnosticCodes.AlphaApplyFailed));
+        }
+
+        return ZaEditSessionSupport.CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles,
+            diagnostics);
+    }
+
     private static PendingEdit? CreateFieldPendingEdit(
         ZaPokemonWorkflow workflow,
         ZaPokemonRecord pokemon,
@@ -1436,6 +2065,71 @@ internal sealed class ZaPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
+        if (string.Equals(
+                normalizedField,
+                ZaPokemonWorkflowService.AlphaMoveField,
+                StringComparison.Ordinal))
+        {
+            var alphaMove = pokemon.AlphaMove;
+            if (alphaMove is null || !alphaMove.HasMapping || !alphaMove.CanEdit)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    alphaMove?.BlockedReason
+                        ?? "Alpha-exclusive move editing is not available for this Pokemon.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: normalizedField,
+                    expected: "Verified existing alpha-exclusive move mapping",
+                    code: ZaPokemonDiagnosticCodes.AlphaMappingUnavailable));
+                return null;
+            }
+
+            var parsedMoveId = ZaEditSessionSupport.TryParseInt(
+                value,
+                1,
+                ushort.MaxValue,
+                normalizedField,
+                ZaEditSessionSupport.PokemonDomain,
+                diagnostics);
+            if (parsedMoveId is null)
+            {
+                return null;
+            }
+
+            var selectedOption = alphaMove.Options.FirstOrDefault(option => option.Value == parsedMoveId.Value);
+            if (selectedOption is null)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The selected alpha-exclusive move is not a verified TM-compatible move with Plus data for this species and form.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: normalizedField,
+                    expected: "One of the available alpha-exclusive move options",
+                    code: ZaPokemonDiagnosticCodes.AlphaSelectionInvalid));
+                return null;
+            }
+
+            if (alphaMove.MoveId == parsedMoveId.Value)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "The selected alpha-exclusive move is already active.",
+                    ZaEditSessionSupport.PokemonDomain,
+                    field: normalizedField,
+                    expected: "A different verified alpha-exclusive move",
+                    code: ZaPokemonDiagnosticCodes.AlphaSelectionInvalid));
+                return null;
+            }
+
+            return new PendingEdit(
+                ZaEditSessionSupport.PokemonDomain,
+                $"Set {pokemon.Name} alpha-exclusive move to {selectedOption.Label}.",
+                alphaMove.EditSources,
+                CreateAlphaMoveRecordId(pokemon.SpeciesId, pokemon.Form),
+                normalizedField,
+                parsedMoveId.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
         if (TryParseCompatibilityField(normalizedField, out var groupId, out var slot))
         {
             var group = pokemon.Compatibility.FirstOrDefault(candidate => candidate.GroupId == groupId);
@@ -1528,6 +2222,17 @@ internal sealed class ZaPokemonEditSessionService
             return;
         }
 
+        if (IsAlphaMoveEdit(edit)
+            || string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.AlphaMoveField,
+                StringComparison.Ordinal)
+            || edit.RecordId?.StartsWith(AlphaMoveRecordIdPrefix, StringComparison.Ordinal) == true)
+        {
+            ValidateAlphaMoveEdit(workflow, edit, diagnostics);
+            return;
+        }
+
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -1606,6 +2311,113 @@ internal sealed class ZaPokemonEditSessionService
             diagnostics);
     }
 
+    private static void ValidateAlphaMoveEdit(
+        ZaPokemonWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.AlphaMoveField,
+                StringComparison.Ordinal)
+            || !TryParseAlphaMoveRecordId(edit.RecordId, out var speciesId, out var formId))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending alpha-exclusive move data is malformed or non-canonical.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Canonical existing species and form mapping",
+                code: ZaPokemonDiagnosticCodes.AlphaSelectionInvalid));
+            return;
+        }
+
+        var pokemon = workflow.Pokemon
+            .Where(candidate => candidate.SpeciesId == speciesId && candidate.Form == formId)
+            .ToArray();
+        var unavailable = pokemon.FirstOrDefault(candidate =>
+            candidate.AlphaMove is null
+            || !candidate.AlphaMove.HasMapping
+            || !candidate.AlphaMove.CanEdit);
+        if (pokemon.Length == 0 || unavailable is not null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                unavailable?.AlphaMove?.BlockedReason
+                    ?? "The pending alpha-exclusive move mapping is not available in the loaded Pokemon Data.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Verified existing alpha-exclusive move mapping",
+                code: ZaPokemonDiagnosticCodes.AlphaMappingUnavailable));
+            return;
+        }
+
+        var alphaMoves = pokemon.Select(candidate => candidate.AlphaMove!).ToArray();
+        var actualSources = edit.Sources
+            .OrderBy(source => source.Layer)
+            .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        if (alphaMoves.Any(alphaMove => !alphaMove.EditSources
+                .OrderBy(source => source.Layer)
+                .ThenBy(source => source.RelativePath, StringComparer.Ordinal)
+                .SequenceEqual(actualSources)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending alpha-exclusive move sources do not exactly match the loaded mapping and validation data.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "Current alpha table, Pokemon compatibility, TM catalog, and Plus move sources",
+                code: ZaPokemonDiagnosticCodes.AlphaPlanVerificationFailed));
+            return;
+        }
+
+        if (alphaMoves.Select(alphaMove => alphaMove.MoveId).Distinct().Count() != 1)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The loaded Pokemon records disagree about the active alpha-exclusive move mapping for this species and form.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "One consistent active alpha-exclusive move mapping",
+                code: ZaPokemonDiagnosticCodes.AlphaPlanVerificationFailed));
+            return;
+        }
+
+        var moveId = ZaEditSessionSupport.TryParseInt(
+            edit.NewValue,
+            1,
+            ushort.MaxValue,
+            edit.Field,
+            ZaEditSessionSupport.PokemonDomain,
+            diagnostics);
+        if (moveId is null)
+        {
+            return;
+        }
+
+        if (alphaMoves.Any(alphaMove => !alphaMove.Options.Any(option => option.Value == moveId.Value)))
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The pending alpha-exclusive move is not a verified TM-compatible move with Plus data for this species and form.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "One of the available alpha-exclusive move options",
+                code: ZaPokemonDiagnosticCodes.AlphaSelectionInvalid));
+        }
+        else if (alphaMoves[0].MoveId == moveId.Value)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "The pending alpha-exclusive move does not change the active mapping.",
+                ZaEditSessionSupport.PokemonDomain,
+                field: ZaPokemonWorkflowService.AlphaMoveField,
+                expected: "A different verified alpha-exclusive move",
+                code: ZaPokemonDiagnosticCodes.AlphaSelectionInvalid));
+        }
+    }
+
     private static ZaPokemonWorkflow OverlayPendingEdits(ZaPokemonWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updated = workflow;
@@ -1622,6 +2434,53 @@ internal sealed class ZaPokemonEditSessionService
         if (IsDexPlacementEdit(edit))
         {
             return OverlayDexPlacement(workflow, edit);
+        }
+
+        if (IsAlphaMoveEdit(edit)
+            && TryParseAlphaMoveRecordId(edit.RecordId, out var speciesId, out var formId)
+            && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId))
+        {
+            return workflow with
+            {
+                Pokemon = workflow.Pokemon
+                    .Select(pokemon =>
+                    {
+                        if (pokemon.SpeciesId != speciesId
+                            || pokemon.Form != formId
+                            || pokemon.AlphaMove is not { } alphaMove)
+                        {
+                            return pokemon;
+                        }
+
+                        var option = alphaMove.Options.FirstOrDefault(candidate => candidate.Value == moveId);
+                        if (option is null)
+                        {
+                            return pokemon;
+                        }
+
+                        var differsFromVanilla = alphaMove.VanillaMoveId is not null
+                            && moveId != alphaMove.VanillaMoveId.Value;
+                        var vanillaIsSafe = alphaMove.VanillaMoveId is not null
+                            && alphaMove.Options.Any(candidate =>
+                                candidate.Value == alphaMove.VanillaMoveId.Value);
+                        return pokemon with
+                        {
+                            AlphaMove = alphaMove with
+                            {
+                                MoveId = moveId,
+                                MoveName = option.Label,
+                                DiffersFromVanilla = differsFromVanilla,
+                                CanRevertToVanilla = differsFromVanilla && vanillaIsSafe,
+                                RestoreBlockedReason = differsFromVanilla && vanillaIsSafe
+                                    ? null
+                                    : !differsFromVanilla
+                                        ? "This mapping already matches vanilla."
+                                        : "The vanilla move is not currently a verified TM-compatible move with Plus data.",
+                            },
+                        };
+                    })
+                    .ToArray(),
+            };
         }
 
         if (!string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
@@ -2269,6 +3128,109 @@ internal sealed class ZaPokemonEditSessionService
                 || string.Equals(edit.RecordId, DexLayoutRecordId, StringComparison.Ordinal)
                 || string.Equals(edit.RecordId, VanillaDexPlacementRecordId, StringComparison.Ordinal))
             && string.Equals(edit.Field, ZaPokemonWorkflowService.DexPlacementField, StringComparison.Ordinal);
+    }
+
+    internal static bool IsAlphaMoveEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, ZaEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
+            && string.Equals(
+                edit.Field,
+                ZaPokemonWorkflowService.AlphaMoveField,
+                StringComparison.Ordinal)
+            && TryParseAlphaMoveRecordId(edit.RecordId, out _, out _);
+    }
+
+    private static EditSession ReplaceOrRemoveAlphaNoOp(
+        ZaPokemonWorkflow loadedWorkflow,
+        EditSession session,
+        PendingEdit pendingEdit)
+    {
+        if (!IsAlphaMoveEdit(pendingEdit)
+            || !session.PendingEdits.Any(edit =>
+                string.Equals(edit.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+                && string.Equals(edit.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+                && string.Equals(edit.Field, pendingEdit.Field, StringComparison.Ordinal))
+            || !TryParseAlphaMoveRecordId(
+                pendingEdit.RecordId,
+                out var speciesId,
+                out var formId)
+            || !int.TryParse(
+                pendingEdit.NewValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var moveId))
+        {
+            return ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+        }
+
+        var sourceMoveId = loadedWorkflow.Pokemon
+            .FirstOrDefault(pokemon =>
+                pokemon.SpeciesId == speciesId && pokemon.Form == formId)
+            ?.AlphaMove
+            ?.MoveId;
+        if (sourceMoveId != moveId)
+        {
+            return ZaEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+        }
+
+        return session with
+        {
+            PendingEdits = session.PendingEdits
+                .Where(edit =>
+                    !string.Equals(edit.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+                    || !string.Equals(edit.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+                    || !string.Equals(edit.Field, pendingEdit.Field, StringComparison.Ordinal))
+                .ToArray(),
+        };
+    }
+
+    private static string CreateAlphaMoveRecordId(int speciesId, int formId)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{AlphaMoveRecordIdPrefix}{speciesId}:{formId}");
+    }
+
+    private static bool TryParseAlphaMoveRecordId(
+        string? recordId,
+        out int speciesId,
+        out int formId)
+    {
+        speciesId = 0;
+        formId = 0;
+        if (recordId is null
+            || !recordId.StartsWith(AlphaMoveRecordIdPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var payload = recordId.AsSpan(AlphaMoveRecordIdPrefix.Length);
+        var separator = payload.IndexOf(':');
+        if (separator <= 0
+            || separator == payload.Length - 1
+            || payload[(separator + 1)..].Contains(':')
+            || !int.TryParse(
+                payload[..separator],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out speciesId)
+            || !int.TryParse(
+                payload[(separator + 1)..],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out formId)
+            || speciesId is < 0 or > ushort.MaxValue
+            || formId is < 0 or > ushort.MaxValue)
+        {
+            speciesId = 0;
+            formId = 0;
+            return false;
+        }
+
+        return string.Equals(
+            recordId,
+            CreateAlphaMoveRecordId(speciesId, formId),
+            StringComparison.Ordinal);
     }
 
     internal static bool IsScopedDexLayoutEdit(PendingEdit edit)

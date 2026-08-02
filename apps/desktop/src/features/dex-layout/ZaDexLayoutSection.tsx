@@ -6,7 +6,6 @@ import {
   ClipboardCheck,
   Info,
   ListOrdered,
-  Pencil,
   RotateCcw,
   Save,
   Search
@@ -18,6 +17,7 @@ import {
   type PokemonDexPlacement,
   type PokemonWorkflow
 } from '../../bridge/contracts';
+import { EditorSessionBar } from '../../components/EditorSessionBar';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 
@@ -250,6 +250,7 @@ export function ZaDexLayoutSection({
   const requiresAdvancedLayout =
     preview !== null && preview.source.dexKind !== preview.destinationDexKind;
   const workflowAvailable = workflow?.summary.availability === 'available';
+  const hasActiveEditSession = editSession !== null;
   const hasStagedChange = (editSession?.pendingEdits.length ?? 0) > 0;
   const isWorkflowActionBusy = isEditStarting || isPokemonUpdating;
   const canStage =
@@ -270,10 +271,18 @@ export function ZaDexLayoutSection({
     !moveDraftIsDirty &&
     resizePreview !== null &&
     !resizeIsNoOp;
+  const returnToVanillaNeedsEditSession =
+    workflowAvailable &&
+    dexEditor?.canReturnToVanilla === true &&
+    !dexEditor.isVanillaLayout &&
+    !hasActiveEditSession &&
+    !hasLocalDraft &&
+    !isWorkflowActionBusy;
   const canReturnToVanilla =
     workflowAvailable &&
     dexEditor?.canReturnToVanilla === true &&
     !dexEditor.isVanillaLayout &&
+    hasActiveEditSession &&
     !hasLocalDraft &&
     !isWorkflowActionBusy;
   const canOpenChanges =
@@ -284,6 +293,10 @@ export function ZaDexLayoutSection({
   }, [hasLocalDraft, onDirtyChange]);
 
   const updateSizeDraft = (dexKind: DexKind, value: string) => {
+    if (!hasActiveEditSession) {
+      return;
+    }
+
     const parsed = parseDexSize(value);
     const dependentValue =
       parsed === null ? '' : (POKEDEX_SPECIES_COUNT - parsed).toString();
@@ -321,6 +334,15 @@ export function ZaDexLayoutSection({
           'Dex Layout changes are staged here. Review and output them from Changes.'
         )}
       </p>
+
+      <EditorSessionBar
+        canEdit={workflowAvailable && dexEditor?.canEdit === true}
+        isEditing={hasActiveEditSession}
+        isStarting={isEditStarting}
+        label="Dex Layout"
+        onStart={onStartEditSession}
+        readOnlyReason={dexEditor?.blockedReason}
+      />
 
       <div className="za-dex-layout-metrics">
         <Metric
@@ -418,7 +440,10 @@ export function ZaDexLayoutSection({
                 <DexSizeControl
                   dexKind="regular"
                   disabled={
-                    !dexEditor.canEditAdvanced || isWorkflowActionBusy || moveDraftIsDirty
+                    !hasActiveEditSession ||
+                    !dexEditor.canEditAdvanced ||
+                    isWorkflowActionBusy ||
+                    moveDraftIsDirty
                   }
                   isValid={proposedRegularCount !== null}
                   onChange={(value) => updateSizeDraft('regular', value)}
@@ -437,7 +462,10 @@ export function ZaDexLayoutSection({
                 <DexSizeControl
                   dexKind="hyperspace"
                   disabled={
-                    !dexEditor.canEditAdvanced || isWorkflowActionBusy || moveDraftIsDirty
+                    !hasActiveEditSession ||
+                    !dexEditor.canEditAdvanced ||
+                    isWorkflowActionBusy ||
+                    moveDraftIsDirty
                   }
                   isValid={proposedHyperspaceCount !== null}
                   onChange={(value) => updateSizeDraft('hyperspace', value)}
@@ -497,20 +525,6 @@ export function ZaDexLayoutSection({
                 ) : null}
 
                 <div className="za-dex-layout-actions">
-                  {editSession === null && dexEditor.canEditAdvanced ? (
-                    <button
-                      aria-busy={isEditStarting || undefined}
-                      className="secondary-button"
-                      disabled={isEditStarting || isWorkflowActionBusy}
-                      onClick={onStartEditSession}
-                      type="button"
-                    >
-                      <Pencil aria-hidden="true" size={16} />
-                      <span>
-                        {translateLiteral(isEditStarting ? 'Starting' : 'Edit')}
-                      </span>
-                    </button>
-                  ) : null}
                   <button
                     aria-busy={isPokemonUpdating || undefined}
                     className="primary-button"
@@ -581,10 +595,17 @@ export function ZaDexLayoutSection({
                       <span>{translateLiteral('Destination Pokédex')}</span>
                       <select
                         disabled={
-                          !dexEditor.canEdit || isWorkflowActionBusy || resizeDraftIsDirty
+                          !hasActiveEditSession ||
+                          !dexEditor.canEdit ||
+                          isWorkflowActionBusy ||
+                          resizeDraftIsDirty
                         }
                         id="za-dex-layout-destination-dex"
                         onChange={(event) => {
+                          if (!hasActiveEditSession) {
+                            return;
+                          }
+
                           const nextDexKind =
                             event.currentTarget.value === 'hyperspace'
                               ? 'hyperspace'
@@ -621,15 +642,20 @@ export function ZaDexLayoutSection({
                             : undefined
                         }
                         disabled={
-                          !dexEditor.canEdit || isWorkflowActionBusy || resizeDraftIsDirty
+                          !hasActiveEditSession ||
+                          !dexEditor.canEdit ||
+                          isWorkflowActionBusy ||
+                          resizeDraftIsDirty
                         }
                         id="za-dex-layout-destination-number"
                         inputMode="numeric"
                         max={maximumDestination}
                         min={1}
-                        onChange={(event) =>
-                          setDestinationNumberDraft(event.currentTarget.value)
-                        }
+                        onChange={(event) => {
+                          if (hasActiveEditSession) {
+                            setDestinationNumberDraft(event.currentTarget.value);
+                          }
+                        }}
                         step={1}
                         type="number"
                         value={destinationNumberDraft}
@@ -666,20 +692,6 @@ export function ZaDexLayoutSection({
                   ) : null}
 
                   <div className="za-dex-layout-actions">
-                    {editSession === null && dexEditor.canEdit ? (
-                      <button
-                        aria-busy={isEditStarting || undefined}
-                        className="secondary-button"
-                        disabled={isEditStarting || isWorkflowActionBusy}
-                        onClick={onStartEditSession}
-                        type="button"
-                      >
-                        <Pencil aria-hidden="true" size={16} />
-                        <span>
-                          {translateLiteral(isEditStarting ? 'Starting' : 'Edit')}
-                        </span>
-                      </button>
-                    ) : null}
                     <button
                       aria-busy={isPokemonUpdating || undefined}
                       className="primary-button"
@@ -728,8 +740,10 @@ export function ZaDexLayoutSection({
               disabled={!canReturnToVanilla}
               onClick={onStageReturnToVanilla}
               title={translateLiteral(
-                dexEditor.returnToVanillaBlockedReason ??
-                  'Restore the verified vanilla Pokédex sizes and species order.'
+                returnToVanillaNeedsEditSession
+                  ? 'Start editing to stage a Pokédex resize.'
+                  : dexEditor.returnToVanillaBlockedReason ??
+                    'Restore the verified vanilla Pokédex sizes and species order.'
               )}
               type="button"
             >

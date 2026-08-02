@@ -1249,7 +1249,27 @@ public static class ZaBridgeMapper
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)),
-            pokemon.SpriteName);
+            pokemon.SpriteName,
+            pokemon.AlphaMove is null
+                ? null
+                : new PokemonAlphaMoveDto(
+                    pokemon.AlphaMove.HasMapping,
+                    pokemon.AlphaMove.MoveId,
+                    pokemon.AlphaMove.MoveName,
+                    pokemon.AlphaMove.VanillaMoveId,
+                    pokemon.AlphaMove.VanillaMoveName,
+                    pokemon.AlphaMove.CanEdit,
+                    pokemon.AlphaMove.BlockedReason,
+                    pokemon.AlphaMove.DiffersFromVanilla,
+                    pokemon.AlphaMove.CanRevertToVanilla,
+                    pokemon.AlphaMove.RestoreBlockedReason,
+                    pokemon.AlphaMove.Options.Select(ToDto).ToArray(),
+                    pokemon.AlphaMove.Provenance is null
+                        ? null
+                        : new PokemonProvenanceDto(
+                            pokemon.AlphaMove.Provenance.SourceFile,
+                            ProjectBridgeMapper.ToDto(pokemon.AlphaMove.Provenance.SourceLayer),
+                            ProjectBridgeMapper.ToDto(pokemon.AlphaMove.Provenance.FileState))));
     }
 
     private static ItemRecordDto ToDto(ZaItemRecord item)

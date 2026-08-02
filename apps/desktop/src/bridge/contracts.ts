@@ -1023,6 +1023,21 @@ export const pokemonEditableFieldOptionSchema = z.strictObject({
   value: z.number().int()
 });
 
+export const pokemonAlphaMoveSchema = z.strictObject({
+  blockedReason: z.string().nullable(),
+  canEdit: z.boolean(),
+  canRevertToVanilla: z.boolean(),
+  differsFromVanilla: z.boolean(),
+  hasMapping: z.boolean(),
+  moveId: z.number().int().nonnegative().nullable(),
+  moveName: z.string().nullable(),
+  options: z.array(pokemonEditableFieldOptionSchema),
+  provenance: pokemonProvenanceSchema.nullable().default(null),
+  restoreBlockedReason: z.string().nullable(),
+  vanillaMoveId: z.number().int().nonnegative().nullable(),
+  vanillaMoveName: z.string().nullable()
+});
+
 export const pokemonEditableFieldSchema = z.strictObject({
   field: z.string(),
   group: z.string(),
@@ -1066,6 +1081,7 @@ export const pokemonDexEditorSchema = z.strictObject({
 
 export const pokemonRecordSchema = z.strictObject({
   abilities: pokemonAbilitySetSchema,
+  alphaMove: pokemonAlphaMoveSchema.nullable().optional().default(null),
   baseExperience: z.number().int(),
   baseStats: pokemonBaseStatsSchema,
   catchRate: z.number().int().nonnegative(),
@@ -5226,6 +5242,7 @@ export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type PokemonEditableField = z.infer<typeof pokemonEditableFieldSchema>;
 export type PokemonEditableFieldOption = z.infer<typeof pokemonEditableFieldOptionSchema>;
+export type PokemonAlphaMove = z.infer<typeof pokemonAlphaMoveSchema>;
 export type PokemonDexEditor = z.infer<typeof pokemonDexEditorSchema>;
 export type PokemonDexPlacement = z.infer<typeof pokemonDexPlacementSchema>;
 export type PokemonEvolutionMethodOption = z.infer<

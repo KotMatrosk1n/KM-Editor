@@ -3,6 +3,7 @@
 using System.Globalization;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Core.Workflows;
 using KM.Formats.ZA;
@@ -10,6 +11,7 @@ using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
 using KM.ZA.EvolutionItems;
 using KM.ZA.ExeFs;
+using KM.ZA.Moves;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Pokemon;
@@ -70,6 +72,7 @@ internal sealed class ZaPokemonWorkflowService
     public const string TechnicalMachineCompatibilityGroupId = "tm";
     public const string EggMoveCompatibilityGroupId = "egg";
     public const string ReminderMoveCompatibilityGroupId = "reminder";
+    public const string AlphaMoveField = "alphaMove";
 
     private static readonly IReadOnlyList<ZaPokemonEditableFieldOption> BooleanOptions =
     [
@@ -338,9 +341,11 @@ internal sealed class ZaPokemonWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         ZaWorkflowFile? source = null;
         ZaWorkflowFile? pokedexSource = null;
+        ZaWorkflowFile? alphaMoveSource = null;
         var labels = ZaTextLabelLookup.None();
         var pokemon = Array.Empty<ZaPokemonRecord>();
         ZaPokemonDexEditor? dexEditor = null;
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog = [];
         IReadOnlyDictionary<int, string> evolutionItemArgumentLabels = CreateDefaultEvolutionItemArgumentLabels(labels);
 
         try
@@ -348,7 +353,7 @@ internal sealed class ZaPokemonWorkflowService
             labels = ZaTextLabelLookup.Load(project, fileSource, diagnostics, project.Paths);
             var spriteLabels = ZaTextLabelLookup.Load(project, fileSource, new List<ValidationDiagnostic>());
             evolutionItemArgumentLabels = LoadEvolutionItemArgumentLabels(project, labels, diagnostics);
-            var tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
+            tmCatalog = ZaTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, ZaDataPaths.PersonalArray);
             var requiresLegacyPersonalRecovery = ZaPersonalTable
                 .GetRootAsZaPersonalTable(new ByteBuffer(source.Bytes))
@@ -405,6 +410,50 @@ internal sealed class ZaPokemonWorkflowService
 
             try
             {
+                alphaMoveSource = fileSource.Read(project, ZaDataPaths.AlphaMoveTable);
+                var baseAlphaMoveSource = fileSource.ReadBase(project, ZaDataPaths.AlphaMoveTable);
+                var battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+                var baseBattleSource = fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray);
+                var itemSource = fileSource.Read(project, ZaDataPaths.ItemDataArray);
+                var baseItemSource = fileSource.ReadBase(project, ZaDataPaths.ItemDataArray);
+                pokemon = ProjectAlphaMoves(
+                    pokemon,
+                    labels,
+                    tmCatalog,
+                    source,
+                    alphaMoveSource,
+                    baseAlphaMoveSource,
+                    battleSource,
+                    baseBattleSource,
+                    itemSource,
+                    baseItemSource);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or InvalidDataException
+                    or InvalidOperationException
+                    or ArgumentException
+                    or OverflowException
+                    or IndexOutOfRangeException)
+            {
+                var blockedReason =
+                    $"Alpha-exclusive move editing is unavailable because its sources could not be verified: {exception.Message}";
+                pokemon = pokemon
+                    .Select(record => record with
+                    {
+                        AlphaMove = CreateUnavailableAlphaMove(blockedReason),
+                    })
+                    .ToArray();
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    blockedReason,
+                    $"romfs/{ZaDataPaths.AlphaMoveTable}") with
+                {
+                    Code = ZaPokemonDiagnosticCodes.AlphaSourceUnavailable,
+                });
+            }
+
+            try
+            {
                 pokedexSource = fileSource.Read(project, ZaDataPaths.PokedexContentsData);
                 dexEditor = AddVanillaLayoutStatus(
                     project,
@@ -440,7 +489,9 @@ internal sealed class ZaPokemonWorkflowService
             pokemon.Count(record => record.DexPresence.IsPresentInGame),
             pokemon.Sum(record => record.Evolutions.Count),
             pokemon.Sum(record => record.Learnset.Count),
-            (source is null ? 0 : 1) + (pokedexSource is null ? 0 : 1));
+            (source is null ? 0 : 1)
+                + (pokedexSource is null ? 0 : 1)
+                + (alphaMoveSource is null ? 0 : 1));
 
         return new ZaPokemonWorkflow(
             summary,
@@ -451,6 +502,230 @@ internal sealed class ZaPokemonWorkflowService
             CreateEditableFields(labels),
             diagnostics,
             dexEditor);
+    }
+
+    private static ZaPokemonRecord[] ProjectAlphaMoves(
+        IReadOnlyList<ZaPokemonRecord> pokemon,
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaTechnicalMachineMove> tmCatalog,
+        ZaWorkflowFile personalSource,
+        ZaWorkflowFile alphaMoveSource,
+        ZaWorkflowFile baseAlphaMoveSource,
+        ZaWorkflowFile battleSource,
+        ZaWorkflowFile baseBattleSource,
+        ZaWorkflowFile itemSource,
+        ZaWorkflowFile baseItemSource)
+    {
+        var activeTable = ZaAlphaMoveTableDocument.Parse(alphaMoveSource.Bytes);
+        var vanillaTable = ZaAlphaMoveTableDocument.Parse(baseAlphaMoveSource.Bytes);
+        var activePlusMoves = CreateValidPlusMoveIds(battleSource.Bytes);
+        var vanillaPlusMoves = CreateValidPlusMoveIds(baseBattleSource.Bytes);
+        var physicalTechnicalMachines = tmCatalog
+            .GroupBy(move => move.MoveId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var editSources = new[]
+            {
+                personalSource,
+                alphaMoveSource,
+                baseAlphaMoveSource,
+                battleSource,
+                baseBattleSource,
+                itemSource,
+                baseItemSource,
+            }
+            .Select(ZaWorkflowFileSource.CreateReference)
+            .Distinct()
+            .OrderBy(reference => reference.Layer)
+            .ThenBy(reference => reference.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+        var provenance = new ZaPokemonProvenance(
+            alphaMoveSource.RelativePath,
+            alphaMoveSource.SourceLayer,
+            alphaMoveSource.FileState);
+        var sharedOptions = pokemon
+            .GroupBy(record => (record.SpeciesId, record.Form))
+            .ToDictionary(
+                group => group.Key,
+                group => CreateSharedAlphaMoveOptions(
+                    group,
+                    physicalTechnicalMachines,
+                    activePlusMoves,
+                    vanillaPlusMoves));
+
+        return pokemon
+            .Select(record => record with
+            {
+                AlphaMove = CreateAlphaMove(
+                    record,
+                    labels,
+                    sharedOptions[(record.SpeciesId, record.Form)],
+                    activeTable,
+                    vanillaTable,
+                    provenance,
+                    editSources),
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlySet<int> CreateValidPlusMoveIds(byte[] battleBytes)
+    {
+        return ZaRuntimeMoveData
+            .BattleRows(ZaRuntimeMoveData.ReadBattle(battleBytes))
+            .Where(row => row.MoveId > 0 && row.MoveId <= int.MaxValue)
+            .GroupBy(row => row.MoveId)
+            .Where(group => group.Count(row => row.VariantType == 1) == 1)
+            .Select(group => checked((int)group.Key))
+            .ToHashSet();
+    }
+
+    private static IReadOnlyList<ZaPokemonEditableFieldOption> CreateSharedAlphaMoveOptions(
+        IEnumerable<ZaPokemonRecord> pokemon,
+        IReadOnlyDictionary<int, ZaTechnicalMachineMove> physicalTechnicalMachines,
+        IReadOnlySet<int> activePlusMoves,
+        IReadOnlySet<int> vanillaPlusMoves)
+    {
+        HashSet<int>? sharedCompatibility = null;
+        foreach (var record in pokemon)
+        {
+            var compatibleMoves = record.Compatibility
+                .FirstOrDefault(group => string.Equals(
+                    group.GroupId,
+                    TechnicalMachineCompatibilityGroupId,
+                    StringComparison.Ordinal))
+                ?.Entries
+                .Where(entry => entry.CanLearn)
+                .Select(entry => entry.MoveId)
+                .ToHashSet()
+                ?? [];
+            if (sharedCompatibility is null)
+            {
+                sharedCompatibility = compatibleMoves;
+            }
+            else
+            {
+                sharedCompatibility.IntersectWith(compatibleMoves);
+            }
+        }
+
+        if (sharedCompatibility is null || sharedCompatibility.Count == 0)
+        {
+            return [];
+        }
+
+        return physicalTechnicalMachines.Values
+            .Where(move => sharedCompatibility.Contains(move.MoveId))
+            .Where(move => activePlusMoves.Contains(move.MoveId))
+            .Where(move => vanillaPlusMoves.Contains(move.MoveId))
+            .OrderBy(move => move.Slot)
+            .ThenBy(move => move.MoveId)
+            .Select(move => new ZaPokemonEditableFieldOption(move.MoveId, move.MoveName))
+            .ToArray();
+    }
+
+    private static ZaPokemonAlphaMove CreateAlphaMove(
+        ZaPokemonRecord pokemon,
+        ZaTextLabelLookup labels,
+        IReadOnlyList<ZaPokemonEditableFieldOption> options,
+        ZaAlphaMoveTableDocument activeTable,
+        ZaAlphaMoveTableDocument vanillaTable,
+        ZaPokemonProvenance provenance,
+        IReadOnlyList<ProjectFileReference> editSources)
+    {
+        if (pokemon.SpeciesId is < 0 or > ushort.MaxValue
+            || pokemon.Form is < 0 or > ushort.MaxValue)
+        {
+            return CreateUnavailableAlphaMove(
+                "This species or form is outside the supported alpha-exclusive move key range.");
+        }
+
+        var speciesId = checked((ushort)pokemon.SpeciesId);
+        var formId = checked((ushort)pokemon.Form);
+        var active = activeTable.FindFirstExact(speciesId, formId);
+        var vanilla = vanillaTable.FindFirstExact(speciesId, formId);
+        if (active is null)
+        {
+            return new ZaPokemonAlphaMove(
+                HasMapping: false,
+                MoveId: null,
+                MoveName: null,
+                VanillaMoveId: vanilla?.MoveId,
+                VanillaMoveName: vanilla is null ? null : labels.Move(vanilla.MoveId),
+                CanEdit: false,
+                BlockedReason:
+                    "No alpha-exclusive move mapping exists for this species and form. Adding mappings is not supported.",
+                DiffersFromVanilla: false,
+                CanRevertToVanilla: false,
+                RestoreBlockedReason: "There is no existing mapping to restore.",
+                Options: [],
+                Provenance: provenance)
+            {
+                EditSources = editSources,
+            };
+        }
+
+        var activeMoveId = (int)active.MoveId;
+        var vanillaMoveId = vanilla is null ? null : (int?)vanilla.MoveId;
+
+        string? blockedReason = null;
+        if (!active.HasMoveId)
+        {
+            blockedReason = "The existing alpha-exclusive move field is not materialized and cannot be patched safely.";
+        }
+        else if (vanilla is null || !vanilla.HasMoveId)
+        {
+            blockedReason = "The clean alpha-exclusive move mapping could not be matched exactly.";
+        }
+        else if (options.Count == 0)
+        {
+            blockedReason = "No verified TM-compatible move with active and clean Plus data is available for this species and form.";
+        }
+
+        var canEdit = blockedReason is null;
+        var differsFromVanilla = vanillaMoveId is not null && activeMoveId != vanillaMoveId.Value;
+        var vanillaIsSafe = vanillaMoveId is not null
+            && options.Any(option => option.Value == vanillaMoveId.Value);
+        var canRevert = canEdit && differsFromVanilla && vanillaIsSafe;
+        var restoreBlockedReason = canRevert
+            ? null
+            : !differsFromVanilla
+                ? "This mapping already matches vanilla."
+                : !vanillaIsSafe
+                    ? "The vanilla move is not currently a verified TM-compatible move with Plus data."
+                    : blockedReason;
+
+        return new ZaPokemonAlphaMove(
+            HasMapping: true,
+            activeMoveId,
+            labels.Move(activeMoveId),
+            vanillaMoveId,
+            vanillaMoveId is null ? null : labels.Move(vanillaMoveId.Value),
+            canEdit,
+            blockedReason,
+            differsFromVanilla,
+            canRevert,
+            restoreBlockedReason,
+            options,
+            provenance)
+        {
+            EditSources = editSources,
+        };
+    }
+
+    private static ZaPokemonAlphaMove CreateUnavailableAlphaMove(string blockedReason)
+    {
+        return new ZaPokemonAlphaMove(
+            HasMapping: false,
+            MoveId: null,
+            MoveName: null,
+            VanillaMoveId: null,
+            VanillaMoveName: null,
+            CanEdit: false,
+            blockedReason,
+            DiffersFromVanilla: false,
+            CanRevertToVanilla: false,
+            RestoreBlockedReason: blockedReason,
+            Options: [],
+            Provenance: null);
     }
 
     private static ZaPokemonDexEditor CreateDexEditor(

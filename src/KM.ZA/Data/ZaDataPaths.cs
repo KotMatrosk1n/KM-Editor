@@ -8,6 +8,7 @@ public static class ZaDataPaths
     public const string LegacyMessageRoot = "message/dat";
 
     public const string PersonalArray = "avalon/data/personal_array.bin";
+    public const string AlphaMoveTable = "world/ik_data/field/oyabun/oyabun_waza/oyabun_waza.bin";
     public const string PokedexContentsData =
         "world/exl/pokedex_contents_data/pokedex_contents_data/pokedex_contents_data.bin";
     public const string MoveDataArray = "avalon/data/waza_array.bin";

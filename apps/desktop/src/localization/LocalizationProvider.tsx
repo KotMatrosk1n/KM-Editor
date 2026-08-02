@@ -2123,6 +2123,124 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     });
   }
 
+  const alphaMoveFailureMatch =
+    /^(Alpha-exclusive move editing is unavailable because its sources could not be verified|Alpha-exclusive move change plan could not verify its sources and output target|Alpha-exclusive move output could not be written): (.+)$/.exec(
+      literal
+    );
+  if (alphaMoveFailureMatch) {
+    return formatLiteralTemplate(language, `${alphaMoveFailureMatch[1]}: {error}`, {
+      error: translateLiteralBodyForLanguage(language, alphaMoveFailureMatch[2])
+    });
+  }
+
+  const alphaMoveSetSummaryMatch = /^Set (.+) alpha-exclusive move to (.+)\.$/.exec(literal);
+  if (alphaMoveSetSummaryMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Set {pokemon} alpha-exclusive move to {move}.',
+      {
+        move: alphaMoveSetSummaryMatch[2],
+        pokemon: alphaMoveSetSummaryMatch[1]
+      }
+    );
+  }
+
+  const alphaMoveSinglePlanMatch = /^Apply pending alpha-exclusive move edit: (.+)$/.exec(
+    literal
+  );
+  if (alphaMoveSinglePlanMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Apply pending alpha-exclusive move edit: {summary}',
+      { summary: translateLiteralBodyForLanguage(language, alphaMoveSinglePlanMatch[1]) }
+    );
+  }
+
+  const alphaMovePlanCountMatch = /^Apply ([\d,]+) pending alpha-exclusive move edits\.$/.exec(
+    literal
+  );
+  if (alphaMovePlanCountMatch) {
+    return formatLiteralTemplate(
+      language,
+      'Apply {count} pending alpha-exclusive move edits.',
+      { count: alphaMovePlanCountMatch[1] }
+    );
+  }
+
+  const alphaMoveApplyOutputMatch =
+    /^(Pokemon alpha-exclusive moves|Pokemon Data and alpha-exclusive moves) output was written(?: (as a standalone LayeredFS override with a patched descriptor|in Trinity Mod Manager layout|in Trinity bypass layout))?\.$/.exec(
+      literal
+    );
+  if (alphaMoveApplyOutputMatch) {
+    const workflow = translateLiteralBodyForLanguage(language, alphaMoveApplyOutputMatch[1]);
+    const suffix = alphaMoveApplyOutputMatch[2];
+    const template = suffix === 'as a standalone LayeredFS override with a patched descriptor'
+      ? '{workflow} output was written as a standalone LayeredFS override with a patched descriptor.'
+      : suffix === 'in Trinity Mod Manager layout'
+        ? '{workflow} output was written in Trinity Mod Manager layout.'
+        : suffix === 'in Trinity bypass layout'
+          ? '{workflow} output was written in Trinity bypass layout.'
+          : '{workflow} output was written.';
+    return formatLiteralTemplate(language, template, { workflow });
+  }
+
+  const alphaMoveReplacementMatch =
+    /^Alpha move replacement (\d+):(\d+) (is specified more than once|has no existing exact table entry|uses an omitted default move field and cannot be patched safely|does not have verified scalar storage|shares scalar storage with another entry and cannot be patched independently|could not be applied to its verified scalar|did not remain the first exact match after verification)\.$/.exec(
+      literal
+    );
+  if (alphaMoveReplacementMatch) {
+    return formatLiteralTemplate(
+      language,
+      `Alpha move replacement {mapping} ${alphaMoveReplacementMatch[3]}.`,
+      { mapping: `${alphaMoveReplacementMatch[1]}:${alphaMoveReplacementMatch[2]}` }
+    );
+  }
+
+  const alphaMoveSpeciesRowMatch =
+    /^The patched alpha move table changed species row (\d+)\.$/.exec(literal);
+  if (alphaMoveSpeciesRowMatch) {
+    return formatLiteralTemplate(
+      language,
+      'The patched alpha move table changed species row {row}.',
+      { row: alphaMoveSpeciesRowMatch[1] }
+    );
+  }
+
+  const alphaMoveSpeciesIdentityMatch =
+    /^The patched alpha move table changed the shape or identity of species row (\d+)\.$/.exec(
+      literal
+    );
+  if (alphaMoveSpeciesIdentityMatch) {
+    return formatLiteralTemplate(
+      language,
+      'The patched alpha move table changed the shape or identity of species row {row}.',
+      { row: alphaMoveSpeciesIdentityMatch[1] }
+    );
+  }
+
+  const alphaMoveFormRowMatch =
+    /^The patched alpha move table (changed|did not preserve) form row (\d+):(\d+)\.$/.exec(
+      literal
+    );
+  if (alphaMoveFormRowMatch) {
+    const template = alphaMoveFormRowMatch[1] === 'changed'
+      ? 'The patched alpha move table changed form row {row}.'
+      : 'The patched alpha move table did not preserve form row {row}.';
+    return formatLiteralTemplate(language, template, {
+      row: `${alphaMoveFormRowMatch[2]}:${alphaMoveFormRowMatch[3]}`
+    });
+  }
+
+  const alphaMoveByteMatch =
+    /^The alpha move patch changed byte (\d+) outside a requested move scalar\.$/.exec(literal);
+  if (alphaMoveByteMatch) {
+    return formatLiteralTemplate(
+      language,
+      'The alpha move patch changed byte {index} outside a requested move scalar.',
+      { index: alphaMoveByteMatch[1] }
+    );
+  }
+
   const changePlanPreviewMatch = /^Change plan preview contains (\d+) target files?\.$/.exec(
     literal
   );

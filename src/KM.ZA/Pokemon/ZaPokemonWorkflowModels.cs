@@ -112,6 +112,23 @@ public sealed record ZaPokemonCompatibilityEntry(
     string Label,
     bool CanLearn);
 
+public sealed record ZaPokemonAlphaMove(
+    bool HasMapping,
+    int? MoveId,
+    string? MoveName,
+    int? VanillaMoveId,
+    string? VanillaMoveName,
+    bool CanEdit,
+    string? BlockedReason,
+    bool DiffersFromVanilla,
+    bool CanRevertToVanilla,
+    string? RestoreBlockedReason,
+    IReadOnlyList<ZaPokemonEditableFieldOption> Options,
+    ZaPokemonProvenance? Provenance)
+{
+    internal IReadOnlyList<ProjectFileReference> EditSources { get; init; } = [];
+}
+
 public sealed record ZaPokemonRecord(
     int PersonalId,
     int SpeciesId,
@@ -135,7 +152,8 @@ public sealed record ZaPokemonRecord(
     IReadOnlyList<ZaPokemonLearnsetMove> Learnset,
     IReadOnlyList<ZaPokemonCompatibilityGroup> Compatibility,
     ZaPokemonProvenance Provenance,
-    string? SpriteName = null);
+    string? SpriteName = null,
+    ZaPokemonAlphaMove? AlphaMove = null);
 
 public sealed record ZaPokemonWorkflowStats(
     int TotalPokemonCount,
