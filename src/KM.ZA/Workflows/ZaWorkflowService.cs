@@ -666,6 +666,11 @@ public sealed class ZaWorkflowService
 
     public ZaEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
+        if (IsMixedAlphaMoveSession(session))
+        {
+            return CreateAlphaMoveMixedValidation(session);
+        }
+
         if (IsMixedScopedDexLayoutSession(session))
         {
             return CreateScopedDexLayoutMixedValidation(session);
@@ -679,6 +684,11 @@ public sealed class ZaWorkflowService
 
     public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session, ZaOutputMode outputMode)
     {
+        if (IsMixedAlphaMoveSession(session))
+        {
+            return CreateAlphaMoveMixedChangePlan(session);
+        }
+
         if (IsMixedScopedDexLayoutSession(session))
         {
             return CreateScopedDexLayoutMixedChangePlan(session);
@@ -692,6 +702,11 @@ public sealed class ZaWorkflowService
 
     public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan, ZaOutputMode outputMode)
     {
+        if (IsMixedAlphaMoveSession(session))
+        {
+            return CreateAlphaMoveMixedApplyResult(session);
+        }
+
         if (IsMixedScopedDexLayoutSession(session))
         {
             return CreateScopedDexLayoutMixedApplyResult(session);
@@ -1045,6 +1060,55 @@ public sealed class ZaWorkflowService
     private static ZaEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {
         return new ZaEditSessionValidation(session, IsValid: false, [CreateMixedDiagnostic()]);
+    }
+
+    private static bool IsMixedAlphaMoveSession(EditSession session)
+    {
+        return session.PendingEdits.Any(ZaPokemonEditSessionService.IsAlphaMoveEdit)
+            && session.PendingEdits.Any(edit => !string.Equals(
+                edit.Domain,
+                ZaEditSessionSupport.PokemonDomain,
+                StringComparison.Ordinal));
+    }
+
+    private static ZaEditSessionValidation CreateAlphaMoveMixedValidation(EditSession session)
+    {
+        return new ZaEditSessionValidation(
+            session,
+            IsValid: false,
+            [CreateAlphaMoveMixedDiagnostic()]);
+    }
+
+    private static ChangePlan CreateAlphaMoveMixedChangePlan(EditSession session)
+    {
+        return new ChangePlan(
+            session.Id,
+            Array.Empty<PlannedFileWrite>(),
+            [CreateAlphaMoveMixedDiagnostic()]);
+    }
+
+    private static ApplyResult CreateAlphaMoveMixedApplyResult(EditSession session)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var plan = CreateAlphaMoveMixedChangePlan(session);
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            Array.Empty<ProjectFileReference>(),
+            new WriteManifest(applyId, appliedAt, plan.Writes),
+            plan.Diagnostics);
+    }
+
+    private static ValidationDiagnostic CreateAlphaMoveMixedDiagnostic()
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Alpha-exclusive move changes must be applied separately from other editor domains.",
+            ZaEditSessionSupport.PokemonDomain,
+            field: ZaPokemonWorkflowService.AlphaMoveField,
+            expected: "An alpha-exclusive move-only Pokemon editor session",
+            code: ZaPokemonDiagnosticCodes.AlphaSessionConflict);
     }
 
     private static bool IsMixedScopedDexLayoutSession(EditSession session)

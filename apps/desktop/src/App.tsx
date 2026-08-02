@@ -35,7 +35,6 @@ import {
   PackagePlus,
   PanelLeftClose,
   PanelLeftOpen,
-  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -149,6 +148,7 @@ import {
   type MoveRecord,
   type MovesWorkflow,
   type PokemonCompatibilityGroup,
+  type PokemonAlphaMove,
   type PokemonDexEditor,
   type PokemonDexPlacement,
   type PokemonEditableField,
@@ -322,6 +322,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from './components/workflowPanels';
+import { EditorSessionBar } from './components/EditorSessionBar';
 import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
 import { completeSuccessfulApplyResult } from './applyResultDiagnostics';
 import { useModalDialog } from './components/useModalDialog';
@@ -1225,6 +1226,7 @@ const itemSortOrderFieldName = 'sortOrder';
 const itemTechnicalMachineNumberFieldName = 'tmNumber';
 const pokemonGlobalEvYieldFieldName = 'evYieldAll';
 const pokemonGlobalExpYieldFieldName = 'expYieldAll';
+const pokemonAlphaMoveFieldName = 'alphaMove';
 const pokemonRemoveEvYieldValue = 'remove';
 const pokemonRestoreEvYieldValue = 'restore';
 const pokemonMaximumUshortValue = 65_535;
@@ -7308,9 +7310,10 @@ export function App({
 
   const runEditSessionMutation = async <T extends { session: EditSession | null },>(
     mutation: (session: EditSession | null) => Promise<T>,
-    commit: (response: T) => void
+    commit: (response: T) => void,
+    requiredSession?: EditSession | null
   ) => {
-    if (isEditSessionOperationBusy) {
+    if (isEditSessionOperationBusy || requiredSession === null) {
       return null;
     }
 
@@ -7326,7 +7329,15 @@ export function App({
           return null;
         }
 
-        const response = await mutation(editSessionRef.current);
+        const currentSession = editSessionRef.current;
+        if (
+          requiredSession !== undefined &&
+          (currentSession === null || currentSession.sessionId !== requiredSession.sessionId)
+        ) {
+          return null;
+        }
+
+        const response = await mutation(currentSession);
         if (editSessionMutationGenerationRef.current !== generation) {
           return null;
         }
@@ -7392,7 +7403,8 @@ export function App({
             setItemsWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('items')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7447,7 +7459,8 @@ export function App({
             setEditSessionSection(updateResponse.sessionSection);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('items')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7476,7 +7489,8 @@ export function App({
         (response) => {
           setPokemonWorkflow(response.workflow);
           setEditValidationDiagnostics(response.diagnostics);
-        }
+        },
+        getEditSessionForSection('pokemon')
       );
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -7588,7 +7602,8 @@ export function App({
             setPokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('pokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7619,7 +7634,8 @@ export function App({
         (updateResponse) => {
           setPokemonWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('pokemon')
       );
       return response !== null &&
         !response.diagnostics.some((diagnostic) => diagnostic.severity === 'error');
@@ -7674,7 +7690,8 @@ export function App({
             setEditSessionSection(updateResponse.session ? 'dexLayout' : null);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('dexLayout')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7723,7 +7740,8 @@ export function App({
             registerEditorDraftDirty('dexLayout', false);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('dexLayout')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7771,7 +7789,8 @@ export function App({
             registerEditorDraftDirty('dexLayout', false);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('dexLayout')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7821,7 +7840,8 @@ export function App({
             setPokemonWorkflow(response.workflow);
           }
           setEditValidationDiagnostics(response.diagnostics);
-        }
+        },
+        getEditSessionForSection('pokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7877,7 +7897,8 @@ export function App({
             setPokemonWorkflow(response.workflow);
           }
           setEditValidationDiagnostics(response.diagnostics);
-        }
+        },
+        getEditSessionForSection('pokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -7970,7 +7991,8 @@ export function App({
             setMovesWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('moves')
       );
       return response?.shouldClearDrafts ?? false;
     } catch (error) {
@@ -8025,7 +8047,8 @@ export function App({
             setEditSessionSection(updateResponse.sessionSection);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('moves')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8067,7 +8090,8 @@ export function App({
             setTextWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('text')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8116,7 +8140,8 @@ export function App({
             setTrainersWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('trainers')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8195,7 +8220,8 @@ export function App({
             setTrainersWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('trainers')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8248,7 +8274,8 @@ export function App({
             setGiftPokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('giftPokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8301,7 +8328,8 @@ export function App({
             setGiftPokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('giftPokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8354,7 +8382,8 @@ export function App({
             setTradePokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('tradePokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8407,7 +8436,8 @@ export function App({
             setTradePokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('tradePokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -8491,7 +8521,8 @@ export function App({
             setStaticEncountersWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('staticEncounters')
       );
       return (
         response !== null &&
@@ -8566,7 +8597,8 @@ export function App({
             setRentalPokemonWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('rentalPokemon')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -9131,7 +9163,8 @@ export function App({
             );
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('shops')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -9180,7 +9213,8 @@ export function App({
         (updateResponse) => {
           setEncountersWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('encounters')
       );
       return (
         response !== null &&
@@ -9243,7 +9277,8 @@ export function App({
             setEditSessionSection(updateResponse.sessionSection);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('encounters')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -9311,7 +9346,8 @@ export function App({
           ));
           setEncountersWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('encounters')
       );
       return (
         response !== null &&
@@ -9355,7 +9391,8 @@ export function App({
         (updateResponse) => {
           setRaidRewardsWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('raidRewards')
       );
       return (
         response !== null &&
@@ -9398,7 +9435,8 @@ export function App({
         (updateResponse) => {
           setRaidBonusRewardsWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('raidBonusRewards')
       );
       return (
         response !== null &&
@@ -9434,7 +9472,8 @@ export function App({
         (updateResponse) => {
           setRaidBattlesWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('raidBattles')
       );
       return (
         response !== null &&
@@ -9470,7 +9509,8 @@ export function App({
         (updateResponse) => {
           setTeraRaidsWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('teraRaids')
       );
       return response !== null;
     } catch (error) {
@@ -9508,7 +9548,8 @@ export function App({
         (updateResponse) => {
           setTeraRaidsWorkflow(updateResponse.workflow);
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('teraRaids')
       );
       return response !== null;
     } catch (error) {
@@ -9599,7 +9640,8 @@ export function App({
           if (!updateResponse.hasErrors && updateResponse.workflow) {
             setPlacementWorkflow(updateResponse.workflow);
           }
-        }
+        },
+        getEditSessionForSection('placement')
       );
       return response !== null && !response.hasErrors;
     } catch (error) {
@@ -9650,7 +9692,8 @@ export function App({
             setBehaviorWorkflow(updateResponse.workflow);
           }
           setEditValidationDiagnostics(updateResponse.diagnostics);
-        }
+        },
+        getEditSessionForSection('behavior')
       );
       return response?.didSucceed === true;
     } catch (error) {
@@ -12825,6 +12868,7 @@ function ItemsSection({
               className="secondary-button"
               disabled={
                 !canEditItems ||
+                editSession === null ||
                 isEditStarting ||
                 isItemUpdating ||
                 isLegacyTechnicalMachineRepairStaged
@@ -13023,6 +13067,7 @@ function SelectedItemPanel({
     onStageItemVanilla !== undefined &&
     item.canRevertToVanilla &&
     canEditItems &&
+    editSession !== null &&
     !hasSelectedItemLocalDrafts &&
     !isEditStarting &&
     !isItemUpdating;
@@ -13095,6 +13140,13 @@ function SelectedItemPanel({
           </dl>
 
           <div className="item-edit-form">
+            <EditorSessionBar
+              canEdit={canEditItems}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Items"
+              onStart={onStartEditSession}
+            />
             {editSession ? (
               <div className="draft-action-row">
                 <button
@@ -13142,24 +13194,7 @@ function SelectedItemPanel({
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(itemDraftSummary)}</span>
               </div>
-            ) : (
-              <>
-                <button
-                  aria-busy={isEditStarting || undefined}
-                  className="secondary-button"
-                  disabled={!canEditItems || isEditStarting}
-                  onClick={onStartEditSession}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Starting"
-                    icon={<Pencil aria-hidden="true" size={16} />}
-                    isBusy={isEditStarting}
-                    label="Edit"
-                  />
-                </button>
-              </>
-            )}
+            ) : null}
 
             <div className="editable-field-groups">
               {editorFamily === 'za' && item.metadata.machineMoveId !== null ? (
@@ -13397,7 +13432,8 @@ function PokemonSection({
 
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
-  const canBulkUpdatePokemonYield = workflow !== null && canEditPokemon && !isPokemonUpdating;
+  const canBulkUpdatePokemonYield =
+    workflow !== null && editSession !== null && canEditPokemon && !isPokemonUpdating;
   const [expYieldConfirmation, setExpYieldConfirmation] =
     useState<PokemonYieldConfirmationState>(null);
   const [evYieldConfirmation, setEvYieldConfirmation] =
@@ -13828,9 +13864,18 @@ function ZaPokemonDexPlacementEditor({
             <label className="path-field" htmlFor="za-pokemon-destination-dex">
               <span>{translateLiteral('Destination Pokédex')}</span>
               <select
-                disabled={!canEditPokemon || !dexEditor.canEdit || isPokemonUpdating}
+                disabled={
+                  !editSessionActive ||
+                  !canEditPokemon ||
+                  !dexEditor.canEdit ||
+                  isPokemonUpdating
+                }
                 id="za-pokemon-destination-dex"
                 onChange={(event) => {
+                  if (!editSessionActive) {
+                    return;
+                  }
+
                   setDestinationDexKind(
                     event.target.value === 'hyperspace' ? 'hyperspace' : 'regular'
                   );
@@ -13851,10 +13896,19 @@ function ZaPokemonDexPlacementEditor({
               <span>{translateLiteral('Occupied destination slot')}</span>
               <SearchableOptionInput
                 ariaLabel="Occupied destination slot"
-                disabled={!canEditPokemon || !dexEditor.canEdit || isPokemonUpdating}
+                disabled={
+                  !editSessionActive ||
+                  !canEditPokemon ||
+                  !dexEditor.canEdit ||
+                  isPokemonUpdating
+                }
                 emptyOptionLabel="Choose a Pokédex slot"
                 id="za-pokemon-destination-slot"
-                onChange={setTargetSpeciesIdDraft}
+                onChange={(value) => {
+                  if (editSessionActive) {
+                    setTargetSpeciesIdDraft(value);
+                  }
+                }}
                 options={destinationOptions}
                 value={targetSpeciesIdDraft}
               />
@@ -13991,12 +14045,16 @@ function SelectedPokemonPanel({
   pokemon: PokemonRecord | null;
   pokemonRecords: PokemonRecord[];
 }) {
+  const { translateLiteral } = useLocalization();
   const personalDraftDefaults = useMemo(
     () => createPokemonPersonalDrafts(pokemon, editableFields),
     [editableFields, pokemon]
   );
   const [personalDraftsByPokemonId, setPersonalDraftsByPokemonId] = useState<
     Record<string, Record<string, string>>
+  >({});
+  const [alphaMoveDraftsByPokemonKey, setAlphaMoveDraftsByPokemonKey] = useState<
+    Record<string, string>
   >({});
   const sparsePersonalDrafts = pokemon
     ? personalDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
@@ -14018,6 +14076,19 @@ function SelectedPokemonPanel({
           : []
       ),
     [editableFields, pokemon]
+  );
+  const alphaMove = editorFamily === 'za' ? pokemon?.alphaMove ?? null : null;
+  const alphaMoveDraftKey = pokemon
+    ? `${pokemon.speciesId.toString()}:${pokemon.form.toString()}`
+    : '';
+  const alphaMoveDefaultDraft = alphaMove?.moveId?.toString() ?? '';
+  const alphaMoveDraft =
+    (alphaMoveDraftKey.length > 0
+      ? alphaMoveDraftsByPokemonKey[alphaMoveDraftKey]
+      : undefined) ?? alphaMoveDefaultDraft;
+  const alphaMoveDraftState = useMemo(
+    () => getPokemonAlphaMoveDraftState(alphaMove, alphaMoveDraft),
+    [alphaMove, alphaMoveDraft]
   );
   const cancelActiveEditSession = useCancelActiveEditSession();
   const [selectedCompatibilityGroupId, setSelectedCompatibilityGroupId] = useState(
@@ -14160,6 +14231,7 @@ function SelectedPokemonPanel({
   useRegisterEditorDraftDirty(
     'pokemon',
     countFieldDraftRecords(personalDraftsByPokemonId) > 0 ||
+      Object.keys(alphaMoveDraftsByPokemonKey).length > 0 ||
       Object.keys(evolutionDraftsByPokemonId).length > 0 ||
       Object.keys(learnsetDraftsByPokemonId).length > 0
   );
@@ -14178,6 +14250,22 @@ function SelectedPokemonPanel({
       )
     );
   }, [personalDraftDefaults, pokemon, writablePersonalFields]);
+
+  useEffect(() => {
+    if (alphaMoveDraftKey.length === 0) {
+      return;
+    }
+
+    setAlphaMoveDraftsByPokemonKey((currentDrafts) => {
+      if (currentDrafts[alphaMoveDraftKey] !== alphaMoveDefaultDraft) {
+        return currentDrafts;
+      }
+
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[alphaMoveDraftKey];
+      return nextDrafts;
+    });
+  }, [alphaMoveDefaultDraft, alphaMoveDraftKey]);
 
   useEffect(() => {
     if (!pokemon) {
@@ -14404,6 +14492,39 @@ function SelectedPokemonPanel({
         : [],
     [compatibilitySearchText, selectedCompatibilityGroup]
   );
+  const alphaMoveDataDisabledReason = getPokemonAlphaMoveDisabledReason(alphaMove);
+  const alphaMoveDisabledReason =
+    alphaMoveDataDisabledReason ??
+    (!canEditPokemon
+      ? 'Alpha-exclusive move editing is unavailable while Pokemon Data is read-only.'
+      : editSession === null
+        ? 'Alpha-exclusive move editing requires an active Pokemon edit session.'
+        : isPokemonUpdating
+          ? 'Alpha-exclusive move editing is temporarily unavailable while Pokemon changes are being staged.'
+          : null);
+  const canEditAlphaMove = alphaMove !== null && alphaMoveDisabledReason === null;
+  const alphaMoveErrorId = 'pokemon-alpha-exclusive-move-error';
+  const alphaMoveStatusId = 'pokemon-alpha-exclusive-move-status';
+  const alphaMoveDescriptionIds = [
+    alphaMoveDisabledReason ? alphaMoveStatusId : null,
+    alphaMoveDraftState.error ? alphaMoveErrorId : null
+  ]
+    .filter((id): id is string => id !== null)
+    .join(' ');
+  const alphaMoveDraftValue = parseEditableIntegerDraft(
+    alphaMoveDraft,
+    alphaMove?.options
+  );
+  const canResetAlphaMoveDraftToVanilla = Boolean(
+    alphaMove &&
+      alphaMove.vanillaMoveId !== null &&
+      alphaMoveDraftValue !== alphaMove.vanillaMoveId &&
+      (alphaMove.canRevertToVanilla ||
+        (alphaMove.canEdit && alphaMove.moveId === alphaMove.vanillaMoveId)) &&
+      canEditPokemon &&
+      editSession !== null &&
+      !isPokemonUpdating
+  );
   const canToggleCompatibility = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditEvolution = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditLearnset = canEditPokemon && editSession !== null && !isPokemonUpdating;
@@ -14532,11 +14653,13 @@ function SelectedPokemonPanel({
   );
   const pokemonDraftInvalidCount =
     personalDraftSummary.invalidFields.length +
+    (alphaMoveDraftState.isValid ? 0 : 1) +
     (editSession !== null
       ? evolutionDraftReview.invalidCount + learnsetDraftReview.invalidCount
       : 0);
   const pokemonDraftChangedCount =
     personalDraftSummary.changedFields.length +
+    (alphaMoveDraftState.isChanged ? 1 : 0) +
     evolutionDraftReview.changes.length +
     learnsetDraftReview.changes.length;
   const canSavePokemonDrafts =
@@ -14617,11 +14740,110 @@ function SelectedPokemonPanel({
     }
   };
 
+  const stagePokemonDrafts = async () => {
+    if (!pokemon) {
+      return;
+    }
+
+    const didSave = await onUpdatePokemonFields(
+      pokemon.personalId,
+      [
+        ...personalDraftSummary.changedFields.map((change) => ({
+          field: change.field,
+          value: change.value
+        })),
+        ...(alphaMoveDraftState.isChanged && alphaMoveDraftState.normalizedValue !== null
+          ? [
+              {
+                field: pokemonAlphaMoveFieldName,
+                value: alphaMoveDraftState.normalizedValue
+              }
+            ]
+          : [])
+      ],
+      evolutionDraftReview.changes,
+      learnsetDraftReview.changes
+    );
+    if (!didSave) {
+      return;
+    }
+
+    setPersonalDraftsByPokemonId((currentDrafts) =>
+      deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+    );
+    setAlphaMoveDraftsByPokemonKey((currentDrafts) => {
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[alphaMoveDraftKey];
+      return nextDrafts;
+    });
+    setEvolutionDraftsByPokemonId((currentDrafts) =>
+      deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+    );
+    setLearnsetDraftsByPokemonId((currentDrafts) =>
+      deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+    );
+  };
+
+  const cancelPokemonEdit = () =>
+    cancelActiveEditSession(() => {
+      setPersonalDraftsByPokemonId({});
+      setAlphaMoveDraftsByPokemonKey({});
+      setEvolutionDraftsByPokemonId({});
+      setLearnsetDraftsByPokemonId({});
+    });
+
   return (
     <aside
       aria-label="Selected Pokemon provenance"
       className={`item-inspector ${editorFamily}-pokemon-inspector`}
     >
+      <EditorSessionBar
+        activeActions={
+          editSession ? (
+            <>
+              <button
+                aria-busy={isPokemonUpdating || undefined}
+                className="primary-button"
+                disabled={!canSavePokemonDrafts}
+                onClick={stagePokemonDrafts}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Staging"
+                  icon={<Save aria-hidden="true" size={16} />}
+                  isBusy={isPokemonUpdating}
+                  label="Stage"
+                />
+              </button>
+              <button
+                className="danger-button"
+                disabled={isPokemonUpdating}
+                onClick={cancelPokemonEdit}
+                type="button"
+              >
+                <X aria-hidden="true" size={16} />
+                <span>Cancel</span>
+              </button>
+              <span className="draft-action-summary">
+                {pokemon === null
+                  ? 'No Pokemon selected.'
+                  : pokemonDraftInvalidCount > 0
+                    ? `${pokemonDraftInvalidCount} field${
+                        pokemonDraftInvalidCount === 1 ? '' : 's'
+                      } need valid values`
+                    : `${pokemonDraftChangedCount} changed`}
+              </span>
+            </>
+          ) : null
+        }
+        canEdit={canEditPokemon && pokemon !== null}
+        isEditing={editSession !== null}
+        isStarting={isEditStarting}
+        label="Pokemon"
+        onStart={onStartEditSession}
+        readOnlyReason={pokemon === null ? 'No Pokemon selected.' : undefined}
+      />
+
       <div className={`${editorFamily}-pokemon-selected-stack`}>
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
@@ -14706,6 +14928,135 @@ function SelectedPokemonPanel({
             </dl>
           </div>
 
+          {editorFamily === 'za' ? (
+            <div className="inspector-block za-pokemon-alpha-move-block">
+              <h4>Alpha Move</h4>
+              {alphaMove ? (
+                <>
+                  <dl className="item-provenance-list compact-dl">
+                    <div>
+                      <dt>Current</dt>
+                      <dd>
+                        {alphaMove.moveId === null ? (
+                          'Unavailable'
+                        ) : (
+                          <span data-localization-ignore="true">
+                            {formatPokemonAlphaMove(alphaMove.moveId, alphaMove.moveName)}
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Vanilla</dt>
+                      <dd>
+                        {alphaMove.vanillaMoveId === null ? (
+                          'Unavailable'
+                        ) : (
+                          <span data-localization-ignore="true">
+                            {formatPokemonAlphaMove(
+                              alphaMove.vanillaMoveId,
+                              alphaMove.vanillaMoveName
+                            )}
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                  <label
+                    className={`path-field editable-field-control ${
+                      alphaMoveDraftState.isChanged ? 'editable-field-changed' : ''
+                    } ${!alphaMoveDraftState.isValid ? 'editable-field-invalid' : ''} ${
+                      alphaMoveDisabledReason ? 'editable-field-disabled' : ''
+                    }`}
+                    htmlFor="pokemon-alpha-exclusive-move"
+                  >
+                    <span>Alpha-exclusive move</span>
+                    <SearchableOptionInput
+                      ariaLabel="Alpha-exclusive move"
+                      ariaDescribedBy={alphaMoveDescriptionIds || undefined}
+                      ariaInvalid={alphaMoveDraftState.error ? true : undefined}
+                      disabled={!canEditAlphaMove}
+                      id="pokemon-alpha-exclusive-move"
+                      onChange={(value) => {
+                        setAlphaMoveDraftsByPokemonKey((currentDrafts) => {
+                          const nextDrafts = { ...currentDrafts };
+                          if (value === alphaMoveDefaultDraft) {
+                            delete nextDrafts[alphaMoveDraftKey];
+                          } else {
+                            nextDrafts[alphaMoveDraftKey] = value;
+                          }
+                          return nextDrafts;
+                        });
+                      }}
+                      options={alphaMove.options}
+                      title={translateLiteral(
+                        alphaMoveDisabledReason ??
+                          'Alpha Pokemon receive this move in their first move slot with its Plus version.'
+                      )}
+                      value={alphaMoveDraft}
+                    />
+                    {alphaMoveDisabledReason ? (
+                      <small className="editable-field-status" id={alphaMoveStatusId}>
+                        {translateLiteral(alphaMoveDisabledReason)}
+                      </small>
+                    ) : null}
+                    {alphaMoveDraftState.error ? (
+                      <small className="editable-field-error" id={alphaMoveErrorId}>
+                        {translateLiteral(alphaMoveDraftState.error)}
+                      </small>
+                    ) : !alphaMoveDisabledReason && alphaMoveDraftState.isChanged ? (
+                      <small className="editable-field-status">Changed</small>
+                    ) : null}
+                  </label>
+                  <div className="draft-action-row">
+                    <button
+                      className="secondary-button"
+                      disabled={!canResetAlphaMoveDraftToVanilla}
+                      onClick={() => {
+                        if (alphaMove.vanillaMoveId === null) {
+                          return;
+                        }
+
+                        const vanillaDraft = alphaMove.vanillaMoveId.toString();
+                        setAlphaMoveDraftsByPokemonKey((currentDrafts) => {
+                          const nextDrafts = { ...currentDrafts };
+                          if (vanillaDraft === alphaMoveDefaultDraft) {
+                            delete nextDrafts[alphaMoveDraftKey];
+                          } else {
+                            nextDrafts[alphaMoveDraftKey] = vanillaDraft;
+                          }
+                          return nextDrafts;
+                        });
+                      }}
+                      title={translateLiteral(
+                        canResetAlphaMoveDraftToVanilla
+                          ? 'Restore the verified vanilla Alpha-exclusive move to this draft.'
+                          : (alphaMoveDisabledReason ??
+                            alphaMove.restoreBlockedReason ??
+                            (alphaMoveDraftValue === alphaMove.vanillaMoveId
+                              ? 'The Alpha-exclusive move draft already matches vanilla.'
+                              : 'The verified vanilla Alpha-exclusive move cannot be restored.'))
+                      )}
+                      type="button"
+                    >
+                      <RefreshCw aria-hidden="true" size={16} />
+                      <span>Restore Vanilla</span>
+                    </button>
+                    {alphaMoveDraftValue !== null &&
+                    alphaMove.vanillaMoveId !== null &&
+                    alphaMoveDraftValue !== alphaMove.vanillaMoveId ? (
+                      <span className="draft-action-summary">Modified from vanilla</span>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <p className="empty-copy">
+                  Alpha-exclusive move data is unavailable for this project.
+                </p>
+              )}
+            </div>
+          ) : null}
+
           {editorFamily === 'za' && dexEditor ? (
             <ZaPokemonDexPlacementEditor
               canEditPokemon={canEditPokemon}
@@ -14779,85 +15130,6 @@ function SelectedPokemonPanel({
                 </fieldset>
               ))}
             </div>
-            {editSession ? (
-              <div className="draft-action-row">
-                <button
-                  aria-busy={isPokemonUpdating || undefined}
-                  className="primary-button"
-                  disabled={!canSavePokemonDrafts}
-                  onClick={async () => {
-                    if (pokemon) {
-                      const didSave = await onUpdatePokemonFields(
-                        pokemon.personalId,
-                        personalDraftSummary.changedFields.map((change) => ({
-                          field: change.field,
-                          value: change.value
-                        })),
-                        evolutionDraftReview.changes,
-                        learnsetDraftReview.changes
-                      );
-                      if (didSave) {
-                        setPersonalDraftsByPokemonId((currentDrafts) =>
-                          deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
-                        );
-                        setEvolutionDraftsByPokemonId((currentDrafts) =>
-                          deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
-                        );
-                        setLearnsetDraftsByPokemonId((currentDrafts) =>
-                          deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
-                        );
-                      }
-                    }
-                  }}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Staging"
-                    icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isPokemonUpdating}
-                    label="Stage"
-                  />
-                </button>
-                <button
-                  className="danger-button"
-                  disabled={isPokemonUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() => {
-                      setPersonalDraftsByPokemonId({});
-                      setEvolutionDraftsByPokemonId({});
-                      setLearnsetDraftsByPokemonId({});
-                    })
-                  }
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <span className="draft-action-summary">
-                  {pokemonDraftInvalidCount > 0
-                    ? `${pokemonDraftInvalidCount} field${
-                        pokemonDraftInvalidCount === 1 ? '' : 's'
-                      } need valid values`
-                    : `${pokemonDraftChangedCount} changed`}
-                </span>
-              </div>
-            ) : null}
-            {canEditPokemon && editSession === null ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
           </>
         ) : (
@@ -16077,6 +16349,7 @@ function SelectedMovePanel({
     onStageMoveVanilla !== undefined &&
     move.canRevertToVanilla &&
     canEditMoves &&
+    editSession !== null &&
     !hasCurrentMoveDrafts &&
     !isEditStarting &&
     !isMoveUpdating;
@@ -16128,22 +16401,13 @@ function SelectedMovePanel({
           </dl>
 
           <div className="item-edit-form move-edit-form">
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditMoves || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
+            <EditorSessionBar
+              canEdit={canEditMoves}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Moves"
+              onStart={onStartEditSession}
+            />
 
             <div className="editable-field-groups">
               {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
@@ -16844,6 +17108,14 @@ function SelectedTextPanel({
           </dl>
 
           <div className="text-edit-form">
+            <EditorSessionBar
+              canEdit={canEditText && entry.canEdit}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Text"
+              onStart={onStartEditSession}
+              readOnlyReason={entry.editBlockedReason}
+            />
             <div className="path-field">
               <span>{valueField?.label ?? 'Text value'}</span>
               <div aria-label="Insert text controls" className="text-token-toolbar" role="toolbar">
@@ -16899,22 +17171,7 @@ function SelectedTextPanel({
                   label="Stage"
                 />
               </button>
-            ) : (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditText || isEditStarting || !entry.canEdit}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            )}
+            ) : null}
           </div>
         </>
       ) : (
@@ -17603,6 +17860,13 @@ function SelectedTrainerPanel({
           </dl>
 
           <div className="trainer-edit-form">
+            <EditorSessionBar
+              canEdit={canEditTrainers}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Trainers"
+              onStart={onStartEditSession}
+            />
             {trainer.aiFlagStates.length > 0 ? (
               <div className="trainer-ai-flags-panel">
                 <div className="trainer-ai-flags-header">
@@ -18010,22 +18274,6 @@ function SelectedTrainerPanel({
               <p className="empty-copy">No party Pokemon selected.</p>
             )}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditTrainers || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -21955,6 +22203,13 @@ function SelectedGiftPokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
+            <EditorSessionBar
+              canEdit={canEditGifts}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Gift Pokemon"
+              onStart={onStartEditSession}
+            />
             <div className="editable-field-groups">
               {giftFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -22139,22 +22394,6 @@ function SelectedGiftPokemonPanel({
               </div>
             ) : null}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditGifts || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -22679,6 +22918,13 @@ function SelectedTradePokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
+            <EditorSessionBar
+              canEdit={canEditTrades}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Trade Pokemon"
+              onStart={onStartEditSession}
+            />
             <div className="editable-field-groups">
               {tradeFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -22914,22 +23160,6 @@ function SelectedTradePokemonPanel({
               </div>
             ) : null}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditTrades || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -23315,6 +23545,13 @@ function SelectedRentalPokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
+            <EditorSessionBar
+              canEdit={canEditRentals}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Rental Pokemon"
+              onStart={onStartEditSession}
+            />
             <div className="editable-field-groups">
               {rentalFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -23495,22 +23732,6 @@ function SelectedRentalPokemonPanel({
               </div>
             ) : null}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditRentals || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -25193,6 +25414,13 @@ function SelectedStaticEncounterPanel({
           </dl>
 
           <div className="trainer-edit-form">
+            <EditorSessionBar
+              canEdit={canEditStaticEncounters}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Static Encounters"
+              onStart={onStartEditSession}
+            />
             <div className="editable-field-groups">
               {encounterFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -25298,22 +25526,6 @@ function SelectedStaticEncounterPanel({
               </div>
             ) : null}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditStaticEncounters || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -25889,6 +26101,13 @@ function SelectedShopPanel({
           </dl>
 
           <div className="shop-edit-form">
+            <EditorSessionBar
+              canEdit={canEditShops}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Shops"
+              onStart={onStartEditSession}
+            />
             <div className="shop-inventory-header">
               <strong>{translateLiteral('Inventory')}</strong>
               <span className="draft-action-summary">
@@ -25944,22 +26163,7 @@ function SelectedShopPanel({
                     : `${changedSlotCount} ${translateLiteral('Pending changes')}.`}
                 </span>
               </div>
-            ) : (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditShops || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel={translateLiteral('Starting')}
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label={translateLiteral('Edit')}
-                />
-              </button>
-            )}
+            ) : null}
 
             {shopInventoryRows.length > 0 ? (
               <div className="shop-inventory-editor-grid">
@@ -27627,6 +27831,7 @@ function SelectedEncounterPanel({
     onStageEncounterVanilla !== undefined &&
     encounterSlot?.canRevertToVanilla === true &&
     canEditEncounters &&
+    editSession !== null &&
     !selectedEncounterHasLocalDrafts &&
     !isEditStarting &&
     !isEncounterUpdating;
@@ -27958,6 +28163,13 @@ function SelectedEncounterPanel({
           ) : null}
 
           <div className="encounter-edit-form">
+            <EditorSessionBar
+              canEdit={canEditEncounters && table.slots.length > 0}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Wild Encounters"
+              onStart={onStartEditSession}
+            />
             {!isSvEncounterTable && !isZaEncounterTable && areaTabs.length > 0 ? (
               <div
                 className="encounter-area-tabs"
@@ -28804,22 +29016,6 @@ function SelectedEncounterPanel({
               <p className="empty-copy">No encounter slot selected.</p>
             )}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditEncounters || isEditStarting || table.slots.length === 0}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
             {isZaEncounterTable && onStageEncounterVanilla ? (
               <div className="za-encounter-revert-action">
                 <button
@@ -29796,6 +29992,13 @@ function TeraRaidsSection({
                   </dl>
 
                   <div className="encounter-edit-form">
+                    <EditorSessionBar
+                      canEdit={canEditTeraRaids}
+                      isEditing={editSession !== null}
+                      isStarting={isEditStarting}
+                      label="Tera Raids"
+                      onStart={onStartEditSession}
+                    />
                     <div
                       className="encounter-slot-tabs"
                       aria-label={translateLiteral('Selected Tera raid summary')}
@@ -29883,22 +30086,7 @@ function TeraRaidsSection({
                         pokemonRecords={pokemonWorkflow?.pokemon}
                         saveLabel="Stage"
                       />
-                    ) : (
-                      <button
-                        aria-busy={isEditStarting || undefined}
-                        className="secondary-button"
-                        disabled={!canEditTeraRaids || isEditStarting}
-                        onClick={onStartEditSession}
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel={translateLiteral('Starting')}
-                          icon={<Pencil aria-hidden="true" size={16} />}
-                          isBusy={isEditStarting}
-                          label={translateLiteral('Edit')}
-                        />
-                      </button>
-                    )}
+                    ) : null}
 
                     <div className="encounter-slot-header">
                       <strong>{translateLiteral('Rewards')}</strong>
@@ -30658,6 +30846,13 @@ function SelectedRaidBattlePanel({
           </dl>
 
           <div className="encounter-edit-form">
+            <EditorSessionBar
+              canEdit={canEditRaidBattles && table.slots.length > 0}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Raid Battles"
+              onStart={onStartEditSession}
+            />
             <div className="encounter-slot-header">
               <strong>Battle slots</strong>
               <select
@@ -30922,22 +31117,6 @@ function SelectedRaidBattlePanel({
               <p className="empty-copy">No raid battle selected.</p>
             )}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditRaidBattles || isEditStarting || table.slots.length === 0}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -31120,6 +31299,7 @@ function RaidRewardsSection({
               sectionId={sectionId}
               selectedSlot={selectedSlot}
               table={selectedTable}
+              title={title}
             />
           </div>
         ) : (
@@ -31144,7 +31324,8 @@ function SelectedRaidRewardPanel({
   reward,
   sectionId,
   selectedSlot,
-  table
+  table,
+  title
 }: {
   canEditRaidRewards: boolean;
   editSession: EditSession | null;
@@ -31162,6 +31343,7 @@ function SelectedRaidRewardPanel({
   sectionId: WorkbenchSection;
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
+  title: string;
 }) {
   const { translateLiteral } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
@@ -31281,6 +31463,13 @@ function SelectedRaidRewardPanel({
           </dl>
 
           <div className="encounter-edit-form">
+            <EditorSessionBar
+              canEdit={canEditRaidRewards && table.rewards.length > 0}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label={title}
+              onStart={onStartEditSession}
+            />
             <div className="encounter-slot-header">
               <strong>{translateLiteral('Rewards')}</strong>
               <select
@@ -31448,22 +31637,6 @@ function SelectedRaidRewardPanel({
               <p className="empty-copy">{translateLiteral('No raid reward selected.')}</p>
             )}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditRaidRewards || isEditStarting || table.rewards.length === 0}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -31863,6 +32036,13 @@ function SelectedBehaviorPanel({
           </dl>
 
           <div className="encounter-edit-form">
+            <EditorSessionBar
+              canEdit={canEditBehavior}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Behavior"
+              onStart={onStartEditSession}
+            />
             <dl className="encounter-slot-detail">
               <div>
                 <dt>{translateLiteral('Hitbox radius')}</dt>
@@ -32052,22 +32232,6 @@ function SelectedBehaviorPanel({
               </div>
             ) : null}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditBehavior || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -32575,6 +32739,13 @@ function SelectedPlacementPanel({
           ) : null}
 
           <div className="encounter-edit-form">
+            <EditorSessionBar
+              canEdit={canEditPlacement}
+              isEditing={editSession !== null}
+              isStarting={isEditStarting}
+              label="Placement"
+              onStart={onStartEditSession}
+            />
             <dl className="encounter-slot-detail">
               <div>
                 <dt>{inspectorPrimaryData?.label ?? 'Placement Data'}</dt>
@@ -32771,22 +32942,6 @@ function SelectedPlacementPanel({
               </div>
             ) : null}
 
-            {!editSession ? (
-              <button
-                aria-busy={isEditStarting || undefined}
-                className="secondary-button"
-                disabled={!canEditPlacement || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Starting"
-                  icon={<Pencil aria-hidden="true" size={16} />}
-                  isBusy={isEditStarting}
-                  label="Edit"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -43404,6 +43559,103 @@ type PokemonPersonalFieldDraftState = {
   isValid: boolean;
   normalizedValue: string | null;
 };
+
+type PokemonAlphaMoveDraftState = PokemonPersonalFieldDraftState;
+
+function getPokemonAlphaMoveDraftState(
+  alphaMove: PokemonAlphaMove | null,
+  draftValue: string
+): PokemonAlphaMoveDraftState {
+  if (!alphaMove || !alphaMove.hasMapping) {
+    return {
+      error: null,
+      isChanged: false,
+      isValid: true,
+      normalizedValue: null
+    };
+  }
+
+  const currentValue = alphaMove.moveId;
+  const normalizedValue = draftValue.trim();
+  if (
+    (currentValue === null && normalizedValue.length === 0) ||
+    (currentValue !== null && normalizedValue === currentValue.toString())
+  ) {
+    return {
+      error: null,
+      isChanged: false,
+      isValid: true,
+      normalizedValue: currentValue?.toString() ?? null
+    };
+  }
+
+  const parsedValue = parseEditableIntegerDraft(normalizedValue, alphaMove.options);
+  if (parsedValue === null) {
+    return {
+      error: 'Choose an available Alpha-exclusive move.',
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  const isEditableOption =
+    alphaMove.canEdit && alphaMove.options.some((option) => option.value === parsedValue);
+  const isVanillaRestore =
+    alphaMove.canRevertToVanilla && alphaMove.vanillaMoveId === parsedValue;
+  if (!isEditableOption && !isVanillaRestore) {
+    return {
+      error: 'Choose an available Alpha-exclusive move.',
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  return {
+    error: null,
+    isChanged: parsedValue !== currentValue,
+    isValid: true,
+    normalizedValue: parsedValue.toString()
+  };
+}
+
+function getPokemonAlphaMoveDisabledReason(alphaMove: PokemonAlphaMove | null) {
+  if (!alphaMove) {
+    return 'Alpha-exclusive move data is unavailable for this project.';
+  }
+
+  if (
+    alphaMove.blockedReason?.startsWith(
+      'Alpha-exclusive move editing is unavailable because its sources could not be verified:'
+    )
+  ) {
+    return 'Alpha-exclusive move editing is unavailable because its source data could not be verified.';
+  }
+
+  if (!alphaMove.hasMapping) {
+    return (
+      alphaMove.blockedReason ??
+      'No alpha-exclusive move mapping exists for this species and form. Adding mappings is not supported.'
+    );
+  }
+
+  if (!alphaMove.canEdit) {
+    return alphaMove.blockedReason ?? 'This Alpha-exclusive move is read-only.';
+  }
+
+  if (alphaMove.options.length === 0) {
+    return 'No safe Alpha-exclusive moves are available for this species and form.';
+  }
+
+  return null;
+}
+
+function formatPokemonAlphaMove(moveId: number, moveName: string | null) {
+  return moveName && moveName.trim().length > 0
+    ? `${moveId.toString()} ${moveName}`
+    : moveId.toString();
+}
 
 type PokemonPersonalDraftChange = {
   field: string;

@@ -172,6 +172,21 @@ public sealed record PokemonCompatibilityEntryDto(
     string Label,
     bool CanLearn);
 
+public sealed record PokemonAlphaMoveDto(
+    bool HasMapping,
+    int? MoveId,
+    string? MoveName,
+    int? VanillaMoveId,
+    string? VanillaMoveName,
+    bool CanEdit,
+    string? BlockedReason,
+    bool DiffersFromVanilla,
+    bool CanRevertToVanilla,
+    string? RestoreBlockedReason,
+    IReadOnlyList<PokemonEditableFieldOptionDto> Options,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    PokemonProvenanceDto? Provenance);
+
 public sealed record PokemonRecordDto(
     int PersonalId,
     int SpeciesId,
@@ -195,7 +210,9 @@ public sealed record PokemonRecordDto(
     IReadOnlyList<PokemonLearnsetMoveDto> Learnset,
     IReadOnlyList<PokemonCompatibilityGroupDto> Compatibility,
     PokemonProvenanceDto Provenance,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SpriteName = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SpriteName = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    PokemonAlphaMoveDto? AlphaMove = null);
 
 public sealed record PokemonEditableFieldDto(
     string Field,

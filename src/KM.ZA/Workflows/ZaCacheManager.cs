@@ -137,6 +137,7 @@ public sealed class ZaCacheManager
         return
         [
             ZaDataPaths.PersonalArray,
+            ZaDataPaths.AlphaMoveTable,
             ZaDataPaths.MoveDataArray,
             ZaDataPaths.BattleMoveParameterArray,
             ZaDataPaths.MoveTimingParameterArray,
