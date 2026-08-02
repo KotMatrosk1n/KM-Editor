@@ -12861,6 +12861,16 @@ function ItemsSection({
           />
         </div>
 
+        {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditItems && selectedItem !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Items"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
         {legacyTechnicalMachineRepairTarget ? (
           <div className="draft-action-row items-repair-action">
             <button
@@ -12949,7 +12959,6 @@ function ItemsSection({
               isItemUpdating={isItemUpdating}
               item={selectedItem}
               editableFields={workflow.editableFields}
-              onStartEditSession={onStartEditSession}
               onStageItemVanilla={onStageItemVanilla}
               onUpdateItemFields={onUpdateItemFields}
             />
@@ -12983,7 +12992,6 @@ function SelectedItemPanel({
   isEditStarting,
   isItemUpdating,
   item,
-  onStartEditSession,
   onStageItemVanilla,
   onUpdateItemFields
 }: {
@@ -12994,7 +13002,6 @@ function SelectedItemPanel({
   isEditStarting: boolean;
   isItemUpdating: boolean;
   item: ItemRecord | null;
-  onStartEditSession: () => void;
   onStageItemVanilla?: (itemId: number) => Promise<boolean>;
   onUpdateItemFields: (
     itemId: number,
@@ -13140,13 +13147,6 @@ function SelectedItemPanel({
           </dl>
 
           <div className="item-edit-form">
-            <EditorSessionBar
-              canEdit={canEditItems}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Items"
-              onStart={onStartEditSession}
-            />
             {editSession ? (
               <div className="draft-action-row">
                 <button
@@ -15981,6 +15981,16 @@ function MovesSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditMoves && selectedMove !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Moves"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="items-layout moves-layout">
             <div
               aria-colcount={8}
@@ -16042,7 +16052,6 @@ function MovesSection({
               isEditStarting={isEditStarting}
               isMoveUpdating={isMoveUpdating}
               move={selectedMove}
-              onStartEditSession={onStartEditSession}
               onStageMoveVanilla={onStageMoveVanilla}
               onUpdateMoveFields={onUpdateMoveFields}
               projectileOptions={workflow.projectileOptions}
@@ -16066,7 +16075,6 @@ function SelectedMovePanel({
   isEditStarting,
   isMoveUpdating,
   move,
-  onStartEditSession,
   onStageMoveVanilla,
   onUpdateMoveFields,
   projectileOptions
@@ -16078,7 +16086,6 @@ function SelectedMovePanel({
   isEditStarting: boolean;
   isMoveUpdating: boolean;
   move: MoveRecord | null;
-  onStartEditSession: () => void;
   onStageMoveVanilla?: (moveId: number) => Promise<boolean>;
   onUpdateMoveFields: (
     moveId: number,
@@ -16401,14 +16408,6 @@ function SelectedMovePanel({
           </dl>
 
           <div className="item-edit-form move-edit-form">
-            <EditorSessionBar
-              canEdit={canEditMoves}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Moves"
-              onStart={onStartEditSession}
-            />
-
             <div className="editable-field-groups">
               {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
                 <fieldset className="editable-field-group">
@@ -16917,6 +16916,17 @@ function TextSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditText && selectedEntry?.canEdit === true}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Text"
+            onStart={onStartEditSession}
+            readOnlyReason={selectedEntry?.editBlockedReason}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="text-layout">
             <div
               aria-colcount={5}
@@ -16959,9 +16969,7 @@ function TextSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               entry={selectedEntry}
-              isEditStarting={isEditStarting}
               isTextUpdating={isTextUpdating}
-              onStartEditSession={onStartEditSession}
               onUpdateTextEntry={onUpdateTextEntry}
             />
           </div>
@@ -16980,18 +16988,14 @@ function SelectedTextPanel({
   editSession,
   editableFields,
   entry,
-  isEditStarting,
   isTextUpdating,
-  onStartEditSession,
   onUpdateTextEntry
 }: {
   canEditText: boolean;
   editSession: EditSession | null;
   editableFields: TextEditableField[];
   entry: TextEntryRecord | null;
-  isEditStarting: boolean;
   isTextUpdating: boolean;
-  onStartEditSession: () => void;
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
 }) {
   const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
@@ -17108,14 +17112,6 @@ function SelectedTextPanel({
           </dl>
 
           <div className="text-edit-form">
-            <EditorSessionBar
-              canEdit={canEditText && entry.canEdit}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Text"
-              onStart={onStartEditSession}
-              readOnlyReason={entry.editBlockedReason}
-            />
             <div className="path-field">
               <span>{valueField?.label ?? 'Text value'}</span>
               <div aria-label="Insert text controls" className="text-token-toolbar" role="toolbar">
@@ -17345,6 +17341,16 @@ function TrainersSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditTrainers && selectedTrainer !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Trainers"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <>
             {supportsTrainerCategories ? (
               <div
@@ -17430,11 +17436,9 @@ function TrainersSection({
                 editSession={editSession}
                 editorFamily={editorFamily}
                 editableFields={workflow.editableFields}
-                isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
                 isScarletVioletProject={isScarletVioletProject}
                 onSelectSlot={setSelectedSlot}
-                onStartEditSession={onStartEditSession}
                 onUpdateTrainerField={onUpdateTrainerField}
                 onUpdateTrainerFields={onUpdateTrainerFields}
                 pokemonWorkflow={pokemonWorkflow}
@@ -17459,11 +17463,9 @@ function SelectedTrainerPanel({
   editSession,
   editorFamily,
   editableFields,
-  isEditStarting,
   isTrainerUpdating,
   isScarletVioletProject,
   onSelectSlot,
-  onStartEditSession,
   onUpdateTrainerField,
   onUpdateTrainerFields,
   pokemonWorkflow,
@@ -17475,11 +17477,9 @@ function SelectedTrainerPanel({
   editSession: EditSession | null;
   editorFamily: EditorUiFamily;
   editableFields: TrainerEditableField[];
-  isEditStarting: boolean;
   isTrainerUpdating: boolean;
   isScarletVioletProject: boolean;
   onSelectSlot: (slot: number | null) => void;
-  onStartEditSession: () => void;
   onUpdateTrainerField: (
     trainerId: number,
     slot: number | null,
@@ -17860,13 +17860,6 @@ function SelectedTrainerPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <EditorSessionBar
-              canEdit={canEditTrainers}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Trainers"
-              onStart={onStartEditSession}
-            />
             {trainer.aiFlagStates.length > 0 ? (
               <div className="trainer-ai-flags-panel">
                 <div className="trainer-ai-flags-header">
@@ -21875,6 +21868,16 @@ function GiftPokemonSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditGifts && selectedGift !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Gift Pokemon"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="trainers-layout">
             <div
               aria-colcount={5}
@@ -21920,9 +21923,7 @@ function GiftPokemonSection({
               editableFields={workflow.editableFields}
               editorFamily={editorFamily}
               gift={selectedGift}
-              isEditStarting={isEditStarting}
               isGiftPokemonUpdating={isGiftPokemonUpdating}
-              onStartEditSession={onStartEditSession}
               onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
             />
@@ -21963,9 +21964,7 @@ function SelectedGiftPokemonPanel({
   editableFields,
   editorFamily,
   gift,
-  isEditStarting,
   isGiftPokemonUpdating,
-  onStartEditSession,
   onUpdateGiftPokemonFields,
   pokemonWorkflow
 }: {
@@ -21974,9 +21973,7 @@ function SelectedGiftPokemonPanel({
   editableFields: GiftPokemonEditableField[];
   editorFamily: EditorUiFamily;
   gift: GiftPokemonRecord | null;
-  isEditStarting: boolean;
   isGiftPokemonUpdating: boolean;
-  onStartEditSession: () => void;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -22203,13 +22200,6 @@ function SelectedGiftPokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <EditorSessionBar
-              canEdit={canEditGifts}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Gift Pokemon"
-              onStart={onStartEditSession}
-            />
             <div className="editable-field-groups">
               {giftFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -22522,6 +22512,16 @@ function TradePokemonSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditTrades && selectedTrade !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Trade Pokemon"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="trainers-layout">
             <div
               aria-colcount={7}
@@ -22576,10 +22576,8 @@ function TradePokemonSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               editorFamily={editorFamily}
-              isEditStarting={isEditStarting}
               isTradePokemonUpdating={isTradePokemonUpdating}
               isZaTradeWorkflow={isZaTradeWorkflow}
-              onStartEditSession={onStartEditSession}
               onUpdateTradePokemonFields={onUpdateTradePokemonFields}
               pokemonWorkflow={pokemonWorkflow}
               trade={selectedTrade}
@@ -22620,10 +22618,8 @@ function SelectedTradePokemonPanel({
   editSession,
   editableFields,
   editorFamily,
-  isEditStarting,
   isTradePokemonUpdating,
   isZaTradeWorkflow,
-  onStartEditSession,
   onUpdateTradePokemonFields,
   pokemonWorkflow,
   trade
@@ -22632,10 +22628,8 @@ function SelectedTradePokemonPanel({
   editSession: EditSession | null;
   editableFields: TradePokemonEditableField[];
   editorFamily: EditorUiFamily;
-  isEditStarting: boolean;
   isTradePokemonUpdating: boolean;
   isZaTradeWorkflow: boolean;
-  onStartEditSession: () => void;
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -22918,13 +22912,6 @@ function SelectedTradePokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <EditorSessionBar
-              canEdit={canEditTrades}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Trade Pokemon"
-              onStart={onStartEditSession}
-            />
             <div className="editable-field-groups">
               {tradeFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -23250,6 +23237,16 @@ function RentalPokemonSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditRentals && selectedRental !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Rental Pokemon"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="trainers-layout">
             <div
               aria-colcount={7}
@@ -23301,9 +23298,7 @@ function RentalPokemonSection({
               canEditRentals={canEditRentals}
               editSession={editSession}
               editableFields={workflow.editableFields}
-              isEditStarting={isEditStarting}
               isRentalPokemonUpdating={isRentalPokemonUpdating}
-              onStartEditSession={onStartEditSession}
               onUpdateRentalPokemonFields={onUpdateRentalPokemonFields}
               pokemonWorkflow={pokemonWorkflow}
               rental={selectedRental}
@@ -23323,9 +23318,7 @@ function SelectedRentalPokemonPanel({
   canEditRentals,
   editSession,
   editableFields,
-  isEditStarting,
   isRentalPokemonUpdating,
-  onStartEditSession,
   onUpdateRentalPokemonFields,
   pokemonWorkflow,
   rental
@@ -23333,9 +23326,7 @@ function SelectedRentalPokemonPanel({
   canEditRentals: boolean;
   editSession: EditSession | null;
   editableFields: RentalPokemonEditableField[];
-  isEditStarting: boolean;
   isRentalPokemonUpdating: boolean;
-  onStartEditSession: () => void;
   onUpdateRentalPokemonFields: (
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
@@ -23545,13 +23536,6 @@ function SelectedRentalPokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <EditorSessionBar
-              canEdit={canEditRentals}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Rental Pokemon"
-              onStart={onStartEditSession}
-            />
             <div className="editable-field-groups">
               {rentalFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -25005,6 +24989,16 @@ function StaticEncountersSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditStaticEncounters && selectedEncounter !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Static Encounters"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="trainers-layout">
             <div
               aria-colcount={isZaStaticEncounters ? 4 : 6}
@@ -25085,9 +25079,7 @@ function StaticEncountersSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               encounter={selectedEncounter}
-              isEditStarting={isEditStarting}
               isStaticEncounterUpdating={isStaticEncounterUpdating}
-              onStartEditSession={onStartEditSession}
               onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
             />
           </div>
@@ -25128,18 +25120,14 @@ function SelectedStaticEncounterPanel({
   editSession,
   editableFields,
   encounter,
-  isEditStarting,
   isStaticEncounterUpdating,
-  onStartEditSession,
   onUpdateStaticEncounterFields
 }: {
   canEditStaticEncounters: boolean;
   editSession: EditSession | null;
   editableFields: StaticEncounterEditableField[];
   encounter: StaticEncounterRecord | null;
-  isEditStarting: boolean;
   isStaticEncounterUpdating: boolean;
-  onStartEditSession: () => void;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
     encounterId: string,
@@ -25414,13 +25402,6 @@ function SelectedStaticEncounterPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <EditorSessionBar
-              canEdit={canEditStaticEncounters}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Static Encounters"
-              onStart={onStartEditSession}
-            />
             <div className="editable-field-groups">
               {encounterFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -25678,6 +25659,16 @@ function ShopsSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditShops && selectedShop !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Shops"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className={`shops-layout ${isFlatShopList ? 'sv-shops-layout' : 'swsh-shops-layout'}`}>
             <div className="shops-table-stack">
               {isFlatShopList ? (
@@ -25694,12 +25685,10 @@ function ShopsSection({
               canEditShops={canEditShops}
               editSession={editSession}
               editableFields={workflow.editableFields}
-              isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               isShopUpdating={isShopUpdating}
               onOpenItem={onOpenItem}
               onSelectSlot={setSelectedSlot}
-              onStartEditSession={onStartEditSession}
               onUpdateShopChanges={onUpdateShopChanges}
               selectedSlot={selectedSlot}
               shop={selectedShop}
@@ -25721,12 +25710,10 @@ function SelectedShopPanel({
   canEditShops,
   editSession,
   editableFields,
-  isEditStarting,
   isItemUpdating,
   isShopUpdating,
   onOpenItem,
   onSelectSlot,
-  onStartEditSession,
   onUpdateShopChanges,
   selectedSlot,
   shop
@@ -25734,12 +25721,10 @@ function SelectedShopPanel({
   canEditShops: boolean;
   editSession: EditSession | null;
   editableFields: ShopEditableField[];
-  isEditStarting: boolean;
   isItemUpdating: boolean;
   isShopUpdating: boolean;
   onOpenItem: (itemId: number) => void;
   onSelectSlot: (slot: number | null) => void;
-  onStartEditSession: () => void;
   onUpdateShopChanges: (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
@@ -26101,13 +26086,6 @@ function SelectedShopPanel({
           </dl>
 
           <div className="shop-edit-form">
-            <EditorSessionBar
-              canEdit={canEditShops}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Shops"
-              onStart={onStartEditSession}
-            />
             <div className="shop-inventory-header">
               <strong>{translateLiteral('Inventory')}</strong>
               <span className="draft-action-summary">
@@ -27327,6 +27305,16 @@ function EncountersSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditEncounters && (selectedTable?.slots.length ?? 0) > 0}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Wild Encounters"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="encounters-layout">
             <div className="encounters-table" role="table" aria-label="Encounter tables">
               <div className="encounters-row encounters-row-heading" role="row">
@@ -27397,7 +27385,6 @@ function EncountersSection({
               onSelectSlot={setSelectedSlot}
               onSelectTable={onSelectTable}
               onStageEncounterVanilla={onStageEncounterVanilla}
-              onStartEditSession={onStartEditSession}
               onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}
               onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
               pendingTableIds={pendingEncounterTableIds}
@@ -27429,7 +27416,6 @@ function SelectedEncounterPanel({
   onSelectSlot,
   onSelectTable,
   onStageEncounterVanilla,
-  onStartEditSession,
   onUpdateEncounterSlotFields,
   onUpdateEncounterSlotUpdates,
   pendingTableIds,
@@ -27449,7 +27435,6 @@ function SelectedEncounterPanel({
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStageEncounterVanilla?: (tableId: string, slot: number) => Promise<boolean>;
-  onStartEditSession: () => void;
   onUpdateEncounterSlotFields: (
     tableId: string,
     slot: number,
@@ -28163,13 +28148,6 @@ function SelectedEncounterPanel({
           ) : null}
 
           <div className="encounter-edit-form">
-            <EditorSessionBar
-              canEdit={canEditEncounters && table.slots.length > 0}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Wild Encounters"
-              onStart={onStartEditSession}
-            />
             {!isSvEncounterTable && !isZaEncounterTable && areaTabs.length > 0 ? (
               <div
                 className="encounter-area-tabs"
@@ -29907,6 +29885,16 @@ function TeraRaidsSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditTeraRaids && selectedRaid !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Tera Raids"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="encounters-layout">
             <div
               className="raid-rewards-table"
@@ -29992,13 +29980,6 @@ function TeraRaidsSection({
                   </dl>
 
                   <div className="encounter-edit-form">
-                    <EditorSessionBar
-                      canEdit={canEditTeraRaids}
-                      isEditing={editSession !== null}
-                      isStarting={isEditStarting}
-                      label="Tera Raids"
-                      onStart={onStartEditSession}
-                    />
                     <div
                       className="encounter-slot-tabs"
                       aria-label={translateLiteral('Selected Tera raid summary')}
@@ -30602,6 +30583,16 @@ function RaidBattlesSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditRaidBattles && (selectedTable?.slots.length ?? 0) > 0}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Raid Battles"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="encounters-layout">
             <div
               className="raid-rewards-table"
@@ -30645,10 +30636,8 @@ function RaidBattlesSection({
               canEditRaidBattles={canEditRaidBattles}
               editSession={editSession}
               editableFields={workflow.editableFields}
-              isEditStarting={isEditStarting}
               isRaidBattleUpdating={isRaidBattleUpdating}
               onSelectSlot={setSelectedSlot}
-              onStartEditSession={onStartEditSession}
               onUpdateRaidBattleSlotFields={onUpdateRaidBattleSlotFields}
               selectedSlot={selectedSlot}
               table={selectedTable}
@@ -30669,10 +30658,8 @@ function SelectedRaidBattlePanel({
   canEditRaidBattles,
   editSession,
   editableFields,
-  isEditStarting,
   isRaidBattleUpdating,
   onSelectSlot,
-  onStartEditSession,
   onUpdateRaidBattleSlotFields,
   selectedSlot,
   table
@@ -30681,10 +30668,8 @@ function SelectedRaidBattlePanel({
   canEditRaidBattles: boolean;
   editSession: EditSession | null;
   editableFields: RaidBattleEditableField[];
-  isEditStarting: boolean;
   isRaidBattleUpdating: boolean;
   onSelectSlot: (slot: number | null) => void;
-  onStartEditSession: () => void;
   onUpdateRaidBattleSlotFields: (
     updates: Array<{ tableId: string; slot: number; field: string; value: string }>
   ) => Promise<boolean>;
@@ -30846,13 +30831,6 @@ function SelectedRaidBattlePanel({
           </dl>
 
           <div className="encounter-edit-form">
-            <EditorSessionBar
-              canEdit={canEditRaidBattles && table.slots.length > 0}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Raid Battles"
-              onStart={onStartEditSession}
-            />
             <div className="encounter-slot-header">
               <strong>Battle slots</strong>
               <select
@@ -31248,6 +31226,16 @@ function RaidRewardsSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditRaidRewards && (selectedTable?.rewards.length ?? 0) > 0}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label={title}
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="encounters-layout">
             <div
               className="raid-rewards-table"
@@ -31290,16 +31278,13 @@ function RaidRewardsSection({
               canEditRaidRewards={canEditRaidRewards}
               editSession={editSession}
               editableFields={workflow.editableFields}
-              isEditStarting={isEditStarting}
               isRaidRewardUpdating={isRaidRewardUpdating}
               onSelectSlot={setSelectedSlot}
-              onStartEditSession={onStartEditSession}
               onUpdateRaidRewardFields={onUpdateRaidRewardFields}
               reward={selectedReward}
               sectionId={sectionId}
               selectedSlot={selectedSlot}
               table={selectedTable}
-              title={title}
             />
           </div>
         ) : (
@@ -31316,24 +31301,19 @@ function SelectedRaidRewardPanel({
   canEditRaidRewards,
   editSession,
   editableFields,
-  isEditStarting,
   isRaidRewardUpdating,
   onSelectSlot,
-  onStartEditSession,
   onUpdateRaidRewardFields,
   reward,
   sectionId,
   selectedSlot,
-  table,
-  title
+  table
 }: {
   canEditRaidRewards: boolean;
   editSession: EditSession | null;
   editableFields: RaidRewardEditableField[];
-  isEditStarting: boolean;
   isRaidRewardUpdating: boolean;
   onSelectSlot: (slot: number | null) => void;
-  onStartEditSession: () => void;
   onUpdateRaidRewardFields: (
     tableId: string,
     slot: number,
@@ -31343,7 +31323,6 @@ function SelectedRaidRewardPanel({
   sectionId: WorkbenchSection;
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
-  title: string;
 }) {
   const { translateLiteral } = useLocalization();
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
@@ -31463,13 +31442,6 @@ function SelectedRaidRewardPanel({
           </dl>
 
           <div className="encounter-edit-form">
-            <EditorSessionBar
-              canEdit={canEditRaidRewards && table.rewards.length > 0}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label={title}
-              onStart={onStartEditSession}
-            />
             <div className="encounter-slot-header">
               <strong>{translateLiteral('Rewards')}</strong>
               <select
@@ -31823,6 +31795,16 @@ function BehaviorSection({
         </div>
 
         {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditBehavior && selectedEntry !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Behavior"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
+        {workflow ? (
           <div className="encounters-layout behavior-layout">
             <div className="raid-rewards-table" role="table" aria-label={translateLiteral('Behavior entries')}>
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
@@ -31873,8 +31855,6 @@ function BehaviorSection({
               entry={selectedEntry}
               fields={workflow.fields}
               isBehaviorUpdating={isBehaviorUpdating}
-              isEditStarting={isEditStarting}
-              onStartEditSession={onStartEditSession}
               onUpdateBehaviorEntryFields={onUpdateBehaviorEntryFields}
             />
           </div>
@@ -31896,8 +31876,6 @@ function SelectedBehaviorPanel({
   entry,
   fields,
   isBehaviorUpdating,
-  isEditStarting,
-  onStartEditSession,
   onUpdateBehaviorEntryFields
 }: {
   canEditBehavior: boolean;
@@ -31905,8 +31883,6 @@ function SelectedBehaviorPanel({
   entry: BehaviorEntryRecord | null;
   fields: BehaviorField[];
   isBehaviorUpdating: boolean;
-  isEditStarting: boolean;
-  onStartEditSession: () => void;
   onUpdateBehaviorEntryFields: (
     entryId: string,
     changes: Array<{ field: string; value: string }>
@@ -32036,13 +32012,6 @@ function SelectedBehaviorPanel({
           </dl>
 
           <div className="encounter-edit-form">
-            <EditorSessionBar
-              canEdit={canEditBehavior}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Behavior"
-              onStart={onStartEditSession}
-            />
             <dl className="encounter-slot-detail">
               <div>
                 <dt>{translateLiteral('Hitbox radius')}</dt>
@@ -32420,6 +32389,16 @@ function PlacementSection({
           />
         </div>
 
+        {workflow ? (
+          <EditorSessionBar
+            canEdit={canEditPlacement && selectedObject !== null}
+            isEditing={editSession !== null}
+            isStarting={isEditStarting}
+            label="Placement"
+            onStart={onStartEditSession}
+          />
+        ) : null}
+
         {supportsPlacementCategories && placementCategories.length > 0 ? (
           <div
             aria-label="Placement categories"
@@ -32503,9 +32482,7 @@ function PlacementSection({
               canEditPlacement={canEditPlacement}
               editSession={editSession}
               editableFields={workflow.editableFields}
-              isEditStarting={isEditStarting}
               isPlacementUpdating={isPlacementUpdating}
-              onStartEditSession={onStartEditSession}
               onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
               onSelectObject={onSelectObject}
               placementGroup={selectedGroup}
@@ -32526,10 +32503,8 @@ function SelectedPlacementPanel({
   canEditPlacement,
   editSession,
   editableFields,
-  isEditStarting,
   isPlacementUpdating,
   onSelectObject,
-  onStartEditSession,
   onUpdatePlacementObjectFields,
   placementGroup,
   placedObject
@@ -32537,10 +32512,8 @@ function SelectedPlacementPanel({
   canEditPlacement: boolean;
   editSession: EditSession | null;
   editableFields: PlacementEditableField[];
-  isEditStarting: boolean;
   isPlacementUpdating: boolean;
   onSelectObject: (objectId: string | null) => void;
-  onStartEditSession: () => void;
   onUpdatePlacementObjectFields: (
     objectId: string,
     changes: Array<{ field: string; value: string }>
@@ -32739,13 +32712,6 @@ function SelectedPlacementPanel({
           ) : null}
 
           <div className="encounter-edit-form">
-            <EditorSessionBar
-              canEdit={canEditPlacement}
-              isEditing={editSession !== null}
-              isStarting={isEditStarting}
-              label="Placement"
-              onStart={onStartEditSession}
-            />
             <dl className="encounter-slot-detail">
               <div>
                 <dt>{inspectorPrimaryData?.label ?? 'Placement Data'}</dt>

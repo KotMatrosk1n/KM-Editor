@@ -324,6 +324,15 @@ export function ZaDexLayoutSection({
         </h2>
       </div>
 
+      <EditorSessionBar
+        canEdit={workflowAvailable && dexEditor?.canEdit === true}
+        isEditing={hasActiveEditSession}
+        isStarting={isEditStarting}
+        label="Dex Layout"
+        onStart={onStartEditSession}
+        readOnlyReason={dexEditor?.blockedReason}
+      />
+
       <p className="za-dex-layout-intro">
         {translateLiteral(
           'Move one species to an exact number and shift the entries between. The occupied-slot Swap control remains available in the Pokemon editor.'
@@ -334,15 +343,6 @@ export function ZaDexLayoutSection({
           'Dex Layout changes are staged here. Review and output them from Changes.'
         )}
       </p>
-
-      <EditorSessionBar
-        canEdit={workflowAvailable && dexEditor?.canEdit === true}
-        isEditing={hasActiveEditSession}
-        isStarting={isEditStarting}
-        label="Dex Layout"
-        onStart={onStartEditSession}
-        readOnlyReason={dexEditor?.blockedReason}
-      />
 
       <div className="za-dex-layout-metrics">
         <Metric
