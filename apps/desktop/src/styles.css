@@ -1460,6 +1460,10 @@ h2 {
   box-shadow: var(--shadow-panel), var(--shadow-inset);
 }
 
+.items-toolbar + .editor-session-bar {
+  margin-top: 16px;
+}
+
 .editor-session-bar[data-state='editing'] {
   border-color: rgb(88 209 124 / 42%);
 }
@@ -3112,14 +3116,6 @@ h2 {
 .sv-pokemon-personal-edit-block > .draft-action-row,
 .za-pokemon-personal-edit-block > .draft-action-row {
   order: -1;
-}
-
-.item-edit-form > .editor-session-bar,
-.text-edit-form > .editor-session-bar,
-.trainer-edit-form > .editor-session-bar,
-.shop-edit-form > .editor-session-bar,
-.encounter-edit-form > .editor-session-bar {
-  order: -2;
 }
 
 .za-encounter-revert-action {
@@ -9583,7 +9579,6 @@ input {
 
 @container workspace (max-width: 1300px) {
   .editor-session-bar {
-    position: static;
     grid-template-columns: minmax(0, 1fr);
   }
 
