@@ -248,6 +248,7 @@ import {
   isStaleProjectScopeError
 } from './bridge/gameScopedProjectBridge';
 import {
+  DesktopServiceError,
   desktopServices as defaultDesktopServices,
   type DesktopServices,
   type NativeUpdate
@@ -258,9 +259,18 @@ import {
 } from './cacheWarmupPolicy';
 import {
   createReportableError,
-  formatReportableErrorMessage,
+  sanitizeReportableErrorText,
   type ReportableError
 } from './errorReporting';
+import {
+  desktopErrorCodes,
+  diagnosticErrorCodes,
+  type KmErrorCode
+} from './errorCodes';
+import {
+  toDesktopErrorDiagnostics,
+  toProjectBridgeDiagnostics
+} from './uiErrorDiagnostics';
 import {
   getRememberedProjectGames,
   type ProjectPathFieldName,
@@ -284,7 +294,8 @@ import {
   getMoveEditableFieldLabel,
   getMoveRelationalValidationIssues,
   isMoveProjectileField,
-  parseMoveTimingField
+  parseMoveTimingField,
+  resolveMoveTimingEditableField
 } from './movesEditor';
 import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, resolveWorkflowDataSection, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import {
@@ -424,23 +435,18 @@ export class AppErrorBoundary extends Component<
 
   public static getDerivedStateFromError(error: unknown) {
     return {
-      report: createReportableError(error, {
-        fallbackMessage: 'The KM Editor interface crashed while rendering.',
-        kind: 'render',
-        title: 'KM Editor hit a critical display error.'
-      })
+      report: createRenderErrorReport(error)
     };
   }
 
   public componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
-    this.setState({
-      report: createReportableError(error, {
-        fallbackMessage: 'The KM Editor interface crashed while rendering.',
-        kind: 'render',
-        seed: errorInfo.componentStack ?? undefined,
-        title: 'KM Editor hit a critical display error.'
-      })
-    });
+    const componentStack = sanitizeReportableErrorText(errorInfo.componentStack ?? '').trim();
+    const report = createRenderErrorReport(error, componentStack || undefined);
+    this.setState((currentState) =>
+      currentState.report?.incidentFingerprint === report.incidentFingerprint
+        ? null
+        : { report }
+    );
   }
 
   public render() {
@@ -452,7 +458,18 @@ export class AppErrorBoundary extends Component<
   }
 }
 
+function createRenderErrorReport(error: unknown, componentStack?: string) {
+  return createReportableError(error, {
+    fallbackMessage: 'The KM Editor interface crashed while rendering.',
+    kind: 'render',
+    seed: componentStack,
+    title: 'KM Editor hit a critical display error.'
+  });
+}
+
 function CriticalErrorScreen({ report }: { report: ReportableError }) {
+  const { translateLiteral } = useLocalization();
+
   return (
     <main className="fatal-error-screen">
       <section className="panel fatal-error-panel" role="alert">
@@ -461,8 +478,14 @@ function CriticalErrorScreen({ report }: { report: ReportableError }) {
           <h1>{report.title}</h1>
         </div>
         <div className="fatal-error-code">
-          <span>Error code</span>
-          <code>{report.code}</code>
+          {report.semanticCode ? (
+            <>
+              <span>{translateLiteral('Error code')}</span>
+              <code data-localization-ignore="true">{report.semanticCode}</code>
+            </>
+          ) : null}
+          <span>{translateLiteral('Incident fingerprint')}</span>
+          <code data-localization-ignore="true">{report.incidentFingerprint}</code>
         </div>
         <p>
           Take a screenshot of this message and report it in GitHub Issues. Restart KM Editor
@@ -3261,7 +3284,11 @@ export function App({
         await desktopServices.exitApp();
       } catch (error) {
         setBridgeDiagnostics(
-          toDesktopDiagnostics(error, 'Could not close KM Editor after discarding pending changes.')
+          toDesktopDiagnostics(
+            error,
+            'Could not close KM Editor after discarding pending changes.',
+            desktopErrorCodes.appExitFailed
+          )
         );
       }
     }
@@ -3338,7 +3365,11 @@ export function App({
       )
       .catch((error) => {
       setBridgeDiagnostics(
-        toDesktopDiagnostics(error, 'Could not update the desktop close guard.')
+        toDesktopDiagnostics(
+          error,
+          'Could not update the desktop close guard.',
+          desktopErrorCodes.closeGuardUpdateFailed
+        )
       );
       });
   }, [
@@ -3641,6 +3672,10 @@ export function App({
         ? createProjectPaths(draftPathsRef.current)
         : null;
       const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
+      let diagnosticFallback: UiDiagnosticFallback = {
+        domain: 'bridge',
+        message: 'Could not update cache settings.'
+      };
 
       try {
         const response = isPokemonLegendsZAGame(selectedGame)
@@ -3656,12 +3691,17 @@ export function App({
             });
         setSvCacheStatus(response.status);
         evictUnprotectedWorkflowPayloads();
+        diagnosticFallback = {
+          code: desktopErrorCodes.bridgeRecycleFailed,
+          domain: 'desktop',
+          message: 'Could not restart the project bridge after updating cache settings.'
+        };
         await desktopServices.recycleProjectBridge();
         if (paths && health) {
           void startSvCacheWarmup(paths, health);
         }
       } catch (error) {
-        setBridgeDiagnostics(toBridgeDiagnostics(error));
+        setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
       }
     },
     [
@@ -3732,6 +3772,10 @@ export function App({
     svCacheWarmupRunRef.current += 1;
     setIsSvCacheWarming(false);
     setIsSvCacheClearing(true);
+    let diagnosticFallback: UiDiagnosticFallback = {
+      domain: 'bridge',
+      message: 'Could not clear the project cache.'
+    };
 
     try {
       const activePaths = isTrinityCacheGame(selectedGame)
@@ -3742,9 +3786,14 @@ export function App({
         : await bridge.clearSvCache({ activePaths });
       setSvCacheStatus(response.status);
       evictUnprotectedWorkflowPayloads();
+      diagnosticFallback = {
+        code: desktopErrorCodes.bridgeRecycleFailed,
+        domain: 'desktop',
+        message: 'Could not restart the project bridge after clearing the cache.'
+      };
       await desktopServices.recycleProjectBridge();
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
     } finally {
       setIsSvCacheClearing(false);
     }
@@ -3809,7 +3858,13 @@ export function App({
           .setCloseGuardEnabled(false)
           .then(() => desktopServices.exitApp())
           .catch((error) => {
-            setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not close KM Editor.'));
+            setBridgeDiagnostics(
+              toDesktopDiagnostics(
+                error,
+                'Could not close KM Editor.',
+                desktopErrorCodes.appExitFailed
+              )
+            );
           });
         return;
       }
@@ -3833,7 +3888,11 @@ export function App({
       })
       .catch((error) => {
         setBridgeDiagnostics(
-          toDesktopDiagnostics(error, 'Could not listen for desktop close requests.')
+          toDesktopDiagnostics(
+            error,
+            'Could not listen for desktop close requests.',
+            desktopErrorCodes.closeRequestListenerFailed
+          )
         );
       });
 
@@ -3861,7 +3920,13 @@ export function App({
         handleSetDraftPath(pathField.field, selectedPath);
       }
     } catch (error) {
-      setBridgeDiagnostics(toDesktopDiagnostics(error, `Could not choose ${pathField.label}.`));
+      setBridgeDiagnostics(
+        toDesktopDiagnostics(
+          error,
+          `Could not choose ${pathField.label}.`,
+          desktopErrorCodes.pathPickerFailed
+        )
+      );
     }
   };
 
@@ -3882,7 +3947,13 @@ export function App({
     try {
       await desktopServices.openPath(outputRootPath);
     } catch (error) {
-      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not open output root.'));
+      setBridgeDiagnostics(
+        toDesktopDiagnostics(
+          error,
+          'Could not open output root.',
+          desktopErrorCodes.pathOpenFailed
+        )
+      );
     }
   };
 
@@ -3925,6 +3996,10 @@ export function App({
     setIsOutputRootCreating(true);
     setProjectStatus('validating');
     setBridgeDiagnostics([]);
+    let diagnosticFallback: UiDiagnosticFallback = {
+      domain: 'bridge',
+      message: 'Could not validate the project before creating the output root folder.'
+    };
 
     try {
       const validationPaths = {
@@ -3948,6 +4023,11 @@ export function App({
         return;
       }
 
+      diagnosticFallback = {
+        code: desktopErrorCodes.directoryCreateFailed,
+        domain: 'desktop',
+        message: 'Could not create the output root folder.'
+      };
       await desktopServices.createDirectory(outputRootPath);
       if (projectValidationRunRef.current !== runId) {
         return;
@@ -3959,6 +4039,10 @@ export function App({
       const nextPaths = {
         ...validationPaths,
         outputRootPath
+      };
+      diagnosticFallback = {
+        domain: 'bridge',
+        message: 'Could not validate the project after creating the output root folder.'
       };
       const nextResponse = await bridge.validateProject({ paths: nextPaths });
       if (projectValidationRunRef.current !== runId) {
@@ -3989,7 +4073,7 @@ export function App({
       if (isStaleProjectScopeError(error)) {
         return;
       }
-      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not create the output root folder.'));
+      setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
     } finally {
       setIsOutputRootCreating(false);
     }
@@ -4039,6 +4123,11 @@ export function App({
     setWorkProgress(createSupportSearchWorkProgress(null));
 
     let unlisten: (() => void) | null = null;
+    let diagnosticFallback: UiDiagnosticFallback = {
+      code: desktopErrorCodes.supportFileSearchFailed,
+      domain: 'desktop',
+      message: 'Could not find oo2core_8_win64.dll.'
+    };
 
     try {
       unlisten = await listen<SupportSearchProgressPayload>(
@@ -4081,6 +4170,10 @@ export function App({
       setDraftPath(supportFolderField, folderPath);
       setProjectStatus('validating');
 
+      diagnosticFallback = {
+        domain: 'bridge',
+        message: 'Could not validate the project after locating oo2core_8_win64.dll.'
+      };
       const response = await bridge.validateProject({ paths });
       if (
         supportSearchRunRef.current !== runId ||
@@ -4123,7 +4216,7 @@ export function App({
       }
 
       setProjectStatus('idle');
-      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not find oo2core_8_win64.dll.'));
+      setBridgeDiagnostics(toOperationDiagnostics(error, diagnosticFallback));
     } finally {
       unlisten?.();
       if (supportSearchRunRef.current === runId) {
@@ -4208,7 +4301,11 @@ export function App({
 
           setAvailableUpdate({
             ...fallbackUpdate,
-            fallbackReason: toErrorMessage(nativeError)
+            fallbackReason: toErrorMessage(nativeError, {
+              code: desktopErrorCodes.updateCheckFailed,
+              domain: 'desktop',
+              message: 'Could not check for native updates.'
+            })
           });
           setUpdateCheckStatus({
             kind: 'available',
@@ -4243,7 +4340,11 @@ export function App({
 
       setUpdateCheckStatus({
         kind: 'error',
-        message: toErrorMessage(error)
+        message: toErrorMessage(error, {
+          code: desktopErrorCodes.updateCheckFailed,
+          domain: 'desktop',
+          message: 'Could not check for updates.'
+        })
       });
     }
   }, [
@@ -4269,6 +4370,10 @@ export function App({
     if (availableUpdate.kind === 'native') {
       let downloadedBytes = 0;
       let contentLength: number | null = null;
+      let diagnosticFallback: UiDiagnosticFallback = {
+        domain: 'bridge',
+        message: 'Could not clear project caches before installing the update.'
+      };
 
       setUpdateCheckStatus({
         kind: 'preparing',
@@ -4291,6 +4396,11 @@ export function App({
             setSvCacheStatus(svCacheClear.status);
           }
           evictUnprotectedWorkflowPayloads();
+          diagnosticFallback = {
+            code: desktopErrorCodes.bridgeRecycleFailed,
+            domain: 'desktop',
+            message: 'Could not restart the project bridge before installing the update.'
+          };
           await desktopServices.recycleProjectBridge();
         } finally {
           setIsSvCacheClearing(false);
@@ -4303,6 +4413,11 @@ export function App({
           message: `Downloading KM Editor v${availableUpdate.version}.`
         });
 
+        diagnosticFallback = {
+          code: desktopErrorCodes.updateInstallFailed,
+          domain: 'desktop',
+          message: 'Could not install the KM Editor update.'
+        };
         await availableUpdate.nativeUpdate.install((event) => {
           switch (event.event) {
             case 'Started':
@@ -4359,16 +4474,20 @@ export function App({
 
         try {
           await desktopServices.relaunchApp();
-        } catch {
+        } catch (error) {
           setUpdateCheckStatus({
             kind: 'available',
-            message: 'Update installed. Restart KM Editor to finish.'
+            message: `Update installed. Restart KM Editor to finish.\n\n${toErrorMessage(error, {
+              code: desktopErrorCodes.appRelaunchFailed,
+              domain: 'desktop',
+              message: 'Could not restart KM Editor automatically.'
+            })}`
           });
         }
       } catch (error) {
         setUpdateCheckStatus({
           kind: 'error',
-          message: toErrorMessage(error)
+          message: toErrorMessage(error, diagnosticFallback)
         });
       }
 
@@ -4395,7 +4514,11 @@ export function App({
     } catch (error) {
       setUpdateCheckStatus({
         kind: 'error',
-        message: toErrorMessage(error)
+        message: toErrorMessage(error, {
+          code: desktopErrorCodes.externalUrlOpenFailed,
+          domain: 'desktop',
+          message: 'Could not open the GitHub release page.'
+        })
       });
     }
   }, [
@@ -6199,7 +6322,13 @@ export function App({
         setBridgeDiagnostics([]);
       }
     } catch (error) {
-      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not pick dump import source file.'));
+      setBridgeDiagnostics(
+        toDesktopDiagnostics(
+          error,
+          'Could not pick dump import source file.',
+          desktopErrorCodes.filePickerFailed
+        )
+      );
     }
   };
 
@@ -6367,7 +6496,13 @@ export function App({
       await loadSvModMergerWorkflow(nextSources);
     } catch (error) {
       setBridgeDiagnostics(
-        toDesktopDiagnostics(error, 'Could not choose a Scarlet/Violet mod source.')
+        toDesktopDiagnostics(
+          error,
+          'Could not choose a Scarlet/Violet mod source.',
+          kind === 'folder'
+            ? desktopErrorCodes.folderPickerFailed
+            : desktopErrorCodes.filePickerFailed
+        )
       );
     }
   };
@@ -6427,7 +6562,13 @@ export function App({
       await loadZaModMergerWorkflow(nextSources);
     } catch (error) {
       setBridgeDiagnostics(
-        toDesktopDiagnostics(error, 'Could not choose a Pokemon Legends ZA mod source.')
+        toDesktopDiagnostics(
+          error,
+          'Could not choose a Pokemon Legends ZA mod source.',
+          kind === 'folder'
+            ? desktopErrorCodes.folderPickerFailed
+            : desktopErrorCodes.filePickerFailed
+        )
       );
     }
   };
@@ -6486,7 +6627,13 @@ export function App({
       resetModMergerPlan();
       await loadModMergerWorkflow(nextDirectory1, nextDirectory2);
     } catch (error) {
-      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not choose a mod directory.'));
+      setBridgeDiagnostics(
+        toDesktopDiagnostics(
+          error,
+          'Could not choose a mod directory.',
+          desktopErrorCodes.folderPickerFailed
+        )
+      );
     }
   };
 
@@ -6976,9 +7123,6 @@ export function App({
 
     try {
       return await bridge.importRandomizerSeed({ seed });
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-      throw error;
     } finally {
       setIsRandomizerApplying(false);
     }
@@ -7033,9 +7177,6 @@ export function App({
       ));
 
       return response;
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-      throw error;
     } finally {
       setIsRandomizerApplying(false);
       setWorkProgress(null);
@@ -7092,9 +7233,6 @@ export function App({
       ));
 
       return response;
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-      throw error;
     } finally {
       setIsRandomizerApplying(false);
       setWorkProgress(null);
@@ -7774,24 +7912,34 @@ export function App({
               ? moveEditBaselineValuesRef.current
               : { sessionId: session.sessionId, valuesByMoveId: {} };
           const moveKey = moveId.toString();
-          if (!Object.prototype.hasOwnProperty.call(baselineValues.valuesByMoveId, moveKey)) {
-            const baselineMove = movesWorkflow.moves.find(
-              (candidate) => candidate.moveId === moveId
-            );
-            if (baselineMove) {
-              baselineValues = {
-                ...baselineValues,
-                valuesByMoveId: {
-                  ...baselineValues.valuesByMoveId,
-                  [moveKey]: Object.fromEntries(
-                    movesWorkflow.editableFields.map((field) => [
-                      field.field,
-                      getEditableMoveFieldValue(baselineMove, field.field)
-                    ])
-                  )
-                }
-              };
+          const baselineMove = movesWorkflow.moves.find(
+            (candidate) => candidate.moveId === moveId
+          );
+          if (baselineMove) {
+            const moveBaselineValues = {
+              ...(baselineValues.valuesByMoveId[moveKey] ??
+                Object.fromEntries(
+                  movesWorkflow.editableFields.map((field) => [
+                    field.field,
+                    getEditableMoveFieldValue(baselineMove, field.field)
+                  ])
+                ))
+            };
+            for (const change of changes) {
+              if (!Object.prototype.hasOwnProperty.call(moveBaselineValues, change.field)) {
+                moveBaselineValues[change.field] = getEditableMoveFieldValue(
+                  baselineMove,
+                  change.field
+                );
+              }
             }
+            baselineValues = {
+              ...baselineValues,
+              valuesByMoveId: {
+                ...baselineValues.valuesByMoveId,
+                [moveKey]: moveBaselineValues
+              }
+            };
           }
           moveEditBaselineValuesRef.current = baselineValues;
 
@@ -12604,8 +12752,8 @@ function ItemsSection({
       (diagnostic) =>
         diagnostic.severity === 'warning' &&
         diagnostic.field === itemTechnicalMachineNumberFieldName &&
-        (diagnostic.message.startsWith('A legacy KM Editor TM-numbering output was detected.') ||
-          diagnostic.message.startsWith('A legacy KM Editor TM pickup layout was detected.'))
+        (diagnostic.code === diagnosticErrorCodes.zaItemsTmLegacyNumbering ||
+          diagnostic.code === diagnosticErrorCodes.zaItemsTmLegacyPickupLayout)
     ) ??
       false);
   const legacyTechnicalMachineRepairTarget = useMemo(() => {
@@ -15670,24 +15818,25 @@ function SelectedMovePanel({
     Record<string, Record<string, string>>
   >({});
   const [runtimeVariantByMoveId, setRuntimeVariantByMoveId] = useState<Record<string, number>>({});
-  const [timingOccurrenceByMoveId, setTimingOccurrenceByMoveId] = useState<Record<string, number>>({});
+  const [timingProfileByMoveVariant, setTimingProfileByMoveVariant] = useState<
+    Record<string, number>
+  >({});
+  const [timingOccurrenceByProfile, setTimingOccurrenceByProfile] = useState<
+    Record<string, number>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const { t, translateLiteral } = useLocalization();
   const runtimeVariantOptions = useMemo(
     () =>
       move
         ? Array.from(
-            new Map(move.runtimeVariants.map((variant) => [variant.variant, variant])).values()
+            new Set([
+              ...move.runtimeVariants.map((variant) => variant.variant),
+              ...move.timingRows.map((timing) => timing.variant)
+            ])
           )
-        : [],
-    [move]
-  );
-  const timingRowOptions = useMemo(
-    () =>
-      move
-        ? Array.from(
-            new Map(move.timingRows.map((timing) => [timing.occurrence, timing])).values()
-          )
+            .sort((left, right) => left - right)
+            .map((variant) => ({ variant }))
         : [],
     [move]
   );
@@ -15699,8 +15848,48 @@ function SelectedMovePanel({
     runtimeVariantOptions.some((variant) => variant.variant === requestedRuntimeVariant)
       ? requestedRuntimeVariant
       : runtimeVariantOptions[0]?.variant ?? 0;
-  const requestedTimingOccurrence = move
-    ? timingOccurrenceByMoveId[move.moveId.toString()]
+  const timingProfileOptions = useMemo(
+    () =>
+      move
+        ? Array.from(
+            new Map(
+              move.timingRows
+                .filter((timing) => timing.variant === selectedRuntimeVariant)
+                .map((timing) => [timing.timingMoveId, timing])
+            ).values()
+          )
+        : [],
+    [move, selectedRuntimeVariant]
+  );
+  const timingProfileStorageKey = move
+    ? `${move.moveId}:${selectedRuntimeVariant}`
+    : null;
+  const requestedTimingProfile = timingProfileStorageKey
+    ? timingProfileByMoveVariant[timingProfileStorageKey]
+    : undefined;
+  const selectedTimingProfile =
+    requestedTimingProfile !== undefined &&
+    timingProfileOptions.some((timing) => timing.timingMoveId === requestedTimingProfile)
+      ? requestedTimingProfile
+      : timingProfileOptions[0]?.timingMoveId ?? null;
+  const timingRowOptions = useMemo(
+    () =>
+      move && selectedTimingProfile !== null
+        ? Array.from(
+            new Map(
+              move.timingRows
+                .filter((timing) => timing.timingMoveId === selectedTimingProfile)
+                .map((timing) => [timing.occurrence, timing])
+            ).values()
+          )
+        : [],
+    [move, selectedTimingProfile]
+  );
+  const timingOccurrenceStorageKey = move && selectedTimingProfile !== null
+    ? `${move.moveId}:${selectedTimingProfile}`
+    : null;
+  const requestedTimingOccurrence = timingOccurrenceStorageKey
+    ? timingOccurrenceByProfile[timingOccurrenceStorageKey]
     : undefined;
   const selectedTimingOccurrence =
     requestedTimingOccurrence !== undefined &&
@@ -15710,6 +15899,29 @@ function SelectedMovePanel({
   const moveFields = useMemo(
     () =>
       editableFields
+        .flatMap((field) => {
+          const timingField = parseMoveTimingField(field.field);
+          if (!timingField?.isLegacyTemplate) {
+            return [field];
+          }
+
+          return selectedTimingProfile === null
+            ? []
+            : [
+                {
+                  ...field,
+                  field: resolveMoveTimingEditableField(
+                    field.field,
+                    selectedTimingProfile,
+                    selectedTimingOccurrence
+                  )
+                }
+              ];
+        })
+        .filter(
+          (field, index, fields) =>
+            fields.findIndex((candidate) => candidate.field === field.field) === index
+        )
         .map((field) => toNumericEditableField(field))
         .map((field) =>
           isMoveProjectileField(field.field) && projectileOptions.length > 0
@@ -15732,8 +15944,9 @@ function SelectedMovePanel({
             const timingField = parseMoveTimingField(field.field);
             return (
               timingField === null ||
-              timingField.occurrence === null ||
-              timingField.occurrence === selectedTimingOccurrence
+              (timingField.timingMoveId === selectedTimingProfile &&
+                (timingField.occurrence === null ||
+                  timingField.occurrence === selectedTimingOccurrence))
             );
           }
         ),
@@ -15742,7 +15955,8 @@ function SelectedMovePanel({
       move,
       projectileOptions,
       selectedRuntimeVariant,
-      selectedTimingOccurrence
+      selectedTimingOccurrence,
+      selectedTimingProfile
     ]
   );
   const moveFieldGroups = useMemo(
@@ -15955,9 +16169,37 @@ function SelectedMovePanel({
                     </select>
                   </label>
                   <p className="field-note">
-                    Normal, Plus, and Boss Moves use separate runtime battle rows. Boss Moves are used
-                    by Rogue Mega and equivalent scripted boss attacks. Unknown variants remain numbered.
+                    {t('moves.runtimeVariant.help')}
                   </p>
+                </fieldset>
+              ) : null}
+              {move.hasRuntimeData && timingProfileOptions.length > 1 ? (
+                <fieldset className="editable-field-group">
+                  <legend>{t('moves.timingProfile.heading')}</legend>
+                  <label className="path-field editable-field-control">
+                    <span>{translateLiteral('Profile')}</span>
+                    <select
+                      disabled={isMoveUpdating}
+                      onChange={(event) => {
+                        if (!timingProfileStorageKey) {
+                          return;
+                        }
+
+                        setTimingProfileByMoveVariant((current) => ({
+                          ...current,
+                          [timingProfileStorageKey]: Number(event.target.value)
+                        }));
+                      }}
+                      value={selectedTimingProfile ?? ''}
+                    >
+                      {timingProfileOptions.map((timing) => (
+                        <option key={timing.timingMoveId} value={timing.timingMoveId}>
+                          {t('moves.timingProfile.option', { id: timing.timingMoveId })}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="field-note">{t('moves.timingProfile.help')}</p>
                 </fieldset>
               ) : null}
               {move.hasRuntimeData && timingRowOptions.length > 1 ? (
@@ -15967,12 +16209,16 @@ function SelectedMovePanel({
                     <span>Occurrence</span>
                     <select
                       disabled={isMoveUpdating}
-                      onChange={(event) =>
-                        setTimingOccurrenceByMoveId((current) => ({
+                      onChange={(event) => {
+                        if (!timingOccurrenceStorageKey) {
+                          return;
+                        }
+
+                        setTimingOccurrenceByProfile((current) => ({
                           ...current,
-                          [move.moveId.toString()]: Number(event.target.value)
-                        }))
-                      }
+                          [timingOccurrenceStorageKey]: Number(event.target.value)
+                        }));
+                      }}
                       value={selectedTimingOccurrence}
                     >
                       {timingRowOptions.map((timing, index) => (
@@ -15982,10 +16228,7 @@ function SelectedMovePanel({
                       ))}
                     </select>
                   </label>
-                  <p className="field-note">
-                    Each occurrence has independent advanced timing data. Accuracy and cooldown are
-                    shared by all timing rows for this move.
-                  </p>
+                  <p className="field-note">{t('moves.timingOccurrence.help')}</p>
                 </fieldset>
               ) : null}
               <fieldset className="editable-field-group">
@@ -34953,7 +35196,8 @@ function RoyalCandySection({
   const visibleDiagnostics =
     selectedWorkflow?.workflowId === 'royal-candy-uninstall'
       ? (workflow?.diagnostics ?? []).filter(
-          (diagnostic) => !diagnostic.message.includes('preflight is blocked')
+          (diagnostic) =>
+            diagnostic.code !== diagnosticErrorCodes.swshRoyalCandyPreflightBlocked
         )
       : (workflow?.diagnostics ?? []);
   const hasMatchingRecords =
@@ -37752,6 +37996,7 @@ function deduplicateDiagnostics(diagnostics: ApiDiagnostic[]): ApiDiagnostic[] {
 
   return diagnostics.filter((diagnostic) => {
     const key = JSON.stringify([
+      diagnostic.code ?? null,
       diagnostic.severity,
       diagnostic.message,
       diagnostic.domain ?? null,
@@ -38515,7 +38760,7 @@ function UpdatePromptModal({
             : `KM Editor v${update.version} is available. KM Editor will open ${update.releaseName}.`}
         </p>
         {update.kind === 'releasePage' && update.fallbackReason ? (
-          <p className="modal-copy modal-copy-muted">
+          <p className="modal-copy modal-copy-muted update-fallback-reason">
             Native update check was not available: {update.fallbackReason}
           </p>
         ) : null}
@@ -47662,79 +47907,89 @@ function delay(milliseconds: number) {
   });
 }
 
-function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
+type UiDiagnosticFallback =
+  | {
+      domain: 'bridge';
+      message?: string;
+    }
+  | {
+      code: KmErrorCode;
+      domain: 'desktop';
+      message: string;
+    };
+
+function toOperationDiagnostics(
+  error: unknown,
+  fallback: UiDiagnosticFallback
+): ApiDiagnostic[] {
   if (isStaleProjectScopeError(error)) {
     return [];
   }
 
   if (error instanceof ProjectBridgeError) {
-    if (error.apiError.diagnostics.length > 0) {
-      return error.apiError.diagnostics;
-    }
-
-    return [
-      {
-        domain: 'bridge',
-        message: formatReportableErrorMessage(
-          createReportableError(error, {
-            fallbackMessage: error.apiError.message,
-            kind: 'bridge',
-            seed: error.apiError.code,
-            title: 'KM Editor hit an unexpected bridge error.'
-          })
-        ),
-        severity: 'error'
-      }
-    ];
+    return toProjectBridgeDiagnostics(error, fallback.message);
   }
 
-  return [
-    {
-      domain: 'bridge',
-      message: formatReportableErrorMessage(
-        createReportableError(error, {
-          fallbackMessage: 'Project bridge request failed.',
-          kind: 'bridge',
-          title: 'KM Editor hit an unexpected bridge error.'
-        })
-      ),
-      severity: 'error'
-    }
-  ];
+  if (error instanceof DesktopServiceError) {
+    return toDesktopErrorDiagnostics(
+      error,
+      fallback.message ?? 'Desktop operation failed.',
+      error.code
+    );
+  }
+
+  return fallback.domain === 'desktop'
+    ? toDesktopErrorDiagnostics(error, fallback.message, fallback.code)
+    : toProjectBridgeDiagnostics(error, fallback.message);
 }
 
-function toDesktopDiagnostics(error: unknown, fallbackMessage: string): ApiDiagnostic[] {
-  const detail =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : fallbackMessage;
-  const message = detail === fallbackMessage ? fallbackMessage : `${fallbackMessage} ${detail}`;
+function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
+  return toOperationDiagnostics(error, {
+    domain: 'bridge',
+    message: 'Project bridge request failed.'
+  });
+}
 
-  return [
-    {
-      domain: 'desktop',
-      message,
-      severity: 'error'
-    }
-  ];
+function toDesktopDiagnostics(
+  error: unknown,
+  fallbackMessage: string,
+  fallbackCode: KmErrorCode = desktopErrorCodes.unexpected
+): ApiDiagnostic[] {
+  return toOperationDiagnostics(error, {
+    code: fallbackCode,
+    domain: 'desktop',
+    message: fallbackMessage
+  });
 }
 
 function isSupportFileSearchCancellation(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === desktopErrorCodes.supportFileSearchCanceled
+  ) {
+    return true;
+  }
+
   const message =
-    error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+    error instanceof Error ? error.message : typeof error === 'string' ? error : null;
   return message === 'Support file search was canceled.';
 }
 
-function toErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
+function toErrorMessage(error: unknown, fallback: UiDiagnosticFallback) {
+  const diagnostics = toOperationDiagnostics(error, fallback);
+  if (diagnostics.length === 0) {
+    return fallback.message ?? 'The operation was canceled.';
   }
 
-  if (typeof error === 'string') {
-    return error;
-  }
+  return diagnostics
+    .map((diagnostic) => {
+      if (!diagnostic.code || diagnostic.message.includes(`Error code: ${diagnostic.code}`)) {
+        return diagnostic.message;
+      }
 
-  return 'Update check failed.';
+      return `${diagnostic.message}\nError code: ${diagnostic.code}`;
+    })
+    .join('\n\n');
 }

@@ -162,9 +162,13 @@ export function getEditableMoveFieldValue(move: MoveRecord, field: string) {
 
   const timingField = parseMoveTimingField(field);
   if (timingField) {
+    const selectedTimingMoveId = timingField.timingMoveId ?? move.moveId;
+    const timingRows = move.timingRows.filter(
+      (candidate) => candidate.timingMoveId === selectedTimingMoveId
+    );
     const timing = timingField.occurrence === null
-      ? move.timing ?? move.timingRows[0] ?? null
-      : move.timingRows.find((candidate) => candidate.occurrence === timingField.occurrence) ?? null;
+      ? timingRows[0] ?? null
+      : timingRows.find((candidate) => candidate.occurrence === timingField.occurrence) ?? null;
     if (!timing) {
       return null;
     }
@@ -280,10 +284,8 @@ export function getEditableMoveFieldValue(move: MoveRecord, field: string) {
 }
 
 export function getMoveEditableFieldLabel(field: MoveEditableField) {
-  const fieldName = field.field
-    .replace(/^battle\.\d+\./, '')
-    .replace(/^timing\.\d+\./, '')
-    .replace(/^timing\./, '');
+  const fieldName =
+    parseMoveTimingField(field.field)?.member ?? field.field.replace(/^battle\.\d+\./, '');
 
   switch (fieldName) {
     case 'turnMin':
@@ -445,18 +447,54 @@ export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
 
 export function parseMoveTimingField(field: string) {
   if (field === 'timing.hitPercent' || field === 'timing.cooldown') {
-    return { member: field.slice('timing.'.length), occurrence: null };
+    return {
+      isLegacyTemplate: true,
+      member: field.slice('timing.'.length),
+      occurrence: null,
+      timingMoveId: null
+    };
   }
 
-  const match = /^timing\.(\d+)\.([A-Za-z][A-Za-z0-9]*)$/.exec(field);
-  if (!match) {
+  const exactAdvancedMatch =
+    /^timing\.(\d+)\.(\d+)\.([A-Za-z][A-Za-z0-9]*)$/.exec(field);
+  if (exactAdvancedMatch) {
+    return {
+      isLegacyTemplate: false,
+      member: exactAdvancedMatch[3],
+      occurrence: Number(exactAdvancedMatch[2]),
+      timingMoveId: Number(exactAdvancedMatch[1])
+    };
+  }
+
+  const sharedOrLegacyAdvancedMatch =
+    /^timing\.(\d+)\.([A-Za-z][A-Za-z0-9]*)$/.exec(field);
+  if (!sharedOrLegacyAdvancedMatch) {
     return null;
   }
 
+  const member = sharedOrLegacyAdvancedMatch[2];
+  const isSharedMember = member === 'hitPercent' || member === 'cooldown';
   return {
-    member: match[2],
-    occurrence: Number(match[1])
+    isLegacyTemplate: !isSharedMember,
+    member,
+    occurrence: isSharedMember ? null : Number(sharedOrLegacyAdvancedMatch[1]),
+    timingMoveId: isSharedMember ? Number(sharedOrLegacyAdvancedMatch[1]) : null
   };
+}
+
+export function resolveMoveTimingEditableField(
+  field: string,
+  timingMoveId: number,
+  occurrence: number
+) {
+  const timingField = parseMoveTimingField(field);
+  if (!timingField || !timingField.isLegacyTemplate) {
+    return field;
+  }
+
+  return timingField.occurrence === null
+    ? `timing.${timingMoveId}.${timingField.member}`
+    : `timing.${timingMoveId}.${occurrence}.${timingField.member}`;
 }
 
 export function isMoveProjectileField(field: string) {
@@ -509,13 +547,19 @@ export function getMoveRelationalValidationIssues(
     }
   }
 
-  const timingOccurrences = new Set(
-    fields
-      .map((field) => parseMoveTimingField(field.field)?.occurrence ?? null)
-      .filter((occurrence): occurrence is number => occurrence !== null)
-  );
-  for (const occurrence of timingOccurrences) {
-    const prefix = `timing.${occurrence}.`;
+  const timingPrefixes = new Set(fields.flatMap((field) => {
+    const timingField = parseMoveTimingField(field.field);
+    if (!timingField || timingField.occurrence === null) {
+      return [];
+    }
+
+    return [
+      timingField.timingMoveId === null
+        ? `timing.${timingField.occurrence}.`
+        : `timing.${timingField.timingMoveId}.${timingField.occurrence}.`
+    ];
+  }));
+  for (const prefix of timingPrefixes) {
     addOrderedPairIssue(`${prefix}rangeMin`, `${prefix}rangeMax`, 'Range');
     addOrderedPairIssue(
       `${prefix}projectileCountMin`,

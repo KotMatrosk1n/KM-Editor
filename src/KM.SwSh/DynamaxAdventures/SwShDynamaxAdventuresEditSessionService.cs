@@ -685,7 +685,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 DiagnosticSeverity.Error,
                 "Dynamax Adventures source table byte layout differs from the vanilla table. Restore the Adventure table from a clean dump before making new Pokemon edits.",
                 file: source.GraphEntry.RelativePath,
-                expected: "Vanilla byte layout, prior KM in-place edits, or a restore-to-vanilla change"));
+                expected: "Vanilla byte layout, prior KM in-place edits, or a restore-to-vanilla change",
+                code: SwShDynamaxAdventuresDiagnosticCodes.TableLayoutMismatch));
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
@@ -3313,7 +3314,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         string message,
         string? field = null,
         string? expected = null,
-        string? file = null)
+        string? file = null,
+        string? code = null)
     {
         return new ValidationDiagnostic(
             severity,
@@ -3321,6 +3323,9 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             File: file,
             Domain: SwShDynamaxAdventuresWorkflowService.DynamaxAdventuresEditDomain,
             Field: field,
-            Expected: expected);
+            Expected: expected)
+        {
+            Code = code,
+        };
     }
 }

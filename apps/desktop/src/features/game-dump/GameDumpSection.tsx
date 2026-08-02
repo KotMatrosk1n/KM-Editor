@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { AlertTriangle, Download, FolderOpen, RefreshCw, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type ApiDiagnostic,
   type ProjectHealth
@@ -13,12 +13,17 @@ import {
   type GameDumpSelection,
   type LoadGameDumpWorkflowRequest
 } from '../../bridge/gameDumpContracts';
-import { ProjectBridgeError, type ProjectBridge } from '../../bridge/projectBridge';
+import { type ProjectBridge } from '../../bridge/projectBridge';
 import type { DesktopServices } from '../../desktopServices';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useModalDialog } from '../../components/useModalDialog';
 import { formatDiagnosticMessage } from '../../diagnostics';
+import { desktopErrorCodes } from '../../errorCodes';
 import { useLocalization } from '../../localization';
+import {
+  toDesktopErrorDiagnostics,
+  toProjectBridgeDiagnostics
+} from '../../uiErrorDiagnostics';
 
 type ProjectPaths = LoadGameDumpWorkflowRequest['paths'];
 
@@ -68,6 +73,7 @@ export function GameDumpSection({
   const [progress, setProgress] = useState<GameDumpProgress | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<GameDumpCategoryFilter>('all');
   const [categorySearch, setCategorySearch] = useState('');
+  const loadWorkflowRunRef = useRef(0);
   const { translateLiteral } = useLocalization();
 
   const selectedCategories = useMemo(
@@ -121,7 +127,9 @@ export function GameDumpSection({
   );
 
   const loadWorkflow = useCallback(async () => {
+    const runId = ++loadWorkflowRunRef.current;
     if (!health?.canOpenReadOnlyWorkflows || paths.selectedGame === null) {
+      setIsLoading(false);
       setWorkflowCategories([]);
       setWorkflowDiagnostics([]);
       setSelectionState({});
@@ -138,6 +146,10 @@ export function GameDumpSection({
     });
     try {
       const response = await bridge.loadGameDumpWorkflow({ paths });
+      if (loadWorkflowRunRef.current !== runId) {
+        return;
+      }
+
       setWorkflowCategories(response.workflow.categories);
       setWorkflowDiagnostics(response.workflow.diagnostics);
       setSelectionState((current) =>
@@ -153,7 +165,20 @@ export function GameDumpSection({
       );
       setProgress(null);
     } catch (error) {
-      setActionDiagnostics(toDiagnostics(error));
+      if (loadWorkflowRunRef.current !== runId) {
+        return;
+      }
+
+      const failureDiagnostics = toProjectBridgeDiagnostics(
+        error,
+        'Game Dump could not be loaded.'
+      );
+      if (failureDiagnostics.length === 0) {
+        setProgress(null);
+        return;
+      }
+
+      setActionDiagnostics(failureDiagnostics);
       setProgress({
         detail: 'Review diagnostics before using these dump files.',
         label: 'Game Dump failed.',
@@ -161,7 +186,9 @@ export function GameDumpSection({
         percent: 100
       });
     } finally {
-      setIsLoading(false);
+      if (loadWorkflowRunRef.current === runId) {
+        setIsLoading(false);
+      }
     }
   }, [bridge, health?.canOpenReadOnlyWorkflows, paths]);
 
@@ -170,12 +197,22 @@ export function GameDumpSection({
   }, [loadWorkflow]);
 
   const handleBrowseDestination = async () => {
-    const selectedFolder = await desktopServices.pickFolder({
-      defaultPath: destinationFolder || undefined,
-      title: translateLiteral('Select Game Dump destination')
-    });
-    if (selectedFolder) {
-      updateDestinationFolder(selectedFolder);
+    try {
+      const selectedFolder = await desktopServices.pickFolder({
+        defaultPath: destinationFolder || undefined,
+        title: translateLiteral('Select Game Dump destination')
+      });
+      if (selectedFolder) {
+        updateDestinationFolder(selectedFolder);
+      }
+    } catch (error) {
+      setActionDiagnostics(
+        toDesktopErrorDiagnostics(
+          error,
+          'Could not choose the Game Dump destination.',
+          desktopErrorCodes.folderPickerFailed
+        )
+      );
     }
   };
 
@@ -187,7 +224,13 @@ export function GameDumpSection({
     try {
       await desktopServices.openPath(destinationFolder);
     } catch (error) {
-      setActionDiagnostics(toDiagnostics(error));
+      setActionDiagnostics(
+        toDesktopErrorDiagnostics(
+          error,
+          'Could not open the Game Dump destination.',
+          desktopErrorCodes.pathOpenFailed
+        )
+      );
     }
   };
 
@@ -235,7 +278,15 @@ export function GameDumpSection({
         writtenFileCount: response.result.writtenFiles.length
       });
     } catch (error) {
-      setActionDiagnostics(toDiagnostics(error));
+      const failureDiagnostics = toProjectBridgeDiagnostics(
+        error,
+        'Game Dump generation failed.'
+      );
+      if (failureDiagnostics.length === 0) {
+        return;
+      }
+
+      setActionDiagnostics(failureDiagnostics);
       setProgress({
         detail: 'Review diagnostics before using these dump files.',
         label: 'Game Dump failed.',
@@ -689,26 +740,6 @@ function formatBytes(value: number) {
   }
 
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function toDiagnostics(error: unknown): ApiDiagnostic[] {
-  if (error instanceof ProjectBridgeError) {
-    return error.apiError.diagnostics.length > 0
-      ? error.apiError.diagnostics
-      : [
-          {
-            message: error.message,
-            severity: 'error'
-          }
-        ];
-  }
-
-  return [
-    {
-      message: error instanceof Error ? error.message : 'Game Dump failed.',
-      severity: 'error'
-    }
-  ];
 }
 
 function loadRememberedDestination(game: NonNullable<ProjectPaths['selectedGame']>) {

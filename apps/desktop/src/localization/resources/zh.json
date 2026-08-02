@@ -1,6 +1,11 @@
 {
   "keys": {
     "Pending changes ({count})": "待处理更改（{count}）",
+    "moves.runtimeVariant.help": "普通招式、Plus 招式和首领招式分别使用独立的战斗与时序配置。首领招式供 Rogue Mega 及同类脚本化首领攻击使用。未知变体仍以编号显示。",
+    "moves.timingOccurrence.help": "每个出现项都有独立的高级时序数据。命中率和冷却时间由所选时序配置中的所有出现项共享。",
+    "moves.timingProfile.heading": "时序配置",
+    "moves.timingProfile.help": "此运行时变体包含多个相互独立的时序配置。原始时序招式 ID 用于标识游戏中存储的配置。",
+    "moves.timingProfile.option": "时序配置 {id}",
     "royalCandy.cap.afterDefeating": "击败{label}后",
     "royalCandy.cap.emptyError": "请输入等级上限。",
     "royalCandy.cap.levelAria": "击败{label}后的等级上限",
@@ -1082,6 +1087,7 @@
     "Equal to": "等于",
     "Error": "错误",
     "Error code": "错误代码",
+    "Incident fingerprint": "事件指纹",
     "Escape - flees from the player": "逃跑 - 从玩家处逃跑",
     "Evasion": "闪避",
     "Event": "事件",

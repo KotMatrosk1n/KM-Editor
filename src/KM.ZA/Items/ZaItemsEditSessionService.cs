@@ -3239,12 +3239,9 @@ internal sealed class ZaItemsEditSessionService
                 diagnostic.Field,
                 ZaItemsWorkflowService.TechnicalMachineNumberField,
                 StringComparison.Ordinal)
-            && (diagnostic.Message.StartsWith(
-                    ZaItemsWorkflowService.LegacyTechnicalMachineNumberingWarningPrefix,
-                    StringComparison.Ordinal)
-                || diagnostic.Message.StartsWith(
-                    ZaItemsWorkflowService.LegacyMachineWazaLayoutWarningPrefix,
-                    StringComparison.Ordinal)));
+            && diagnostic.Code is
+                ZaItemsDiagnosticCodes.LegacyTechnicalMachineNumbering
+                    or ZaItemsDiagnosticCodes.LegacyTechnicalMachinePickupLayout);
     }
 
     private static ZaItemsWorkflow OverlayPendingEdits(ZaItemsWorkflow workflow, IEnumerable<PendingEdit> edits)

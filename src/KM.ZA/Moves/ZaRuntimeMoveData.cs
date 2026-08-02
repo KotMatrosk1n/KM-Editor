@@ -166,6 +166,7 @@ internal static class ZaRuntimeMoveData
     {
         return new ZaMoveTimingParameterT
         {
+            MoveId = row.TimingMoveId,
             ChargeFrame = row.ChargeFrames,
             AttackLoopFrame = row.AttackLoopFrames,
             SpawnOrigin = row.SpawnOrigin,
@@ -206,8 +207,34 @@ internal static class ZaRuntimeMoveData
     public static string BattleField(int variant, string field) =>
         $"{BattlePrefix}{variant.ToString(CultureInfo.InvariantCulture)}.{field}";
 
+    public static string TimingSharedField(int timingMoveId, string field) =>
+        $"{TimingPrefix}{timingMoveId.ToString(CultureInfo.InvariantCulture)}.{field}";
+
+    public static string TimingField(int timingMoveId, int occurrence, string field) =>
+        $"{TimingPrefix}{timingMoveId.ToString(CultureInfo.InvariantCulture)}.{occurrence.ToString(CultureInfo.InvariantCulture)}.{field}";
+
+    // Retained as the occurrence-only workflow template shape. Concrete edits
+    // always include the exact encoded timing move ID through the overload above.
     public static string TimingField(int occurrence, string field) =>
         $"{TimingPrefix}{occurrence.ToString(CultureInfo.InvariantCulture)}.{field}";
+
+    public static bool IsTimingForMove(int timingMoveId, int moveId) =>
+        timingMoveId >= 0
+        && moveId >= 0
+        && GetTimingBaseMoveId(timingMoveId) == moveId;
+
+    public static int GetTimingBaseMoveId(int timingMoveId) =>
+        timingMoveId >= 0
+            ? timingMoveId % 1000
+            : throw new ArgumentOutOfRangeException(nameof(timingMoveId));
+
+    public static int GetTimingVariant(int timingMoveId) => timingMoveId switch
+    {
+        < 0 => throw new ArgumentOutOfRangeException(nameof(timingMoveId)),
+        < 1000 => 0,
+        < 2000 => 1,
+        _ => 2,
+    };
 
     public static bool TryParseBattleField(string? field, out int variant, out string member)
     {
@@ -231,8 +258,13 @@ internal static class ZaRuntimeMoveData
         return true;
     }
 
-    public static bool TryParseTimingField(string? field, out int? occurrence, out string member)
+    public static bool TryParseTimingField(
+        string? field,
+        out int? timingMoveId,
+        out int? occurrence,
+        out string member)
     {
+        timingMoveId = null;
         occurrence = null;
         member = string.Empty;
         if (string.IsNullOrWhiteSpace(field) || !field.StartsWith(TimingPrefix, StringComparison.Ordinal))
@@ -240,28 +272,46 @@ internal static class ZaRuntimeMoveData
             return false;
         }
 
-        var suffix = field[TimingPrefix.Length..];
-        var separator = suffix.IndexOf('.');
-        if (separator < 0)
+        var parts = field[TimingPrefix.Length..].Split('.', StringSplitOptions.None);
+        if (parts.Length == 1)
         {
-            member = suffix;
+            member = parts[0];
             return member.Length > 0;
         }
 
-        if (!int.TryParse(
-                suffix.AsSpan(0, separator),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var parsedOccurrence)
-            || parsedOccurrence < 0
-            || separator == suffix.Length - 1)
+        if (parts.Length == 2
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsedIdentity)
+            && parsedIdentity >= 0
+            && !string.IsNullOrWhiteSpace(parts[1]))
         {
-            return false;
+            member = parts[1];
+            if (member is "hitPercent" or "cooldown")
+            {
+                timingMoveId = parsedIdentity;
+            }
+            else
+            {
+                // Legacy/template shape: timing.<occurrence>.<member>.
+                occurrence = parsedIdentity;
+            }
+
+            return true;
         }
 
-        occurrence = parsedOccurrence;
-        member = suffix[(separator + 1)..];
-        return true;
+        if (parts.Length == 3
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsedTimingMoveId)
+            && parsedTimingMoveId >= 0
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var parsedOccurrence)
+            && parsedOccurrence >= 0
+            && !string.IsNullOrWhiteSpace(parts[2]))
+        {
+            timingMoveId = parsedTimingMoveId;
+            occurrence = parsedOccurrence;
+            member = parts[2];
+            return true;
+        }
+
+        return false;
     }
 
     public static ZaMoveRuntimeVariantRecord ToRecord(ZaBattleMoveParameterT row)
@@ -313,6 +363,8 @@ internal static class ZaRuntimeMoveData
         var spawnLocator = row.SpawnLocator ?? string.Empty;
         var locatorOptions = spawnLocators ?? KnownSpawnLocators;
         return new ZaMoveTimingRecord(
+            row.MoveId,
+            GetTimingVariant(row.MoveId),
             occurrence,
             row.ChargeFrame,
             row.AttackLoopFrame,

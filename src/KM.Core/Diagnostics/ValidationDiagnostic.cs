@@ -8,4 +8,10 @@ public sealed record ValidationDiagnostic(
     string? File = null,
     string? Domain = null,
     string? Field = null,
-    string? Expected = null);
+    string? Expected = null)
+{
+    /// <summary>
+    /// A stable KM-prefixed semantic identifier; the human message may evolve independently.
+    /// </summary>
+    public string? Code { get; init; }
+}

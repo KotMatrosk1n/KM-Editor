@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { z, type ZodTypeAny } from 'zod';
+import { diagnosticErrorCodes, kmErrorCodeSchema } from '../errorCodes';
 export const kmCommandNameValues = [
   'project.open',
   'project.validate',
@@ -246,6 +247,7 @@ export const kmCommandNames = {
 export const apiDiagnosticSeveritySchema = z.enum(['info', 'warning', 'error']);
 
 export const apiDiagnosticSchema = z.strictObject({
+  code: kmErrorCodeSchema.nullish(),
   domain: z.string().nullable().optional(),
   expected: z.string().nullable().optional(),
   field: z.string().nullable().optional(),
@@ -255,7 +257,7 @@ export const apiDiagnosticSchema = z.strictObject({
 });
 
 export const apiErrorSchema = z.strictObject({
-  code: z.string(),
+  code: kmErrorCodeSchema,
   diagnostics: z.array(apiDiagnosticSchema),
   message: z.string()
 });
@@ -1315,7 +1317,9 @@ export const moveTimingRecordSchema = z.strictObject({
   spawnOffsetY: z.number(),
   spawnOffsetZ: z.number(),
   spawnOrigin: z.number().int(),
-  targetCorrectionType: z.number().int()
+  targetCorrectionType: z.number().int(),
+  timingMoveId: z.number().int().nonnegative(),
+  variant: z.number().int().nonnegative()
 });
 
 export const moveVanillaFieldValueSchema = z.strictObject({
@@ -2341,13 +2345,12 @@ function validateDynamaxAdventuresWorkflow(
     const hasRecoverableTableDiagnostic = workflowDiagnostics.some(
       (diagnostic) =>
         diagnostic.severity === 'error' &&
-        (diagnostic.message.includes(
-          'source table byte layout differs from the vanilla table'
-        ) ||
-          diagnostic.message.startsWith('Dynamax Adventures row ') ||
-          diagnostic.message.includes(
-            'contains changes on a hidden normal or boss row'
-          ))
+        (diagnostic.code ===
+          diagnosticErrorCodes.swshDynamaxAdventuresTableLayoutMismatch ||
+          diagnostic.code ===
+            diagnosticErrorCodes.swshDynamaxAdventuresRowApiDomainInvalid ||
+          diagnostic.code === diagnosticErrorCodes.swshDynamaxAdventuresRowFormUnresolved ||
+          diagnostic.code === diagnosticErrorCodes.swshDynamaxAdventuresHiddenRowChanged)
     );
     if (!hasRecoverableTableDiagnostic) {
       addDynamaxAdventureContractIssue(
@@ -5197,11 +5200,12 @@ export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
       const hasPayload = response.payload !== null && response.payload !== undefined;
       const hasError = response.error !== null && response.error !== undefined;
 
-      // A bridge response must be exactly one of success or failure; never both and never neither.
-      if (hasPayload === hasError) {
+      // Reject contradictory envelopes here. An empty envelope is structurally valid so the
+      // request layer can report the more specific KM-BRIDGE-RESPONSE-PAYLOAD-MISSING code.
+      if (hasPayload && hasError) {
         context.addIssue({
           code: 'custom',
-          message: 'Bridge responses must contain either payload or error.'
+          message: 'Bridge responses cannot contain both payload and error.'
         });
       }
     });

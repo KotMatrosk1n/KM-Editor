@@ -215,12 +215,20 @@ export function DiagnosticsSection({
               {group.diagnostics.map((diagnostic, index) => (
                 <li
                   className={`diagnostic diagnostic-${diagnostic.severity}`}
-                  key={`${diagnostic.severity}-${diagnostic.message}-${index}`}
+                  key={`${diagnostic.code ?? 'uncoded'}-${diagnostic.severity}-${diagnostic.message}-${index}`}
                 >
                   <strong>
                     {translateLiteral(formatDiagnosticSeverity(diagnostic.severity))}
                   </strong>
-                  <span>{formatDiagnosticMessage(diagnostic, translateLiteral)}</span>
+                  <span>
+                    {diagnostic.code ? (
+                      <code className="diagnostic-code" data-localization-ignore="true">
+                        {diagnostic.code}
+                      </code>
+                    ) : null}
+                    {diagnostic.code ? ' ' : null}
+                    {formatDiagnosticMessage(diagnostic, translateLiteral)}
+                  </span>
                 </li>
               ))}
             </ul>

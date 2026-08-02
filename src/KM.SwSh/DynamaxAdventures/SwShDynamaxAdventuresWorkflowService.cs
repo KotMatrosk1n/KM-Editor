@@ -275,7 +275,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                     $"Dynamax Adventures row {invalidEntry.ToString(CultureInfo.InvariantCulture)} contains {invalidField} outside the supported API domain.",
                     file: source.GraphEntry.RelativePath,
                     field: invalidField,
-                    expected: expected));
+                    expected: expected,
+                    code: SwShDynamaxAdventuresDiagnosticCodes.RowApiDomainInvalid));
                 if (!hasVerifiedLayeredBase)
                 {
                     return CreateWorkflow(summary, [], parsedSourcePaths.Count, lookupTables, diagnostics);
@@ -296,7 +297,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                     $"Dynamax Adventures row {invalidEntry.ToString(CultureInfo.InvariantCulture)} contains a form that does not exist for its species in Sword/Shield personal data.",
                     file: source.GraphEntry.RelativePath,
                     field: FormField,
-                    expected: expected));
+                    expected: expected,
+                    code: SwShDynamaxAdventuresDiagnosticCodes.RowFormUnresolved));
                 if (!hasVerifiedLayeredBase)
                 {
                     return CreateWorkflow(summary, [], parsedSourcePaths.Count, lookupTables, diagnostics);
@@ -309,7 +311,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                     DiagnosticSeverity.Error,
                     "Dynamax Adventures source table byte layout differs from the vanilla table. Restore the Adventure table from a clean dump before making new Pokemon edits.",
                     file: source.GraphEntry.RelativePath,
-                    expected: "Vanilla byte layout or prior KM in-place Dynamax Adventures edits"));
+                    expected: "Vanilla byte layout or prior KM in-place Dynamax Adventures edits",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.TableLayoutMismatch));
             }
 
             if (vanillaArchive is not null
@@ -384,7 +387,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                     DiagnosticSeverity.Error,
                     "Dynamax Adventures contains changes on a hidden normal or boss row. Unsupported row classes must remain base-identical before editing can continue.",
                     file: source.GraphEntry.RelativePath,
-                    expected: "Base-identical hidden normal and boss rows"));
+                    expected: "Base-identical hidden normal and boss rows",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.HiddenRowChanged));
             }
             if (encounters.Any(encounter => encounter.IsEditable
                 && (encounter.VanillaPokemon is null
@@ -396,7 +400,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                     DiagnosticSeverity.Error,
                     "Dynamax Adventures could not map complete base, ability, Gigantamax, and move options for every editable row.",
                     file: source.GraphEntry.RelativePath,
-                    expected: "Verified vanilla row plus nonempty safe option sets for every editable Pokemon"));
+                    expected: "Verified vanilla row plus nonempty safe option sets for every editable Pokemon",
+                    code: SwShDynamaxAdventuresDiagnosticCodes.OptionsIncomplete));
             }
             var mainState = AnalyzeMainState(
                 project,
@@ -683,20 +688,9 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             .ToArray();
         return errors.Any(diagnostic =>
-                diagnostic.Message.Contains(
-                    "source table byte layout differs from the vanilla table",
-                    StringComparison.Ordinal)
-                || diagnostic.Message.StartsWith("Dynamax Adventures row ", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("contains changes on a hidden normal or boss row", StringComparison.Ordinal))
+                SwShDynamaxAdventuresDiagnosticCodes.IsTableRestoreTrigger(diagnostic.Code))
             && errors.All(diagnostic =>
-                diagnostic.Message.Contains("source table byte layout differs from the vanilla table", StringComparison.Ordinal)
-                || diagnostic.Message.StartsWith("Dynamax Adventures row ", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("contains changes on a hidden normal or boss row", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("could not map complete base, ability, Gigantamax, and move options", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("could not map any verified safe normal-route species options", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("personal data is missing or unreadable", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("move data is missing or unreadable", StringComparison.Ordinal)
-                || diagnostic.Message.Contains("learnset data is missing or unreadable", StringComparison.Ordinal));
+                SwShDynamaxAdventuresDiagnosticCodes.IsTableRestoreCompatible(diagnostic.Code));
     }
 
     private static bool Invalid(
@@ -729,7 +723,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                 DiagnosticSeverity.Error,
                 "Dynamax Adventures could not map any verified safe normal-route species options.",
                 field: SpeciesField,
-                expected: "Readable species names and personal data with at least one safe replacement"));
+                expected: "Readable species names and personal data with at least one safe replacement",
+                code: SwShDynamaxAdventuresDiagnosticCodes.SpeciesOptionsMissing));
         }
 
         if (summary.Availability == SwShWorkflowAvailability.Available
@@ -1158,7 +1153,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                 DiagnosticSeverity.Error,
                 "Dynamax Adventures personal data is missing or unreadable. Pokemon rows remain read-only because species and form safety cannot be verified.",
                 file: SwShPersonalTable.PersonalDataRelativePath,
-                expected: "Readable Sword/Shield personal_total.bin"));
+                expected: "Readable Sword/Shield personal_total.bin",
+                code: SwShDynamaxAdventuresDiagnosticCodes.PersonalDataMissing));
         }
 
         if (!moveAvailability.HasSemanticData || usableMoveIds.Count == 0)
@@ -1167,7 +1163,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                 DiagnosticSeverity.Error,
                 "Dynamax Adventures move data is missing or unreadable. Pokemon rows remain read-only because usable moves cannot be verified.",
                 file: SwShMoveDataFile.MoveDataRelativeDirectory,
-                expected: "Readable Sword/Shield move data with at least one usable move"));
+                expected: "Readable Sword/Shield move data with at least one usable move",
+                code: SwShDynamaxAdventuresDiagnosticCodes.MoveDataMissing));
         }
 
         if (learnsetRecords.Count == 0)
@@ -1176,7 +1173,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                 DiagnosticSeverity.Error,
                 "Dynamax Adventures learnset data is missing or unreadable. Pokemon rows remain read-only because move compatibility cannot be verified.",
                 file: SwShPokemonLearnsetTable.LearnsetDataRelativePath,
-                expected: "Readable Sword/Shield wazaoboe_total.bin"));
+                expected: "Readable Sword/Shield wazaoboe_total.bin",
+                code: SwShDynamaxAdventuresDiagnosticCodes.LearnsetDataMissing));
         }
 
         return new DynamaxAdventureLookupTables(
@@ -1702,7 +1700,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         string message,
         string? file = null,
         string? field = null,
-        string? expected = null)
+        string? expected = null,
+        string? code = null)
     {
         return new ValidationDiagnostic(
             severity,
@@ -1710,7 +1709,10 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             File: file,
             Field: field,
             Domain: DynamaxAdventuresEditDomain,
-            Expected: expected);
+            Expected: expected)
+        {
+            Code = code,
+        };
     }
 
     internal static bool IsDynamaxAdventureTableLayoutCompatible(

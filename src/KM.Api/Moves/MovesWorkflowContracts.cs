@@ -95,6 +95,8 @@ public sealed record MoveRuntimeVariantRecordDto(
     int ValueEffectRatio);
 
 public sealed record MoveTimingRecordDto(
+    int TimingMoveId,
+    int Variant,
     int Occurrence,
     int ChargeFrames,
     int AttackLoopFrames,

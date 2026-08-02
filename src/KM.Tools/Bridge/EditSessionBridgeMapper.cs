@@ -160,7 +160,10 @@ public static class EditSessionBridgeMapper
             diagnostic.File,
             diagnostic.Domain,
             diagnostic.Field,
-            diagnostic.Expected);
+            diagnostic.Expected)
+        {
+            Code = diagnostic.Code,
+        };
     }
 
     private static DiagnosticSeverity ToCore(ApiDiagnosticSeverity severity)

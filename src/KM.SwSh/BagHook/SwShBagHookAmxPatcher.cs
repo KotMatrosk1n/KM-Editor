@@ -11,6 +11,13 @@ internal enum SwShBagHookInstallKind
     Conflict,
 }
 
+internal enum SwShBagHookMarkerPlacement
+{
+    None,
+    DataSection,
+    LegacyCodeSection,
+}
+
 internal sealed record SwShBagHookSlotPatch(
     int Slot,
     int? ItemId,
@@ -26,7 +33,8 @@ internal sealed record SwShBagHookSlotState(
 internal sealed record SwShBagHookAnalysis(
     SwShBagHookInstallKind Kind,
     string Message,
-    IReadOnlyList<SwShBagHookSlotState> Slots);
+    IReadOnlyList<SwShBagHookSlotState> Slots,
+    SwShBagHookMarkerPlacement MarkerPlacement);
 
 internal sealed record SwShBagHookRestoreResult(
     byte[] Data,
@@ -65,12 +73,6 @@ internal static class SwShBagHookAmxPatcher
     private const ulong MarkerCell0 = 0x4741425F48535753; // SWSH_BAG
     private const ulong MarkerCell1 = 0x32565F4B4F4F485F; // _HOOK_V2
 
-    private enum MarkerPlacement
-    {
-        DataSection,
-        LegacyCodeSection,
-    }
-
     public static SwShBagHookAnalysis Analyze(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -89,14 +91,15 @@ internal static class SwShBagHookAmxPatcher
 
             if (TryReadV2Slots(decoded, codeCells, targetCell.Value, out var slots, out var markerPlacement))
             {
-                var message = markerPlacement == MarkerPlacement.LegacyCodeSection
+                var message = markerPlacement == SwShBagHookMarkerPlacement.LegacyCodeSection
                     ? "Bag Hook V2 is installed with the legacy code-section marker. Stage and apply Bag Hook, Royal Candy, or Starting Items to migrate the marker into AMX data and keep the script VM-safe."
                     : "Bag Hook V2 is installed. Slot 1 is reserved for Royal Candy; slots 2-20 are available for Starting Items.";
 
                 return new SwShBagHookAnalysis(
                     SwShBagHookInstallKind.InstalledV2,
                     message,
-                    slots);
+                    slots,
+                    markerPlacement);
             }
 
             if (TryReadLegacySingleGrant(codeCells, targetCell.Value, out var legacySlot))
@@ -104,7 +107,8 @@ internal static class SwShBagHookAmxPatcher
                 return new SwShBagHookAnalysis(
                     SwShBagHookInstallKind.LegacySingleGrant,
                     "A legacy one-item Bag-event grant is installed. Reinstall Bag Hook V2 before managing shared slots.",
-                    CreateLegacySlots(legacySlot));
+                    CreateLegacySlots(legacySlot),
+                    SwShBagHookMarkerPlacement.None);
             }
 
             if (targetCell.Value == OriginalNoOpGrantStubCell)
@@ -112,7 +116,8 @@ internal static class SwShBagHookAmxPatcher
                 return new SwShBagHookAnalysis(
                     SwShBagHookInstallKind.NotInstalled,
                     "Bag Hook is not installed. Installing it creates 20 disabled grant slots and grants no items by itself.",
-                    CreateEmptySlots("unavailable", "Install Bag Hook V2 before claiming this slot."));
+                    CreateEmptySlots("unavailable", "Install Bag Hook V2 before claiming this slot."),
+                    SwShBagHookMarkerPlacement.None);
             }
 
             return CreateConflict($"Bag Hook call site points to AMX cell {targetCell.Value}, which is not the vanilla no-op routine, Bag Hook V2, or a recognized legacy grant.");
@@ -208,7 +213,7 @@ internal static class SwShBagHookAmxPatcher
         var bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize)
             ?? throw new InvalidDataException("Bag Hook call site is not a readable local AMX CALL.");
         if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out _, out var markerPlacement)
-            || markerPlacement != MarkerPlacement.DataSection)
+            || markerPlacement != SwShBagHookMarkerPlacement.DataSection)
         {
             throw new InvalidDataException("Bag Hook V2 does not have its expected terminal data marker.");
         }
@@ -331,7 +336,7 @@ internal static class SwShBagHookAmxPatcher
             throw new InvalidDataException("Bag Hook V2 must be installed before slot grants can be edited.");
         }
 
-        if (markerPlacement == MarkerPlacement.LegacyCodeSection)
+        if (markerPlacement == SwShBagHookMarkerPlacement.LegacyCodeSection)
         {
             decoded = MoveLegacyCodeMarkerToDataSection(decoded, bagProcCell);
             codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
@@ -395,7 +400,8 @@ internal static class SwShBagHookAmxPatcher
         return new SwShBagHookAnalysis(
             SwShBagHookInstallKind.Conflict,
             message,
-            CreateEmptySlots("conflict", "Slot state cannot be trusted until the Bag-event script conflict is resolved."));
+            CreateEmptySlots("conflict", "Slot state cannot be trusted until the Bag-event script conflict is resolved."),
+            SwShBagHookMarkerPlacement.None);
     }
 
     private static void ValidateRestoreBaseLayout(DecodedAmx current, DecodedAmx baseAmx)
@@ -439,7 +445,7 @@ internal static class SwShBagHookAmxPatcher
         var bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize);
         if (bagProcCell is null
             || !TryReadV2Slots(decoded, codeCells, bagProcCell.Value, out _, out var markerPlacement)
-            || markerPlacement != MarkerPlacement.LegacyCodeSection)
+            || markerPlacement != SwShBagHookMarkerPlacement.LegacyCodeSection)
         {
             return null;
         }
@@ -473,10 +479,10 @@ internal static class SwShBagHookAmxPatcher
         IReadOnlyList<ulong> codeCells,
         int bagProcCell,
         out IReadOnlyList<SwShBagHookSlotState> slots,
-        out MarkerPlacement markerPlacement)
+        out SwShBagHookMarkerPlacement markerPlacement)
     {
         slots = Array.Empty<SwShBagHookSlotState>();
-        markerPlacement = MarkerPlacement.DataSection;
+        markerPlacement = SwShBagHookMarkerPlacement.None;
         var minimumLength = bagProcCell + HookCodeCellCount;
         if (bagProcCell < 0 || minimumLength > codeCells.Count)
         {
@@ -492,11 +498,11 @@ internal static class SwShBagHookAmxPatcher
 
         if (TryReadDataMarker(decoded))
         {
-            markerPlacement = MarkerPlacement.DataSection;
+            markerPlacement = SwShBagHookMarkerPlacement.DataSection;
         }
         else if (TryReadLegacyCodeMarker(codeCells, bagProcCell))
         {
-            markerPlacement = MarkerPlacement.LegacyCodeSection;
+            markerPlacement = SwShBagHookMarkerPlacement.LegacyCodeSection;
         }
         else
         {

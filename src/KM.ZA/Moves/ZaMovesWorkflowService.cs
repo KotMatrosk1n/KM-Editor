@@ -437,13 +437,13 @@ internal sealed class ZaMovesWorkflowService
                 .GroupBy(row => checked((int)row.MoveId))
                 .ToDictionary(group => group.Key, group => group.OrderBy(row => row.VariantType).ToArray());
             var timingByMove = ZaRuntimeMoveData.TimingRows(timingTable)
-                .GroupBy(row => row.MoveId)
+                .GroupBy(row => ZaRuntimeMoveData.GetTimingBaseMoveId(row.MoveId))
                 .ToDictionary(group => group.Key, group => group.ToArray());
             var baseBattleByMove = ZaRuntimeMoveData.BattleRows(baseBattleTable)
                 .GroupBy(row => checked((int)row.MoveId))
                 .ToDictionary(group => group.Key, group => group.OrderBy(row => row.VariantType).ToArray());
             var baseTimingByMove = ZaRuntimeMoveData.TimingRows(baseTimingTable)
-                .GroupBy(row => row.MoveId)
+                .GroupBy(row => ZaRuntimeMoveData.GetTimingBaseMoveId(row.MoveId))
                 .ToDictionary(group => group.Key, group => group.ToArray());
 
             spawnLocators = ZaRuntimeMoveData.SpawnLocators
@@ -451,9 +451,14 @@ internal sealed class ZaMovesWorkflowService
                     .Select(row => row.SpawnLocator ?? string.Empty))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            var maximumTimingOccurrences = timingByMove.Count == 0
-                ? 0
-                : timingByMove.Values.Max(rows => rows.Length);
+            var maximumTimingOccurrences = ZaRuntimeMoveData.TimingRows(timingTable)
+                .GroupBy(row => row.MoveId)
+                .Select(group => group.Count())
+                .Concat(ZaRuntimeMoveData.TimingRows(baseTimingTable)
+                    .GroupBy(row => row.MoveId)
+                    .Select(group => group.Count()))
+                .DefaultIfEmpty(0)
+                .Max();
             runtimeEditableFields = CreateRuntimeEditableFields(
                 maximumTimingOccurrences,
                 spawnLocators,
@@ -514,14 +519,16 @@ internal sealed class ZaMovesWorkflowService
             return exact;
         }
 
-        if (!ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var member)
-            || occurrence is null)
+        if (!ZaRuntimeMoveData.TryParseTimingField(field, out _, out var occurrence, out var member))
         {
             return null;
         }
 
-        var template = RuntimeAdvancedTimingTemplates.FirstOrDefault(candidate =>
-            ZaRuntimeMoveData.TryParseTimingField(candidate.Field, out _, out var candidateMember)
+        var templates = occurrence is null
+            ? RuntimeBaseEditableFields
+            : RuntimeAdvancedTimingTemplates;
+        var template = templates.FirstOrDefault(candidate =>
+            ZaRuntimeMoveData.TryParseTimingField(candidate.Field, out _, out _, out var candidateMember)
             && string.Equals(candidateMember, member, StringComparison.Ordinal));
         return template is null ? null : template with { Field = field! };
     }
@@ -529,13 +536,24 @@ internal sealed class ZaMovesWorkflowService
     internal static ZaMoveEditableField? GetEditableField(ZaMovesWorkflow workflow, string? field)
     {
         ArgumentNullException.ThrowIfNull(workflow);
-        return workflow.EditableFields.FirstOrDefault(candidate =>
+        var exact = workflow.EditableFields.FirstOrDefault(candidate =>
             string.Equals(candidate.Field, field, StringComparison.Ordinal));
+        if (exact is not null
+            || !ZaRuntimeMoveData.TryParseTimingField(field, out _, out var occurrence, out var member))
+        {
+            return exact;
+        }
+
+        var template = workflow.EditableFields.FirstOrDefault(candidate =>
+            ZaRuntimeMoveData.TryParseTimingField(candidate.Field, out _, out var candidateOccurrence, out var candidateMember)
+            && (occurrence is null) == (candidateOccurrence is null)
+            && string.Equals(candidateMember, member, StringComparison.Ordinal));
+        return template is null ? null : template with { Field = field! };
     }
 
     internal static bool IsProjectileField(string? field)
     {
-        return ZaRuntimeMoveData.TryParseTimingField(field, out var occurrence, out var member)
+        return ZaRuntimeMoveData.TryParseTimingField(field, out _, out var occurrence, out var member)
             && occurrence is not null
             && ZaRuntimeMoveData.IsProjectileMember(member);
     }
@@ -640,13 +658,10 @@ internal sealed class ZaMovesWorkflowService
     {
         var (variants, ambiguousVariantIds) = ProjectBattleRows(battleRows);
         var (baseVariants, ambiguousBaseVariantIds) = ProjectBattleRows(baseBattleRows);
-        var timingRecords = timingRows
-            .Select((row, occurrence) => ZaRuntimeMoveData.ToRecord(row, occurrence, spawnLocators))
-            .ToArray();
-        var baseTimingRecords = baseTimingRows
-            .Select((row, occurrence) => ZaRuntimeMoveData.ToRecord(row, occurrence, spawnLocators))
-            .ToArray();
-        var timing = timingRecords.FirstOrDefault();
+        var timingRecords = ProjectTimingRows(timingRows, spawnLocators);
+        var baseTimingRecords = ProjectTimingRows(baseTimingRows, spawnLocators);
+        var timing = timingRecords.FirstOrDefault(row => row.Variant == 0)
+            ?? timingRecords.FirstOrDefault();
         var primary = variants.FirstOrDefault(variant => variant.Variant == 0) ?? variants.FirstOrDefault();
         var vanillaValues = new List<ZaMoveVanillaFieldValue>();
         var currentVariantIds = battleRows
@@ -661,7 +676,9 @@ internal sealed class ZaMovesWorkflowService
         var hasMatchingVariantShape = ambiguousVariantIds.Count == 0
             && ambiguousBaseVariantIds.Count == 0
             && currentVariantIds.SequenceEqual(baseVariantIds);
-        var hasMatchingTiming = timingRows.Count == baseTimingRows.Count;
+        var hasMatchingTiming = timingRows
+            .Select(row => row.MoveId)
+            .SequenceEqual(baseTimingRows.Select(row => row.MoveId));
         var canRevertToVanilla = hasRuntimeData
             && hasMatchingVariantShape
             && hasMatchingTiming;
@@ -704,14 +721,35 @@ internal sealed class ZaMovesWorkflowService
             }
         }
 
-        foreach (var field in runtimeEditableFields.Where(candidate =>
-                     candidate.Field.StartsWith(ZaRuntimeMoveData.TimingPrefix, StringComparison.Ordinal)))
+        foreach (var baseTiming in baseTimingRecords)
         {
-            if (ZaRuntimeMoveData.TryParseTimingField(field.Field, out var occurrence, out var member)
-                && baseTimingRecords.ElementAtOrDefault(occurrence ?? 0) is { } baseTiming
-                && ZaRuntimeMoveData.GetValue(baseTiming, member) is { } value)
+            foreach (var field in runtimeEditableFields.Where(candidate =>
+                         candidate.Field.StartsWith(ZaRuntimeMoveData.TimingPrefix, StringComparison.Ordinal)))
             {
-                vanillaValues.Add(new ZaMoveVanillaFieldValue(field.Field, value));
+                if (!ZaRuntimeMoveData.TryParseTimingField(
+                        field.Field,
+                        out _,
+                        out var templateOccurrence,
+                        out var member)
+                    || (templateOccurrence is null && baseTiming.Occurrence != 0)
+                    || (templateOccurrence is not null && templateOccurrence != baseTiming.Occurrence)
+                    || ZaRuntimeMoveData.GetValue(baseTiming, member) is not { } value)
+                {
+                    continue;
+                }
+
+                var exactField = templateOccurrence is null
+                    ? ZaRuntimeMoveData.TimingSharedField(baseTiming.TimingMoveId, member)
+                    : ZaRuntimeMoveData.TimingField(
+                        baseTiming.TimingMoveId,
+                        baseTiming.Occurrence,
+                        member);
+                vanillaValues.Add(new ZaMoveVanillaFieldValue(exactField, value));
+
+                if (baseTiming.TimingMoveId == move.MoveId)
+                {
+                    vanillaValues.Add(new ZaMoveVanillaFieldValue(field.Field, value));
+                }
             }
         }
 
@@ -783,6 +821,18 @@ internal sealed class ZaMovesWorkflowService
         }
 
         return (variants, ambiguous);
+    }
+
+    private static IReadOnlyList<ZaMoveTimingRecord> ProjectTimingRows(
+        IReadOnlyList<ZaMoveTimingParameterT> rows,
+        IReadOnlyList<string> spawnLocators)
+    {
+        return rows
+            .GroupBy(row => row.MoveId)
+            .OrderBy(group => group.Key)
+            .SelectMany(group => group.Select((row, occurrence) =>
+                ZaRuntimeMoveData.ToRecord(row, occurrence, spawnLocators)))
+            .ToArray();
     }
 
     private static IReadOnlyList<ZaMoveStatChangeRecord> ToStatChangeRecords(ZaMoveStatChanges? statChanges)

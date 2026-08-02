@@ -2281,6 +2281,7 @@ public sealed class SwShRandomizerService
         {
             var existing = collapsed.FirstOrDefault(item =>
                 item.Diagnostic.Severity == diagnostic.Severity
+                && string.Equals(item.Diagnostic.Code, diagnostic.Code, StringComparison.Ordinal)
                 && string.Equals(item.Diagnostic.Message, diagnostic.Message, StringComparison.Ordinal)
                 && string.Equals(item.Diagnostic.File, diagnostic.File, StringComparison.Ordinal)
                 && string.Equals(item.Diagnostic.Domain, diagnostic.Domain, StringComparison.Ordinal)
