@@ -4,14 +4,13 @@ KM Editor publishes Windows desktop builds through GitHub Releases.
 
 ## Release Workflow
 
-The `Desktop Release` workflow verifies that the exact pull request merge passed the required product builds, builds the Tauri desktop app on Windows, packages it, and creates a draft GitHub Release.
+The `Desktop Release` workflow verifies that the exact pull request merge passed the required product builds, compiles the Tauri desktop app on Windows, packages it with the custom KM Editor setup, and creates a draft GitHub Release.
 
 The release assets are:
 
-- NSIS setup executable
-- MSI installer
-- Tauri updater signatures for the Windows installers
-- `latest.json`, which points native update checks at the signed Windows installer
+- `KM.Editor.Setup_<version>_x64.exe`, the custom install, update, and uninstall package
+- The Tauri updater signature for that setup executable
+- `latest.json`, which points every supported Windows updater identity at the same signed setup executable
 - `SHA256SUMS.txt` for the uploaded assets
 
 ## Desktop Update Checks

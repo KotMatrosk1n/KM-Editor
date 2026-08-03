@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package
+    Name="$(KmProductName)"
+    Manufacturer="$(KmManufacturer)"
+    Version="$(KmVersion)"
+    UpgradeCode="$(KmMsiUpgradeCode)"
+    UpgradeStrategy="majorUpgrade"
+    Scope="perUserOrMachine"
+    Language="1033"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <SummaryInformation
+      Description="$(KmProductName) application files"
+      Manufacturer="$(KmManufacturer)" />
+
+    <MajorUpgrade
+      Schedule="afterInstallInitialize"
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Publish the resolved directory so Burn can prove maintenance targets. -->
+    <SetProperty
+      Id="ARPINSTALLLOCATION"
+      Value="[INSTALLFOLDER]"
+      After="CostFinalize"
+      Sequence="execute" />
+
+    <!-- Burn is the only supported Apps &amp; Features owner and user interface. -->
+    <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/KotMatrosk1n/KM-Editor" />
+
+    <!--
+      Burn supplies the validated install directory for clean installs and MSI
+      migrations. Mark the switch secure so it crosses an elevated MSI boundary.
+      A standalone MSI omits it and uses the scope-dependent assignment below.
+    -->
+    <Property Id="KM_BURN_MANAGED_INSTALL" Secure="yes" />
+    <Property Id="KM_INSTALL_SCOPE" Secure="yes" />
+    <Property Id="KM_MIGRATE_LEGACY_NSIS" Secure="yes" />
+    <Property Id="KM_DELETE_USER_SETTINGS" Value="0" Secure="yes" />
+    <Property Id="KM_CREATE_START_MENU_SHORTCUT" Value="1" Secure="yes" />
+    <Property Id="KM_CREATE_DESKTOP_SHORTCUT" Value="1" Secure="yes" />
+
+    <!--
+      KM's native cache preferences live in settings.json at each cache root.
+      Only projects and tmp are derived data, so routine setup operations target
+      those exact subdirectories. RemoveFolderEx accepts environment variables
+      and expands them before costing; these Property-table values are therefore
+      available before the WixRemoveFoldersEx action runs.
+
+      The two Tauri roots match the directories removed by Tauri's published
+      NSIS "Delete app data" option for bundle id app.kmeditor.desktop. They are
+      reached only by an explicit uninstall choice.
+    -->
+    <Property Id="KmSvCacheProjectsPath" Value="%LOCALAPPDATA%\KM Editor\ScarletVioletCache\projects" />
+    <Property Id="KmSvCacheTempPath" Value="%LOCALAPPDATA%\KM Editor\ScarletVioletCache\tmp" />
+    <Property Id="KmZaCacheProjectsPath" Value="%LOCALAPPDATA%\KM Editor\PokemonLegendsZACache\projects" />
+    <Property Id="KmZaCacheTempPath" Value="%LOCALAPPDATA%\KM Editor\PokemonLegendsZACache\tmp" />
+    <Property Id="KmSvCacheRootPath" Value="%LOCALAPPDATA%\KM Editor\ScarletVioletCache" />
+    <Property Id="KmZaCacheRootPath" Value="%LOCALAPPDATA%\KM Editor\PokemonLegendsZACache" />
+    <Property Id="KmTauriRoamingDataPath" Value="%APPDATA%\app.kmeditor.desktop" />
+    <Property Id="KmTauriLocalDataPath" Value="%LOCALAPPDATA%\app.kmeditor.desktop" />
+
+    <Launch
+      Condition="KM_MIGRATE_LEGACY_NSIS &lt;&gt; 1 OR (KM_BURN_MANAGED_INSTALL = 1 AND MSIINSTALLPERUSER)"
+      Message="Legacy KM Editor migration is supported only through the current-user custom installer." />
+    <Launch
+      Condition="KM_MIGRATE_LEGACY_NSIS &lt;&gt; 1 OR (NOT DISABLEROLLBACK AND NOT RollbackDisabled)"
+      Message="Legacy KM Editor migration requires Windows Installer rollback to be enabled." />
+    <Launch
+      Condition="KM_DELETE_USER_SETTINGS = 0 OR (KM_DELETE_USER_SETTINGS = 1 AND Installed AND REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE)"
+      Message="KM_DELETE_USER_SETTINGS is supported only for a complete uninstall." />
+
+    <!--
+      The package is dual-purpose. Program Files is the per-machine default;
+      WiX v7 sets MSIINSTALLPERUSER for the default per-user plan, at which point
+      this Type 51 assignment preserves KM's existing %LOCALAPPDATA%\KM Editor
+      location. Burn must plan the scope that matches an existing MSI install.
+    -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(KmInstallFolderName)">
+        <Component Id="CmpKmEditorExecutable" Guid="{$(KmAppComponentGuid)}">
+          <File
+            Id="FilKmEditorExecutable"
+            Source="!(bindpath.KmPayload)\$(KmAppExecutableName)"
+            Name="$(KmAppExecutableName)"
+            KeyPath="yes" />
+
+          <!-- Remove installer-owned folders only when empty; user data is preserved. -->
+          <RemoveFolder Id="RemoveKmInstallFolderIfEmpty" Directory="INSTALLFOLDER" On="uninstall" />
+        </Component>
+
+        <Component Id="CmpKmToolsBridge" Guid="{$(KmBridgeComponentGuid)}">
+          <File
+            Id="FilKmToolsBridge"
+            Source="!(bindpath.KmPayload)\$(KmSidecarExecutableName)"
+            Name="$(KmSidecarExecutableName)"
+            KeyPath="yes" />
+        </Component>
+
+        <!--
+          Preserve KM's published product-key identity. HKMU follows the planned
+          MSI assignment, so the same authored component writes HKCU for a
+          per-user install and HKLM for a per-machine install.
+        -->
+        <Component Id="CmpInstallerRegistration" Guid="{$(KmRegistrationComponentGuid)}">
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)"
+            Type="string"
+            Value="[INSTALLFOLDER]"
+            KeyPath="yes" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)"
+            Name="InstallDir"
+            Type="string"
+            Value="[INSTALLFOLDER]" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)"
+            Name="InstallScope"
+            Type="string"
+            Value="[KM_INSTALL_SCOPE]" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)"
+            Name="InstallerFamily"
+            Type="string"
+            Value="BurnMsi" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)"
+            Name="MainBinaryName"
+            Type="string"
+            Value="$(KmAppExecutableName)" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)"
+            Name="Version"
+            Type="string"
+            Value="$(KmVersion)" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)\Installer\Preferences"
+            Name="CreateStartMenuShortcut"
+            Type="string"
+            Value="[KM_CREATE_START_MENU_SHORTCUT]" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)\Installer\Preferences"
+            Name="CreateDesktopShortcut"
+            Type="string"
+            Value="[KM_CREATE_DESKTOP_SHORTCUT]" />
+
+          <!--
+            Fresh installs, NSIS migrations, major upgrades, and complete
+            uninstalls clear rebuildable cache payloads. Repairs preserve them.
+            The containing registration component is always installed, which is
+            required for its uninstall-time RemoveFolderEx rows to be scheduled.
+          -->
+          <util:RemoveFolderEx
+            Id="RemoveSvProjectsCache"
+            Property="KmSvCacheProjectsPath"
+            On="both"
+            Condition="NOT Installed OR REMOVE~=&quot;ALL&quot;" />
+          <util:RemoveFolderEx
+            Id="RemoveSvTemporaryCache"
+            Property="KmSvCacheTempPath"
+            On="both"
+            Condition="NOT Installed OR REMOVE~=&quot;ALL&quot;" />
+          <util:RemoveFolderEx
+            Id="RemoveZaProjectsCache"
+            Property="KmZaCacheProjectsPath"
+            On="both"
+            Condition="NOT Installed OR REMOVE~=&quot;ALL&quot;" />
+          <util:RemoveFolderEx
+            Id="RemoveZaTemporaryCache"
+            Property="KmZaCacheTempPath"
+            On="both"
+            Condition="NOT Installed OR REMOVE~=&quot;ALL&quot;" />
+
+          <!--
+            This destructive branch is opt-in and uninstall-only. It removes the
+            two native cache settings files together with their roots, plus the
+            exact roaming/local Tauri data roots that contain WebView user state.
+          -->
+          <util:RemoveFolderEx
+            Id="RemoveSvCacheAndSettings"
+            Property="KmSvCacheRootPath"
+            On="uninstall"
+            Condition="KM_DELETE_USER_SETTINGS = 1 AND Installed AND REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+          <util:RemoveFolderEx
+            Id="RemoveZaCacheAndSettings"
+            Property="KmZaCacheRootPath"
+            On="uninstall"
+            Condition="KM_DELETE_USER_SETTINGS = 1 AND Installed AND REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+          <util:RemoveFolderEx
+            Id="RemoveTauriRoamingData"
+            Property="KmTauriRoamingDataPath"
+            On="uninstall"
+            Condition="KM_DELETE_USER_SETTINGS = 1 AND Installed AND REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+          <util:RemoveFolderEx
+            Id="RemoveTauriLocalData"
+            Property="KmTauriLocalDataPath"
+            On="uninstall"
+            Condition="KM_DELETE_USER_SETTINGS = 1 AND Installed AND REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+        </Component>
+
+        <!--
+          The BA enables this component only after matching the exact published
+          NSIS identity, its two registration paths, and its uninstaller path.
+          RemoveFiles and RemoveRegistryValues are standard MSI actions: Windows
+          Installer saves deleted files and registry state in its rollback script.
+          No wildcard, directory recursion, legacy uninstaller execution, cache,
+          or application-data deletion is permitted here.
+        -->
+        <Component
+          Id="CmpLegacyNsisTakeover"
+          Guid="{7B3EA0C1-1D7C-4E2A-9447-728216ABAD23}"
+          Condition="KM_BURN_MANAGED_INSTALL = 1 AND KM_MIGRATE_LEGACY_NSIS = 1 AND MSIINSTALLPERUSER AND NOT DISABLEROLLBACK AND NOT RollbackDisabled"
+          Transitive="yes">
+          <RemoveFile Id="RemoveLegacyAppBinary" Name="$(KmAppExecutableName)" On="install" />
+          <RemoveFile Id="RemoveLegacyBridgeBinary" Name="$(KmSidecarExecutableName)" On="install" />
+          <RemoveFile Id="RemoveLegacyUninstaller" Name="uninstall.exe" On="install" />
+          <RemoveFile Id="RemoveLegacyDesktopShortcut" Directory="DesktopFolder" Name="KM Editor.lnk" On="install" />
+          <RemoveFile Id="RemoveLegacyStartMenuShortcut" Directory="ProgramMenuFolder" Name="KM Editor.lnk" On="install" />
+          <RemoveRegistryKey
+            Id="RemoveLegacyNsisArpKey"
+            Root="HKCU"
+            Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\KM Editor"
+            Action="removeOnInstall" />
+          <RemoveRegistryValue
+            Id="RemoveLegacyInstallerLanguage"
+            Root="HKCU"
+            Key="Software\kmeditor\KM Editor"
+            Name="Installer Language" />
+          <RegistryValue
+            Root="HKCU"
+            Key="Software\kmeditor\KM Editor\Installer"
+            Name="LegacyNsisMigrated"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+        </Component>
+
+        <!--
+          Shortcut choices are separate transitive components with one keypath
+          each. ProgramMenuFolder, DesktopFolder, and HKMU all follow the MSI
+          assignment selected through ALLUSERS. A formatted INSTALLFOLDER target
+          avoids cross-component file references during repair and upgrade.
+        -->
+        <Component
+          Id="CmpStartMenuShortcut"
+          Guid="{$(KmStartMenuComponentGuid)}"
+          Condition="KM_CREATE_START_MENU_SHORTCUT = 1"
+          Transitive="yes">
+          <Shortcut
+            Id="ScKmEditorStartMenu"
+            Directory="ProgramMenuFolder"
+            Name="$(KmProductName)"
+            Description="$(KmProductName)"
+            Target="[INSTALLFOLDER]$(KmAppExecutableName)"
+            WorkingDirectory="INSTALLFOLDER"
+            Advertise="no" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)\Installer\Shortcuts"
+            Name="StartMenu"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+        </Component>
+
+        <Component
+          Id="CmpDesktopShortcut"
+          Guid="{$(KmDesktopComponentGuid)}"
+          Condition="KM_CREATE_DESKTOP_SHORTCUT = 1"
+          Transitive="yes">
+          <Shortcut
+            Id="ScKmEditorDesktop"
+            Directory="DesktopFolder"
+            Name="$(KmProductName)"
+            Description="$(KmProductName)"
+            Target="[INSTALLFOLDER]$(KmAppExecutableName)"
+            WorkingDirectory="INSTALLFOLDER"
+            Advertise="no" />
+          <RegistryValue
+            Root="HKMU"
+            Key="$(KmProductRegistryKey)\Installer\Shortcuts"
+            Name="Desktop"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <SetDirectory
+      Id="INSTALLFOLDER"
+      Value="[LocalAppDataFolder]$(KmInstallFolderName)"
+      Condition="MSIINSTALLPERUSER AND NOT KM_BURN_MANAGED_INSTALL"
+      Sequence="both" />
+
+    <Feature Id="MainFeature" Title="$(KmProductName)" Level="1" AllowAbsent="no">
+      <ComponentRef Id="CmpKmEditorExecutable" />
+      <ComponentRef Id="CmpKmToolsBridge" />
+      <ComponentRef Id="CmpInstallerRegistration" />
+      <ComponentRef Id="CmpLegacyNsisTakeover" />
+      <ComponentRef Id="CmpStartMenuShortcut" />
+      <ComponentRef Id="CmpDesktopShortcut" />
+    </Feature>
+  </Package>
+</Wix>

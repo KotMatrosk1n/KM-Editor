@@ -96,6 +96,9 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
       - name: Cache backend packages
         uses: actions/cache@v4
         with:
@@ -125,7 +128,7 @@ jobs:
       - name: Verify release version
         shell: pwsh
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Release tag '$env:RELEASE_TAG' must look like v0.1.0."
           }
 
@@ -183,6 +186,20 @@ jobs:
             throw "Release tag '$env:RELEASE_TAG' does not match Cargo.lock version '$cargoLockVersion'."
           }
 
+      - name: Verify custom setup release approvals
+        shell: pwsh
+        env:
+          WIX_V7_EULA_ACCEPTED: ${{ vars.WIX_V7_EULA_ACCEPTED }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ($env:WIX_V7_EULA_ACCEPTED -ne 'true') {
+            throw 'Set WIX_V7_EULA_ACCEPTED=true only after the WiX v7 OSMF EULA has been reviewed and accepted.'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw 'TAURI_SIGNING_PRIVATE_KEY must be configured before building updater artifacts.'
+          }
+
       - name: Install dependencies
         shell: pwsh
         run: pnpm install --frozen-lockfile
@@ -191,47 +208,75 @@ jobs:
         shell: pwsh
         run: dotnet restore .\KM.Editor.slnx
 
-      - name: Build desktop packages
+      - name: Build desktop application
+        shell: pwsh
+        run: pnpm --dir apps/desktop exec tauri build --ci --no-bundle --no-sign
+
+      - name: Build custom Windows setup
+        shell: pwsh
+        env:
+          WIX_V7_EULA_ACCEPTED: ${{ vars.WIX_V7_EULA_ACCEPTED }}
+        run: |
+          if ($env:WIX_V7_EULA_ACCEPTED -ne 'true') {
+            throw 'Set repository variable WIX_V7_EULA_ACCEPTED=true only after the WiX v7 OSMF EULA has been reviewed and accepted.'
+          }
+
+          $version = $env:RELEASE_TAG.Substring(1)
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
+          $webView2Path = Join-Path $env:RUNNER_TEMP 'km-webview2/MicrosoftEdgeWebview2Setup.exe'
+          $sidecarPath = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/src-tauri/binaries/km-tools-bridge-x86_64-pc-windows-msvc.exe'
+
+          & .\installer\windows\scripts\Get-WebView2Bootstrapper.ps1 `
+            -DestinationFile $webView2Path
+
+          & .\installer\windows\scripts\Build-KmWindowsSetup.ps1 `
+            -Version $version `
+            -CargoTargetDirectory $env:CARGO_TARGET_DIR `
+            -SidecarPath $sidecarPath `
+            -WebView2BootstrapperPath $webView2Path `
+            -OutputDirectory $releaseDir `
+            -AcceptWixEula
+
+      - name: Sign custom updater artifact
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
-            throw 'TAURI_SIGNING_PRIVATE_KEY must be configured as a GitHub Actions secret before building updater artifacts.'
+            throw 'TAURI_SIGNING_PRIVATE_KEY must be configured before signing updater artifacts.'
           }
 
-          pnpm --dir apps/desktop exec tauri build --ci --bundles 'nsis,msi'
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
+          $setupFiles = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter 'KM.Editor.Setup_*_x64.exe')
+          if ($setupFiles.Count -ne 1) {
+            throw "Expected exactly one custom setup executable, found $($setupFiles.Count)."
+          }
+
+          pnpm --dir apps/desktop exec tauri signer sign $setupFiles[0].FullName
 
       - name: Stage release assets
         shell: pwsh
         run: |
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
-          Remove-Item $releaseDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $releaseDir | Out-Null
-
-          Copy-Item (Join-Path $env:CARGO_TARGET_DIR 'release/bundle/nsis/*.exe') $releaseDir
-          Copy-Item (Join-Path $env:CARGO_TARGET_DIR 'release/bundle/msi/*.msi') $releaseDir
-          Get-ChildItem (Join-Path $env:CARGO_TARGET_DIR 'release/bundle') -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '\.(nsis|msi)\.zip$' -or $_.Name -match '\.sig$' } |
-            ForEach-Object { Copy-Item $_.FullName $releaseDir }
-
-          Get-ChildItem $releaseDir -File |
-            Where-Object { $_.Name.Contains(' ') } |
-            ForEach-Object {
-              $safeName = $_.Name.Replace(' ', '.')
-              Rename-Item -LiteralPath $_.FullName -NewName $safeName
-            }
-
-          $nsisInstallers = @(Get-ChildItem $releaseDir -File -Filter '*.exe' | Sort-Object Name)
-          $msiInstallers = @(Get-ChildItem $releaseDir -File -Filter '*.msi' | Sort-Object Name)
-
-          if ($nsisInstallers.Count -ne 1) {
-            throw "Expected exactly one NSIS updater installer, found $($nsisInstallers.Count)."
+          $setupFiles = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter 'KM.Editor.Setup_*_x64.exe')
+          if ($setupFiles.Count -ne 1) {
+            throw "Expected exactly one custom setup executable, found $($setupFiles.Count)."
           }
 
-          if ($msiInstallers.Count -ne 1) {
-            throw "Expected exactly one MSI updater installer, found $($msiInstallers.Count)."
+          $setup = $setupFiles[0]
+          $signaturePath = "$($setup.FullName).sig"
+          if (-not (Test-Path -LiteralPath $signaturePath -PathType Leaf)) {
+            throw "Could not find updater signature '$signaturePath'."
+          }
+
+          $receiptPath = "$($setup.FullName).build.json"
+          if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
+            throw "Could not find the setup build receipt '$receiptPath'."
+          }
+          Remove-Item -LiteralPath $receiptPath -Force
+          if (Test-Path -LiteralPath $receiptPath) {
+            throw "Could not remove the setup build receipt '$receiptPath'."
           }
 
           $version = $env:RELEASE_TAG.TrimStart('v')
@@ -248,23 +293,34 @@ jobs:
             }
           }
 
-          $nsisPlatform = New-UpdaterPlatform $nsisInstallers[0]
-          $msiPlatform = New-UpdaterPlatform $msiInstallers[0]
+          $windowsPlatform = New-UpdaterPlatform $setup
           $latestJson = [ordered]@{
             version = $version
             notes = "See the GitHub Release notes for KM Editor $env:RELEASE_TAG."
             pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             platforms = [ordered]@{
-              'windows-x86_64-nsis' = $nsisPlatform
-              'windows-x86_64-msi' = $msiPlatform
-              # Older clients only know the generic key, so keep NSIS as their fallback.
-              'windows-x86_64' = $nsisPlatform
+              'windows-x86_64-nsis' = $windowsPlatform
+              'windows-x86_64-msi' = $windowsPlatform
+              'windows-x86_64' = $windowsPlatform
             }
           }
 
           $latestJson |
             ConvertTo-Json -Depth 8 |
             Set-Content -Path (Join-Path $releaseDir 'latest.json') -Encoding utf8
+
+          $allowedBeforeChecksums = @(
+            $setup.Name,
+            "$($setup.Name).sig",
+            'latest.json'
+          )
+          $unexpectedBeforeChecksums = @(
+            Get-ChildItem -LiteralPath $releaseDir -File |
+              Where-Object { $_.Name -notin $allowedBeforeChecksums }
+          )
+          if ($unexpectedBeforeChecksums.Count -ne 0) {
+            throw "Unexpected release assets before checksums: $($unexpectedBeforeChecksums.Name -join ', ')."
+          }
 
           $hashLines = Get-ChildItem $releaseDir -File |
             Sort-Object Name |
@@ -274,6 +330,17 @@ jobs:
             }
 
           $hashLines | Set-Content -Path (Join-Path $releaseDir 'SHA256SUMS.txt') -Encoding utf8
+
+          $allowedFinalAssets = $allowedBeforeChecksums + 'SHA256SUMS.txt'
+          $finalAssets = @(Get-ChildItem -LiteralPath $releaseDir -File)
+          $unexpectedFinalAssets = @($finalAssets | Where-Object { $_.Name -notin $allowedFinalAssets })
+          $missingFinalAssets = @($allowedFinalAssets | Where-Object {
+            -not (Test-Path -LiteralPath (Join-Path $releaseDir $_) -PathType Leaf)
+          })
+          if ($unexpectedFinalAssets.Count -ne 0 -or $missingFinalAssets.Count -ne 0) {
+            throw "Release asset allowlist failed. Unexpected: $($unexpectedFinalAssets.Name -join ', '); missing: $($missingFinalAssets -join ', ')."
+          }
+
           Get-ChildItem $releaseDir -File | Sort-Object Name | Format-Table Name, Length
 
       - name: Create draft GitHub Release

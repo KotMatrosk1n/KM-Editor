@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="LanguageName" xml:space="preserve"><value>中文</value></data>
+  <data name="PlanningInstallHeading" xml:space="preserve"><value>正在准备安装</value></data>
+  <data name="PlanningInstallDescription" xml:space="preserve"><value>Windows 安装程序正在计算安装 KM Editor 所需的文件和注册信息。</value></data>
+  <data name="PlanningUpdateHeading" xml:space="preserve"><value>正在准备更新</value></data>
+  <data name="PlanningUpdateDescription" xml:space="preserve"><value>Windows 安装程序正在计算安全更新 KM Editor 所需的更改。</value></data>
+  <data name="PlanningRepairHeading" xml:space="preserve"><value>正在准备修复</value></data>
+  <data name="PlanningRepairDescription" xml:space="preserve"><value>Windows 安装程序正在确定需要修复的 KM Editor 文件和注册信息。</value></data>
+  <data name="PlanningUninstallHeading" xml:space="preserve"><value>正在准备卸载</value></data>
+  <data name="PlanningUninstallDescription" xml:space="preserve"><value>Windows 安装程序正在计算需要删除的应用文件、编辑器缓存和注册信息。</value></data>
+  <data name="CachingInstallHeading" xml:space="preserve"><value>正在准备安装文件</value></data>
+  <data name="CachingInstallDescription" xml:space="preserve"><value>正在检查安装包并暂存安装 KM Editor 所需的文件。</value></data>
+  <data name="CachingUpdateHeading" xml:space="preserve"><value>正在准备更新文件</value></data>
+  <data name="CachingUpdateDescription" xml:space="preserve"><value>正在检查已验证的更新包并暂存替换文件。</value></data>
+  <data name="CachingRepairHeading" xml:space="preserve"><value>正在准备修复文件</value></data>
+  <data name="CachingRepairDescription" xml:space="preserve"><value>正在检查安装包，以便修复 KM Editor。</value></data>
+  <data name="CachingUninstallHeading" xml:space="preserve"><value>正在准备卸载</value></data>
+  <data name="CachingUninstallDescription" xml:space="preserve"><value>正在验证已注册的安装，然后再删除 KM Editor。</value></data>
+  <data name="ExecutingInstallHeading" xml:space="preserve"><value>正在安装 KM Editor</value></data>
+  <data name="ExecutingInstallDescription" xml:space="preserve"><value>正在复制应用文件、注册 KM Editor 并清除旧的编辑器缓存。您的设置将会保留。</value></data>
+  <data name="ExecutingUpdateHeading" xml:space="preserve"><value>正在更新 KM Editor</value></data>
+  <data name="ExecutingUpdateDescription" xml:space="preserve"><value>正在替换应用文件并清除编辑器缓存，同时保留您的设置。</value></data>
+  <data name="ExecutingRepairHeading" xml:space="preserve"><value>正在修复 KM Editor</value></data>
+  <data name="ExecutingRepairDescription" xml:space="preserve"><value>正在验证已安装的文件，并恢复任何缺失或损坏的文件。</value></data>
+  <data name="ExecutingUninstallHeading" xml:space="preserve"><value>正在卸载 KM Editor</value></data>
+  <data name="ExecutingUninstallDescription" xml:space="preserve"><value>正在删除应用文件和编辑器缓存。只有在您选择相应选项时，设置才会被删除。</value></data>
+  <data name="FinalizingInstallHeading" xml:space="preserve"><value>正在完成安装</value></data>
+  <data name="FinalizingInstallDescription" xml:space="preserve"><value>正在完成新安装的注册和最终检查。</value></data>
+  <data name="FinalizingUpdateHeading" xml:space="preserve"><value>正在完成更新</value></data>
+  <data name="FinalizingUpdateDescription" xml:space="preserve"><value>正在完成注册并清理已被取代的安装程序数据。</value></data>
+  <data name="FinalizingRepairHeading" xml:space="preserve"><value>正在完成修复</value></data>
+  <data name="FinalizingRepairDescription" xml:space="preserve"><value>正在完成注册并对修复后的安装进行最终验证。</value></data>
+  <data name="FinalizingUninstallHeading" xml:space="preserve"><value>正在完成卸载</value></data>
+  <data name="FinalizingUninstallDescription" xml:space="preserve"><value>正在完成缓存清理并删除剩余的安装程序注册信息。</value></data>
+  <data name="StatusWithPackage" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="StatusInitializing" xml:space="preserve"><value>正在启动安装引擎</value></data>
+  <data name="StatusDetecting" xml:space="preserve"><value>正在检查已安装的版本及其归属</value></data>
+  <data name="StatusPlanningInstall" xml:space="preserve"><value>正在计算安装计划</value></data>
+  <data name="StatusPlanningUpdate" xml:space="preserve"><value>正在计算更新计划</value></data>
+  <data name="StatusPlanningRepair" xml:space="preserve"><value>正在计算修复计划</value></data>
+  <data name="StatusPlanningUninstall" xml:space="preserve"><value>正在计算卸载计划</value></data>
+  <data name="StatusCachingInstall" xml:space="preserve"><value>正在验证并暂存安装文件</value></data>
+  <data name="StatusCachingUpdate" xml:space="preserve"><value>正在验证并暂存更新文件</value></data>
+  <data name="StatusCachingRepair" xml:space="preserve"><value>正在验证修复所需的文件</value></data>
+  <data name="StatusCachingUninstall" xml:space="preserve"><value>正在验证已注册的安装</value></data>
+  <data name="StatusExecutingInstall" xml:space="preserve"><value>正在安装文件并清除旧的编辑器缓存</value></data>
+  <data name="StatusExecutingUpdate" xml:space="preserve"><value>正在更新文件并清除编辑器缓存</value></data>
+  <data name="StatusExecutingRepair" xml:space="preserve"><value>正在修复 KM Editor 文件</value></data>
+  <data name="StatusExecutingUninstall" xml:space="preserve"><value>正在删除 KM Editor 和编辑器缓存</value></data>
+  <data name="StatusFinalizingInstall" xml:space="preserve"><value>正在完成安装和注册</value></data>
+  <data name="StatusFinalizingUpdate" xml:space="preserve"><value>正在完成更新和清理</value></data>
+  <data name="StatusFinalizingRepair" xml:space="preserve"><value>正在完成修复和验证</value></data>
+  <data name="StatusFinalizingUninstall" xml:space="preserve"><value>正在完成缓存清理和卸载</value></data>
+  <data name="StatusCancelling" xml:space="preserve"><value>正在等待可安全停止的时机</value></data>
+  <data name="UninstallOptionsHeading" xml:space="preserve"><value>卸载选项</value></data>
+  <data name="DeleteUserSettingsLabel" xml:space="preserve"><value>同时删除我的 KM Editor 设置</value></data>
+  <data name="DeleteUserSettingsDescription" xml:space="preserve"><value>不勾选此项可保留您的偏好、已保存的路径和其他编辑器设置。可重建的编辑器缓存始终会被删除。</value></data>
+</root>

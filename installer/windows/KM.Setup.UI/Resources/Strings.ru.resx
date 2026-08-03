@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="LanguageName" xml:space="preserve"><value>Русский</value></data>
+  <data name="PlanningInstallHeading" xml:space="preserve"><value>Подготовка установки</value></data>
+  <data name="PlanningInstallDescription" xml:space="preserve"><value>Windows Installer рассчитывает файлы и регистрацию для установки KM Editor.</value></data>
+  <data name="PlanningUpdateHeading" xml:space="preserve"><value>Подготовка обновления</value></data>
+  <data name="PlanningUpdateDescription" xml:space="preserve"><value>Windows Installer рассчитывает изменения для безопасного обновления KM Editor.</value></data>
+  <data name="PlanningRepairHeading" xml:space="preserve"><value>Подготовка восстановления</value></data>
+  <data name="PlanningRepairDescription" xml:space="preserve"><value>Windows Installer определяет файлы и регистрацию KM Editor, требующие восстановления.</value></data>
+  <data name="PlanningUninstallHeading" xml:space="preserve"><value>Подготовка удаления</value></data>
+  <data name="PlanningUninstallDescription" xml:space="preserve"><value>Windows Installer рассчитывает файлы приложения, кэш редактора и регистрацию для удаления.</value></data>
+  <data name="CachingInstallHeading" xml:space="preserve"><value>Подготовка файлов установки</value></data>
+  <data name="CachingInstallDescription" xml:space="preserve"><value>Проверка пакета и подготовка файлов для установки KM Editor.</value></data>
+  <data name="CachingUpdateHeading" xml:space="preserve"><value>Подготовка файлов обновления</value></data>
+  <data name="CachingUpdateDescription" xml:space="preserve"><value>Проверка подтверждённого пакета обновления и подготовка файлов замены.</value></data>
+  <data name="CachingRepairHeading" xml:space="preserve"><value>Подготовка файлов восстановления</value></data>
+  <data name="CachingRepairDescription" xml:space="preserve"><value>Проверка пакета перед восстановлением KM Editor.</value></data>
+  <data name="CachingUninstallHeading" xml:space="preserve"><value>Подготовка удаления</value></data>
+  <data name="CachingUninstallDescription" xml:space="preserve"><value>Проверка зарегистрированной установки перед удалением KM Editor.</value></data>
+  <data name="ExecutingInstallHeading" xml:space="preserve"><value>Установка KM Editor</value></data>
+  <data name="ExecutingInstallDescription" xml:space="preserve"><value>Копирование файлов, регистрация KM Editor и очистка старого кэша редактора. Ваши настройки сохраняются.</value></data>
+  <data name="ExecutingUpdateHeading" xml:space="preserve"><value>Обновление KM Editor</value></data>
+  <data name="ExecutingUpdateDescription" xml:space="preserve"><value>Замена файлов и очистка кэша редактора с сохранением ваших настроек.</value></data>
+  <data name="ExecutingRepairHeading" xml:space="preserve"><value>Восстановление KM Editor</value></data>
+  <data name="ExecutingRepairDescription" xml:space="preserve"><value>Проверка установленных файлов и восстановление отсутствующих или повреждённых.</value></data>
+  <data name="ExecutingUninstallHeading" xml:space="preserve"><value>Удаление KM Editor</value></data>
+  <data name="ExecutingUninstallDescription" xml:space="preserve"><value>Удаление файлов и кэша редактора. Настройки удаляются только при выборе этой опции.</value></data>
+  <data name="FinalizingInstallHeading" xml:space="preserve"><value>Завершение установки</value></data>
+  <data name="FinalizingInstallDescription" xml:space="preserve"><value>Завершение регистрации и итоговой проверки новой установки.</value></data>
+  <data name="FinalizingUpdateHeading" xml:space="preserve"><value>Завершение обновления</value></data>
+  <data name="FinalizingUpdateDescription" xml:space="preserve"><value>Завершение регистрации и очистка устаревших данных установщика.</value></data>
+  <data name="FinalizingRepairHeading" xml:space="preserve"><value>Завершение восстановления</value></data>
+  <data name="FinalizingRepairDescription" xml:space="preserve"><value>Завершение регистрации и итоговой проверки восстановленной установки.</value></data>
+  <data name="FinalizingUninstallHeading" xml:space="preserve"><value>Завершение удаления</value></data>
+  <data name="FinalizingUninstallDescription" xml:space="preserve"><value>Завершение очистки кэша и удаление оставшейся регистрации установщика.</value></data>
+  <data name="StatusWithPackage" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="StatusInitializing" xml:space="preserve"><value>Запуск модуля установки</value></data>
+  <data name="StatusDetecting" xml:space="preserve"><value>Проверка установленных версий и владельца</value></data>
+  <data name="StatusPlanningInstall" xml:space="preserve"><value>Расчёт плана установки</value></data>
+  <data name="StatusPlanningUpdate" xml:space="preserve"><value>Расчёт плана обновления</value></data>
+  <data name="StatusPlanningRepair" xml:space="preserve"><value>Расчёт плана восстановления</value></data>
+  <data name="StatusPlanningUninstall" xml:space="preserve"><value>Расчёт плана удаления</value></data>
+  <data name="StatusCachingInstall" xml:space="preserve"><value>Проверка и подготовка файлов установки</value></data>
+  <data name="StatusCachingUpdate" xml:space="preserve"><value>Проверка и подготовка файлов обновления</value></data>
+  <data name="StatusCachingRepair" xml:space="preserve"><value>Проверка файлов восстановления</value></data>
+  <data name="StatusCachingUninstall" xml:space="preserve"><value>Проверка зарегистрированной установки</value></data>
+  <data name="StatusExecutingInstall" xml:space="preserve"><value>Установка файлов и очистка старого кэша</value></data>
+  <data name="StatusExecutingUpdate" xml:space="preserve"><value>Обновление файлов и очистка кэша</value></data>
+  <data name="StatusExecutingRepair" xml:space="preserve"><value>Восстановление файлов KM Editor</value></data>
+  <data name="StatusExecutingUninstall" xml:space="preserve"><value>Удаление KM Editor и кэша редактора</value></data>
+  <data name="StatusFinalizingInstall" xml:space="preserve"><value>Завершение установки и регистрации</value></data>
+  <data name="StatusFinalizingUpdate" xml:space="preserve"><value>Завершение обновления и очистки</value></data>
+  <data name="StatusFinalizingRepair" xml:space="preserve"><value>Завершение восстановления и проверки</value></data>
+  <data name="StatusFinalizingUninstall" xml:space="preserve"><value>Завершение очистки и удаления</value></data>
+  <data name="StatusCancelling" xml:space="preserve"><value>Ожидание безопасной точки остановки</value></data>
+  <data name="UninstallOptionsHeading" xml:space="preserve"><value>Параметры удаления</value></data>
+  <data name="DeleteUserSettingsLabel" xml:space="preserve"><value>Также удалить мои настройки KM Editor</value></data>
+  <data name="DeleteUserSettingsDescription" xml:space="preserve"><value>Оставьте флажок снятым, чтобы сохранить предпочтения, сохранённые пути и другие настройки редактора. Восстанавливаемый кэш редактора удаляется всегда.</value></data>
+</root>

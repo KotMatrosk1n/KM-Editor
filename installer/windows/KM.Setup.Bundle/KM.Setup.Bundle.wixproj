@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <OutputName>KM.Editor.Setup</OutputName>
+    <OutputPath>$(MSBuildProjectDirectory)\bin\$(Configuration)\</OutputPath>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Platform>x64</Platform>
+
+    <KmProductName Condition="'$(KmProductName)' == ''">KM Editor</KmProductName>
+    <!-- Keep the publisher emitted by the published Tauri MSI family. -->
+    <KmManufacturer Condition="'$(KmManufacturer)' == ''">kmeditor</KmManufacturer>
+    <KmAppExecutableName Condition="'$(KmAppExecutableName)' == ''">km-editor-desktop.exe</KmAppExecutableName>
+    <KmInstallFolderName Condition="'$(KmInstallFolderName)' == ''">KM Editor</KmInstallFolderName>
+
+    <!-- Both identities are release-stable. Override only for an intentional new family. -->
+    <KmMsiUpgradeCode Condition="'$(KmMsiUpgradeCode)' == ''">7a06ff31-5a9f-5a2c-aab6-92b8d255d620</KmMsiUpgradeCode>
+    <KmBundleUpgradeCode Condition="'$(KmBundleUpgradeCode)' == ''">9cb66e41-9696-4089-954a-c3277fbc55ed</KmBundleUpgradeCode>
+    <KmBundleProviderKey Condition="'$(KmBundleProviderKey)' == ''">app.kmeditor.desktop.bundle</KmBundleProviderKey>
+    <KmLegacyUninstallRegistryKey Condition="'$(KmLegacyUninstallRegistryKey)' == ''">Software\Microsoft\Windows\CurrentVersion\Uninstall\KM Editor</KmLegacyUninstallRegistryKey>
+    <KmProductRegistryKey Condition="'$(KmProductRegistryKey)' == ''">Software\kmeditor\KM Editor</KmProductRegistryKey>
+    <KmDefaultShortcutPreference Condition="'$(KmDefaultShortcutPreference)' == ''">1</KmDefaultShortcutPreference>
+
+    <KmMsiPath Condition="'$(KmMsiPath)' == ''">$(MSBuildProjectDirectory)\..\KM.Setup.Package\bin\$(Configuration)\KM.Editor.msi</KmMsiPath>
+    <KmBootstrapperApplicationSourceDir Condition="'$(KmBootstrapperApplicationSourceDir)' == ''">$(MSBuildProjectDirectory)\..\KM.Setup.UI\bin\$(Configuration)\net10.0-windows\win-x64\publish</KmBootstrapperApplicationSourceDir>
+    <KmBootstrapperApplicationExe Condition="'$(KmBootstrapperApplicationExe)' == ''">KM.Setup.UI.exe</KmBootstrapperApplicationExe>
+    <KmBundleIconPath Condition="'$(KmBundleIconPath)' == ''">$(MSBuildProjectDirectory)\..\..\..\apps\desktop\src-tauri\icons\icon.ico</KmBundleIconPath>
+
+    <!--
+      Required, deliberately local prerequisite input. The release driver must
+      download the current Microsoft-signed Evergreen Bootstrapper, verify its
+      publisher/signature, and pass the staged path. No moving URL is embedded.
+    -->
+    <WebView2BootstrapperPath Condition="'$(WebView2BootstrapperPath)' == ''">$(MSBuildProjectDirectory)\obj\payload\prerequisites\MicrosoftEdgeWebview2Setup.exe</WebView2BootstrapperPath>
+    <WebView2BootstrapperHash Condition="'$(WebView2BootstrapperHash)' == ''"></WebView2BootstrapperHash>
+
+    <DefineConstants>$(DefineConstants);KmProductName=$(KmProductName);KmManufacturer=$(KmManufacturer);KmVersion=$(KmVersion);KmAppExecutableName=$(KmAppExecutableName);KmInstallFolderName=$(KmInstallFolderName);KmMsiUpgradeCode=$(KmMsiUpgradeCode);KmBundleUpgradeCode=$(KmBundleUpgradeCode);KmBundleProviderKey=$(KmBundleProviderKey);KmLegacyUninstallRegistryKey=$(KmLegacyUninstallRegistryKey);KmProductRegistryKey=$(KmProductRegistryKey);KmDefaultShortcutPreference=$(KmDefaultShortcutPreference);KmMsiPath=$(KmMsiPath);KmBootstrapperApplicationExe=$(KmBootstrapperApplicationExe);KmBundleIconPath=$(KmBundleIconPath);WebView2BootstrapperPath=$(WebView2BootstrapperPath);WebView2BootstrapperHash=$(WebView2BootstrapperHash)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" Version="7.0.0" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="7.0.0" />
+    <ProjectReference Include="..\KM.Setup.Package\KM.Setup.Package.wixproj" ReferenceOutputAssembly="false" />
+    <BindPath Include="$(KmBootstrapperApplicationSourceDir)" BindName="KmBootstrapperApplication" />
+  </ItemGroup>
+
+  <Target Name="ValidateKmBundleInputs" BeforeTargets="CoreCompile">
+    <Error Condition="'$(KmVersion)' == ''" Text="KmVersion is required and must be supplied by the release driver (for example, -p:KmVersion=2.4.0)." />
+    <Error Condition="'$(KmDefaultShortcutPreference)' != '0' And '$(KmDefaultShortcutPreference)' != '1'" Text="KmDefaultShortcutPreference must be 0 or 1." />
+    <Error Condition="'$(KmProductName)' != 'KM Editor' Or '$(KmInstallFolderName)' != 'KM Editor' Or '$(KmProductRegistryKey)' != 'Software\kmeditor\KM Editor' Or '$(KmLegacyUninstallRegistryKey)' != 'Software\Microsoft\Windows\CurrentVersion\Uninstall\KM Editor' Or '$(KmMsiUpgradeCode)' != '7a06ff31-5a9f-5a2c-aab6-92b8d255d620' Or '$(KmBundleUpgradeCode)' != '9cb66e41-9696-4089-954a-c3277fbc55ed' Or '$(KmBundleProviderKey)' != 'app.kmeditor.desktop.bundle'" Text="KM Editor setup requires the published production bundle identity." />
+    <Error Condition="!Exists('$(KmMsiPath)')" Text="KM bundle input is missing: $(KmMsiPath). Build KM.Setup.Package first or pass -p:KmMsiPath=... ." />
+    <Error Condition="!Exists('$(KmBootstrapperApplicationSourceDir)\$(KmBootstrapperApplicationExe)')" Text="Published custom bootstrapper application is missing: $(KmBootstrapperApplicationSourceDir)\$(KmBootstrapperApplicationExe). Publish the self-contained win-x64 KM.Setup.UI project first or pass -p:KmBootstrapperApplicationSourceDir=... ." />
+    <Error Condition="!Exists('$(WebView2BootstrapperPath)')" Text="WebView2 prerequisite is required. Stage the current Microsoft-signed Evergreen Bootstrapper and pass -p:WebView2BootstrapperPath=... . Do not replace this with an unverified moving URL." />
+    <Error Condition="'$(WebView2BootstrapperHash)' == ''" Text="WebView2BootstrapperHash is required so each scope-specific prerequisite package receives a unique content-derived Burn cache identity." />
+    <Error Condition="!Exists('$(KmBundleIconPath)')" Text="KM bundle icon is missing: $(KmBundleIconPath). Pass -p:KmBundleIconPath=... ." />
+  </Target>
+</Project>

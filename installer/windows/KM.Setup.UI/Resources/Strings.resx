@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="LanguageName" xml:space="preserve"><value>English</value></data>
+  <data name="BrandName" xml:space="preserve"><value>KM Editor</value></data>
+  <data name="SetupWindowTitle" xml:space="preserve"><value>KM Editor Setup</value></data>
+  <data name="InstallWindowTitle" xml:space="preserve"><value>Install KM Editor</value></data>
+  <data name="UpdateWindowTitle" xml:space="preserve"><value>Update KM Editor</value></data>
+  <data name="ManageWindowTitle" xml:space="preserve"><value>Manage KM Editor</value></data>
+  <data name="InstallerEyebrow" xml:space="preserve"><value>KM EDITOR FOR WINDOWS</value></data>
+  <data name="InstallerTagline" xml:space="preserve"><value>Build and maintain your installation with the same dark KM experience.</value></data>
+  <data name="InitializingHeading" xml:space="preserve"><value>Preparing setup</value></data>
+  <data name="InitializingDescription" xml:space="preserve"><value>Starting the KM Editor installation engine.</value></data>
+  <data name="DetectingHeading" xml:space="preserve"><value>Checking your installation</value></data>
+  <data name="DetectingDescription" xml:space="preserve"><value>Looking for an existing KM Editor installation and determining the correct update path.</value></data>
+  <data name="ReadyInstallHeading" xml:space="preserve"><value>Ready to install</value></data>
+  <data name="ReadyInstallDescription" xml:space="preserve"><value>KM Editor will be installed for your Windows account. Any old editor cache will be cleared while your settings are kept.</value></data>
+  <data name="ReadyMaintenanceHeading" xml:space="preserve"><value>KM Editor is installed</value></data>
+  <data name="ReadyMaintenanceDescription" xml:space="preserve"><value>You can repair KM Editor or remove it from this PC. Uninstall always clears editor cache; deleting settings is optional.</value></data>
+  <data name="ReadyUpdateHeading" xml:space="preserve"><value>Update ready</value></data>
+  <data name="ReadyUpdateDescription" xml:space="preserve"><value>The verified update is ready. It will replace the application and clear editor cache while keeping your settings.</value></data>
+  <data name="ReadyMigrationHeading" xml:space="preserve"><value>Ready to upgrade KM Editor</value></data>
+  <data name="ReadyMigrationDescription" xml:space="preserve"><value>Setup verified the existing installation and will transfer it to the new repairable installer. Editor cache will be cleared and your settings will be kept.</value></data>
+  <data name="PlanningInstallHeading" xml:space="preserve"><value>Preparing installation</value></data>
+  <data name="PlanningInstallDescription" xml:space="preserve"><value>Windows Installer is calculating the files and registration needed to install KM Editor.</value></data>
+  <data name="PlanningUpdateHeading" xml:space="preserve"><value>Preparing the update</value></data>
+  <data name="PlanningUpdateDescription" xml:space="preserve"><value>Windows Installer is calculating the changes needed to update KM Editor safely.</value></data>
+  <data name="PlanningRepairHeading" xml:space="preserve"><value>Preparing the repair</value></data>
+  <data name="PlanningRepairDescription" xml:space="preserve"><value>Windows Installer is determining which KM Editor files and registrations need repair.</value></data>
+  <data name="PlanningUninstallHeading" xml:space="preserve"><value>Preparing removal</value></data>
+  <data name="PlanningUninstallDescription" xml:space="preserve"><value>Windows Installer is calculating the application files, editor cache, and registration to remove.</value></data>
+  <data name="CachingInstallHeading" xml:space="preserve"><value>Preparing installation files</value></data>
+  <data name="CachingInstallDescription" xml:space="preserve"><value>Checking the installer payload and staging the files required to install KM Editor.</value></data>
+  <data name="CachingUpdateHeading" xml:space="preserve"><value>Preparing update files</value></data>
+  <data name="CachingUpdateDescription" xml:space="preserve"><value>Checking the verified update payload and staging the replacement files.</value></data>
+  <data name="CachingRepairHeading" xml:space="preserve"><value>Preparing repair files</value></data>
+  <data name="CachingRepairDescription" xml:space="preserve"><value>Checking the installer payload before restoring KM Editor.</value></data>
+  <data name="CachingUninstallHeading" xml:space="preserve"><value>Preparing to uninstall</value></data>
+  <data name="CachingUninstallDescription" xml:space="preserve"><value>Verifying the registered installation before removing KM Editor.</value></data>
+  <data name="ExecutingInstallHeading" xml:space="preserve"><value>Installing KM Editor</value></data>
+  <data name="ExecutingInstallDescription" xml:space="preserve"><value>Copying application files, registering KM Editor, and clearing old editor cache. Your settings are being kept.</value></data>
+  <data name="ExecutingUpdateHeading" xml:space="preserve"><value>Updating KM Editor</value></data>
+  <data name="ExecutingUpdateDescription" xml:space="preserve"><value>Replacing application files and clearing editor cache while keeping your settings.</value></data>
+  <data name="ExecutingRepairHeading" xml:space="preserve"><value>Repairing KM Editor</value></data>
+  <data name="ExecutingRepairDescription" xml:space="preserve"><value>Verifying installed files and restoring anything that is missing or damaged.</value></data>
+  <data name="ExecutingUninstallHeading" xml:space="preserve"><value>Uninstalling KM Editor</value></data>
+  <data name="ExecutingUninstallDescription" xml:space="preserve"><value>Removing application files and editor cache. Settings are removed only if you selected that option.</value></data>
+  <data name="FinalizingInstallHeading" xml:space="preserve"><value>Finishing installation</value></data>
+  <data name="FinalizingInstallDescription" xml:space="preserve"><value>Completing registration and final checks for the new installation.</value></data>
+  <data name="FinalizingUpdateHeading" xml:space="preserve"><value>Finishing the update</value></data>
+  <data name="FinalizingUpdateDescription" xml:space="preserve"><value>Completing registration and cleaning up superseded installer data.</value></data>
+  <data name="FinalizingRepairHeading" xml:space="preserve"><value>Finishing the repair</value></data>
+  <data name="FinalizingRepairDescription" xml:space="preserve"><value>Completing registration and final verification of the repaired installation.</value></data>
+  <data name="FinalizingUninstallHeading" xml:space="preserve"><value>Finishing removal</value></data>
+  <data name="FinalizingUninstallDescription" xml:space="preserve"><value>Completing cache cleanup and removing the remaining installer registration.</value></data>
+  <data name="InstallingHeading" xml:space="preserve"><value>Installing KM Editor</value></data>
+  <data name="InstallingDescription" xml:space="preserve"><value>Installing application files and registering KM Editor.</value></data>
+  <data name="UpdatingHeading" xml:space="preserve"><value>Updating KM Editor</value></data>
+  <data name="UpdatingDescription" xml:space="preserve"><value>Applying the verified update. KM Editor will reopen when the update is complete.</value></data>
+  <data name="RepairingHeading" xml:space="preserve"><value>Repairing KM Editor</value></data>
+  <data name="RepairingDescription" xml:space="preserve"><value>Verifying installed files and restoring anything that is missing or damaged.</value></data>
+  <data name="UninstallingHeading" xml:space="preserve"><value>Uninstalling KM Editor</value></data>
+  <data name="UninstallingDescription" xml:space="preserve"><value>Removing installed application files and registration.</value></data>
+  <data name="CancellingHeading" xml:space="preserve"><value>Cancelling safely</value></data>
+  <data name="CancellingDescription" xml:space="preserve"><value>Waiting for Windows Installer to reach a safe rollback point.</value></data>
+  <data name="InstallSuccessHeading" xml:space="preserve"><value>KM Editor is installed</value></data>
+  <data name="InstallSuccessDescription" xml:space="preserve"><value>Installation completed successfully. Old editor cache was cleared and your settings were kept.</value></data>
+  <data name="UpdateSuccessHeading" xml:space="preserve"><value>KM Editor is up to date</value></data>
+  <data name="UpdateSuccessDescription" xml:space="preserve"><value>The update completed successfully. Editor cache was cleared and your settings were kept.</value></data>
+  <data name="RepairSuccessHeading" xml:space="preserve"><value>Repair complete</value></data>
+  <data name="RepairSuccessDescription" xml:space="preserve"><value>KM Editor was repaired successfully.</value></data>
+  <data name="UninstallSuccessHeading" xml:space="preserve"><value>KM Editor was removed</value></data>
+  <data name="UninstallSuccessDescription" xml:space="preserve"><value>KM Editor and its editor cache were removed successfully.</value></data>
+  <data name="FailureHeading" xml:space="preserve"><value>Setup could not complete</value></data>
+  <data name="FailureDescription" xml:space="preserve"><value>No success state was recorded. Review the details or open the installation log before trying again.</value></data>
+  <data name="CancelledHeading" xml:space="preserve"><value>Setup was cancelled</value></data>
+  <data name="CancelledDescription" xml:space="preserve"><value>Windows Installer stopped and rolled back the incomplete change.</value></data>
+  <data name="BlockedHeading" xml:space="preserve"><value>Setup cannot continue safely</value></data>
+  <data name="BlockedDescription" xml:space="preserve"><value>No changes were made. Review the existing installation details below.</value></data>
+  <data name="ExistingInstallConflictDescription" xml:space="preserve"><value>KM Editor has conflicting, incomplete, or unsafe installation ownership. Setup will not install, update, or repair until that state is resolved. Uninstall is offered only when setup can prove the exact registered custom installation.</value></data>
+  <data name="NewerInstallDescription" xml:space="preserve"><value>A newer version of KM Editor is already installed. Setup will not replace it with an older version.</value></data>
+  <data name="UnknownFailure" xml:space="preserve"><value>Windows Installer returned an unexpected error.</value></data>
+  <data name="RelaunchWarning" xml:space="preserve"><value>The update installed successfully, but KM Editor could not be reopened automatically.</value></data>
+  <data name="RestartRequiredNotice" xml:space="preserve"><value>Windows must be restarted to finish this change. You can restart now or finish and restart later.</value></data>
+  <data name="RestartRequiredManualNotice" xml:space="preserve"><value>Windows must be restarted to finish this change. Finish setup, then restart Windows when you are ready.</value></data>
+  <data name="CurrentPackageLabel" xml:space="preserve"><value>Current status</value></data>
+  <data name="StatusWithPackage" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="StatusInitializing" xml:space="preserve"><value>Starting the setup engine</value></data>
+  <data name="StatusDetecting" xml:space="preserve"><value>Checking installed versions and ownership</value></data>
+  <data name="StatusPlanningInstall" xml:space="preserve"><value>Calculating the installation plan</value></data>
+  <data name="StatusPlanningUpdate" xml:space="preserve"><value>Calculating the update plan</value></data>
+  <data name="StatusPlanningRepair" xml:space="preserve"><value>Calculating the repair plan</value></data>
+  <data name="StatusPlanningUninstall" xml:space="preserve"><value>Calculating the uninstall plan</value></data>
+  <data name="StatusCachingInstall" xml:space="preserve"><value>Verifying and staging installation files</value></data>
+  <data name="StatusCachingUpdate" xml:space="preserve"><value>Verifying and staging update files</value></data>
+  <data name="StatusCachingRepair" xml:space="preserve"><value>Verifying files needed for repair</value></data>
+  <data name="StatusCachingUninstall" xml:space="preserve"><value>Verifying the registered installation</value></data>
+  <data name="StatusExecutingInstall" xml:space="preserve"><value>Installing files and clearing old editor cache</value></data>
+  <data name="StatusExecutingUpdate" xml:space="preserve"><value>Updating files and clearing editor cache</value></data>
+  <data name="StatusExecutingRepair" xml:space="preserve"><value>Repairing KM Editor files</value></data>
+  <data name="StatusExecutingUninstall" xml:space="preserve"><value>Removing KM Editor and editor cache</value></data>
+  <data name="StatusFinalizingInstall" xml:space="preserve"><value>Completing installation and registration</value></data>
+  <data name="StatusFinalizingUpdate" xml:space="preserve"><value>Completing the update and cleanup</value></data>
+  <data name="StatusFinalizingRepair" xml:space="preserve"><value>Completing repair and verification</value></data>
+  <data name="StatusFinalizingUninstall" xml:space="preserve"><value>Completing cache cleanup and removal</value></data>
+  <data name="StatusCancelling" xml:space="preserve"><value>Waiting for a safe point to stop</value></data>
+  <data name="ProgressLabel" xml:space="preserve"><value>{0}%</value></data>
+  <data name="VersionLabel" xml:space="preserve"><value>Version {0}</value></data>
+  <data name="ErrorDetailsLabel" xml:space="preserve"><value>Technical details</value></data>
+  <data name="LogFileLabel" xml:space="preserve"><value>Installation log</value></data>
+  <data name="InstallButton" xml:space="preserve"><value>Install</value></data>
+  <data name="UpdateButton" xml:space="preserve"><value>Update</value></data>
+  <data name="RepairButton" xml:space="preserve"><value>Repair</value></data>
+  <data name="UninstallButton" xml:space="preserve"><value>Uninstall</value></data>
+  <data name="CancelButton" xml:space="preserve"><value>Cancel</value></data>
+  <data name="CloseButton" xml:space="preserve"><value>Close</value></data>
+  <data name="FinishButton" xml:space="preserve"><value>Finish</value></data>
+  <data name="RestartNowButton" xml:space="preserve"><value>Restart now</value></data>
+  <data name="TryAgainButton" xml:space="preserve"><value>Try again</value></data>
+  <data name="OpenLogButton" xml:space="preserve"><value>Open log</value></data>
+  <data name="CloseWindowAutomationName" xml:space="preserve"><value>Close setup</value></data>
+  <data name="PerUserScopeLabel" xml:space="preserve"><value>Install for me</value></data>
+  <data name="PerMachineScopeLabel" xml:space="preserve"><value>Install for everyone</value></data>
+  <data name="CreateStartMenuShortcutLabel" xml:space="preserve"><value>Create a Start menu shortcut</value></data>
+  <data name="CreateDesktopShortcutLabel" xml:space="preserve"><value>Create a desktop shortcut</value></data>
+  <data name="UninstallOptionsHeading" xml:space="preserve"><value>Uninstall options</value></data>
+  <data name="DeleteUserSettingsLabel" xml:space="preserve"><value>Also delete my KM Editor settings</value></data>
+  <data name="DeleteUserSettingsDescription" xml:space="preserve"><value>Leave this unchecked to keep your preferences, saved paths, and other editor settings. Rebuildable editor cache is always removed.</value></data>
+  <data name="InvocationBridgeFailure" xml:space="preserve"><value>The updater handoff data was invalid. Setup stopped before planning any changes.</value></data>
+  <data name="FatalBootstrapperFailure" xml:space="preserve"><value>KM Editor Setup could not start its installation interface. No success was recorded; review the setup log or try a fresh installer download.</value></data>
+  <data name="ShortcutPreferenceFailure" xml:space="preserve"><value>Setup found an invalid saved shortcut preference and stopped before planning changes.</value></data>
+</root>
