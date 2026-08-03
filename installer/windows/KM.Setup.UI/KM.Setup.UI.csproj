@@ -1,0 +1,31 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>KM.Setup.UI</AssemblyName>
+    <RootNamespace>KM.Setup.UI</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\..\apps\desktop\src-tauri\icons\icon.ico</ApplicationIcon>
+    <WixVersion>7.0.0</WixVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="$(WixVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\..\apps\desktop\src\assets\km-logo.png" Link="Assets\km-logo.png" />
+  </ItemGroup>
+
+</Project>

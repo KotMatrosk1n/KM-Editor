@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>KM.Editor</OutputName>
+    <OutputPath>$(MSBuildProjectDirectory)\bin\$(Configuration)\</OutputPath>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Platform>x64</Platform>
+
+    <KmProductName Condition="'$(KmProductName)' == ''">KM Editor</KmProductName>
+    <!-- Keep the publisher emitted by the published Tauri MSI family. -->
+    <KmManufacturer Condition="'$(KmManufacturer)' == ''">kmeditor</KmManufacturer>
+
+    <!--
+      This is the UpgradeCode already published by Tauri. It must remain stable so
+      this package can major-upgrade the existing MSI family.
+    -->
+    <KmMsiUpgradeCode Condition="'$(KmMsiUpgradeCode)' == ''">7a06ff31-5a9f-5a2c-aab6-92b8d255d620</KmMsiUpgradeCode>
+
+    <!--
+      The packaging driver must stage exactly the final installed names here.
+      In particular, Tauri's target-suffixed sidecar must be renamed to
+      km-tools-bridge.exe before this project is built.
+    -->
+    <KmPayloadDir Condition="'$(KmPayloadDir)' == ''">$(MSBuildProjectDirectory)\obj\payload\app</KmPayloadDir>
+    <KmAppExecutableName Condition="'$(KmAppExecutableName)' == ''">km-editor-desktop.exe</KmAppExecutableName>
+    <KmSidecarExecutableName Condition="'$(KmSidecarExecutableName)' == ''">km-tools-bridge.exe</KmSidecarExecutableName>
+    <KmInstallFolderName Condition="'$(KmInstallFolderName)' == ''">KM Editor</KmInstallFolderName>
+    <KmProductRegistryKey Condition="'$(KmProductRegistryKey)' == ''">Software\kmeditor\KM Editor</KmProductRegistryKey>
+    <KmAppComponentGuid Condition="'$(KmAppComponentGuid)' == ''">f08d6c99-af79-44a8-a79b-ed2c9041a7c6</KmAppComponentGuid>
+    <KmBridgeComponentGuid Condition="'$(KmBridgeComponentGuid)' == ''">57bd3b2e-eadd-4bb0-a4dc-fe8797cbba5c</KmBridgeComponentGuid>
+    <KmRegistrationComponentGuid Condition="'$(KmRegistrationComponentGuid)' == ''">e343161d-c1f9-435e-a3d8-0644cd1df61e</KmRegistrationComponentGuid>
+    <KmStartMenuComponentGuid Condition="'$(KmStartMenuComponentGuid)' == ''">195b7f6d-41c6-4adb-9355-9dab0b415eef</KmStartMenuComponentGuid>
+    <KmDesktopComponentGuid Condition="'$(KmDesktopComponentGuid)' == ''">4212a8ba-a657-4185-bf13-2e054fde2a78</KmDesktopComponentGuid>
+    <!--
+      ICE57 cannot model the runtime ALLUSERS redirection shared by
+      ProgramMenuFolder/DesktopFolder and HKMU in this dual-scope package. The
+      two reviewed shortcut components contain only those matched resources.
+      Keep every other ICE enabled, especially ICE69 cross-component checks.
+    -->
+    <SuppressIces>$(SuppressIces);ICE57</SuppressIces>
+
+    <DefineConstants>$(DefineConstants);KmProductName=$(KmProductName);KmManufacturer=$(KmManufacturer);KmVersion=$(KmVersion);KmMsiUpgradeCode=$(KmMsiUpgradeCode);KmAppExecutableName=$(KmAppExecutableName);KmSidecarExecutableName=$(KmSidecarExecutableName);KmInstallFolderName=$(KmInstallFolderName);KmProductRegistryKey=$(KmProductRegistryKey);KmAppComponentGuid=$(KmAppComponentGuid);KmBridgeComponentGuid=$(KmBridgeComponentGuid);KmRegistrationComponentGuid=$(KmRegistrationComponentGuid);KmStartMenuComponentGuid=$(KmStartMenuComponentGuid);KmDesktopComponentGuid=$(KmDesktopComponentGuid)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="7.0.0" />
+    <BindPath Include="$(KmPayloadDir)" BindName="KmPayload" />
+  </ItemGroup>
+
+  <Target Name="ValidateKmPackageInputs" BeforeTargets="CoreCompile">
+    <Error Condition="'$(KmVersion)' == ''" Text="KmVersion is required and must be supplied by the release driver (for example, -p:KmVersion=2.4.0)." />
+    <Error Condition="'$(KmProductName)' != 'KM Editor' Or '$(KmInstallFolderName)' != 'KM Editor' Or '$(KmProductRegistryKey)' != 'Software\kmeditor\KM Editor' Or '$(KmMsiUpgradeCode)' != '7a06ff31-5a9f-5a2c-aab6-92b8d255d620'" Text="KM Editor setup requires the published production MSI identity." />
+    <Error Condition="!Exists('$(KmPayloadDir)\$(KmAppExecutableName)')" Text="KM MSI input is missing: $(KmPayloadDir)\$(KmAppExecutableName). Stage the release app payload and pass -p:KmPayloadDir=... if necessary." />
+    <Error Condition="!Exists('$(KmPayloadDir)\$(KmSidecarExecutableName)')" Text="KM MSI input is missing: $(KmPayloadDir)\$(KmSidecarExecutableName). Stage the target-suffixed Tauri sidecar under its final installed name before building." />
+  </Target>
+</Project>

@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{6AB90524-23DA-4E2F-AC72-A0E615403D5D}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>KMSetupLauncher</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <!--
+      There is deliberately no fallback. Packaging must pass the exact
+      already-built Burn bundle that will be hash-pinned and embedded.
+    -->
+    <KmInnerBundlePath Condition="'$(KmInnerBundlePath)'==''"></KmInnerBundlePath>
+    <!-- The tracked KM icon is the default, but packaging may supply an explicit replacement. -->
+    <KmLauncherIconPath Condition="'$(KmLauncherIconPath)'==''">$(MSBuildThisFileDirectory)..\..\..\apps\desktop\src-tauri\icons\icon.ico</KmLauncherIconPath>
+    <!-- Release packaging must provide a numeric three- or four-part KM version. -->
+    <KmVersion Condition="'$(KmVersion)'==''"></KmVersion>
+    <_KmGeneratedHashHeader>$(IntDir)KmInnerBundleHash.generated.h</_KmGeneratedHashHeader>
+    <_KmGeneratedResourceFile>$(IntDir)KmInnerBundle.generated.rc</_KmGeneratedResourceFile>
+    <TargetName>KM Editor Setup</TargetName>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
+      <AdditionalDependencies>bcrypt.lib;crypt32.lib;shell32.lib;user32.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <UACExecutionLevel>AsInvoker</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>bcrypt.lib;crypt32.lib;shell32.lib;user32.lib;wintrust.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="Launcher.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="$(_KmGeneratedResourceFile)" />
+  </ItemGroup>
+
+  <Target Name="GeneratePinnedInnerBundleResource" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(Platform)'!='x64'" Text="KM.Setup.Launcher supports x64 only." />
+    <Error Condition="'$(KmInnerBundlePath)'==''" Text="KmInnerBundlePath must name the exact already-built inner Burn EXE." />
+    <Error Condition="!Exists('$(KmInnerBundlePath)')" Text="The inner Burn EXE does not exist: $(KmInnerBundlePath)" />
+    <Error Condition="'$(KmLauncherIconPath)'==''" Text="KmLauncherIconPath must name the KM launcher ICO." />
+    <Error Condition="!Exists('$(KmLauncherIconPath)')" Text="The launcher icon does not exist: $(KmLauncherIconPath)" />
+    <Error Condition="'$(KmVersion)'==''" Text="KmVersion must be supplied by release packaging." />
+
+    <PropertyGroup>
+      <_KmInnerBundleFullPath>$([System.IO.Path]::GetFullPath('$(KmInnerBundlePath)'))</_KmInnerBundleFullPath>
+      <_KmInnerBundleExtension>$([System.IO.Path]::GetExtension('$(_KmInnerBundleFullPath)').ToLowerInvariant())</_KmInnerBundleExtension>
+      <!-- RC accepts forward slashes and then cannot reinterpret path backslashes as escapes. -->
+      <_KmInnerBundleResourcePath>$(_KmInnerBundleFullPath.Replace('\', '/'))</_KmInnerBundleResourcePath>
+      <_KmLauncherIconFullPath>$([System.IO.Path]::GetFullPath('$(KmLauncherIconPath)'))</_KmLauncherIconFullPath>
+      <_KmLauncherIconExtension>$([System.IO.Path]::GetExtension('$(_KmLauncherIconFullPath)').ToLowerInvariant())</_KmLauncherIconExtension>
+      <_KmLauncherIconResourcePath>$(_KmLauncherIconFullPath.Replace('\', '/'))</_KmLauncherIconResourcePath>
+      <_KmVersionFourPart Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(KmVersion)', '^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$'))">$(KmVersion).0</_KmVersionFourPart>
+      <_KmVersionFourPart Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(KmVersion)', '^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$'))">$(KmVersion)</_KmVersionFourPart>
+    </PropertyGroup>
+    <Error Condition="'$(_KmInnerBundleExtension)'!='.exe'" Text="KmInnerBundlePath must be an EXE." />
+    <Error Condition="'$(_KmLauncherIconExtension)'!='.ico'" Text="KmLauncherIconPath must be an ICO file." />
+    <Error Condition="'$(_KmVersionFourPart)'==''" Text="KmVersion must contain three or four numeric components, for example 2.3.6 or 2.3.6.0." />
+
+    <PropertyGroup>
+      <_KmVersionMajor>$([System.Version]::Parse('$(_KmVersionFourPart)').Major)</_KmVersionMajor>
+      <_KmVersionMinor>$([System.Version]::Parse('$(_KmVersionFourPart)').Minor)</_KmVersionMinor>
+      <_KmVersionBuild>$([System.Version]::Parse('$(_KmVersionFourPart)').Build)</_KmVersionBuild>
+      <_KmVersionRevision>$([System.Version]::Parse('$(_KmVersionFourPart)').Revision)</_KmVersionRevision>
+      <_KmVersionNormalized>$(_KmVersionMajor).$(_KmVersionMinor).$(_KmVersionBuild).$(_KmVersionRevision)</_KmVersionNormalized>
+      <_KmVersionComma>$(_KmVersionMajor),$(_KmVersionMinor),$(_KmVersionBuild),$(_KmVersionRevision)</_KmVersionComma>
+    </PropertyGroup>
+    <Error Condition="$(_KmVersionMajor) &gt; 65535 Or $(_KmVersionMinor) &gt; 65535 Or $(_KmVersionBuild) &gt; 65535 Or $(_KmVersionRevision) &gt; 65535" Text="Every KmVersion component must be between 0 and 65535 for Windows VERSIONINFO." />
+
+    <GetFileHash Files="$(_KmInnerBundleFullPath)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Items" ItemName="_KmInnerBundleHashItem" />
+    </GetFileHash>
+    <PropertyGroup>
+      <_KmInnerBundleSha256>@(_KmInnerBundleHashItem->'%(FileHash)')</_KmInnerBundleSha256>
+    </PropertyGroup>
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(_KmInnerBundleSha256)', '^[0-9A-Fa-f]{64}$'))!='True'" Text="Could not calculate the inner Burn EXE SHA-256 digest." />
+
+    <MakeDir Directories="$(IntDir)" />
+    <ItemGroup>
+      <_KmHashHeaderLine Include="// SPDX-License-Identifier: GPL-3.0-only" />
+      <_KmHashHeaderLine Include="#pragma once" />
+      <_KmHashHeaderLine Include="#define KM_INNER_BUNDLE_SHA256_HEX L&quot;$(_KmInnerBundleSha256)&quot;" />
+      <_KmResourceLine Include="// SPDX-License-Identifier: GPL-3.0-only" />
+      <_KmResourceLine Include="#include &quot;resource.h&quot;" />
+      <_KmResourceLine Include="#include &lt;winver.h&gt;" />
+      <_KmResourceLine Include="IDI_KM_LAUNCHER ICON &quot;$(_KmLauncherIconResourcePath)&quot;" />
+      <_KmResourceLine Include="IDR_KM_INNER_BUNDLE RCDATA &quot;$(_KmInnerBundleResourcePath)&quot;" />
+      <_KmResourceLine Include="VS_VERSION_INFO VERSIONINFO" />
+      <_KmResourceLine Include=" FILEVERSION $(_KmVersionComma)" />
+      <_KmResourceLine Include=" PRODUCTVERSION $(_KmVersionComma)" />
+      <_KmResourceLine Include=" FILEFLAGSMASK VS_FFI_FILEFLAGSMASK" />
+      <_KmResourceLine Include=" FILEFLAGS 0" />
+      <_KmResourceLine Include=" FILEOS VOS_NT_WINDOWS32" />
+      <_KmResourceLine Include=" FILETYPE VFT_APP" />
+      <_KmResourceLine Include=" FILESUBTYPE VFT2_UNKNOWN" />
+      <_KmResourceLine Include="BEGIN" />
+      <_KmResourceLine Include="  BLOCK &quot;StringFileInfo&quot;" />
+      <_KmResourceLine Include="  BEGIN" />
+      <_KmResourceLine Include="    BLOCK &quot;040904B0&quot;" />
+      <_KmResourceLine Include="    BEGIN" />
+      <_KmResourceLine Include="      VALUE &quot;CompanyName&quot;, &quot;KM Editor contributors\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;FileDescription&quot;, &quot;KM Editor Setup\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;FileVersion&quot;, &quot;$(_KmVersionNormalized)\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;InternalName&quot;, &quot;KM.Setup.Launcher\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;LegalCopyright&quot;, &quot;Copyright (c) KM Editor contributors\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;OriginalFilename&quot;, &quot;KM Editor Setup.exe\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;ProductName&quot;, &quot;KM Editor\0&quot;" />
+      <_KmResourceLine Include="      VALUE &quot;ProductVersion&quot;, &quot;$(KmVersion)\0&quot;" />
+      <_KmResourceLine Include="    END" />
+      <_KmResourceLine Include="  END" />
+      <_KmResourceLine Include="  BLOCK &quot;VarFileInfo&quot;" />
+      <_KmResourceLine Include="  BEGIN" />
+      <_KmResourceLine Include="    VALUE &quot;Translation&quot;, 0x0409, 1200" />
+      <_KmResourceLine Include="  END" />
+      <_KmResourceLine Include="END" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_KmGeneratedHashHeader)" Lines="@(_KmHashHeaderLine)" Overwrite="true" Encoding="UTF-8" />
+    <WriteLinesToFile File="$(_KmGeneratedResourceFile)" Lines="@(_KmResourceLine)" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

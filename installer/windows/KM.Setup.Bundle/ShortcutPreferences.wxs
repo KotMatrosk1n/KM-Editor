@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Fragment>
+    <!--
+      Burn's Persisted variables are private to one bundle registration and do
+      not flow to a newer related bundle. The MSI therefore owns release-stable
+      preference values, and these searches load only the selected MSI scope.
+    -->
+    <util:RegistrySearch
+      Id="SearchPerUserStartMenuShortcutPreference"
+      Variable="KMPerUserStartMenuShortcutPreference"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)\Installer\Preferences"
+      Value="CreateStartMenuShortcut"
+      Result="value"
+      Bitness="always64" />
+
+    <util:RegistrySearch
+      Id="SearchPerUserDesktopShortcutPreference"
+      Variable="KMPerUserDesktopShortcutPreference"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)\Installer\Preferences"
+      Value="CreateDesktopShortcut"
+      Result="value"
+      Bitness="always64" />
+
+    <util:RegistrySearch
+      Id="SearchPerMachineStartMenuShortcutPreference"
+      Variable="KMPerMachineStartMenuShortcutPreference"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)\Installer\Preferences"
+      Value="CreateStartMenuShortcut"
+      Result="value"
+      Bitness="always64" />
+
+    <util:RegistrySearch
+      Id="SearchPerMachineDesktopShortcutPreference"
+      Variable="KMPerMachineDesktopShortcutPreference"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)\Installer\Preferences"
+      Value="CreateDesktopShortcut"
+      Result="value"
+      Bitness="always64" />
+  </Fragment>
+</Wix>

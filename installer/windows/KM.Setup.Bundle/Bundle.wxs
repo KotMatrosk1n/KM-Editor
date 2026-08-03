@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+  xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Bundle
+    Name="$(KmProductName)"
+    InProgressName="$(KmProductName) Setup"
+    Manufacturer="$(KmManufacturer)"
+    Version="$(KmVersion)"
+    UpgradeCode="$(KmBundleUpgradeCode)"
+    ProviderKey="$(KmBundleProviderKey)"
+    Copyright="Copyright (c) KM Editor contributors"
+    AboutUrl="https://github.com/KotMatrosk1n/KM-Editor"
+    HelpUrl="https://github.com/KotMatrosk1n/KM-Editor/issues"
+    UpdateUrl="https://github.com/KotMatrosk1n/KM-Editor/releases/latest"
+    IconSourceFile="$(KmBundleIconPath)"
+    Compressed="yes"
+    DisableModify="no"
+    DisableRemove="no"
+    Condition="VersionNT64">
+
+    <!--
+      WiX v7 runs this self-contained custom BA out of process. Payload harvesting
+      includes every published runtime dependency while excluding duplicate entry
+      point and debug-symbol files.
+    -->
+    <BootstrapperApplication SourceFile="!(bindpath.KmBootstrapperApplication)\$(KmBootstrapperApplicationExe)">
+      <Payloads Include="!(bindpath.KmBootstrapperApplication)\**">
+        <Exclude Files="!(bindpath.KmBootstrapperApplication)\$(KmBootstrapperApplicationExe)" />
+        <Exclude Files="!(bindpath.KmBootstrapperApplication)\**\*.pdb" />
+      </Payloads>
+    </BootstrapperApplication>
+
+    <!--
+      The invisible compatibility launcher consumes Tauri's positional switches,
+      then hands only these explicit values to the inner Burn bundle. Nothing is
+      persisted; the encoded application arguments are redacted from Burn logs.
+    -->
+    <Variable Name="KMUpdateMode" Type="string" Value="0" Hidden="no" Persisted="no" bal:Overridable="yes" />
+    <Variable Name="KMAutoLaunch" Type="string" Value="0" Hidden="no" Persisted="no" bal:Overridable="yes" />
+    <Variable Name="KMLaunchArgumentsBase64" Type="string" Value="" Hidden="yes" Persisted="no" bal:Overridable="yes" />
+    <Variable Name="KMInvocationBridged" Type="string" Value="0" Hidden="no" Persisted="no" bal:Overridable="yes" />
+
+    <!-- The production installer always enables the exact-identity, rollback-backed NSIS takeover. -->
+    <Variable Name="KMMigrateLegacyNsis" Type="numeric" Value="0" Hidden="yes" Persisted="no" bal:Overridable="no" />
+
+    <!-- The BA loads release-stable preferences from the MSI-owned scope. -->
+    <Variable Name="KMDefaultShortcutPreference" Type="numeric" Value="$(KmDefaultShortcutPreference)" Hidden="yes" Persisted="no" bal:Overridable="no" />
+    <Variable Name="KMCreateStartMenuShortcut" Type="numeric" Value="$(KmDefaultShortcutPreference)" Hidden="no" Persisted="no" bal:Overridable="no" />
+    <Variable Name="KMCreateDesktopShortcut" Type="numeric" Value="$(KmDefaultShortcutPreference)" Hidden="no" Persisted="no" bal:Overridable="no" />
+
+    <!-- Set by the uninstall confirmation UI; never command-line overridable. -->
+    <Variable Name="KMDeleteUserSettings" Type="numeric" Value="0" Hidden="no" Persisted="no" bal:Overridable="no" />
+
+    <!-- The BA selects the effective relaunch path after it chooses/preserves scope. -->
+    <Variable Name="KMPerUserExecutablePath" Type="formatted" Value="[LocalAppDataFolder]$(KmInstallFolderName)\$(KmAppExecutableName)" Hidden="yes" Persisted="no" bal:Overridable="no" />
+    <Variable Name="KMPerMachineExecutablePath" Type="formatted" Value="[ProgramFiles64Folder]$(KmInstallFolderName)\$(KmAppExecutableName)" Hidden="yes" Persisted="no" bal:Overridable="no" />
+    <Variable Name="KMEditorExecutablePath" Type="formatted" Value="[LocalAppDataFolder]$(KmInstallFolderName)\$(KmAppExecutableName)" Hidden="yes" Persisted="no" bal:Overridable="no" />
+
+    <!--
+      Internal BA-to-MSI path contract. It is intentionally not command-line
+      overridable: clean installs select a scope default, while an MSI migration
+      may preserve only a validated Windows Installer InstallLocation.
+    -->
+    <Variable Name="KMEditorInstallFolder" Type="formatted" Value="[LocalAppDataFolder]$(KmInstallFolderName)" Hidden="yes" Persisted="no" bal:Overridable="no" />
+    <Variable Name="KMInstallScope" Type="string" Value="perUser" Hidden="no" Persisted="no" bal:Overridable="no" />
+    <Variable Name="KMRequestedPlanScope" Type="numeric" Value="0" Hidden="yes" Persisted="no" bal:Overridable="no" />
+
+    <!-- WebView2 and legacy/current-install detection are isolated in fragments. -->
+    <util:RegistrySearchRef Id="SearchWebView2Machine32Version" />
+    <util:RegistrySearchRef Id="SearchWebView2Machine64Version" />
+    <util:RegistrySearchRef Id="SearchWebView2UserVersion" />
+    <util:RegistrySearchRef Id="SearchWebView2User32Version" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisExists" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisUninstallString" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisInstallLocation" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisVersion" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisDisplayName" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisPublisher" />
+    <util:RegistrySearchRef Id="SearchLegacyNsisMainBinaryName" />
+    <util:RegistrySearchRef Id="SearchLegacyProductInstallLocation" />
+    <util:RegistrySearchRef Id="SearchPerMachineProductInstallLocation" />
+    <util:RegistrySearchRef Id="SearchPerUserStartMenuShortcutPreference" />
+    <util:RegistrySearchRef Id="SearchPerUserDesktopShortcutPreference" />
+    <util:RegistrySearchRef Id="SearchPerMachineStartMenuShortcutPreference" />
+    <util:RegistrySearchRef Id="SearchPerMachineDesktopShortcutPreference" />
+    <util:ProductSearchRef Id="SearchExistingMsiVersion" />
+    <util:ProductSearchRef Id="SearchExistingMsiAssignment" />
+
+    <Chain>
+      <PackageGroupRef Id="WebView2PrerequisitePackages" />
+
+      <!--
+        This dual-purpose MSI makes the bundle configurable-scope. KM.Setup.UI
+        must call WiX v7 Plan(action, scope): per-user for clean installs and the
+        detected assignment for maintenance or migration from the published MSI.
+      -->
+      <MsiPackage
+        Id="PkgKmEditorMsi"
+        SourceFile="$(KmMsiPath)"
+        Compressed="yes"
+        Cache="keep"
+        Visible="no"
+        Vital="yes"
+        EnableFeatureSelection="no">
+        <MsiProperty Name="INSTALLFOLDER" Value="[KMEditorInstallFolder]" />
+        <MsiProperty Name="KM_BURN_MANAGED_INSTALL" Value="1" />
+        <MsiProperty Name="KM_INSTALL_SCOPE" Value="[KMInstallScope]" />
+        <MsiProperty Name="KM_MIGRATE_LEGACY_NSIS" Value="[KMMigrateLegacyNsis]" />
+        <MsiProperty Name="KM_DELETE_USER_SETTINGS" Value="[KMDeleteUserSettings]" />
+        <MsiProperty Name="KM_CREATE_START_MENU_SHORTCUT" Value="[KMCreateStartMenuShortcut]" />
+        <MsiProperty Name="KM_CREATE_DESKTOP_SHORTCUT" Value="[KMCreateDesktopShortcut]" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

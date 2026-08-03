@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Fragment>
+    <!--
+      Microsoft's documented Evergreen Runtime identity. Either a non-zero HKLM
+      or HKCU pv value satisfies the shared prerequisite.
+    -->
+    <util:RegistrySearch
+      Id="SearchWebView2Machine32Version"
+      Variable="WebView2Machine32Version"
+      Root="HKLM"
+      Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+      Value="pv"
+      Result="value"
+      Bitness="always32" />
+
+    <util:RegistrySearch
+      Id="SearchWebView2Machine64Version"
+      Variable="WebView2Machine64Version"
+      Root="HKLM"
+      Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+      Value="pv"
+      Result="value"
+      Bitness="always64" />
+
+    <util:RegistrySearch
+      Id="SearchWebView2User32Version"
+      Variable="WebView2User32Version"
+      Root="HKCU"
+      Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+      Value="pv"
+      Result="value"
+      Bitness="always32" />
+
+    <util:RegistrySearch
+      Id="SearchWebView2UserVersion"
+      Variable="WebView2UserVersion"
+      Root="HKCU"
+      Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+      Value="pv"
+      Result="value"
+      Bitness="always64" />
+
+    <!-- One verified payload is shared by both scope-specific package records. -->
+    <PayloadGroup Id="WebView2BootstrapperPayload">
+      <ExePackagePayload
+        Id="PayWebView2Bootstrapper"
+        Name="prerequisites\MicrosoftEdgeWebview2Setup.exe"
+        SourceFile="$(WebView2BootstrapperPath)"
+        Compressed="yes" />
+    </PayloadGroup>
+
+    <PackageGroup Id="WebView2PrerequisitePackages">
+      <!--
+        ExePackage scope is fixed, so two mutually exclusive packages are used
+        to follow the configurable bundle scope. Both use the same verified build
+        payload through a shared payload group; exactly one can be planned. The BA
+        sets and verifies KMRequestedPlanScope immediately before calling Plan, then
+        compares Burn's final scope against it at PlanComplete. Do not condition these
+        packages on WixBundlePlannedScope: Burn 7 populates that reporting variable
+        after ExePackage install conditions have already been evaluated.
+      -->
+      <ExePackage
+        Id="PkgWebView2PerUser"
+        CacheId="KMEditor.WebView2.$(WebView2BootstrapperHash).PerUser"
+        DisplayName="Microsoft Edge WebView2 Runtime"
+        Description="Shared web runtime required by KM Editor"
+        DetectCondition="(WebView2Machine32Version AND WebView2Machine32Version &lt;&gt; &quot;0.0.0.0&quot;) OR (WebView2Machine64Version AND WebView2Machine64Version &lt;&gt; &quot;0.0.0.0&quot;) OR (WebView2User32Version AND WebView2User32Version &lt;&gt; &quot;0.0.0.0&quot;) OR (WebView2UserVersion AND WebView2UserVersion &lt;&gt; &quot;0.0.0.0&quot;)"
+        InstallCondition="KMRequestedPlanScope = 2"
+        InstallArguments="/silent /install"
+        PerMachine="no"
+        Permanent="yes"
+        Vital="yes"
+        Cache="keep">
+        <PayloadGroupRef Id="WebView2BootstrapperPayload" />
+      </ExePackage>
+
+      <ExePackage
+        Id="PkgWebView2PerMachine"
+        CacheId="KMEditor.WebView2.$(WebView2BootstrapperHash).PerMachine"
+        DisplayName="Microsoft Edge WebView2 Runtime"
+        Description="Shared web runtime required by KM Editor"
+        DetectCondition="(WebView2Machine32Version AND WebView2Machine32Version &lt;&gt; &quot;0.0.0.0&quot;) OR (WebView2Machine64Version AND WebView2Machine64Version &lt;&gt; &quot;0.0.0.0&quot;)"
+        InstallCondition="KMRequestedPlanScope = 1"
+        InstallArguments="/silent /install"
+        PerMachine="yes"
+        Permanent="yes"
+        Vital="yes"
+        Cache="keep">
+        <PayloadGroupRef Id="WebView2BootstrapperPayload" />
+      </ExePackage>
+    </PackageGroup>
+  </Fragment>
+</Wix>

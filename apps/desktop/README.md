@@ -41,6 +41,6 @@ $env:CARGO_TARGET_DIR = "$env:LOCALAPPDATA\Temp\km-editor-tauri-target"
 pnpm tauri:build
 ```
 
-The Tauri package build produces MSI and NSIS installers under the Cargo target `release/bundle/` directory. The default per-user NSIS install includes both `km-editor-desktop.exe` and the bundled `km-tools-bridge.exe` sidecar.
+The Tauri build compiles the unbundled desktop executable. Windows install, update, and uninstall packages are produced only by the custom setup driver under `installer/windows/`, which combines that executable with the published `km-tools-bridge.exe` sidecar.
 
 The desktop app should consume typed contracts from `src/KM.Api` through the chosen local bridge rather than binding directly to backend storage or binary model types.

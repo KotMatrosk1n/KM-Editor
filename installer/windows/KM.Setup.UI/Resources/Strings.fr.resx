@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="LanguageName" xml:space="preserve"><value>Français</value></data>
+  <data name="PlanningInstallHeading" xml:space="preserve"><value>Préparation de l'installation</value></data>
+  <data name="PlanningInstallDescription" xml:space="preserve"><value>Windows Installer calcule les fichiers et inscriptions nécessaires pour installer KM Editor.</value></data>
+  <data name="PlanningUpdateHeading" xml:space="preserve"><value>Préparation de la mise à jour</value></data>
+  <data name="PlanningUpdateDescription" xml:space="preserve"><value>Windows Installer calcule les changements nécessaires pour mettre KM Editor à jour en toute sécurité.</value></data>
+  <data name="PlanningRepairHeading" xml:space="preserve"><value>Préparation de la réparation</value></data>
+  <data name="PlanningRepairDescription" xml:space="preserve"><value>Windows Installer détermine les fichiers et inscriptions de KM Editor à réparer.</value></data>
+  <data name="PlanningUninstallHeading" xml:space="preserve"><value>Préparation de la suppression</value></data>
+  <data name="PlanningUninstallDescription" xml:space="preserve"><value>Windows Installer calcule les fichiers, le cache de l'éditeur et les inscriptions à supprimer.</value></data>
+  <data name="CachingInstallHeading" xml:space="preserve"><value>Préparation des fichiers d'installation</value></data>
+  <data name="CachingInstallDescription" xml:space="preserve"><value>Vérification du paquet et préparation des fichiers requis pour installer KM Editor.</value></data>
+  <data name="CachingUpdateHeading" xml:space="preserve"><value>Préparation des fichiers de mise à jour</value></data>
+  <data name="CachingUpdateDescription" xml:space="preserve"><value>Vérification du paquet de mise à jour validé et préparation des fichiers de remplacement.</value></data>
+  <data name="CachingRepairHeading" xml:space="preserve"><value>Préparation des fichiers de réparation</value></data>
+  <data name="CachingRepairDescription" xml:space="preserve"><value>Vérification du paquet avant la restauration de KM Editor.</value></data>
+  <data name="CachingUninstallHeading" xml:space="preserve"><value>Préparation de la désinstallation</value></data>
+  <data name="CachingUninstallDescription" xml:space="preserve"><value>Vérification de l'installation inscrite avant la suppression de KM Editor.</value></data>
+  <data name="ExecutingInstallHeading" xml:space="preserve"><value>Installation de KM Editor</value></data>
+  <data name="ExecutingInstallDescription" xml:space="preserve"><value>Copie des fichiers, inscription de KM Editor et nettoyage de l'ancien cache de l'éditeur. Vos paramètres sont conservés.</value></data>
+  <data name="ExecutingUpdateHeading" xml:space="preserve"><value>Mise à jour de KM Editor</value></data>
+  <data name="ExecutingUpdateDescription" xml:space="preserve"><value>Remplacement des fichiers et nettoyage du cache de l'éditeur tout en conservant vos paramètres.</value></data>
+  <data name="ExecutingRepairHeading" xml:space="preserve"><value>Réparation de KM Editor</value></data>
+  <data name="ExecutingRepairDescription" xml:space="preserve"><value>Vérification des fichiers installés et restauration de ceux qui sont absents ou endommagés.</value></data>
+  <data name="ExecutingUninstallHeading" xml:space="preserve"><value>Désinstallation de KM Editor</value></data>
+  <data name="ExecutingUninstallDescription" xml:space="preserve"><value>Suppression des fichiers et du cache de l'éditeur. Les paramètres ne sont supprimés que si vous avez choisi cette option.</value></data>
+  <data name="FinalizingInstallHeading" xml:space="preserve"><value>Finalisation de l'installation</value></data>
+  <data name="FinalizingInstallDescription" xml:space="preserve"><value>Finalisation de l'inscription et des dernières vérifications de la nouvelle installation.</value></data>
+  <data name="FinalizingUpdateHeading" xml:space="preserve"><value>Finalisation de la mise à jour</value></data>
+  <data name="FinalizingUpdateDescription" xml:space="preserve"><value>Finalisation de l'inscription et nettoyage des anciennes données d'installation.</value></data>
+  <data name="FinalizingRepairHeading" xml:space="preserve"><value>Finalisation de la réparation</value></data>
+  <data name="FinalizingRepairDescription" xml:space="preserve"><value>Finalisation de l'inscription et de la vérification de l'installation réparée.</value></data>
+  <data name="FinalizingUninstallHeading" xml:space="preserve"><value>Finalisation de la suppression</value></data>
+  <data name="FinalizingUninstallDescription" xml:space="preserve"><value>Finalisation du nettoyage du cache et suppression de l'inscription restante.</value></data>
+  <data name="StatusWithPackage" xml:space="preserve"><value>{0} : {1}</value></data>
+  <data name="StatusInitializing" xml:space="preserve"><value>Démarrage du moteur d'installation</value></data>
+  <data name="StatusDetecting" xml:space="preserve"><value>Vérification des versions installées et de leur propriétaire</value></data>
+  <data name="StatusPlanningInstall" xml:space="preserve"><value>Calcul du plan d'installation</value></data>
+  <data name="StatusPlanningUpdate" xml:space="preserve"><value>Calcul du plan de mise à jour</value></data>
+  <data name="StatusPlanningRepair" xml:space="preserve"><value>Calcul du plan de réparation</value></data>
+  <data name="StatusPlanningUninstall" xml:space="preserve"><value>Calcul du plan de désinstallation</value></data>
+  <data name="StatusCachingInstall" xml:space="preserve"><value>Vérification et préparation des fichiers d'installation</value></data>
+  <data name="StatusCachingUpdate" xml:space="preserve"><value>Vérification et préparation des fichiers de mise à jour</value></data>
+  <data name="StatusCachingRepair" xml:space="preserve"><value>Vérification des fichiers de réparation</value></data>
+  <data name="StatusCachingUninstall" xml:space="preserve"><value>Vérification de l'installation inscrite</value></data>
+  <data name="StatusExecutingInstall" xml:space="preserve"><value>Installation des fichiers et nettoyage de l'ancien cache</value></data>
+  <data name="StatusExecutingUpdate" xml:space="preserve"><value>Mise à jour des fichiers et nettoyage du cache</value></data>
+  <data name="StatusExecutingRepair" xml:space="preserve"><value>Réparation des fichiers de KM Editor</value></data>
+  <data name="StatusExecutingUninstall" xml:space="preserve"><value>Suppression de KM Editor et du cache de l'éditeur</value></data>
+  <data name="StatusFinalizingInstall" xml:space="preserve"><value>Finalisation de l'installation et de l'inscription</value></data>
+  <data name="StatusFinalizingUpdate" xml:space="preserve"><value>Finalisation de la mise à jour et du nettoyage</value></data>
+  <data name="StatusFinalizingRepair" xml:space="preserve"><value>Finalisation de la réparation et de la vérification</value></data>
+  <data name="StatusFinalizingUninstall" xml:space="preserve"><value>Finalisation du nettoyage et de la suppression</value></data>
+  <data name="StatusCancelling" xml:space="preserve"><value>Attente d'un point sûr pour arrêter</value></data>
+  <data name="UninstallOptionsHeading" xml:space="preserve"><value>Options de désinstallation</value></data>
+  <data name="DeleteUserSettingsLabel" xml:space="preserve"><value>Supprimer aussi mes paramètres KM Editor</value></data>
+  <data name="DeleteUserSettingsDescription" xml:space="preserve"><value>Laissez cette case décochée pour conserver vos préférences, chemins enregistrés et autres paramètres de l’éditeur. Le cache recréable de l’éditeur est toujours supprimé.</value></data>
+</root>

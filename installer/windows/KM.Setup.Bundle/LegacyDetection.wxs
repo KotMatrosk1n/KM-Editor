@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Fragment>
+    <!--
+      Detection only. Do not execute an UninstallString read from the registry.
+      KM.Setup.UI independently validates every identity/path field before it can
+      enable the exact-file, rollback-backed MSI takeover.
+    -->
+    <util:RegistrySearch
+      Id="SearchLegacyNsisExists"
+      Variable="KMLegacyNsisDetected"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Result="exists" />
+
+    <util:RegistrySearch
+      Id="SearchLegacyNsisUninstallString"
+      Variable="KMLegacyNsisUninstallString"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Value="UninstallString"
+      Result="value"
+      Condition="KMLegacyNsisDetected"
+      After="SearchLegacyNsisExists" />
+
+    <util:RegistrySearch
+      Id="SearchLegacyNsisInstallLocation"
+      Variable="KMLegacyNsisInstallLocation"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Value="InstallLocation"
+      Result="value"
+      Condition="KMLegacyNsisDetected"
+      After="SearchLegacyNsisExists" />
+
+    <util:RegistrySearch
+      Id="SearchLegacyNsisVersion"
+      Variable="KMLegacyNsisVersion"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Value="DisplayVersion"
+      Result="value"
+      Condition="KMLegacyNsisDetected"
+      After="SearchLegacyNsisExists" />
+
+    <util:RegistrySearch
+      Id="SearchLegacyNsisDisplayName"
+      Variable="KMLegacyNsisDisplayName"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Value="DisplayName"
+      Result="value"
+      Condition="KMLegacyNsisDetected"
+      After="SearchLegacyNsisExists" />
+
+    <util:RegistrySearch
+      Id="SearchLegacyNsisPublisher"
+      Variable="KMLegacyNsisPublisher"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Value="Publisher"
+      Result="value"
+      Condition="KMLegacyNsisDetected"
+      After="SearchLegacyNsisExists" />
+
+    <util:RegistrySearch
+      Id="SearchLegacyNsisMainBinaryName"
+      Variable="KMLegacyNsisMainBinaryName"
+      Root="HKCU"
+      Key="$(KmLegacyUninstallRegistryKey)"
+      Value="MainBinaryName"
+      Result="value"
+      Condition="KMLegacyNsisDetected"
+      After="SearchLegacyNsisExists" />
+
+    <!-- Omitting Value reads the product key's default value. -->
+    <util:RegistrySearch
+      Id="SearchLegacyProductInstallLocation"
+      Variable="KMLegacyProductInstallLocation"
+      Root="HKCU"
+      Key="$(KmProductRegistryKey)"
+      Result="value" />
+
+    <!-- The MSI registration uses HKMU, so upgrade cleanup must also prove a
+         per-machine product path from the 64-bit HKLM registry view. -->
+    <util:RegistrySearch
+      Id="SearchPerMachineProductInstallLocation"
+      Variable="KMPerMachineProductInstallLocation"
+      Root="HKLM"
+      Key="$(KmProductRegistryKey)"
+      Result="value"
+      Bitness="always64" />
+
+    <!--
+      On a first Burn migration there is no WixBundleDetectedScope yet. These
+      searches let the BA preserve the published Tauri MSI's existing assignment.
+      ProductSearch assignment: 0 = per-user, 1 = per-machine.
+    -->
+    <util:ProductSearch
+      Id="SearchExistingMsiVersion"
+      Variable="ExistingMsiVersion"
+      UpgradeCode="$(KmMsiUpgradeCode)"
+      Result="version" />
+
+    <util:ProductSearch
+      Id="SearchExistingMsiAssignment"
+      Variable="ExistingMsiAssignment"
+      UpgradeCode="$(KmMsiUpgradeCode)"
+      Result="assignment"
+      After="SearchExistingMsiVersion" />
+  </Fragment>
+</Wix>
