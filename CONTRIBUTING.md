@@ -40,7 +40,7 @@ Known file names, fields, small byte patterns, public technical references, and 
 
 ## Development setup
 
-KM Editor uses .NET, React, TypeScript, pnpm, Rust, and Tauri. The exact supported versions and platform prerequisites are listed in the [README](README.md).
+KM Editor uses .NET, React, TypeScript, pnpm, Rust, and Tauri. The supported .NET SDK is defined in [`global.json`](global.json), Node.js and pnpm requirements are defined in [`package.json`](package.json), and the Rust requirement is defined in [`Cargo.toml`](apps/desktop/src-tauri/Cargo.toml). Windows desktop development also requires Visual Studio 2022 Build Tools with Desktop development with C++, a Windows 10 or 11 SDK, and Microsoft Edge WebView2 Runtime.
 
 After cloning the repository, install the locked dependencies and restore the .NET solution:
 
