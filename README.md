@@ -9,95 +9,64 @@
 
 KM Editor is a Windows desktop editor for Pokemon Sword and Shield, Pokemon Scarlet and Violet, and Pokemon Legends Z-A mod projects.
 
-It turns game records into searchable editors, keeps clean base files separate from generated output, and lets you review a complete change plan before anything is written. Spend more time making the mod and less time wondering which file just betrayed you.
+It turns complex game data into a workspace you can search, understand, and review. You get the speed of a specialized editor without giving up control over what KM Editor will write. Spend more time making the mod and less time wondering which file just betrayed you.
 
-[Download the latest release](https://github.com/KotMatrosk1n/KM-Editor/releases/latest) | [Read the wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) | [Report an issue](https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose)
+[Download the latest release](https://github.com/KotMatrosk1n/KM-Editor/releases/latest) | [Explore the complete wiki](https://github.com/KotMatrosk1n/KM-Editor/wiki) | [Report an issue](https://github.com/KotMatrosk1n/KM-Editor/issues/new/choose)
 
-## Start a Project
+## Why Modders Use KM Editor
+
+* **Find the record you mean.** Search Pokemon, moves, trainers, encounters, shops, placements, and other supported data by useful names instead of working directly with raw tables.
+* **Edit with game context.** Controls, choices, limits, and diagnostics follow the selected game and workflow. KM Editor does not pretend that similar looking data works the same way in every game.
+* **See the output before it exists.** Stage changes across editors, inspect the complete plan, and remove anything questionable before files are written.
+* **Protect your clean source.** Base RomFS and ExeFS stay read only. Generated files go to a separate Output Root that you control.
+
+When a value, layout, or write target cannot be proven safe, KM Editor blocks the action instead of guessing. That makes it useful for quick edits and for larger projects you expect to revisit months later.
+
+## Start Building
 
 1. Install the latest Windows release.
 2. Choose the exact game you are editing.
 3. Select clean Base RomFS and Base ExeFS folders, then choose a separate Output Root.
-4. Press **Validate Paths**.
-5. Open **Workflows**, choose an editor, and stage edits into the current session.
-6. Open **Changes**, choose **Review**, inspect the target files, and choose the output action for that game.
+4. Select **Validate Paths**.
+5. Open **Workflows**, choose an editor, and stage your changes.
+6. Open **Changes**, review every target, and apply the output.
 
-KM Editor does not include game files. Regular users do not need .NET, Node.js, Rust, Git, or a separate backend installation.
+Regular users do not need .NET, Node.js, Rust, Git, or a separate backend installation. KM Editor does not include game files.
 
-Changing a project path requires validation so every editor reloads from the newly selected project. **Switch and Revert** discard the draft or pending session named by the warning while keeping the current validated project open.
+## Three Games, Three Dedicated Toolsets
 
-## Supported Workflows
+Each game family has its own readers, validation rules, editor models, and output behavior. Work from one game cannot silently cross into another.
 
-| Game family | Editing coverage | Advanced tools | Guide |
-| --- | --- | --- | --- |
-| Sword and Shield | Pokemon, Rental Pokemon, moves, items, trainers, text, behavior, wild and static encounters, gifts, trades, raids, shops, rewards, and placement | Dedicated ExeFS and hook based editors, Randomizer, Mod Merger, Game Dump, and Dump Importer | [Sword and Shield overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview) |
-| Scarlet and Violet | Pokemon, moves, items, trainers, text, wild and static encounters, gifts, trades, Tera Raids, shops, and placement | Type Chart, Fashion Unlock, Hyperspace Bypass, data cache, Mod Merger, Game Dump, and Dump Importer | [Scarlet and Violet overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
-| Legends Z-A | Pokemon, moves, items, trainers, text, wild encounters, gifts, trades, shops, and placement | Ange Fight, Dex Layout, Type Chart, data cache, Mod Merger, Game Dump, and Dump Importer | [Legends Z-A overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) |
+| Game family | Complete guide |
+| --- | --- |
+| Pokemon Sword and Shield | [Sword and Shield overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Overview) |
+| Pokemon Scarlet and Violet | [Scarlet and Violet overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Overview) |
+| Pokemon Legends Z-A | [Legends Z-A overview](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Overview) |
 
-The game guides are the authoritative feature maps. Similar editor names do not mean the games share formats or output rules.
+The wiki is the authoritative feature map. It lists every supported editor, field group, advanced tool, output rule, and known limitation without turning this page into a release history.
 
-Legends Z-A Moves edits the runtime battle and timing records used in battle. Normal Move, Plus Move, and Boss Move variants remain separate, and bounded controls cover cooldown, effects, animation, targeting, motion, range, and projectiles. Selected moves and items can be staged back to verified vanilla data, and physical TM move changes migrate Pokemon compatibility and keep disc icons synchronized.
+## Built For Ongoing Projects
 
-In Legends Z-A Wild Encounters, phase-gated placements show their progression requirements and raw phase numbers, and the linked placement table remains available whether an encounter has one placement or several. Shared encounter records can edit species, form, held item, traits, levels, Alpha settings, IVs, and moves, while unknown structural values remain visible and read only. Gender choices use the actual encounter values, and supported whole-number structural Alpha rows below 100 percent remain editable. Guaranteed rows stay fixed at 100 percent, while mixed or unreadable shared ownership remains read only.
+Existing Output Root files layer over the clean base, so KM Editor can continue from the mod you already have. Source labels show where loaded data came from, and project validation reloads every editor when you change the selected game or paths.
 
-Settings offers Classic and Focused layouts. Classic preserves the original side-by-side editor arrangement and remains the default. Focused places record browsers above full-width selected details, and KM Editor remembers the selected layout across launches.
+Normal edits collect in one reviewable session. Dedicated advanced workflows keep their own plans when several files or executable changes must be handled together. A valid plan can still conflict with another mod when both replace the same file, so KM Editor keeps the targets visible and provides game specific Mod Merger workflows where available.
 
-The searchable Workflows page lists supported editor workflows for the selected game. Standalone tools and utility pages remain in the sidebar, which is the complete catalogue. Supported workflows and Settings open their matching wiki guides from inside the app.
+The interface is available in English, Spanish, French, German, Russian, Ukrainian, and Simplified Chinese. Installed releases can discover signed updates and guide you through installation from Settings.
 
-## Built Around Reviewable Output
-
-- Base RomFS and ExeFS remain read only.
-- Existing Output Root files layer over the clean base, with source labels showing which record KM Editor loaded.
-- Normal edits are grouped by editor in Changes. Individual staged rows can be removed before Review builds the complete output plan.
-- ExeFS and hook based workflows use their own reviewed plans when they need coordinated file ownership.
-- Scarlet and Violet plus Legends Z-A use separate bounded caches that can be cleared without deleting pending work.
-- Project changes cancel stale loading work so results from one game or Output Root cannot replace another project.
-
-A valid edit can still conflict with another mod when both replace the same file. Review the Output Plan and use the appropriate Mod Merger where one is available.
-
-## Documentation
+## Learn More
 
 | Need | Start here |
 | --- | --- |
-| Set up paths and output | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) |
-| Understand drafts, pending changes, and output | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow) |
-| Configure updates, data caches, or interface language | [Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Settings) |
-| Install, update, or uninstall KM Editor | [Installing and Updating](https://github.com/KotMatrosk1n/KM-Editor/wiki/Installing-and-Updating) |
-| Fix a game-specific problem | [Sword and Shield](https://github.com/KotMatrosk1n/KM-Editor/wiki/Sword-and-Shield-Troubleshooting), [Scarlet and Violet](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Troubleshooting), or [Legends Z-A](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Troubleshooting) troubleshooting |
-| Inspect Z-A wild spawners and phase conditions | [Legends Z-A Wild Encounters Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Legends-Z-A-Wild-Encounters-Editor) |
-| Find technical details for an editor | [Wiki Home](https://github.com/KotMatrosk1n/KM-Editor/wiki) |
+| Set up a clean project | [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup) |
+| Understand editing and review | [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow) |
+| See every supported feature | [Wiki Home](https://github.com/KotMatrosk1n/KM-Editor/wiki) |
+| Install or update KM Editor | [Installing and Updating](https://github.com/KotMatrosk1n/KM-Editor/wiki/Installing-and-Updating) |
+| Diagnose a problem | [Error Codes And Diagnostics](https://github.com/KotMatrosk1n/KM-Editor/wiki/Error-Codes-And-Diagnostics) |
 
 GameBanana pages: [Sword and Shield](https://gamebanana.com/tools/23044), [Scarlet and Violet](https://gamebanana.com/tools/23103), and [Legends Z-A](https://gamebanana.com/tools/23168).
 
-The interface supports English, Spanish, French, German, Russian, Ukrainian, and Simplified Chinese. Installed release builds can check for signed updates from Settings.
+## Contributing
 
-## Developing KM Editor
-
-KM Editor uses .NET 10, React, TypeScript, pnpm, Rust, and Tauri 2. Windows builds require:
-
-- .NET SDK `10.0.300`, as defined in [`global.json`](global.json).
-- Node.js `24.16.0` or newer and pnpm `11.5.2` or newer, as defined in [`package.json`](package.json).
-- The Rust MSVC toolchain with `rustc` `1.88.0` or newer, matching [`Cargo.toml`](apps/desktop/src-tauri/Cargo.toml).
-- Visual Studio 2022 Build Tools with Desktop development with C++ and a Windows 10 or 11 SDK.
-- Microsoft Edge WebView2 Runtime.
-
-See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for the Windows toolchain.
-
-```powershell
-pnpm install --frozen-lockfile
-dotnet restore .\KM.Editor.slnx
-pnpm check
-pnpm tauri:dev
-```
-
-Use `pnpm check` to verify workspace hygiene and compile the desktop and backend projects. Installer and updater release builds also require the signing configuration described in [`docs/releases.md`](docs/releases.md).
-
-## Repository Map
-
-- [`src/`](src/) contains backend workflows, binary formats, API contracts, and the bridge host.
-- [`apps/desktop/`](apps/desktop/) contains the React, TypeScript, Vite, and Tauri desktop app.
-- [`docs/`](docs/) contains release and repository documentation.
-
-Contributions are welcome. Read [Contributing](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md), and the [Security Policy](SECURITY.md) before submitting changes or reports. See [Contributors](CONTRIBUTORS.md) for project credits.
+Contributions are welcome across the desktop app, backend workflows, binary formats, documentation, and localization. Start with [Contributing](CONTRIBUTING.md), then review the [Code of Conduct](CODE_OF_CONDUCT.md) and [Security Policy](SECURITY.md). Release maintainers can find packaging details in [Release Documentation](docs/releases.md).
 
 KM Editor is distributed under the [GPL 3.0 only license](LICENSE).
