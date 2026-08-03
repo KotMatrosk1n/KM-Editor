@@ -796,6 +796,7 @@ const utilityNavigationSections = sections.filter((section) =>
 
 const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Editor/releases';
 const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
+const githubUpdateCheckTimeoutMs = 15_000;
 const sidebarCompactStorageKey = 'km-editor.sidebar.compact.v1';
 const expandedWorkflowGroupsStorageKey = 'km-editor.workflow-groups.user-expanded.v2';
 const editorLayoutStorageKey = 'km-editor.editor-layout.v1';
@@ -1130,6 +1131,7 @@ type UpdateCheckStatus =
   | { kind: 'installing'; message: string }
   | { kind: 'opening'; message: string }
   | { kind: 'preparing'; message: string }
+  | { detail: string; kind: 'restartRequired'; message: string }
   | { kind: 'restarting'; message: string }
   | { kind: 'upToDate'; message: string };
 
@@ -2366,6 +2368,7 @@ export function App({
     message: 'Not checked'
   });
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [isUpdatePromptOpen, setIsUpdatePromptOpen] = useState(false);
   const [editSessionSection, setEditSessionSection] = useState<WorkbenchSection | null>(null);
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
@@ -4254,6 +4257,7 @@ export function App({
     const runId = updateCheckRunRef.current + 1;
     updateCheckRunRef.current = runId;
     closeNativeUpdate(availableNativeUpdateRef.current);
+    setIsUpdatePromptOpen(false);
     setAvailableUpdate(null);
     setUpdateCheckStatus({
       kind: 'checking',
@@ -4355,14 +4359,48 @@ export function App({
     desktopServices.isAvailable
   ]);
 
-  const handleDismissAvailableUpdate = useCallback(() => {
-    updateCheckRunRef.current += 1;
-    if (availableUpdate?.kind === 'native') {
-      closeNativeUpdate(availableUpdate.nativeUpdate);
+  useEffect(() => {
+    if (!desktopServices.isAvailable) {
+      return;
     }
 
-    setAvailableUpdate(null);
-  }, [availableUpdate, closeNativeUpdate]);
+    const timeoutId = window.setTimeout(() => {
+      void handleCheckForUpdates();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [desktopServices.isAvailable, handleCheckForUpdates]);
+
+  const handleOpenAvailableUpdate = useCallback(() => {
+    if (availableUpdate) {
+      setIsUpdatePromptOpen(true);
+    }
+  }, [availableUpdate]);
+
+  const handleDismissUpdatePrompt = useCallback(() => {
+    setIsUpdatePromptOpen(false);
+  }, []);
+
+  const handleRestartAfterUpdate = useCallback(async () => {
+    setUpdateCheckStatus({
+      kind: 'restarting',
+      message: 'Update installed. Restarting KM Editor.'
+    });
+
+    try {
+      await desktopServices.relaunchApp();
+    } catch (error) {
+      setUpdateCheckStatus({
+        detail: toErrorMessage(error, {
+          code: desktopErrorCodes.appRelaunchFailed,
+          domain: 'desktop',
+          message: 'Could not restart KM Editor automatically.'
+        }),
+        kind: 'restartRequired',
+        message: 'Update installed. Restart KM Editor to finish.'
+      });
+    }
+  }, [desktopServices.relaunchApp]);
 
   const handleDownloadAvailableUpdate = useCallback(async () => {
     if (!availableUpdate) {
@@ -4469,23 +4507,8 @@ export function App({
         }
         await availableUpdate.nativeUpdate.close().catch(() => undefined);
         setAvailableUpdate(null);
-        setUpdateCheckStatus({
-          kind: 'restarting',
-          message: 'Update installed. Restarting KM Editor.'
-        });
-
-        try {
-          await desktopServices.relaunchApp();
-        } catch (error) {
-          setUpdateCheckStatus({
-            kind: 'available',
-            message: `Update installed. Restart KM Editor to finish.\n\n${toErrorMessage(error, {
-              code: desktopErrorCodes.appRelaunchFailed,
-              domain: 'desktop',
-              message: 'Could not restart KM Editor automatically.'
-            })}`
-          });
-        }
+        setIsUpdatePromptOpen(false);
+        await handleRestartAfterUpdate();
       } catch (error) {
         setUpdateCheckStatus({
           kind: 'error',
@@ -4508,10 +4531,10 @@ export function App({
         window.open(availableUpdate.releaseUrl, '_blank', 'noopener,noreferrer');
       }
 
-      setAvailableUpdate(null);
+      setIsUpdatePromptOpen(false);
       setUpdateCheckStatus({
         kind: 'available',
-        message: 'Opened the GitHub release page.'
+        message: `KM Editor v${availableUpdate.version} is available on GitHub.`
       });
     } catch (error) {
       setUpdateCheckStatus({
@@ -4529,8 +4552,8 @@ export function App({
     desktopServices.isAvailable,
     desktopServices.openExternalUrl,
     desktopServices.recycleProjectBridge,
-    desktopServices.relaunchApp,
     evictUnprotectedWorkflowPayloads,
+    handleRestartAfterUpdate,
     selectedGame
   ]);
 
@@ -10874,16 +10897,20 @@ export function App({
           {utilityNavigationSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
+            const hasAvailableUpdate = section.id === 'settings' && availableUpdate !== null;
+            const navigationLabel = hasAvailableUpdate
+              ? `${translateLiteral(section.label)}: ${translateLiteral('Update Available')}`
+              : translateLiteral(section.label);
 
             return (
               <button
                 aria-current={isActive ? 'page' : undefined}
-                aria-label={section.label}
+                aria-label={navigationLabel}
                 className="nav-button"
                 disabled={isEditSessionOperationBusy || hasCriticalWriteOperation}
                 key={section.id}
                 onClick={() => handleSidebarNavigateSection(section.id)}
-                title={isSidebarCompact ? translateLiteral(section.label) : undefined}
+                title={isSidebarCompact ? navigationLabel : undefined}
                 type="button"
               >
                 <Icon aria-hidden="true" size={18} />
@@ -10891,6 +10918,11 @@ export function App({
                 {section.id === 'changes' && pendingEditCount > 0 ? (
                   <span className="nav-count" aria-label={`${pendingEditCount} pending changes`}>
                     {pendingEditCount}
+                  </span>
+                ) : null}
+                {hasAvailableUpdate ? (
+                  <span aria-hidden="true" className="nav-count">
+                    !
                   </span>
                 ) : null}
               </button>
@@ -12121,6 +12153,7 @@ export function App({
           {activeSection === 'settings' ? (
             <SettingsSection
               appVersion={appVersion}
+              availableUpdateKind={availableUpdate?.kind ?? null}
               editorLayout={editorLayout}
               isSvCacheClearing={isSvCacheClearing}
               isSvCacheRefreshing={isSvCacheRefreshing}
@@ -12129,6 +12162,8 @@ export function App({
               onChangeSvCacheLimit={handleChangeSvCacheLimit}
               onChangeSvCacheMode={handleChangeSvCacheMode}
               onCheckForUpdates={handleCheckForUpdates}
+              onOpenAvailableUpdate={handleOpenAvailableUpdate}
+              onRestartAfterUpdate={handleRestartAfterUpdate}
               onClearSvCache={() => setIsSvCacheClearConfirmOpen(true)}
               onRefreshSvCacheStatus={() => void handleRefreshSvCacheStatus()}
               selectedGame={selectedGame}
@@ -12193,9 +12228,9 @@ export function App({
           onStay={handleStayAfterExitDecline}
         />
       ) : null}
-      {availableUpdate ? (
+      {availableUpdate && isUpdatePromptOpen ? (
         <UpdatePromptModal
-          onDismiss={handleDismissAvailableUpdate}
+          onDismiss={handleDismissUpdatePrompt}
           onDownload={handleDownloadAvailableUpdate}
           status={updateCheckStatus}
           update={availableUpdate}
@@ -37806,6 +37841,7 @@ type PendingEditContext = {
 
 function SettingsSection({
   appVersion,
+  availableUpdateKind,
   editorLayout,
   isSvCacheClearing,
   isSvCacheRefreshing,
@@ -37814,6 +37850,8 @@ function SettingsSection({
   onChangeSvCacheLimit,
   onChangeSvCacheMode,
   onCheckForUpdates,
+  onOpenAvailableUpdate,
+  onRestartAfterUpdate,
   onClearSvCache,
   onRefreshSvCacheStatus,
   selectedGame,
@@ -37822,6 +37860,7 @@ function SettingsSection({
   svCacheStatus
 }: {
   appVersion: string;
+  availableUpdateKind: AvailableUpdate['kind'] | null;
   editorLayout: EditorLayoutPreference;
   isSvCacheClearing: boolean;
   isSvCacheRefreshing: boolean;
@@ -37830,6 +37869,8 @@ function SettingsSection({
   onChangeSvCacheLimit: (maxCacheSizeBytes: number) => void;
   onChangeSvCacheMode: (mode: TrinityCacheMode) => void;
   onCheckForUpdates: () => void;
+  onOpenAvailableUpdate: () => void;
+  onRestartAfterUpdate: () => void;
   onClearSvCache: () => void;
   onRefreshSvCacheStatus: () => void;
   selectedGame: ProjectGame;
@@ -37858,7 +37899,13 @@ function SettingsSection({
   const cacheDescription = isPokemonLegendsZAGame(selectedGame)
     ? 'Controls how aggressively Z-A Trinity data is cached between editor loads.'
     : 'Controls how aggressively S/V Trinity data is cached between editor loads.';
-  const { language, setLanguage, t } = useLocalization();
+  const { language, setLanguage, t, translateLiteral } = useLocalization();
+  const availableUpdateActionLabel =
+    availableUpdateKind === 'native'
+      ? 'Install Update'
+      : availableUpdateKind === 'releasePage'
+        ? 'Open Release'
+        : 'Check for Updates';
   const languageKeyByCode: Record<LanguageCode, string> = {
     de: 'german',
     en: 'english',
@@ -37890,27 +37937,53 @@ function SettingsSection({
         <button
           className="primary-button"
           disabled={isBusy}
-          onClick={onCheckForUpdates}
+          onClick={
+            status.kind === 'restartRequired'
+              ? onRestartAfterUpdate
+              : availableUpdateKind
+                ? onOpenAvailableUpdate
+                : onCheckForUpdates
+          }
           type="button"
         >
-          <RefreshCw aria-hidden="true" size={18} />
+          {status.kind === 'restartRequired' ? (
+            <RotateCcw aria-hidden="true" size={18} />
+          ) : availableUpdateKind === 'native' ? (
+            <Download aria-hidden="true" size={18} />
+          ) : availableUpdateKind === 'releasePage' ? (
+            <ExternalLink aria-hidden="true" size={18} />
+          ) : (
+            <RefreshCw aria-hidden="true" size={18} />
+          )}
           <span>
             {status.kind === 'checking'
-              ? 'Checking'
+              ? translateLiteral('Checking')
               : status.kind === 'preparing'
-                ? 'Preparing'
-              : status.kind === 'downloading'
-                ? 'Downloading'
-                : status.kind === 'installing'
-                  ? 'Installing'
-                  : 'Check for Updates'}
+                ? translateLiteral('Preparing')
+                : status.kind === 'downloading'
+                  ? translateLiteral('Downloading')
+                  : status.kind === 'installing'
+                    ? translateLiteral('Installing')
+                    : status.kind === 'restarting'
+                      ? translateLiteral('Restarting')
+                      : status.kind === 'restartRequired'
+                        ? translateLiteral('Restart KM Editor')
+                        : translateLiteral(availableUpdateActionLabel)}
           </span>
         </button>
         <p
           className={`update-status update-status-${status.kind}`}
           role={status.kind === 'error' ? 'alert' : 'status'}
         >
-          {status.message}
+          {status.kind === 'restartRequired' ? (
+            <>
+              {translateLiteral(status.message)}
+              {'\n\n'}
+              {status.detail}
+            </>
+          ) : (
+            status.message
+          )}
         </p>
       </div>
 
@@ -47338,8 +47411,8 @@ function createZaMegaFormLabelDefinitions(): SpeciesFormLabelDefinition[] {
       26,
       ['raichu'],
       [
-        [2, 'Mega Kanto'],
-        [3, 'Mega Alolan']
+        [2, 'Mega X'],
+        [3, 'Mega Y']
       ],
       undefined,
       'za'
@@ -47769,17 +47842,38 @@ function getPathStatusClassName(pathValidation: ProjectPathValidation | undefine
 }
 
 async function fetchAvailableUpdate(currentVersion: string): Promise<ReleasePageUpdate | null> {
-  const response = await fetch(githubReleasesApiUrl, {
-    headers: {
-      Accept: 'application/vnd.github+json'
-    }
-  });
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeoutId = window.setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, githubUpdateCheckTimeoutMs);
+  let response: Response;
+  let payload: unknown;
 
-  if (!response.ok) {
-    throw new Error(`GitHub update check failed (${response.status}).`);
+  try {
+    response = await fetch(githubReleasesApiUrl, {
+      headers: {
+        Accept: 'application/vnd.github+json'
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub update check failed (${response.status}).`);
+    }
+
+    payload = await response.json();
+  } catch (error) {
+    if (didTimeout) {
+      throw new Error('GitHub update check timed out.', { cause: error });
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 
-  const payload: unknown = await response.json();
   if (!Array.isArray(payload)) {
     throw new Error('GitHub update response was not a release list.');
   }

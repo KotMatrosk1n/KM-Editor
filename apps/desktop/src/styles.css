@@ -8743,6 +8743,7 @@ button.sv-encounter-condition-row:hover {
 .update-status-available,
 .update-status-downloading,
 .update-status-installing,
+.update-status-restartRequired,
 .update-status-restarting,
 .update-status-upToDate {
   color: #d7f7dd;

@@ -6,6 +6,8 @@ import { open as openExternal } from '@tauri-apps/plugin-shell';
 import type { DownloadEvent } from '@tauri-apps/plugin-updater';
 import { desktopErrorCodes, type KmErrorCode } from './errorCodes';
 
+const nativeUpdateCheckTimeoutMs = 15_000;
+
 export class DesktopServiceError extends Error {
   public constructor(
     public readonly code: KmErrorCode,
@@ -62,7 +64,7 @@ export const desktopServices: DesktopServices = {
         ensureTauriRuntime();
 
         const { check } = await import('@tauri-apps/plugin-updater');
-        const update = await check();
+        const update = await check({ timeout: nativeUpdateCheckTimeoutMs });
 
         if (!update) {
           return null;
