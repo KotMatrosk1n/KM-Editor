@@ -8,7 +8,8 @@ import {
   ListOrdered,
   RotateCcw,
   Save,
-  Search
+  Search,
+  X
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
@@ -17,7 +18,10 @@ import {
   type PokemonDexPlacement,
   type PokemonWorkflow
 } from '../../bridge/contracts';
-import { EditorSessionBar } from '../../components/EditorSessionBar';
+import {
+  EditorSessionBar,
+  EditorSessionBarActions
+} from '../../components/EditorSessionBar';
 import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import { useLocalization } from '../../localization';
 
@@ -56,6 +60,7 @@ export function ZaDexLayoutSection({
   editSession,
   isEditStarting,
   isPokemonUpdating,
+  onCancelEditSession,
   onDirtyChange,
   onMovePlacement,
   onOpenChanges,
@@ -68,6 +73,7 @@ export function ZaDexLayoutSection({
   editSession: EditSession | null;
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
+  onCancelEditSession: (onDiscard?: () => void) => void;
   onDirtyChange: (isDirty: boolean) => void;
   onMovePlacement: (
     sourceSpeciesId: number,
@@ -252,6 +258,8 @@ export function ZaDexLayoutSection({
   const workflowAvailable = workflow?.summary.availability === 'available';
   const hasActiveEditSession = editSession !== null;
   const hasStagedChange = (editSession?.pendingEdits.length ?? 0) > 0;
+  const sessionActionChangedCount =
+    (editSession?.pendingEdits.length ?? 0) + (hasLocalDraft ? 1 : 0);
   const isWorkflowActionBusy = isEditStarting || isPokemonUpdating;
   const canStage =
     workflowAvailable &&
@@ -271,6 +279,7 @@ export function ZaDexLayoutSection({
     !moveDraftIsDirty &&
     resizePreview !== null &&
     !resizeIsNoOp;
+  const canStageSessionDraft = canStageResize || canStage;
   const returnToVanillaNeedsEditSession =
     workflowAvailable &&
     dexEditor?.canReturnToVanilla === true &&
@@ -311,6 +320,45 @@ export function ZaDexLayoutSection({
     setRegularSizeDraft(dependentValue);
   };
 
+  const discardLocalDrafts = () => {
+    if (dexEditor) {
+      setRegularSizeDraft(dexEditor.regularCount.toString());
+      setHyperspaceSizeDraft(dexEditor.hyperspaceCount.toString());
+      setResizeDraftBaseKey(
+        createDexSizeKey(dexEditor.regularCount, dexEditor.hyperspaceCount)
+      );
+    } else {
+      setRegularSizeDraft('');
+      setHyperspaceSizeDraft('');
+      setResizeDraftBaseKey('');
+    }
+
+    if (selectedPlacement) {
+      setDestinationDexKind(selectedPlacement.dexKind);
+      setDestinationNumberDraft(selectedPlacement.displayedNumber.toString());
+      setMoveDraftBaseKey(createDexMoveKey(selectedPlacement));
+    } else {
+      setDestinationDexKind('regular');
+      setDestinationNumberDraft('');
+      setMoveDraftBaseKey('');
+    }
+  };
+
+  const stageLocalDraft = async () => {
+    if (canStageResize && resizePreview && !resizeIsNoOp) {
+      await onResizeDex(resizePreview.proposedRegularCount);
+      return;
+    }
+
+    if (canStage && preview && !isNoOp) {
+      await onMovePlacement(
+        preview.source.speciesId,
+        preview.destinationDexKind,
+        preview.destinationDisplayedNumber
+      );
+    }
+  };
+
   return (
     <>
       <section
@@ -332,6 +380,38 @@ export function ZaDexLayoutSection({
         onStart={onStartEditSession}
         readOnlyReason={dexEditor?.blockedReason}
       />
+
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isPokemonUpdating || undefined}
+            className="primary-button"
+            disabled={!canStageSessionDraft}
+            onClick={stageLocalDraft}
+            type="button"
+          >
+            <Save aria-hidden="true" size={16} />
+            <span>
+              {translateLiteral(isPokemonUpdating ? 'Staging' : 'Stage')}
+            </span>
+          </button>
+          <button
+            className="danger-button"
+            disabled={isWorkflowActionBusy}
+            onClick={() => onCancelEditSession(discardLocalDrafts)}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>{translateLiteral('Cancel')}</span>
+          </button>
+          <span className="draft-action-summary">
+            <span data-localization-ignore="true">
+              {sessionActionChangedCount.toLocaleString()}
+            </span>{' '}
+            {translateLiteral('Pending changes')}
+          </span>
+        </EditorSessionBarActions>
+      ) : null}
 
       <p className="za-dex-layout-intro">
         {translateLiteral(
@@ -524,33 +604,13 @@ export function ZaDexLayoutSection({
                   </p>
                 ) : null}
 
-                <div className="za-dex-layout-actions">
-                  <button
-                    aria-busy={isPokemonUpdating || undefined}
-                    className="primary-button"
-                    disabled={!canStageResize}
-                    onClick={async () => {
-                      if (!resizePreview || resizeIsNoOp) {
-                        return;
-                      }
-
-                      await onResizeDex(resizePreview.proposedRegularCount);
-                    }}
-                    type="button"
-                  >
-                    <Save aria-hidden="true" size={16} />
-                    <span>
-                      {translateLiteral(
-                        isPokemonUpdating ? 'Staging' : 'Stage Resize'
-                      )}
-                    </span>
-                  </button>
-                  {editSession === null && dexEditor.canEditAdvanced ? (
+                {editSession === null && dexEditor.canEditAdvanced ? (
+                  <div className="za-dex-layout-actions">
                     <span className="draft-action-summary">
                       {translateLiteral('Start editing to stage a Pokédex resize.')}
                     </span>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </section>
 
               <aside
@@ -691,35 +751,13 @@ export function ZaDexLayoutSection({
                     </p>
                   ) : null}
 
-                  <div className="za-dex-layout-actions">
-                    <button
-                      aria-busy={isPokemonUpdating || undefined}
-                      className="primary-button"
-                      disabled={!canStage}
-                      onClick={async () => {
-                        if (!preview || isNoOp) {
-                          return;
-                        }
-
-                        await onMovePlacement(
-                          preview.source.speciesId,
-                          preview.destinationDexKind,
-                          preview.destinationDisplayedNumber
-                        );
-                      }}
-                      type="button"
-                    >
-                      <Save aria-hidden="true" size={16} />
-                      <span>
-                        {translateLiteral(isPokemonUpdating ? 'Staging' : 'Stage Move')}
-                      </span>
-                    </button>
-                    {editSession === null && dexEditor.canEdit ? (
+                  {editSession === null && dexEditor.canEdit ? (
+                    <div className="za-dex-layout-actions">
                       <span className="draft-action-summary">
                         {translateLiteral('Start editing to stage a Pokédex move.')}
                       </span>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="empty-copy">

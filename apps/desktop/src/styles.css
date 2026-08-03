@@ -1510,6 +1510,31 @@ h2 {
   min-width: 0;
 }
 
+.editor-session-bar-actions:empty {
+  display: none;
+}
+
+.editor-session-action-group {
+  display: contents;
+}
+
+.editor-session-bar-actions :is(
+    .primary-button,
+    .secondary-button,
+    .danger-button,
+    .purple-button
+  ) {
+  min-width: 0;
+}
+
+.editor-session-bar-actions .draft-action-summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .game-dump-section {
   display: grid;
   gap: 16px;
@@ -9704,6 +9729,20 @@ input {
 }
 
 @container workspace (max-width: 760px) {
+  .editor-session-bar-actions :is(
+      .primary-button,
+      .secondary-button,
+      .danger-button,
+      .purple-button
+    ) {
+    flex: 1 1 160px;
+  }
+
+  .editor-session-bar-actions .draft-action-summary {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
   .dynamax-adventure-status-summary,
   .dynamax-adventure-field-groups {
     grid-template-columns: 1fr;

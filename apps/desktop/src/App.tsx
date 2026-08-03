@@ -322,7 +322,11 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from './components/workflowPanels';
-import { EditorSessionBar } from './components/EditorSessionBar';
+import {
+  EditorSessionActionsProvider,
+  EditorSessionBar,
+  EditorSessionBarActions
+} from './components/EditorSessionBar';
 import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
 import { completeSuccessfulApplyResult } from './applyResultDiagnostics';
 import { useModalDialog } from './components/useModalDialog';
@@ -10759,6 +10763,7 @@ export function App({
 
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
+    <EditorSessionActionsProvider>
     <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
     <main
       className={`app-shell editor-layout-${editorLayout}${isSidebarCompact ? ' sidebar-is-compact' : ''}${isSidebarConstrained ? ' sidebar-is-constrained' : ''}${isSidebarOverlayOpen ? ' sidebar-overlay-open' : ''}`}
@@ -11192,6 +11197,7 @@ export function App({
                 editSession={getEditSessionForSection('dexLayout')}
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
+                onCancelEditSession={requestCancelEditSession}
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('dexLayout', isDirty)
                 }
@@ -12245,6 +12251,7 @@ export function App({
       ) : null}
     </main>
     </EditorDraftDirtyContext.Provider>
+    </EditorSessionActionsProvider>
     </CancelEditSessionContext.Provider>
   );
 }
@@ -12342,6 +12349,39 @@ function BusyActionContent({
       )}
       <span>{translateLiteral(isBusy ? busyLabel : label)}</span>
     </>
+  );
+}
+
+function EmptySelectionEditorSessionActions({
+  isBusy,
+  onCancel,
+  stageLabel = 'Stage',
+  summary
+}: {
+  isBusy: boolean;
+  onCancel: () => void;
+  stageLabel?: string;
+  summary: string;
+}) {
+  const { translateLiteral } = useLocalization();
+
+  return (
+    <EditorSessionBarActions>
+      <button className="primary-button" disabled type="button">
+        <Save aria-hidden="true" size={16} />
+        <span>{translateLiteral(stageLabel)}</span>
+      </button>
+      <button
+        className="danger-button"
+        disabled={isBusy}
+        onClick={onCancel}
+        type="button"
+      >
+        <X aria-hidden="true" size={16} />
+        <span>{translateLiteral('Cancel')}</span>
+      </button>
+      <span className="draft-action-summary">{translateLiteral(summary)}</span>
+    </EditorSessionBarActions>
   );
 }
 
@@ -13131,6 +13171,13 @@ function SelectedItemPanel({
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
+      {editSession && !item ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isItemUpdating}
+          onCancel={() => cancelActiveEditSession(() => setFieldDraftsByItemId({}))}
+          summary="No item selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Item</h3>
@@ -13183,7 +13230,7 @@ function SelectedItemPanel({
 
           <div className="item-edit-form">
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isItemUpdating || undefined}
                   className="primary-button"
@@ -13228,7 +13275,7 @@ function SelectedItemPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(itemDraftSummary)}</span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
             <div className="editable-field-groups">
@@ -14833,44 +14880,6 @@ function SelectedPokemonPanel({
       className={`item-inspector ${editorFamily}-pokemon-inspector`}
     >
       <EditorSessionBar
-        activeActions={
-          editSession ? (
-            <>
-              <button
-                aria-busy={isPokemonUpdating || undefined}
-                className="primary-button"
-                disabled={!canSavePokemonDrafts}
-                onClick={stagePokemonDrafts}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Staging"
-                  icon={<Save aria-hidden="true" size={16} />}
-                  isBusy={isPokemonUpdating}
-                  label="Stage"
-                />
-              </button>
-              <button
-                className="danger-button"
-                disabled={isPokemonUpdating}
-                onClick={cancelPokemonEdit}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-              <span className="draft-action-summary">
-                {pokemon === null
-                  ? 'No Pokemon selected.'
-                  : pokemonDraftInvalidCount > 0
-                    ? `${pokemonDraftInvalidCount} field${
-                        pokemonDraftInvalidCount === 1 ? '' : 's'
-                      } need valid values`
-                    : `${pokemonDraftChangedCount} changed`}
-              </span>
-            </>
-          ) : null
-        }
         canEdit={canEditPokemon && pokemon !== null}
         isEditing={editSession !== null}
         isStarting={isEditStarting}
@@ -14878,6 +14887,43 @@ function SelectedPokemonPanel({
         onStart={onStartEditSession}
         readOnlyReason={pokemon === null ? 'No Pokemon selected.' : undefined}
       />
+
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isPokemonUpdating || undefined}
+            className="primary-button"
+            disabled={!canSavePokemonDrafts}
+            onClick={stagePokemonDrafts}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isPokemonUpdating}
+              label="Stage"
+            />
+          </button>
+          <button
+            className="danger-button"
+            disabled={isPokemonUpdating}
+            onClick={cancelPokemonEdit}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <span className="draft-action-summary">
+            {pokemon === null
+              ? 'No Pokemon selected.'
+              : pokemonDraftInvalidCount > 0
+                ? `${pokemonDraftInvalidCount} field${
+                    pokemonDraftInvalidCount === 1 ? '' : 's'
+                  } need valid values`
+                : `${pokemonDraftChangedCount} changed`}
+          </span>
+        </EditorSessionBarActions>
+      ) : null}
 
       <div className={`${editorFamily}-pokemon-selected-stack`}>
         <div className="panel-heading">
@@ -16398,6 +16444,13 @@ function SelectedMovePanel({
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
+      {editSession && !move ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isMoveUpdating}
+          onCancel={() => cancelActiveEditSession(() => setMoveDraftsByMoveId({}))}
+          summary="No move selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Move</h3>
@@ -16632,7 +16685,7 @@ function SelectedMovePanel({
             </div>
 
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isMoveUpdating || undefined}
                   className="primary-button"
@@ -16691,7 +16744,7 @@ function SelectedMovePanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(moveDraftSummary)}</span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
             {onStageMoveVanilla ? (
               <div className="za-encounter-revert-action">
@@ -17034,6 +17087,7 @@ function SelectedTextPanel({
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
 }) {
   const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
+  const cancelActiveEditSession = useCancelActiveEditSession();
   const textValueTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const valueField = editableFields.find((field) => field.field === 'value');
   const draftValue = entry ? draftsByTextKey[entry.textKey] ?? entry.value : '';
@@ -17113,9 +17167,52 @@ function SelectedTextPanel({
 
   const draftState = getTextDraftState(draftValue, entry, valueField);
   const canSubmit = editSession !== null && draftState.canSubmit;
+  const textDraftCount = Object.keys(draftsByTextKey).length;
 
   return (
     <aside aria-label="Selected text provenance" className="text-inspector">
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isTextUpdating || undefined}
+            className="primary-button"
+            disabled={!canSubmit || isTextUpdating}
+            onClick={async () => {
+              if (!entry) {
+                return;
+              }
+
+              const didSave = await onUpdateTextEntry(entry.textKey, draftValue);
+              if (didSave) {
+                setDraftsByTextKey((currentDrafts) =>
+                  deleteFieldDraftRecord(currentDrafts, entry.textKey)
+                );
+              }
+            }}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isTextUpdating}
+              label="Stage"
+            />
+          </button>
+          <button
+            className="danger-button"
+            disabled={isTextUpdating}
+            onClick={() => cancelActiveEditSession(() => setDraftsByTextKey({}))}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <span className="draft-action-summary">
+            {textDraftCount} changed
+          </span>
+        </EditorSessionBarActions>
+      ) : null}
+
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Text</h3>
@@ -17180,29 +17277,6 @@ function SelectedTextPanel({
               <p className="empty-copy">{entry.editBlockedReason ?? 'This text line is read-only.'}</p>
             ) : null}
 
-            {editSession ? (
-              <button
-                aria-busy={isTextUpdating || undefined}
-                className="primary-button"
-                disabled={!canSubmit || isTextUpdating}
-                onClick={async () => {
-                  const didSave = await onUpdateTextEntry(entry.textKey, draftValue);
-                  if (didSave) {
-                    setDraftsByTextKey((currentDrafts) =>
-                      deleteFieldDraftRecord(currentDrafts, entry.textKey)
-                    );
-                  }
-                }}
-                type="button"
-              >
-                <BusyActionContent
-                  busyLabel="Staging"
-                  icon={<Save aria-hidden="true" size={16} />}
-                  isBusy={isTextUpdating}
-                  label="Stage"
-                />
-              </button>
-            ) : null}
           </div>
         </>
       ) : (
@@ -17834,8 +17908,122 @@ function SelectedTrainerPanel({
     );
   }, [pokemonDraftDefaults, selectedPokemonDraftKey]);
 
+  const stageTrainerDrafts = async () => {
+    if (!trainer) {
+      return;
+    }
+
+    const didSave = await onUpdateTrainerFields(
+      trainerDraftSummary.changedFields.map((change) => ({
+        field: change.field,
+        slot: null,
+        trainerId: trainer.trainerId,
+        value: change.value
+      }))
+    );
+    if (didSave) {
+      setTrainerDraftsByTrainerId((currentDrafts) =>
+        deleteFieldDraftRecord(currentDrafts, trainer.trainerId)
+      );
+    }
+  };
+
+  const stagePokemonDrafts = async () => {
+    if (!trainer || !selectedPokemon) {
+      return;
+    }
+
+    const didSave = await onUpdateTrainerFields(
+      pokemonDraftSummary.changedFields.map((change) => ({
+        field: change.field,
+        slot: selectedPokemon.slot,
+        trainerId: trainer.trainerId,
+        value: change.value
+      }))
+    );
+    if (didSave && selectedPokemonDraftKey) {
+      setPokemonDraftsByTrainerSlot((currentDrafts) =>
+        deleteFieldDraftRecord(currentDrafts, selectedPokemonDraftKey)
+      );
+    }
+  };
+
+  const stageTrainerMaxIvs = async () => {
+    if (!trainer) {
+      return;
+    }
+
+    const didSave =
+      trainerMaxIvUpdates.length === 0 ||
+      (await onUpdateTrainerFields(trainerMaxIvUpdates));
+    if (didSave) {
+      setPokemonDraftsByTrainerSlot((currentDrafts) =>
+        reconcileTrainerMaxIvDrafts(
+          currentDrafts,
+          trainer,
+          contextualPokemonFields
+        )
+      );
+    }
+  };
+
+  const cancelTrainerEdit = () =>
+    cancelActiveEditSession(() => {
+      setTrainerDraftsByTrainerId({});
+      setPokemonDraftsByTrainerSlot({});
+    });
+
   return (
     <aside aria-label="Selected trainer provenance" className="trainer-inspector">
+      {editSession ? (
+        <EditorSessionBarActions>
+          <button
+            aria-busy={isTrainerUpdating || undefined}
+            className="primary-button"
+            disabled={!canSaveTrainerDrafts}
+            onClick={stageTrainerDrafts}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isTrainerUpdating}
+              label="Stage Trainer"
+            />
+          </button>
+          {selectedPokemon ? (
+            <button
+              aria-busy={isTrainerUpdating || undefined}
+              className="primary-button"
+              disabled={!canSavePokemonDrafts}
+              onClick={stagePokemonDrafts}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Staging"
+                icon={<Save aria-hidden="true" size={16} />}
+                isBusy={isTrainerUpdating}
+                label="Stage Party"
+              />
+            </button>
+          ) : null}
+          <button
+            className="danger-button"
+            disabled={isTrainerUpdating}
+            onClick={cancelTrainerEdit}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <span className="draft-action-summary">
+            Trainer: {formatDraftSummary(trainerDraftSummary)}
+            {selectedPokemon
+              ? `; party: ${formatDraftSummary(pokemonDraftSummary)}`
+              : ''}
+          </span>
+        </EditorSessionBarActions>
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Trainer</h3>
@@ -17995,76 +18183,13 @@ function SelectedTrainerPanel({
                 </fieldset>
               ))}
             </div>
-            {editSession ? (
-              <div className="draft-action-row">
-                <button
-                  aria-busy={isTrainerUpdating || undefined}
-                  className="primary-button"
-                  disabled={!canSaveTrainerDrafts}
-                  onClick={async () => {
-                    const didSave = await onUpdateTrainerFields(
-                      trainerDraftSummary.changedFields.map((change) => ({
-                        field: change.field,
-                        slot: null,
-                        trainerId: trainer.trainerId,
-                        value: change.value
-                      }))
-                    );
-                    if (didSave) {
-                      setTrainerDraftsByTrainerId((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, trainer.trainerId)
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <BusyActionContent
-                    busyLabel="Staging"
-                    icon={<Save aria-hidden="true" size={16} />}
-                    isBusy={isTrainerUpdating}
-                    label="Stage"
-                  />
-                </button>
-                <button
-                  className="danger-button"
-                  disabled={isTrainerUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() => {
-                      setTrainerDraftsByTrainerId({});
-                      setPokemonDraftsByTrainerSlot({});
-                    })
-                  }
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <span className="draft-action-summary">
-                  {formatDraftSummary(trainerDraftSummary)}
-                </span>
-              </div>
-            ) : null}
-
             <div className="trainer-party-header">
               <strong>Party</strong>
               <button
                 aria-busy={isTrainerUpdating || undefined}
                 className="primary-button compact-button trainer-max-iv-button"
                 disabled={!canMaxTrainerIvs}
-                onClick={async () => {
-                  const didSave =
-                    trainerMaxIvUpdates.length === 0 ||
-                    (await onUpdateTrainerFields(trainerMaxIvUpdates));
-                  if (didSave) {
-                    setPokemonDraftsByTrainerSlot((currentDrafts) =>
-                      reconcileTrainerMaxIvDrafts(
-                        currentDrafts,
-                        trainer,
-                        contextualPokemonFields
-                      )
-                    );
-                  }
-                }}
+                onClick={stageTrainerMaxIvs}
                 type="button"
               >
                 <BusyActionContent
@@ -18248,55 +18373,6 @@ function SelectedTrainerPanel({
                   ))}
                 </div>
                 <TrainerPokemonProjectedStatsPanel projectedStats={projectedPokemonStats} />
-                {editSession ? (
-                  <div className="draft-action-row">
-                    <button
-                      aria-busy={isTrainerUpdating || undefined}
-                      className="primary-button"
-                      disabled={!canSavePokemonDrafts}
-                      onClick={async () => {
-                        const didSave = await onUpdateTrainerFields(
-                          pokemonDraftSummary.changedFields.map((change) => ({
-                            field: change.field,
-                            slot: selectedPokemon.slot,
-                            trainerId: trainer.trainerId,
-                            value: change.value
-                          }))
-                        );
-                        if (didSave && selectedPokemonDraftKey) {
-                          setPokemonDraftsByTrainerSlot((currentDrafts) =>
-                            deleteFieldDraftRecord(currentDrafts, selectedPokemonDraftKey)
-                          );
-                        }
-                      }}
-                      type="button"
-                    >
-                      <BusyActionContent
-                        busyLabel="Staging"
-                        icon={<Save aria-hidden="true" size={16} />}
-                        isBusy={isTrainerUpdating}
-                        label="Stage"
-                      />
-                    </button>
-                    <button
-                      className="danger-button"
-                      disabled={isTrainerUpdating}
-                      onClick={() =>
-                        cancelActiveEditSession(() => {
-                          setTrainerDraftsByTrainerId({});
-                          setPokemonDraftsByTrainerSlot({});
-                        })
-                      }
-                      type="button"
-                    >
-                      <X aria-hidden="true" size={16} />
-                      <span>Cancel</span>
-                    </button>
-                    <span className="draft-action-summary">
-                      {formatDraftSummary(pokemonDraftSummary)}
-                    </span>
-                  </div>
-                ) : null}
               </div>
             ) : (
               <p className="empty-copy">No party Pokemon selected.</p>
@@ -22156,6 +22232,13 @@ function SelectedGiftPokemonPanel({
 
   return (
     <aside aria-label="Selected gift Pokemon provenance" className="trainer-inspector">
+      {editSession && !gift ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isGiftPokemonUpdating}
+          onCancel={() => cancelActiveEditSession(() => setGiftDraftsByIndex({}))}
+          summary="No gift selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Gift</h3>
@@ -22378,7 +22461,7 @@ function SelectedGiftPokemonPanel({
               ))}
             </div>
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isGiftPokemonUpdating || undefined}
                   className="primary-button"
@@ -22416,7 +22499,7 @@ function SelectedGiftPokemonPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(giftDraftSummary)}</span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
           </div>
@@ -22850,6 +22933,13 @@ function SelectedTradePokemonPanel({
 
   return (
     <aside aria-label="Selected trade Pokemon provenance" className="trainer-inspector">
+      {editSession && !trade ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isTradePokemonUpdating}
+          onCancel={() => cancelActiveEditSession(() => setTradeDraftsByIndex({}))}
+          summary="No trade selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Trade</h3>
@@ -23141,7 +23231,7 @@ function SelectedTradePokemonPanel({
               ))}
             </div>
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isTradePokemonUpdating || undefined}
                   className="primary-button"
@@ -23179,7 +23269,7 @@ function SelectedTradePokemonPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(tradeDraftSummary)}</span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
           </div>
@@ -23498,6 +23588,13 @@ function SelectedRentalPokemonPanel({
 
   return (
     <aside aria-label="Selected rental Pokemon provenance" className="trainer-inspector">
+      {editSession && !rental ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isRentalPokemonUpdating}
+          onCancel={() => cancelActiveEditSession(() => setRentalDraftsByIndex({}))}
+          summary="No rental selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Rental</h3>
@@ -23708,7 +23805,7 @@ function SelectedRentalPokemonPanel({
               ))}
             </div>
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isRentalPokemonUpdating || undefined}
                   className="primary-button"
@@ -23748,7 +23845,7 @@ function SelectedRentalPokemonPanel({
                 <span className="draft-action-summary">
                   {formatDraftSummary(rentalDraftSummary)}
                 </span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
           </div>
@@ -25348,6 +25445,13 @@ function SelectedStaticEncounterPanel({
       aria-label={translateLiteral('Selected static encounter provenance')}
       className="trainer-inspector"
     >
+      {editSession && !encounter ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isStaticEncounterUpdating}
+          onCancel={() => cancelActiveEditSession(() => setEncounterDraftsByIndex({}))}
+          summary="No static encounter selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>{translateLiteral('Selected Static Encounter')}</h3>
@@ -25493,7 +25597,7 @@ function SelectedStaticEncounterPanel({
               ))}
             </div>
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isStaticEncounterUpdating || undefined}
                   className="primary-button"
@@ -25539,7 +25643,7 @@ function SelectedStaticEncounterPanel({
                 <span className="draft-action-summary">
                   {formatDraftSummary(encounterDraftSummary)}
                 </span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
           </div>
@@ -26078,6 +26182,13 @@ function SelectedShopPanel({
 
   return (
     <aside aria-label={translateLiteral('Selected shop provenance')} className="shop-inspector">
+      {editSession && !shop ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isShopUpdating || isItemUpdating}
+          onCancel={() => cancelActiveEditSession(resetShopDrafts)}
+          summary="No shop selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>{translateLiteral('Selected Shop')}</h3>
@@ -26130,7 +26241,7 @@ function SelectedShopPanel({
             </div>
 
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={(isShopUpdating || isItemUpdating) || undefined}
                   className="primary-button"
@@ -26175,7 +26286,7 @@ function SelectedShopPanel({
                       : translateLiteral('Fix invalid inventory rows.')
                     : `${changedSlotCount} ${translateLiteral('Pending changes')}.`}
                 </span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
             {shopInventoryRows.length > 0 ? (
@@ -28104,6 +28215,20 @@ function SelectedEncounterPanel({
 
   return (
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
+      {editSession && !encounterSlot ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isEncounterUpdating}
+          onCancel={() =>
+            cancelActiveEditSession(() => {
+              setDraftsBySlotKey({});
+              setZaSlotDraftsBySlotKey({});
+              setZaAppearanceDraftsByTableId({});
+              setLevelDraftsByScopeKey({});
+            })
+          }
+          summary="No encounter slot selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Encounter</h3>
@@ -28261,7 +28386,7 @@ function SelectedEncounterPanel({
             ) : null}
 
             {!isSvEncounterTable && !isZaEncounterTable && areaCopyTargetArea ? (
-              <div className="encounter-area-copy-actions">
+              <div className="draft-action-row">
                 <button
                   className="secondary-button"
                   disabled={!canPrepareEncounterAreaCopy}
@@ -28892,6 +29017,49 @@ function SelectedEncounterPanel({
                     </dl>
                   </section>
                 ) : null}
+                {!isSvEncounterTable && !isZaEncounterTable ? (
+                  <div className="draft-action-row">
+                    <button
+                      aria-busy={isEncounterUpdating || undefined}
+                      className="danger-button"
+                      disabled={!canClearEncounterSlot}
+                      onClick={async () => {
+                        if (!table || !encounterSlot || !encounterDraftKey) {
+                          return;
+                        }
+
+                        const didSave = await onUpdateEncounterSlotFields(
+                          table.tableId,
+                          encounterSlot.slot,
+                          [
+                            { field: encounterSpeciesFieldName, value: '0' },
+                            { field: encounterFormFieldName, value: '0' },
+                            { field: encounterProbabilityFieldName, value: '0' }
+                          ]
+                        );
+                        if (didSave) {
+                          setDraftsBySlotKey((currentDrafts) =>
+                            removeDraftFieldsFromRecord(
+                              currentDrafts,
+                              encounterDraftKey,
+                              encounterSlotDraftDefaults,
+                              encounterClearFieldNames
+                            )
+                          );
+                        }
+                      }}
+                      title="Set this SwSh encounter slot to Empty at 0% probability."
+                      type="button"
+                    >
+                      <BusyActionContent
+                        busyLabel="Clearing"
+                        icon={<Trash2 aria-hidden="true" size={16} />}
+                        isBusy={isEncounterUpdating}
+                        label="Clear Slot"
+                      />
+                    </button>
+                  </div>
+                ) : null}
                 {isZaEncounterTable && zaSpawnerCountWarnings.length > 0 ? (
                   <div
                     aria-label={t('za.spawnSettings.warningHeading')}
@@ -28908,7 +29076,7 @@ function SelectedEncounterPanel({
                   </div>
                 ) : null}
                 {editSession ? (
-                  <div className="draft-action-row">
+                  <EditorSessionBarActions>
                     <button
                       aria-busy={isEncounterUpdating || undefined}
                       className="primary-button"
@@ -28962,47 +29130,6 @@ function SelectedEncounterPanel({
                         label="Stage"
                       />
                     </button>
-                    {!isSvEncounterTable && !isZaEncounterTable ? (
-                      <button
-                        aria-busy={isEncounterUpdating || undefined}
-                        className="danger-button"
-                        disabled={!canClearEncounterSlot}
-                        onClick={async () => {
-                          if (!table || !encounterSlot || !encounterDraftKey) {
-                            return;
-                          }
-
-                          const didSave = await onUpdateEncounterSlotFields(
-                            table.tableId,
-                            encounterSlot.slot,
-                            [
-                              { field: encounterSpeciesFieldName, value: '0' },
-                              { field: encounterFormFieldName, value: '0' },
-                              { field: encounterProbabilityFieldName, value: '0' }
-                            ]
-                          );
-                          if (didSave) {
-                            setDraftsBySlotKey((currentDrafts) =>
-                              removeDraftFieldsFromRecord(
-                                currentDrafts,
-                                encounterDraftKey,
-                                encounterSlotDraftDefaults,
-                                encounterClearFieldNames
-                              )
-                            );
-                          }
-                        }}
-                        title="Set this SwSh encounter slot to Empty at 0% probability."
-                        type="button"
-                      >
-                        <BusyActionContent
-                          busyLabel="Clearing"
-                          icon={<Trash2 aria-hidden="true" size={16} />}
-                          isBusy={isEncounterUpdating}
-                          label="Clear Slot"
-                        />
-                      </button>
-                    ) : null}
                     <button
                       className="danger-button"
                       disabled={isEncounterUpdating}
@@ -29022,7 +29149,7 @@ function SelectedEncounterPanel({
                     <span className="draft-action-summary">
                       {formatDraftSummary(encounterDraftSummary)}
                     </span>
-                  </div>
+                  </EditorSessionBarActions>
                 ) : null}
               </>
             ) : (
@@ -29775,6 +29902,7 @@ function TeraRaidsSection({
   const [draftsByRecordId, setDraftsByRecordId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const cancelActiveEditSession = useCancelActiveEditSession();
   const [rewardKind, setRewardKind] = useState<'fixed' | 'lottery'>('fixed');
   const [selectedRewardRecordId, setSelectedRewardRecordId] = useState<string | null>(null);
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
@@ -30100,7 +30228,7 @@ function TeraRaidsSection({
                         onUpdateField={onUpdateTeraRaidField}
                         onUpdateFields={onUpdateTeraRaidFields}
                         pokemonRecords={pokemonWorkflow?.pokemon}
-                        saveLabel="Stage"
+                        saveLabel="Stage Raid"
                       />
                     ) : null}
 
@@ -30239,7 +30367,7 @@ function TeraRaidsSection({
                                 onChangeDrafts={setDraftsByRecordId}
                                 onUpdateField={onUpdateTeraRaidField}
                                 onUpdateFields={onUpdateTeraRaidFields}
-                                saveLabel="Stage"
+                                saveLabel="Stage Selected Reward"
                               />
                             ) : null}
                           </>
@@ -30266,6 +30394,25 @@ function TeraRaidsSection({
             {translateLiteral('Open Tera Raids from Workflows to load backend raid data.')}
           </p>
         )}
+        {editSession ? (
+          <EditorSessionBarActions>
+            <button
+              className="danger-button"
+              disabled={isTeraRaidUpdating}
+              onClick={() =>
+                cancelActiveEditSession(() => setDraftsByRecordId({}))
+              }
+              type="button"
+            >
+              <X aria-hidden="true" size={16} />
+              <span>{translateLiteral('Cancel')}</span>
+            </button>
+            <span className="draft-action-summary">
+              {countFieldDraftRecords(draftsByRecordId)}{' '}
+              {translateLiteral('Pending changes')}
+            </span>
+          </EditorSessionBarActions>
+        ) : null}
       </section>
 
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
@@ -30312,7 +30459,6 @@ function TeraRaidDraftPanel({
   saveLabel: string;
 }) {
   const { translateLiteral } = useLocalization();
-  const cancelActiveEditSession = useCancelActiveEditSession();
   const currentValueSignature = fields
     .map((field) => `${field.field}:${getValue(field.field) ?? ''}`)
     .join('|');
@@ -30442,7 +30588,7 @@ function TeraRaidDraftPanel({
         ))}
       </div>
 
-      <div className="draft-action-row">
+      <EditorSessionBarActions>
         <button
           aria-busy={isBusy || undefined}
           className="primary-button"
@@ -30473,25 +30619,10 @@ function TeraRaidDraftPanel({
             label={translateLiteral(saveLabel)}
           />
         </button>
-        <button
-          className="danger-button"
-          disabled={disabled}
-          onClick={() =>
-            cancelActiveEditSession(() =>
-              onChangeDrafts((currentDrafts) =>
-                deleteFieldDraftRecord(currentDrafts, draftKey)
-              )
-            )
-          }
-          type="button"
-        >
-          <X aria-hidden="true" size={16} />
-          <span>{translateLiteral('Cancel')}</span>
-        </button>
         <span className="draft-action-summary">
           {translateLiteral(formatDraftSummary(draftSummary))}
         </span>
-      </div>
+      </EditorSessionBarActions>
     </>
   );
 }
@@ -30831,6 +30962,13 @@ function SelectedRaidBattlePanel({
 
   return (
     <aside aria-label="Selected raid battle provenance" className="encounter-inspector">
+      {editSession && !battleSlot ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isRaidBattleUpdating}
+          onCancel={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
+          summary="No raid battle selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Battle</h3>
@@ -31079,7 +31217,7 @@ function SelectedRaidBattlePanel({
                   ))}
                 </div>
                 {editSession ? (
-                  <div className="draft-action-row">
+                  <EditorSessionBarActions>
                     <button
                       aria-busy={isRaidBattleUpdating || undefined}
                       className="primary-button"
@@ -31123,7 +31261,7 @@ function SelectedRaidBattlePanel({
                     <span className="draft-action-summary">
                       {formatDraftSummary(raidBattleTableDraftSummary)}
                     </span>
-                  </div>
+                  </EditorSessionBarActions>
                 ) : null}
               </>
             ) : (
@@ -31442,6 +31580,13 @@ function SelectedRaidRewardPanel({
       aria-label={translateLiteral('Selected raid reward provenance')}
       className="encounter-inspector"
     >
+      {editSession && !reward ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isRaidRewardUpdating}
+          onCancel={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
+          summary="No raid reward selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>{translateLiteral('Selected Reward')}</h3>
@@ -31592,7 +31737,7 @@ function SelectedRaidRewardPanel({
                   ))}
                 </div>
                 {editSession ? (
-                  <div className="draft-action-row">
+                  <EditorSessionBarActions>
                     <button
                       aria-busy={isRaidRewardUpdating || undefined}
                       className="primary-button"
@@ -31637,7 +31782,7 @@ function SelectedRaidRewardPanel({
                     <span className="draft-action-summary">
                       {formatDraftSummary(raidRewardDraftSummary)}
                     </span>
-                  </div>
+                  </EditorSessionBarActions>
                 ) : null}
               </>
             ) : (
@@ -32010,6 +32155,13 @@ function SelectedBehaviorPanel({
       aria-label={translateLiteral('Selected behavior entry provenance')}
       className="encounter-inspector"
     >
+      {editSession && !entry ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isBehaviorUpdating}
+          onCancel={() => cancelActiveEditSession(() => setDraftsByEntryId({}))}
+          summary="No behavior entry selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <Activity aria-hidden="true" size={18} />
         <h3>{translateLiteral('Selected Behavior')}</h3>
@@ -32189,7 +32341,7 @@ function SelectedBehaviorPanel({
             </div>
 
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isBehaviorUpdating || undefined}
                   className="primary-button"
@@ -32233,7 +32385,7 @@ function SelectedBehaviorPanel({
                 <span className="draft-action-summary">
                   {formatDraftSummary(behaviorDraftSummary)}
                 </span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
           </div>
@@ -32700,6 +32852,14 @@ function SelectedPlacementPanel({
 
   return (
     <aside aria-label="Selected placement object provenance" className="encounter-inspector">
+      {editSession && !placedObject ? (
+        <EmptySelectionEditorSessionActions
+          isBusy={isPlacementUpdating}
+          onCancel={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
+          stageLabel="Stage Changes"
+          summary="No placement object selected."
+        />
+      ) : null}
       <div className="panel-heading">
         <MapPin aria-hidden="true" size={18} />
         <h3>Selected Object</h3>
@@ -32896,7 +33056,7 @@ function SelectedPlacementPanel({
               ))}
             </div>
             {editSession ? (
-              <div className="draft-action-row">
+              <EditorSessionBarActions>
                 <button
                   aria-busy={isPlacementUpdating || undefined}
                   className="primary-button"
@@ -32940,7 +33100,7 @@ function SelectedPlacementPanel({
                 <span className="draft-action-summary">
                   {formatDraftSummary(placementDraftSummary)}
                 </span>
-              </div>
+              </EditorSessionBarActions>
             ) : null}
 
           </div>
