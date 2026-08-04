@@ -243,6 +243,7 @@ type WorkbenchState = {
   setBehaviorWorkflow: (behaviorWorkflow: BehaviorWorkflow) => void;
   setPlacementSearchText: (placementSearchText: string) => void;
   setPlacementWorkflow: (placementWorkflow: PlacementWorkflow) => void;
+  setPlacementWorkflowPage: (placementWorkflow: PlacementWorkflow) => void;
   setPokemonSearchText: (pokemonSearchText: string) => void;
   setPokemonWorkflow: (pokemonWorkflow: PokemonWorkflow) => void;
   setProjectHealth: (health: ProjectHealth) => void;
@@ -1043,6 +1044,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'placement'),
         placementSearchText: '',
+        placementWorkflow,
+        selectedPlacementObjectId
+      };
+    }),
+  setPlacementWorkflowPage: (placementWorkflow) =>
+    set((state) => {
+      const selectedPlacementObjectId = placementWorkflow.objects.some(
+        (placedObject) => placedObject.objectId === state.selectedPlacementObjectId
+      )
+        ? state.selectedPlacementObjectId
+        : (placementWorkflow.objects[0]?.objectId ?? null);
+
+      return {
         placementWorkflow,
         selectedPlacementObjectId
       };

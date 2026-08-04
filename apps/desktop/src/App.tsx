@@ -244,6 +244,14 @@ import {
   type ZaCacheStatus
 } from './bridge/zaCacheContracts';
 import {
+  type SwShCacheMode,
+  type SwShCacheStatus
+} from './bridge/swShCacheContracts';
+import {
+  type QuerySwShPlacementCatalogResponse,
+  type SwShPlacementCatalog
+} from './bridge/swShPlacementContracts';
+import {
   createGameScopedProjectBridge,
   isStaleProjectScopeError
 } from './bridge/gameScopedProjectBridge';
@@ -265,6 +273,7 @@ import {
 import {
   desktopErrorCodes,
   diagnosticErrorCodes,
+  swshPlacementErrorCodes,
   type KmErrorCode
 } from './errorCodes';
 import {
@@ -408,8 +417,8 @@ import { getSectionWikiUrl } from './wikiLinks';
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 export type EditorUiFamily = 'swsh' | 'sv' | 'za';
-type TrinityCacheMode = SvCacheMode | ZaCacheMode;
-type TrinityCacheStatus = SvCacheStatus | ZaCacheStatus;
+type TrinityCacheMode = SvCacheMode | ZaCacheMode | SwShCacheMode;
+type TrinityCacheStatus = SvCacheStatus | ZaCacheStatus | SwShCacheStatus;
 
 const textControlInserts = [
   {
@@ -1687,6 +1696,8 @@ const placementSpeciesFormFieldPairs = [
 const virtualTableInitialRect = { height: 480, width: 800 };
 const virtualTableOverscan = 8;
 const virtualTableRowHeight = 40;
+const placementVirtualTableRowHeight = 56;
+const swShPlacementPageSize = 200;
 const CancelEditSessionContext = createContext<((onDiscard?: () => void) => void) | null>(
   null
 );
@@ -1807,7 +1818,7 @@ export function App({
   desktopServices?: DesktopServices;
 } = {}) {
   useSelectEditableFieldContents();
-  const { language, translateLiteral } = useLocalization();
+  const { language, t, translateLiteral } = useLocalization();
 
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const applyResult = useWorkbenchStore((state) => state.applyResult);
@@ -2065,6 +2076,9 @@ export function App({
   const setBehaviorWorkflow = useWorkbenchStore((state) => state.setBehaviorWorkflow);
   const setPlacementSearchText = useWorkbenchStore((state) => state.setPlacementSearchText);
   const setPlacementWorkflow = useWorkbenchStore((state) => state.setPlacementWorkflow);
+  const setPlacementWorkflowPage = useWorkbenchStore(
+    (state) => state.setPlacementWorkflowPage
+  );
   const setPokemonSearchText = useWorkbenchStore((state) => state.setPokemonSearchText);
   const setPokemonWorkflow = useWorkbenchStore((state) => state.setPokemonWorkflow);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
@@ -2180,6 +2194,7 @@ export function App({
   const selectedGame = draftPaths.selectedGame;
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
   const isPokemonLegendsZAProject = isPokemonLegendsZAGame(selectedGame);
+  const isSwordShieldProject = selectedGame === 'sword' || selectedGame === 'shield';
   const supportsTrinityOutput = isScarletVioletProject || isPokemonLegendsZAProject;
   const textWorkflowRef = useRef(textWorkflow);
   textWorkflowRef.current = textWorkflow;
@@ -2247,6 +2262,18 @@ export function App({
   const [isRaidBonusRewardUpdating, setIsRaidBonusRewardUpdating] = useState(false);
   const [isPlacementLoading, setIsPlacementLoading] = useState(false);
   const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
+  const [swShPlacementCatalog, setSwShPlacementCatalog] =
+    useState<SwShPlacementCatalog | null>(null);
+  const [swShPlacementPage, setSwShPlacementPage] =
+    useState<QuerySwShPlacementCatalogResponse | null>(null);
+  const [swShPlacementCategoryId, setSwShPlacementCategoryId] = useState<string | null>(null);
+  const [swShPlacementOffset, setSwShPlacementOffset] = useState(0);
+  const [isSwShPlacementPageLoading, setIsSwShPlacementPageLoading] = useState(false);
+  const [isSwShPlacementPageStale, setIsSwShPlacementPageStale] = useState(false);
+  const [isSwShPlacementDetailLoading, setIsSwShPlacementDetailLoading] = useState(false);
+  const [swShPlacementQueryRefreshToken, setSwShPlacementQueryRefreshToken] = useState(0);
+  const [swShPlacementRequestDiagnostics, setSwShPlacementRequestDiagnostics] =
+    useState<ApiDiagnostic[]>([]);
   const [isBehaviorLoading, setIsBehaviorLoading] = useState(false);
   const [isBehaviorUpdating, setIsBehaviorUpdating] = useState(false);
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
@@ -2416,6 +2443,10 @@ export function App({
   const criticalWriteOperationRef = useRef(hasCriticalWriteOperation);
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
   const svCacheWarmupRunRef = useRef(0);
+  const swShPlacementCatalogRevisionRef = useRef<string | null>(null);
+  const swShPlacementQueryRunRef = useRef(0);
+  const swShPlacementDetailRunRef = useRef(0);
+  const swShPlacementRecoveryAttemptedRef = useRef(false);
   const availableNativeUpdateRef = useRef<NativeUpdate | null>(null);
   const editSessionOperationRunRef = useRef(0);
   const dynamaxAdventurePreviewRunRef = useRef(0);
@@ -3531,7 +3562,10 @@ export function App({
 
   const startSvCacheWarmup = useCallback(
     async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
-      if (!isTrinityCacheGame(paths.selectedGame) || !hasValidTrinitySupportFolder(paths.selectedGame, health)) {
+      if (
+        !isProjectCacheGame(paths.selectedGame) ||
+        !hasValidProjectCacheSource(paths.selectedGame, health)
+      ) {
         return;
       }
 
@@ -3539,9 +3573,11 @@ export function App({
       svCacheWarmupRunRef.current = runId;
 
       try {
-        const initialStatus = isPokemonLegendsZAGame(paths.selectedGame)
-          ? await bridge.getZaCacheStatus({ paths })
-          : await bridge.getSvCacheStatus({ paths });
+        const initialStatus = await getProjectCacheStatusForGame(
+          bridge,
+          paths.selectedGame,
+          paths
+        );
         if (svCacheWarmupRunRef.current !== runId) {
           return;
         }
@@ -3584,9 +3620,12 @@ export function App({
 
           const previousCompleted = latestStatus.warmupCompleted;
           const previousTotal = latestStatus.warmupTotal;
-          const response = isPokemonLegendsZAGame(paths.selectedGame)
-            ? await bridge.warmupZaCacheStep({ paths, stepIndex: nextStepIndex })
-            : await bridge.warmupSvCacheStep({ paths, stepIndex: nextStepIndex });
+          const response = await warmupProjectCacheStepForGame(
+            bridge,
+            paths.selectedGame,
+            paths,
+            nextStepIndex
+          );
           if (svCacheWarmupRunRef.current !== runId) {
             return;
           }
@@ -3635,7 +3674,7 @@ export function App({
     svCacheWarmupRunRef.current += 1;
     setIsSvCacheWarming(false);
 
-    if (!isTrinityCacheGame(selectedGame)) {
+    if (!isProjectCacheGame(selectedGame)) {
       setIsSvCacheWarming(false);
       setIsSvCacheRefreshing(false);
       setIsSvCacheClearing(false);
@@ -3644,18 +3683,14 @@ export function App({
       return;
     }
 
-    if (health && hasValidTrinitySupportFolder(selectedGame, health)) {
+    if (health && hasValidProjectCacheSource(selectedGame, health)) {
       void startSvCacheWarmup(createProjectPaths(draftPathsRef.current), health);
       return;
     }
 
     let isDisposed = false;
 
-    const getCacheStatus = isPokemonLegendsZAGame(selectedGame)
-      ? bridge.getZaCacheStatus
-      : bridge.getSvCacheStatus;
-
-    void getCacheStatus({ paths: null })
+    void getProjectCacheStatusForGame(bridge, selectedGame, null)
       .then((response) => {
         if (!isDisposed) {
           setSvCacheStatus(response.status);
@@ -3674,10 +3709,14 @@ export function App({
 
   const handleChangeSvCacheMode = useCallback(
     async (mode: TrinityCacheMode) => {
+      if (!isProjectCacheGame(selectedGame)) {
+        return;
+      }
+
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
 
-      const paths = isTrinityCacheGame(selectedGame)
+      const paths = isProjectCacheGame(selectedGame)
         ? createProjectPaths(draftPathsRef.current)
         : null;
       const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
@@ -3687,17 +3726,13 @@ export function App({
       };
 
       try {
-        const response = isPokemonLegendsZAGame(selectedGame)
-          ? await bridge.updateZaCacheSettings({
-              maxCacheSizeBytes,
-              mode,
-              paths
-            })
-          : await bridge.updateSvCacheSettings({
-              maxCacheSizeBytes,
-              mode,
-              paths
-            });
+        const response = await updateProjectCacheSettingsForGame(
+          bridge,
+          selectedGame,
+          mode,
+          maxCacheSizeBytes,
+          paths
+        );
         setSvCacheStatus(response.status);
         evictUnprotectedWorkflowPayloads();
         diagnosticFallback = {
@@ -3726,25 +3761,25 @@ export function App({
 
   const handleChangeSvCacheLimit = useCallback(
     async (maxCacheSizeBytes: number) => {
+      if (!isProjectCacheGame(selectedGame)) {
+        return;
+      }
+
       svCacheWarmupRunRef.current += 1;
       setIsSvCacheWarming(false);
-      const paths = isTrinityCacheGame(selectedGame)
+      const paths = isProjectCacheGame(selectedGame)
         ? createProjectPaths(draftPathsRef.current)
         : null;
       const mode = svCacheStatus?.settings.mode ?? 'balanced';
 
       try {
-        const response = isPokemonLegendsZAGame(selectedGame)
-          ? await bridge.updateZaCacheSettings({
-              maxCacheSizeBytes,
-              mode,
-              paths
-            })
-          : await bridge.updateSvCacheSettings({
-              maxCacheSizeBytes,
-              mode,
-              paths
-            });
+        const response = await updateProjectCacheSettingsForGame(
+          bridge,
+          selectedGame,
+          mode,
+          maxCacheSizeBytes,
+          paths
+        );
         setSvCacheStatus(response.status);
         if (paths && health) {
           void startSvCacheWarmup(paths, health);
@@ -3757,16 +3792,14 @@ export function App({
   );
 
   const handleRefreshSvCacheStatus = useCallback(async () => {
-    if (!isTrinityCacheGame(selectedGame)) {
+    if (!isProjectCacheGame(selectedGame)) {
       return;
     }
 
     const paths = createProjectPaths(draftPathsRef.current);
     setIsSvCacheRefreshing(true);
     try {
-      const response = isPokemonLegendsZAGame(selectedGame)
-        ? await bridge.getZaCacheStatus({ paths })
-        : await bridge.getSvCacheStatus({ paths });
+      const response = await getProjectCacheStatusForGame(bridge, selectedGame, paths);
       setSvCacheStatus(response.status);
       setSvCacheRefreshTick((currentTick) => currentTick + 1);
     } catch (error) {
@@ -3777,6 +3810,10 @@ export function App({
   }, [bridge, selectedGame]);
 
   const handleConfirmClearSvCache = useCallback(async () => {
+    if (!isProjectCacheGame(selectedGame)) {
+      return;
+    }
+
     setIsSvCacheClearConfirmOpen(false);
     svCacheWarmupRunRef.current += 1;
     setIsSvCacheWarming(false);
@@ -3787,12 +3824,10 @@ export function App({
     };
 
     try {
-      const activePaths = isTrinityCacheGame(selectedGame)
+      const activePaths = isProjectCacheGame(selectedGame)
         ? createProjectPaths(draftPathsRef.current)
         : null;
-      const response = isPokemonLegendsZAGame(selectedGame)
-        ? await bridge.clearZaCache({ activePaths })
-        : await bridge.clearSvCache({ activePaths });
+      const response = await clearProjectCacheForGame(bridge, selectedGame, activePaths);
       setSvCacheStatus(response.status);
       evictUnprotectedWorkflowPayloads();
       diagnosticFallback = {
@@ -4429,12 +4464,15 @@ export function App({
         setIsSvCacheWarming(false);
         setIsSvCacheClearing(true);
         try {
-          const [svCacheClear, zaCacheClear] = await Promise.all([
+          const [svCacheClear, zaCacheClear, swShCacheClear] = await Promise.all([
             bridge.clearSvCache({ activePaths: null }),
-            bridge.clearZaCache({ activePaths: null })
+            bridge.clearZaCache({ activePaths: null }),
+            bridge.clearSwShCache({ activePaths: null })
           ]);
 
-          if (isPokemonLegendsZAGame(selectedGame)) {
+          if (isSwordShieldGame(selectedGame)) {
+            setSvCacheStatus(swShCacheClear.status);
+          } else if (isPokemonLegendsZAGame(selectedGame)) {
             setSvCacheStatus(zaCacheClear.status);
           } else if (isScarletVioletGame(selectedGame)) {
             setSvCacheStatus(svCacheClear.status);
@@ -4768,7 +4806,155 @@ export function App({
     );
   };
 
+  const commitSwShPlacementCatalog = useCallback(
+    (catalog: SwShPlacementCatalog, activatePlacementSection = false) => {
+      swShPlacementCatalogRevisionRef.current = catalog.revision;
+      swShPlacementQueryRunRef.current += 1;
+      swShPlacementDetailRunRef.current += 1;
+      setSwShPlacementCatalog(catalog);
+      setSwShPlacementPage(null);
+      setSwShPlacementCategoryId(catalog.categories[0]?.id ?? null);
+      setSwShPlacementOffset(0);
+      setIsSwShPlacementPageLoading(true);
+      setIsSwShPlacementPageStale(true);
+      setIsSwShPlacementDetailLoading(false);
+      setSwShPlacementRequestDiagnostics([]);
+      const workflow = createSwShPlacementPageWorkflow(catalog, []);
+      if (activatePlacementSection) {
+        setPlacementWorkflow(workflow);
+      } else {
+        setPlacementWorkflowPage(workflow);
+      }
+    },
+    [setPlacementWorkflow, setPlacementWorkflowPage]
+  );
+
+  const recoverSwShPlacementCatalog = useCallback(
+    async (
+      error: unknown,
+      expectedRevision: string,
+      isRequestCurrent: () => boolean
+    ) => {
+      if (
+        !isStaleSwShPlacementCatalogError(error) ||
+        swShPlacementRecoveryAttemptedRef.current
+      ) {
+        return false;
+      }
+
+      swShPlacementRecoveryAttemptedRef.current = true;
+      const projectScopeGeneration = projectScopeGenerationRef.current;
+      const paths = createProjectPaths(draftPathsRef.current);
+      const pathsSignature = JSON.stringify(paths);
+      const canCommitRecovery = () =>
+        isRequestCurrent() &&
+        projectScopeGenerationRef.current === projectScopeGeneration &&
+        JSON.stringify(createProjectPaths(draftPathsRef.current)) === pathsSignature &&
+        swShPlacementCatalogRevisionRef.current === expectedRevision &&
+        useWorkbenchStore.getState().placementWorkflow !== null &&
+        isSwordShieldGame(useWorkbenchStore.getState().draftPaths.selectedGame);
+      try {
+        const response = await bridge.openSwShPlacementCatalog({
+          paths
+        });
+        if (!canCommitRecovery()) {
+          return true;
+        }
+
+        commitSwShPlacementCatalog(response.catalog);
+        return true;
+      } catch (recoveryError) {
+        if (!canCommitRecovery() || isStaleProjectScopeError(recoveryError)) {
+          return true;
+        }
+
+        setSwShPlacementRequestDiagnostics(toBridgeDiagnostics(recoveryError));
+        swShPlacementRecoveryAttemptedRef.current = false;
+        return true;
+      }
+    },
+    [bridge, commitSwShPlacementCatalog, createProjectPaths]
+  );
+
+  const loadSwShPlacementObjectDetails = useCallback(
+    async (revision: string, objectId: string) => {
+      const runId = swShPlacementDetailRunRef.current + 1;
+      swShPlacementDetailRunRef.current = runId;
+      setIsSwShPlacementDetailLoading(true);
+      setSwShPlacementRequestDiagnostics([]);
+
+      try {
+        const response = await bridge.loadSwShPlacementObject({
+          objectId,
+          paths: createProjectPaths(draftPathsRef.current),
+          revision,
+          session: getEditSessionForSection('placement')
+        });
+        if (
+          swShPlacementDetailRunRef.current !== runId ||
+          swShPlacementCatalogRevisionRef.current !== response.revision
+        ) {
+          return;
+        }
+
+        const currentWorkflow = useWorkbenchStore.getState().placementWorkflow;
+        if (!currentWorkflow?.objects.some((placedObject) => placedObject.objectId === objectId)) {
+          return;
+        }
+
+        setSwShPlacementRequestDiagnostics([]);
+        setPlacementWorkflowPage({
+          ...currentWorkflow,
+          diagnostics: deduplicateDiagnostics([
+            ...currentWorkflow.diagnostics,
+            ...response.diagnostics
+          ]),
+          objects: currentWorkflow.objects.map((placedObject) =>
+            placedObject.objectId === objectId ? response.object : placedObject
+          )
+        });
+      } catch (error) {
+        if (
+          swShPlacementDetailRunRef.current === runId &&
+          !(await recoverSwShPlacementCatalog(
+            error,
+            revision,
+            () => swShPlacementDetailRunRef.current === runId
+          ))
+        ) {
+          setSwShPlacementRequestDiagnostics(toBridgeDiagnostics(error));
+        }
+      } finally {
+        if (swShPlacementDetailRunRef.current === runId) {
+          setIsSwShPlacementDetailLoading(false);
+        }
+      }
+    },
+    [
+      bridge,
+      getEditSessionForSection,
+      recoverSwShPlacementCatalog,
+      setPlacementWorkflowPage
+    ]
+  );
+
   const handleOpenPlacementWorkflow = async () => {
+    if (isSwordShieldProject) {
+      swShPlacementRecoveryAttemptedRef.current = false;
+      setSwShPlacementRequestDiagnostics([]);
+      setPlacementSearchText('');
+      await runRetainedWorkflowLoad(
+        'placement',
+        setIsPlacementLoading,
+        () =>
+          bridge.openSwShPlacementCatalog({
+            paths: createProjectPaths(draftPathsRef.current)
+          }),
+        (response) => commitSwShPlacementCatalog(response.catalog, true)
+      );
+      return;
+    }
+
     await runRetainedWorkflowLoad(
       'placement',
       setIsPlacementLoading,
@@ -4776,6 +4962,132 @@ export function App({
       (response) => setPlacementWorkflow(response.workflow)
     );
   };
+
+  useEffect(() => {
+    if (!isSwordShieldProject || !swShPlacementCatalog) {
+      return undefined;
+    }
+
+    const revision = swShPlacementCatalog.revision;
+    const runId = swShPlacementQueryRunRef.current + 1;
+    swShPlacementQueryRunRef.current = runId;
+    swShPlacementDetailRunRef.current += 1;
+    setIsSwShPlacementDetailLoading(false);
+    setIsSwShPlacementPageLoading(true);
+    setIsSwShPlacementPageStale(true);
+    setSwShPlacementRequestDiagnostics([]);
+    const debounceMilliseconds = placementSearchText.trim().length > 0 ? 180 : 0;
+    const timeoutId = window.setTimeout(() => {
+      void bridge
+        .querySwShPlacementCatalog({
+          categoryId: swShPlacementCategoryId,
+          limit: swShPlacementPageSize,
+          offset: swShPlacementOffset,
+          paths: createProjectPaths(draftPathsRef.current),
+          revision,
+          searchText: placementSearchText,
+          session: getEditSessionForSection('placement')
+        })
+        .then((response) => {
+          if (
+            swShPlacementQueryRunRef.current !== runId ||
+            swShPlacementCatalogRevisionRef.current !== response.revision
+          ) {
+            return;
+          }
+
+          swShPlacementRecoveryAttemptedRef.current = false;
+          setSwShPlacementRequestDiagnostics([]);
+          setIsSwShPlacementPageStale(false);
+          setSwShPlacementPage(response);
+          setPlacementWorkflowPage(
+            createSwShPlacementPageWorkflow(swShPlacementCatalog, response.objects)
+          );
+        })
+        .catch(async (error) => {
+          if (
+            swShPlacementQueryRunRef.current === runId &&
+            !(await recoverSwShPlacementCatalog(
+              error,
+              revision,
+              () => swShPlacementQueryRunRef.current === runId
+            ))
+          ) {
+            setSwShPlacementRequestDiagnostics(toBridgeDiagnostics(error));
+          }
+        })
+        .finally(() => {
+          if (swShPlacementQueryRunRef.current === runId) {
+            setIsSwShPlacementPageLoading(false);
+          }
+        });
+    }, debounceMilliseconds);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (swShPlacementQueryRunRef.current === runId) {
+        swShPlacementQueryRunRef.current += 1;
+      }
+    };
+  }, [
+    bridge,
+    getEditSessionForSection,
+    isSwordShieldProject,
+    placementSearchText,
+    recoverSwShPlacementCatalog,
+    setPlacementWorkflowPage,
+    swShPlacementCatalog,
+    swShPlacementCategoryId,
+    swShPlacementOffset,
+    swShPlacementQueryRefreshToken
+  ]);
+
+  useEffect(() => {
+    if (
+      !isSwordShieldProject ||
+      !swShPlacementCatalog ||
+      !swShPlacementPage ||
+      !selectedPlacementObjectId
+    ) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadSwShPlacementObjectDetails(
+        swShPlacementCatalog.revision,
+        selectedPlacementObjectId
+      );
+    }, 75);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    editSession?.pendingEdits.length,
+    editSession?.sessionId,
+    isSwordShieldProject,
+    loadSwShPlacementObjectDetails,
+    selectedPlacementObjectId,
+    swShPlacementCatalog,
+    swShPlacementPage
+  ]);
+
+  useEffect(() => {
+    if (isSwordShieldProject && placementWorkflow) {
+      return;
+    }
+
+    swShPlacementCatalogRevisionRef.current = null;
+    swShPlacementQueryRunRef.current += 1;
+    swShPlacementDetailRunRef.current += 1;
+    setSwShPlacementCatalog(null);
+    setSwShPlacementPage(null);
+    setSwShPlacementCategoryId(null);
+    setSwShPlacementOffset(0);
+    setIsSwShPlacementPageLoading(false);
+    setIsSwShPlacementPageStale(false);
+    setIsSwShPlacementDetailLoading(false);
+    setSwShPlacementRequestDiagnostics([]);
+    swShPlacementRecoveryAttemptedRef.current = false;
+  }, [isSwordShieldProject, placementWorkflow]);
 
   const handleOpenBehaviorWorkflow = async () => {
     await runRetainedWorkflowLoad(
@@ -9595,6 +9907,7 @@ export function App({
       return false;
     }
 
+    const isRemoteSwShPlacement = isSwordShieldProject && swShPlacementCatalog !== null;
     setIsPlacementUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -9633,7 +9946,10 @@ export function App({
               ];
           const hasErrors = diagnostics.some((diagnostic) => diagnostic.severity === 'error');
 
-          let nextWorkflow = updateResponse.workflow ?? placementWorkflow;
+          const currentWorkflow = isRemoteSwShPlacement
+            ? useWorkbenchStore.getState().placementWorkflow
+            : placementWorkflow;
+          let nextWorkflow = updateResponse.workflow ?? currentWorkflow;
           if (
             !hasErrors &&
             nextWorkflow &&
@@ -9665,7 +9981,11 @@ export function App({
         (updateResponse) => {
           setEditValidationDiagnostics(updateResponse.diagnostics);
           if (!updateResponse.hasErrors && updateResponse.workflow) {
-            setPlacementWorkflow(updateResponse.workflow);
+            if (isRemoteSwShPlacement) {
+              setPlacementWorkflowPage(updateResponse.workflow);
+            } else {
+              setPlacementWorkflow(updateResponse.workflow);
+            }
           }
         },
         getEditSessionForSection('placement')
@@ -10317,9 +10637,15 @@ export function App({
     if (placementWorkflow && refreshSections.has('placement')) {
       reloadTasks.push(
         async () => {
-          const response = await bridge.loadPlacementWorkflow({ paths });
+          const response = isSwordShieldProject
+            ? await bridge.openSwShPlacementCatalog({ paths })
+            : await bridge.loadPlacementWorkflow({ paths });
           if (canCommitRefresh()) {
-            setPlacementWorkflow(response.workflow);
+            if ('catalog' in response) {
+              commitSwShPlacementCatalog(response.catalog);
+            } else {
+              setPlacementWorkflow(response.workflow);
+            }
           }
         }
       );
@@ -11619,10 +11945,35 @@ export function App({
                 editSession={getEditSessionForSection('placement')}
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
-                onSearchChange={setPlacementSearchText}
+                onSearchChange={(value) => {
+                  setPlacementSearchText(value);
+                  setSwShPlacementOffset(0);
+                }}
                 onSelectObject={setSelectedPlacementObjectId}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
+                remotePaging={
+                  swShPlacementCatalog
+                    ? {
+                        categoryId: swShPlacementCategoryId,
+                        isDetailLoading: isSwShPlacementDetailLoading,
+                        isPageLoading: isSwShPlacementPageLoading,
+                        isPageStale: isSwShPlacementPageStale,
+                        limit: swShPlacementPage?.limit ?? swShPlacementPageSize,
+                        offset: swShPlacementPage?.offset ?? swShPlacementOffset,
+                        onCategoryChange: (categoryId) => {
+                          setSwShPlacementCategoryId(categoryId);
+                          setSwShPlacementOffset(0);
+                        },
+                        onPageChange: setSwShPlacementOffset,
+                        onRetry: () => {
+                          swShPlacementRecoveryAttemptedRef.current = false;
+                          setSwShPlacementQueryRefreshToken((current) => current + 1);
+                        },
+                        totalCount: swShPlacementPage?.totalCount ?? 0
+                      }
+                    : undefined
+                }
                 searchText={placementSearchText}
                 selectedObjectId={selectedPlacementObjectId}
                 updateDiagnostics={[
@@ -11630,7 +11981,8 @@ export function App({
                     (diagnostic) =>
                       diagnostic.domain == null || diagnostic.domain === 'workflow.placement'
                   ),
-                  ...bridgeDiagnostics
+                  ...bridgeDiagnostics,
+                  ...swShPlacementRequestDiagnostics
                 ]}
                 workflow={placementWorkflow}
               />
@@ -12194,11 +12546,19 @@ export function App({
       {isSvCacheClearConfirmOpen ? (
         <SvCacheClearConfirmationModal
           cacheSizeLabel={formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0)}
-          cacheTitle={isPokemonLegendsZAGame(selectedGame) ? 'Z-A Cache' : 'S/V Cache'}
+          cacheTitle={
+            isSwordShieldGame(selectedGame)
+              ? t('settings.cache.swsh.title')
+              : isPokemonLegendsZAGame(selectedGame)
+                ? 'Z-A Cache'
+                : 'S/V Cache'
+          }
           description={
-            isPokemonLegendsZAGame(selectedGame)
-              ? 'This removes the Pokemon Legends Z-A Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
-              : 'This removes the Scarlet/Violet Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
+            isSwordShieldGame(selectedGame)
+              ? t('settings.cache.swsh.clearDescription')
+              : isPokemonLegendsZAGame(selectedGame)
+                ? 'This removes the Pokemon Legends Z-A Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
+                : 'This removes the Scarlet/Violet Trinity disk cache and releases clean loaded editor data. Pending edits and dirty drafts remain safe, and released editors reload on demand.'
           }
           isClearing={isSvCacheClearing}
           onCancel={() => setIsSvCacheClearConfirmOpen(false)}
@@ -12419,19 +12779,25 @@ function WorkflowLoadingPanel({ label }: { label: string }) {
 }
 
 function VirtualTableBody<T>({
+  estimateSize = virtualTableRowHeight,
   getKey,
   items,
-  renderRow
+  measureRows = false,
+  renderRow,
+  resetKey
 }: {
+  estimateSize?: number;
   getKey: (item: T, index: number) => string | number;
   items: T[];
-  renderRow: (item: T) => ReactNode;
+  measureRows?: boolean;
+  renderRow: (item: T, index: number) => ReactNode;
+  resetKey?: string | number;
 }) {
   const scrollParentRef = useRef<HTMLDivElement | null>(null);
   useVirtualTableHeaderScrollSync(scrollParentRef, items);
   const rowVirtualizer = useVirtualizer({
     count: items.length,
-    estimateSize: () => virtualTableRowHeight,
+    estimateSize: () => estimateSize,
     getItemKey: (index) => getKey(items[index]!, index),
     getScrollElement: () => scrollParentRef.current,
     initialRect: virtualTableInitialRect,
@@ -12440,6 +12806,17 @@ function VirtualTableBody<T>({
       ? { observeElementRect: observeVirtualTableElementRect }
       : {})
   });
+
+  useLayoutEffect(() => {
+    if (resetKey === undefined) {
+      return;
+    }
+
+    if (scrollParentRef.current) {
+      scrollParentRef.current.scrollTop = 0;
+    }
+    rowVirtualizer.scrollToOffset(0);
+  }, [resetKey]);
 
   return (
     <div className="virtual-table-body" ref={scrollParentRef} role="rowgroup">
@@ -12457,14 +12834,16 @@ function VirtualTableBody<T>({
           return (
             <div
               className="virtual-table-row"
+              data-index={virtualRow.index}
               key={virtualRow.key}
+              ref={measureRows ? rowVirtualizer.measureElement : undefined}
               role="presentation"
               style={{
-                height: `${virtualRow.size}px`,
+                ...(measureRows ? {} : { height: `${virtualRow.size}px` }),
                 transform: `translateY(${virtualRow.start}px)`
               }}
             >
-              {renderRow(item)}
+              {renderRow(item, virtualRow.index)}
             </div>
           );
         })}
@@ -12559,6 +12938,7 @@ function HealthSection({
   selectedGame: ProjectGame;
   svCacheStatus: TrinityCacheStatus | null;
 }) {
+  const { t } = useLocalization();
   const outputRootPath = draftPaths.outputRootPath.trim();
   const gameDefinition = gameDefinitions[selectedGame];
   const GameIcon = gameDefinition.icon;
@@ -12567,12 +12947,13 @@ function HealthSection({
   );
   const canShowSvCacheProgress = Boolean(
     health &&
-      isTrinityCacheGame(selectedGame) &&
-      health.canOpenEditableWorkflows &&
-      hasValidTrinitySupportFolder(selectedGame, health) &&
+      isProjectCacheGame(selectedGame) &&
+      hasValidProjectCacheSource(selectedGame, health) &&
       svCacheStatus
   );
-  const cacheTitle = getTrinityCacheTitle(selectedGame);
+  const cacheTitle = isSwordShieldGame(selectedGame)
+    ? t('settings.cache.swsh.title')
+    : getTrinityCacheTitle(selectedGame);
 
   return (
     <>
@@ -12710,6 +13091,7 @@ function HealthSection({
           <SvCacheProgressPanel
             cacheTitle={cacheTitle}
             isWarming={isSvCacheWarming}
+            selectedGame={selectedGame}
             status={svCacheStatus}
           />
         ) : null}
@@ -12743,13 +13125,17 @@ function HealthSection({
 function SvCacheProgressPanel({
   cacheTitle,
   isWarming,
+  selectedGame,
   status
 }: {
   cacheTitle: string;
   isWarming: boolean;
+  selectedGame: ProjectGame;
   status: TrinityCacheStatus;
 }) {
+  const { t } = useLocalization();
   const isMinimal = status.settings.mode === 'minimal';
+  const isSwordShieldCache = isSwordShieldGame(selectedGame);
   const percent = Math.max(0, Math.min(100, status.progressPercent));
   const phaseLabel = isMinimal
     ? 'Off'
@@ -12760,9 +13146,17 @@ function SvCacheProgressPanel({
         : status.warmupCompleted > 0
           ? 'Partially built'
           : 'Ready to build';
-  const message = isMinimal
-    ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
-    : status.message;
+  const message = isSwordShieldCache
+    ? isMinimal
+      ? t('settings.cache.swsh.status.off')
+      : isWarming
+        ? t('settings.cache.swsh.status.building')
+        : percent >= 100
+          ? t('settings.cache.swsh.status.ready')
+          : t('settings.cache.swsh.status.readyToBuild')
+    : isMinimal
+      ? `Persistent ${cacheTitle} warmup is off in Minimal mode.`
+      : status.message;
 
   return (
     <div className="sv-cache-progress-panel" role="status">
@@ -14723,6 +15117,24 @@ function SelectedPokemonPanel({
       pokemonSpeciesOptions
     ]
   );
+  const selectedEvolutionDraft =
+    selectedEvolution === null
+      ? null
+      : evolutionDraftsBySlot[selectedEvolution.slot] ?? null;
+  const selectedEvolutionDraftChange =
+    selectedEvolution === null
+      ? null
+      : evolutionDraftReview.changes.find(
+          (change) => change.slot === selectedEvolution.slot
+        ) ?? null;
+  const selectedEvolutionDraftStatus =
+    selectedEvolutionDraft === null
+      ? 'No changes'
+      : selectedEvolutionDraftChange === null
+        ? 'Invalid'
+        : 'Changed';
+  const canSaveSelectedEvolution =
+    canEditEvolution && selectedEvolutionDraftChange !== null;
   const learnsetDraftReview = useMemo(
     () =>
       reviewPokemonLearnsetDrafts(
@@ -14820,6 +15232,58 @@ function SelectedPokemonPanel({
     if (resolvedForm !== null) {
       setNewEvolutionFormDraft(resolvedForm.toString());
     }
+  };
+
+  const saveSelectedEvolution = async () => {
+    if (
+      !pokemon ||
+      !selectedEvolution ||
+      !selectedEvolutionDraft ||
+      !selectedEvolutionDraftChange
+    ) {
+      return;
+    }
+
+    const pokemonKey = pokemon.personalId.toString();
+    const evolutionSlot = selectedEvolution.slot;
+    const savedDraft = selectedEvolutionDraft;
+    const didSave = await onUpdatePokemonEvolution(
+      pokemon.personalId,
+      'upsert',
+      evolutionSlot,
+      selectedEvolutionDraftChange.method,
+      selectedEvolutionDraftChange.argument,
+      selectedEvolutionDraftChange.species,
+      selectedEvolutionDraftChange.form,
+      selectedEvolutionDraftChange.level
+    );
+    if (!didSave) {
+      return;
+    }
+
+    setEvolutionDraftsByPokemonId((currentDraftsByPokemonId) => {
+      const currentPokemonDrafts = currentDraftsByPokemonId[pokemonKey];
+      const currentDraft = currentPokemonDrafts?.[evolutionSlot];
+      if (
+        !currentPokemonDrafts ||
+        !currentDraft ||
+        !pokemonEvolutionDraftFieldsEqual(currentDraft, savedDraft)
+      ) {
+        return currentDraftsByPokemonId;
+      }
+
+      const nextPokemonDrafts = { ...currentPokemonDrafts };
+      delete nextPokemonDrafts[evolutionSlot];
+
+      const nextDraftsByPokemonId = { ...currentDraftsByPokemonId };
+      if (Object.keys(nextPokemonDrafts).length === 0) {
+        delete nextDraftsByPokemonId[pokemonKey];
+      } else {
+        nextDraftsByPokemonId[pokemonKey] = nextPokemonDrafts;
+      }
+
+      return nextDraftsByPokemonId;
+    });
   };
 
   const stagePokemonDrafts = async () => {
@@ -15768,6 +16232,32 @@ function SelectedPokemonPanel({
                     />
                   </label>
                   <div className="learnset-button-row">
+                    <button
+                      aria-busy={isPokemonUpdating || undefined}
+                      className="primary-button"
+                      disabled={!canSaveSelectedEvolution}
+                      onClick={() => void saveSelectedEvolution()}
+                      title="Save Changes"
+                      type="button"
+                    >
+                      <BusyActionContent
+                        busyLabel="Saving"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isPokemonUpdating}
+                        label="Save Changes"
+                      />
+                    </button>
+                    <span
+                      aria-live="polite"
+                      className={`draft-action-summary evolution-draft-status ${
+                        selectedEvolutionDraft !== null &&
+                        selectedEvolutionDraftChange === null
+                          ? 'editable-field-error'
+                          : ''
+                      }`}
+                    >
+                      {selectedEvolutionDraftStatus}
+                    </span>
                     <button
                       aria-label="Move evolution row up"
                       className="secondary-button icon-button"
@@ -32409,6 +32899,18 @@ type PlacementSectionProps = {
     objectId: string,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  remotePaging?: {
+    categoryId: string | null;
+    isDetailLoading: boolean;
+    isPageLoading: boolean;
+    isPageStale: boolean;
+    limit: number;
+    offset: number;
+    onCategoryChange: (categoryId: string | null) => void;
+    onPageChange: (offset: number) => void;
+    onRetry: () => void;
+    totalCount: number;
+  };
   searchText: string;
   selectedObjectId: string | null;
   updateDiagnostics: ApiDiagnostic[];
@@ -32441,28 +32943,34 @@ function PlacementSection({
   onSelectObject,
   onStartEditSession,
   onUpdatePlacementObjectFields,
+  remotePaging,
   searchText,
   selectedObjectId,
   updateDiagnostics,
   workflow
 }: PlacementSectionProps) {
+  const { t } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
-  const placementCategories = getPlacementCategories(workflow);
+  const placementCategories = useMemo(() => getPlacementCategories(workflow), [workflow]);
   const supportsPlacementCategories =
     placementCategories.length > 0 &&
-    (workflow?.objects.some((placedObject) => placedObject.categoryId?.trim()) ?? false);
+    (remotePaging !== undefined ||
+      (workflow?.objects.some((placedObject) => placedObject.categoryId?.trim()) ?? false));
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const activeCategoryId = supportsPlacementCategories
-    ? placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
+    ? remotePaging?.categoryId ??
+      placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
       placementCategories[0]?.id ??
       null
     : null;
-  const filteredObjects =
-    workflow?.objects.filter((placedObject) => {
-      if (
-        activeCategoryId &&
-        getPlacementCategoryId(placedObject) !== activeCategoryId
-      ) {
+  const filteredObjects = useMemo(() => {
+    const objects = workflow?.objects ?? [];
+    if (remotePaging) {
+      return objects;
+    }
+
+    return objects.filter((placedObject) => {
+      if (activeCategoryId && getPlacementCategoryId(placedObject) !== activeCategoryId) {
         return false;
       }
 
@@ -32485,12 +32993,14 @@ function PlacementSection({
         placedObject.label,
         placedObject.map,
         placedObject.objectType,
+        placedObject.previewText ?? '',
         placedObject.scriptId ?? ''
       ]
         .join(' ')
         .toLocaleLowerCase()
         .includes(normalizedSearch);
-    }) ?? [];
+    });
+  }, [activeCategoryId, normalizedSearch, remotePaging, workflow?.objects]);
   const groupedObjects = useMemo(
     () =>
       buildPlacementObjectGroups(filteredObjects, {
@@ -32510,6 +33020,12 @@ function PlacementSection({
     groupedObjects[0] ??
     null;
   const canEditPlacement = workflow?.summary.availability === 'available';
+  const isRemoteInteractionBlocked =
+    (remotePaging?.isPageLoading ?? false) ||
+    (remotePaging?.isPageStale ?? false) ||
+    isPlacementUpdating;
+  const canInteractWithSelectedPlacement =
+    !isRemoteInteractionBlocked && !(remotePaging?.isDetailLoading ?? false);
   const pendingPlacementObjectIds = getPendingPlacementObjectIds(editSession);
 
   useEffect(() => {
@@ -32555,7 +33071,7 @@ function PlacementSection({
             <Search aria-hidden="true" size={18} />
             <input
               aria-label="Search placement"
-              disabled={!workflow}
+              disabled={!workflow || isPlacementUpdating}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search placement"
               type="search"
@@ -32563,8 +33079,12 @@ function PlacementSection({
             />
           </label>
           <Metric
-            label="Loaded objects"
-            value={workflow ? workflow.stats.totalObjectCount.toString() : '0'}
+            label={remotePaging ? t('placement.matchingObjects') : 'Loaded objects'}
+            value={
+              workflow
+                ? (remotePaging?.totalCount ?? workflow.stats.totalObjectCount).toString()
+                : '0'
+            }
           />
           <Metric
             label="Areas"
@@ -32578,7 +33098,11 @@ function PlacementSection({
 
         {workflow ? (
           <EditorSessionBar
-            canEdit={canEditPlacement && selectedObject !== null}
+            canEdit={
+              canEditPlacement &&
+              selectedObject !== null &&
+              canInteractWithSelectedPlacement
+            }
             isEditing={editSession !== null}
             isStarting={isEditStarting}
             label="Placement"
@@ -32596,17 +33120,22 @@ function PlacementSection({
               <button
                 aria-selected={category.id === activeCategoryId}
                 className="condition-tab-button placement-category-tab"
+                disabled={isRemoteInteractionBlocked}
                 key={category.id}
                 onClick={() => {
-                  setSelectedCategoryId(category.id);
-                  const categoryObjects = workflow?.objects.filter(
-                    (placedObject) => getPlacementCategoryId(placedObject) === category.id
-                  ) ?? [];
-                  const firstGroup = buildPlacementObjectGroups(categoryObjects, {
-                    groupItemBallSpawners: editorFamily === 'za',
-                    groupPokemonSpawners: editorFamily === 'za'
-                  })[0];
-                  onSelectObject(firstGroup?.objects[0]?.objectId ?? null);
+                  if (remotePaging) {
+                    remotePaging.onCategoryChange(category.id);
+                  } else {
+                    setSelectedCategoryId(category.id);
+                    const categoryObjects = workflow?.objects.filter(
+                      (placedObject) => getPlacementCategoryId(placedObject) === category.id
+                    ) ?? [];
+                    const firstGroup = buildPlacementObjectGroups(categoryObjects, {
+                      groupItemBallSpawners: editorFamily === 'za',
+                      groupPokemonSpawners: editorFamily === 'za'
+                    })[0];
+                    onSelectObject(firstGroup?.objects[0]?.objectId ?? null);
+                  }
                 }}
                 role="tab"
                 title={category.description}
@@ -32621,54 +33150,140 @@ function PlacementSection({
 
         {workflow ? (
           <div className="encounters-layout placement-layout">
-            <div className="raid-rewards-table placement-object-table" role="table" aria-label="Placed objects">
-              <div className="raid-rewards-row raid-rewards-row-heading placement-object-row" role="row">
-                <span role="columnheader">Object</span>
-                <span role="columnheader">Pokemon / Data</span>
-                <span role="columnheader">Position</span>
-              </div>
-              {groupedObjects.map((objectGroup) => {
-                const isSelected = selectedObject
-                  ? objectGroup.objects.some((placedObject) => placedObject.objectId === selectedObject.objectId)
-                  : false;
-                const isPending = objectGroup.objects.some((placedObject) =>
-                  pendingPlacementObjectIds.has(placedObject.objectId)
-                );
-                const nextObjectId = isSelected
-                  ? selectedObject?.objectId ?? objectGroup.objects[0]?.objectId ?? null
-                  : objectGroup.objects[0]?.objectId ?? null;
-                return (
+            <div className="placement-browser-stack">
+              {remotePaging?.isPageLoading ? (
+                <div aria-live="polite" className="placement-load-status" role="status">
+                  <RefreshCw aria-hidden="true" className="workflow-loading-spinner" size={16} />
+                  <span>{t('placement.loadingMatches')}</span>
+                </div>
+              ) : null}
+              {remotePaging?.isPageStale && !remotePaging.isPageLoading ? (
+                <div aria-live="polite" className="placement-load-status" role="status">
+                  <span>{t('placement.refreshFailed')}</span>
                   <button
-                    className={`raid-rewards-row placement-object-row ${
-                      isSelected ? 'raid-rewards-row-selected' : ''
-                    } ${isPending ? 'raid-rewards-row-pending' : ''}`}
-                    key={objectGroup.key}
-                    onClick={() => onSelectObject(nextObjectId)}
-                    role="row"
+                    className="secondary-button placement-retry-button"
+                    disabled={isPlacementUpdating}
+                    onClick={remotePaging.onRetry}
                     type="button"
                   >
-                    <span className="placement-object-name" role="cell">
-                      <strong>{objectGroup.label}</strong>
-                      <small>{objectGroup.map}</small>
-                    </span>
-                    <span className="placement-primary-cell" role="cell">
-                      {objectGroup.preview}
-                    </span>
-                    <span role="cell">{objectGroup.position}</span>
+                    <RefreshCw aria-hidden="true" size={14} />
+                    <span>{t('placement.retry')}</span>
                   </button>
-                );
-              })}
-              {groupedObjects.length === 0 ? (
-                <div className="raid-rewards-row placement-object-row placement-empty-row" role="row">
-                  <span role="cell">{activeCategoryId === null ? 'No placement entries.' : `No entries in ${placementCategories.find((category) => category.id === activeCategoryId)?.label ?? 'placement'}.`}</span>
                 </div>
+              ) : null}
+              <div
+                aria-busy={remotePaging?.isPageLoading || undefined}
+                aria-rowcount={(remotePaging?.totalCount ?? groupedObjects.length) + 1}
+                className="raid-rewards-table placement-object-table"
+                role="table"
+                aria-label="Placed objects"
+              >
+                <div className="raid-rewards-row raid-rewards-row-heading placement-object-row" role="row">
+                  <span role="columnheader">Object</span>
+                  <span role="columnheader">Pokemon / Data</span>
+                  <span role="columnheader">Position</span>
+                </div>
+                <VirtualTableBody
+                  estimateSize={placementVirtualTableRowHeight}
+                  getKey={(objectGroup) => objectGroup.key}
+                  items={groupedObjects}
+                  measureRows
+                  resetKey={
+                    remotePaging
+                      ? `${remotePaging.categoryId ?? 'all'}:${remotePaging.offset}:${searchText}`
+                      : undefined
+                  }
+                  renderRow={(objectGroup, rowIndex) => {
+                    const isSelected = selectedObject
+                      ? objectGroup.objects.some(
+                          (placedObject) => placedObject.objectId === selectedObject.objectId
+                        )
+                      : false;
+                    const isPending = objectGroup.objects.some((placedObject) =>
+                      pendingPlacementObjectIds.has(placedObject.objectId)
+                    );
+                    const nextObjectId = isSelected
+                      ? selectedObject?.objectId ?? objectGroup.objects[0]?.objectId ?? null
+                      : objectGroup.objects[0]?.objectId ?? null;
+                    return (
+                      <button
+                        aria-rowindex={rowIndex + 2 + (remotePaging?.offset ?? 0)}
+                        className={`raid-rewards-row placement-object-row ${
+                          isSelected ? 'raid-rewards-row-selected' : ''
+                        } ${isPending ? 'raid-rewards-row-pending' : ''}`}
+                        disabled={isRemoteInteractionBlocked}
+                        onClick={() => onSelectObject(nextObjectId)}
+                        role="row"
+                        type="button"
+                      >
+                        <span className="placement-object-name" role="cell">
+                          <strong>{objectGroup.label}</strong>
+                          <small>{objectGroup.map}</small>
+                        </span>
+                        <span className="placement-primary-cell" role="cell">
+                          {objectGroup.preview}
+                        </span>
+                        <span role="cell">{objectGroup.position}</span>
+                      </button>
+                    );
+                  }}
+                />
+                {groupedObjects.length === 0 && !remotePaging?.isPageLoading ? (
+                  <div aria-rowindex={2} className="raid-rewards-row placement-object-row placement-empty-row" role="row">
+                    <span role="cell">{activeCategoryId === null ? 'No placement entries.' : `No entries in ${placementCategories.find((category) => category.id === activeCategoryId)?.label ?? 'placement'}.`}</span>
+                  </div>
+                ) : null}
+              </div>
+              {remotePaging ? (
+                <nav className="placement-pagination" aria-label={t('placement.resultPages')}>
+                  <span>
+                    {remotePaging.totalCount === 0
+                      ? t('placement.noMatches')
+                      : t('placement.showingResults', {
+                          end: Math.min(
+                            remotePaging.offset + groupedObjects.length,
+                            remotePaging.totalCount
+                          ),
+                          start: remotePaging.offset + 1,
+                          total: remotePaging.totalCount
+                        })}
+                  </span>
+                  <div className="placement-pagination-actions">
+                    <button
+                      className="secondary-button"
+                      disabled={isRemoteInteractionBlocked || remotePaging.offset === 0}
+                      onClick={() =>
+                        remotePaging.onPageChange(
+                          Math.max(0, remotePaging.offset - remotePaging.limit)
+                        )
+                      }
+                      type="button"
+                    >
+                      {t('placement.previous')}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={
+                        isRemoteInteractionBlocked ||
+                        remotePaging.offset + remotePaging.limit >= remotePaging.totalCount
+                      }
+                      onClick={() =>
+                        remotePaging.onPageChange(remotePaging.offset + remotePaging.limit)
+                      }
+                      type="button"
+                    >
+                      {t('placement.next')}
+                    </button>
+                  </div>
+                </nav>
               ) : null}
             </div>
 
             <SelectedPlacementPanel
-              canEditPlacement={canEditPlacement}
+              canEditPlacement={canEditPlacement && canInteractWithSelectedPlacement}
               editSession={editSession}
               editableFields={workflow.editableFields}
+              isDetailsLoading={remotePaging?.isDetailLoading ?? false}
               isPlacementUpdating={isPlacementUpdating}
               onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
               onSelectObject={onSelectObject}
@@ -32690,6 +33305,7 @@ function SelectedPlacementPanel({
   canEditPlacement,
   editSession,
   editableFields,
+  isDetailsLoading,
   isPlacementUpdating,
   onSelectObject,
   onUpdatePlacementObjectFields,
@@ -32699,6 +33315,7 @@ function SelectedPlacementPanel({
   canEditPlacement: boolean;
   editSession: EditSession | null;
   editableFields: PlacementEditableField[];
+  isDetailsLoading: boolean;
   isPlacementUpdating: boolean;
   onSelectObject: (objectId: string | null) => void;
   onUpdatePlacementObjectFields: (
@@ -32712,7 +33329,7 @@ function SelectedPlacementPanel({
     Record<string, Record<string, string>>
   >({});
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
   const cancelActiveEditSession = useCancelActiveEditSession();
   const visibleFields = useMemo(
     () => (placedObject ? getPlacementFieldControls(placedObject, editableFields) : []),
@@ -32864,6 +33481,13 @@ function SelectedPlacementPanel({
         <MapPin aria-hidden="true" size={18} />
         <h3>Selected Object</h3>
       </div>
+
+      {isDetailsLoading ? (
+        <div aria-live="polite" className="placement-load-status" role="status">
+          <RefreshCw aria-hidden="true" className="workflow-loading-spinner" size={16} />
+          <span>{t('placement.loadingDetails')}</span>
+        </div>
+      ) : null}
 
       {placedObject ? (
         <>
@@ -38038,6 +38662,7 @@ function SettingsSection({
   svCacheRefreshTick: number;
   svCacheStatus: TrinityCacheStatus | null;
 }) {
+  const { language, setLanguage, t, translateLiteral } = useLocalization();
   const isBusy =
     status.kind === 'checking' ||
     status.kind === 'downloading' ||
@@ -38049,17 +38674,27 @@ function SettingsSection({
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? defaultTrinityCacheLimitBytes;
   const cacheSizeLabel = formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0);
   const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
-  const canShowSvCacheSettings = isTrinityCacheGame(selectedGame);
-  const cacheTitle = isPokemonLegendsZAGame(selectedGame)
-    ? 'Pokemon Legends Z-A Data Cache'
-    : 'Scarlet/Violet Data Cache';
-  const cacheModeLabel = isPokemonLegendsZAGame(selectedGame)
-    ? 'Z-A cache mode'
-    : 'S/V cache mode';
-  const cacheDescription = isPokemonLegendsZAGame(selectedGame)
-    ? 'Controls how aggressively Z-A Trinity data is cached between editor loads.'
-    : 'Controls how aggressively S/V Trinity data is cached between editor loads.';
-  const { language, setLanguage, t, translateLiteral } = useLocalization();
+  const canShowSvCacheSettings = isProjectCacheGame(selectedGame);
+  const cacheTitle = isSwordShieldGame(selectedGame)
+    ? t('settings.cache.swsh.title')
+    : isPokemonLegendsZAGame(selectedGame)
+      ? 'Pokemon Legends Z-A Data Cache'
+      : 'Scarlet/Violet Data Cache';
+  const cacheModeLabel = isSwordShieldGame(selectedGame)
+    ? t('settings.cache.swsh.modeLabel')
+    : isPokemonLegendsZAGame(selectedGame)
+      ? 'Z-A cache mode'
+      : 'S/V cache mode';
+  const cacheDescription = isSwordShieldGame(selectedGame)
+    ? t('settings.cache.swsh.description')
+    : isPokemonLegendsZAGame(selectedGame)
+      ? 'Controls how aggressively Z-A Trinity data is cached between editor loads.'
+      : 'Controls how aggressively S/V Trinity data is cached between editor loads.';
+  const swShCacheModeDescriptionById: Record<TrinityCacheMode, string> = {
+    balanced: t('settings.cache.swsh.mode.balanced.description'),
+    minimal: t('settings.cache.swsh.mode.minimal.description'),
+    performance: t('settings.cache.swsh.mode.performance.description')
+  };
   const availableUpdateActionLabel =
     availableUpdateKind === 'native'
       ? 'Install Update'
@@ -38229,7 +38864,11 @@ function SettingsSection({
                       </small>
                     ) : null}
                   </span>
-                  <p>{option.description}</p>
+                  <p>
+                    {isSwordShieldGame(selectedGame)
+                      ? swShCacheModeDescriptionById[option.id]
+                      : option.description}
+                  </p>
                 </button>
               );
             })}
@@ -39633,6 +40272,19 @@ function pokemonEvolutionDraftEqualsRecord(
     draft.level === evolution.level.toString() &&
     draft.method === evolution.method.toString() &&
     draft.species === evolution.species.toString()
+  );
+}
+
+function pokemonEvolutionDraftFieldsEqual(
+  left: PokemonEvolutionDraftFields,
+  right: PokemonEvolutionDraftFields
+) {
+  return (
+    left.argument === right.argument &&
+    left.form === right.form &&
+    left.level === right.level &&
+    left.method === right.method &&
+    left.species === right.species
   );
 }
 
@@ -48314,9 +48966,8 @@ function hasValidTrinitySupportFolder(
 }
 
 function getTrinityCacheTitle(game: ProjectGame | null | undefined) {
-  return isPokemonLegendsZAGame(game)
-    ? 'Z-A Data Cache'
-    : 'S/V Data Cache';
+  if (isSwordShieldGame(game)) return 'Sword/Shield Data Cache';
+  return isPokemonLegendsZAGame(game) ? 'Z-A Data Cache' : 'S/V Data Cache';
 }
 
 function normalizeDraftPath(path: string) {
@@ -48379,6 +49030,83 @@ function delay(milliseconds: number) {
   });
 }
 
+function createSwShPlacementPageWorkflow(
+  catalog: SwShPlacementCatalog,
+  objects: PlacedObjectRecord[]
+): PlacementWorkflow {
+  return {
+    categories: catalog.categories,
+    diagnostics: catalog.diagnostics,
+    editableFields: catalog.editableFields,
+    objects,
+    stats: catalog.stats,
+    summary: catalog.summary
+  };
+}
+
+function isSwordShieldGame(
+  game: ProjectGame | null | undefined
+): game is Extract<NonNullable<ProjectGame>, 'sword' | 'shield'> {
+  return game === 'sword' || game === 'shield';
+}
+
+function isProjectCacheGame(
+  game: ProjectGame | null | undefined
+): game is NonNullable<ProjectGame> {
+  return isSwordShieldGame(game) || isTrinityCacheGame(game);
+}
+
+function hasValidProjectCacheSource(game: ProjectGame, health: ProjectHealth) {
+  return isSwordShieldGame(game)
+    ? health.canOpenReadOnlyWorkflows
+    : hasValidTrinitySupportFolder(game, health);
+}
+
+function getProjectCacheStatusForGame(
+  bridge: ProjectBridge,
+  game: ProjectGame,
+  paths: ReturnType<typeof toProjectPaths> | null
+) {
+  if (isSwordShieldGame(game)) return bridge.getSwShCacheStatus({ paths });
+  if (isPokemonLegendsZAGame(game)) return bridge.getZaCacheStatus({ paths });
+  return bridge.getSvCacheStatus({ paths });
+}
+
+function updateProjectCacheSettingsForGame(
+  bridge: ProjectBridge,
+  game: ProjectGame,
+  mode: TrinityCacheMode,
+  maxCacheSizeBytes: number,
+  paths: ReturnType<typeof toProjectPaths> | null
+) {
+  const request = { maxCacheSizeBytes, mode, paths };
+  if (isSwordShieldGame(game)) return bridge.updateSwShCacheSettings(request);
+  if (isPokemonLegendsZAGame(game)) return bridge.updateZaCacheSettings(request);
+  return bridge.updateSvCacheSettings(request);
+}
+
+function clearProjectCacheForGame(
+  bridge: ProjectBridge,
+  game: ProjectGame,
+  activePaths: ReturnType<typeof toProjectPaths> | null
+) {
+  if (isSwordShieldGame(game)) return bridge.clearSwShCache({ activePaths });
+  if (isPokemonLegendsZAGame(game)) return bridge.clearZaCache({ activePaths });
+  return bridge.clearSvCache({ activePaths });
+}
+
+function warmupProjectCacheStepForGame(
+  bridge: ProjectBridge,
+  game: ProjectGame,
+  paths: ReturnType<typeof toProjectPaths>,
+  stepIndex: number
+) {
+  const request = { paths, stepIndex };
+  if (isSwordShieldGame(game)) return bridge.warmupSwShCacheStep(request);
+  if (isPokemonLegendsZAGame(game)) return bridge.warmupZaCacheStep(request);
+  return bridge.warmupSvCacheStep(request);
+}
+
 type UiDiagnosticFallback =
   | {
       domain: 'bridge';
@@ -48420,6 +49148,23 @@ function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
     domain: 'bridge',
     message: 'Project bridge request failed.'
   });
+}
+
+function isStaleSwShPlacementCatalogError(error: unknown) {
+  if (!(error instanceof ProjectBridgeError)) {
+    return false;
+  }
+
+  if (error.apiError.code === swshPlacementErrorCodes.catalogStale) {
+    return true;
+  }
+
+  const message = error.apiError.message.toLocaleLowerCase();
+  return (
+    message.includes('placement source data changed after this catalog was opened') ||
+    message.includes('selected placement object is no longer present') ||
+    message.includes('placement catalog revision is required')
+  );
 }
 
 function toDesktopDiagnostics(

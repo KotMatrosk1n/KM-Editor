@@ -49,7 +49,8 @@ public sealed record PlacedObjectRecordDto(
     PlacementProvenanceDto Provenance,
     string CategoryId = "",
     string CategoryLabel = "",
-    IReadOnlyList<PlacementFieldValueDto>? Fields = null);
+    IReadOnlyList<PlacementFieldValueDto>? Fields = null,
+    string? PreviewText = null);
 
 public sealed record PlacementEditableFieldDto(
     string Field,
@@ -86,6 +87,45 @@ public sealed record PlacementWorkflowDto(
     IReadOnlyList<PlacementCategoryDto>? Categories = null);
 
 public sealed record LoadPlacementWorkflowResponse(PlacementWorkflowDto Workflow);
+
+public sealed record OpenSwShPlacementCatalogRequest(ProjectPathsDto Paths);
+
+public sealed record SwShPlacementCatalogDto(
+    string Revision,
+    WorkflowSummaryDto Summary,
+    IReadOnlyList<PlacementEditableFieldDto> EditableFields,
+    PlacementWorkflowStatsDto Stats,
+    IReadOnlyList<ApiDiagnostic> Diagnostics,
+    IReadOnlyList<PlacementCategoryDto> Categories);
+
+public sealed record OpenSwShPlacementCatalogResponse(SwShPlacementCatalogDto Catalog);
+
+public sealed record QuerySwShPlacementCatalogRequest(
+    ProjectPathsDto Paths,
+    string Revision,
+    string? CategoryId = null,
+    string? SearchText = null,
+    int Offset = 0,
+    int Limit = 100,
+    EditSessionDto? Session = null);
+
+public sealed record QuerySwShPlacementCatalogResponse(
+    string Revision,
+    IReadOnlyList<PlacedObjectRecordDto> Objects,
+    int Offset,
+    int Limit,
+    int TotalCount);
+
+public sealed record LoadSwShPlacementObjectRequest(
+    ProjectPathsDto Paths,
+    string Revision,
+    string ObjectId,
+    EditSessionDto? Session = null);
+
+public sealed record LoadSwShPlacementObjectResponse(
+    string Revision,
+    PlacedObjectRecordDto Object,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdatePlacementObjectFieldRequest(
     ProjectPathsDto Paths,

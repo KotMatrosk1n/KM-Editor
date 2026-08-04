@@ -4,7 +4,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, TryLockError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(windows)]
@@ -16,6 +17,13 @@ const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
 const MAX_PROJECT_BRIDGE_IN_FLIGHT_REQUESTS: usize = 8;
 const PROJECT_BRIDGE_RECYCLED_ERROR: &str =
     "Project bridge request was canceled because the bridge was recycled.";
+const PROJECT_BRIDGE_PROJECT_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT: Duration = Duration::from_secs(120);
+const PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const PROJECT_BRIDGE_REQUEST_RUNNING: usize = 0;
+const PROJECT_BRIDGE_REQUEST_COMPLETED: usize = 1;
+const PROJECT_BRIDGE_REQUEST_TIMED_OUT: usize = 2;
+const PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN: usize = 0;
 const SUPPORT_SEARCH_CANCELED_ERROR: &str = "Support file search was canceled.";
 const WINDOW_CLOSE_REQUESTED_EVENT: &str = "km-editor://window-close-requested";
 const SUPPORT_SEARCH_PROGRESS_EVENT: &str = "km-editor://support-file-search-progress";
@@ -101,6 +109,8 @@ impl Drop for ProjectBridgeRequestPermit {
 }
 
 struct ProjectBridgeProcess {
+    active_request_token: AtomicUsize,
+    next_request_token: AtomicUsize,
     child: Mutex<Option<Child>>,
     io: Mutex<ProjectBridgeIo>,
 }
@@ -108,6 +118,27 @@ struct ProjectBridgeProcess {
 struct ProjectBridgeIo {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+}
+
+enum ProjectBridgeRequestFailure {
+    Retryable(String),
+    TimedOut(String),
+}
+
+enum ProjectBridgeIoLockFailure {
+    Poisoned,
+    TimedOut,
+}
+
+struct ProjectBridgeReadOnlyWatchdog {
+    cancellation_sender: mpsc::Sender<()>,
+    request_state: Arc<AtomicUsize>,
+    thread: Option<JoinHandle<()>>,
+}
+
+struct ProjectBridgeActiveRequest<'a> {
+    active_request_token: &'a AtomicUsize,
+    request_token: usize,
 }
 
 impl Drop for ProjectBridgeProcess {
@@ -176,16 +207,24 @@ fn run_project_bridge_request_with<F>(
 where
     F: FnMut() -> Result<ProjectBridgeProcess, String>,
 {
+    let read_only_timeout = project_bridge_read_only_timeout(request_json);
+
     for attempt in 0..2 {
         let process = get_or_start_project_bridge_process(
             bridge_state,
             request_generation,
             &mut start_process,
         )?;
-        let request_result = process.request(bridge_state, request_generation, request_json);
+        let request_result = process.request(
+            bridge_state,
+            request_generation,
+            request_json,
+            read_only_timeout,
+        );
         match request_result {
             Ok(response) => return Ok(response),
-            Err(error) => {
+            Err(ProjectBridgeRequestFailure::TimedOut(error)) => return Err(error),
+            Err(ProjectBridgeRequestFailure::Retryable(error)) => {
                 remove_failed_project_bridge_process(bridge_state, &process)?;
                 ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
                 if attempt > 0 {
@@ -246,6 +285,8 @@ fn remove_failed_project_bridge_process(
 impl ProjectBridgeProcess {
     fn new(child: Child, stdin: ChildStdin, stdout: ChildStdout) -> Self {
         Self {
+            active_request_token: AtomicUsize::new(PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN),
+            next_request_token: AtomicUsize::new(1),
             child: Mutex::new(Some(child)),
             io: Mutex::new(ProjectBridgeIo {
                 stdin,
@@ -255,39 +296,112 @@ impl ProjectBridgeProcess {
     }
 
     fn request(
-        &self,
+        self: &Arc<Self>,
         bridge_state: &ProjectBridgeState,
         request_generation: usize,
         request_json: &str,
-    ) -> Result<String, String> {
-        let mut io = self
-            .io
-            .lock()
-            .map_err(|_| "Project bridge I/O lock was poisoned.".to_owned())?;
-        ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
-        io.stdin
-            .write_all(request_json.as_bytes())
-            .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
-        io.stdin
-            .write_all(b"\n")
-            .and_then(|_| io.stdin.flush())
-            .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+        read_only_timeout: Option<Duration>,
+    ) -> Result<String, ProjectBridgeRequestFailure> {
+        let request_token = self.allocate_request_token();
+        let watchdog = read_only_timeout.map(|timeout| {
+            ProjectBridgeReadOnlyWatchdog::start(
+                bridge_state.clone(),
+                request_generation,
+                self.clone(),
+                request_token,
+                timeout,
+            )
+        });
+        let mut io = match lock_project_bridge_request_io(
+            &self.io,
+            watchdog
+                .as_ref()
+                .map(|watchdog| watchdog.request_state.as_ref()),
+        ) {
+            Ok(io) => io,
+            Err(ProjectBridgeIoLockFailure::TimedOut) => {
+                let _ = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
+                return Err(ProjectBridgeRequestFailure::TimedOut(
+                    create_project_bridge_timeout_error(
+                        read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
+                    ),
+                ));
+            }
+            Err(ProjectBridgeIoLockFailure::Poisoned) => {
+                let timed_out = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
+                return if timed_out {
+                    Err(ProjectBridgeRequestFailure::TimedOut(
+                        create_project_bridge_timeout_error(
+                            read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
+                        ),
+                    ))
+                } else {
+                    Err(ProjectBridgeRequestFailure::Retryable(
+                        "Project bridge I/O lock was poisoned.".to_owned(),
+                    ))
+                };
+            }
+        };
+        let _active_request =
+            ProjectBridgeActiveRequest::begin(&self.active_request_token, request_token);
 
-        let mut response = String::new();
-        let bytes_read = io
-            .stdout
-            .read_line(&mut response)
-            .map_err(|error| format!("Could not read the project bridge response: {error}"))?;
-        if bytes_read == 0 {
-            return Err("Project bridge runner returned an empty response.".to_owned());
+        if watchdog
+            .as_ref()
+            .is_some_and(ProjectBridgeReadOnlyWatchdog::has_timed_out)
+        {
+            let _ = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
+            return Err(ProjectBridgeRequestFailure::TimedOut(
+                create_project_bridge_timeout_error(
+                    read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
+                ),
+            ));
         }
 
-        while response.ends_with(['\r', '\n']) {
-            response.pop();
+        let request_result = (|| -> Result<String, String> {
+            ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
+            io.stdin
+                .write_all(request_json.as_bytes())
+                .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+            io.stdin
+                .write_all(b"\n")
+                .and_then(|_| io.stdin.flush())
+                .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+
+            let mut response = String::new();
+            let bytes_read = io
+                .stdout
+                .read_line(&mut response)
+                .map_err(|error| format!("Could not read the project bridge response: {error}"))?;
+            if bytes_read == 0 {
+                return Err("Project bridge runner returned an empty response.".to_owned());
+            }
+
+            while response.ends_with(['\r', '\n']) {
+                response.pop();
+            }
+
+            ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
+            Ok(response)
+        })();
+        let timed_out = watchdog.is_some_and(ProjectBridgeReadOnlyWatchdog::finish);
+        if timed_out {
+            return Err(ProjectBridgeRequestFailure::TimedOut(
+                create_project_bridge_timeout_error(
+                    read_only_timeout.unwrap_or(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT),
+                ),
+            ));
         }
 
-        ensure_project_bridge_request_is_current(bridge_state, request_generation)?;
-        Ok(response)
+        request_result.map_err(ProjectBridgeRequestFailure::Retryable)
+    }
+
+    fn allocate_request_token(&self) -> usize {
+        loop {
+            let request_token = self.next_request_token.fetch_add(1, Ordering::Relaxed);
+            if request_token != PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN {
+                return request_token;
+            }
+        }
     }
 
     fn terminate(&self) -> Result<(), String> {
@@ -298,6 +412,181 @@ impl ProjectBridgeProcess {
         terminate_project_bridge_child(&mut child);
         Ok(())
     }
+}
+
+impl<'a> ProjectBridgeActiveRequest<'a> {
+    fn begin(active_request_token: &'a AtomicUsize, request_token: usize) -> Self {
+        debug_assert_ne!(request_token, PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN);
+        active_request_token.store(request_token, Ordering::Release);
+        Self {
+            active_request_token,
+            request_token,
+        }
+    }
+}
+
+impl Drop for ProjectBridgeActiveRequest<'_> {
+    fn drop(&mut self) {
+        let _ = self.active_request_token.compare_exchange(
+            self.request_token,
+            PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+}
+
+impl ProjectBridgeReadOnlyWatchdog {
+    fn start(
+        bridge_state: ProjectBridgeState,
+        request_generation: usize,
+        process: Arc<ProjectBridgeProcess>,
+        request_token: usize,
+        timeout: Duration,
+    ) -> Self {
+        let request_state = Arc::new(AtomicUsize::new(PROJECT_BRIDGE_REQUEST_RUNNING));
+        let watchdog_request_state = request_state.clone();
+        let (cancellation_sender, cancellation_receiver) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            if cancellation_receiver.recv_timeout(timeout) != Err(mpsc::RecvTimeoutError::Timeout) {
+                return;
+            }
+
+            if watchdog_request_state
+                .compare_exchange(
+                    PROJECT_BRIDGE_REQUEST_RUNNING,
+                    PROJECT_BRIDGE_REQUEST_TIMED_OUT,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+                && active_project_bridge_request_matches(
+                    &process.active_request_token,
+                    request_token,
+                )
+            {
+                let _ = timeout_project_bridge_process(&bridge_state, request_generation, &process);
+            }
+        });
+
+        Self {
+            cancellation_sender,
+            request_state,
+            thread: Some(thread),
+        }
+    }
+
+    fn has_timed_out(&self) -> bool {
+        self.request_state.load(Ordering::Acquire) == PROJECT_BRIDGE_REQUEST_TIMED_OUT
+    }
+
+    fn finish(mut self) -> bool {
+        let _ = self.request_state.compare_exchange(
+            PROJECT_BRIDGE_REQUEST_RUNNING,
+            PROJECT_BRIDGE_REQUEST_COMPLETED,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        let _ = self.cancellation_sender.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+
+        self.request_state.load(Ordering::Acquire) == PROJECT_BRIDGE_REQUEST_TIMED_OUT
+    }
+}
+
+fn active_project_bridge_request_matches(
+    active_request_token: &AtomicUsize,
+    request_token: usize,
+) -> bool {
+    request_token != PROJECT_BRIDGE_NO_ACTIVE_REQUEST_TOKEN
+        && active_request_token.load(Ordering::Acquire) == request_token
+}
+
+fn lock_project_bridge_request_io<'a, T>(
+    io: &'a Mutex<T>,
+    timeout_state: Option<&AtomicUsize>,
+) -> Result<MutexGuard<'a, T>, ProjectBridgeIoLockFailure> {
+    let Some(timeout_state) = timeout_state else {
+        return io.lock().map_err(|_| ProjectBridgeIoLockFailure::Poisoned);
+    };
+
+    loop {
+        match io.try_lock() {
+            Ok(io) => return Ok(io),
+            Err(TryLockError::Poisoned(_)) => return Err(ProjectBridgeIoLockFailure::Poisoned),
+            Err(TryLockError::WouldBlock)
+                if timeout_state.load(Ordering::Acquire) == PROJECT_BRIDGE_REQUEST_TIMED_OUT =>
+            {
+                return Err(ProjectBridgeIoLockFailure::TimedOut)
+            }
+            Err(TryLockError::WouldBlock) => {
+                std::thread::sleep(PROJECT_BRIDGE_QUEUE_WAIT_POLL_INTERVAL)
+            }
+        }
+    }
+}
+
+fn project_bridge_read_only_timeout(request_json: &str) -> Option<Duration> {
+    let request: serde_json::Value = serde_json::from_str(request_json).ok()?;
+    let command = request.get("command")?.as_str()?;
+
+    if matches!(
+        command,
+        "project.open" | "project.validate" | "project.fileGraph.refresh" | "workflow.list"
+    ) {
+        return Some(PROJECT_BRIDGE_PROJECT_READ_TIMEOUT);
+    }
+
+    if matches!(
+        command,
+        "placement.catalog.open"
+            | "placement.catalog.query"
+            | "swshCache.status"
+            | "swshCache.warmup.step"
+    ) {
+        return Some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT);
+    }
+
+    command
+        .ends_with(".load")
+        .then_some(PROJECT_BRIDGE_WORKFLOW_LOAD_TIMEOUT)
+}
+
+fn timeout_project_bridge_process(
+    bridge_state: &ProjectBridgeState,
+    request_generation: usize,
+    timed_out_process: &Arc<ProjectBridgeProcess>,
+) -> Result<(), String> {
+    let removed = {
+        let mut current = bridge_state
+            .process
+            .lock()
+            .map_err(|_| "Project bridge process lock was poisoned.".to_owned())?;
+        if bridge_state.generation.load(Ordering::Acquire) == request_generation
+            && current
+                .as_ref()
+                .is_some_and(|process| Arc::ptr_eq(process, timed_out_process))
+        {
+            bridge_state.generation.fetch_add(1, Ordering::AcqRel);
+            current.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some(process) = removed {
+        process.terminate()?;
+    }
+    Ok(())
+}
+
+fn create_project_bridge_timeout_error(timeout: Duration) -> String {
+    format!(
+        "The read-only project request did not finish within {} seconds. KM Editor stopped waiting so the interface can recover. Check that the selected project folders are available, then retry.",
+        timeout.as_secs()
+    )
 }
 
 fn ensure_project_bridge_request_is_current(

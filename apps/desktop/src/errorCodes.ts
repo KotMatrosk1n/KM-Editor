@@ -33,6 +33,10 @@ export const swshDynamaxAdventuresErrorCodes = {
   startSeedInvalid: 'KM-SWSH-DYNAMAX-ADVENTURES-START-SEED-INVALID'
 } as const satisfies Record<string, KmErrorCode>;
 
+export const swshPlacementErrorCodes = {
+  catalogStale: 'KM-SWSH-PLACEMENT-CATALOG-STALE'
+} as const satisfies Record<string, KmErrorCode>;
+
 export const diagnosticErrorCodes = {
   swshDynamaxAdventuresHiddenRowChanged:
     'KM-SWSH-DYNAMAX-ADVENTURES-HIDDEN-ROW-CHANGED',

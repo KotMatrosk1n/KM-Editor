@@ -5,6 +5,7 @@ using KM.Api.Editing;
 using KM.Api.GameDump;
 using KM.Api.Projects;
 using KM.Api.SvCache;
+using KM.Api.SwShCache;
 using KM.Api.ZaCache;
 using KM.Api.Workflows;
 using System.Text.Json;
@@ -36,6 +37,7 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<ProjectPathRoleDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ProjectPathStatusDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<SvCacheModeDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<SwShCacheModeDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ZaCacheModeDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<WorkflowAvailabilityDto>(JsonNamingPolicy.CamelCase));
 

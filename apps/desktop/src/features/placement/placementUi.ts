@@ -207,6 +207,10 @@ export function mergePlacementObjectUpdate(
 
 export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
   const fields = object.fields ?? [];
+  if (fields.length === 0 && object.previewText?.trim()) {
+    return object.previewText;
+  }
+
   const species =
     fields.find((field) => field.field.endsWith('.speciesId')) ??
     fields.find((field) => field.field.endsWith('.Species'));
@@ -237,6 +241,8 @@ export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
     fields.find((field) => field.label === 'Model' && hasUsefulPlacementDisplay(field)) ??
     fields.find((field) => field.label === 'Model Hash' && hasUsefulPlacementDisplay(field));
   if (model) return getPlacementDisplayValue(model);
+
+  if (object.previewText?.trim()) return object.previewText;
 
   if (object.scriptId) return object.scriptId;
 

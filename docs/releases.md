@@ -4,9 +4,11 @@ KM Editor publishes Windows desktop builds through GitHub Releases.
 
 ## Release Workflow
 
-The `Desktop Release` workflow verifies that the exact pull request merge passed the required product builds, compiles the Tauri desktop app on Windows, packages it with the custom KM Editor setup, and creates a draft GitHub Release.
+The `Desktop Release` workflow requires its source SHA to be a two-parent merge whose tree exactly matches its second parent, verifies successful `Build / Desktop` and `Build / Backend` checks on that pull-request head, compiles the Tauri desktop app on Windows, packages it with the custom KM Editor setup, and uploads the release assets to a draft GitHub Release.
 
-The release assets are:
+KM Editor 2.3.6 is the final release using the legacy NSIS and MSI asset set. The custom setup described below first ships in the next versioned release produced from current source.
+
+For that next release and later releases, the assets are:
 
 - `KM.Editor.Setup_<version>_x64.exe`, the custom install, update, and uninstall package
 - The Tauri updater signature for that setup executable
@@ -32,6 +34,8 @@ Tauri updater artifacts must be signed. The release workflow expects these GitHu
 
 The private signing key must never be committed. If the private key or password is lost, installed updater-enabled builds cannot receive future native updates signed by a different key.
 
+The workflow also requires repository variable `WIX_V7_EULA_ACCEPTED=true`, recorded only after the WiX v7 OSMF EULA has been reviewed and accepted. KM Editor's outer setup is not currently required to carry an Authenticode signature; Tauri/Minisign updater signing remains mandatory, and the included WebView2 bootstrapper must retain its valid Microsoft Authenticode signature.
+
 ## Manual Release
 
 Use the GitHub Actions UI when a release should be created from the final pull request merge on `master`:
@@ -41,24 +45,23 @@ Use the GitHub Actions UI when a release should be created from the final pull r
 3. Select `master` as the workflow branch.
 4. Enter a tag such as `v0.1.0`.
 5. Leave `prerelease` unchecked for normal releases.
-6. Review the generated draft release notes and assets.
-7. Publish the draft release from GitHub.
-8. Replace the generated notes with the final changelog and comparison link.
+6. Review the generated draft assets and replace the generated notes with the final changelog and comparison link.
+7. Publish the completed draft release from GitHub.
 
-The workflow creates the tag at the commit that ran the workflow if the tag does not already exist.
+For a manual run, `gh release create` creates the requested tag at the workflow SHA if it does not already exist. A tag-push run uses the tag that triggered it.
 
 The tag must match the desktop app version and point to a pull request merge whose tree matches its build-checked head. For example, `v0.1.0` requires the app version to be `0.1.0`.
 
 ## Tag Release
 
-Pushing a version tag also starts the release workflow:
+Pushing an exact numeric `vX.Y.Z` tag also starts the release workflow. Other `v*` tags may trigger the job but are rejected by the version gate before packaging:
 
 ```powershell
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Create the tag at the final build-checked pull request merge on `master`. Direct release commits, mismatched merge trees, and tags on source without successful product builds are rejected before packaging.
+Create the tag at the final build-checked pull-request merge on `master`. The workflow rejects non-two-parent source commits, trees that differ from the second parent, and second parents without the required successful product checks; selecting and verifying `master` remains a maintainer responsibility.
 
 ## Version Checklist
 

@@ -37,6 +37,7 @@ using KM.Api.SpreadsheetImport;
 using KM.Api.StartingItems;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
+using KM.Api.SwShCache;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
@@ -201,7 +202,8 @@ public sealed class ProjectBridgeDispatcher
         SwShTradePokemonEditSessionService? tradePokemonEditSessionService = null,
         SwShWorkflowService? swShWorkflowService = null,
         SvWorkflowService? svWorkflowService = null,
-        ZaWorkflowService? zaWorkflowService = null)
+        ZaWorkflowService? zaWorkflowService = null,
+        SwShCacheManager? swShCacheManager = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -238,9 +240,13 @@ public sealed class ProjectBridgeDispatcher
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
         this.tradePokemonEditSessionService = tradePokemonEditSessionService ?? new SwShTradePokemonEditSessionService(this.projectWorkspaceService);
+        var resolvedSwShCacheManager = swShWorkflowService?.SharedCacheManager
+            ?? swShCacheManager
+            ?? new SwShCacheManager();
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(
             this.projectWorkspaceService,
-            modMergerWorkflowService: this.modMergerWorkflowService);
+            modMergerWorkflowService: this.modMergerWorkflowService,
+            cacheManager: resolvedSwShCacheManager);
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(
             this.projectWorkspaceService,
             this.swShWorkflowService.SharedPlacementWorkflowService);
@@ -295,7 +301,9 @@ public sealed class ProjectBridgeDispatcher
                         KmCommandNames.UpdateSvCacheSettings or
                         KmCommandNames.ClearSvCache or
                         KmCommandNames.UpdateZaCacheSettings or
-                        KmCommandNames.ClearZaCache);
+                        KmCommandNames.ClearZaCache or
+                        KmCommandNames.UpdateSwShCacheSettings or
+                        KmCommandNames.ClearSwShCache);
             }
 
             var response = command switch
@@ -365,6 +373,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRaidBonusRewardField => DispatchUpdateRaidBonusRewardField(requestJson),
                 KmCommandNames.UpdateRaidBonusRewardFields => DispatchUpdateRaidBonusRewardFields(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
+                KmCommandNames.OpenSwShPlacementCatalog => DispatchOpenSwShPlacementCatalog(requestJson),
+                KmCommandNames.QuerySwShPlacementCatalog => DispatchQuerySwShPlacementCatalog(requestJson),
+                KmCommandNames.LoadSwShPlacementObject => DispatchLoadSwShPlacementObject(requestJson),
                 KmCommandNames.UpdatePlacementObjectField => DispatchUpdatePlacementObjectField(requestJson),
                 KmCommandNames.UpdatePlacementObjectFields => DispatchUpdatePlacementObjectFields(requestJson),
                 KmCommandNames.LoadBehaviorWorkflow => DispatchLoadBehaviorWorkflow(requestJson),
@@ -428,6 +439,10 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateZaCacheSettings => DispatchUpdateZaCacheSettings(requestJson),
                 KmCommandNames.ClearZaCache => DispatchClearZaCache(requestJson),
                 KmCommandNames.WarmupZaCacheStep => DispatchWarmupZaCacheStep(requestJson),
+                KmCommandNames.GetSwShCacheStatus => DispatchGetSwShCacheStatus(requestJson),
+                KmCommandNames.UpdateSwShCacheSettings => DispatchUpdateSwShCacheSettings(requestJson),
+                KmCommandNames.ClearSwShCache => DispatchClearSwShCache(requestJson),
+                KmCommandNames.WarmupSwShCacheStep => DispatchWarmupSwShCacheStep(requestJson),
                 KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
                 KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
                 KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
@@ -459,10 +474,14 @@ public sealed class ProjectBridgeDispatcher
         }
         catch (BridgeRequestException exception)
         {
+            var code = exception.Code ?? BridgeErrorCodes.InvalidJson;
+            var message = exception.Code is null
+                ? $"Bridge request JSON is invalid: {exception.Message}"
+                : exception.Message;
             return (
                 SerializeFailure(
-                    BridgeErrorCodes.InvalidJson,
-                    $"Bridge request JSON is invalid: {exception.Message}",
+                    code,
+                    message,
                     requestId),
                 RequiresDispatcherReset: false);
         }
@@ -1878,6 +1897,98 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchOpenSwShPlacementCatalog(string requestJson)
+    {
+        var request = DeserializeRequest<OpenSwShPlacementCatalogRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        EnsureSwordShieldPlacementCatalogPaths(paths);
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var catalog = swShWorkflowService.OpenPlacementCatalog(project);
+            return SerializeSuccess(SwShBridgeMapper.ToCatalogDto(catalog), request.RequestId);
+        }
+        catch (SwShPlacementCatalogException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception, exception.Code);
+        }
+    }
+
+    private string DispatchQuerySwShPlacementCatalog(string requestJson)
+    {
+        var request = DeserializeRequest<QuerySwShPlacementCatalogRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        EnsureSwordShieldPlacementCatalogPaths(paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var result = swShWorkflowService.SharedPlacementWorkflowService.QueryCatalog(
+                project,
+                request.Payload.Revision,
+                request.Payload.CategoryId,
+                request.Payload.SearchText,
+                request.Payload.Offset,
+                request.Payload.Limit,
+                session);
+            return SerializeSuccess(SwShBridgeMapper.ToCatalogQueryDto(result), request.RequestId);
+        }
+        catch (SwShPlacementCatalogException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception, exception.Code);
+        }
+    }
+
+    private string DispatchLoadSwShPlacementObject(string requestJson)
+    {
+        var request = DeserializeRequest<LoadSwShPlacementObjectRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        EnsureSwordShieldPlacementCatalogPaths(paths);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+
+        try
+        {
+            var project = projectWorkspaceService.Open(paths);
+            var result = swShWorkflowService.SharedPlacementWorkflowService.LoadCatalogObject(
+                project,
+                request.Payload.Revision,
+                request.Payload.ObjectId,
+                session);
+            return SerializeSuccess(SwShBridgeMapper.ToPlacementObjectDetailDto(result), request.RequestId);
+        }
+        catch (SwShPlacementCatalogException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception, exception.Code);
+        }
+    }
+
+    private static void EnsureSwordShieldPlacementCatalogPaths(ProjectPaths paths)
+    {
+        if (paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield))
+        {
+            throw new BridgeRequestException(
+                "Sword/Shield Placement catalog commands require a Sword or Shield project.");
+        }
+    }
+
+    private static T DispatchSwShPlacementOperation<T>(Func<T> operation)
+    {
+        try
+        {
+            return operation();
+        }
+        catch (SwShPlacementCatalogException exception)
+        {
+            throw new BridgeRequestException(exception.Message, exception, exception.Code);
+        }
+    }
+
     private string DispatchUpdatePlacementObjectField(string requestJson)
     {
         var request = DeserializeRequest<UpdatePlacementObjectFieldRequest>(requestJson);
@@ -1911,12 +2022,13 @@ public sealed class ProjectBridgeDispatcher
             return SerializeSuccess(svResponse, request.RequestId);
         }
 
-        var result = placementEditSessionService.UpdateObjectField(
-            paths,
-            session,
-            request.Payload.ObjectId,
-            request.Payload.Field,
-            request.Payload.Value);
+        var result = DispatchSwShPlacementOperation(() =>
+            placementEditSessionService.UpdateObjectField(
+                paths,
+                session,
+                request.Payload.ObjectId,
+                request.Payload.Field,
+                request.Payload.Value));
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1955,7 +2067,8 @@ public sealed class ProjectBridgeDispatcher
             .Select(update => new SwShPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
             .ToArray();
         var response = SwShBridgeMapper.ToPlacementObjectFieldsDto(
-            placementEditSessionService.UpdateObjectFields(paths, session, swShUpdates));
+            DispatchSwShPlacementOperation(() =>
+                placementEditSessionService.UpdateObjectFields(paths, session, swShUpdates)));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2857,6 +2970,52 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchGetSwShCacheStatus(string requestJson)
+    {
+        var request = DeserializeRequest<GetSwShCacheStatusRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = SwShCacheBridgeMapper.ToDto(swShWorkflowService.GetCacheStatus(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateSwShCacheSettings(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateSwShCacheSettingsRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = SwShCacheBridgeMapper.ToDto(swShWorkflowService.UpdateCacheSettings(
+            SwShCacheBridgeMapper.ToCore(request.Payload.Mode),
+            request.Payload.MaxCacheSizeBytes,
+            paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchClearSwShCache(string requestJson)
+    {
+        var request = DeserializeRequest<ClearSwShCacheRequest>(requestJson);
+        var paths = request.Payload.ActivePaths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.ActivePaths);
+        var response = SwShCacheBridgeMapper.ToDto(swShWorkflowService.ClearCache(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchWarmupSwShCacheStep(string requestJson)
+    {
+        var request = DeserializeRequest<WarmupSwShCacheStepRequest>(requestJson);
+        var response = SwShCacheBridgeMapper.ToDto(swShWorkflowService.WarmupCacheStep(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.StepIndex));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<LoadFpsPatchRequest>(requestJson);
@@ -3255,7 +3414,8 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
-            EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+            EditSessionDomain.Placement => DispatchSwShPlacementOperation(() =>
+                placementEditSessionService.Validate(paths, session)),
             EditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
             EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
@@ -3297,7 +3457,8 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Placement => DispatchSwShPlacementOperation(() =>
+                placementEditSessionService.CreateChangePlan(paths, session)),
             EditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
@@ -3340,7 +3501,8 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
-            EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Placement => DispatchSwShPlacementOperation(() =>
+                placementEditSessionService.ApplyChangePlan(paths, session, reviewedPlan)),
             EditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
@@ -3870,7 +4032,8 @@ public sealed class ProjectBridgeDispatcher
 
         var request = DeserializeRequest<JsonElement>(requestJson);
         if (request?.Payload.ValueKind is not JsonValueKind.Object
-            || !request.Payload.TryGetProperty("paths", out var paths)
+            || (!request.Payload.TryGetProperty("paths", out var paths)
+                && !request.Payload.TryGetProperty("activePaths", out paths))
             || paths.ValueKind is not JsonValueKind.Object
             || !paths.TryGetProperty("selectedGame", out var selectedGameJson)
             || selectedGameJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -3929,7 +4092,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateSvCacheSettings or
             KmCommandNames.ClearSvCache or
             KmCommandNames.UpdateZaCacheSettings or
-            KmCommandNames.ClearZaCache;
+            KmCommandNames.ClearZaCache or
+            KmCommandNames.UpdateSwShCacheSettings or
+            KmCommandNames.ClearSwShCache;
     }
 
     private static bool IsWorkflowCacheMutation(string? command)
@@ -3946,6 +4111,13 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsSwordShieldOnlyCommand(string command)
     {
         return command is
+            KmCommandNames.OpenSwShPlacementCatalog or
+            KmCommandNames.QuerySwShPlacementCatalog or
+            KmCommandNames.LoadSwShPlacementObject or
+            KmCommandNames.GetSwShCacheStatus or
+            KmCommandNames.UpdateSwShCacheSettings or
+            KmCommandNames.ClearSwShCache or
+            KmCommandNames.WarmupSwShCacheStep or
             KmCommandNames.UpdateStaticEncounterFields or
             KmCommandNames.LoadRentalPokemonWorkflow or
             KmCommandNames.UpdateRentalPokemonField or
@@ -4392,10 +4564,16 @@ public sealed class ProjectBridgeDispatcher
 
     private sealed class BridgeRequestException : Exception
     {
-        public BridgeRequestException(string message, Exception? innerException = null)
+        public BridgeRequestException(
+            string message,
+            Exception? innerException = null,
+            string? code = null)
             : base(message, innerException)
         {
+            Code = code;
         }
+
+        public string? Code { get; }
     }
 
     private sealed record BridgeCommandEnvelope(string? Command, string? RequestId);

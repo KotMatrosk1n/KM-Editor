@@ -292,6 +292,47 @@ public static class SwShBridgeMapper
         return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
     }
 
+    public static OpenSwShPlacementCatalogResponse ToCatalogDto(SwShPlacementCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+
+        return new OpenSwShPlacementCatalogResponse(
+            new SwShPlacementCatalogDto(
+                catalog.Revision,
+                ToDto(catalog.Summary),
+                catalog.EditableFields.Select(ToDto).ToArray(),
+                new PlacementWorkflowStatsDto(
+                    catalog.Stats.TotalObjectCount,
+                    catalog.Stats.TotalAreaCount,
+                    catalog.Stats.SourceFileCount),
+                catalog.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+                catalog.Categories.Select(ToDto).ToArray()));
+    }
+
+    public static QuerySwShPlacementCatalogResponse ToCatalogQueryDto(
+        SwShPlacementCatalogQueryResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new QuerySwShPlacementCatalogResponse(
+            result.Revision,
+            result.Objects.Select(ToDto).ToArray(),
+            result.Offset,
+            result.Limit,
+            result.TotalCount);
+    }
+
+    public static LoadSwShPlacementObjectResponse ToPlacementObjectDetailDto(
+        SwShPlacementObjectDetailResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new LoadSwShPlacementObjectResponse(
+            result.Revision,
+            ToDto(result.Object),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadBehaviorWorkflowResponse ToDto(SwShBehaviorWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -2675,7 +2716,8 @@ public static class SwShBridgeMapper
             ToDto(placedObject.Provenance),
             placedObject.CategoryId,
             placedObject.CategoryLabel,
-            Fields: placedObject.Fields?.Select(ToDto).ToArray() ?? Array.Empty<PlacementFieldValueDto>());
+            Fields: placedObject.Fields?.Select(ToDto).ToArray() ?? Array.Empty<PlacementFieldValueDto>(),
+            PreviewText: placedObject.PreviewText);
     }
 
     private static PlacementFieldValueDto ToDto(SwShPlacementFieldValue field)

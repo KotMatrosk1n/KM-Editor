@@ -82,6 +82,9 @@ public sealed class SwShPlacementEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
+        placementWorkflowService.EnsureCatalogObjectsForEditing(
+            project,
+            updates.Where(update => update is not null).Select(update => update.ObjectId));
         var loadedWorkflow = placementWorkflowService.LoadForEditing(project);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -225,6 +228,9 @@ public sealed class SwShPlacementEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
+        placementWorkflowService.EnsureCatalogObjectsForEditing(
+            project,
+            Array.Empty<string?>());
         var workflow = placementWorkflowService.LoadForEditing(project);
         var projectedWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
@@ -382,6 +388,10 @@ public sealed class SwShPlacementEditSessionService
         try
         {
             var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
+            placementWorkflowService.EnsureCatalogObjectsForEditing(
+                project,
+                Array.Empty<string?>(),
+                verifyContent: true);
             var workflow = placementWorkflowService.LoadForEditing(project);
             var needsItemHashLookup = session.PendingEdits.Any(edit =>
                 string.Equals(edit.Field, SwShPlacementWorkflowService.ItemIdField, StringComparison.Ordinal)
@@ -475,7 +485,7 @@ public sealed class SwShPlacementEditSessionService
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
     }
 
-    private static SwShPlacementWorkflow OverlayPendingEdits(
+    internal static SwShPlacementWorkflow OverlayPendingEdits(
         SwShPlacementWorkflow workflow,
         IReadOnlyList<PendingEdit> pendingEdits,
         IReadOnlyDictionary<int, ulong>? itemHashes = null)
@@ -486,10 +496,16 @@ public sealed class SwShPlacementEditSessionService
         }
 
         var objects = workflow.Objects.ToArray();
+        var objectIndexes = objects
+            .Select((placedObject, index) => (placedObject.ObjectId, Index: index))
+            .ToDictionary(entry => entry.ObjectId, entry => entry.Index, StringComparer.Ordinal);
+        Dictionary<HiddenPlacementParentIdentity, IReadOnlyList<int>>? hiddenParentIndexes = null;
         foreach (var edit in pendingEdits.Where(edit => edit.Domain == PlacementEditDomain))
         {
-            var index = Array.FindIndex(objects, placedObject => placedObject.ObjectId == edit.RecordId);
-            if (index < 0 || edit.Field is null || edit.NewValue is null)
+            if (edit.RecordId is null
+                || !objectIndexes.TryGetValue(edit.RecordId, out var index)
+                || edit.Field is null
+                || edit.NewValue is null)
             {
                 continue;
             }
@@ -505,7 +521,23 @@ public sealed class SwShPlacementEditSessionService
                 && itemHashes?.TryGetValue(itemId, out var itemHash) == true
                     ? FormatHash(itemHash)
                     : null;
-            foreach (var affectedIndex in GetAffectedObjectIndexes(objects, placedObject, edit.Field))
+            IReadOnlyList<int> affectedIndexes;
+            if (SharesHiddenPlacementParent(placedObject, edit.Field))
+            {
+                hiddenParentIndexes ??= CreateHiddenPlacementParentIndexes(objects);
+                affectedIndexes = hiddenParentIndexes.GetValueOrDefault(
+                    new HiddenPlacementParentIdentity(
+                        placedObject.ArchiveMember,
+                        placedObject.ZoneIndex,
+                        placedObject.ObjectIndex))
+                    ?? [index];
+            }
+            else
+            {
+                affectedIndexes = [index];
+            }
+
+            foreach (var affectedIndex in affectedIndexes)
             {
                 objects[affectedIndex] = OverlayPendingEdit(
                     objects[affectedIndex],
@@ -517,6 +549,29 @@ public sealed class SwShPlacementEditSessionService
         }
 
         return workflow with { Objects = objects };
+    }
+
+    private static bool SharesHiddenPlacementParent(
+        SwShPlacedObjectRecord placedObject,
+        string field)
+    {
+        return placedObject.ObjectType == "HiddenItem"
+            && (IsTransformField(field) || IsRawPlacementField(field));
+    }
+
+    private static Dictionary<HiddenPlacementParentIdentity, IReadOnlyList<int>>
+        CreateHiddenPlacementParentIndexes(IReadOnlyList<SwShPlacedObjectRecord> objects)
+    {
+        return objects
+            .Select((placedObject, index) => (PlacedObject: placedObject, Index: index))
+            .Where(entry => entry.PlacedObject.ObjectType == "HiddenItem")
+            .GroupBy(entry => new HiddenPlacementParentIdentity(
+                entry.PlacedObject.ArchiveMember,
+                entry.PlacedObject.ZoneIndex,
+                entry.PlacedObject.ObjectIndex))
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<int>)group.Select(entry => entry.Index).ToArray());
     }
 
     private static SwShPlacedObjectRecord OverlayPendingEdit(
@@ -558,10 +613,10 @@ public sealed class SwShPlacementEditSessionService
                 itemId);
         }
 
-        return updated with
+        return SwShPlacementWorkflowService.WithRefreshedPreviewText(updated with
         {
             Fields = updatedFields,
-        };
+        });
     }
 
     private static IReadOnlyList<SwShPlacementFieldValue>? OverlayDerivedItemHashField(
@@ -1850,4 +1905,9 @@ public sealed class SwShPlacementEditSessionService
     private sealed record PlacementStorageTarget(
         PlacementStorageIdentity Identity,
         PendingEdit Edit);
+
+    private sealed record HiddenPlacementParentIdentity(
+        string ArchiveMember,
+        int ZoneIndex,
+        int ObjectIndex);
 }

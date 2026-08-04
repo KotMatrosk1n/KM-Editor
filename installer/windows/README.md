@@ -3,19 +3,27 @@
 # KM Editor Windows Setup
 
 This directory contains KM Editor's custom Windows setup implementation. It is intentionally
-separate from the normal KM Editor solution so ordinary application compilation does not
-create installer artifacts.
+separate from the normal KM Editor solution and pull-request build workflow so ordinary
+application compilation does not create installer artifacts. Release packaging is wired
+separately through `.github/workflows/desktop-release.yml`, which invokes the setup driver
+for eligible versioned release runs.
+
+KM Editor 2.3.6 is the final release using the legacy NSIS and MSI asset set. The custom
+setup documented here first ships in the next versioned release produced from current
+source.
 
 ## Architecture
 
-The published setup executable is a small native updater-compatibility launcher containing
-an exact hash-pinned WiX Burn bundle. The launcher validates and starts that bundle; it never
-owns installation state. The self-contained WPF bootstrapper application owns presentation
-only. Burn and Windows Installer own detection, planning, caching, progress, cancellation,
-elevation, rollback, repair, update, and uninstall behavior.
+The setup executable produced by current source is a small native updater-compatibility
+launcher containing an exact hash-pinned WiX Burn bundle. The launcher validates and starts
+that bundle; it never owns installation state. The self-contained WPF bootstrapper
+application owns presentation only. Burn and Windows Installer own detection, planning,
+caching, progress, cancellation, elevation, rollback, repair, update, and uninstall
+behavior.
 
 ```text
-KM Editor Setup.exe     native compatibility launcher
+KM.Editor.Setup_<version>_x64.exe
+                        published native compatibility launcher
   -> WiX Burn           cached lifecycle, update, repair, and uninstall owner
        -> KM.Setup.UI   custom WPF bootstrapper application
        -> KM.Setup.Package
@@ -42,16 +50,19 @@ cross-version storage.
 - `KM.Setup.Launcher`: Statically linked x64 wrapper that preserves Tauri's legacy updater
   arguments, hash-verifies the embedded Burn bundle, and forwards its exact exit code.
 
-These projects are not added to `KM.Editor.slnx`. A normal backend or desktop compile must
-not create Windows installer artifacts.
+These projects are not added to `KM.Editor.slnx`. A normal backend or desktop compile, and
+the pull-request `Build` workflow, must not create Windows installer artifacts. This does
+not exclude setup from releases: the dedicated `Desktop Release` workflow builds the
+unbundled desktop application and then invokes the setup driver explicitly.
 
 WiX v7 is required for configurable bundle scope. Its OSMF EULA requires an explicit
 maintainer acceptance gesture, so these projects deliberately do not set `AcceptEula` on
-the user's behalf. That legal/release decision must be made before the first WiX build.
+the user's behalf. Local packaging requires `-AcceptWixEula`; GitHub release packaging
+requires the repository variable `WIX_V7_EULA_ACCEPTED=true`.
 
 ## Build inputs
 
-Production packaging requires explicit, already-built inputs:
+Production packaging requires exact release inputs:
 
 - the unbundled Tauri executable, named `km-editor-desktop.exe`;
 - the self-contained project bridge, staged as `km-tools-bridge.exe`;
@@ -63,12 +74,13 @@ Installer projects must fail when a required input is absent. They must never si
 an old executable, infer a release version from an output filename, or download an
 unverified executable during compilation.
 
-`scripts/Build-KmWindowsSetup.ps1` is the only packaging driver. It accepts exact app,
-sidecar, WebView2, version, and output paths; stages everything under a unique ignored
-working directory; builds the MSI, custom BA, Burn bundle, and native launcher in order;
-copies only the final outer EXE plus a build receipt to the requested output directory; and
-removes that exact GUID-scoped working directory. `-KeepIntermediates` retains it for
-diagnostics. The driver never launches or installs the result.
+`scripts/Build-KmWindowsSetup.ps1` is the only packaging driver. It accepts the Cargo target
+directory containing the exact release application, plus exact sidecar, WebView2, version,
+and output paths; stages everything under a unique ignored working directory; builds the
+MSI, custom BA, Burn bundle, and native launcher in order; copies only the final outer EXE
+plus a build receipt to the requested output directory; and removes that exact GUID-scoped
+working directory. `-KeepIntermediates` retains it for diagnostics. The driver never
+launches or installs the result.
 
 The driver requires an explicit `-AcceptWixEula` switch and passes WiX's non-persistent
 `AcceptEula=wix7` build property. Omitting the switch fails before restore or compilation.
@@ -79,6 +91,38 @@ The staging script patches exactly one Tauri bundle marker from `UNK` to `NSS` i
 staged copy of the application before it is signed. This intentionally keeps all future
 custom-installer builds on Tauri's established `windows-x86_64-nsis` updater-family key;
 the source build output is never modified.
+
+## GitHub release automation
+
+The pull-request `Build` workflow compiles and checks the product but does not package an
+installer. The `Desktop Release` workflow is the only GitHub Actions caller of the setup
+driver. It starts for a pushed `v*` tag or an explicit manual run, then rejects the run
+before packaging unless all of these conditions hold:
+
+- the release tag is exactly numeric `vX.Y.Z` and every desktop version field matches it;
+- the source is a two-parent pull-request merge whose tree matches its checked head;
+- `Build / Desktop` and `Build / Backend` passed for that head;
+- repository variable `WIX_V7_EULA_ACCEPTED` is `true`; and
+- Actions secret `TAURI_SIGNING_PRIVATE_KEY` is configured. The password secret is needed
+  only when that updater-signing key is password-protected.
+
+An eligible run builds the unbundled application, downloads and verifies the current
+Microsoft-signed WebView2 bootstrapper, invokes the setup driver, and Minisign-signs the
+final outer launcher for Tauri updater verification. It creates a **draft** GitHub Release
+containing exactly these four assets:
+
+```text
+KM.Editor.Setup_<version>_x64.exe
+KM.Editor.Setup_<version>_x64.exe.sig
+latest.json
+SHA256SUMS.txt
+```
+
+The local build receipt, inner Burn executable, and MSI are not published. A maintainer
+reviews and publishes the draft; pushing an ordinary commit or opening a pull request never
+creates a setup artifact or release. KM Editor's own setup is not currently required to be
+Authenticode-signed. The bundled WebView2 prerequisite must retain its valid Microsoft
+Authenticode signature, and the outer setup must have its Tauri/Minisign updater signature.
 
 ## Progress contract
 
@@ -111,7 +155,7 @@ quiet modes follow Burn's explicit restart policy and return standard Windows In
 codes `3010` (restart required) or `1641` (restart initiated).
 
 Burn interprets its own switches before a bootstrapper application starts, including
-switch-looking values that Tauri places after `/ARGS`. The published executable therefore
+switch-looking values that Tauri places after `/ARGS`. The custom setup therefore
 uses a small native compatibility launcher in front of the Burn bundle. That launcher
 treats the `/ARGS` tail as opaque application arguments and passes it to Burn only through
 a hidden encoded variable. The launcher is not an installation owner and never appears in
@@ -122,26 +166,30 @@ launcher also pins and verifies the exact embedded Burn payload with SHA-256 bef
 execution. An unsigned embedded payload is accepted, while any present signature must be
 structurally valid and trusted.
 
-The application-side update checker, endpoint, public key, and passive install mode do not
-need a functional rewrite. At release cutover, the generated `latest.json` must point all
-three Windows identities at the same final launcher bytes and Minisign signature:
+The existing application-side update checker, endpoint, public key, and passive install
+mode remain the integration point. The release workflow generates `latest.json` with all
+three Windows identities pointing at the same final launcher bytes and Minisign signature:
 
 ```text
-windows-x86_64-nsis -> KM Editor Setup.exe
-windows-x86_64-msi  -> KM Editor Setup.exe
-windows-x86_64      -> KM Editor Setup.exe
+windows-x86_64-nsis -> KM.Editor.Setup_<version>_x64.exe
+windows-x86_64-msi  -> KM.Editor.Setup_<version>_x64.exe
+windows-x86_64      -> KM.Editor.Setup_<version>_x64.exe
 ```
 
 Only the outer launcher is an updater artifact. The inner Burn EXE and MSI are never
 published as alternate user-facing installers. Installer packaging is deliberately not run
-on normal pull requests. The tag-only desktop release job builds the custom setup and
-Minisign-signs only the final outer bytes. All three Windows updater identities reference
-that same EXE and signature.
+by the pull-request `Build` workflow. Eligible pushed numeric version tags and eligible
+manual `Desktop Release` runs build the custom setup and Minisign-sign only the final outer
+bytes. Maintainers may also invoke the packaging driver explicitly for local release
+validation; ordinary application and solution builds never invoke it. All three Windows
+updater identities reference that same EXE and signature.
 
-The release job requires `WIX_V7_EULA_ACCEPTED=true` after the WiX v7 OSMF EULA has been
-reviewed and accepted. Legacy migration is part of every production setup and is not
-controlled by a repository variable. The integration accepts numeric `vX.Y.Z` release tags
-only; prerelease status remains a GitHub Release flag rather than an MSI version suffix.
+The release job requires repository variable `WIX_V7_EULA_ACCEPTED=true` after the WiX v7
+OSMF EULA has been reviewed and accepted, plus the `TAURI_SIGNING_PRIVATE_KEY` Actions
+secret and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when that key is password-protected. Legacy
+migration is part of every production setup and is not controlled by a repository variable.
+The integration accepts numeric `vX.Y.Z` release tags only; prerelease status remains a
+GitHub Release flag rather than an MSI version suffix.
 
 ## Legacy installation migration
 
@@ -173,3 +221,6 @@ Do not replace the published installer or updater manifest until clean install, 
 repair, uninstall, cancellation, rollback, legacy migration, passive relaunch, app-in-use,
 and display-scaling checks pass on supported Windows versions. Installer packaging and
 installation are explicit release-validation actions, not normal pull-request side effects.
+This lifecycle matrix is a manual release gate. GitHub Actions validates the source, product
+checks, versions, packaging inputs, and updater signature, but it does not automate every
+Windows installation scenario listed above.
