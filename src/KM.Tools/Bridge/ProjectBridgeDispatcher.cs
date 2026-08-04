@@ -4335,7 +4335,18 @@ public sealed class ProjectBridgeDispatcher
             status.MainSiteCount,
             status.PatchedRomFsFileCount,
             status.ManagedRomFsFileCount,
+            status.StaleOwnedRomFsFileCount,
             status.ConflictingRomFsFileCount,
+            status.StaleOwnedRomFsFiles,
+            status.ConflictingRomFsFiles,
+            status.RomFsCategories
+                .Select(category => new FpsPatchRomFsCategoryStatusDto(
+                    category.Category,
+                    category.ManagedFileCount,
+                    category.PatchedFileCount,
+                    category.StaleOwnedFileCount,
+                    category.ConflictingFileCount))
+                .ToArray(),
             status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 

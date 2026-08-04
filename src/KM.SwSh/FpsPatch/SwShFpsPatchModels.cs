@@ -6,6 +6,13 @@ using KM.Core.Projects;
 
 namespace KM.SwSh.FpsPatch;
 
+public sealed record SwShFpsPatchRomFsCategoryStatus(
+    string Category,
+    int ManagedFileCount,
+    int PatchedFileCount,
+    int StaleOwnedFileCount,
+    int ConflictingFileCount);
+
 public sealed record SwShFpsPatchStatus(
     string Status,
     string Message,
@@ -15,7 +22,11 @@ public sealed record SwShFpsPatchStatus(
     int MainSiteCount,
     int PatchedRomFsFileCount,
     int ManagedRomFsFileCount,
+    int StaleOwnedRomFsFileCount,
     int ConflictingRomFsFileCount,
+    IReadOnlyList<string> StaleOwnedRomFsFiles,
+    IReadOnlyList<string> ConflictingRomFsFiles,
+    IReadOnlyList<SwShFpsPatchRomFsCategoryStatus> RomFsCategories,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
 public sealed record SwShFpsPatchApplyResult(

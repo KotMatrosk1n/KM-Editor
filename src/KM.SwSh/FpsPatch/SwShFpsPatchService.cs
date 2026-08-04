@@ -32,11 +32,22 @@ public sealed class SwShFpsPatchService
     private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
     private const string ExcludedTitleDemoBseqRelativePath = "romfs/bin/demo/sequence/sd9010_title.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
+    private const int MaximumReportedRomFsPaths = 25;
 
     private static readonly EnumerationOptions RecursiveEnumeration = CreateEnumerationOptions(recursive: true);
     private static readonly EnumerationOptions TopDirectoryEnumeration = CreateEnumerationOptions(recursive: false);
 
     private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
+    private static readonly string[] RomFsCategoryOrder =
+    [
+        "battleSequences",
+        "battleCameras",
+        "battleInterface",
+        "battleModels",
+        "openingAndDemos",
+        "recoveryAnimation",
+        "other",
+    ];
     private static readonly string[] ExcludedBattleCameraDirectories =
     [
         "ballthrow",
@@ -191,7 +202,13 @@ public sealed class SwShFpsPatchService
         {
             var generated = ConvertManagedRomFsFile(normalized, File.ReadAllBytes(sourcePath));
             var output = File.ReadAllBytes(outputPath);
-            return output.SequenceEqual(generated);
+            if (output.SequenceEqual(generated))
+            {
+                return true;
+            }
+
+            var manifestHashes = ReadManifestOwnedFileHashes(paths);
+            return MatchesManifestOwnedOutput(normalized, output, manifestHashes);
         }
         catch (IOException)
         {
@@ -252,7 +269,7 @@ public sealed class SwShFpsPatchService
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            RecordManifest(paths, preparedMain is not null, preparedRomFsFiles, diagnostics);
+            RefreshManifestSnapshot(paths, diagnostics);
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 writtenFiles.Count == 0
@@ -286,7 +303,10 @@ public sealed class SwShFpsPatchService
         RestoreRomFsFiles(paths, diagnostics, writtenFiles);
         RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
         RemoveLegacyExcludedDemoSequenceOutputs(paths, diagnostics, writtenFiles);
-        DeleteManifest(paths, diagnostics);
+        if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            RefreshManifestSnapshot(paths, diagnostics);
+        }
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -375,6 +395,7 @@ public sealed class SwShFpsPatchService
             return preparedFiles;
         }
 
+        var manifestHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
         var moveEffectFiles = EnumerateManagedBseqFiles(paths.BaseRomFsPath, diagnostics);
         if (moveEffectFiles.Count != ExpectedManagedBseqFileCount)
         {
@@ -390,36 +411,36 @@ public sealed class SwShFpsPatchService
 
         foreach (var sourceFile in moveEffectFiles)
         {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
         }
 
         foreach (var sourceFile in EnumerateManagedBattleCameraFiles(paths.BaseRomFsPath, diagnostics))
         {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
         }
 
         foreach (var sourceFile in EnumerateManagedBattleUiArchives(paths.BaseRomFsPath, diagnostics))
         {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
         }
 
         foreach (var sourceFile in EnumerateManagedDemoBseqFiles(paths.BaseRomFsPath, diagnostics))
         {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics, manifestHashes);
         }
 
         foreach (var sourceFile in RequiredManagedBseqFiles)
         {
-            PrepareManagedRomFsFile(paths, sourceFile.RelativePath, preparedFiles, diagnostics);
+            PrepareManagedRomFsFile(paths, sourceFile.RelativePath, preparedFiles, diagnostics, manifestHashes);
         }
 
         foreach (var relativePath in RequiredManagedBattleModelAnimationFiles)
         {
-            PrepareManagedRomFsFile(paths, relativePath, preparedFiles, diagnostics);
+            PrepareManagedRomFsFile(paths, relativePath, preparedFiles, diagnostics, manifestHashes);
         }
 
-        PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics);
-        PrepareManagedRomFsFile(paths, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath, preparedFiles, diagnostics);
+        PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics, manifestHashes);
+        PrepareManagedRomFsFile(paths, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath, preparedFiles, diagnostics, manifestHashes);
 
         return preparedFiles;
     }
@@ -428,7 +449,8 @@ public sealed class SwShFpsPatchService
         ProjectPaths paths,
         string relativePath,
         ICollection<PreparedRomFsFile> preparedFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlyDictionary<string, string> manifestHashes)
     {
         var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath!, relativePath);
         if (sourcePath is null || !File.Exists(sourcePath))
@@ -445,14 +467,16 @@ public sealed class SwShFpsPatchService
             paths,
             new ManagedRomFsFile(sourcePath, NormalizeRelativePath(relativePath)),
             preparedFiles,
-            diagnostics);
+            diagnostics,
+            manifestHashes);
     }
 
     private static void PrepareManagedRomFsFile(
         ProjectPaths paths,
         ManagedRomFsFile sourceFile,
         ICollection<PreparedRomFsFile> preparedFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        IReadOnlyDictionary<string, string> manifestHashes)
     {
         try
         {
@@ -477,7 +501,8 @@ public sealed class SwShFpsPatchService
                     return;
                 }
 
-                if (!existing.SequenceEqual(sourceBytes))
+                if (!existing.SequenceEqual(sourceBytes)
+                    && !MatchesManifestOwnedOutput(sourceFile.RelativePath, existing, manifestHashes))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
@@ -488,7 +513,7 @@ public sealed class SwShFpsPatchService
                 }
             }
 
-            preparedFiles.Add(new PreparedRomFsFile(sourceFile.RelativePath, generated, ComputeSha256(generated)));
+            preparedFiles.Add(new PreparedRomFsFile(sourceFile.RelativePath, generated));
         }
         catch (IOException exception)
         {
@@ -598,6 +623,7 @@ public sealed class SwShFpsPatchService
             return;
         }
 
+        var manifestHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
         foreach (var sourceFile in EnumerateManagedRomFsFiles(paths.BaseRomFsPath, diagnostics))
         {
             var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
@@ -611,7 +637,8 @@ public sealed class SwShFpsPatchService
                 var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
                 var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
                 var outputBytes = File.ReadAllBytes(targetPath);
-                if (!outputBytes.SequenceEqual(generated))
+                if (!outputBytes.SequenceEqual(generated)
+                    && !MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Warning,
@@ -887,18 +914,58 @@ public sealed class SwShFpsPatchService
         }
 
         var sourceFiles = EnumerateManagedRomFsFiles(paths.BaseRomFsPath, diagnostics);
-        var patchedCount = 0;
-        var conflictingCount = 0;
+        var manifestHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
+        var inspectedFiles = new List<InspectedRomFsFile>(sourceFiles.Count);
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
-            return new RomFsStatus(sourceFiles.Count, patchedCount, conflictingCount);
+            inspectedFiles.AddRange(sourceFiles.Select(sourceFile => new InspectedRomFsFile(
+                sourceFile.RelativePath,
+                GetRomFsCategory(sourceFile.RelativePath),
+                ManagedRomFsFileState.NotInstalled)));
+            return CreateRomFsStatus(inspectedFiles);
+        }
+
+        var reportedConflictDiagnosticCount = 0;
+        var omittedConflictDiagnosticCount = 0;
+
+        void AddConflictDiagnostic(string message, string file, string expected)
+        {
+            if (reportedConflictDiagnosticCount < MaximumReportedRomFsPaths)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    message,
+                    file: file,
+                    expected: expected));
+                reportedConflictDiagnosticCount++;
+                return;
+            }
+
+            omittedConflictDiagnosticCount++;
         }
 
         foreach (var sourceFile in sourceFiles)
         {
             var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
-            if (targetPath is null || !File.Exists(targetPath))
+            if (targetPath is null)
             {
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    GetRomFsCategory(sourceFile.RelativePath),
+                    ManagedRomFsFileState.Conflict));
+                AddConflictDiagnostic(
+                    "60FPS Patch could not resolve this managed ROMFS path inside Output Root.",
+                    sourceFile.RelativePath,
+                    "Output-root-contained managed ROMFS path");
+                continue;
+            }
+
+            if (!File.Exists(targetPath))
+            {
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    GetRomFsCategory(sourceFile.RelativePath),
+                    ManagedRomFsFileState.NotInstalled));
                 continue;
             }
 
@@ -907,30 +974,144 @@ public sealed class SwShFpsPatchService
                 var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
                 var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
                 var outputBytes = File.ReadAllBytes(targetPath);
-                if (outputBytes.SequenceEqual(generated))
+                var state = outputBytes.SequenceEqual(generated)
+                    ? ManagedRomFsFileState.Patched
+                    : outputBytes.SequenceEqual(sourceBytes)
+                        ? ManagedRomFsFileState.NotInstalled
+                        : MatchesManifestOwnedOutput(sourceFile.RelativePath, outputBytes, manifestHashes)
+                            ? ManagedRomFsFileState.StaleOwned
+                            : ManagedRomFsFileState.Conflict;
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    GetRomFsCategory(sourceFile.RelativePath),
+                    state));
+                if (state == ManagedRomFsFileState.Conflict)
                 {
-                    patchedCount++;
+                    AddConflictDiagnostic(
+                        "60FPS Patch will not overwrite this ROMFS file because it differs from Base RomFS, current KM output, and recorded KM-owned output.",
+                        sourceFile.RelativePath,
+                        "Vanilla, current KM-generated, or manifest-recorded KM-owned ROMFS file");
                 }
-                else if (!outputBytes.SequenceEqual(sourceBytes))
-                {
-                    conflictingCount++;
-                }
             }
-            catch (IOException)
+            catch (IOException exception)
             {
-                conflictingCount++;
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    GetRomFsCategory(sourceFile.RelativePath),
+                    ManagedRomFsFileState.Conflict));
+                AddConflictDiagnostic(
+                    $"60FPS Patch could not inspect this managed ROMFS file: {exception.Message}",
+                    sourceFile.RelativePath,
+                    "Readable Base RomFS and Output Root files");
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException exception)
             {
-                conflictingCount++;
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    GetRomFsCategory(sourceFile.RelativePath),
+                    ManagedRomFsFileState.Conflict));
+                AddConflictDiagnostic(
+                    $"60FPS Patch could not inspect this managed ROMFS file: {exception.Message}",
+                    sourceFile.RelativePath,
+                    "Readable Base RomFS and Output Root files");
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException exception)
             {
-                conflictingCount++;
+                inspectedFiles.Add(new InspectedRomFsFile(
+                    sourceFile.RelativePath,
+                    GetRomFsCategory(sourceFile.RelativePath),
+                    ManagedRomFsFileState.Conflict));
+                AddConflictDiagnostic(
+                    exception.Message,
+                    sourceFile.RelativePath,
+                    "Valid managed Sword/Shield ROMFS file");
             }
         }
 
-        return new RomFsStatus(sourceFiles.Count, patchedCount, conflictingCount);
+        if (omittedConflictDiagnosticCount > 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"60FPS Patch omitted {omittedConflictDiagnosticCount:N0} additional managed ROMFS conflict diagnostic(s)."),
+                expected: "Resolve every reported managed ROMFS conflict before installing"));
+        }
+
+        return CreateRomFsStatus(inspectedFiles);
+    }
+
+    private static RomFsStatus CreateRomFsStatus(IReadOnlyList<InspectedRomFsFile> files)
+    {
+        var staleOwnedFiles = files
+            .Where(file => file.State == ManagedRomFsFileState.StaleOwned)
+            .Select(file => file.RelativePath)
+            .Take(MaximumReportedRomFsPaths)
+            .ToArray();
+        var conflictingFiles = files
+            .Where(file => file.State == ManagedRomFsFileState.Conflict)
+            .Select(file => file.RelativePath)
+            .Take(MaximumReportedRomFsPaths)
+            .ToArray();
+        var categories = RomFsCategoryOrder
+            .Select(category =>
+            {
+                var categoryFiles = files.Where(file => file.Category == category).ToArray();
+                return new SwShFpsPatchRomFsCategoryStatus(
+                    category,
+                    categoryFiles.Length,
+                    categoryFiles.Count(file => file.State == ManagedRomFsFileState.Patched),
+                    categoryFiles.Count(file => file.State == ManagedRomFsFileState.StaleOwned),
+                    categoryFiles.Count(file => file.State == ManagedRomFsFileState.Conflict));
+            })
+            .Where(category => category.ManagedFileCount > 0)
+            .ToArray();
+
+        return new RomFsStatus(
+            files.Count,
+            files.Count(file => file.State == ManagedRomFsFileState.Patched),
+            files.Count(file => file.State == ManagedRomFsFileState.StaleOwned),
+            files.Count(file => file.State == ManagedRomFsFileState.Conflict),
+            staleOwnedFiles,
+            conflictingFiles,
+            categories);
+    }
+
+    private static string GetRomFsCategory(string relativePath)
+    {
+        var normalized = NormalizeRelativePath(relativePath);
+        if (normalized.StartsWith(SequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "battleSequences";
+        }
+
+        if (normalized.StartsWith(BattleCameraRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "battleCameras";
+        }
+
+        if (normalized.StartsWith(BattleUiRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "battleInterface";
+        }
+
+        if (normalized.StartsWith(BattleModelAnimationRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "battleModels";
+        }
+
+        if (normalized.StartsWith(DemoSequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return "openingAndDemos";
+        }
+
+        if (string.Equals(normalized, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return "recoveryAnimation";
+        }
+
+        return "other";
     }
 
     private SwShFpsPatchStatus CreateStatus(
@@ -942,10 +1123,13 @@ public sealed class SwShFpsPatchService
         string status;
         string message;
 
+        var ownedRomFsFileCount = romFsStatus.PatchedFileCount + romFsStatus.StaleOwnedFileCount;
         if (hasErrors)
         {
             status = "blocked";
-            message = "60FPS Patch has diagnostics that need attention.";
+            message = romFsStatus.ConflictingFileCount > 0
+                ? "60FPS Patch found ROMFS output it does not own and will not overwrite."
+                : "60FPS Patch has diagnostics that need attention.";
         }
         else if (mainStatus.Kind == SwShFpsPatchMainKind.UnsupportedBuild)
         {
@@ -961,7 +1145,17 @@ public sealed class SwShFpsPatchService
             status = "installed";
             message = "60FPS Patch is installed.";
         }
-        else if (mainStatus.PatchedSiteCount == 0 && romFsStatus.PatchedFileCount == 0)
+        else if (mainStatus.PatchedSiteCount == mainStatus.SiteCount
+            && mainStatus.SiteCount > 0
+            && romFsStatus.ManagedFileCount > 0
+            && ownedRomFsFileCount == romFsStatus.ManagedFileCount
+            && romFsStatus.StaleOwnedFileCount > 0
+            && romFsStatus.ConflictingFileCount == 0)
+        {
+            status = "updateAvailable";
+            message = "60FPS Patch has earlier KM-owned ROMFS output that can be refreshed safely.";
+        }
+        else if (mainStatus.PatchedSiteCount == 0 && ownedRomFsFileCount == 0)
         {
             status = romFsStatus.ConflictingFileCount == 0 ? "notInstalled" : "blocked";
             message = romFsStatus.ConflictingFileCount == 0
@@ -971,9 +1165,11 @@ public sealed class SwShFpsPatchService
         else
         {
             status = romFsStatus.ConflictingFileCount == 0 ? "partial" : "blocked";
-            message = romFsStatus.ConflictingFileCount == 0
-                ? "60FPS Patch is partially installed."
-                : "60FPS Patch is partially installed and has ROMFS conflicts.";
+            message = romFsStatus.StaleOwnedFileCount > 0
+                ? "60FPS Patch is partially installed and includes earlier KM-owned ROMFS output."
+                : romFsStatus.ConflictingFileCount == 0
+                    ? "60FPS Patch is partially installed."
+                    : "60FPS Patch is partially installed and has ROMFS conflicts.";
         }
 
         return new SwShFpsPatchStatus(
@@ -985,7 +1181,11 @@ public sealed class SwShFpsPatchService
             mainStatus.SiteCount,
             romFsStatus.PatchedFileCount,
             romFsStatus.ManagedFileCount,
+            romFsStatus.StaleOwnedFileCount,
             romFsStatus.ConflictingFileCount,
+            romFsStatus.StaleOwnedFiles,
+            romFsStatus.ConflictingFiles,
+            romFsStatus.Categories,
             diagnostics);
     }
 
@@ -1017,7 +1217,24 @@ public sealed class SwShFpsPatchService
         string baseRomFsPath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var files = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics).ToList();
+        var errorCountBeforeBseqScan = diagnostics.Count(
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var managedBseqFiles = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics);
+        var errorCountAfterBseqScan = diagnostics.Count(
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        if (managedBseqFiles.Count != ExpectedManagedBseqFileCount
+            && errorCountAfterBseqScan == errorCountBeforeBseqScan)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"60FPS Patch expected {ExpectedManagedBseqFileCount:N0} managed move-effect BSEQ files, but found {managedBseqFiles.Count:N0}."),
+                file: SequenceRootRelativePath,
+                expected: "Complete Sword/Shield Base RomFS move-effect sequence folder"));
+        }
+
+        var files = managedBseqFiles.ToList();
         files.AddRange(EnumerateManagedBattleCameraFiles(baseRomFsPath, diagnostics));
         files.AddRange(EnumerateManagedBattleUiArchives(baseRomFsPath, diagnostics));
         files.AddRange(EnumerateManagedDemoBseqFiles(baseRomFsPath, diagnostics));
@@ -1664,18 +1881,290 @@ public sealed class SwShFpsPatchService
         return Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
     }
 
-    private static void RecordManifest(
+    private static IReadOnlyDictionary<string, string> ReadManifestOwnedFileHashes(
         ProjectPaths paths,
-        bool wroteMain,
-        IReadOnlyList<PreparedRomFsFile> preparedRomFsFiles,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic>? diagnostics = null)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var manifestPath = ResolveOutputPath(paths.OutputRootPath, ManifestRelativePath);
+        if (manifestPath is null || !File.Exists(manifestPath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<FpsPatchManifest>(
+                File.ReadAllText(manifestPath),
+                ManifestJsonOptions);
+            if (manifest is null || manifest.Version != 1 || manifest.RomFsFiles is null)
+            {
+                throw new InvalidDataException("60FPS Patch manifest has an unsupported layout.");
+            }
+
+            var hashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in manifest.RomFsFiles)
+            {
+                var relativePath = NormalizeRelativePath(file.RelativePath ?? string.Empty);
+                var hash = file.Sha256?.Trim().ToLowerInvariant() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(relativePath)
+                    || Path.IsPathRooted(relativePath)
+                    || relativePath.Split('/').Contains("..", StringComparer.Ordinal)
+                    || hash.Length != 64
+                    || !hash.All(Uri.IsHexDigit))
+                {
+                    continue;
+                }
+
+                hashes[relativePath] = hash;
+            }
+
+            return hashes;
+        }
+        catch (IOException exception)
+        {
+            diagnostics?.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch manifest could not be read: {exception.Message}",
+                file: ManifestRelativePath,
+                expected: "Readable 60FPS Patch ownership manifest"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics?.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch manifest could not be read: {exception.Message}",
+                file: ManifestRelativePath,
+                expected: "Readable 60FPS Patch ownership manifest"));
+        }
+        catch (JsonException exception)
+        {
+            diagnostics?.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch manifest could not be parsed: {exception.Message}",
+                file: ManifestRelativePath,
+                expected: "Valid 60FPS Patch ownership manifest"));
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics?.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                exception.Message,
+                file: ManifestRelativePath,
+                expected: "Version 1 60FPS Patch ownership manifest"));
+        }
+
+        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesManifestOwnedOutput(
+        string relativePath,
+        byte[] output,
+        IReadOnlyDictionary<string, string> manifestHashes)
+    {
+        return manifestHashes.TryGetValue(NormalizeRelativePath(relativePath), out var expectedHash)
+            && string.Equals(ComputeSha256(output), expectedHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void RefreshManifestSnapshot(
+        ProjectPaths paths,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             return;
         }
 
-        var manifestPath = ResolveOutputPath(paths.OutputRootPath, ManifestRelativePath);
+        var previousHashes = ReadManifestOwnedFileHashes(paths, diagnostics);
+        var enumerationDiagnostics = new List<ValidationDiagnostic>();
+        var sourceFiles = EnumerateManagedRomFsFiles(paths.BaseRomFsPath, enumerationDiagnostics);
+        foreach (var diagnostic in enumerationDiagnostics)
+        {
+            diagnostics.Add(diagnostic);
+        }
+
+        if (enumerationDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        var ownedFiles = new List<FpsPatchManifestFile>();
+        foreach (var sourceFile in sourceFiles)
+        {
+            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
+            if (targetPath is null || !File.Exists(targetPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
+                var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
+                var output = File.ReadAllBytes(targetPath);
+                if (output.SequenceEqual(generated)
+                    || MatchesManifestOwnedOutput(sourceFile.RelativePath, output, previousHashes))
+                {
+                    ownedFiles.Add(new FpsPatchManifestFile(
+                        sourceFile.RelativePath,
+                        ComputeSha256(output)));
+                }
+            }
+            catch (IOException exception)
+            {
+                PreservePreviousManifestEntry(sourceFile.RelativePath, previousHashes, ownedFiles);
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not refresh ownership for a managed ROMFS file: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Readable managed ROMFS output"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                PreservePreviousManifestEntry(sourceFile.RelativePath, previousHashes, ownedFiles);
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not refresh ownership for a managed ROMFS file: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Readable managed ROMFS output"));
+            }
+            catch (InvalidDataException exception)
+            {
+                PreservePreviousManifestEntry(sourceFile.RelativePath, previousHashes, ownedFiles);
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    exception.Message,
+                    file: sourceFile.RelativePath,
+                    expected: "Valid managed Sword/Shield ROMFS output"));
+            }
+        }
+
+        PreserveUnvisitedManifestEntries(
+            paths,
+            sourceFiles
+                .Select(sourceFile => sourceFile.RelativePath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase),
+            previousHashes,
+            ownedFiles,
+            diagnostics);
+
+        var mainPatched = HasInstalledMainOutput(paths);
+        if (!mainPatched && ownedFiles.Count == 0)
+        {
+            DeleteManifest(paths, diagnostics);
+            return;
+        }
+
+        WriteManifest(
+            paths,
+            new FpsPatchManifest(
+                Version: 1,
+                CreatedAt: DateTimeOffset.UtcNow,
+                ExeFsMainPatched: mainPatched,
+                RomFsFiles: ownedFiles
+                    .DistinctBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                    .ToArray()),
+            diagnostics);
+    }
+
+    private static void PreserveUnvisitedManifestEntries(
+        ProjectPaths paths,
+        IReadOnlySet<string> visitedPaths,
+        IReadOnlyDictionary<string, string> previousHashes,
+        ICollection<FpsPatchManifestFile> ownedFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var (relativePath, previousHash) in previousHashes)
+        {
+            if (visitedPaths.Contains(relativePath) || !IsManagedRomFsPath(relativePath))
+            {
+                continue;
+            }
+
+            var targetPath = ResolveOutputPath(paths.OutputRootPath!, relativePath);
+            if (targetPath is null || !File.Exists(targetPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                var output = File.ReadAllBytes(targetPath);
+                if (string.Equals(ComputeSha256(output), previousHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
+                }
+            }
+            catch (IOException exception)
+            {
+                ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not verify previously recorded ROMFS ownership: {exception.Message}",
+                    file: relativePath,
+                    expected: "Readable previously recorded KM-owned ROMFS output"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not verify previously recorded ROMFS ownership: {exception.Message}",
+                    file: relativePath,
+                    expected: "Readable previously recorded KM-owned ROMFS output"));
+            }
+        }
+    }
+
+    private static void PreservePreviousManifestEntry(
+        string relativePath,
+        IReadOnlyDictionary<string, string> previousHashes,
+        ICollection<FpsPatchManifestFile> ownedFiles)
+    {
+        if (previousHashes.TryGetValue(NormalizeRelativePath(relativePath), out var previousHash))
+        {
+            ownedFiles.Add(new FpsPatchManifestFile(relativePath, previousHash));
+        }
+    }
+
+    private static bool HasInstalledMainOutput(ProjectPaths paths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            return false;
+        }
+
+        var outputMainPath = ResolveOutputPath(paths.OutputRootPath, ExeFsMainPath);
+        if (outputMainPath is null || !File.Exists(outputMainPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            return SwShFpsMainPatcher.Analyze(File.ReadAllBytes(outputMainPath), paths.SelectedGame).PatchedSiteCount > 0;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static void WriteManifest(
+        ProjectPaths paths,
+        FpsPatchManifest manifest,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var manifestPath = ResolveOutputPath(paths.OutputRootPath!, ManifestRelativePath);
         if (manifestPath is null)
         {
             return;
@@ -1683,13 +2172,6 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            var manifest = new FpsPatchManifest(
-                Version: 1,
-                CreatedAt: DateTimeOffset.UtcNow,
-                ExeFsMainPatched: wroteMain,
-                RomFsFiles: preparedRomFsFiles
-                    .Select(file => new FpsPatchManifestFile(file.RelativePath, file.Sha256))
-                    .ToArray());
             var directory = Path.GetDirectoryName(manifestPath);
             if (!string.IsNullOrWhiteSpace(directory))
             {
@@ -1788,8 +2270,20 @@ public sealed class SwShFpsPatchService
 
     private sealed record PreparedRomFsFile(
         string RelativePath,
-        byte[] Contents,
-        string Sha256);
+        byte[] Contents);
+
+    private enum ManagedRomFsFileState
+    {
+        NotInstalled,
+        Patched,
+        StaleOwned,
+        Conflict,
+    }
+
+    private sealed record InspectedRomFsFile(
+        string RelativePath,
+        string Category,
+        ManagedRomFsFileState State);
 
     private sealed record MainStatus(
         SwShFpsPatchMainKind Kind,
@@ -1804,9 +2298,13 @@ public sealed class SwShFpsPatchService
     private sealed record RomFsStatus(
         int ManagedFileCount,
         int PatchedFileCount,
-        int ConflictingFileCount)
+        int StaleOwnedFileCount,
+        int ConflictingFileCount,
+        IReadOnlyList<string> StaleOwnedFiles,
+        IReadOnlyList<string> ConflictingFiles,
+        IReadOnlyList<SwShFpsPatchRomFsCategoryStatus> Categories)
     {
-        public static RomFsStatus Empty { get; } = new(0, 0, 0);
+        public static RomFsStatus Empty { get; } = new(0, 0, 0, 0, [], [], []);
     }
 
     private sealed record FpsPatchManifest(

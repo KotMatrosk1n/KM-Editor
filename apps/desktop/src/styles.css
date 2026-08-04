@@ -1417,6 +1417,440 @@ h2 {
   line-height: 1.35;
 }
 
+.technical-tool-section {
+  min-width: 0;
+}
+
+.technical-tool-heading {
+  align-items: flex-start;
+}
+
+.technical-tool-heading > div {
+  min-width: 0;
+}
+
+.technical-tool-heading h2,
+.technical-tool-heading p {
+  margin: 0;
+}
+
+.technical-tool-heading p {
+  margin-top: 3px;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.technical-tool-description {
+  max-width: 112ch;
+  margin: 12px 0 0;
+  color: var(--color-text-soft);
+  line-height: 1.55;
+}
+
+.technical-tool-status-panel {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(220px, 1fr);
+  gap: 12px 18px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 12px;
+  background: #0b1120;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.technical-tool-status-panel > p {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.technical-tool-status-group {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+}
+
+.technical-tool-status-group > span:first-child {
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.technical-tool-context-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.technical-tool-subsystem-grid,
+.technical-tool-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.technical-tool-subsystem-card,
+.technical-tool-overview-grid > article {
+  min-width: 0;
+  padding: 14px;
+  background: #0b1120;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.technical-tool-subsystem-heading,
+.technical-tool-notice-heading {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.technical-tool-subsystem-heading > svg,
+.technical-tool-notice-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--color-gold);
+}
+
+.technical-tool-subsystem-heading > div,
+.technical-tool-notice-heading > div {
+  min-width: 0;
+}
+
+.technical-tool-subsystem-card h3,
+.technical-tool-subsystem-card p,
+.technical-tool-overview-grid h3,
+.technical-tool-overview-grid p,
+.technical-tool-notice h3,
+.technical-tool-notice p,
+.technical-tool-component-section h3,
+.technical-tool-component-section p {
+  margin: 0;
+}
+
+.technical-tool-subsystem-card h3,
+.technical-tool-overview-grid h3,
+.technical-tool-notice h3,
+.technical-tool-component-section h3 {
+  color: var(--color-text);
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.technical-tool-subsystem-card p,
+.technical-tool-overview-grid p,
+.technical-tool-notice p,
+.technical-tool-component-section p {
+  margin-top: 5px;
+  color: var(--color-text-muted);
+  font-size: 0.79rem;
+  font-weight: 650;
+  line-height: 1.48;
+}
+
+.technical-tool-ratio {
+  display: block;
+  margin-top: 18px;
+  color: var(--color-text);
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.technical-tool-ratio + span {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.technical-tool-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.technical-tool-counts > div {
+  min-width: 0;
+  padding: 9px;
+  background: #0d1628;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.technical-tool-counts dt,
+.technical-tool-contract-grid dt {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.technical-tool-counts dd,
+.technical-tool-contract-grid dd {
+  min-width: 0;
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-weight: 850;
+}
+
+.technical-tool-component-section,
+.technical-tool-notice,
+.technical-tool-details {
+  margin-top: 16px;
+  padding: 14px;
+  background: #0b1120;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.technical-tool-component-table {
+  display: grid;
+  min-width: 680px;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.technical-tool-component-section:has(.technical-tool-component-table) {
+  overflow-x: auto;
+}
+
+.technical-tool-component-row {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) repeat(4, minmax(76px, 0.22fr));
+  gap: 10px;
+  align-items: center;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.technical-tool-component-row:last-child {
+  border-bottom: 0;
+}
+
+.technical-tool-component-row > span:not(.technical-tool-component-name) {
+  color: var(--color-text-soft);
+  font-size: 0.82rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.technical-tool-component-header {
+  min-height: 36px;
+  color: var(--color-gold);
+  background: #111b30;
+}
+
+.technical-tool-component-header > span {
+  color: inherit !important;
+  font-size: 0.68rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.technical-tool-component-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.technical-tool-component-name strong {
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.technical-tool-component-name small {
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.technical-tool-notice-info {
+  background: rgb(79 70 229 / 9%);
+  border-color: rgb(109 115 255 / 38%);
+}
+
+.technical-tool-notice-error {
+  background: rgb(138 52 56 / 14%);
+  border-color: #8a3438;
+}
+
+.technical-tool-notice-error .technical-tool-notice-heading > svg {
+  color: #ff6b6b;
+}
+
+.technical-tool-path-list {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  margin: 12px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.technical-tool-path-list li {
+  min-width: 0;
+  padding: 7px 9px;
+  background: #080d16;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.technical-tool-path-list code,
+.technical-tool-contract-grid code,
+.technical-tool-instruction-table code {
+  overflow-wrap: anywhere;
+  color: #dbe4ff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: normal;
+}
+
+.technical-tool-details > summary {
+  color: var(--color-gold);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.technical-tool-details dl {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.technical-tool-details dl > div {
+  display: grid;
+  gap: 3px;
+}
+
+.technical-tool-details dt {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.technical-tool-details dd {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.technical-tool-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.technical-tool-contract-grid > div {
+  min-width: 0;
+  padding: 10px;
+  background: #0d1628;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.technical-tool-instruction-table {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.technical-tool-instruction-table > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.35fr) minmax(220px, 0.65fr) minmax(240px, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  background: #0d1628;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.technical-tool-instruction-table strong {
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.technical-tool-instruction-table span {
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.technical-tool-action-help {
+  display: grid;
+  gap: 4px;
+  margin: 9px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.technical-tool-action-help p {
+  margin: 0;
+}
+
+.technical-tool-action-help strong {
+  color: var(--color-text);
+}
+
+@container workspace (max-width: 900px) {
+  .technical-tool-status-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .technical-tool-status-panel > p {
+    grid-column: 1 / -1;
+  }
+
+  .technical-tool-instruction-table > div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}
+
+@container workspace (max-width: 600px) {
+  .technical-tool-status-panel,
+  .technical-tool-counts {
+    grid-template-columns: 1fr;
+  }
+
+  .technical-tool-status-panel > p {
+    grid-column: auto;
+  }
+
+  .technical-tool-action-row > button {
+    flex: 1 1 100%;
+  }
+}
+
 .status-ready {
   color: #58d17c;
   background: #11291c;
