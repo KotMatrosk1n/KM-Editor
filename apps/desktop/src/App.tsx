@@ -765,7 +765,7 @@ const sections: Array<{
   },
   {
     id: 'profanityFilter',
-    label: 'Profanity Filter',
+    label: 'Profanity Filter Bypass',
     icon: MessageSquareOff
   },
   {
@@ -12340,6 +12340,7 @@ export function App({
               onApply={handleApplyFpsPatch}
               onRefresh={handleLoadFpsPatch}
               onRestore={handleRestoreFpsPatch}
+              outputRootPath={draftPaths.outputRootPath}
               status={fpsPatchStatus}
             />
           ) : null}
@@ -12351,6 +12352,7 @@ export function App({
               onApply={handleApplyProfanityFilter}
               onRefresh={handleLoadProfanityFilter}
               onRestore={handleRestoreProfanityFilter}
+              outputRootPath={draftPaths.outputRootPath}
               status={profanityFilterStatus}
             />
           ) : null}
@@ -37215,6 +37217,7 @@ function FpsPatchSection({
   onApply,
   onRefresh,
   onRestore,
+  outputRootPath,
   status
 }: {
   canApply: boolean;
@@ -37223,91 +37226,311 @@ function FpsPatchSection({
   onApply: () => void;
   onRefresh: () => void;
   onRestore: () => void;
+  outputRootPath: string;
   status: FpsPatchStatus | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const isBusy = isLoading || isApplying;
-  const statusLabel = status ? formatFpsPatchStatus(status.status) : 'Not checked';
-  const mainSiteValue = status
-    ? `${status.patchedMainSiteCount}/${status.mainSiteCount}`
-    : 'Not checked';
-  const romFsValue = status
-    ? `${status.patchedRomFsFileCount.toLocaleString()}/${status.managedRomFsFileCount.toLocaleString()}`
-    : 'Not checked';
+  const statusKey = status?.status ?? 'unchecked';
+  const statusLabel = t(`fpsPatch.state.${statusKey}`);
+  const hasInstallBlock = status
+    ? status.conflictingRomFsFileCount > 0 ||
+      status.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+      status.status === 'blocked' ||
+      status.status === 'unsupported'
+    : false;
+  const safetyLabel = status
+    ? hasInstallBlock
+      ? t('technicalTool.safety.blocked')
+      : t('technicalTool.safety.safe')
+    : t('technicalTool.safety.notChecked');
+  const installedRomFsFileCount = status
+    ? status.patchedRomFsFileCount + status.staleOwnedRomFsFileCount
+    : 0;
+  const notInstalledRomFsFileCount = status
+    ? Math.max(
+        0,
+        status.managedRomFsFileCount -
+          installedRomFsFileCount -
+          status.conflictingRomFsFileCount
+      )
+    : 0;
+  const canInstall = Boolean(
+    canApply &&
+      status &&
+      status.conflictingRomFsFileCount === 0 &&
+      ['notInstalled', 'partial', 'updateAvailable'].includes(status.status)
+  );
+  const canUninstall = Boolean(
+    canApply &&
+      status &&
+      (status.patchedMainSiteCount > 0 || installedRomFsFileCount > 0)
+  );
+  const installDisabledReason = !status
+    ? t('fpsPatch.disabled.refreshFirst')
+    : status.status === 'installed'
+      ? t('fpsPatch.disabled.alreadyInstalled')
+      : hasInstallBlock
+        ? t('fpsPatch.disabled.resolveBlockers')
+        : !canApply
+          ? t('fpsPatch.disabled.projectNotEditable')
+          : null;
+  const uninstallDisabledReason = !status
+    ? t('fpsPatch.disabled.refreshFirst')
+    : !canApply
+      ? t('fpsPatch.disabled.projectNotEditable')
+      : !canUninstall
+      ? t('fpsPatch.disabled.noOwnedOutput')
+      : null;
 
   return (
     <>
       <section
         aria-labelledby="fps-patch-heading"
-        className="panel wide-panel swsh-editor-surface fps-patch-section"
+        className="panel wide-panel swsh-editor-surface technical-tool-section fps-patch-section"
       >
-        <div className="panel-heading">
+        <div className="panel-heading technical-tool-heading">
           <Zap aria-hidden="true" size={18} />
-          <h2 id="fps-patch-heading">60FPS Patch</h2>
+          <div>
+            <h2 id="fps-patch-heading">{translateLiteral('60FPS Patch')}</h2>
+            <p>{t('fpsPatch.subtitle')}</p>
+          </div>
         </div>
 
-        <div className="fps-patch-status-row" aria-live="polite">
-          <span className={`status-pill ${getFpsPatchStatusClassName(status?.status ?? 'unchecked')}`}>
-            {statusLabel}
-          </span>
-          {status ? <span className="fps-patch-status-message">{status.message}</span> : null}
+        <p className="workflow-description technical-tool-description">
+          {t('fpsPatch.description')}
+        </p>
+        <p className="workflow-description technical-tool-description">
+          {t('fpsPatch.compatibility')}
+        </p>
+
+        <div className="technical-tool-status-panel" aria-live="polite">
+          <div className="technical-tool-status-group">
+            <span>{t('technicalTool.status.installation')}</span>
+            <span className={`status-pill ${getFpsPatchStatusClassName(statusKey)}`}>
+              {statusLabel}
+            </span>
+          </div>
+          <div className="technical-tool-status-group">
+            <span>{t('fpsPatch.actions.install')}</span>
+            <span className={`status-pill ${status && !hasInstallBlock ? 'status-ready' : hasInstallBlock ? 'status-blocked' : 'status-warning'}`}>
+              {safetyLabel}
+            </span>
+          </div>
+          <p>{t(`fpsPatch.summary.${statusKey}`)}</p>
         </div>
 
-        <div className="metric-grid">
-          <Metric label="ExeFS sites" value={mainSiteValue} />
-          <Metric label="ROMFS files" value={romFsValue} />
+        <div className="health-grid technical-tool-context-grid">
           <Metric
-            label="Conflicts"
-            value={status ? status.conflictingRomFsFileCount.toLocaleString() : 'Not checked'}
+            label={translateLiteral('Detected game')}
+            value={status ? formatCatchCapProjectGame(status.detectedGame, translateLiteral) : t('technicalTool.value.notChecked')}
+          />
+          <Metric label={t('technicalTool.context.supportedBuild')} value={t('fpsPatch.supportedBuild')} />
+          <Metric
+            label={translateLiteral('Build ID')}
+            value={status?.buildId ?? t('technicalTool.value.notChecked')}
+            valueIsRaw={Boolean(status?.buildId)}
+          />
+          <Metric
+            label={translateLiteral('Output Root')}
+            value={outputRootPath.trim() || t('technicalTool.value.notConfigured')}
+            valueIsRaw={Boolean(outputRootPath.trim())}
           />
         </div>
 
-        <div className="mod-merger-action-row">
+        <div className="technical-tool-subsystem-grid">
+          <article className="technical-tool-subsystem-card">
+            <div className="technical-tool-subsystem-heading">
+              <ShieldCheck aria-hidden="true" size={18} />
+              <div>
+                <h3>{t('fpsPatch.exefs.title')}</h3>
+                <p>{t('fpsPatch.exefs.description')}</p>
+              </div>
+            </div>
+            <strong className="technical-tool-ratio" data-localization-ignore="true">
+              {status ? `${status.patchedMainSiteCount}/${status.mainSiteCount}` : '--'}
+            </strong>
+            <span>{t('fpsPatch.exefs.ratioLabel')}</span>
+          </article>
+
+          <article className="technical-tool-subsystem-card">
+            <div className="technical-tool-subsystem-heading">
+              <Layers aria-hidden="true" size={18} />
+              <div>
+                <h3>{t('fpsPatch.romfs.title')}</h3>
+                <p>{t('fpsPatch.romfs.description')}</p>
+              </div>
+            </div>
+            <dl className="technical-tool-counts">
+              <div>
+                <dt>{t('fpsPatch.romfs.current')}</dt>
+                <dd data-localization-ignore="true">{status ? status.patchedRomFsFileCount.toLocaleString() : '--'}</dd>
+              </div>
+              <div>
+                <dt>{t('fpsPatch.romfs.refreshable')}</dt>
+                <dd data-localization-ignore="true">{status ? status.staleOwnedRomFsFileCount.toLocaleString() : '--'}</dd>
+              </div>
+              <div>
+                <dt>{t('fpsPatch.romfs.notInstalled')}</dt>
+                <dd data-localization-ignore="true">{status ? notInstalledRomFsFileCount.toLocaleString() : '--'}</dd>
+              </div>
+              <div>
+                <dt>{t('fpsPatch.romfs.conflicts')}</dt>
+                <dd data-localization-ignore="true">{status ? status.conflictingRomFsFileCount.toLocaleString() : '--'}</dd>
+              </div>
+            </dl>
+          </article>
+        </div>
+
+        {status && status.romFsCategories.length > 0 ? (
+          <section className="technical-tool-component-section" aria-labelledby="fps-patch-components-heading">
+            <div>
+              <h3 id="fps-patch-components-heading">{t('fpsPatch.components.title')}</h3>
+              <p>{t('fpsPatch.components.description')}</p>
+            </div>
+            <div
+              aria-labelledby="fps-patch-components-heading"
+              className="technical-tool-component-table"
+              role="table"
+            >
+              <div className="technical-tool-component-row technical-tool-component-header" role="row">
+                <span role="columnheader">{t('fpsPatch.components.component')}</span>
+                <span role="columnheader">{t('fpsPatch.components.managed')}</span>
+                <span role="columnheader">{t('fpsPatch.components.current')}</span>
+                <span role="columnheader">{t('fpsPatch.components.refresh')}</span>
+                <span role="columnheader">{translateLiteral('Conflicts')}</span>
+              </div>
+              {status.romFsCategories.map((category) => (
+                <div className="technical-tool-component-row" key={category.category} role="row">
+                  <span className="technical-tool-component-name" role="cell">
+                    <strong>{t(`fpsPatch.category.${category.category}.label`)}</strong>
+                    <small>{t(`fpsPatch.category.${category.category}.detail`)}</small>
+                  </span>
+                  <span data-localization-ignore="true" role="cell">{category.managedFileCount.toLocaleString()}</span>
+                  <span data-localization-ignore="true" role="cell">{category.patchedFileCount.toLocaleString()}</span>
+                  <span data-localization-ignore="true" role="cell">{category.staleOwnedFileCount.toLocaleString()}</span>
+                  <span data-localization-ignore="true" role="cell">{category.conflictingFileCount.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {status && status.staleOwnedRomFsFileCount > 0 ? (
+          <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="fps-patch-refresh-heading">
+            <div className="technical-tool-notice-heading">
+              <RefreshCw aria-hidden="true" size={18} />
+              <div>
+                <h3 id="fps-patch-refresh-heading">{t('fpsPatch.refreshable.title')}</h3>
+                <p>{t('fpsPatch.refreshable.description')}</p>
+              </div>
+            </div>
+            <ul className="technical-tool-path-list">
+              {status.staleOwnedRomFsFiles.map((relativePath) => (
+                <li key={relativePath}><code data-localization-ignore="true">{relativePath}</code></li>
+              ))}
+            </ul>
+            {status.staleOwnedRomFsFileCount > status.staleOwnedRomFsFiles.length ? (
+              <p>{t('fpsPatch.paths.more', { count: status.staleOwnedRomFsFileCount - status.staleOwnedRomFsFiles.length })}</p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {status && status.conflictingRomFsFileCount > 0 ? (
+          <section className="technical-tool-notice technical-tool-notice-error" aria-labelledby="fps-patch-conflicts-heading">
+            <div className="technical-tool-notice-heading">
+              <AlertTriangle aria-hidden="true" size={18} />
+              <div>
+                <h3 id="fps-patch-conflicts-heading">{t('fpsPatch.conflicts.title')}</h3>
+                <p>{t('fpsPatch.conflicts.description')}</p>
+              </div>
+            </div>
+            <ul className="technical-tool-path-list">
+              {status.conflictingRomFsFiles.map((relativePath) => (
+                <li key={relativePath}><code data-localization-ignore="true">{relativePath}</code></li>
+              ))}
+            </ul>
+            {status.conflictingRomFsFileCount > status.conflictingRomFsFiles.length ? (
+              <p>{t('fpsPatch.paths.more', { count: status.conflictingRomFsFileCount - status.conflictingRomFsFiles.length })}</p>
+            ) : null}
+          </section>
+        ) : null}
+
+        <details className="technical-tool-details">
+          <summary>{t('technicalTool.technicalContract')}</summary>
+          <dl>
+            <div>
+              <dt>{t('technicalTool.contract.executable')}</dt>
+              <dd>{t('fpsPatch.contract.executable')}</dd>
+            </div>
+            <div>
+              <dt>{t('technicalTool.contract.generatedOutput')}</dt>
+              <dd>{t('fpsPatch.contract.generatedOutput')}</dd>
+            </div>
+            <div>
+              <dt>{t('technicalTool.contract.restoration')}</dt>
+              <dd>{t('fpsPatch.contract.restoration')}</dd>
+            </div>
+          </dl>
+        </details>
+
+        <div className="action-row technical-tool-action-row">
           <button
             aria-busy={isLoading || undefined}
             className="secondary-button"
             disabled={isBusy}
             onClick={onRefresh}
-            title="Refresh 60FPS Patch status from Base ExeFS, Base RomFS, and Output Root."
+            title={t('fpsPatch.actions.refreshHelp')}
             type="button"
           >
             <BusyActionContent
-              busyLabel="Refreshing"
+              busyLabel={translateLiteral('Refreshing')}
               icon={<RefreshCw aria-hidden="true" size={16} />}
               isBusy={isLoading}
-              label="Refresh"
+              label={t('fpsPatch.actions.refresh')}
             />
           </button>
           <button
             aria-busy={isApplying || undefined}
             className="primary-button"
-            disabled={!canApply || isBusy}
+            disabled={!canInstall || isBusy}
             onClick={onApply}
-            title="Install the SwSh 60FPS ExeFS patch and generated ROMFS timing and animation overlays."
+            title={t('fpsPatch.actions.installHelp')}
             type="button"
           >
             <BusyActionContent
-              busyLabel="Working"
+              busyLabel={translateLiteral('Working')}
               icon={<CheckCircle aria-hidden="true" size={16} />}
               isBusy={isApplying}
-              label="Install"
+              label={t('fpsPatch.actions.install')}
             />
           </button>
           <button
             aria-busy={isApplying || undefined}
             className="danger-button"
-            disabled={!canApply || isBusy}
+            disabled={!canUninstall || isBusy}
             onClick={onRestore}
-            title="Remove only KM-owned 60FPS Patch output while preserving other output files and non-overlapping exefs/main bytes."
+            title={t('fpsPatch.actions.removeHelp')}
             type="button"
           >
             <BusyActionContent
-              busyLabel="Working"
+              busyLabel={translateLiteral('Working')}
               icon={<RotateCcw aria-hidden="true" size={16} />}
               isBusy={isApplying}
-              label="Uninstall"
+              label={t('fpsPatch.actions.remove')}
             />
           </button>
         </div>
+        {!isBusy && (!canInstall || !canUninstall) ? (
+          <div className="technical-tool-action-help">
+            {!canInstall && installDisabledReason ? (
+              <p><strong>{t('fpsPatch.actions.install')}:</strong> {installDisabledReason}</p>
+            ) : null}
+            {!canUninstall && uninstallDisabledReason ? (
+              <p><strong>{t('fpsPatch.actions.remove')}:</strong> {uninstallDisabledReason}</p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {status && status.diagnostics.length > 0 ? (
@@ -37315,23 +37538,6 @@ function FpsPatchSection({
       ) : null}
     </>
   );
-}
-
-function formatFpsPatchStatus(status: string) {
-  switch (status) {
-    case 'installed':
-      return 'Installed';
-    case 'notInstalled':
-      return 'Not installed';
-    case 'partial':
-      return 'Partial';
-    case 'blocked':
-      return 'Blocked';
-    case 'unsupported':
-      return 'Unsupported';
-    default:
-      return status;
-  }
 }
 
 function getFpsPatchStatusClassName(status: string) {
@@ -37343,6 +37549,7 @@ function getFpsPatchStatusClassName(status: string) {
       return 'status-blocked';
     case 'notInstalled':
     case 'partial':
+    case 'updateAvailable':
     case 'unchecked':
     default:
       return 'status-warning';
@@ -37356,6 +37563,7 @@ function ProfanityFilterSection({
   onApply,
   onRefresh,
   onRestore,
+  outputRootPath,
   status
 }: {
   canApply: boolean;
@@ -37364,85 +37572,248 @@ function ProfanityFilterSection({
   onApply: () => void;
   onRefresh: () => void;
   onRestore: () => void;
+  outputRootPath: string;
   status: ProfanityFilterStatus | null;
 }) {
+  const { t, translateLiteral } = useLocalization();
   const isBusy = isLoading || isApplying;
-  const statusLabel = status ? formatProfanityFilterStatus(status.status) : 'Not checked';
-  const patchSiteValue = status?.patchOffsetHex ?? 'Not checked';
-  const patchShapeValue = status?.patchShape ?? 'Not checked';
-  const sourceValue = status ? formatProfanityFilterSourceLayer(status.sourceLayer) : 'Not checked';
+  const statusKey = status?.status ?? 'unchecked';
+  const statusLabel = t(`profanityFilter.state.${statusKey}`);
+  const hasWriteBlock = status
+    ? status.diagnostics.some((diagnostic) => diagnostic.severity === 'error') ||
+      status.status === 'blocked' ||
+      status.status === 'unsupported'
+    : false;
+  const safetyLabel = status
+    ? hasWriteBlock
+      ? t('technicalTool.safety.blocked')
+      : t('technicalTool.safety.safe')
+    : t('technicalTool.safety.notChecked');
+  const canInstall = Boolean(
+    canApply && status && ['notInstalled', 'compatible'].includes(status.status)
+  );
+  const canRestore = Boolean(
+    canApply && status && ['installed', 'compatible'].includes(status.status)
+  );
+  const patchShapeValue = status
+    ? ({
+        'vanilla profanity-filter call': t('profanityFilter.instruction.vanilla'),
+        'KM clean-result instruction': t('profanityFilter.instruction.km'),
+        'compatible clean-result instruction': t('profanityFilter.instruction.compatible'),
+        'unknown bytes': t('profanityFilter.instruction.unknown'),
+        unreadable: t('profanityFilter.instruction.unreadable'),
+        unsupported: t('profanityFilter.instruction.unsupported')
+      }[status.patchShape] ?? translateLiteral(status.patchShape))
+    : t('technicalTool.value.notChecked');
+  const installDisabledReason = !status
+    ? t('profanityFilter.disabled.refreshFirst')
+    : hasWriteBlock
+      ? t('profanityFilter.disabled.resolveBlockers')
+      : !canApply
+        ? t('profanityFilter.disabled.projectNotEditable')
+        : status.status === 'installed'
+          ? t('profanityFilter.disabled.alreadyInstalled')
+          : null;
+  const restoreDisabledReason = !status
+    ? t('profanityFilter.disabled.refreshFirst')
+    : hasWriteBlock
+      ? t('profanityFilter.disabled.resolveBlockers')
+      : !canApply
+        ? t('profanityFilter.disabled.projectNotEditable')
+        : status.status === 'notInstalled'
+          ? t('profanityFilter.disabled.notInstalled')
+          : null;
 
   return (
     <>
       <section
         aria-labelledby="profanity-filter-heading"
-        className="panel wide-panel swsh-editor-surface fps-patch-section"
+        className="panel wide-panel swsh-editor-surface technical-tool-section profanity-filter-section"
       >
-        <div className="panel-heading">
+        <div className="panel-heading technical-tool-heading">
           <MessageSquareOff aria-hidden="true" size={18} />
-          <h2 id="profanity-filter-heading">Profanity Filter</h2>
+          <div>
+            <h2 id="profanity-filter-heading">{t('profanityFilter.title')}</h2>
+            <p>{t('profanityFilter.subtitle')}</p>
+          </div>
         </div>
 
-        <div className="fps-patch-status-row" aria-live="polite">
-          <span className={`status-pill ${getProfanityFilterStatusClassName(status?.status ?? 'unchecked')}`}>
-            {statusLabel}
-          </span>
-          {status ? <span className="fps-patch-status-message">{status.message}</span> : null}
+        <p className="workflow-description technical-tool-description">
+          {t('profanityFilter.description')}
+        </p>
+        <p className="workflow-description technical-tool-description">
+          {t('profanityFilter.compatibility')}
+        </p>
+
+        <div className="technical-tool-status-panel" aria-live="polite">
+          <div className="technical-tool-status-group">
+            <span>{t('technicalTool.status.installation')}</span>
+            <span className={`status-pill ${getProfanityFilterStatusClassName(statusKey)}`}>
+              {statusLabel}
+            </span>
+          </div>
+          <div className="technical-tool-status-group">
+            <span>{t('technicalTool.status.writeSafety')}</span>
+            <span className={`status-pill ${status && !hasWriteBlock ? 'status-ready' : hasWriteBlock ? 'status-blocked' : 'status-warning'}`}>
+              {safetyLabel}
+            </span>
+          </div>
+          <p>{t(`profanityFilter.summary.${statusKey}`)}</p>
         </div>
 
-        <div className="metric-grid">
-          <Metric label="Patch site" value={patchSiteValue} />
-          <Metric label="Bytes" value={patchShapeValue} />
-          <Metric label="Source" value={sourceValue} />
+        <div className="health-grid technical-tool-context-grid">
+          <Metric
+            label={translateLiteral('Detected game')}
+            value={status ? formatCatchCapProjectGame(status.detectedGame, translateLiteral) : t('technicalTool.value.notChecked')}
+          />
+          <Metric label={t('technicalTool.context.supportedBuild')} value={t('profanityFilter.supportedBuild')} />
+          <Metric
+            label={translateLiteral('Build ID')}
+            value={status?.buildId ?? t('technicalTool.value.notChecked')}
+            valueIsRaw={Boolean(status?.buildId)}
+          />
+          <Metric
+            label={translateLiteral('Source')}
+            value={status ? translateLiteral(formatProfanityFilterSourceLayer(status.sourceLayer)) : t('technicalTool.value.notChecked')}
+          />
+          <Metric
+            label={translateLiteral('Output Root')}
+            value={outputRootPath.trim() || t('technicalTool.value.notConfigured')}
+            valueIsRaw={Boolean(outputRootPath.trim())}
+          />
         </div>
 
-        <div className="mod-merger-action-row">
+        <div className="technical-tool-overview-grid">
+          <article>
+            <h3>{t('profanityFilter.behavior.title')}</h3>
+            <p>{t('profanityFilter.behavior.description')}</p>
+          </article>
+          <article>
+            <h3>{t('profanityFilter.scope.title')}</h3>
+            <p>{t('profanityFilter.scope.description')}</p>
+          </article>
+          <article>
+            <h3>{t('profanityFilter.preservation.title')}</h3>
+            <p>{t('profanityFilter.preservation.description')}</p>
+          </article>
+        </div>
+
+        <section className="technical-tool-component-section" aria-labelledby="profanity-filter-details-heading">
+          <div>
+            <h3 id="profanity-filter-details-heading">{t('profanityFilter.details.title')}</h3>
+            <p>{t('profanityFilter.details.description')}</p>
+          </div>
+          <dl className="technical-tool-contract-grid">
+            <div>
+              <dt>{translateLiteral('File')}</dt>
+              <dd><code data-localization-ignore="true">exefs/main</code></dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Patch site')}</dt>
+              <dd><code data-localization-ignore="true">{status?.patchOffsetHex ?? '--'}</code></dd>
+            </div>
+            <div>
+              <dt>{translateLiteral('Owned bytes')}</dt>
+              <dd>{t('profanityFilter.details.ownedBytes')}</dd>
+            </div>
+            <div>
+              <dt>{t('profanityFilter.details.observedState')}</dt>
+              <dd>{patchShapeValue}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="technical-tool-component-section" aria-labelledby="profanity-filter-behavior-heading">
+          <div>
+            <h3 id="profanity-filter-behavior-heading">{t('profanityFilter.instructionTable.title')}</h3>
+            <p>{t('profanityFilter.instructionTable.description')}</p>
+          </div>
+          <div className="technical-tool-instruction-table">
+            <div>
+              <strong>{t('profanityFilter.instructionTable.vanilla')}</strong>
+              <code data-localization-ignore="true">Sword 0x97E37E86 / Shield 0x97E37E7A</code>
+              <span>{t('profanityFilter.instructionTable.vanillaBehavior')}</span>
+            </div>
+            <div>
+              <strong>{t('profanityFilter.instructionTable.km')}</strong>
+              <code data-localization-ignore="true">0x2A1F03E0 · mov w0, wzr</code>
+              <span>{t('profanityFilter.instructionTable.kmBehavior')}</span>
+            </div>
+            <div>
+              <strong>{t('profanityFilter.instructionTable.compatible')}</strong>
+              <code data-localization-ignore="true">0x52800000 · mov w0, #0</code>
+              <span>{t('profanityFilter.instructionTable.compatibleBehavior')}</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="technical-tool-notice technical-tool-notice-info" aria-labelledby="profanity-filter-restore-heading">
+          <div className="technical-tool-notice-heading">
+            <RotateCcw aria-hidden="true" size={18} />
+            <div>
+              <h3 id="profanity-filter-restore-heading">{t('profanityFilter.restore.title')}</h3>
+              <p>{t('profanityFilter.restore.description')}</p>
+            </div>
+          </div>
+        </section>
+
+        <div className="action-row technical-tool-action-row">
           <button
             aria-busy={isLoading || undefined}
             className="secondary-button"
             disabled={isBusy}
             onClick={onRefresh}
-            title="Refresh Profanity Filter status from Base ExeFS and Output Root."
+            title={t('profanityFilter.actions.refreshHelp')}
             type="button"
           >
             <BusyActionContent
-              busyLabel="Refreshing"
+              busyLabel={translateLiteral('Refreshing')}
               icon={<RefreshCw aria-hidden="true" size={16} />}
               isBusy={isLoading}
-              label="Refresh"
+              label={t('profanityFilter.actions.refresh')}
             />
           </button>
           <button
             aria-busy={isApplying || undefined}
             className="primary-button"
-            disabled={!canApply || isBusy}
+            disabled={!canInstall || isBusy}
             onClick={onApply}
-            title="Install the SwSh Profanity Filter ExeFS patch."
+            title={t('profanityFilter.actions.installHelp')}
             type="button"
           >
             <BusyActionContent
-              busyLabel="Working"
+              busyLabel={translateLiteral('Working')}
               icon={<CheckCircle aria-hidden="true" size={16} />}
               isBusy={isApplying}
-              label="Install"
+              label={t('profanityFilter.actions.install')}
             />
           </button>
           <button
             aria-busy={isApplying || undefined}
             className="danger-button"
-            disabled={!canApply || isBusy}
+            disabled={!canRestore || isBusy}
             onClick={onRestore}
-            title="Remove only Profanity Filter bytes while preserving other exefs/main edits."
+            title={t('profanityFilter.actions.restoreHelp')}
             type="button"
           >
             <BusyActionContent
-              busyLabel="Working"
+              busyLabel={translateLiteral('Working')}
               icon={<RotateCcw aria-hidden="true" size={16} />}
               isBusy={isApplying}
-              label="Uninstall"
+              label={t('profanityFilter.actions.restore')}
             />
           </button>
         </div>
+        {!isBusy && (!canInstall || !canRestore) ? (
+          <div className="technical-tool-action-help">
+            {!canInstall && installDisabledReason ? (
+              <p><strong>{t('profanityFilter.actions.install')}:</strong> {installDisabledReason}</p>
+            ) : null}
+            {!canRestore && restoreDisabledReason ? (
+              <p><strong>{t('profanityFilter.actions.restore')}:</strong> {restoreDisabledReason}</p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {status && status.diagnostics.length > 0 ? (
@@ -37450,23 +37821,6 @@ function ProfanityFilterSection({
       ) : null}
     </>
   );
-}
-
-function formatProfanityFilterStatus(status: string) {
-  switch (status) {
-    case 'installed':
-      return 'Installed';
-    case 'compatible':
-      return 'Compatible';
-    case 'notInstalled':
-      return 'Not installed';
-    case 'blocked':
-      return 'Blocked';
-    case 'unsupported':
-      return 'Unsupported';
-    default:
-      return status;
-  }
 }
 
 function getProfanityFilterStatusClassName(status: string) {

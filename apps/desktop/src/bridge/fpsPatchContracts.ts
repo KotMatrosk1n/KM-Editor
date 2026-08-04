@@ -11,8 +11,17 @@ export const loadFpsPatchRequestSchema = z.strictObject({ paths: projectPathsSch
 export const applyFpsPatchRequestSchema = z.strictObject({ paths: projectPathsSchema });
 export const restoreFpsPatchRequestSchema = z.strictObject({ paths: projectPathsSchema });
 
+export const fpsPatchRomFsCategoryStatusSchema = z.strictObject({
+  category: z.string(),
+  conflictingFileCount: z.number(),
+  managedFileCount: z.number(),
+  patchedFileCount: z.number(),
+  staleOwnedFileCount: z.number()
+});
+
 export const fpsPatchStatusSchema = z.strictObject({
   buildId: z.string().nullable(),
+  conflictingRomFsFiles: z.array(z.string()),
   conflictingRomFsFileCount: z.number(),
   detectedGame: projectGameSchema.nullable(),
   diagnostics: z.array(apiDiagnosticSchema),
@@ -21,6 +30,9 @@ export const fpsPatchStatusSchema = z.strictObject({
   message: z.string(),
   patchedMainSiteCount: z.number(),
   patchedRomFsFileCount: z.number(),
+  romFsCategories: z.array(fpsPatchRomFsCategoryStatusSchema),
+  staleOwnedRomFsFiles: z.array(z.string()),
+  staleOwnedRomFsFileCount: z.number(),
   status: z.string()
 });
 

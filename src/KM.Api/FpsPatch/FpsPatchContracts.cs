@@ -15,6 +15,13 @@ public sealed record ApplyFpsPatchRequest(
 public sealed record RestoreFpsPatchRequest(
     ProjectPathsDto Paths);
 
+public sealed record FpsPatchRomFsCategoryStatusDto(
+    string Category,
+    int ManagedFileCount,
+    int PatchedFileCount,
+    int StaleOwnedFileCount,
+    int ConflictingFileCount);
+
 public sealed record FpsPatchStatusDto(
     string Status,
     string Message,
@@ -24,7 +31,11 @@ public sealed record FpsPatchStatusDto(
     int MainSiteCount,
     int PatchedRomFsFileCount,
     int ManagedRomFsFileCount,
+    int StaleOwnedRomFsFileCount,
     int ConflictingRomFsFileCount,
+    IReadOnlyList<string> StaleOwnedRomFsFiles,
+    IReadOnlyList<string> ConflictingRomFsFiles,
+    IReadOnlyList<FpsPatchRomFsCategoryStatusDto> RomFsCategories,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadFpsPatchResponse(
