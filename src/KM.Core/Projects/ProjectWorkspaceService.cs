@@ -59,7 +59,10 @@ public sealed class ProjectWorkspaceService
         ArgumentNullException.ThrowIfNull(paths);
 
         ClearMemoryCache();
-        return validator.Validate(paths);
+        var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
+        CacheOpenedProject(paths, health, fileGraph);
+
+        return health;
     }
 
     public ProjectFileGraph RefreshFileGraph(ProjectPaths paths)
@@ -67,9 +70,29 @@ public sealed class ProjectWorkspaceService
         ArgumentNullException.ThrowIfNull(paths);
 
         ClearMemoryCache();
-        var (_, fileGraph) = ValidateAndBuildFileGraph(paths);
+        var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
+        CacheOpenedProject(paths, health, fileGraph);
 
         return fileGraph;
+    }
+
+    private void CacheOpenedProject(
+        ProjectPaths paths,
+        ProjectHealth health,
+        ProjectFileGraph fileGraph)
+    {
+        var project = new OpenedProject(
+            ProjectId.New(),
+            paths,
+            health,
+            fileGraph,
+            DateTimeOffset.UtcNow);
+
+        lock (memoryCacheSyncRoot)
+        {
+            cachedPaths = paths;
+            cachedProject = project;
+        }
     }
 
     public void ClearMemoryCache()

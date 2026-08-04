@@ -7,6 +7,7 @@ import { DesktopServiceError } from './desktopServices';
 import {
   desktopErrorCodes,
   projectBridgeErrorCodes,
+  swshPlacementErrorCodes,
   swshDynamaxAdventuresErrorCodes,
   type KmErrorCode
 } from './errorCodes';
@@ -16,6 +17,7 @@ const expectedBridgeErrorCodes = new Set<KmErrorCode>([
   swshDynamaxAdventuresErrorCodes.seedInvalid,
   swshDynamaxAdventuresErrorCodes.seedLimitInvalid,
   swshDynamaxAdventuresErrorCodes.startSeedInvalid,
+  swshPlacementErrorCodes.catalogStale,
   projectBridgeErrorCodes.gameMismatch
 ]);
 

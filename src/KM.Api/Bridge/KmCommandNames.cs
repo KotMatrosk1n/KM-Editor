@@ -72,6 +72,9 @@ public static class KmCommandNames
     public const string UpdateRaidBonusRewardField = "raidBonusRewards.reward.update";
     public const string UpdateRaidBonusRewardFields = "raidBonusRewards.rewards.update";
     public const string LoadPlacementWorkflow = "placement.load";
+    public const string OpenSwShPlacementCatalog = "placement.catalog.open";
+    public const string QuerySwShPlacementCatalog = "placement.catalog.query";
+    public const string LoadSwShPlacementObject = "placement.object.load";
     public const string UpdatePlacementObjectField = "placement.object.update";
     public const string UpdatePlacementObjectFields = "placement.objects.update";
     public const string LoadBehaviorWorkflow = "behavior.load";
@@ -135,6 +138,10 @@ public static class KmCommandNames
     public const string UpdateZaCacheSettings = "zaCache.settings.update";
     public const string ClearZaCache = "zaCache.clear";
     public const string WarmupZaCacheStep = "zaCache.warmup.step";
+    public const string GetSwShCacheStatus = "swshCache.status";
+    public const string UpdateSwShCacheSettings = "swshCache.settings.update";
+    public const string ClearSwShCache = "swshCache.clear";
+    public const string WarmupSwShCacheStep = "swshCache.warmup.step";
     public const string LoadFpsPatch = "fpsPatch.load";
     public const string ApplyFpsPatch = "fpsPatch.apply";
     public const string RestoreFpsPatch = "fpsPatch.restore";

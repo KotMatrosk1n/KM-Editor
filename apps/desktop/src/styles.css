@@ -3686,6 +3686,10 @@ h2 {
   justify-content: flex-end;
 }
 
+.evolution-draft-status {
+  margin-right: auto;
+}
+
 .learnset-add-button {
   grid-column: 1 / -1;
   max-width: 650px;
@@ -4681,6 +4685,78 @@ h2 {
 
 .placement-layout {
   grid-template-columns: minmax(360px, 0.78fr) minmax(560px, 1.22fr);
+}
+
+.placement-browser-stack {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+
+.placement-object-table {
+  max-height: none;
+  overflow: hidden;
+}
+
+.placement-object-table .virtual-table-body {
+  max-height: var(--editor-table-max-height);
+}
+
+.placement-object-table .raid-rewards-row-heading {
+  width: max(100%, var(--virtual-table-scroll-width, 100%));
+  transform: translateX(calc(0px - var(--virtual-table-scroll-x, 0px)));
+  will-change: transform;
+}
+
+.placement-object-table .virtual-table-row > .placement-object-row {
+  width: max(100%, var(--virtual-table-scroll-width, 100%));
+  min-height: 56px;
+  height: auto;
+}
+
+.placement-object-table[aria-busy="true"] .virtual-table-body {
+  opacity: 0.58;
+}
+
+.placement-load-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--color-text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  background: rgb(17 26 44 / 84%);
+  border: 1px solid #34435f;
+  border-radius: 8px;
+}
+
+.placement-retry-button {
+  margin-left: auto;
+}
+
+.placement-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.placement-pagination-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.placement-pagination .secondary-button {
+  min-height: 34px;
+  padding: 7px 12px;
 }
 
 .placement-field-groups {
@@ -8621,6 +8697,7 @@ button.sv-encounter-condition-row:hover {
   .shops-layout > .shops-table-stack,
   .encounters-layout > .encounters-table,
   .encounters-layout > .raid-rewards-table,
+  .placement-layout > .placement-browser-stack,
   .flagwork-layout > .flagwork-stack,
   .flagwork-layout > .exefs-table,
   .royal-candy-layout > .royal-candy-workflow-table,

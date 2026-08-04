@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Core.Workflows;
@@ -9,17 +10,40 @@ using KM.SwSh.Items;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Placement;
 
 public sealed class SwShPlacementWorkflowService
 {
+    private const string CatalogParserSchema = "swsh-placement-catalog-v3";
+    private const int MaximumCatalogQueryLimit = 250;
+    private const int PlacementArchiveCacheCapacity = 8;
+    private const int PlacementDetailCacheCapacity = 64;
     private const ulong Wr02HoeruoObjectHash = 0x12E3C0CA0F529035;
 
     private static readonly string[] EditingSnapshotPrimaryTransformLabels =
         ["X", "Y", "Z", "Rotation Y"];
+    private static readonly SwShCacheArtifactDescriptor CatalogCacheArtifact = new(
+        "placement.catalog",
+        "catalog",
+        SwShCacheArtifactPolicy.Balanced);
 
     private readonly ProjectWorkflowMemoryCache<SwShPlacementWorkflow> memoryCache = new();
+    private readonly SwShCacheManager? cacheManager;
+    private readonly object catalogSyncRoot = new();
+    private readonly BoundedLruCache<PlacementArchiveCacheKey, SwShPlacementZoneArchive> archiveCache =
+        new(PlacementArchiveCacheCapacity);
+    private readonly BoundedLruCache<PlacementDetailCacheKey, SwShPlacedObjectRecord> detailCache =
+        new(PlacementDetailCacheCapacity);
+    private PlacementCatalogRuntimeEntry? catalogEntry;
+    private SwShPlacementCatalogCacheData? retainedCatalogData;
+
+    public SwShPlacementWorkflowService(SwShCacheManager? cacheManager = null)
+    {
+        this.cacheManager = cacheManager;
+    }
 
     public const string PlacementDataPath = "romfs/bin/archive/field/resident/placement.gfpak";
     public const string ItemHashPath = "romfs/bin/pml/item/item_hash_to_index.dat";
@@ -146,9 +170,157 @@ public sealed class SwShPlacementWorkflowService
         return workflow;
     }
 
-    public void ClearMemoryCache()
+    public void ClearMemoryCache(bool clearReusableDataCache = true)
     {
         memoryCache.Clear();
+        lock (catalogSyncRoot)
+        {
+            catalogEntry = null;
+            archiveCache.Clear();
+            detailCache.Clear();
+            if (clearReusableDataCache)
+            {
+                retainedCatalogData = null;
+            }
+        }
+    }
+
+    public SwShPlacementCatalog OpenCatalog(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        lock (catalogSyncRoot)
+        {
+            return EnsureCatalog(project).Data.Catalog;
+        }
+    }
+
+    public SwShPlacementCatalogQueryResult QueryCatalog(
+        OpenedProject project,
+        string revision,
+        string? categoryId,
+        string? searchText,
+        int offset,
+        int limit,
+        EditSession? session = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (string.IsNullOrWhiteSpace(revision))
+        {
+            throw SwShPlacementCatalogException.Stale(
+                "Placement catalog revision is required. Reopen Placement and try again.");
+        }
+
+        if (offset < 0)
+        {
+            throw new SwShPlacementCatalogException("Placement query offset must not be negative.");
+        }
+
+        if (limit is < 1 or > MaximumCatalogQueryLimit)
+        {
+            throw new SwShPlacementCatalogException(
+                $"Placement query limit must be between 1 and {MaximumCatalogQueryLimit.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        lock (catalogSyncRoot)
+        {
+            var entry = ResolveCatalogForRevision(project, revision);
+
+            var categoryFilter = string.IsNullOrWhiteSpace(categoryId) ? null : categoryId.Trim();
+            var searchFilter = string.IsNullOrWhiteSpace(searchText) ? null : searchText.Trim();
+            var page = new List<SwShPlacedObjectRecord>(Math.Min(limit, entry.Data.Rows.Count));
+            var editingSnapshot = entry.EditingSnapshot;
+            var projectedSnapshot = session is { PendingEdits.Count: > 0 }
+                ? SwShPlacementEditSessionService.OverlayPendingEdits(
+                    editingSnapshot,
+                    session.PendingEdits,
+                    entry.DetailContext?.ItemHashes)
+                : null;
+            var totalCount = 0;
+            for (var index = 0; index < entry.Data.Rows.Count; index++)
+            {
+                var row = entry.Data.Rows[index];
+                var summary = row.Summary;
+                var effectiveSearchText = row.SearchText;
+                if (projectedSnapshot is not null
+                    && !ReferenceEquals(projectedSnapshot.Objects[index], editingSnapshot.Objects[index]))
+                {
+                    var overlaidObject = WithRefreshedPreviewText(projectedSnapshot.Objects[index]);
+                    summary = overlaidObject with { Fields = Array.Empty<SwShPlacementFieldValue>() };
+                    effectiveSearchText = string.Concat(
+                        row.SearchText,
+                        " ",
+                        CreateCatalogSearchText(overlaidObject));
+                }
+
+                if (categoryFilter is not null
+                    && !string.Equals(summary.CategoryId, categoryFilter, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (searchFilter is not null
+                    && !effectiveSearchText.Contains(searchFilter, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (totalCount >= offset && page.Count < limit)
+                {
+                    page.Add(summary);
+                }
+
+                totalCount++;
+            }
+
+            return new SwShPlacementCatalogQueryResult(
+                entry.Data.Revision,
+                page,
+                offset,
+                limit,
+                totalCount);
+        }
+    }
+
+    public SwShPlacementObjectDetailResult LoadCatalogObject(
+        OpenedProject project,
+        string revision,
+        string objectId,
+        EditSession? session = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (string.IsNullOrWhiteSpace(revision))
+        {
+            throw SwShPlacementCatalogException.Stale(
+                "Placement catalog revision is required. Reopen Placement and try again.");
+        }
+
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            throw new SwShPlacementCatalogException(
+                "A Placement object must be selected before its details can be loaded.");
+        }
+
+        lock (catalogSyncRoot)
+        {
+            var entry = ResolveCatalogForRevision(project, revision);
+            if (!entry.ObjectIndexes.TryGetValue(objectId, out var objectIndex))
+            {
+                throw SwShPlacementCatalogException.Stale(
+                    "The selected Placement object is no longer present. Reopen Placement and try again.");
+            }
+
+            var detail = LoadCatalogObjectCore(project, entry, objectIndex);
+            if (session is not null && session.PendingEdits.Count > 0)
+            {
+                detail = OverlayCatalogObject(entry, objectIndex, detail, session);
+            }
+
+            return new SwShPlacementObjectDetailResult(
+                entry.Data.Revision,
+                detail,
+                entry.Data.Catalog.Diagnostics);
+        }
     }
 
     private static SwShPlacementWorkflow CreateEditingSnapshot(
@@ -182,6 +354,11 @@ public sealed class SwShPlacementWorkflowService
             }
         }
 
+        if (FindPlacementPreviewField(placedObject) is { } previewField)
+        {
+            retainedFields.Add(previewField.Field);
+        }
+
         var fields = placedObject.Fields
             .Where(field =>
                 !field.IsReadOnly
@@ -204,8 +381,923 @@ public sealed class SwShPlacementWorkflowService
             or ChanceField;
     }
 
+    private PlacementCatalogRuntimeEntry EnsureCatalog(OpenedProject project)
+    {
+        var sourceSnapshot = CaptureCatalogSourceSnapshot(project);
+        var revision = sourceSnapshot.Revision;
+        if (catalogEntry is not null
+            && Equals(catalogEntry.Paths, project.Paths)
+            && string.Equals(catalogEntry.Data.Revision, revision, StringComparison.Ordinal))
+        {
+            return catalogEntry;
+        }
+
+        SwShPlacementCatalogCacheData? data = null;
+        PlacementDetailContext? detailContext = null;
+        var loadedFromCache = sourceSnapshot.CacheIdentity is not null
+            && TryLoadCachedCatalog(sourceSnapshot.CacheIdentity, revision, out data);
+
+        data ??= BuildCatalogCacheData(project, revision, out detailContext);
+        var verifiedSnapshot = CaptureCatalogSourceSnapshot(project);
+        if (!string.Equals(revision, verifiedSnapshot.Revision, StringComparison.Ordinal))
+        {
+            throw SwShPlacementCatalogException.Stale(
+                "Placement source data changed while the catalog was loading. Reopen Placement and try again.");
+        }
+
+        if (!loadedFromCache && verifiedSnapshot.CacheIdentity is not null)
+        {
+            TryStoreCachedCatalog(verifiedSnapshot.CacheIdentity, data);
+        }
+
+        var objectIndexes = data.Rows
+            .Select((row, index) => (row.Summary.ObjectId, Index: index))
+            .ToDictionary(entry => entry.ObjectId, entry => entry.Index, StringComparer.Ordinal);
+        var nextEntry = new PlacementCatalogRuntimeEntry(
+            project.Paths,
+            data,
+            objectIndexes,
+            detailContext,
+            verifiedSnapshot.CacheIdentity,
+            verifiedSnapshot.Fingerprints);
+
+        catalogEntry = nextEntry;
+        memoryCache.Set(project.Paths, data.EditingSnapshot);
+        archiveCache.Clear();
+        detailCache.Clear();
+        return nextEntry;
+    }
+
+    private PlacementCatalogRuntimeEntry ResolveCatalogForRevision(
+        OpenedProject project,
+        string revision)
+    {
+        if (catalogEntry is not null
+            && Equals(catalogEntry.Paths, project.Paths)
+            && string.Equals(catalogEntry.Data.Revision, revision, StringComparison.Ordinal))
+        {
+            if (AreCatalogDependencyMetadataCurrent(project.Paths, catalogEntry.DependencyFingerprints))
+            {
+                return catalogEntry;
+            }
+
+            var currentSnapshot = CaptureCatalogSourceSnapshot(project);
+            if (!string.Equals(currentSnapshot.Revision, revision, StringComparison.Ordinal))
+            {
+                InvalidateCatalogRuntime();
+                throw SwShPlacementCatalogException.Stale(
+                    "Placement source data changed after this catalog was opened. Reopen Placement and try again.");
+            }
+        }
+
+        var entry = EnsureCatalog(project);
+        ValidateCatalogRevision(entry, revision);
+        return entry;
+    }
+
+    public SwShCacheSourceIdentity? CaptureCatalogCacheSourceIdentity(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        lock (catalogSyncRoot)
+        {
+            if (catalogEntry is not null
+                && Equals(catalogEntry.Paths, project.Paths)
+                && AreCatalogDependencyMetadataCurrent(project.Paths, catalogEntry.DependencyFingerprints))
+            {
+                return catalogEntry.CacheIdentity;
+            }
+
+            return CaptureCatalogSourceSnapshot(project).CacheIdentity;
+        }
+    }
+
+    private bool TryLoadCachedCatalog(
+        SwShCacheSourceIdentity sourceIdentity,
+        string revision,
+        out SwShPlacementCatalogCacheData? data)
+    {
+        data = null;
+        if (IsUsableCatalogCacheData(retainedCatalogData, revision))
+        {
+            data = retainedCatalogData;
+            return true;
+        }
+
+        if (cacheManager is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!cacheManager.TryGetArtifact(
+                    sourceIdentity,
+                    CatalogCacheArtifact,
+                    out SwShPlacementCatalogCacheData cachedData))
+            {
+                return false;
+            }
+
+            if (IsUsableCatalogCacheData(cachedData, revision))
+            {
+                data = cachedData;
+                retainedCatalogData = cachedData;
+                return true;
+            }
+
+            cacheManager.RemoveArtifact(sourceIdentity, CatalogCacheArtifact);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        return false;
+    }
+
+    private void TryStoreCachedCatalog(
+        SwShCacheSourceIdentity sourceIdentity,
+        SwShPlacementCatalogCacheData data)
+    {
+        if (cacheManager is null)
+        {
+            retainedCatalogData = data;
+            return;
+        }
+
+        try
+        {
+            // Retain one decoded catalog for the current process. This preserves the
+            // intended session-memory cache in Minimal mode and for LayeredFS sources
+            // without serializing a very large disk-ineligible payload.
+            retainedCatalogData = data;
+            if (sourceIdentity.Sources.Any(source => source.SourceLayer != ProjectFileLayer.Base)
+                || cacheManager.GetSettings().Mode == SwShCacheMode.Minimal)
+            {
+                return;
+            }
+
+            cacheManager.SetArtifact(sourceIdentity, CatalogCacheArtifact, data);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static bool IsUsableCatalogCacheData(
+        SwShPlacementCatalogCacheData? data,
+        string revision)
+    {
+        if (data is null
+            || data.Catalog is null
+            || data.Rows is null
+            || data.EditingSnapshot is null
+            || !string.Equals(data.Revision, revision, StringComparison.Ordinal)
+            || !string.Equals(data.Catalog.Revision, revision, StringComparison.Ordinal)
+            || data.Rows.Count != data.EditingSnapshot.Objects.Count
+            || data.Catalog.Stats.TotalObjectCount != data.Rows.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < data.Rows.Count; index++)
+        {
+            var row = data.Rows[index];
+            var editingObject = data.EditingSnapshot.Objects[index];
+            if (row is null
+                || row.Summary is null
+                || editingObject is null
+                || string.IsNullOrWhiteSpace(row.Summary.ObjectId)
+                || !string.Equals(row.Summary.ObjectId, editingObject.ObjectId, StringComparison.Ordinal)
+                || (row.Summary.Fields?.Count ?? 0) != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    internal SwShPlacementCatalogCacheData BuildCatalogCacheData(
+        OpenedProject project,
+        string revision)
+    {
+        return BuildCatalogCacheData(project, revision, out _);
+    }
+
+    private SwShPlacementCatalogCacheData BuildCatalogCacheData(
+        OpenedProject project,
+        string revision,
+        out PlacementDetailContext? detailContext)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(revision);
+
+        var workflow = LoadUncached(project, out detailContext);
+        var editingSnapshot = CreateEditingSnapshot(workflow);
+        var diagnostics = SanitizeCatalogDiagnostics(project.Paths, workflow.Diagnostics);
+        var catalog = new SwShPlacementCatalog(
+            revision,
+            workflow.Summary with { Diagnostics = SanitizeCatalogDiagnostics(project.Paths, workflow.Summary.Diagnostics) },
+            workflow.EditableFields,
+            workflow.Stats,
+            diagnostics,
+            workflow.Categories);
+        var rows = workflow.Objects
+            .Select(placedObject => new SwShPlacementCatalogCacheRow(
+                placedObject with { Fields = Array.Empty<SwShPlacementFieldValue>() },
+                CreateCatalogSearchText(placedObject)))
+            .ToArray();
+
+        return new SwShPlacementCatalogCacheData(
+            revision,
+            catalog,
+            rows,
+            editingSnapshot);
+    }
+
+    private static PlacementDetailContext? LoadCatalogDetailContext(OpenedProject project)
+    {
+        var placementSource = ResolvePlacementDataSource(project);
+        if (placementSource is null)
+        {
+            return null;
+        }
+
+        var diagnostics = new List<ValidationDiagnostic>();
+        try
+        {
+            var itemNames = LoadItemNames(project, diagnostics, out _);
+            var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames);
+            var itemHashes = LoadItemHashes(project, diagnostics, out _);
+            var itemIdsByHash = CreateItemIdsByHash(itemHashes);
+            var pack = SwShGfPackFile.Parse(File.ReadAllBytes(placementSource.AbsolutePath));
+            var areaNames = LoadRequiredHashTable(pack, AreaNameHashTableMember);
+            var zoneNames = LoadOptionalHashTable(pack, ZoneNameHashTableMember, diagnostics);
+            var objectNames = LoadOptionalHashTable(pack, ObjectNameHashTableMember, diagnostics);
+            var hashLabels = LoadPlacementHashLabels(
+                project,
+                pack,
+                areaNames,
+                zoneNames,
+                objectNames,
+                diagnostics);
+            return new PlacementDetailContext(
+                pack,
+                zoneNames,
+                objectNames,
+                hashLabels,
+                itemHashes,
+                itemIdsByHash,
+                itemDisplayNames,
+                CreateProvenance(placementSource.GraphEntry));
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private SwShPlacedObjectRecord LoadCatalogObjectCore(
+        OpenedProject project,
+        PlacementCatalogRuntimeEntry entry,
+        int objectIndex)
+    {
+        var summary = entry.Data.Rows[objectIndex].Summary;
+        var detailKey = new PlacementDetailCacheKey(entry.Data.Revision, summary.ObjectId);
+        if (detailCache.TryGet(detailKey, out var cachedDetail))
+        {
+            EnrichEditingSnapshot(entry, objectIndex, cachedDetail!);
+            return cachedDetail!;
+        }
+
+        var context = entry.DetailContext ??= LoadCatalogDetailContext(project)
+            ?? throw new SwShPlacementCatalogException(
+                "Placement object details are unavailable because the catalog source could not be decoded.");
+        var archiveKey = new PlacementArchiveCacheKey(entry.Data.Revision, summary.ArchiveMember);
+        if (!archiveCache.TryGet(archiveKey, out var archive))
+        {
+            try
+            {
+                if (!context.Pack.ContainsFileName(summary.ArchiveMember))
+                {
+                    throw SwShPlacementCatalogException.Stale(
+                        "The selected Placement area is no longer present. Reopen Placement and try again.");
+                }
+
+                archive = SwShPlacementZoneArchive.Parse(
+                    context.Pack.GetFileByName(summary.ArchiveMember),
+                    context.ItemIdsByHash);
+                archiveCache.Set(archiveKey, archive);
+            }
+            catch (SwShPlacementCatalogException)
+            {
+                throw;
+            }
+            catch (InvalidDataException)
+            {
+                throw new SwShPlacementCatalogException(
+                    "The selected Placement area could not be decoded. Reopen Placement and try again.");
+            }
+            catch (IOException)
+            {
+                throw new SwShPlacementCatalogException(
+                    "The selected Placement area could not be read. Reopen Placement and try again.");
+            }
+        }
+
+        var detail = FlattenArchive(
+                summary.ArchiveMember,
+                archive!,
+                context.ZoneNames,
+                context.ObjectNames,
+                context.HashLabels,
+                context.ItemHashes,
+                context.ItemDisplayNames,
+                context.Provenance)
+            .FirstOrDefault(candidate => string.Equals(candidate.ObjectId, summary.ObjectId, StringComparison.Ordinal));
+        if (detail is null)
+        {
+            throw SwShPlacementCatalogException.Stale(
+                "The selected Placement object is no longer present. Reopen Placement and try again.");
+        }
+
+        detailCache.Set(detailKey, detail);
+        EnrichEditingSnapshot(entry, objectIndex, detail);
+        return detail;
+    }
+
+    internal void EnsureCatalogObjectsForEditing(
+        OpenedProject project,
+        IEnumerable<string?> objectIds,
+        bool verifyContent = false)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(objectIds);
+
+        lock (catalogSyncRoot)
+        {
+            if (catalogEntry is null || !Equals(catalogEntry.Paths, project.Paths))
+            {
+                return;
+            }
+
+            EnsureCatalogSourcesCurrentForEditing(project, catalogEntry, verifyContent);
+
+            foreach (var objectId in objectIds
+                .Where(objectId => !string.IsNullOrWhiteSpace(objectId))
+                .Distinct(StringComparer.Ordinal))
+            {
+                if (catalogEntry.ObjectIndexes.TryGetValue(objectId!, out var objectIndex))
+                {
+                    LoadCatalogObjectCore(project, catalogEntry, objectIndex);
+                }
+            }
+        }
+    }
+
+    private void EnrichEditingSnapshot(
+        PlacementCatalogRuntimeEntry entry,
+        int objectIndex,
+        SwShPlacedObjectRecord detail)
+    {
+        var objects = entry.EditingSnapshot.Objects.ToArray();
+        objects[objectIndex] = detail;
+        if (entry.TouchEditingDetail(objectIndex, out var evictedIndex) && evictedIndex != objectIndex)
+        {
+            objects[evictedIndex] = entry.Data.EditingSnapshot.Objects[evictedIndex];
+        }
+
+        entry.EditingSnapshot = entry.EditingSnapshot with { Objects = objects };
+        memoryCache.Set(entry.Paths, entry.EditingSnapshot);
+    }
+
+    private static SwShPlacedObjectRecord OverlayCatalogObject(
+        PlacementCatalogRuntimeEntry entry,
+        int objectIndex,
+        SwShPlacedObjectRecord detail,
+        EditSession session)
+    {
+        var objects = entry.EditingSnapshot.Objects.ToArray();
+        objects[objectIndex] = detail;
+        var workflow = entry.EditingSnapshot with { Objects = objects };
+        var projected = SwShPlacementEditSessionService.OverlayPendingEdits(
+            workflow,
+            session.PendingEdits,
+            entry.DetailContext?.ItemHashes);
+        return WithRefreshedPreviewText(projected.Objects[objectIndex]);
+    }
+
+    private static void ValidateCatalogRevision(
+        PlacementCatalogRuntimeEntry entry,
+        string revision)
+    {
+        if (!string.Equals(entry.Data.Revision, revision, StringComparison.Ordinal))
+        {
+            throw SwShPlacementCatalogException.Stale(
+                "Placement source data changed after this catalog was opened. Reopen Placement and try again.");
+        }
+    }
+
+    private static string CreateCatalogSearchText(SwShPlacedObjectRecord placedObject)
+    {
+        var builder = new StringBuilder();
+        AppendSearchValue(builder, placedObject.ArchiveMember);
+        AppendSearchValue(builder, placedObject.CategoryLabel);
+        foreach (var field in placedObject.Fields ?? [])
+        {
+            AppendSearchValue(builder, field.Label);
+            AppendSearchValue(builder, field.Value);
+            AppendSearchValue(builder, field.DisplayValue);
+            AppendSearchValue(builder, field.Group);
+        }
+
+        AppendSearchValue(builder, placedObject.ItemHash);
+        AppendSearchValue(builder, placedObject.ItemId?.ToString(CultureInfo.InvariantCulture));
+        AppendSearchValue(builder, placedObject.ItemName);
+        AppendSearchValue(builder, placedObject.Label);
+        AppendSearchValue(builder, placedObject.Map);
+        AppendSearchValue(builder, placedObject.ObjectType);
+        AppendSearchValue(builder, placedObject.PreviewText);
+        AppendSearchValue(builder, placedObject.ScriptId);
+        return builder.ToString();
+    }
+
+    private static bool AreCatalogDependencyMetadataCurrent(
+        ProjectPaths paths,
+        IReadOnlyList<CatalogDependencyFingerprint> fingerprints)
+    {
+        foreach (var fingerprint in fingerprints)
+        {
+            var current = CaptureCurrentCatalogDependencyMetadata(paths, fingerprint.RelativePath);
+            if (current.IsPresent != fingerprint.IsPresent
+                || !string.Equals(current.SourceLayer, fingerprint.SourceLayer, StringComparison.Ordinal)
+                || !string.Equals(current.SourceState, fingerprint.SourceState, StringComparison.Ordinal)
+                || !string.Equals(current.AbsolutePath, fingerprint.AbsolutePath, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(current.Length, fingerprint.Length, StringComparison.Ordinal)
+                || !string.Equals(
+                    current.LastWriteTimeUtcTicks,
+                    fingerprint.LastWriteTimeUtcTicks,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static CatalogDependencyMetadata CaptureCurrentCatalogDependencyMetadata(
+        ProjectPaths paths,
+        string relativePath)
+    {
+        var layeredPath = CombineGraphPath(paths.OutputRootPath, relativePath);
+        var basePath = relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+            ? CombineGraphPath(paths.BaseRomFsPath, relativePath["romfs/".Length..])
+            : relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase)
+                ? CombineGraphPath(paths.BaseExeFsPath, relativePath["exefs/".Length..])
+                : null;
+        var layeredExists = layeredPath is not null && File.Exists(layeredPath);
+        var baseExists = basePath is not null && File.Exists(basePath);
+        var absolutePath = layeredExists ? layeredPath : baseExists ? basePath : null;
+        if (absolutePath is null)
+        {
+            return new CatalogDependencyMetadata(
+                IsPresent: false,
+                SourceLayer: "missing",
+                SourceState: "missing",
+                AbsolutePath: null,
+                Length: "missing",
+                LastWriteTimeUtcTicks: "missing");
+        }
+
+        var sourceLayer = layeredExists ? "layered" : "base";
+        var sourceState = layeredExists
+            ? baseExists
+                ? ProjectFileGraphEntryState.LayeredOverride.ToString()
+                : ProjectFileGraphEntryState.LayeredOnly.ToString()
+            : ProjectFileGraphEntryState.BaseOnly.ToString();
+        try
+        {
+            var info = new FileInfo(absolutePath);
+            return new CatalogDependencyMetadata(
+                IsPresent: true,
+                sourceLayer,
+                sourceState,
+                absolutePath,
+                info.Exists ? info.Length.ToString(CultureInfo.InvariantCulture) : "missing",
+                info.Exists
+                    ? info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture)
+                    : "missing");
+        }
+        catch (IOException)
+        {
+            return new CatalogDependencyMetadata(
+                IsPresent: true,
+                sourceLayer,
+                sourceState,
+                absolutePath,
+                Length: "unreadable",
+                LastWriteTimeUtcTicks: "unreadable");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new CatalogDependencyMetadata(
+                IsPresent: true,
+                sourceLayer,
+                sourceState,
+                absolutePath,
+                Length: "unreadable",
+                LastWriteTimeUtcTicks: "unreadable");
+        }
+    }
+
+    private void EnsureCatalogSourcesCurrentForEditing(
+        OpenedProject project,
+        PlacementCatalogRuntimeEntry entry,
+        bool verifyContent)
+    {
+        if (!verifyContent
+            && AreCatalogDependencyMetadataCurrent(project.Paths, entry.DependencyFingerprints))
+        {
+            return;
+        }
+
+        var currentSnapshot = CaptureCatalogSourceSnapshot(project);
+        if (!string.Equals(currentSnapshot.Revision, entry.Data.Revision, StringComparison.Ordinal))
+        {
+            InvalidateCatalogRuntime();
+            throw SwShPlacementCatalogException.Stale(
+                "Placement source data changed after editing began. Reopen Placement and try again.");
+        }
+    }
+
+    private void InvalidateCatalogRuntime()
+    {
+        catalogEntry = null;
+        memoryCache.Clear();
+        archiveCache.Clear();
+        detailCache.Clear();
+    }
+
+    private static void AppendSearchValue(StringBuilder builder, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+
+        if (builder.Length > 0)
+        {
+            builder.Append(' ');
+        }
+
+        builder.Append(value);
+    }
+
+    private static CatalogSourceSnapshot CaptureCatalogSourceSnapshot(OpenedProject project)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var dependencyPaths = GetCatalogDependencyPaths(project);
+        var dependencies = dependencyPaths
+            .Select(relativePath => new CatalogDependencySource(
+                relativePath,
+                ResolveWorkflowFile(project, relativePath)))
+            .ToArray();
+        var fingerprints = new CatalogDependencyFingerprint[dependencies.Length];
+        Parallel.For(
+            fromInclusive: 0,
+            toExclusive: dependencies.Length,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) },
+            index => fingerprints[index] = CaptureCatalogDependencyFingerprint(dependencies[index]));
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendFingerprint(hash, CatalogParserSchema);
+        AppendFingerprint(hash, project.Paths.SelectedGame?.ToString() ?? "none");
+        AppendFingerprint(hash, language);
+        foreach (var fingerprint in fingerprints)
+        {
+            AppendFingerprint(hash, fingerprint.RelativePath.ToLowerInvariant());
+            if (!fingerprint.IsPresent)
+            {
+                AppendFingerprint(hash, "missing");
+                continue;
+            }
+
+            AppendFingerprint(hash, fingerprint.SourceLayer);
+            AppendFingerprint(hash, fingerprint.SourceState);
+            AppendFingerprint(hash, fingerprint.AbsolutePath!);
+            AppendFingerprint(hash, fingerprint.Length);
+            AppendFingerprint(hash, fingerprint.LastWriteTimeUtcTicks);
+            AppendFingerprint(hash, fingerprint.ContentSha256);
+        }
+
+        var revision = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        return new CatalogSourceSnapshot(
+            revision,
+            CreateCatalogCacheSourceIdentity(project, language, fingerprints),
+            fingerprints);
+    }
+
+    private static string[] GetCatalogDependencyPaths(OpenedProject project)
+    {
+        var paths = project.FileGraph.Entries
+            .Select(entry => entry.RelativePath)
+            .Where(IsCatalogEnumeratedDependencyPath)
+            .Concat(
+            [
+                PlacementDataPath,
+                ItemHashPath,
+                TrainerIdHashTablePath,
+                SwShStaticEncountersWorkflowService.StaticEncounterDataPath,
+                SwShItemTable.ItemDataRelativePath,
+                SwShPersonalTable.PersonalDataRelativePath,
+            ])
+            .ToList();
+
+        foreach (var fileName in new[] { "itemname.dat", "wazaname.dat" })
+        {
+            var source = ResolveCommonTextSource(project, fileName);
+            paths.Add(source?.GraphEntry.RelativePath
+                ?? SwShGameTextLanguage.CommonMessagePath(
+                    SwShGameTextLanguage.Resolve(project.Paths),
+                    fileName));
+        }
+
+        var abilityNamesSource = ResolvePreferredOrEnglishCommonTextSource(project, "tokusei.dat");
+        paths.Add(abilityNamesSource?.GraphEntry.RelativePath
+            ?? SwShGameTextLanguage.CommonMessagePath(
+                SwShGameTextLanguage.Resolve(project.Paths),
+                "tokusei.dat"));
+
+        var staticMessageRoot = ResolveStaticEncounterMessageRoot(project);
+        if (staticMessageRoot is not null)
+        {
+            paths.Add($"{staticMessageRoot}/monsname.dat");
+            paths.Add($"{staticMessageRoot}/itemname.dat");
+            paths.Add($"{staticMessageRoot}/wazaname.dat");
+        }
+
+        return paths
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsCatalogEnumeratedDependencyPath(string relativePath)
+    {
+        return (relativePath.StartsWith(FlagworkRootPath, StringComparison.OrdinalIgnoreCase)
+                && relativePath.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase))
+            || (relativePath.StartsWith(
+                    SwShMoveDataFile.MoveDataRelativeDirectory + "/",
+                    StringComparison.OrdinalIgnoreCase)
+                && (relativePath.EndsWith(".wazabin", StringComparison.OrdinalIgnoreCase)
+                    || relativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static WorkflowFileSource? ResolvePreferredOrEnglishCommonTextSource(
+        OpenedProject project,
+        string fileName)
+    {
+        var language = SwShGameTextLanguage.Resolve(project.Paths);
+        var preferred = ResolveWorkflowFile(
+            project,
+            SwShGameTextLanguage.CommonMessagePath(language, fileName));
+        if (preferred is not null)
+        {
+            return preferred;
+        }
+
+        return string.Equals(language, SwShGameTextLanguage.English, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : ResolveWorkflowFile(
+                project,
+                SwShGameTextLanguage.CommonMessagePath(SwShGameTextLanguage.English, fileName));
+    }
+
+    private static string? ResolveStaticEncounterMessageRoot(OpenedProject project)
+    {
+        const string messageRoot = "romfs/bin/message";
+        var languages = project.FileGraph.Entries
+            .Where(entry => entry.RelativePath.StartsWith(messageRoot + "/", StringComparison.OrdinalIgnoreCase))
+            .Select(entry =>
+            {
+                var start = messageRoot.Length + 1;
+                var separator = entry.RelativePath.IndexOf('/', start);
+                return separator < 0 ? null : entry.RelativePath[start..separator];
+            })
+            .Where(language => !string.IsNullOrWhiteSpace(language))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (languages.Length == 0)
+        {
+            return null;
+        }
+
+        var preferredLanguage = SwShGameTextLanguage.Resolve(project.Paths);
+        var language = languages.Contains(preferredLanguage, StringComparer.OrdinalIgnoreCase)
+            ? preferredLanguage
+            : languages.Contains(SwShGameTextLanguage.English, StringComparer.OrdinalIgnoreCase)
+                ? SwShGameTextLanguage.English
+                : languages[0]!;
+        return $"{messageRoot}/{language}/common";
+    }
+
+    private static SwShCacheSourceIdentity? CreateCatalogCacheSourceIdentity(
+        OpenedProject project,
+        string language,
+        IReadOnlyList<CatalogDependencyFingerprint> fingerprints)
+    {
+        if (project.Paths.SelectedGame is not (ProjectGame.Sword or ProjectGame.Shield)
+            || fingerprints.FirstOrDefault(fingerprint =>
+                string.Equals(
+                    fingerprint.RelativePath,
+                    PlacementDataPath,
+                    StringComparison.OrdinalIgnoreCase)) is not { IsCacheSource: true })
+        {
+            return null;
+        }
+
+        var present = fingerprints.Where(fingerprint => fingerprint.IsPresent).ToArray();
+        if (present.Length == 0 || present.Any(fingerprint => !fingerprint.IsCacheSource))
+        {
+            return null;
+        }
+
+        var stamps = present.Select(fingerprint => new SwShCacheFileStamp(
+            Path.GetFullPath(fingerprint.AbsolutePath!),
+            fingerprint.CacheSourceLayer!.Value,
+            fingerprint.CacheLength!.Value,
+            fingerprint.CacheLastWriteTimeUtc!.Value,
+            fingerprint.ContentSha256)).ToArray();
+        return new SwShCacheSourceIdentity(
+            SwShCacheManager.CacheSchemaVersion,
+            $"{CatalogParserSchema};language={language}",
+            project.Paths.SelectedGame.Value,
+            stamps);
+    }
+
+    private static CatalogDependencyFingerprint CaptureCatalogDependencyFingerprint(
+        CatalogDependencySource dependency)
+    {
+        if (dependency.Source is null)
+        {
+            return new CatalogDependencyFingerprint(
+                dependency.RelativePath,
+                IsPresent: false,
+                SourceLayer: "missing",
+                SourceState: "missing",
+                AbsolutePath: null,
+                Length: "missing",
+                LastWriteTimeUtcTicks: "missing",
+                ContentSha256: "missing",
+                CacheSourceLayer: null,
+                CacheLength: null,
+                CacheLastWriteTimeUtc: null);
+        }
+
+        var source = dependency.Source;
+        var length = "unreadable";
+        var lastWriteTimeUtcTicks = "unreadable";
+        long? cacheLength = null;
+        DateTime? cacheLastWriteTimeUtc = null;
+        try
+        {
+            var info = new FileInfo(source.AbsolutePath);
+            length = info.Exists ? info.Length.ToString(CultureInfo.InvariantCulture) : "missing";
+            lastWriteTimeUtcTicks = info.Exists
+                ? info.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture)
+                : "missing";
+            if (info.Exists)
+            {
+                cacheLength = info.Length;
+                cacheLastWriteTimeUtc = DateTime.SpecifyKind(info.LastWriteTimeUtc, DateTimeKind.Utc);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        return new CatalogDependencyFingerprint(
+            dependency.RelativePath,
+            IsPresent: true,
+            source.GraphEntry.LayeredFile is null ? "base" : "layered",
+            source.GraphEntry.State.ToString(),
+            source.AbsolutePath,
+            length,
+            lastWriteTimeUtcTicks,
+            CreateCatalogContentFingerprint(source.AbsolutePath),
+            source.GraphEntry.LayeredFile is null
+                ? ProjectFileLayer.Base
+                : ProjectFileLayer.Layered,
+            cacheLength,
+            cacheLastWriteTimeUtc);
+    }
+
+    private static string CreateCatalogContentFingerprint(string absolutePath)
+    {
+        try
+        {
+            using var stream = new FileStream(
+                absolutePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 128 * 1024,
+                FileOptions.SequentialScan);
+            return Convert.ToHexString(SHA256.HashData(stream));
+        }
+        catch (FileNotFoundException)
+        {
+            return "missing";
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return "missing";
+        }
+        catch (IOException)
+        {
+            return "unreadable";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return "unreadable";
+        }
+    }
+
+    private static void AppendFingerprint(IncrementalHash hash, string value)
+    {
+        hash.AppendData(Encoding.UTF8.GetBytes(value));
+        hash.AppendData([0]);
+    }
+
+    private static IReadOnlyList<ValidationDiagnostic> SanitizeCatalogDiagnostics(
+        ProjectPaths paths,
+        IReadOnlyList<ValidationDiagnostic> diagnostics)
+    {
+        return diagnostics.Select(diagnostic => diagnostic with
+        {
+            Message = SanitizeCatalogText(paths, diagnostic.Message),
+            File = SanitizeCatalogFile(paths, diagnostic.File),
+        }).ToArray();
+    }
+
+    private static string SanitizeCatalogText(ProjectPaths paths, string value)
+    {
+        var sanitized = value;
+        foreach (var (path, replacement) in new[]
+        {
+            (paths.BaseRomFsPath, "base RomFS"),
+            (paths.BaseExeFsPath, "base ExeFS"),
+            (paths.OutputRootPath, "output root"),
+        })
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                sanitized = sanitized.Replace(path, replacement, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return sanitized;
+    }
+
+    private static string? SanitizeCatalogFile(ProjectPaths paths, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !Path.IsPathRooted(value))
+        {
+            return value;
+        }
+
+        return SanitizeCatalogText(paths, value);
+    }
+
     private SwShPlacementWorkflow LoadUncached(OpenedProject project)
     {
+        return LoadUncached(project, out _);
+    }
+
+    private SwShPlacementWorkflow LoadUncached(
+        OpenedProject project,
+        out PlacementDetailContext? detailContext)
+    {
+        detailContext = null;
         var summary = CreateSummary(project);
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
 
@@ -237,6 +1329,15 @@ public sealed class SwShPlacementWorkflowService
             var objectNames = LoadOptionalHashTable(pack, ObjectNameHashTableMember, diagnostics);
             var hashLabels = LoadPlacementHashLabels(project, pack, areaNames, zoneNames, objectNames, diagnostics);
             var provenance = CreateProvenance(placementSource.GraphEntry);
+            detailContext = new PlacementDetailContext(
+                pack,
+                zoneNames,
+                objectNames,
+                hashLabels,
+                itemHashes,
+                itemIdsByHash,
+                itemDisplayNames,
+                provenance);
             var records = new List<SwShPlacedObjectRecord>();
             var areaCount = 0;
 
@@ -866,7 +1967,7 @@ public sealed class SwShPlacementWorkflowService
         bool itemUsesDirectIdStorage = false)
     {
         var category = ResolveCategory(objectType);
-        return new SwShPlacedObjectRecord(
+        var placedObject = new SwShPlacedObjectRecord(
             objectId,
             objectType,
             label,
@@ -891,6 +1992,129 @@ public sealed class SwShPlacementWorkflowService
             fields,
             itemUsesHashStorage,
             itemUsesDirectIdStorage);
+        return WithRefreshedPreviewText(placedObject);
+    }
+
+    internal static SwShPlacedObjectRecord WithRefreshedPreviewText(
+        SwShPlacedObjectRecord placedObject)
+    {
+        ArgumentNullException.ThrowIfNull(placedObject);
+        return placedObject with { PreviewText = CreatePlacementPreviewText(placedObject) };
+    }
+
+    private static string CreatePlacementPreviewText(SwShPlacedObjectRecord placedObject)
+    {
+        if (FindPlacementPreviewField(placedObject) is { } previewField)
+        {
+            return GetPlacementDisplayValue(previewField);
+        }
+
+        if (string.Equals(placedObject.CategoryId, "pokemonSpawners", StringComparison.Ordinal))
+        {
+            return placedObject.Label;
+        }
+
+        if (string.Equals(placedObject.CategoryId, "itemBallSpawners", StringComparison.Ordinal))
+        {
+            return FirstNonempty(placedObject.ItemName, placedObject.Label);
+        }
+
+        if (!string.IsNullOrEmpty(placedObject.ScriptId))
+        {
+            return placedObject.ScriptId;
+        }
+
+        return placedObject.ItemId is null
+            ? FirstNonempty(placedObject.ItemHash, placedObject.ItemName, placedObject.ObjectType)
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"{placedObject.ItemName} ({placedObject.ItemId.Value})");
+    }
+
+    private static SwShPlacementFieldValue? FindPlacementPreviewField(
+        SwShPlacedObjectRecord placedObject)
+    {
+        var fields = placedObject.Fields ?? [];
+        var species = fields.FirstOrDefault(field =>
+                field.Field.EndsWith(".speciesId", StringComparison.Ordinal))
+            ?? fields.FirstOrDefault(field =>
+                field.Field.EndsWith(".Species", StringComparison.Ordinal));
+        if (species is not null)
+        {
+            return species;
+        }
+
+        if (string.Equals(placedObject.CategoryId, "pokemonSpawners", StringComparison.Ordinal)
+            || string.Equals(placedObject.CategoryId, "itemBallSpawners", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var table = fields.FirstOrDefault(field =>
+                field.Field.EndsWith(".tableKey", StringComparison.Ordinal))
+            ?? fields.FirstOrDefault(field =>
+                field.Field.EndsWith(".label", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Static Encounter", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Symbol Encounter", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Raid Table", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Trainer Battle", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Object Hash", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Model Hash", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                field.Label.Contains("Message Hash", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                string.Equals(field.Group, "References", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field));
+        if (table is not null)
+        {
+            return table;
+        }
+
+        var model = fields.FirstOrDefault(field =>
+                string.Equals(field.Label, "Model", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field))
+            ?? fields.FirstOrDefault(field =>
+                string.Equals(field.Label, "Model Hash", StringComparison.Ordinal)
+                && HasUsefulPlacementDisplay(field));
+        if (model is not null)
+        {
+            return model;
+        }
+
+        return null;
+    }
+
+    private static string GetPlacementDisplayValue(SwShPlacementFieldValue field)
+    {
+        return string.IsNullOrEmpty(field.DisplayValue) ? field.Value : field.DisplayValue;
+    }
+
+    private static bool HasUsefulPlacementDisplay(SwShPlacementFieldValue field)
+    {
+        var value = GetPlacementDisplayValue(field).Trim();
+        return value.Length > 0
+            && !string.Equals(value, "None", StringComparison.Ordinal)
+            && !string.Equals(value, "None (empty hash)", StringComparison.Ordinal)
+            && !string.Equals(value, "0xCBF29CE484222645", StringComparison.Ordinal);
+    }
+
+    private static string FirstNonempty(params string[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrEmpty(value)) ?? string.Empty;
     }
 
     private static IReadOnlyList<SwShPlacementFieldValue> CreateFieldItemFields(
@@ -1516,6 +2740,170 @@ public sealed class SwShPlacementWorkflowService
             : ProjectFileLayer.Base;
 
         return new SwShPlacementProvenance(entry.RelativePath, sourceLayer, entry.State);
+    }
+
+    private sealed class PlacementCatalogRuntimeEntry
+    {
+        private readonly Dictionary<int, LinkedListNode<int>> editingDetailNodes = [];
+        private readonly LinkedList<int> editingDetailRecency = [];
+
+        public PlacementCatalogRuntimeEntry(
+            ProjectPaths paths,
+            SwShPlacementCatalogCacheData data,
+            IReadOnlyDictionary<string, int> objectIndexes,
+            PlacementDetailContext? detailContext,
+            SwShCacheSourceIdentity? cacheIdentity,
+            IReadOnlyList<CatalogDependencyFingerprint> dependencyFingerprints)
+        {
+            Paths = paths;
+            Data = data;
+            ObjectIndexes = objectIndexes;
+            DetailContext = detailContext;
+            CacheIdentity = cacheIdentity;
+            DependencyFingerprints = dependencyFingerprints;
+            EditingSnapshot = data.EditingSnapshot;
+        }
+
+        public ProjectPaths Paths { get; }
+
+        public SwShPlacementCatalogCacheData Data { get; }
+
+        public IReadOnlyDictionary<string, int> ObjectIndexes { get; }
+
+        public PlacementDetailContext? DetailContext { get; set; }
+
+        public SwShCacheSourceIdentity? CacheIdentity { get; }
+
+        public IReadOnlyList<CatalogDependencyFingerprint> DependencyFingerprints { get; }
+
+        public SwShPlacementWorkflow EditingSnapshot { get; set; }
+
+        public bool TouchEditingDetail(int objectIndex, out int evictedIndex)
+        {
+            evictedIndex = -1;
+            if (editingDetailNodes.Remove(objectIndex, out var existingNode))
+            {
+                editingDetailRecency.Remove(existingNode);
+            }
+
+            editingDetailNodes[objectIndex] = editingDetailRecency.AddLast(objectIndex);
+            if (editingDetailNodes.Count <= PlacementDetailCacheCapacity
+                || editingDetailRecency.First is not { } oldest)
+            {
+                return false;
+            }
+
+            editingDetailRecency.RemoveFirst();
+            editingDetailNodes.Remove(oldest.Value);
+            evictedIndex = oldest.Value;
+            return true;
+        }
+    }
+
+    private sealed record PlacementDetailContext(
+        SwShGfPackFile Pack,
+        IReadOnlyDictionary<ulong, string> ZoneNames,
+        IReadOnlyDictionary<ulong, string> ObjectNames,
+        IReadOnlyDictionary<ulong, string> HashLabels,
+        IReadOnlyDictionary<int, ulong> ItemHashes,
+        IReadOnlyDictionary<ulong, int> ItemIdsByHash,
+        IReadOnlyList<string> ItemDisplayNames,
+        SwShPlacementProvenance Provenance);
+
+    private sealed record PlacementArchiveCacheKey(string Revision, string ArchiveMember);
+
+    private sealed record PlacementDetailCacheKey(string Revision, string ObjectId);
+
+    private sealed record CatalogDependencySource(
+        string RelativePath,
+        WorkflowFileSource? Source);
+
+    private sealed record CatalogSourceSnapshot(
+        string Revision,
+        SwShCacheSourceIdentity? CacheIdentity,
+        IReadOnlyList<CatalogDependencyFingerprint> Fingerprints);
+
+    private sealed record CatalogDependencyMetadata(
+        bool IsPresent,
+        string SourceLayer,
+        string SourceState,
+        string? AbsolutePath,
+        string Length,
+        string LastWriteTimeUtcTicks);
+
+    private sealed record CatalogDependencyFingerprint(
+        string RelativePath,
+        bool IsPresent,
+        string SourceLayer,
+        string SourceState,
+        string? AbsolutePath,
+        string Length,
+        string LastWriteTimeUtcTicks,
+        string ContentSha256,
+        ProjectFileLayer? CacheSourceLayer,
+        long? CacheLength,
+        DateTime? CacheLastWriteTimeUtc)
+    {
+        public bool IsCacheSource =>
+            IsPresent
+            && !string.IsNullOrWhiteSpace(AbsolutePath)
+            && CacheSourceLayer is not null
+            && CacheLength is >= 0
+            && CacheLastWriteTimeUtc is not null
+            && ContentSha256.Length == 64
+            && ContentSha256.All(Uri.IsHexDigit);
+    }
+
+    private sealed class BoundedLruCache<TKey, TValue>
+        where TKey : notnull
+    {
+        private readonly int capacity;
+        private readonly Dictionary<TKey, CacheEntry> entries = [];
+        private readonly LinkedList<TKey> recency = [];
+
+        public BoundedLruCache(int capacity)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1);
+            this.capacity = capacity;
+        }
+
+        public bool TryGet(TKey key, out TValue? value)
+        {
+            if (!entries.TryGetValue(key, out var entry))
+            {
+                value = default;
+                return false;
+            }
+
+            recency.Remove(entry.RecencyNode);
+            recency.AddLast(entry.RecencyNode);
+            value = entry.Value;
+            return true;
+        }
+
+        public void Set(TKey key, TValue value)
+        {
+            if (entries.Remove(key, out var replaced))
+            {
+                recency.Remove(replaced.RecencyNode);
+            }
+
+            var node = recency.AddLast(key);
+            entries[key] = new CacheEntry(value, node);
+            while (entries.Count > capacity && recency.First is { } oldest)
+            {
+                recency.RemoveFirst();
+                entries.Remove(oldest.Value);
+            }
+        }
+
+        public void Clear()
+        {
+            entries.Clear();
+            recency.Clear();
+        }
+
+        private sealed record CacheEntry(TValue Value, LinkedListNode<TKey> RecencyNode);
     }
 
     private static SwShWorkflowSummary CreateSummary(

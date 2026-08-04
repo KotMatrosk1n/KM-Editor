@@ -35,7 +35,8 @@ public sealed record SwShPlacedObjectRecord(
     string CategoryLabel = "",
     IReadOnlyList<SwShPlacementFieldValue>? Fields = null,
     bool ItemUsesHashStorage = false,
-    bool ItemUsesDirectIdStorage = false);
+    bool ItemUsesDirectIdStorage = false,
+    string? PreviewText = null);
 
 public sealed record SwShPlacementFieldValue(
     string Field,
@@ -106,3 +107,51 @@ public sealed record SwShPlacementWorkflow(
     SwShPlacementWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics,
     IReadOnlyList<SwShPlacementCategory> Categories);
+
+public sealed record SwShPlacementCatalog(
+    string Revision,
+    SwShWorkflowSummary Summary,
+    IReadOnlyList<SwShPlacementEditableField> EditableFields,
+    SwShPlacementWorkflowStats Stats,
+    IReadOnlyList<ValidationDiagnostic> Diagnostics,
+    IReadOnlyList<SwShPlacementCategory> Categories);
+
+public sealed record SwShPlacementCatalogQueryResult(
+    string Revision,
+    IReadOnlyList<SwShPlacedObjectRecord> Objects,
+    int Offset,
+    int Limit,
+    int TotalCount);
+
+public sealed record SwShPlacementObjectDetailResult(
+    string Revision,
+    SwShPlacedObjectRecord Object,
+    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+internal sealed record SwShPlacementCatalogCacheData(
+    string Revision,
+    SwShPlacementCatalog Catalog,
+    IReadOnlyList<SwShPlacementCatalogCacheRow> Rows,
+    SwShPlacementWorkflow EditingSnapshot);
+
+internal sealed record SwShPlacementCatalogCacheRow(
+    SwShPlacedObjectRecord Summary,
+    string SearchText);
+
+public sealed class SwShPlacementCatalogException : InvalidOperationException
+{
+    public const string StaleCatalogErrorCode = "KM-SWSH-PLACEMENT-CATALOG-STALE";
+
+    public SwShPlacementCatalogException(string message, string? code = null)
+        : base(message)
+    {
+        Code = code;
+    }
+
+    public string? Code { get; }
+
+    public static SwShPlacementCatalogException Stale(string message)
+    {
+        return new SwShPlacementCatalogException(message, StaleCatalogErrorCode);
+    }
+}

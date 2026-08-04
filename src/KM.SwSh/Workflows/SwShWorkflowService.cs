@@ -32,6 +32,8 @@ using KM.SwSh.Text;
 using KM.SwSh.TypeChart;
 using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace KM.SwSh.Workflows;
 
@@ -71,6 +73,9 @@ public sealed class SwShWorkflowService
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShParsedDataCache parsedDataCache;
+    private readonly SwShCacheManager cacheManager;
+    private readonly object cacheWarmupSyncRoot = new();
+    private string? warmedPlacementCacheKey;
 
     public SwShWorkflowService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -106,9 +111,11 @@ public sealed class SwShWorkflowService
         SwShNpcItemGiftWorkflowService? npcItemGiftWorkflowService = null,
         SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
-        SwShParsedDataCache? parsedDataCache = null)
+        SwShParsedDataCache? parsedDataCache = null,
+        SwShCacheManager? cacheManager = null)
     {
         this.parsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
+        this.cacheManager = cacheManager ?? new SwShCacheManager();
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SwShPokemonWorkflowService();
@@ -130,7 +137,7 @@ public sealed class SwShWorkflowService
         this.staticEncountersWorkflowService = staticEncountersWorkflowService ?? new SwShStaticEncountersWorkflowService();
         this.rentalPokemonWorkflowService = rentalPokemonWorkflowService ?? new SwShRentalPokemonWorkflowService();
         this.dynamaxAdventuresWorkflowService = dynamaxAdventuresWorkflowService ?? new SwShDynamaxAdventuresWorkflowService();
-        this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
+        this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService(this.cacheManager);
         this.behaviorWorkflowService = behaviorWorkflowService ?? new SwShBehaviorWorkflowService();
         this.raidBattlesWorkflowService = raidBattlesWorkflowService ?? new SwShRaidBattlesWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
@@ -219,15 +226,163 @@ public sealed class SwShWorkflowService
 
     public SwShPlacementWorkflowService SharedPlacementWorkflowService => placementWorkflowService;
 
+    public SwShCacheManager SharedCacheManager => cacheManager;
+
+    public SwShCacheStatus GetCacheStatus(ProjectPaths? paths = null)
+    {
+        var activeSource = CapturePlacementCacheSourceIdentity(paths);
+        return AddPlacementWarmupStatus(cacheManager.GetStatus(activeSource), activeSource);
+    }
+
+    public SwShCacheStatus UpdateCacheSettings(
+        SwShCacheMode mode,
+        long maxCacheSizeBytes,
+        ProjectPaths? activePaths = null)
+    {
+        var activeSource = CapturePlacementCacheSourceIdentity(activePaths);
+        var previousSettings = cacheManager.GetSettings();
+        var status = cacheManager.UpdateSettings(mode, maxCacheSizeBytes, activeSource);
+        if (previousSettings.Mode != status.Settings.Mode)
+        {
+            ClearMemoryCaches(clearReusableDataCaches: true);
+            ClearPlacementWarmupState();
+        }
+
+        return AddPlacementWarmupStatus(status, activeSource);
+    }
+
+    public SwShCacheStatus ClearCache(ProjectPaths? activePaths = null)
+    {
+        var activeSource = CapturePlacementCacheSourceIdentity(activePaths);
+        var status = cacheManager.Clear(activeSource);
+        ClearMemoryCaches(clearReusableDataCaches: true);
+        ClearPlacementWarmupState();
+        return AddPlacementWarmupStatus(status, activeSource);
+    }
+
+    public SwShCacheStatus WarmupCacheStep(ProjectPaths paths, int stepIndex)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        if (stepIndex != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(stepIndex), stepIndex, "Sword/Shield cache warmup has one step at index 0.");
+        }
+
+        var status = cacheManager.GetStatus();
+        if (status.Settings.Mode == SwShCacheMode.Minimal)
+        {
+            return AddPlacementWarmupStatus(status, activeSource: null);
+        }
+
+        var project = projectWorkspaceService.Open(paths);
+        OpenPlacementCatalog(project);
+        var activeSource = placementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
+        return AddPlacementWarmupStatus(cacheManager.GetStatus(activeSource), activeSource);
+    }
+
+    public SwShPlacementCatalog OpenPlacementCatalog(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var catalog = placementWorkflowService.OpenCatalog(project);
+        var activeSource = placementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
+        if (activeSource is not null)
+        {
+            lock (cacheWarmupSyncRoot)
+            {
+                warmedPlacementCacheKey = CreateCacheIdentityKey(activeSource);
+            }
+        }
+
+        return catalog;
+    }
+
     public void ClearMemoryCaches(bool clearReusableDataCaches = true)
     {
         projectWorkspaceService.ClearMemoryCache();
         pokemonWorkflowService.ClearMemoryCache();
-        placementWorkflowService.ClearMemoryCache();
+        placementWorkflowService.ClearMemoryCache(clearReusableDataCaches);
         if (clearReusableDataCaches)
         {
             parsedDataCache.Clear();
         }
+    }
+
+    private SwShCacheSourceIdentity? CapturePlacementCacheSourceIdentity(ProjectPaths? paths)
+    {
+        if (paths is null)
+        {
+            return null;
+        }
+
+        var project = projectWorkspaceService.Open(paths);
+        return placementWorkflowService.CaptureCatalogCacheSourceIdentity(project);
+    }
+
+    private SwShCacheStatus AddPlacementWarmupStatus(
+        SwShCacheStatus status,
+        SwShCacheSourceIdentity? activeSource)
+    {
+        if (status.Settings.Mode == SwShCacheMode.Minimal || activeSource is null)
+        {
+            return status with
+            {
+                WarmupCompleted = 0,
+                WarmupTotal = 0,
+                ProgressPercent = 0,
+            };
+        }
+
+        var activeKey = CreateCacheIdentityKey(activeSource);
+        bool isWarmed;
+        lock (cacheWarmupSyncRoot)
+        {
+            isWarmed = string.Equals(warmedPlacementCacheKey, activeKey, StringComparison.Ordinal);
+        }
+
+        return status with
+        {
+            WarmupCompleted = isWarmed ? 1 : 0,
+            WarmupTotal = 1,
+            ProgressPercent = isWarmed ? 100 : 0,
+            Phase = isWarmed ? "Cache ready" : "Ready to cache",
+            Message = isWarmed
+                ? "Sword/Shield Placement cache is ready."
+                : "Sword/Shield Placement cache is ready to warm.",
+        };
+    }
+
+    private void ClearPlacementWarmupState()
+    {
+        lock (cacheWarmupSyncRoot)
+        {
+            warmedPlacementCacheKey = null;
+        }
+    }
+
+    private static string CreateCacheIdentityKey(SwShCacheSourceIdentity source)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendCacheIdentityValue(hash, source.CacheSchemaVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AppendCacheIdentityValue(hash, source.ParserVersion);
+        AppendCacheIdentityValue(hash, ((int)source.SelectedGame).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        foreach (var file in source.Sources)
+        {
+            AppendCacheIdentityValue(hash, file.FullPath);
+            AppendCacheIdentityValue(hash, ((int)file.SourceLayer).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            AppendCacheIdentityValue(hash, file.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            AppendCacheIdentityValue(hash, file.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            AppendCacheIdentityValue(hash, file.Sha256);
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static void AppendCacheIdentityValue(IncrementalHash hash, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        hash.AppendData(BitConverter.GetBytes(bytes.Length));
+        hash.AppendData(bytes);
     }
 
     public SwShMovesWorkflow LoadMoves(ProjectPaths paths)

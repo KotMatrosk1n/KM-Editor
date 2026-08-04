@@ -5,7 +5,10 @@
 `KM.Setup.Launcher` is an invisible, native x64 Windows entry point for the KM
 Editor Burn bundle. It exists only to bridge Windows updater command
 lines emitted by already-released Tauri clients. It is intentionally not part
-of the root solution and has no package, build, workflow, or release hook of
+of the root solution and is not built by ordinary application or solution
+builds or by the pull-request workflow. It is built only as the final stage of
+an explicit `Build-KmWindowsSetup.ps1` packaging run, including eligible
+`Desktop Release` runs; it has no independent package or release trigger of
 its own. Both configurations use the static Visual C++ runtime (`/MTd` for
 Debug and `/MT` for Release), so a clean machine does not need the VC++
 redistributable merely to start setup.
