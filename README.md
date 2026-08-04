@@ -65,7 +65,9 @@ Regular users do not need .NET, Node.js, Rust, Git, or a separate backend instal
 
 The interface is available in English, Spanish, French, German, Russian, Ukrainian, and Simplified Chinese.
 
-Installed releases can check GitHub for newer stable versions and guide you through supported updates from **Settings**. Update checks contact GitHub. If a bundled Pokémon sprite is unavailable, the interface may request a fallback image from Pokémon Showdown. Project files remain local and are not uploaded by either request.
+Installed releases can check GitHub for newer stable versions and guide you through supported updates from **Settings**. The Windows setup handles installation, supported updates, repair, and uninstall while clearing rebuildable editor cache without removing user settings unless the user chooses to remove them during uninstall.
+
+Update checks contact GitHub. If a bundled Pokémon sprite is unavailable, the interface may request a fallback image from Pokémon Showdown. Project files remain local and are not uploaded by either request.
 
 ## Guides and Help
 

@@ -3,6 +3,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
+    [string] $Version,
+
+    [Parameter(Mandatory = $true)]
     [string] $CargoTargetDirectory,
 
     [Parameter(Mandatory = $true)]
@@ -73,6 +76,55 @@ function Assert-X64PortableExecutable {
     }
 }
 
+function Assert-KmBinaryVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Path,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Description,
+
+        [Parameter(Mandatory = $true)]
+        [int[]] $ExpectedParts
+    )
+
+    $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+    if ([string]::IsNullOrWhiteSpace($versionInfo.FileVersion) -or
+        [string]::IsNullOrWhiteSpace($versionInfo.ProductVersion)) {
+        throw "$Description must carry Windows file and product version metadata. Rebuild it from synchronized release metadata."
+    }
+
+    $expected = @($ExpectedParts[0], $ExpectedParts[1], $ExpectedParts[2], 0)
+    $actualFile = @(
+        $versionInfo.FileMajorPart,
+        $versionInfo.FileMinorPart,
+        $versionInfo.FileBuildPart,
+        $versionInfo.FilePrivatePart
+    )
+    $actualProduct = @(
+        $versionInfo.ProductMajorPart,
+        $versionInfo.ProductMinorPart,
+        $versionInfo.ProductBuildPart,
+        $versionInfo.ProductPrivatePart
+    )
+    $expectedText = $expected -join '.'
+    $actualFileText = $actualFile -join '.'
+    $actualProductText = $actualProduct -join '.'
+
+    if ($actualFileText -ne $expectedText -or $actualProductText -ne $expectedText) {
+        throw "$Description must carry file and product version $expectedText. Found file version $actualFileText and product version $actualProductText. Rebuild it from synchronized release metadata."
+    }
+}
+
+if ($Version -notmatch '^(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})$') {
+    throw 'Version must be a canonical numeric three-part version.'
+}
+
+$versionParts = @($Version.Split('.') | ForEach-Object { [int]$_ })
+if ($versionParts[0] -gt 255 -or $versionParts[1] -gt 255 -or $versionParts[2] -gt 65535) {
+    throw 'Version exceeds the Windows setup limits.'
+}
+
 $resolvedCargoTarget = Resolve-Path -LiteralPath $CargoTargetDirectory -ErrorAction SilentlyContinue
 if ($null -eq $resolvedCargoTarget) {
     throw 'The Cargo target directory does not exist.'
@@ -92,6 +144,14 @@ $bridgeExecutable = Resolve-RequiredFile `
 
 Assert-X64PortableExecutable -Path $mainExecutable -Description 'The unbundled KM Editor executable'
 Assert-X64PortableExecutable -Path $bridgeExecutable -Description 'The KM project bridge sidecar'
+Assert-KmBinaryVersion `
+    -Path $mainExecutable `
+    -Description 'The unbundled KM Editor executable' `
+    -ExpectedParts $versionParts
+Assert-KmBinaryVersion `
+    -Path $bridgeExecutable `
+    -Description 'The KM project bridge sidecar' `
+    -ExpectedParts $versionParts
 
 $destinationPath = [System.IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $destinationPath) {
@@ -129,7 +189,7 @@ $manifest = @(
     }
 )
 
-[ordered]@{ files = $manifest } |
+[ordered]@{ version = $Version; files = $manifest } |
     ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $destinationPath 'payload-manifest.json') -Encoding utf8
 

@@ -143,7 +143,7 @@
     </PropertyGroup>
     <Error Condition="'$(_KmInnerBundleExtension)'!='.exe'" Text="KmInnerBundlePath must be an EXE." />
     <Error Condition="'$(_KmLauncherIconExtension)'!='.ico'" Text="KmLauncherIconPath must be an ICO file." />
-    <Error Condition="'$(_KmVersionFourPart)'==''" Text="KmVersion must contain three or four numeric components, for example 2.3.6 or 2.3.6.0." />
+    <Error Condition="'$(_KmVersionFourPart)'==''" Text="KmVersion must contain three or four numeric components, for example 1.2.3 or 1.2.3.0." />
 
     <PropertyGroup>
       <_KmVersionMajor>$([System.Version]::Parse('$(_KmVersionFourPart)').Major)</_KmVersionMajor>
