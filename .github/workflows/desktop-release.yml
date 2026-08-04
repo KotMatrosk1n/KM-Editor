@@ -133,57 +133,9 @@ jobs:
           }
 
           $expectedVersion = $env:RELEASE_TAG.Substring(1)
-          $rootPackage = Get-Content 'package.json' -Raw | ConvertFrom-Json
-          $desktopPackage = Get-Content 'apps/desktop/package.json' -Raw | ConvertFrom-Json
-          $tauriConfig = Get-Content 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
-          $cargoToml = Get-Content 'apps/desktop/src-tauri/Cargo.toml' -Raw
-          $cargoLock = Get-Content 'apps/desktop/src-tauri/Cargo.lock' -Raw
-
-          if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
-            throw 'Could not read the desktop Cargo.toml package version.'
-          }
-
-          $cargoVersion = $Matches[1]
-          $cargoLockMatches = [regex]::Matches(
-            $cargoLock,
-            '(?ms)^\[\[package\]\]\s*\r?\nname\s*=\s*"km-editor-desktop"\s*\r?\nversion\s*=\s*"([^"]+)"'
-          )
-
-          if ($cargoLockMatches.Count -ne 1) {
-            throw "Expected one km-editor-desktop package entry in Cargo.lock, found $($cargoLockMatches.Count)."
-          }
-
-          $cargoLockVersion = $cargoLockMatches[0].Groups[1].Value
-          $mainWindows = @($tauriConfig.app.windows | Where-Object { $_.label -eq 'main' })
-
-          if ($mainWindows.Count -ne 1) {
-            throw "Expected one main desktop window, found $($mainWindows.Count)."
-          }
-
-          $expectedWindowTitle = "KM Editor v$expectedVersion"
-
-          if ($rootPackage.version -ne $expectedVersion) {
-            throw "Release tag '$env:RELEASE_TAG' does not match package.json version '$($rootPackage.version)'."
-          }
-
-          if ($desktopPackage.version -ne $expectedVersion) {
-            throw "Release tag '$env:RELEASE_TAG' does not match apps/desktop/package.json version '$($desktopPackage.version)'."
-          }
-
-          if ($tauriConfig.version -ne $expectedVersion) {
-            throw "Release tag '$env:RELEASE_TAG' does not match tauri.conf.json version '$($tauriConfig.version)'."
-          }
-
-          if ($mainWindows[0].title -ne $expectedWindowTitle) {
-            throw "Release tag '$env:RELEASE_TAG' expects main window title '$expectedWindowTitle', found '$($mainWindows[0].title)'."
-          }
-
-          if ($cargoVersion -ne $expectedVersion) {
-            throw "Release tag '$env:RELEASE_TAG' does not match Cargo.toml version '$cargoVersion'."
-          }
-
-          if ($cargoLockVersion -ne $expectedVersion) {
-            throw "Release tag '$env:RELEASE_TAG' does not match Cargo.lock version '$cargoLockVersion'."
+          node .\scripts\release-version.mjs --check $expectedVersion
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release version verification failed for '$env:RELEASE_TAG'."
           }
 
       - name: Verify custom setup release approvals
@@ -248,23 +200,27 @@ jobs:
           }
 
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
-          $setupFiles = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter 'KM.Editor.Setup_*_x64.exe')
-          if ($setupFiles.Count -ne 1) {
-            throw "Expected exactly one custom setup executable, found $($setupFiles.Count)."
+          $version = $env:RELEASE_TAG.Substring(1)
+          $setupName = "KM.Editor.Setup_${version}_x64.exe"
+          $setupPath = Join-Path $releaseDir $setupName
+          if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
+            throw "Could not find the expected custom setup executable '$setupName'."
           }
 
-          pnpm --dir apps/desktop exec tauri signer sign $setupFiles[0].FullName
+          pnpm --dir apps/desktop exec tauri signer sign $setupPath
 
       - name: Stage release assets
         shell: pwsh
         run: |
           $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
-          $setupFiles = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter 'KM.Editor.Setup_*_x64.exe')
-          if ($setupFiles.Count -ne 1) {
-            throw "Expected exactly one custom setup executable, found $($setupFiles.Count)."
+          $version = $env:RELEASE_TAG.Substring(1)
+          $setupName = "KM.Editor.Setup_${version}_x64.exe"
+          $setupPath = Join-Path $releaseDir $setupName
+          if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
+            throw "Could not find the expected custom setup executable '$setupName'."
           }
 
-          $setup = $setupFiles[0]
+          $setup = Get-Item -LiteralPath $setupPath
           $signaturePath = "$($setup.FullName).sig"
           if (-not (Test-Path -LiteralPath $signaturePath -PathType Leaf)) {
             throw "Could not find updater signature '$signaturePath'."
@@ -274,12 +230,39 @@ jobs:
           if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
             throw "Could not find the setup build receipt '$receiptPath'."
           }
+
+          try {
+            $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -ErrorAction Stop
+          } catch {
+            throw "Could not parse the setup build receipt '$receiptPath': $($_.Exception.Message)"
+          }
+
+          if (([string]$receipt.version) -cne $version) {
+            throw "Setup build receipt version '$($receipt.version)' does not match '$version'."
+          }
+          if (([string]$receipt.file) -cne $setupName) {
+            throw "Setup build receipt file '$($receipt.file)' does not match '$setupName'."
+          }
+
+          if (([string]$receipt.architecture) -cne 'x64') {
+            throw "Setup build receipt architecture '$($receipt.architecture)' is not 'x64'."
+          }
+
+          $recordedHash = ([string]$receipt.sha256).Trim().ToLowerInvariant()
+          if ($recordedHash -notmatch '^[0-9a-f]{64}$') {
+            throw 'Setup build receipt does not contain a valid SHA-256 digest.'
+          }
+
+          $actualHash = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($recordedHash -cne $actualHash) {
+            throw "Setup build receipt SHA-256 '$recordedHash' does not match '$actualHash'."
+          }
+
           Remove-Item -LiteralPath $receiptPath -Force
           if (Test-Path -LiteralPath $receiptPath) {
             throw "Could not remove the setup build receipt '$receiptPath'."
           }
 
-          $version = $env:RELEASE_TAG.TrimStart('v')
           function New-UpdaterPlatform($installer) {
             $signaturePath = Join-Path $releaseDir "$($installer.Name).sig"
             if (-not (Test-Path -LiteralPath $signaturePath)) {

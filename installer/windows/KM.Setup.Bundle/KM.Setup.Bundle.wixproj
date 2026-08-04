@@ -46,7 +46,7 @@
   </ItemGroup>
 
   <Target Name="ValidateKmBundleInputs" BeforeTargets="CoreCompile">
-    <Error Condition="'$(KmVersion)' == ''" Text="KmVersion is required and must be supplied by the release driver (for example, -p:KmVersion=2.4.0)." />
+    <Error Condition="'$(KmVersion)' == ''" Text="KmVersion is required and must be supplied by the release driver (for example, -p:KmVersion=1.2.3)." />
     <Error Condition="'$(KmDefaultShortcutPreference)' != '0' And '$(KmDefaultShortcutPreference)' != '1'" Text="KmDefaultShortcutPreference must be 0 or 1." />
     <Error Condition="'$(KmProductName)' != 'KM Editor' Or '$(KmInstallFolderName)' != 'KM Editor' Or '$(KmProductRegistryKey)' != 'Software\kmeditor\KM Editor' Or '$(KmLegacyUninstallRegistryKey)' != 'Software\Microsoft\Windows\CurrentVersion\Uninstall\KM Editor' Or '$(KmMsiUpgradeCode)' != '7a06ff31-5a9f-5a2c-aab6-92b8d255d620' Or '$(KmBundleUpgradeCode)' != '9cb66e41-9696-4089-954a-c3277fbc55ed' Or '$(KmBundleProviderKey)' != 'app.kmeditor.desktop.bundle'" Text="KM Editor setup requires the published production bundle identity." />
     <Error Condition="!Exists('$(KmMsiPath)')" Text="KM bundle input is missing: $(KmMsiPath). Build KM.Setup.Package first or pass -p:KmMsiPath=... ." />

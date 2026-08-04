@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync
+} from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,11 +25,14 @@ const binariesDirectory = resolve(tauriRoot, 'binaries');
 const publishRoot = resolve(binariesDirectory, '.publish');
 const publishDirectory = resolve(publishRoot, runtimeIdentifier);
 const projectPath = resolve(repositoryRoot, 'src', 'KM.Tools', 'KM.Tools.csproj');
+const releaseVersionScript = resolve(repositoryRoot, 'scripts', 'release-version.mjs');
+const tauriConfigPath = resolve(tauriRoot, 'tauri.conf.json');
 const publishedBinary = resolve(publishDirectory, `KM.Tools${binaryExtension}`);
 const stagedBinary = resolve(
   binariesDirectory,
   `${sidecarBaseName}-${targetTriple}${binaryExtension}`
 );
+const applicationVersion = getApplicationVersion();
 
 mkdirSync(binariesDirectory, { recursive: true });
 removeStaleStagedSidecars();
@@ -44,6 +54,10 @@ try {
       '-p:PublishSingleFile=true',
       '-p:EnableCompressionInSingleFile=true',
       '-p:PublishTrimmed=false',
+      `-p:Version=${applicationVersion}`,
+      `-p:AssemblyVersion=${applicationVersion}.0`,
+      `-p:FileVersion=${applicationVersion}.0`,
+      `-p:InformationalVersion=${applicationVersion}`,
       '-o',
       publishDirectory
     ],
@@ -60,6 +74,16 @@ try {
 }
 
 console.log(`Staged KM.Tools sidecar at ${relative(repositoryRoot, stagedBinary)}`);
+
+function getApplicationVersion() {
+  execFileSync(process.execPath, [releaseVersionScript, '--check'], {
+    cwd: repositoryRoot,
+    stdio: 'inherit'
+  });
+
+  const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, 'utf8'));
+  return tauriConfig.version;
+}
 
 function removeStaleStagedSidecars() {
   for (const entry of readdirSync(binariesDirectory, { withFileTypes: true })) {

@@ -8,9 +8,8 @@ application compilation does not create installer artifacts. Release packaging i
 separately through `.github/workflows/desktop-release.yml`, which invokes the setup driver
 for eligible versioned release runs.
 
-KM Editor 2.3.6 is the final release using the legacy NSIS and MSI asset set. The custom
-setup documented here first ships in the next versioned release produced from current
-source.
+KM Editor 2.4.0 is the first release using the custom setup documented here. KM Editor
+2.3.6 is the final release using the legacy NSIS and MSI asset set.
 
 ## Architecture
 
@@ -72,7 +71,9 @@ Production packaging requires exact release inputs:
 
 Installer projects must fail when a required input is absent. They must never silently use
 an old executable, infer a release version from an output filename, or download an
-unverified executable during compilation.
+unverified executable during compilation. Manual packaging also fails when its requested
+version differs from synchronized repository metadata or from the staged application and
+project bridge binary metadata.
 
 `scripts/Build-KmWindowsSetup.ps1` is the only packaging driver. It accepts the Cargo target
 directory containing the exact release application, plus exact sidecar, WebView2, version,
@@ -87,10 +88,46 @@ The driver requires an explicit `-AcceptWixEula` switch and passes WiX's non-per
 Every build produced by this driver enables the verified legacy-installation takeover with
 the same production identity used for clean installs and updates.
 
+The staged project bridge derives its assembly, file, informational, and product version
+metadata from the synchronized KM Editor app version. The setup driver supplies that same
+version to the custom setup UI and native launcher. This keeps the installed application,
+project bridge, setup display, Windows package registration, artifact name, and updater
+metadata on one release version without adding independent version literals.
+
 The staging script patches exactly one Tauri bundle marker from `UNK` to `NSS` in the
 staged copy of the application before it is signed. This intentionally keeps all future
 custom-installer builds on Tauri's established `windows-x86_64-nsis` updater-family key;
 the source build output is never modified.
+
+## Release version synchronization
+
+Set and verify a release version from the repository root before the release pull request.
+Replace `X.Y.Z` with the intended numeric version:
+
+```powershell
+pnpm version:set X.Y.Z
+pnpm check:version X.Y.Z
+```
+
+The set command updates exactly six fields:
+
+- the root package version;
+- the desktop package version;
+- the Tauri application version;
+- the Tauri main window title;
+- the desktop Cargo package version; and
+- the unique desktop package entry in `Cargo.lock`.
+
+The check command requires all six fields to match. Pull-request desktop builds run the
+same synchronization check, and the release workflow checks them again against the exact
+numeric release tag before it invokes this setup driver.
+
+These commands do not change dependency or toolchain versions, supported game versions,
+installer family identities, protocol and manifest format versions, release tags, or
+historical release documentation. The statement that 2.3.6 is the final legacy-installer
+release is intentionally retained. The README release badge has no hard-coded application
+version; it follows the latest published GitHub Release and should be verified after that
+release is published.
 
 ## GitHub release automation
 

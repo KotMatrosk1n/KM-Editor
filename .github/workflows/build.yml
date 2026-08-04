@@ -34,6 +34,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Verify release version metadata
+        shell: pwsh
+        run: node .\scripts\release-version.mjs --check
+
       - name: Check tracked workspace paths
         shell: pwsh
         run: pnpm run check:workspace

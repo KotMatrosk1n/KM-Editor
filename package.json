@@ -1,6 +1,6 @@
 {
   "name": "km-editor",
-  "version": "2.3.6",
+  "version": "2.4.0",
   "private": true,
   "packageManager": "pnpm@11.5.2",
   "engines": {
@@ -14,7 +14,9 @@
     "tauri:dev": "pnpm --filter @km-editor/desktop tauri:dev",
     "tauri:build": "pnpm --filter @km-editor/desktop tauri:build",
     "typecheck": "pnpm --filter @km-editor/desktop typecheck",
-    "check": "pnpm run check:workspace && pnpm run build && dotnet build KM.Editor.slnx --nologo",
+    "version:set": "node scripts/release-version.mjs --set",
+    "check": "pnpm run check:workspace && pnpm run check:version && pnpm run build && dotnet build KM.Editor.slnx --nologo",
+    "check:version": "node scripts/release-version.mjs --check",
     "check:workspace": "node scripts/check-workspace-paths.mjs"
   }
 }

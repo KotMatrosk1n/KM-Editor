@@ -125,8 +125,8 @@ function Resolve-MsBuild {
     return Resolve-RequiredFile -Path $candidates[0] -Description 'The Visual Studio MSBuild executable'
 }
 
-if ($Version -notmatch '^\d{1,5}\.\d{1,5}\.\d{1,5}$') {
-    throw 'Version must contain exactly three numeric components, for example 2.4.0.'
+if ($Version -notmatch '^(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})$') {
+    throw 'Version must be a canonical numeric three-part version, for example 1.2.3.'
 }
 
 $versionParts = @($Version.Split('.') | ForEach-Object { [int]$_ })
@@ -141,6 +141,14 @@ if (-not $AcceptWixEula) {
 $scriptsRoot = $PSScriptRoot
 $windowsRoot = Split-Path -Parent $scriptsRoot
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $windowsRoot '..\..')).Path
+Invoke-Checked `
+    -FilePath 'node' `
+    -Description 'Verifying synchronized KM Editor release metadata' `
+    -ArgumentList @(
+        (Join-Path $repositoryRoot 'scripts\release-version.mjs'),
+        '--check',
+        $Version
+    )
 $cargoTarget = Resolve-RequiredDirectory -Path $CargoTargetDirectory -Description 'The Cargo target directory'
 $sidecar = Resolve-RequiredFile -Path $SidecarPath -Description 'The KM Tools sidecar'
 $webView2 = Resolve-RequiredFile -Path $WebView2BootstrapperPath -Description 'The WebView2 Evergreen Bootstrapper'
@@ -185,6 +193,7 @@ New-Item -ItemType Directory -Path $workingRoot | Out-Null
 
 try {
 & (Join-Path $scriptsRoot 'Stage-KmPayload.ps1') `
+    -Version $Version `
     -CargoTargetDirectory $cargoTarget `
     -SidecarPath $sidecar `
     -Destination $payloadRoot
@@ -200,7 +209,11 @@ Invoke-Checked `
         '-r', 'win-x64',
         '--self-contained', 'true',
         '--output', $uiOutput,
-        '-p:AcceptEula=wix7'
+        '-p:AcceptEula=wix7',
+        "-p:Version=$Version",
+        "-p:AssemblyVersion=$($Version).0",
+        "-p:FileVersion=$($Version).0",
+        "-p:InformationalVersion=$Version"
     ))
 
 $packageProject = Join-Path $windowsRoot 'KM.Setup.Package\KM.Setup.Package.wixproj'

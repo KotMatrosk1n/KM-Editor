@@ -6,9 +6,9 @@ KM Editor publishes Windows desktop builds through GitHub Releases.
 
 The `Desktop Release` workflow requires its source SHA to be a two-parent merge whose tree exactly matches its second parent, verifies successful `Build / Desktop` and `Build / Backend` checks on that pull-request head, compiles the Tauri desktop app on Windows, packages it with the custom KM Editor setup, and uploads the release assets to a draft GitHub Release.
 
-KM Editor 2.3.6 is the final release using the legacy NSIS and MSI asset set. The custom setup described below first ships in the next versioned release produced from current source.
+KM Editor 2.4.0 is the first release using the custom setup described below. KM Editor 2.3.6 is the final release using the legacy NSIS and MSI asset set.
 
-For that next release and later releases, the assets are:
+The custom setup release assets are:
 
 - `KM.Editor.Setup_<version>_x64.exe`, the custom install, update, and uninstall package
 - The Tauri updater signature for that setup executable
@@ -65,14 +65,28 @@ Create the tag at the final build-checked pull-request merge on `master`. The wo
 
 ## Version Checklist
 
-Before creating a release, update the desktop app version in:
+Set the release version from the repository root before creating the release pull request. Replace `X.Y.Z` with the intended numeric version:
 
-- `package.json`
-- `apps/desktop/package.json`
-- the version and main window title in `apps/desktop/src-tauri/tauri.conf.json`
-- `apps/desktop/src-tauri/Cargo.toml`
-- the `km-editor-desktop` package entry in `apps/desktop/src-tauri/Cargo.lock`
+```powershell
+pnpm version:set X.Y.Z
+pnpm check:version X.Y.Z
+```
 
-Review the README release badge and release-facing feature summary at the same time.
+`pnpm version:set` updates exactly six synchronized fields:
+
+- the version in `package.json`
+- the version in `apps/desktop/package.json`
+- the version in `apps/desktop/src-tauri/tauri.conf.json`
+- the main window title in `apps/desktop/src-tauri/tauri.conf.json`
+- the package version in `apps/desktop/src-tauri/Cargo.toml`
+- the unique `km-editor-desktop` package version in `apps/desktop/src-tauri/Cargo.lock`
+
+`pnpm check:version X.Y.Z` fails unless all six fields match the requested version. The normal repository check and pull-request desktop build also run the synchronization check. The release workflow repeats it against the exact `vX.Y.Z` tag before packaging.
+
+The version command does not update dependency versions, toolchain versions, supported game versions, protocol or manifest format versions, release tags, historical release statements, or release records. In particular, references identifying 2.3.6 as the final legacy-installer release remain historical facts.
+
+The README release badge reads the latest published GitHub Release dynamically and has no literal app version to change. Review the release-facing README summary during release preparation, then verify that the badge and latest-release link resolve to the newly published release.
+
+Desktop packaging derives the project bridge binary metadata from the synchronized app version. The setup driver derives setup binary metadata from its mandatory version and rejects manual packaging when that version differs from the synchronized source metadata or the staged application and project bridge metadata.
 
 Use the same version number in the GitHub release tag, prefixed with `v`.
