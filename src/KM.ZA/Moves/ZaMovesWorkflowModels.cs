@@ -110,6 +110,49 @@ public sealed record ZaMoveTimingRecord(
     int ReplacementProjectile5,
     double ProjectileCorrectionScale);
 
+public sealed record ZaMovePlayerDamageInvocationSourceRecord(
+    int ParentBulletId,
+    string Kind);
+
+public sealed record ZaMovePlayerDamageTimelinePathEdgeRecord(
+    int ParentBulletId,
+    int ChildBulletId,
+    string Kind);
+
+public sealed record ZaMovePlayerDamageTimelineLaunchRecord(
+    int RootBulletId,
+    string TimelineName,
+    string TimelinePath,
+    string? ConditionTag)
+{
+    public IReadOnlyList<IReadOnlyList<ZaMovePlayerDamageTimelinePathEdgeRecord>>
+        RelationshipPaths { get; init; } = [];
+}
+
+public sealed record ZaMovePlayerDamageInvocationRecord(
+    int BulletId,
+    string ResourceName,
+    string ResourcePath,
+    string Role,
+    double LifetimeSeconds,
+    bool IsSelf,
+    IReadOnlyList<ZaMovePlayerDamageInvocationSourceRecord> Sources,
+    IReadOnlyList<ZaMovePlayerDamageTimelineLaunchRecord> VerifiedVanillaTimelineLaunches)
+{
+    internal string IncomingAncestryShape { get; init; } = string.Empty;
+}
+
+public sealed record ZaMovePlayerDamageRecord(
+    int AttackId,
+    int RuntimeMoveId,
+    int DefaultDamage,
+    int PlayerDamage,
+    int VanillaPlayerDamage,
+    double HitIntervalSeconds,
+    bool BulletMappingMatchesVerifiedVanilla,
+    bool VerifiedVanillaTimelineCatalogAvailable,
+    IReadOnlyList<ZaMovePlayerDamageInvocationRecord> Invocations);
+
 public sealed record ZaMoveVanillaFieldValue(string Field, string Value);
 
 public sealed record ZaMoveRecord(
@@ -153,6 +196,8 @@ public sealed record ZaMoveRecord(
 
     public IReadOnlyList<ZaMoveTimingRecord> TimingRows { get; init; } = [];
 
+    public IReadOnlyList<ZaMovePlayerDamageRecord> PlayerDamageRows { get; init; } = [];
+
     public IReadOnlyList<ZaMoveVanillaFieldValue> VanillaValues { get; init; } = [];
 
     public IReadOnlyList<string> RuntimeSourceFiles { get; init; } = [];
@@ -161,21 +206,29 @@ public sealed record ZaMoveRecord(
 
     public ProjectFileLayer RuntimeTimingSourceLayer { get; init; } = ProjectFileLayer.Base;
 
+    public ProjectFileLayer RuntimePlayerDamageSourceLayer { get; init; } = ProjectFileLayer.Base;
+
     internal IReadOnlyList<ZaMoveRuntimeVariantRecord> VanillaRuntimeVariants { get; init; } = [];
 
     internal IReadOnlySet<int> AmbiguousRuntimeVariantIds { get; init; } = new HashSet<int>();
 
     internal IReadOnlyList<ZaMoveTimingRecord> VanillaTimingRows { get; init; } = [];
 
+    internal IReadOnlyList<ZaMovePlayerDamageRecord> VanillaPlayerDamageRows { get; init; } = [];
+
     internal string? RuntimeBattleVanillaFingerprint { get; init; }
 
     internal string? RuntimeTimingVanillaFingerprint { get; init; }
+
+    internal string? RuntimePlayerDamageVanillaFingerprint { get; init; }
 
     internal bool RuntimeBattleDiffersFromVanilla { get; init; }
 
     internal bool RuntimeTimingDiffersFromVanilla { get; init; }
 
-    public bool HasRuntimeData => RuntimeVariants.Count > 0 || TimingRows.Count > 0;
+    internal bool RuntimePlayerDamageDiffersFromVanilla { get; init; }
+
+    public bool HasRuntimeData => RuntimeVariants.Count > 0 || TimingRows.Count > 0 || PlayerDamageRows.Count > 0;
 
     public bool CanRevertToVanilla { get; init; }
 

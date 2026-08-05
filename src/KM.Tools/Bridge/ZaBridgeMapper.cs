@@ -666,11 +666,30 @@ public static class ZaBridgeMapper
         return new ScriptedBossActionDto(
             action.Key,
             action.Kind,
+            action.SelectorActionId,
             action.MoveId,
+            action.VanillaMoveId,
             action.RuntimeMoveId,
             action.Name,
             action.UsesBattleParameters,
-            action.UsesTimingParameters);
+            action.UsesTimingParameters,
+            action.CanEdit,
+            action.RuntimeState,
+            action.LockReason,
+            action.HeatAvailability
+                .Select(availability => new ScriptedBossHeatAvailabilityDto(
+                    availability.HeatLevel,
+                    availability.State))
+                .ToArray(),
+            action.HeatContext);
+    }
+
+    private static ScriptedBossMoveOptionDto ToDto(ZaScriptedBossMoveOptionRecord option)
+    {
+        return new ScriptedBossMoveOptionDto(
+            option.MoveId,
+            option.RuntimeMoveId,
+            option.Name);
     }
 
     private static ShopsWorkflowDto ToShopsWorkflowDto(ZaShopsWorkflow workflow)
@@ -762,6 +781,7 @@ public static class ZaBridgeMapper
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
         {
             ScriptedBosses = workflow.ScriptedBosses.Select(ToDto).ToArray(),
+            ScriptedBossMoveOptions = workflow.ScriptedBossMoveOptions.Select(ToDto).ToArray(),
         };
     }
 
@@ -1514,6 +1534,7 @@ public static class ZaBridgeMapper
             RuntimeVariants = move.RuntimeVariants.Select(ToDto).ToArray(),
             Timing = move.Timing is null ? null : ToDto(move.Timing),
             TimingRows = move.TimingRows.Select(ToDto).ToArray(),
+            PlayerDamageRows = move.PlayerDamageRows.Select(ToDto).ToArray(),
             VanillaValues = move.VanillaValues
                 .Select(value => new MoveVanillaFieldValueDto(value.Field, value.Value))
                 .ToArray(),
@@ -1618,6 +1639,54 @@ public static class ZaBridgeMapper
             timing.OverwriteProjectile5,
             timing.ReplacementProjectile5,
             timing.ProjectileCorrectionScale);
+    }
+
+    private static MovePlayerDamageRecordDto ToDto(ZaMovePlayerDamageRecord damage)
+    {
+        return new MovePlayerDamageRecordDto(
+            damage.AttackId,
+            damage.RuntimeMoveId,
+            damage.DefaultDamage,
+            damage.PlayerDamage,
+            damage.VanillaPlayerDamage,
+            damage.HitIntervalSeconds,
+            damage.BulletMappingMatchesVerifiedVanilla,
+            damage.VerifiedVanillaTimelineCatalogAvailable,
+            damage.Invocations.Select(ToDto).ToArray());
+    }
+
+    private static MovePlayerDamageInvocationRecordDto ToDto(
+        ZaMovePlayerDamageInvocationRecord invocation)
+    {
+        return new MovePlayerDamageInvocationRecordDto(
+            invocation.BulletId,
+            invocation.ResourceName,
+            invocation.ResourcePath,
+            invocation.Role,
+            invocation.LifetimeSeconds,
+            invocation.IsSelf,
+            invocation.Sources
+                .Select(source => new MovePlayerDamageInvocationSourceRecordDto(
+                    source.ParentBulletId,
+                    source.Kind))
+                .ToArray(),
+            invocation.VerifiedVanillaTimelineLaunches
+                .Select(launch => new MovePlayerDamageTimelineLaunchRecordDto(
+                    launch.RootBulletId,
+                    launch.TimelineName,
+                    launch.TimelinePath,
+                    launch.ConditionTag)
+                {
+                    RelationshipPaths = launch.RelationshipPaths
+                        .Select(path => (IReadOnlyList<MovePlayerDamageTimelinePathEdgeRecordDto>)path
+                            .Select(edge => new MovePlayerDamageTimelinePathEdgeRecordDto(
+                                edge.ParentBulletId,
+                                edge.ChildBulletId,
+                                edge.Kind))
+                            .ToArray())
+                        .ToArray(),
+                })
+                .ToArray());
     }
 
     private static MoveStatChangeRecordDto ToDto(ZaMoveStatChangeRecord statChange)

@@ -17,7 +17,7 @@ internal sealed class ZaMovesWorkflowService
 {
     private const string WorkflowLabel = "Moves";
     private const string WorkflowDescription =
-        "Edit Pokemon Legends Z-A runtime battle parameters, variants, accuracy, and cooldown data.";
+        "Edit Pokemon Legends Z-A runtime battle parameters, variants, accuracy, cooldown, and verified boss player damage data.";
 
     public const string CanUseMoveField = "canUseMove";
     public const string TypeField = "type";
@@ -394,6 +394,15 @@ internal sealed class ZaMovesWorkflowService
         ZaWorkflowFile? source = null;
         ZaWorkflowFile? battleSource = null;
         ZaWorkflowFile? timingSource = null;
+        ZaWorkflowFile? playerDamageSource = null;
+        ZaMovePlayerDamageDataDocument? playerDamageData = null;
+        ZaMovePlayerDamageDataDocument? basePlayerDamageData = null;
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
+            playerDamageInvocations = new Dictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>();
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
+            basePlayerDamageInvocations = new Dictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>();
+        var playerDamageInvocationCatalogsVerified = false;
+        var verifiedVanillaTimelineCatalogAvailable = false;
         IReadOnlyList<ZaMoveEditableFieldOption> projectileOptions = [];
         IReadOnlyList<ProjectFileReference> projectileCatalogSources = [];
         IReadOnlyList<string> spawnLocators = ZaRuntimeMoveData.SpawnLocators;
@@ -417,19 +426,74 @@ internal sealed class ZaMovesWorkflowService
 
             try
             {
+                var candidateSource = fileSource.Read(project, ZaDataPaths.AiAttackParamArray);
+                var candidateBaseSource = fileSource.ReadBase(project, ZaDataPaths.AiAttackParamArray);
+                var candidateData = ZaMovePlayerDamageDataDocument.Parse(candidateSource.Bytes);
+                var candidateBaseData = ZaMovePlayerDamageDataDocument.Parse(candidateBaseSource.Bytes);
+                var mismatchedRuntimeMoveIds = candidateData.Values
+                    .Select(value => value.RuntimeMoveId)
+                    .Concat(candidateBaseData.Values.Select(value => value.RuntimeMoveId))
+                    .Distinct()
+                    .Where(runtimeMoveId =>
+                        !candidateData.HasSameCanonicalShape(candidateBaseData, runtimeMoveId))
+                    .Order()
+                    .ToArray();
+
+                if (mismatchedRuntimeMoveIds.Length > 0)
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        $"Boss player damage controls are unavailable for {mismatchedRuntimeMoveIds.Length} move layout(s) because their active and verified vanilla Attack ID shapes do not match.",
+                        $"romfs/{ZaDataPaths.AiAttackParamArray}",
+                        expected: "Matching canonical Attack IDs, runtime move IDs, default damage values, and hit intervals"));
+                }
+
+                playerDamageSource = candidateSource;
+                playerDamageData = candidateData;
+                basePlayerDamageData = candidateBaseData;
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(ZaWorkflowSupport.Warning(
+                    $"Boss player damage controls are unavailable because the attack parameter data could not be verified: {exception.Message}",
+                    $"romfs/{ZaDataPaths.AiAttackParamArray}",
+                    expected: "Structurally valid active and verified vanilla boss attack parameter data"));
+            }
+
+            try
+            {
                 var projectileSource = fileSource.Read(project, ZaDataPaths.AiBulletParamArray);
                 var baseProjectileSource = fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray);
+                var hasVerifiedVanillaTimelineCatalog =
+                    ZaMovePlayerDamageTimelineCatalog.MatchesVerifiedBaseBulletCatalog(
+                        baseProjectileSource.Bytes);
+                verifiedVanillaTimelineCatalogAvailable = hasVerifiedVanillaTimelineCatalog;
                 projectileOptions = ZaMoveProjectileCatalog.ReadOptions(projectileSource.Bytes);
+                playerDamageInvocations =
+                    ZaMoveProjectileCatalog.ReadPlayerDamageInvocations(
+                        projectileSource.Bytes,
+                        hasVerifiedVanillaTimelineCatalog);
+                basePlayerDamageInvocations =
+                    ZaMoveProjectileCatalog.ReadPlayerDamageInvocations(
+                        baseProjectileSource.Bytes,
+                        hasVerifiedVanillaTimelineCatalog);
+                playerDamageInvocationCatalogsVerified = true;
                 projectileCatalogSources =
                 [
                     new ProjectFileReference(projectileSource.SourceLayer, projectileSource.RelativePath),
                     new ProjectFileReference(baseProjectileSource.SourceLayer, baseProjectileSource.RelativePath),
                 ];
+                if (!hasVerifiedVanillaTimelineCatalog)
+                {
+                    diagnostics.Add(ZaWorkflowSupport.Warning(
+                        "Verified-vanilla effect-timeline launch descriptions are unavailable because the base bullet catalog does not match the researched timeline build. Active BulletParam invocation descriptors and editing remain available.",
+                        $"romfs/{ZaDataPaths.AiBulletParamArray}",
+                        expected: "The verified base bullet catalog associated with the effect-timeline evidence"));
+                }
             }
             catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
             {
                 diagnostics.Add(ZaWorkflowSupport.Warning(
-                    $"Projectile override fields are unavailable because the bullet catalog could not be verified: {exception.Message}",
+                    $"Projectile override fields and Boss player-damage invocation-backed editing are unavailable because the bullet catalog could not be verified: {exception.Message}",
                     $"romfs/{ZaDataPaths.AiBulletParamArray}",
                     expected: "A structurally valid active and verified-base bullet parameter catalog"));
             }
@@ -463,7 +527,11 @@ internal sealed class ZaMovesWorkflowService
             runtimeEditableFields = CreateRuntimeEditableFields(
                 maximumTimingOccurrences,
                 spawnLocators,
-                projectileOptions);
+                projectileOptions)
+                .Concat(CreatePlayerDamageEditableFields(
+                    playerDamageData,
+                    basePlayerDamageData))
+                .ToArray();
 
             moves = LoadRecords(source, labels)
                 .Select(move => AddRuntimeData(
@@ -476,6 +544,14 @@ internal sealed class ZaMovesWorkflowService
                     battleSource.SourceLayer,
                     timingSource.RelativePath,
                     timingSource.SourceLayer,
+                    playerDamageData,
+                    basePlayerDamageData,
+                    playerDamageInvocations,
+                    basePlayerDamageInvocations,
+                    playerDamageInvocationCatalogsVerified,
+                    verifiedVanillaTimelineCatalogAvailable,
+                    playerDamageSource?.RelativePath,
+                    playerDamageSource?.SourceLayer ?? ProjectFileLayer.Base,
                     runtimeEditableFields,
                     spawnLocators))
                 .ToArray();
@@ -486,6 +562,12 @@ internal sealed class ZaMovesWorkflowService
                 $"Moves could not be loaded: {exception.Message}",
                 $"romfs/{ZaDataPaths.BattleMoveParameterArray}"));
         }
+
+        var scriptedBossCatalog = ZaScriptedBossActionCatalog.Load(
+            project,
+            fileSource,
+            labels,
+            diagnostics);
 
         var summary = ZaWorkflowSupport.CreateSummary(
             project,
@@ -501,12 +583,13 @@ internal sealed class ZaMovesWorkflowService
             new ZaMovesWorkflowStats(
                 moves.Length,
                 moves.Count(move => move.CanUseMove),
-                new[] { source, battleSource, timingSource }.Count(file => file is not null),
+                new[] { source, battleSource, timingSource, playerDamageSource }.Count(file => file is not null)
+                    + (scriptedBossCatalog.HasSelectorSource ? 1 : 0),
                 moves.Sum(move => move.Flags.Count(flag => flag.Enabled))),
             diagnostics)
         {
             ProjectileOptions = projectileOptions,
-            ScriptedBosses = ZaScriptedBossActionCatalog.Project(labels),
+            ScriptedBosses = scriptedBossCatalog.Profiles,
             ProjectileCatalogSources = projectileCatalogSources,
             SpawnLocators = spawnLocators,
         };
@@ -655,6 +738,16 @@ internal sealed class ZaMovesWorkflowService
         ProjectFileLayer battleSourceLayer,
         string timingSourceFile,
         ProjectFileLayer timingSourceLayer,
+        ZaMovePlayerDamageDataDocument? playerDamageData,
+        ZaMovePlayerDamageDataDocument? basePlayerDamageData,
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
+            playerDamageInvocations,
+        IReadOnlyDictionary<int, IReadOnlyList<ZaMovePlayerDamageInvocationRecord>>
+            basePlayerDamageInvocations,
+        bool playerDamageInvocationCatalogsVerified,
+        bool verifiedVanillaTimelineCatalogAvailable,
+        string? playerDamageSourceFile,
+        ProjectFileLayer playerDamageSourceLayer,
         IReadOnlyList<ZaMoveEditableField> runtimeEditableFields,
         IReadOnlyList<string> spawnLocators)
     {
@@ -666,6 +759,66 @@ internal sealed class ZaMovesWorkflowService
             ?? timingRecords.FirstOrDefault();
         var primary = variants.FirstOrDefault(variant => variant.Variant == 0) ?? variants.FirstOrDefault();
         var vanillaValues = new List<ZaMoveVanillaFieldValue>();
+        var runtimeBossMoveId = move.MoveId is >= 0 and < 1000
+            ? checked(2000 + move.MoveId)
+            : 0;
+        var hasPlayerDamageDocuments = runtimeBossMoveId != 0
+            && playerDamageData is not null
+            && basePlayerDamageData is not null;
+        var currentPlayerDamageValues = hasPlayerDamageDocuments
+            ? playerDamageData!.GetValuesForRuntimeMove(runtimeBossMoveId)
+            : [];
+        var basePlayerDamageValues = hasPlayerDamageDocuments
+            ? basePlayerDamageData!.GetValuesForRuntimeMove(runtimeBossMoveId)
+            : [];
+        var hasPlayerDamageData = currentPlayerDamageValues.Count > 0
+            || basePlayerDamageValues.Count > 0;
+        var hasMatchingPlayerDamageShape = !hasPlayerDamageData
+            || (hasPlayerDamageDocuments
+                && playerDamageData!.HasSameCanonicalShape(
+                    basePlayerDamageData!,
+                    runtimeBossMoveId));
+        IReadOnlyList<ZaMovePlayerDamageRecord> playerDamageRows = [];
+        IReadOnlyList<ZaMovePlayerDamageRecord> vanillaPlayerDamageRows = [];
+        if (hasPlayerDamageData && hasMatchingPlayerDamageShape)
+        {
+            var baseByAttackId = basePlayerDamageValues.ToDictionary(value => value.AttackId);
+            playerDamageRows = currentPlayerDamageValues
+                .Select(value =>
+                {
+                    var invocations = playerDamageInvocations.GetValueOrDefault(value.AttackId) ?? [];
+                    var baseInvocations =
+                        basePlayerDamageInvocations.GetValueOrDefault(value.AttackId) ?? [];
+                    return new ZaMovePlayerDamageRecord(
+                        value.AttackId,
+                        value.RuntimeMoveId,
+                        value.DefaultDamage,
+                        value.PlayerDamage,
+                        baseByAttackId[value.AttackId].PlayerDamage,
+                        value.HitInterval,
+                        playerDamageInvocationCatalogsVerified
+                            && invocations.Count > 0
+                            && baseInvocations.Count > 0
+                            && ZaMoveProjectileCatalog.HaveSamePlayerDamageInvocationShape(
+                                invocations,
+                                baseInvocations),
+                        verifiedVanillaTimelineCatalogAvailable,
+                        invocations);
+                })
+                .ToArray();
+            vanillaPlayerDamageRows = basePlayerDamageValues
+                .Select(value => new ZaMovePlayerDamageRecord(
+                    value.AttackId,
+                    value.RuntimeMoveId,
+                    value.DefaultDamage,
+                    value.PlayerDamage,
+                    value.PlayerDamage,
+                    value.HitInterval,
+                    playerDamageInvocationCatalogsVerified,
+                    verifiedVanillaTimelineCatalogAvailable,
+                    basePlayerDamageInvocations.GetValueOrDefault(value.AttackId) ?? []))
+                .ToArray();
+        }
         var currentVariantIds = battleRows
             .Select(row => checked((int)row.VariantType))
             .Order()
@@ -674,22 +827,22 @@ internal sealed class ZaMovesWorkflowService
             .Select(row => checked((int)row.VariantType))
             .Order()
             .ToArray();
-        var hasRuntimeData = variants.Count > 0 || timingRows.Count > 0;
+        var hasRuntimeData = variants.Count > 0 || timingRows.Count > 0 || hasPlayerDamageData;
         var hasMatchingVariantShape = ambiguousVariantIds.Count == 0
             && ambiguousBaseVariantIds.Count == 0
             && currentVariantIds.SequenceEqual(baseVariantIds);
         var hasMatchingTiming = timingRows
             .Select(row => row.MoveId)
             .SequenceEqual(baseTimingRows.Select(row => row.MoveId));
-        var canRevertToVanilla = hasRuntimeData
-            && hasMatchingVariantShape
-            && hasMatchingTiming;
         var battleVanillaFingerprint = baseBattleRows.Count == 0
             ? null
             : ZaRuntimeMoveData.CreateBattleRowsFingerprint(baseBattleRows);
         var timingVanillaFingerprint = baseTimingRows.Count == 0
             ? null
             : ZaRuntimeMoveData.CreateTimingRowsFingerprint(baseTimingRows);
+        var playerDamageVanillaFingerprint = vanillaPlayerDamageRows.Count == 0
+            ? null
+            : basePlayerDamageData!.GetCanonicalFingerprint(runtimeBossMoveId);
         var battleDiffersFromVanilla = hasMatchingVariantShape
             && battleVanillaFingerprint is not null
             && !string.Equals(
@@ -702,13 +855,30 @@ internal sealed class ZaMovesWorkflowService
                 ZaRuntimeMoveData.CreateTimingRowsFingerprint(timingRows),
                 timingVanillaFingerprint,
                 StringComparison.Ordinal);
+        var playerDamageDiffersFromVanilla = hasMatchingPlayerDamageShape
+            && playerDamageVanillaFingerprint is not null
+            && !string.Equals(
+                playerDamageData!.GetCanonicalFingerprint(runtimeBossMoveId),
+                playerDamageVanillaFingerprint,
+                StringComparison.Ordinal);
+        var projectileCatalogBlocksRestore = !playerDamageInvocationCatalogsVerified
+            && (timingDiffersFromVanilla || playerDamageDiffersFromVanilla);
+        var canRevertToVanilla = hasRuntimeData
+            && hasMatchingVariantShape
+            && hasMatchingTiming
+            && hasMatchingPlayerDamageShape
+            && !projectileCatalogBlocksRestore;
         var revertBlockedReason = canRevertToVanilla
             ? null
             : !hasRuntimeData
-                ? "This move does not have editable runtime battle or timing data."
+                ? "This move does not have editable runtime battle, timing, or player damage data."
                 : !hasMatchingVariantShape
                     ? "The active and verified vanilla files do not contain one exact matching occurrence shape of unambiguous runtime variants for this move."
-                    : "The active and verified vanilla files do not contain the same restorable timing-row shape for this move.";
+                    : !hasMatchingTiming
+                        ? "The active and verified vanilla files do not contain the same restorable timing-row shape for this move."
+                        : !hasMatchingPlayerDamageShape
+                            ? "The active and verified vanilla files do not contain the same restorable boss player damage Attack ID shape for this move."
+                            : "This move cannot restore changed timing or boss player-damage rows because the active and verified-base bullet catalogs are unavailable.";
 
         foreach (var baseVariant in baseVariants)
         {
@@ -755,6 +925,19 @@ internal sealed class ZaMovesWorkflowService
             }
         }
 
+        foreach (var basePlayerDamage in vanillaPlayerDamageRows)
+        {
+            vanillaValues.Add(new ZaMoveVanillaFieldValue(
+                ZaMovePlayerDamageDataDocument.Field(basePlayerDamage.AttackId),
+                basePlayerDamage.PlayerDamage.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        var runtimeSourceFiles = new List<string> { battleSourceFile, timingSourceFile };
+        if (playerDamageRows.Count > 0 && playerDamageSourceFile is not null)
+        {
+            runtimeSourceFiles.Add(playerDamageSourceFile);
+        }
+
         return (primary is null
                 ? move
                 : move with
@@ -782,17 +965,22 @@ internal sealed class ZaMovesWorkflowService
             RuntimeVariants = variants,
             Timing = timing,
             TimingRows = timingRecords,
+            PlayerDamageRows = playerDamageRows,
             VanillaValues = vanillaValues,
-            RuntimeSourceFiles = [battleSourceFile, timingSourceFile],
+            RuntimeSourceFiles = runtimeSourceFiles,
             RuntimeBattleSourceLayer = battleSourceLayer,
             RuntimeTimingSourceLayer = timingSourceLayer,
+            RuntimePlayerDamageSourceLayer = playerDamageSourceLayer,
             VanillaRuntimeVariants = baseVariants,
             AmbiguousRuntimeVariantIds = ambiguousVariantIds,
             VanillaTimingRows = baseTimingRecords,
+            VanillaPlayerDamageRows = vanillaPlayerDamageRows,
             RuntimeBattleVanillaFingerprint = battleVanillaFingerprint,
             RuntimeTimingVanillaFingerprint = timingVanillaFingerprint,
+            RuntimePlayerDamageVanillaFingerprint = playerDamageVanillaFingerprint,
             RuntimeBattleDiffersFromVanilla = battleDiffersFromVanilla,
             RuntimeTimingDiffersFromVanilla = timingDiffersFromVanilla,
+            RuntimePlayerDamageDiffersFromVanilla = playerDamageDiffersFromVanilla,
             CanRevertToVanilla = canRevertToVanilla,
             RevertToVanillaBlockedReason = revertBlockedReason,
         };
@@ -1033,6 +1221,32 @@ internal sealed class ZaMovesWorkflowService
                     spawnLocators,
                     projectileMaximum)))
             .Where(field => projectileOptions.Count > 0 || !IsProjectileField(field.Field))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ZaMoveEditableField> CreatePlayerDamageEditableFields(
+        ZaMovePlayerDamageDataDocument? playerDamageData,
+        ZaMovePlayerDamageDataDocument? basePlayerDamageData)
+    {
+        if (playerDamageData is null || basePlayerDamageData is null)
+        {
+            return [];
+        }
+
+        var matchingRuntimeMoveIds = playerDamageData.Values
+            .Select(value => value.RuntimeMoveId)
+            .Distinct()
+            .Where(runtimeMoveId =>
+                playerDamageData.HasSameCanonicalShape(basePlayerDamageData, runtimeMoveId))
+            .ToHashSet();
+        return playerDamageData.Values
+            .Where(value => matchingRuntimeMoveIds.Contains(value.RuntimeMoveId))
+            .Select(value => Field(
+                ZaMovePlayerDamageDataDocument.Field(value.AttackId),
+                $"Attack {value.AttackId.ToString(CultureInfo.InvariantCulture)} player damage",
+                "integer",
+                ZaMovePlayerDamageDataDocument.MinimumPlayerDamage,
+                ZaMovePlayerDamageDataDocument.MaximumPlayerDamage))
             .ToArray();
     }
 

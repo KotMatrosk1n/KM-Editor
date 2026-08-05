@@ -219,6 +219,8 @@ public sealed record EncountersWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics)
 {
     public IReadOnlyList<ScriptedBossProfileDto> ScriptedBosses { get; init; } = [];
+
+    public IReadOnlyList<ScriptedBossMoveOptionDto> ScriptedBossMoveOptions { get; init; } = [];
 }
 
 public sealed record LoadEncountersWorkflowResponse(EncountersWorkflowDto Workflow);

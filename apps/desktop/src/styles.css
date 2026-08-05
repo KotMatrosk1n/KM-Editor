@@ -3361,6 +3361,136 @@ h2 {
   gap: 10px;
 }
 
+.move-player-damage-field-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.move-player-damage-field-group {
+  grid-column: 1 / -1;
+}
+
+.move-player-damage-group-note {
+  margin-bottom: 12px;
+}
+
+.move-player-damage-control {
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px;
+  background: rgb(7 13 26 / 62%);
+  border: 1px solid rgb(93 158 148 / 42%);
+  border-radius: 8px;
+}
+
+.move-player-damage-descriptor {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.move-player-damage-descriptor p,
+.move-player-damage-descriptor dl {
+  margin: 0;
+}
+
+.move-player-damage-descriptor-heading,
+.move-player-damage-invocation-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.move-player-damage-descriptor-heading strong,
+.move-player-damage-invocation-heading strong {
+  color: var(--color-text);
+}
+
+.move-player-damage-mapping-status {
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.move-player-damage-mapping-status.is-verified {
+  color: #83d6b0;
+  background: rgb(55 122 91 / 18%);
+}
+
+.move-player-damage-mapping-status.is-unverified,
+.move-player-damage-unverified {
+  color: #f1c75b;
+}
+
+.move-player-damage-invocations {
+  display: grid;
+  gap: 8px;
+}
+
+.move-player-damage-invocation {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  padding: 9px;
+  background: rgb(18 27 45 / 72%);
+  border: 1px solid rgb(93 158 148 / 28%);
+  border-radius: 7px;
+}
+
+.move-player-damage-invocation-heading span {
+  color: var(--color-gold);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+
+.move-player-damage-invocation code {
+  overflow-wrap: anywhere;
+  color: #b8cbff;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.move-player-damage-invocation-technical,
+.move-player-damage-row-technical {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.move-player-damage-invocation-technical div,
+.move-player-damage-row-technical div {
+  min-width: 0;
+}
+
+.move-player-damage-invocation-technical dt,
+.move-player-damage-row-technical dt {
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.move-player-damage-invocation-technical dd,
+.move-player-damage-row-technical dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+@media (max-width: 760px) {
+  .move-player-damage-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .field-group-action-row {
   display: flex;
   justify-content: flex-start;
@@ -8780,12 +8910,31 @@ button.sv-encounter-condition-row:hover {
 .za-scripted-boss-actions {
   display: grid;
   gap: 10px;
-  margin-bottom: 12px;
   padding: 12px;
   color: var(--color-text);
-  background: rgb(58 43 12 / 52%);
-  border: 1px solid rgb(214 168 66 / 38%);
+  background: rgb(20 38 45 / 62%);
+  border: 1px solid rgb(79 181 161 / 42%);
   border-radius: 8px;
+}
+
+.za-scripted-boss-field-group {
+  grid-column: 1 / -1;
+}
+
+.za-scripted-boss-actions-broken {
+  background: rgb(58 24 22 / 54%);
+  border-color: rgb(229 96 90 / 46%);
+}
+
+.za-scripted-boss-actions-unavailable,
+.za-scripted-boss-actions-unverified {
+  background: rgb(58 43 12 / 52%);
+  border-color: rgb(214 168 66 / 38%);
+}
+
+.za-scripted-boss-actions-locked {
+  background: rgb(28 35 49 / 70%);
+  border-color: rgb(124 148 184 / 34%);
 }
 
 .za-scripted-boss-actions-heading {
@@ -8797,7 +8946,20 @@ button.sv-encounter-condition-row:hover {
 .za-scripted-boss-actions-heading > svg {
   flex: 0 0 auto;
   margin-top: 2px;
+  color: #66d3b7;
+}
+
+.za-scripted-boss-actions-broken .za-scripted-boss-actions-heading > svg {
+  color: #ff8b84;
+}
+
+.za-scripted-boss-actions-unavailable .za-scripted-boss-actions-heading > svg,
+.za-scripted-boss-actions-unverified .za-scripted-boss-actions-heading > svg {
   color: var(--color-warning);
+}
+
+.za-scripted-boss-actions-locked .za-scripted-boss-actions-heading > svg {
+  color: var(--color-text-soft);
 }
 
 .za-scripted-boss-actions-heading h4,
@@ -8811,8 +8973,9 @@ button.sv-encounter-condition-row:hover {
 
 .za-scripted-boss-actions-heading p,
 .za-scripted-boss-pool-help,
+.za-scripted-boss-replacement-caveat,
 .za-scripted-boss-unmapped {
-  color: #d8c79d;
+  color: var(--color-text-soft);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -8838,24 +9001,141 @@ button.sv-encounter-condition-row:hover {
   min-width: 0;
 }
 
+.za-scripted-boss-profile-summary > .za-scripted-boss-profile-statuses,
+.za-scripted-boss-action-statuses {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.za-scripted-boss-status-pill {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.za-scripted-boss-status-editable,
+.za-scripted-boss-status-working {
+  color: #8ce5ce;
+  background: rgb(22 83 69 / 46%);
+  border-color: rgb(79 181 161 / 42%);
+}
+
+.za-scripted-boss-status-broken {
+  color: #ffaaa5;
+  background: rgb(112 38 35 / 44%);
+  border-color: rgb(229 96 90 / 44%);
+}
+
+.za-scripted-boss-status-unavailable {
+  color: #f2cb70;
+  background: rgb(92 67 14 / 44%);
+  border-color: rgb(214 168 66 / 40%);
+}
+
+.za-scripted-boss-status-locked {
+  color: #b7c3d7;
+  background: rgb(51 63 84 / 48%);
+  border-color: rgb(124 148 184 / 34%);
+}
+
 .za-scripted-boss-profile-summary strong {
   overflow-wrap: anywhere;
   font-size: 13px;
 }
 
-.za-scripted-boss-profile-summary span {
+.za-scripted-boss-profile-summary > div:first-child > span,
+.za-scripted-boss-profile-summary > span {
   color: var(--color-text-soft);
   font-size: 11px;
 }
 
 .za-scripted-boss-pool-help,
+.za-scripted-boss-replacement-caveat,
 .za-scripted-boss-unmapped {
   margin: 0;
 }
 
+.za-scripted-boss-replacement-caveat {
+  padding: 8px 9px;
+  color: #d6c28d;
+  background: rgb(58 43 12 / 38%);
+  border: 1px solid rgb(214 168 66 / 28%);
+  border-radius: 6px;
+}
+
+.za-scripted-boss-heat-guide {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  background: rgb(11 17 32 / 58%);
+  border: 1px solid rgb(93 113 151 / 34%);
+  border-radius: 6px;
+}
+
+.za-scripted-boss-heat-guide-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.za-scripted-boss-heat-guide-heading strong {
+  font-size: 12px;
+}
+
+.za-scripted-boss-heat-guide-heading span,
+.za-scripted-boss-heat-guide > small {
+  color: var(--color-text-soft);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.za-scripted-boss-heat-ranges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 6px;
+}
+
+.za-scripted-boss-heat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.za-scripted-boss-heat-legend > span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.za-scripted-boss-heat-ranges > span {
+  padding: 5px 7px;
+  color: #b8c7dc;
+  background: rgb(28 35 49 / 74%);
+  border: 1px solid rgb(124 148 184 / 30%);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  text-align: center;
+}
+
 .za-scripted-boss-action-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 7px;
   margin: 0;
   padding: 0;
@@ -8863,11 +9143,8 @@ button.sv-encounter-condition-row:hover {
 }
 
 .za-scripted-boss-action-list li {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
-  align-items: flex-start;
-  justify-content: space-between;
   min-width: 0;
   padding: 8px 9px;
   background: rgb(11 17 32 / 62%);
@@ -8875,7 +9152,27 @@ button.sv-encounter-condition-row:hover {
   border-radius: 6px;
 }
 
-.za-scripted-boss-action-list li > div {
+.za-scripted-boss-action-list li.is-editable {
+  border-color: rgb(79 181 161 / 38%);
+}
+
+.za-scripted-boss-action-list li.is-broken {
+  border-color: rgb(229 96 90 / 42%);
+}
+
+.za-scripted-boss-action-list li.is-unavailable {
+  border-color: rgb(214 168 66 / 36%);
+}
+
+.za-scripted-boss-action-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.za-scripted-boss-action-heading > div:first-child {
   display: grid;
   min-width: 0;
 }
@@ -8885,17 +9182,142 @@ button.sv-encounter-condition-row:hover {
   font-size: 12px;
 }
 
-.za-scripted-boss-action-list span {
+.za-scripted-boss-action-heading > div:first-child > span {
   color: var(--color-text-soft);
   font-size: 11px;
 }
 
 .za-scripted-boss-action-list code {
-  flex: 0 0 auto;
   color: #aebed7;
   font-size: 10px;
   line-height: 1.4;
-  text-align: right;
+  text-align: left;
+}
+
+.za-scripted-boss-action-detail,
+.za-scripted-boss-action-lock-reason,
+.za-scripted-boss-action-caveat {
+  overflow-wrap: anywhere;
+  color: var(--color-text-soft);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.za-scripted-boss-action-lock-reason {
+  color: #d6c28d;
+}
+
+.za-scripted-boss-heat-availability {
+  display: grid;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.za-scripted-boss-heat-availability-label {
+  color: #cbd7e8 !important;
+  font-size: 10px !important;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.za-scripted-boss-heat-pills {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 92px), 1fr));
+  gap: 4px;
+}
+
+.za-scripted-boss-heat-pill {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 4px;
+  align-items: center;
+  min-width: 0;
+  padding: 4px 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.za-scripted-boss-heat-pill > svg {
+  grid-row: 1 / 3;
+}
+
+.za-scripted-boss-heat-pill > span {
+  color: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.za-scripted-boss-heat-pill > small {
+  color: inherit;
+  font-size: 9px;
+  line-height: 1.2;
+  opacity: 0.88;
+  overflow-wrap: anywhere;
+}
+
+.za-scripted-boss-heat-pill.is-available {
+  color: #8ce5ce;
+  background: rgb(22 83 69 / 36%);
+  border-color: rgb(79 181 161 / 34%);
+}
+
+.za-scripted-boss-heat-pill.is-context-only,
+.za-scripted-boss-heat-legend > .is-context-only {
+  color: #b9b2ff;
+  background: rgb(65 55 121 / 38%);
+  border-color: rgb(132 119 224 / 34%);
+}
+
+.za-scripted-boss-heat-pill.is-unavailable,
+.za-scripted-boss-heat-legend > .is-unavailable {
+  color: #f2cb70;
+  background: rgb(92 67 14 / 38%);
+  border-color: rgb(214 168 66 / 34%);
+}
+
+.za-scripted-boss-heat-pill.is-unverified,
+.za-scripted-boss-heat-legend > .is-unverified {
+  color: #b7c3d7;
+  background: rgb(51 63 84 / 40%);
+  border-color: rgb(124 148 184 / 30%);
+}
+
+.za-scripted-boss-heat-legend > .is-available {
+  color: #8ce5ce;
+  background: rgb(22 83 69 / 36%);
+  border-color: rgb(79 181 161 / 34%);
+}
+
+.za-scripted-boss-heat-detail {
+  color: var(--color-text-soft);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.za-scripted-boss-heat-detail.is-locked {
+  color: #d6c28d;
+}
+
+.za-scripted-boss-heat-detail.is-unverified {
+  color: #b7c3d7;
+}
+
+.za-scripted-boss-heat-detail.is-context-only {
+  color: #c5c0f4;
+}
+
+.za-scripted-boss-action-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.za-scripted-boss-action-control .editable-field-control {
+  width: 100%;
 }
 
 .za-encounter-advanced-data {
@@ -10676,6 +11098,21 @@ input {
 
   .za-encounter-field-group-wide {
     grid-column: auto;
+  }
+
+  .za-scripted-boss-action-list {
+    grid-template-columns: 1fr;
+  }
+
+  .za-scripted-boss-profile-summary,
+  .za-scripted-boss-action-heading {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .za-scripted-boss-profile-summary > .za-scripted-boss-profile-statuses,
+  .za-scripted-boss-action-statuses {
+    justify-content: flex-start;
   }
 
   .za-encounter-ownership-summary {

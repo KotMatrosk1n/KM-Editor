@@ -141,6 +141,7 @@ public sealed class ZaCacheManager
             ZaDataPaths.MoveDataArray,
             ZaDataPaths.BattleMoveParameterArray,
             ZaDataPaths.MoveTimingParameterArray,
+            ZaDataPaths.BossMoveSelectorArray,
             ZaDataPaths.ItemDataArray,
             ZaDataPaths.EvolutionItemConversionArray,
             ZaDataPaths.TrainerDataArray,
