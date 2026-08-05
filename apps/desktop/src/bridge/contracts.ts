@@ -1346,19 +1346,170 @@ export const moveTimingRecordSchema = z.strictObject({
   variant: z.number().int().nonnegative()
 });
 
+export const movePlayerDamageInvocationSourceRecordSchema = z.strictObject({
+  kind: z.enum(['child', 'landing', 'coreLanding']),
+  parentBulletId: z.number().int().positive()
+});
+
+export const movePlayerDamageTimelineLaunchRecordSchema = z.strictObject({
+  conditionTag: z.string().min(1).nullable(),
+  relationshipPaths: z.array(
+    z.array(
+      z.strictObject({
+        childBulletId: z.number().int().positive(),
+        kind: z.enum(['child', 'landing', 'coreLanding']),
+        parentBulletId: z.number().int().positive()
+      })
+    )
+  ),
+  rootBulletId: z.number().int().positive(),
+  timelineName: z.string().min(1),
+  timelinePath: z.string().min(1)
+});
+
+export const movePlayerDamageInvocationRecordSchema = z.strictObject({
+  bulletId: z.number().int().positive(),
+  isSelf: z.boolean(),
+  lifetimeSeconds: z.number().finite().nonnegative(),
+  resourceName: z.string().min(1),
+  resourcePath: z.string().min(1),
+  role: z.string().min(1),
+  sources: z.array(movePlayerDamageInvocationSourceRecordSchema),
+  verifiedVanillaTimelineLaunches: z.array(movePlayerDamageTimelineLaunchRecordSchema)
+});
+
+export const movePlayerDamageRecordSchema = z.strictObject({
+  attackId: z.number().int().positive(),
+  defaultDamage: z.number().int().nonnegative(),
+  hitIntervalSeconds: z.number().finite(),
+  bulletMappingMatchesVerifiedVanilla: z.boolean(),
+  invocations: z.array(movePlayerDamageInvocationRecordSchema),
+  playerDamage: z.number().int().min(0).max(999),
+  runtimeMoveId: z.number().int().min(2000).max(2999),
+  vanillaPlayerDamage: z.number().int().min(0).max(999),
+  verifiedVanillaTimelineCatalogAvailable: z.boolean()
+});
+
 export const moveVanillaFieldValueSchema = z.strictObject({
   field: z.string(),
   value: z.string()
 });
 
-export const scriptedBossActionSchema = z.strictObject({
-  key: z.string(),
-  kind: z.enum(['battle-move', 'movement-helper', 'scripted-mechanic']),
-  moveId: z.number().int().nonnegative().nullable(),
+export const scriptedBossHeatAvailabilitySchema = z.strictObject({
+  heatLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  state: z.enum(['available', 'context-only', 'unavailable', 'unverified'])
+});
+
+export const scriptedBossActionSchema = z
+  .strictObject({
+    canEdit: z.boolean(),
+    heatContext: z.enum(['after-stun']).nullable(),
+    heatAvailability: z.array(scriptedBossHeatAvailabilitySchema).max(3),
+    key: z.string(),
+    kind: z.enum(['battle-move', 'movement-helper', 'scripted-mechanic']),
+    lockReason: z
+      .enum([
+        'controller-script',
+        'timing-choreography',
+        'selector-unavailable',
+        'runtime-catalog-unavailable'
+      ])
+      .nullable(),
+    moveId: z.number().int().nonnegative().nullable(),
+    name: z.string(),
+    runtimeMoveId: z.number().int().nullable(),
+    runtimeState: z.enum([
+      'working',
+      'missing-battle',
+      'missing-timing',
+      'missing-battle-and-timing',
+      'timing-only',
+      'invalid-reference',
+      'unavailable',
+      'not-applicable'
+    ]),
+    selectorActionId: z.number().int().positive().nullable(),
+    usesBattleParameters: z.boolean(),
+    usesTimingParameters: z.boolean(),
+    vanillaMoveId: z.number().int().nonnegative().nullable()
+  })
+  .superRefine((action, context) => {
+    const heatLevels = new Set(
+      action.heatAvailability.map((availability) => availability.heatLevel)
+    );
+    const expectedAvailabilityCount =
+      action.kind === 'scripted-mechanic' ? 0 : 3;
+    const contextOnlyCount = action.heatAvailability.filter(
+      (availability) => availability.state === 'context-only'
+    ).length;
+    if (
+      action.heatAvailability.length !== expectedAvailabilityCount ||
+      (expectedAvailabilityCount === 3 && heatLevels.size !== 3)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          expectedAvailabilityCount === 0
+            ? 'Script-only boss actions cannot declare Heat availability.'
+            : 'Boss action Heat availability must contain each Heat level exactly once.',
+        path: ['heatAvailability']
+      });
+    }
+
+    if (contextOnlyCount !== 0 && contextOnlyCount !== 3) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Context-only Heat availability must apply to every Heat level.',
+        path: ['heatAvailability']
+      });
+    }
+
+    if (
+      action.heatContext !== null &&
+      (action.heatAvailability.length !== 3 || contextOnlyCount !== 3)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Boss action Heat context requires context-only availability.',
+        path: ['heatContext']
+      });
+    }
+
+    if (action.canEdit) {
+      if (action.kind !== 'battle-move') {
+        context.addIssue({
+          code: 'custom',
+          message: 'Only battle-move boss actions can be editable.',
+          path: ['canEdit']
+        });
+      }
+      if (action.selectorActionId === null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Editable boss actions require a selector action ID.',
+          path: ['selectorActionId']
+        });
+      }
+      if (action.lockReason !== null) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Editable boss actions cannot declare a lock reason.',
+          path: ['lockReason']
+        });
+      }
+    } else if (action.lockReason === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Read-only boss actions require a lock reason.',
+        path: ['lockReason']
+      });
+    }
+  });
+
+export const scriptedBossMoveOptionSchema = z.strictObject({
+  moveId: z.number().int().nonnegative(),
   name: z.string(),
-  runtimeMoveId: z.number().int().nonnegative().nullable(),
-  usesBattleParameters: z.boolean(),
-  usesTimingParameters: z.boolean()
+  runtimeMoveId: z.number().int().nonnegative()
 });
 
 export const scriptedBossProfileSchema = z.strictObject({
@@ -1392,6 +1543,7 @@ export const moveRecordSchema = z.strictObject({
   moveId: z.number().int().nonnegative(),
   name: z.string(),
   power: z.number().int().nonnegative(),
+  playerDamageRows: z.array(movePlayerDamageRecordSchema),
   pp: z.number().int().nonnegative(),
   priority: z.number().int(),
   provenance: moveProvenanceSchema,
@@ -3094,6 +3246,7 @@ export const encountersWorkflowStatsSchema = z.strictObject({
 export const encountersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(encounterEditableFieldSchema),
+  scriptedBossMoveOptions: z.array(scriptedBossMoveOptionSchema).default([]),
   scriptedBosses: z.array(scriptedBossProfileSchema).default([]),
   stats: encountersWorkflowStatsSchema,
   summary: workflowSummarySchema,
@@ -5291,6 +5444,7 @@ export type MoveRecord = z.infer<typeof moveRecordSchema>;
 export type MoveStatChangeRecord = z.infer<typeof moveStatChangeRecordSchema>;
 export type MovesWorkflow = z.infer<typeof movesWorkflowSchema>;
 export type ScriptedBossAction = z.infer<typeof scriptedBossActionSchema>;
+export type ScriptedBossMoveOption = z.infer<typeof scriptedBossMoveOptionSchema>;
 export type ScriptedBossProfile = z.infer<typeof scriptedBossProfileSchema>;
 export type TextEditableField = z.infer<typeof textEditableFieldSchema>;
 export type TextEntryRecord = z.infer<typeof textEntryRecordSchema>;

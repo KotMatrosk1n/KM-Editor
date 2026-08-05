@@ -870,6 +870,23 @@ internal sealed class ZaAngeFlatBufferReader
         return BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset, sizeof(int)));
     }
 
+    public float ReadSingle(int offset, string label)
+    {
+        EnsureRange(offset, sizeof(float), label);
+        return BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(offset, sizeof(float)));
+    }
+
+    public bool ReadBoolean(int offset, string label)
+    {
+        EnsureRange(offset, sizeof(byte), label);
+        return bytes[offset] switch
+        {
+            0 => false,
+            1 => true,
+            _ => throw new InvalidDataException($"{label} is not a canonical FlatBuffer boolean."),
+        };
+    }
+
     public IReadOnlyList<int> ReadTableVector(
         int tableOffset,
         int fieldIndex,

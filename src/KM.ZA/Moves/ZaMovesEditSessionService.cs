@@ -19,6 +19,7 @@ internal sealed class ZaMovesEditSessionService
 {
     private const string BattleVanillaRestoreField = "runtime.restore.battle";
     private const string TimingVanillaRestoreField = "runtime.restore.timing";
+    private const string PlayerDamageVanillaRestoreField = "runtime.restore.playerDamage";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaWorkflowFileSource fileSource;
@@ -268,6 +269,30 @@ internal sealed class ZaMovesEditSessionService
             stagedTableCount++;
         }
 
+        if (targetMove.RuntimePlayerDamageDiffersFromVanilla)
+        {
+            if (targetMove.RuntimePlayerDamageVanillaFingerprint is not { } fingerprint)
+            {
+                diagnostics.Add(CreateRestoreShapeDiagnostic(
+                    moveId,
+                    PlayerDamageVanillaRestoreField,
+                    "Verified vanilla player-damage rows are unavailable for the selected move."));
+                return new ZaMovesEditResult(currentWorkflow, currentSession, diagnostics);
+            }
+
+            updatedSession = ZaEditSessionSupport.ReplacePendingEdit(
+                updatedSession,
+                CreateRuntimeRestoreEdit(
+                    targetMove,
+                    PlayerDamageVanillaRestoreField,
+                    ZaDataPaths.AiAttackParamArray,
+                    targetMove.RuntimePlayerDamageSourceLayer,
+                    fingerprint,
+                    "player-damage rows",
+                    loadedWorkflow.ProjectileCatalogSources));
+            stagedTableCount++;
+        }
+
         ValidatePendingPairs(loadedWorkflow, updatedSession.PendingEdits, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -357,6 +382,7 @@ internal sealed class ZaMovesEditSessionService
             var writes = new List<PlannedFileWrite>();
             AddRuntimeWrite(ZaDataPaths.BattleMoveParameterArray, ZaRuntimeMoveData.BattlePrefix, "battle parameters", writes);
             AddRuntimeWrite(ZaDataPaths.MoveTimingParameterArray, ZaRuntimeMoveData.TimingPrefix, "timing parameters", writes);
+            AddRuntimeWrite(ZaDataPaths.AiAttackParamArray, ZaMovePlayerDamageDataDocument.FieldPrefix, "player-damage", writes);
             if (outputMode == ZaOutputMode.Standalone)
             {
                 var descriptor = ZaWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
@@ -513,13 +539,32 @@ internal sealed class ZaMovesEditSessionService
                     ZaDataPaths.MoveTimingParameterArray,
                     ZaRuntimeMoveData.TimingPrefix))
                 .ToArray();
+            var playerDamageEdits = session.PendingEdits
+                .Where(edit => IsRuntimeEditForPath(
+                    edit,
+                    ZaDataPaths.AiAttackParamArray,
+                    ZaMovePlayerDamageDataDocument.FieldPrefix))
+                .ToArray();
+            var playerDamageSource = playerDamageEdits.Length > 0
+                ? fileSource.Read(project, ZaDataPaths.AiAttackParamArray)
+                : null;
             var battleBaseSource = battleEdits.Any(edit => IsBattleVanillaRestoreEdit(edit))
                     ? fileSource.ReadBase(project, ZaDataPaths.BattleMoveParameterArray)
                     : null;
             var timingBaseSource = timingEdits.Any(edit => IsTimingVanillaRestoreEdit(edit))
                     ? fileSource.ReadBase(project, ZaDataPaths.MoveTimingParameterArray)
                     : null;
+            var playerDamageBaseSource = playerDamageEdits.Any(edit => IsPlayerDamageVanillaRestoreEdit(edit))
+                    ? fileSource.ReadBase(project, ZaDataPaths.AiAttackParamArray)
+                    : null;
             var timingDependencySources = timingEdits.Any(RequiresProjectileCatalog)
+                ? new[]
+                {
+                    fileSource.Read(project, ZaDataPaths.AiBulletParamArray),
+                    fileSource.ReadBase(project, ZaDataPaths.AiBulletParamArray),
+                }
+                : [];
+            var playerDamageDependencySources = playerDamageEdits.Any(RequiresProjectileCatalog)
                 ? new[]
                 {
                     fileSource.Read(project, ZaDataPaths.AiBulletParamArray),
@@ -545,6 +590,16 @@ internal sealed class ZaMovesEditSessionService
                         timingBaseSource,
                         timingDependencySources,
                         timingEdits,
+                        outputMode))
+                || (playerDamageEdits.Length > 0
+                    && !RuntimeSourceMatchesPlan(
+                        paths,
+                        currentPlan,
+                        ZaDataPaths.AiAttackParamArray,
+                        playerDamageSource!,
+                        playerDamageBaseSource,
+                        playerDamageDependencySources,
+                        playerDamageEdits,
                         outputMode)))
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
@@ -568,16 +623,37 @@ internal sealed class ZaMovesEditSessionService
             var baseTimingTable = timingBaseSource is null
                 ? null
                 : ZaRuntimeMoveData.ReadTiming(timingBaseSource.Bytes);
+            var playerDamageDocument = playerDamageSource is null
+                ? null
+                : ZaMovePlayerDamageDataDocument.Parse(playerDamageSource.Bytes);
+            var basePlayerDamageDocument = playerDamageBaseSource is null
+                ? null
+                : ZaMovePlayerDamageDataDocument.Parse(playerDamageBaseSource.Bytes);
+            var playerDamageValues = playerDamageDocument?.Values.ToList();
             foreach (var edit in session.PendingEdits.OrderBy(edit => IsRuntimeRestoreEdit(edit) ? 0 : 1))
             {
-                ApplyRuntimeEdit(
-                    workflow,
-                    battleTable,
-                    timingTable,
-                    baseBattleTable,
-                    baseTimingTable,
-                    edit,
-                    diagnostics);
+                if (IsPlayerDamageVanillaRestoreEdit(edit)
+                    || ZaMovePlayerDamageDataDocument.TryParseField(edit.Field, out _))
+                {
+                    ApplyPlayerDamageEdit(
+                        workflow,
+                        playerDamageDocument,
+                        basePlayerDamageDocument,
+                        playerDamageValues,
+                        edit,
+                        diagnostics);
+                }
+                else
+                {
+                    ApplyRuntimeEdit(
+                        workflow,
+                        battleTable,
+                        timingTable,
+                        baseBattleTable,
+                        baseTimingTable,
+                        edit,
+                        diagnostics);
+                }
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -594,6 +670,9 @@ internal sealed class ZaMovesEditSessionService
                 null,
                 timingTable,
                 timingEdits);
+            var expectedPlayerDamageRestores = CreateExpectedPlayerDamageRestoreFingerprints(
+                playerDamageValues,
+                playerDamageEdits);
             if (battleEdits.Length > 0)
             {
                 var battleBytes = battleTable.SerializeToBinary();
@@ -622,6 +701,21 @@ internal sealed class ZaMovesEditSessionService
                 writes.Add(new ZaWorkflowFileWrite(
                     ZaDataPaths.MoveTimingParameterArray,
                     timingBytes));
+            }
+
+            if (playerDamageEdits.Length > 0
+                && playerDamageDocument is not null
+                && playerDamageValues is not null)
+            {
+                var playerDamageBytes = playerDamageDocument.Write(playerDamageValues);
+                ValidatePlayerDamageOutput(
+                    playerDamageBytes,
+                    playerDamageEdits,
+                    expectedPlayerDamageRestores,
+                    diagnostics);
+                writes.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.AiAttackParamArray,
+                    playerDamageBytes));
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -678,14 +772,31 @@ internal sealed class ZaMovesEditSessionService
         }
 
         var editableField = ZaMovesWorkflowService.GetEditableField(workflow, normalizedField)!;
+        var isBattleField = normalizedField.StartsWith(
+            ZaRuntimeMoveData.BattlePrefix,
+            StringComparison.Ordinal);
+        var isPlayerDamageField = normalizedField.StartsWith(
+            ZaMovePlayerDamageDataDocument.FieldPrefix,
+            StringComparison.Ordinal);
+        if (isPlayerDamageField
+            && !ValidatePlayerDamageEditability(workflow, move, normalizedField, diagnostics))
+        {
+            return null;
+        }
+
         var targetSource = new ProjectFileReference(
-                normalizedField.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
+                isBattleField
                     ? move.RuntimeBattleSourceLayer
-                    : move.RuntimeTimingSourceLayer,
-                normalizedField.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
+                    : isPlayerDamageField
+                        ? move.RuntimePlayerDamageSourceLayer
+                        : move.RuntimeTimingSourceLayer,
+                isBattleField
                     ? ZaDataPaths.BattleMoveParameterArray
-                    : ZaDataPaths.MoveTimingParameterArray);
+                    : isPlayerDamageField
+                        ? ZaDataPaths.AiAttackParamArray
+                        : ZaDataPaths.MoveTimingParameterArray);
         var sources = ZaMovesWorkflowService.IsProjectileField(normalizedField)
+            || isPlayerDamageField
             ? new[] { targetSource }.Concat(workflow.ProjectileCatalogSources).Distinct().ToArray()
             : [targetSource];
         return new PendingEdit(
@@ -734,12 +845,53 @@ internal sealed class ZaMovesEditSessionService
         if (edit.Field is not null)
         {
             _ = IsFieldPresent(move, edit.Field, diagnostics);
-            if (ZaMovesWorkflowService.IsProjectileField(edit.Field))
+            var isPlayerDamageField = ZaMovePlayerDamageDataDocument.TryParseField(edit.Field, out _);
+            if (isPlayerDamageField
+                && !ValidatePlayerDamageEditability(workflow, move, edit.Field, diagnostics))
+            {
+                return;
+            }
+
+            if (ZaMovesWorkflowService.IsProjectileField(edit.Field)
+                || isPlayerDamageField)
             {
                 ValidateProjectileCatalogProvenance(workflow, edit, diagnostics);
             }
             ValidateVanillaRestoreValue(move, edit, diagnostics);
         }
+    }
+
+    private static bool ValidatePlayerDamageEditability(
+        ZaMovesWorkflow workflow,
+        ZaMoveRecord move,
+        string field,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (workflow.ProjectileCatalogSources.Count == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Boss player damage cannot be edited because the active and verified-base bullet catalogs are unavailable.",
+                ZaEditSessionSupport.MovesDomain,
+                field: field,
+                expected: "Verified active and base BulletParam provenance"));
+            return false;
+        }
+
+        if (!ZaMovePlayerDamageDataDocument.TryParseField(field, out var attackId)
+            || move.PlayerDamageRows.FirstOrDefault(row => row.AttackId == attackId) is not { } damageRow
+            || damageRow.Invocations.Count == 0)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Boss player damage cannot be edited because no active BulletParam row invokes this Attack ID.",
+                ZaEditSessionSupport.MovesDomain,
+                field: field,
+                expected: "At least one active damage-bearing BulletParam consumer"));
+            return false;
+        }
+
+        return true;
     }
 
     private static void ValidatePendingPairs(
@@ -1379,6 +1531,13 @@ internal sealed class ZaMovesEditSessionService
 
     private static string? GetEditableValue(ZaMoveRecord move, string field)
     {
+        if (ZaMovePlayerDamageDataDocument.TryParseField(field, out var attackId))
+        {
+            var playerDamage = move.PlayerDamageRows
+                .FirstOrDefault(row => row.AttackId == attackId);
+            return playerDamage?.PlayerDamage.ToString(CultureInfo.InvariantCulture);
+        }
+
         if (ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out var battleMember))
         {
             var runtimeVariant = move.RuntimeVariants.FirstOrDefault(candidate => candidate.Variant == variant);
@@ -1425,7 +1584,11 @@ internal sealed class ZaMovesEditSessionService
             ZaRuntimeMoveData.BattlePrefix,
             StringComparison.Ordinal)
                 ? move.RuntimeBattleSourceLayer
-                : move.RuntimeTimingSourceLayer;
+                : edit.Field.StartsWith(
+                    ZaMovePlayerDamageDataDocument.FieldPrefix,
+                    StringComparison.Ordinal)
+                    ? move.RuntimePlayerDamageSourceLayer
+                    : move.RuntimeTimingSourceLayer;
         if (activeSourceLayer == ProjectFileLayer.Base)
         {
             return;
@@ -1452,7 +1615,9 @@ internal sealed class ZaMovesEditSessionService
     {
         var virtualPath = field.StartsWith(ZaRuntimeMoveData.BattlePrefix, StringComparison.Ordinal)
             ? ZaDataPaths.BattleMoveParameterArray
-            : ZaDataPaths.MoveTimingParameterArray;
+            : field.StartsWith(ZaMovePlayerDamageDataDocument.FieldPrefix, StringComparison.Ordinal)
+                ? ZaDataPaths.AiAttackParamArray
+                : ZaDataPaths.MoveTimingParameterArray;
         return HasBaseSource(edit, virtualPath);
     }
 
@@ -1470,6 +1635,26 @@ internal sealed class ZaMovesEditSessionService
         string field,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        var isPlayerDamage = ZaMovePlayerDamageDataDocument.TryParseField(field, out var attackId);
+        if (isPlayerDamage)
+        {
+            var playerDamageRow = move.PlayerDamageRows.FirstOrDefault(row => row.AttackId == attackId);
+            if (playerDamageRow is not null
+                && ZaMovePlayerDamageDataDocument.IsForBaseMove(playerDamageRow.RuntimeMoveId, move.MoveId))
+            {
+                return true;
+            }
+
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{move.Name} does not contain player-damage AttackId {attackId} for its Boss Move.",
+                ZaEditSessionSupport.MovesDomain,
+                field: field,
+                expected: "An exact player-damage AttackId associated with the selected Boss Move",
+                code: ZaMovesDiagnosticCodes.RuntimeFieldMissing));
+            return false;
+        }
+
         var isBattle = ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out _);
         if (isBattle && move.AmbiguousRuntimeVariantIds.Contains(variant))
         {
@@ -1622,6 +1807,22 @@ internal sealed class ZaMovesEditSessionService
             };
         }
 
+        if (IsPlayerDamageVanillaRestoreEdit(edit))
+        {
+            var vanillaDamageByAttackId = move.VanillaPlayerDamageRows
+                .ToDictionary(row => row.AttackId, row => row.PlayerDamage);
+            return move with
+            {
+                PlayerDamageRows = move.PlayerDamageRows
+                    .Select(row => vanillaDamageByAttackId.TryGetValue(
+                            row.AttackId,
+                            out var vanillaPlayerDamage)
+                        ? row with { PlayerDamage = vanillaPlayerDamage }
+                        : row)
+                    .ToArray(),
+            };
+        }
+
         return move;
     }
 
@@ -1631,6 +1832,19 @@ internal sealed class ZaMovesEditSessionService
         string field,
         string value)
     {
+        if (ZaMovePlayerDamageDataDocument.TryParseField(field, out var attackId)
+            && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var playerDamage))
+        {
+            return move with
+            {
+                PlayerDamageRows = move.PlayerDamageRows
+                    .Select(row => row.AttackId == attackId
+                        ? row with { PlayerDamage = playerDamage }
+                        : row)
+                    .ToArray(),
+            };
+        }
+
         if (ZaRuntimeMoveData.TryParseBattleField(field, out var variant, out var member)
             && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
         {
@@ -1862,12 +2076,17 @@ internal sealed class ZaMovesEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var isBattleRestore = IsBattleVanillaRestoreEdit(edit);
+        var isTimingRestore = IsTimingVanillaRestoreEdit(edit);
         var expectedFingerprint = isBattleRestore
             ? move.RuntimeBattleVanillaFingerprint
-            : move.RuntimeTimingVanillaFingerprint;
+            : isTimingRestore
+                ? move.RuntimeTimingVanillaFingerprint
+                : move.RuntimePlayerDamageVanillaFingerprint;
         var virtualPath = isBattleRestore
             ? ZaDataPaths.BattleMoveParameterArray
-            : ZaDataPaths.MoveTimingParameterArray;
+            : isTimingRestore
+                ? ZaDataPaths.MoveTimingParameterArray
+                : ZaDataPaths.AiAttackParamArray;
 
         if (!move.CanRevertToVanilla)
         {
@@ -1900,13 +2119,17 @@ internal sealed class ZaMovesEditSessionService
                 expected: $"Base source for {virtualPath}"));
         }
 
-        if (!isBattleRestore)
+        if (isTimingRestore)
         {
             ValidateTimingRestoreProjectileCatalog(
                 workflow,
                 move.MoveId,
                 move.VanillaTimingRows,
                 diagnostics);
+        }
+
+        if (isTimingRestore || IsPlayerDamageVanillaRestoreEdit(edit))
+        {
             ValidateProjectileCatalogProvenance(workflow, edit, diagnostics);
         }
     }
@@ -2130,14 +2353,21 @@ internal sealed class ZaMovesEditSessionService
         return string.Equals(virtualPath, ZaDataPaths.BattleMoveParameterArray, StringComparison.Ordinal)
             ? IsBattleVanillaRestoreEdit(edit)
             : string.Equals(virtualPath, ZaDataPaths.MoveTimingParameterArray, StringComparison.Ordinal)
-                && IsTimingVanillaRestoreEdit(edit);
+                ? IsTimingVanillaRestoreEdit(edit)
+                : string.Equals(virtualPath, ZaDataPaths.AiAttackParamArray, StringComparison.Ordinal)
+                    && IsPlayerDamageVanillaRestoreEdit(edit);
     }
 
     private static bool IsRuntimeRestoreEdit(PendingEdit edit) =>
-        IsBattleVanillaRestoreEdit(edit) || IsTimingVanillaRestoreEdit(edit);
+        IsBattleVanillaRestoreEdit(edit)
+        || IsTimingVanillaRestoreEdit(edit)
+        || IsPlayerDamageVanillaRestoreEdit(edit);
 
     private static bool RequiresProjectileCatalog(PendingEdit edit) =>
-        ZaMovesWorkflowService.IsProjectileField(edit.Field) || IsTimingVanillaRestoreEdit(edit);
+        ZaMovesWorkflowService.IsProjectileField(edit.Field)
+        || ZaMovePlayerDamageDataDocument.TryParseField(edit.Field, out _)
+        || IsTimingVanillaRestoreEdit(edit)
+        || IsPlayerDamageVanillaRestoreEdit(edit);
 
     private static bool IsBattleVanillaRestoreEdit(PendingEdit edit) =>
         string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
@@ -2146,6 +2376,241 @@ internal sealed class ZaMovesEditSessionService
     private static bool IsTimingVanillaRestoreEdit(PendingEdit edit) =>
         string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
         && string.Equals(edit.Field, TimingVanillaRestoreField, StringComparison.Ordinal);
+
+    private static bool IsPlayerDamageVanillaRestoreEdit(PendingEdit edit) =>
+        string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+        && string.Equals(edit.Field, PlayerDamageVanillaRestoreField, StringComparison.Ordinal);
+
+    private static void ApplyPlayerDamageEdit(
+        ZaMovesWorkflow workflow,
+        ZaMovePlayerDamageDataDocument? activeDocument,
+        ZaMovePlayerDamageDataDocument? baseDocument,
+        IList<ZaMovePlayerDamageValues>? values,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.Domain, ZaEditSessionSupport.MovesDomain, StringComparison.Ordinal)
+            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+            || moveId is < 0 or >= 1000
+            || activeDocument is null
+            || values is null)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Boss Move player-damage edit is not valid for apply.",
+                ZaEditSessionSupport.MovesDomain,
+                field: edit.Field,
+                expected: "A verified Boss Move player-damage row"));
+            return;
+        }
+
+        var runtimeMoveId = checked(2000 + moveId);
+        if (IsPlayerDamageVanillaRestoreEdit(edit))
+        {
+            if (baseDocument is null)
+            {
+                diagnostics.Add(CreateRestoreShapeDiagnostic(
+                    moveId,
+                    PlayerDamageVanillaRestoreField,
+                    "Verified vanilla player-damage rows were not loaded for the selected move restoration."));
+                return;
+            }
+
+            var activeRows = activeDocument.GetValuesForRuntimeMove(runtimeMoveId);
+            var baseRows = baseDocument.GetValuesForRuntimeMove(runtimeMoveId);
+            var baseFingerprint = baseRows.Count == 0
+                ? null
+                : baseDocument.GetCanonicalFingerprint(runtimeMoveId);
+            if (activeRows.Count == 0
+                || baseRows.Count == 0
+                || !activeDocument.HasSameCanonicalShape(baseDocument, runtimeMoveId)
+                || baseFingerprint is null
+                || !string.Equals(edit.NewValue, baseFingerprint, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateRestoreShapeDiagnostic(
+                    moveId,
+                    PlayerDamageVanillaRestoreField,
+                    "The active and verified vanilla player-damage rows no longer have the exact reviewed AttackId shape."));
+                return;
+            }
+
+            var replacements = baseRows.ToDictionary(row => row.AttackId);
+            var replacementCount = 0;
+            for (var index = 0; index < values.Count; index++)
+            {
+                var current = values[index];
+                if (current.RuntimeMoveId != runtimeMoveId)
+                {
+                    continue;
+                }
+
+                if (!replacements.TryGetValue(current.AttackId, out var replacement)
+                    || current.RuntimeMoveId != replacement.RuntimeMoveId
+                    || current.DefaultDamage != replacement.DefaultDamage
+                    || current.HitInterval != replacement.HitInterval)
+                {
+                    diagnostics.Add(CreateRestoreShapeDiagnostic(
+                        moveId,
+                        PlayerDamageVanillaRestoreField,
+                        "The selected move player-damage AttackId shape changed while the verified vanilla rows were being restored."));
+                    return;
+                }
+
+                values[index] = current with { PlayerDamage = replacement.PlayerDamage };
+                replacementCount++;
+            }
+
+            if (replacementCount != baseRows.Count)
+            {
+                diagnostics.Add(CreateRestoreShapeDiagnostic(
+                    moveId,
+                    PlayerDamageVanillaRestoreField,
+                    "The selected move player-damage AttackId shape changed while the verified vanilla rows were being restored."));
+            }
+
+            return;
+        }
+
+        if (!ZaMovePlayerDamageDataDocument.TryParseField(edit.Field, out var attackId)
+            || TryNormalizeEditableValue(workflow, edit.Field, edit.NewValue, diagnostics) is not { } normalizedValue
+            || !int.TryParse(normalizedValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var playerDamage)
+            || playerDamage is < ZaMovePlayerDamageDataDocument.MinimumPlayerDamage
+                or > ZaMovePlayerDamageDataDocument.MaximumPlayerDamage)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Boss Move player-damage edit is not valid for apply.",
+                ZaEditSessionSupport.MovesDomain,
+                field: edit.Field,
+                expected: $"An integer from {ZaMovePlayerDamageDataDocument.MinimumPlayerDamage} to {ZaMovePlayerDamageDataDocument.MaximumPlayerDamage}"));
+            return;
+        }
+
+        var targetIndexes = values
+            .Select((row, index) => new { Row = row, Index = index })
+            .Where(candidate => candidate.Row.AttackId == attackId)
+            .ToArray();
+        if (targetIndexes.Length != 1
+            || targetIndexes[0].Row.RuntimeMoveId != runtimeMoveId)
+        {
+            diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Boss Move {moveId} could not apply player damage for AttackId {attackId}.",
+                ZaEditSessionSupport.MovesDomain,
+                field: edit.Field,
+                expected: "One exact AttackId associated with the selected Boss Move"));
+            return;
+        }
+
+        var target = targetIndexes[0];
+        values[target.Index] = target.Row with { PlayerDamage = playerDamage };
+    }
+
+    private static IReadOnlyDictionary<int, string> CreateExpectedPlayerDamageRestoreFingerprints(
+        IReadOnlyList<ZaMovePlayerDamageValues>? values,
+        IReadOnlyList<PendingEdit> edits)
+    {
+        var fingerprints = new Dictionary<int, string>();
+        if (values is null)
+        {
+            return fingerprints;
+        }
+
+        foreach (var edit in edits.Where(IsPlayerDamageVanillaRestoreEdit))
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+                || moveId is < 0 or >= 1000)
+            {
+                continue;
+            }
+
+            var rows = values
+                .Where(row => row.RuntimeMoveId == checked(2000 + moveId))
+                .ToArray();
+            if (rows.Length > 0)
+            {
+                fingerprints[moveId] = CreatePlayerDamageFingerprint(rows);
+            }
+        }
+
+        return fingerprints;
+    }
+
+    private static string CreatePlayerDamageFingerprint(
+        IEnumerable<ZaMovePlayerDamageValues> values)
+    {
+        var canonical = string.Join(
+            "\n",
+            values
+                .OrderBy(value => value.AttackId)
+                .Select(value => string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{value.AttackId}:{value.RuntimeMoveId}:{value.DefaultDamage}:"
+                    + $"{value.PlayerDamage}:{BitConverter.SingleToInt32Bits(value.HitInterval):X8}")));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
+            .ToLowerInvariant();
+    }
+
+    private static void ValidatePlayerDamageOutput(
+        byte[] bytes,
+        IReadOnlyList<PendingEdit> edits,
+        IReadOnlyDictionary<int, string> expectedRestoreFingerprints,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var document = ZaMovePlayerDamageDataDocument.Parse(bytes);
+        foreach (var edit in edits)
+        {
+            if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var moveId)
+                || moveId is < 0 or >= 1000)
+            {
+                continue;
+            }
+
+            var runtimeMoveId = checked(2000 + moveId);
+            if (IsPlayerDamageVanillaRestoreEdit(edit))
+            {
+                var rows = document.GetValuesForRuntimeMove(runtimeMoveId);
+                _ = expectedRestoreFingerprints.TryGetValue(moveId, out var expectedFingerprint);
+                var actualFingerprint = rows.Count == 0
+                    ? null
+                    : document.GetCanonicalFingerprint(runtimeMoveId);
+                if (actualFingerprint is null
+                    || expectedFingerprint is null
+                    || !string.Equals(actualFingerprint, expectedFingerprint, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Serialized Boss Move output did not retain the complete vanilla player-damage restoration for move {moveId}.",
+                        ZaEditSessionSupport.MovesDomain,
+                        field: edit.Field,
+                        expected: expectedFingerprint ?? "Complete verified vanilla player-damage rows",
+                        code: ZaMovesDiagnosticCodes.RuntimeRestoreVerificationFailed));
+                }
+
+                continue;
+            }
+
+            if (!ZaMovePlayerDamageDataDocument.TryParseField(edit.Field, out var attackId)
+                || !int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expectedDamage))
+            {
+                continue;
+            }
+
+            var matchingRows = document.Values
+                .Where(row => row.AttackId == attackId && row.RuntimeMoveId == runtimeMoveId)
+                .ToArray();
+            if (matchingRows.Length != 1 || matchingRows[0].PlayerDamage != expectedDamage)
+            {
+                diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Serialized Boss Move output did not retain player damage for AttackId {attackId} on move {moveId}.",
+                    ZaEditSessionSupport.MovesDomain,
+                    field: edit.Field,
+                    expected: edit.NewValue,
+                    code: ZaMovesDiagnosticCodes.RuntimeVariantVerificationFailed));
+            }
+        }
+    }
 
     private static void ApplyRuntimeEdit(
         ZaMovesWorkflow workflow,

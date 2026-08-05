@@ -175,6 +175,8 @@ public sealed record ZaEncountersWorkflow(
 {
     public IReadOnlyList<ZaScriptedBossProfileRecord> ScriptedBosses { get; init; } = [];
 
+    public IReadOnlyList<ZaScriptedBossMoveOptionRecord> ScriptedBossMoveOptions { get; init; } = [];
+
     internal ZaPokemonAvailability PokemonAvailability { get; init; } =
         ZaPokemonAvailability.Unfiltered;
 

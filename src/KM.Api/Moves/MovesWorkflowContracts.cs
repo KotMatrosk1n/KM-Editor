@@ -135,6 +135,46 @@ public sealed record MoveTimingRecordDto(
     int ReplacementProjectile5,
     double ProjectileCorrectionScale);
 
+public sealed record MovePlayerDamageInvocationSourceRecordDto(
+    int ParentBulletId,
+    string Kind);
+
+public sealed record MovePlayerDamageTimelinePathEdgeRecordDto(
+    int ParentBulletId,
+    int ChildBulletId,
+    string Kind);
+
+public sealed record MovePlayerDamageTimelineLaunchRecordDto(
+    int RootBulletId,
+    string TimelineName,
+    string TimelinePath,
+    string? ConditionTag)
+{
+    public IReadOnlyList<IReadOnlyList<MovePlayerDamageTimelinePathEdgeRecordDto>>
+        RelationshipPaths { get; init; } = [];
+}
+
+public sealed record MovePlayerDamageInvocationRecordDto(
+    int BulletId,
+    string ResourceName,
+    string ResourcePath,
+    string Role,
+    double LifetimeSeconds,
+    bool IsSelf,
+    IReadOnlyList<MovePlayerDamageInvocationSourceRecordDto> Sources,
+    IReadOnlyList<MovePlayerDamageTimelineLaunchRecordDto> VerifiedVanillaTimelineLaunches);
+
+public sealed record MovePlayerDamageRecordDto(
+    int AttackId,
+    int RuntimeMoveId,
+    int DefaultDamage,
+    int PlayerDamage,
+    int VanillaPlayerDamage,
+    double HitIntervalSeconds,
+    bool BulletMappingMatchesVerifiedVanilla,
+    bool VerifiedVanillaTimelineCatalogAvailable,
+    IReadOnlyList<MovePlayerDamageInvocationRecordDto> Invocations);
+
 public sealed record MoveVanillaFieldValueDto(string Field, string Value);
 
 public sealed record MoveRecordDto(
@@ -177,6 +217,8 @@ public sealed record MoveRecordDto(
     public MoveTimingRecordDto? Timing { get; init; }
 
     public IReadOnlyList<MoveTimingRecordDto> TimingRows { get; init; } = [];
+
+    public IReadOnlyList<MovePlayerDamageRecordDto> PlayerDamageRows { get; init; } = [];
 
     public IReadOnlyList<MoveVanillaFieldValueDto> VanillaValues { get; init; } = [];
 

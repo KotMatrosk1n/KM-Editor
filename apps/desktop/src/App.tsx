@@ -185,6 +185,8 @@ import {
   type RoyalCandyWorkflowRecord,
   type SaveBlockRecord,
   type SaveFileRecord,
+  type ScriptedBossAction,
+  type ScriptedBossMoveOption,
   type ScriptedBossProfile,
   type ShopEditableField,
   type ShopEditableFieldOption,
@@ -225,7 +227,6 @@ import {
 } from './bridge/contracts';
 import {
   findScriptedBossProfile,
-  getScriptedBossOwners,
   getScriptedBossMoveSearchValues,
   ScriptedBossEncounterActions,
   ScriptedBossMoveOwnership
@@ -305,13 +306,16 @@ import {
   formatMoveHitRange,
   formatMoveInflictedEffectTurns,
   formatMoveRecoilValue,
-  formatMoveRuntimeVariantLabel,
   getEditableMoveFieldValue,
   getMoveEditableFieldGroup,
   getMoveEditableFieldLabel,
   getMoveRelationalValidationIssues,
+  getMoveRuntimeVariants,
+  getMoveRuntimeView,
   isMoveProjectileField,
+  parseMovePlayerDamageField,
   parseMoveTimingField,
+  resolveMoveRuntimeVariant,
   resolveMoveTimingEditableField
 } from './movesEditor';
 import { canAccessWorkflowSectionForHealth, getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isPokemonLegendsZAAdvancedEditorSection, isPokemonLegendsZAGame, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isTrinityCacheGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, pokemonLegendsZAAdvancedEditorDomains, readOnlyViewerSectionIds, resolveWorkflowDataSection, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
@@ -16513,12 +16517,13 @@ function MovesSection({
   selectedMoveId: number | null;
   workflow: MovesWorkflow | null;
 }) {
-  const { translateLiteral } = useLocalization();
+  const { t, translateLiteral } = useLocalization();
+  const [runtimeVariantByMoveId, setRuntimeVariantByMoveId] = useState<Record<string, number>>({});
   const moves = workflow?.moves ?? [];
   const scriptedBosses = workflow?.scriptedBosses ?? [];
   const filteredMoves = useMemo(
-    () => filterMoves(moves, searchText, scriptedBosses),
-    [moves, scriptedBosses, searchText]
+    () => filterMoves(moves, searchText, scriptedBosses, t),
+    [moves, scriptedBosses, searchText, t]
   );
   const selectedMove = useMemo(
     () =>
@@ -16530,6 +16535,12 @@ function MovesSection({
   const canEditMoves = workflow?.summary.availability === 'available';
   const pendingMoveIds = useMemo(() => getPendingMoveIds(editSession), [editSession]);
   const usesRuntimeMoveData = moves.some((move) => move.hasRuntimeData);
+  const selectedRuntimeVariant = selectedMove
+    ? resolveMoveRuntimeVariant(
+        selectedMove,
+        runtimeVariantByMoveId[selectedMove.moveId.toString()]
+      )
+    : null;
 
   return (
     <>
@@ -16592,36 +16603,88 @@ function MovesSection({
                 <span role="columnheader">Power</span>
                 <span role="columnheader">Acc</span>
                 <span role="columnheader">{usesRuntimeMoveData ? 'Cooldown' : 'PP'}</span>
-                <span role="columnheader">{usesRuntimeMoveData ? 'Variants' : 'Flags'}</span>
+                <span role="columnheader">
+                  {usesRuntimeMoveData ? t('moves.runtimeVariant.label') : 'Flags'}
+                </span>
               </div>
               <VirtualTableBody
                 getKey={(move) => move.moveId}
                 items={filteredMoves}
-                renderRow={(move) => (
-                  <button
-                    className={`moves-row ${
-                      selectedMove?.moveId === move.moveId ? 'moves-row-selected' : ''
-                    } ${
-                      pendingMoveIds.has(move.moveId) ? 'moves-row-pending' : ''
-                    }`}
-                    onClick={() => onSelectMove(move.moveId)}
-                    role="row"
-                    type="button"
-                  >
-                    <span role="cell">{move.moveId}</span>
-                    <span role="cell">{move.name}</span>
-                    <span role="cell">{move.typeName}</span>
-                    <span role="cell">{move.categoryName}</span>
-                    <span role="cell">{formatMovePower(move.power)}</span>
-                    <span role="cell">{translateLiteral(formatMoveAccuracy(move.accuracy))}</span>
-                    <span role="cell">
-                      {move.hasRuntimeData ? `${move.timing?.cooldown ?? '-'}s` : move.pp}
-                    </span>
-                    <span role="cell">
-                      {move.hasRuntimeData ? move.runtimeVariants.length : formatMoveActiveFlags(move)}
-                    </span>
-                  </button>
-                )}
+                renderRow={(move) => {
+                  const isSelected = selectedMove?.moveId === move.moveId;
+                  const runtimeVariant = move.hasRuntimeData
+                    ? resolveMoveRuntimeVariant(
+                        move,
+                        isSelected ? runtimeVariantByMoveId[move.moveId.toString()] : undefined
+                      )
+                    : null;
+                  const runtimeView = move.hasRuntimeData
+                    ? getMoveRuntimeView(move, runtimeVariant)
+                    : null;
+                  const runtimeVariantCount = move.hasRuntimeData
+                    ? getMoveRuntimeVariants(move).length
+                    : 0;
+
+                  return (
+                    <button
+                      className={`moves-row ${isSelected ? 'moves-row-selected' : ''} ${
+                        pendingMoveIds.has(move.moveId) ? 'moves-row-pending' : ''
+                      }`}
+                      onClick={() => onSelectMove(move.moveId)}
+                      role="row"
+                      type="button"
+                    >
+                      <span role="cell">{move.moveId}</span>
+                      <span role="cell">{move.name}</span>
+                      <span role="cell">
+                        {move.hasRuntimeData
+                          ? runtimeView?.battleRow?.typeName ??
+                            t('moves.inspector.missingBattleRow')
+                          : move.typeName}
+                      </span>
+                      <span role="cell">
+                        {move.hasRuntimeData
+                          ? runtimeView?.battleRow?.damageTypeName ??
+                            t('moves.inspector.missingBattleRow')
+                          : move.categoryName}
+                      </span>
+                      <span role="cell">
+                        {move.hasRuntimeData
+                          ? runtimeView?.battleRow
+                            ? runtimeView.battleRow.power
+                            : '-'
+                          : formatMovePower(move.power)}
+                      </span>
+                      <span role="cell">
+                        {move.hasRuntimeData
+                          ? runtimeView?.timingRow
+                            ? `${runtimeView.timingRow.hitPercent}%`
+                            : '-'
+                          : translateLiteral(formatMoveAccuracy(move.accuracy))}
+                      </span>
+                      <span role="cell">
+                        {move.hasRuntimeData
+                          ? runtimeView?.timingRow
+                            ? `${runtimeView.timingRow.cooldown}s`
+                            : '-'
+                          : move.pp}
+                      </span>
+                      <span role="cell">
+                        {move.hasRuntimeData && runtimeVariant !== null
+                          ? t(
+                              `moves.list.runtimeSummary.${isSelected ? 'selected' : 'available'}.${
+                                runtimeVariantCount === 1 ? 'one' : 'other'
+                              }`,
+                              {
+                                count: runtimeVariantCount,
+                                label: formatLocalizedMoveRuntimeVariantLabel(runtimeVariant, t)
+                              }
+                            )
+                          : formatMoveActiveFlags(move)}
+                      </span>
+                    </button>
+                  );
+                }}
               />
             </div>
 
@@ -16638,8 +16701,19 @@ function MovesSection({
               isMoveUpdating={isMoveUpdating}
               move={selectedMove}
               onStageMoveVanilla={onStageMoveVanilla}
+              onSelectRuntimeVariant={(variant) => {
+                if (!selectedMove) {
+                  return;
+                }
+
+                setRuntimeVariantByMoveId((current) => ({
+                  ...current,
+                  [selectedMove.moveId.toString()]: variant
+                }));
+              }}
               onUpdateMoveFields={onUpdateMoveFields}
               projectileOptions={workflow.projectileOptions}
+              selectedRuntimeVariant={selectedRuntimeVariant}
               scriptedBosses={workflow.scriptedBosses}
             />
           </div>
@@ -16653,6 +16727,359 @@ function MovesSection({
   );
 }
 
+function formatMoveRuntimeRowStatus(
+  view: NonNullable<ReturnType<typeof getMoveRuntimeView>>,
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  const rowStatusKey = view.battleRow
+    ? view.timingRow
+      ? 'moves.runtimeStatus.battleAndTiming'
+      : 'moves.runtimeStatus.battleOnly'
+    : view.timingRow
+      ? 'moves.runtimeStatus.timingOnly'
+      : 'moves.runtimeStatus.none';
+  const rowStatus = t(rowStatusKey);
+  if (view.variant !== 2) {
+    return rowStatus;
+  }
+
+  if (view.playerDamageRows.length === 0) {
+    return t('moves.runtimeStatus.playerDamage.none', { status: rowStatus });
+  }
+
+  return t(
+    view.playerDamageRows.length === 1
+      ? 'moves.runtimeStatus.playerDamage.one'
+      : 'moves.runtimeStatus.playerDamage.other',
+    { count: view.playerDamageRows.length, status: rowStatus }
+  );
+}
+
+function formatLocalizedMoveRuntimeVariantLabel(
+  variant: number,
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  switch (variant) {
+    case 0:
+      return t('moves.runtimeVariant.normal');
+    case 1:
+      return t('moves.runtimeVariant.plus');
+    case 2:
+      return t('moves.runtimeVariant.boss');
+    default:
+      return t('moves.runtimeVariant.unknown', { variant });
+  }
+}
+
+function formatMovePlayerDamageHitInterval(value: number, language: string) {
+  return value.toLocaleString(language, {
+    maximumFractionDigits: 4,
+    minimumFractionDigits: 0
+  });
+}
+
+function formatMovePlayerDamageConditionTag(
+  conditionTag: string | null,
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  if (conditionTag === null) {
+    return t('moves.playerDamage.condition.none');
+  }
+
+  const knownConditions: Record<string, string> = {
+    Poke0149: 'moves.playerDamage.condition.dragonite',
+    Poke0359: 'moves.playerDamage.condition.absol',
+    Poke0952: 'moves.playerDamage.condition.scovillain'
+  };
+  const knownCondition = knownConditions[conditionTag];
+  return knownCondition
+    ? t(knownCondition, { tag: conditionTag })
+    : t('moves.playerDamage.condition.active', { tag: conditionTag });
+}
+
+function formatMovePlayerDamageRole(
+  role: string,
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  const knownRoles: Record<string, string> = {
+    'Attack-bearing bullet with multiple incoming BulletParam links':
+      'moves.playerDamage.role.multipleIncoming',
+    'Attack-bearing core landing bullet': 'moves.playerDamage.role.coreLanding',
+    'Attack-bearing landing bullet': 'moves.playerDamage.role.landing',
+    'Attack-bearing child bullet': 'moves.playerDamage.role.child',
+    'Attack-bearing bullet with no incoming BulletParam link':
+      'moves.playerDamage.role.noIncoming'
+  };
+  const knownRole = knownRoles[role];
+  return knownRole ? t(knownRole) : t('moves.playerDamage.role.unknown', { role });
+}
+
+function formatMovePlayerDamageInvocationSources(
+  sources: MoveRecord['playerDamageRows'][number]['invocations'][number]['sources'],
+  language: string,
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  const descriptions = sources.map((source) => {
+    switch (source.kind) {
+      case 'child':
+        return t('moves.playerDamage.source.child', {
+          parentBulletId: source.parentBulletId
+        });
+      case 'landing':
+        return t('moves.playerDamage.source.landing', {
+          parentBulletId: source.parentBulletId
+        });
+      case 'coreLanding':
+        return t('moves.playerDamage.source.coreLanding', {
+          parentBulletId: source.parentBulletId
+        });
+      default:
+        return t('moves.playerDamage.source.unknown', {
+          kind: source.kind,
+          parentBulletId: source.parentBulletId
+        });
+    }
+  });
+  return new Intl.ListFormat(language, { style: 'long', type: 'conjunction' }).format(
+    descriptions
+  );
+}
+
+function formatMovePlayerDamageRelationshipEdge(
+  edge: MoveRecord['playerDamageRows'][number]['invocations'][number]['verifiedVanillaTimelineLaunches'][number]['relationshipPaths'][number][number],
+  t: ReturnType<typeof useLocalization>['t']
+) {
+  switch (edge.kind) {
+    case 'child':
+      return t('moves.playerDamage.timeline.edge.child', {
+        childBulletId: edge.childBulletId,
+        parentBulletId: edge.parentBulletId
+      });
+    case 'landing':
+      return t('moves.playerDamage.timeline.edge.landing', {
+        childBulletId: edge.childBulletId,
+        parentBulletId: edge.parentBulletId
+      });
+    case 'coreLanding':
+      return t('moves.playerDamage.timeline.edge.coreLanding', {
+        childBulletId: edge.childBulletId,
+        parentBulletId: edge.parentBulletId
+      });
+  }
+}
+
+function MovePlayerDamageDescriptor({
+  id,
+  row,
+  totalRows
+}: {
+  id: string;
+  row: MoveRecord['playerDamageRows'][number];
+  totalRows: number;
+}) {
+  const { language, t } = useLocalization();
+  const mappingStatus = row.bulletMappingMatchesVerifiedVanilla
+    ? t('moves.playerDamage.status.matchesVanilla')
+    : row.invocations.length > 0
+      ? t('moves.playerDamage.status.differsFromVanilla')
+      : t('moves.playerDamage.status.noActiveMapping');
+
+  return (
+    <aside className="move-player-damage-descriptor" id={id}>
+      <div className="move-player-damage-descriptor-heading">
+        <strong>
+          {t(
+            totalRows > 1
+              ? 'moves.playerDamage.heading.other'
+              : 'moves.playerDamage.heading.one',
+            { attackId: row.attackId, count: totalRows }
+          )}
+        </strong>
+        <span
+          className={`move-player-damage-mapping-status ${
+            row.bulletMappingMatchesVerifiedVanilla ? 'is-verified' : 'is-unverified'
+          }`}
+        >
+          {mappingStatus}
+        </span>
+      </div>
+      <p>
+        {t(
+          row.invocations.length > 0
+            ? 'moves.playerDamage.description.withInvocations'
+            : 'moves.playerDamage.description.noInvocations',
+          { attackId: row.attackId }
+        )}
+      </p>
+      {row.invocations.length > 0 ? (
+        <div className="move-player-damage-invocations">
+          {row.invocations.map((invocation, invocationIndex) => (
+            <section
+              className="move-player-damage-invocation"
+              key={`${invocation.bulletId}-${invocation.resourcePath}-${invocationIndex}`}
+            >
+              <div className="move-player-damage-invocation-heading">
+                <strong>{formatMovePlayerDamageRole(invocation.role, t)}</strong>
+                <span>
+                  {t('moves.playerDamage.technical.bullet', {
+                    bulletId: invocation.bulletId
+                  })}
+                </span>
+              </div>
+              {row.bulletMappingMatchesVerifiedVanilla && invocation.verifiedVanillaTimelineLaunches.length > 0 ? (
+                <>
+                  {invocation.verifiedVanillaTimelineLaunches.map((launch, launchIndex) => {
+                    const relationshipPaths = launch.relationshipPaths.filter(
+                      (path) => path.length > 0
+                    );
+                    return (
+                      <Fragment
+                        key={`${launch.timelinePath}-${launch.rootBulletId}-${launchIndex}`}
+                      >
+                        <p>
+                          {t('moves.playerDamage.timeline.verifiedVanillaEvidence')}{' '}
+                          <code title={launch.timelinePath}>{launch.timelineName}</code>{' '}
+                          {t(
+                            launch.rootBulletId === invocation.bulletId
+                              ? 'moves.playerDamage.timeline.launchesDirect'
+                              : 'moves.playerDamage.timeline.launchesRoot',
+                            {
+                              condition: formatMovePlayerDamageConditionTag(
+                                launch.conditionTag,
+                                t
+                              ),
+                              rootBulletId: launch.rootBulletId
+                            }
+                          )}{' '}
+                          {t(
+                            launch.rootBulletId === invocation.bulletId
+                              ? 'moves.playerDamage.timeline.directInvocation'
+                              : 'moves.playerDamage.timeline.chainInvocation',
+                            {
+                              attackId: row.attackId,
+                              bulletId: invocation.bulletId
+                            }
+                          )}
+                        </p>
+                        {relationshipPaths.map((path, pathIndex) => (
+                          <p key={`${launchIndex}-${pathIndex}`}>
+                            {t('moves.playerDamage.timeline.relationshipPath', {
+                              edges: path
+                                .map((edge) => formatMovePlayerDamageRelationshipEdge(edge, t))
+                                .join(' → '),
+                              index: pathIndex + 1
+                            })}
+                          </p>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
+                  {invocation.sources.length > 0 ? (
+                    <p>
+                      {t('moves.playerDamage.timeline.immediateLink', {
+                        bulletId: invocation.bulletId,
+                        sources: formatMovePlayerDamageInvocationSources(
+                          invocation.sources,
+                          language,
+                          t
+                        )
+                      })}
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p>
+                  {invocation.sources.length > 0
+                    ? t('moves.playerDamage.timeline.linkedInvocation', {
+                        attackId: row.attackId,
+                        bulletId: invocation.bulletId,
+                        sources: formatMovePlayerDamageInvocationSources(
+                          invocation.sources,
+                          language,
+                          t
+                        )
+                      })
+                    : t('moves.playerDamage.timeline.directOwner', {
+                        attackId: row.attackId,
+                        bulletId: invocation.bulletId
+                      })}{' '}
+                  {t(
+                    !row.verifiedVanillaTimelineCatalogAvailable
+                      ? 'moves.playerDamage.timeline.catalogUnavailable'
+                      : !row.bulletMappingMatchesVerifiedVanilla
+                        ? 'moves.playerDamage.timeline.mappingDiffers'
+                        : 'moves.playerDamage.timeline.exhaustiveNoLaunch',
+                    { bulletId: invocation.bulletId }
+                  )}
+                </p>
+              )}
+              <dl className="move-player-damage-invocation-technical">
+                <div>
+                  <dt>{t('moves.playerDamage.technical.bulletResource')}</dt>
+                  <dd>
+                    <code title={invocation.resourcePath}>{invocation.resourceName}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('moves.playerDamage.technical.lifetime')}</dt>
+                  <dd>
+                    {t('moves.playerDamage.technical.seconds', {
+                      value: formatMovePlayerDamageHitInterval(
+                        invocation.lifetimeSeconds,
+                        language
+                      )
+                    })}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('moves.playerDamage.technical.isSelf')}</dt>
+                  <dd>
+                    {t(
+                      invocation.isSelf
+                        ? 'moves.playerDamage.technical.yes'
+                        : 'moves.playerDamage.technical.no'
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="move-player-damage-unverified">
+          {t('moves.playerDamage.fallback.noInvoker', { attackId: row.attackId })}
+        </p>
+      )}
+      <dl className="move-player-damage-row-technical">
+        <div>
+          <dt>{t('moves.playerDamage.technical.runtimeMove')}</dt>
+          <dd>{row.runtimeMoveId}</dd>
+        </div>
+        <div>
+          <dt>{t('moves.playerDamage.technical.defaultTargetDamage')}</dt>
+          <dd>
+            {t('moves.playerDamage.technical.defaultPropertyValue', {
+              value: row.defaultDamage
+            })}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('moves.playerDamage.technical.minimumRepeatHitInterval')}</dt>
+          <dd>
+            {t('moves.playerDamage.technical.repeatHitIntervalValue', {
+              value: formatMovePlayerDamageHitInterval(row.hitIntervalSeconds, language)
+            })}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('moves.playerDamage.technical.vanillaPlayerDamage')}</dt>
+          <dd>{row.vanillaPlayerDamage}</dd>
+        </div>
+      </dl>
+    </aside>
+  );
+}
+
 function SelectedMovePanel({
   baselineValues,
   canEditMoves,
@@ -16661,9 +17088,11 @@ function SelectedMovePanel({
   isEditStarting,
   isMoveUpdating,
   move,
+  onSelectRuntimeVariant,
   onStageMoveVanilla,
   onUpdateMoveFields,
   projectileOptions,
+  selectedRuntimeVariant,
   scriptedBosses
 }: {
   baselineValues: Record<string, number | null> | null;
@@ -16673,18 +17102,19 @@ function SelectedMovePanel({
   isEditStarting: boolean;
   isMoveUpdating: boolean;
   move: MoveRecord | null;
+  onSelectRuntimeVariant: (variant: number) => void;
   onStageMoveVanilla?: (moveId: number) => Promise<boolean>;
   onUpdateMoveFields: (
     moveId: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
   projectileOptions: Array<{ label: string; value: number }>;
+  selectedRuntimeVariant: number | null;
   scriptedBosses: ScriptedBossProfile[];
 }) {
   const [moveDraftsByMoveId, setMoveDraftsByMoveId] = useState<
     Record<string, Record<string, string>>
   >({});
-  const [runtimeVariantByMoveId, setRuntimeVariantByMoveId] = useState<Record<string, number>>({});
   const [timingProfileByMoveVariant, setTimingProfileByMoveVariant] = useState<
     Record<string, number>
   >({});
@@ -16694,30 +17124,9 @@ function SelectedMovePanel({
   const cancelActiveEditSession = useCancelActiveEditSession();
   const { t, translateLiteral } = useLocalization();
   const runtimeVariantOptions = useMemo(
-    () =>
-      move
-        ? Array.from(
-            new Set([
-              ...move.runtimeVariants.map((variant) => variant.variant),
-              ...move.timingRows.map((timing) => timing.variant)
-            ])
-          )
-            .sort((left, right) => left - right)
-            .map((variant) => ({ variant }))
-        : [],
+    () => (move ? getMoveRuntimeVariants(move) : []),
     [move]
   );
-  const requestedRuntimeVariant = move
-    ? runtimeVariantByMoveId[move.moveId.toString()]
-    : undefined;
-  const selectedRuntimeVariant =
-    requestedRuntimeVariant !== undefined &&
-    runtimeVariantOptions.some((variant) => variant.variant === requestedRuntimeVariant)
-      ? requestedRuntimeVariant
-      : runtimeVariantOptions[0]?.variant ?? 0;
-  const hasScriptedBossOwner = move
-    ? getScriptedBossOwners(scriptedBosses, move.moveId).length > 0
-    : false;
   const timingProfileOptions = useMemo(
     () =>
       move
@@ -16748,12 +17157,16 @@ function SelectedMovePanel({
         ? Array.from(
             new Map(
               move.timingRows
-                .filter((timing) => timing.timingMoveId === selectedTimingProfile)
+                .filter(
+                  (timing) =>
+                    timing.variant === selectedRuntimeVariant &&
+                    timing.timingMoveId === selectedTimingProfile
+                )
                 .map((timing) => [timing.occurrence, timing])
             ).values()
           )
         : [],
-    [move, selectedTimingProfile]
+    [move, selectedRuntimeVariant, selectedTimingProfile]
   );
   const timingOccurrenceStorageKey = move && selectedTimingProfile !== null
     ? `${move.moveId}:${selectedTimingProfile}`
@@ -16766,7 +17179,18 @@ function SelectedMovePanel({
     timingRowOptions.some((timing) => timing.occurrence === requestedTimingOccurrence)
       ? requestedTimingOccurrence
       : timingRowOptions[0]?.occurrence ?? 0;
-  const moveFields = useMemo(
+  const selectedRuntimeView = useMemo(
+    () =>
+      move
+        ? getMoveRuntimeView(move, selectedRuntimeVariant, {
+            occurrence:
+              selectedTimingProfile === null ? null : selectedTimingOccurrence,
+            timingMoveId: selectedTimingProfile
+          })
+        : null,
+    [move, selectedRuntimeVariant, selectedTimingOccurrence, selectedTimingProfile]
+  );
+  const allMoveFields = useMemo(
     () =>
       editableFields
         .flatMap((field) => {
@@ -16775,18 +17199,18 @@ function SelectedMovePanel({
             return [field];
           }
 
-          return selectedTimingProfile === null
-            ? []
-            : [
-                {
-                  ...field,
-                  field: resolveMoveTimingEditableField(
-                    field.field,
-                    selectedTimingProfile,
-                    selectedTimingOccurrence
-                  )
-                }
-              ];
+          if (!move) {
+            return [];
+          }
+
+          return move.timingRows.map((timing) => ({
+            ...field,
+            field: resolveMoveTimingEditableField(
+              field.field,
+              timing.timingMoveId,
+              timing.occurrence
+            )
+          }));
         })
         .filter(
           (field, index, fields) =>
@@ -16798,32 +17222,41 @@ function SelectedMovePanel({
             ? { ...field, options: projectileOptions }
             : field
         )
-        .filter(
-          (field) => {
-            if (!move || getEditableMoveFieldValue(move, field.field) === null) {
-              return move === null;
-            }
+        .filter((field) => !move || getEditableMoveFieldValue(move, field.field) !== null),
+    [editableFields, move, projectileOptions]
+  );
+  const moveFields = useMemo(
+    () =>
+      allMoveFields.filter((field) => {
+        if (!move) {
+          return true;
+        }
 
-            if (
-              field.field.startsWith('battle.') &&
-              !field.field.startsWith(`battle.${selectedRuntimeVariant}.`)
-            ) {
-              return false;
-            }
+        if (
+          field.field.startsWith('battle.') &&
+          !field.field.startsWith(`battle.${selectedRuntimeVariant}.`)
+        ) {
+          return false;
+        }
 
-            const timingField = parseMoveTimingField(field.field);
-            return (
-              timingField === null ||
-              (timingField.timingMoveId === selectedTimingProfile &&
-                (timingField.occurrence === null ||
-                  timingField.occurrence === selectedTimingOccurrence))
-            );
-          }
-        ),
+        if (
+          parseMovePlayerDamageField(field.field) !== null &&
+          selectedRuntimeVariant !== 2
+        ) {
+          return false;
+        }
+
+        const timingField = parseMoveTimingField(field.field);
+        return (
+          timingField === null ||
+          (timingField.timingMoveId === selectedTimingProfile &&
+            (timingField.occurrence === null ||
+              timingField.occurrence === selectedTimingOccurrence))
+        );
+      }),
     [
-      editableFields,
+      allMoveFields,
       move,
-      projectileOptions,
       selectedRuntimeVariant,
       selectedTimingOccurrence,
       selectedTimingProfile
@@ -16839,9 +17272,9 @@ function SelectedMovePanel({
   const moveDraftDefaults = useMemo(
     () =>
       move
-        ? createTrainerDrafts(moveFields, (field) => getEditableMoveFieldValue(move, field))
+        ? createTrainerDrafts(allMoveFields, (field) => getEditableMoveFieldValue(move, field))
         : {},
-    [move, moveFields]
+    [allMoveFields, move]
   );
   const moveDraftStorageKey = move
     ? move.moveId.toString()
@@ -16857,33 +17290,33 @@ function SelectedMovePanel({
       move
         ? {
             drafts: moveDrafts,
-            fields: moveFields,
+            fields: allMoveFields,
             getValue: (field) => getEditableMoveFieldValue(move, field),
             preservedValues: baselineValues ?? undefined
           }
         : undefined,
-    [baselineValues, move, moveDrafts, moveFields]
+    [allMoveFields, baselineValues, move, moveDrafts]
   );
   const moveDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
-        moveFields,
+        allMoveFields,
         moveDrafts,
         move ? (field) => getEditableMoveFieldValue(move, field) : null,
         { preservedValues: baselineValues ?? undefined }
       ),
-    [baselineValues, move, moveDrafts, moveFields]
+    [allMoveFields, baselineValues, move, moveDrafts]
   );
   const moveRelationalValidationIssues = useMemo(
     () =>
       move
-        ? getMoveRelationalValidationIssues(move, moveFields, moveDrafts)
+        ? getMoveRelationalValidationIssues(move, allMoveFields, moveDrafts)
         : [],
-    [move, moveDrafts, moveFields]
+    [allMoveFields, move, moveDrafts]
   );
   const moveDecimalValidationIssues = useMemo(
     () =>
-      moveFields.flatMap((field) => {
+      allMoveFields.flatMap((field) => {
         if (field.valueKind !== 'number') {
           return [];
         }
@@ -16912,7 +17345,7 @@ function SelectedMovePanel({
 
         return [{ field: field.field, message: 'Choose one of the available options.' }];
       }),
-    [baselineValues, move, moveDrafts, moveFields]
+    [allMoveFields, baselineValues, move, moveDrafts]
   );
   useRegisterEditorDraftDirty('moves', countFieldDraftRecords(moveDraftsByMoveId) > 0);
   const hasCurrentMoveDrafts = move
@@ -16951,6 +17384,9 @@ function SelectedMovePanel({
     !hasCurrentMoveDrafts &&
     !isEditStarting &&
     !isMoveUpdating;
+  const selectedRuntimeRowStatus = selectedRuntimeView
+    ? formatMoveRuntimeRowStatus(selectedRuntimeView, t)
+    : null;
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
@@ -16978,53 +17414,126 @@ function SelectedMovePanel({
               <dd>{move.moveId}</dd>
             </div>
             <div>
-              <dt>Status</dt>
-              <dd>{move.canUseMove ? 'Enabled' : 'Disabled'}</dd>
+                  <dt>{t('moves.inspector.catalogStatus')}</dt>
+                  <dd>
+                    {t(
+                      move.canUseMove
+                        ? 'moves.inspector.catalogEnabled'
+                        : 'moves.inspector.catalogDisabled'
+                    )}
+                  </dd>
             </div>
-            <div>
-              <dt>Type / category</dt>
-              <dd>
-                {move.typeName} / {move.categoryName}
-              </dd>
-            </div>
+            {move.hasRuntimeData && selectedRuntimeView ? (
+              <>
+                <div>
+                  <dt>{t('moves.inspector.selectedRuntimeVariant')}</dt>
+                  <dd>
+                    {formatLocalizedMoveRuntimeVariantLabel(selectedRuntimeView.variant, t)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('moves.inspector.runtimeRowStatus')}</dt>
+                  <dd>{selectedRuntimeRowStatus}</dd>
+                </div>
+                <div>
+                  <dt>{t('moves.inspector.runtimeTypeCategory')}</dt>
+                  <dd>
+                    {selectedRuntimeView.battleRow
+                      ? `${selectedRuntimeView.battleRow.typeName} / ${selectedRuntimeView.battleRow.damageTypeName}`
+                      : t('moves.inspector.missingBattleRow')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('moves.inspector.runtimePower')}</dt>
+                  <dd>
+                    {selectedRuntimeView.battleRow
+                      ? selectedRuntimeView.battleRow.power
+                      : t('moves.inspector.missingBattleRow')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('moves.inspector.runtimeAccuracy')}</dt>
+                  <dd>
+                    {selectedRuntimeView.timingRow
+                      ? `${selectedRuntimeView.timingRow.hitPercent}%`
+                      : t('moves.inspector.missingTimingRow')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('moves.inspector.runtimeCooldown')}</dt>
+                  <dd>
+                    {selectedRuntimeView.timingRow
+                      ? `${selectedRuntimeView.timingRow.cooldown}s`
+                      : t('moves.inspector.missingTimingRow')}
+                  </dd>
+                </div>
+                {selectedRuntimeView.variant === 2 ? (
+                  <div>
+                    <dt>{t('moves.inspector.playerDamageRows')}</dt>
+                    <dd>
+                      {selectedRuntimeView.playerDamageRows.length > 0
+                        ? t(
+                            selectedRuntimeView.playerDamageRows.length === 1
+                              ? 'moves.inspector.playerDamageRows.one'
+                              : 'moves.inspector.playerDamageRows.other',
+                            { count: selectedRuntimeView.playerDamageRows.length }
+                          )
+                        : t('moves.inspector.playerDamageRows.none')}
+                    </dd>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div>
+                <dt>Type / category</dt>
+                <dd>
+                  {move.typeName} / {move.categoryName}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Description</dt>
               <dd>{move.description ?? 'No description text.'}</dd>
             </div>
             <div>
-              <dt>Source file</dt>
+              <dt>{t('moves.inspector.catalogSourceFile')}</dt>
               <dd>{move.provenance.sourceFile}</dd>
             </div>
             <div>
-              <dt>Layer</dt>
+              <dt>{t('moves.inspector.catalogSourceLayer')}</dt>
               <dd>{formatSourceLayer(move.provenance.sourceLayer)}</dd>
             </div>
             <div>
-              <dt>File state</dt>
+              <dt>{t('moves.inspector.catalogFileState')}</dt>
               <dd>{formatFileState(move.provenance.fileState)}</dd>
             </div>
+            {move.hasRuntimeData ? (
+              <div>
+                <dt>{t('moves.inspector.runtimeDataSources')}</dt>
+                <dd>
+                  {move.runtimeSourceFiles.length > 0
+                    ? move.runtimeSourceFiles.join(', ')
+                    : t('moves.inspector.noRuntimeDataSources')}
+                </dd>
+              </div>
+            ) : null}
           </dl>
 
           <div className="item-edit-form move-edit-form">
             <div className="editable-field-groups">
               {move.hasRuntimeData && runtimeVariantOptions.length > 0 ? (
                 <fieldset className="editable-field-group">
-                  <legend>Runtime Variant</legend>
+                  <legend>{t('moves.runtimeVariant.heading')}</legend>
                   <label className="path-field editable-field-control">
-                    <span>Variant</span>
+                    <span>{t('moves.runtimeVariant.label')}</span>
                     <select
                       disabled={isMoveUpdating}
-                      onChange={(event) =>
-                        setRuntimeVariantByMoveId((current) => ({
-                          ...current,
-                          [move.moveId.toString()]: Number(event.target.value)
-                        }))
-                      }
-                      value={selectedRuntimeVariant}
+                      onChange={(event) => onSelectRuntimeVariant(Number(event.target.value))}
+                      value={selectedRuntimeVariant ?? ''}
                     >
                       {runtimeVariantOptions.map((variant) => (
-                        <option key={variant.variant} value={variant.variant}>
-                          {formatMoveRuntimeVariantLabel(variant.variant)}
+                        <option key={variant} value={variant}>
+                          {formatLocalizedMoveRuntimeVariantLabel(variant, t)}
                         </option>
                       ))}
                     </select>
@@ -17032,9 +17541,12 @@ function SelectedMovePanel({
                   <p className="field-note">
                     {t('moves.runtimeVariant.help')}
                   </p>
+                  <p className="field-note">
+                    {t('moves.runtimeVariant.draftRetention')}
+                  </p>
                 </fieldset>
               ) : null}
-              {selectedRuntimeVariant === 2 || hasScriptedBossOwner ? (
+              {selectedRuntimeVariant === 2 ? (
                 <ScriptedBossMoveOwnership move={move} profiles={scriptedBosses} />
               ) : null}
               {move.hasRuntimeData && timingProfileOptions.length > 1 ? (
@@ -17111,6 +17623,7 @@ function SelectedMovePanel({
               {moveFieldGroups.map((group, groupIndex) => {
                 const isFlagsGroup = group.group.endsWith('Flags');
                 const isAdvancedGroup = group.group.startsWith('Advanced ');
+                const isPlayerDamageGroup = group.group === 'Boss Player Damage';
                 const isFirstAdvancedGroup =
                   isAdvancedGroup &&
                   !moveFieldGroups
@@ -17120,17 +17633,29 @@ function SelectedMovePanel({
                   <Fragment key={group.group}>
                     {isFirstAdvancedGroup ? (
                       <p className="field-note move-advanced-editor-note">
-                        Advanced fields directly control runtime animation, motion, targeting, and
-                        projectile behavior. Values are bounded to verified game data; paired
-                        minimum, maximum, and projectile replacement fields are validated together.
+                        {t('moves.advancedEditor.help')}
                       </p>
                     ) : null}
                     <fieldset
-                      className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}`}
+                      className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}${isAdvancedGroup ? ' move-advanced-field-group' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-group' : ''}`}
                     >
-                      <legend>{translateLiteral(group.group)}</legend>
+                      <legend>
+                        {isPlayerDamageGroup
+                          ? t('moves.playerDamage.groupHeading')
+                          : translateLiteral(group.group)}
+                      </legend>
+                      {isPlayerDamageGroup ? (
+                        <p className="field-note move-player-damage-group-note">
+                          {t(
+                            move.playerDamageRows.length === 1
+                              ? 'moves.playerDamage.groupNote.one'
+                              : 'moves.playerDamage.groupNote.other',
+                            { count: move.playerDamageRows.length }
+                          )}
+                        </p>
+                      ) : null}
                       <div
-                        className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}`}
+                        className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}${isPlayerDamageGroup ? ' move-player-damage-field-grid' : ''}`}
                       >
                         {group.fields.map((field) => {
                         const currentValue = getEditableMoveFieldValue(move, field.field);
@@ -17155,15 +17680,51 @@ function SelectedMovePanel({
                             }
                           : draftState;
 
-                        return (
+                        const playerDamageAttackId = parseMovePlayerDamageField(field.field);
+                        const playerDamageRow = playerDamageAttackId === null
+                          ? null
+                          : move.playerDamageRows.find(
+                              (candidate) => candidate.attackId === playerDamageAttackId
+                            ) ?? null;
+                        const playerDamageDescriptorId = playerDamageRow === null
+                          ? undefined
+                          : `move-player-damage-${move.moveId}-${playerDamageRow.attackId}-descriptor`;
+                        const playerDamageDisabledReason = playerDamageRow?.invocations.length === 0
+                          ? t('moves.playerDamage.disabled.noInvoker', {
+                              attackId: playerDamageRow.attackId
+                            })
+                          : undefined;
+                        const fieldControl = (
                           <GiftPokemonDraftField
+                            ariaDescribedBy={playerDamageDescriptorId}
                             currentValue={currentValue}
-                            disabled={!canEditMoves || editSession === null || isMoveUpdating}
+                            disabled={
+                              !canEditMoves ||
+                              editSession === null ||
+                              isMoveUpdating ||
+                              playerDamageDisabledReason !== undefined
+                            }
+                            disabledReason={playerDamageDisabledReason}
                             draftState={effectiveDraftState}
                             draftValue={draftValue}
                             field={field}
+                            helpText={
+                              playerDamageAttackId === null
+                                ? undefined
+                                : t('moves.playerDamage.fieldHelp', {
+                                    attackId: playerDamageAttackId,
+                                    maximum: field.maximumValue ?? 999,
+                                    minimum: field.minimumValue ?? 0
+                                  })
+                            }
                             idPrefix="move-field"
-                            key={field.field}
+                            labelText={
+                              playerDamageAttackId === null
+                                ? undefined
+                                : t('moves.playerDamage.fieldLabel', {
+                                    attackId: playerDamageAttackId
+                                  })
+                            }
                             onChange={(value) => {
                               setMoveDraftsByMoveId((currentDrafts) => {
                                 const recordKey = move.moveId.toString();
@@ -17188,6 +17749,18 @@ function SelectedMovePanel({
                             }}
                             preservedValue={baselineValues?.[field.field] ?? null}
                           />
+                        );
+                        return playerDamageRow ? (
+                          <div className="move-player-damage-control" key={field.field}>
+                            {fieldControl}
+                            <MovePlayerDamageDescriptor
+                              id={playerDamageDescriptorId!}
+                              row={playerDamageRow}
+                              totalRows={move.playerDamageRows.length}
+                            />
+                          </div>
+                        ) : (
+                          <Fragment key={field.field}>{fieldControl}</Fragment>
                         );
                         })}
                       </div>
@@ -18978,6 +19551,7 @@ function TrainerDraftField({
   disabledReason,
   draftState,
   draftValue,
+  emptyOptionLabel,
   field,
   formOptionContext,
   idPrefix = 'trainer-field',
@@ -18989,6 +19563,7 @@ function TrainerDraftField({
   disabledReason?: string;
   draftState: TrainerDraftState;
   draftValue: string;
+  emptyOptionLabel?: string;
   field: NumericEditableField;
   formOptionContext?: SpeciesFormOptionContext;
   idPrefix?: string;
@@ -19043,6 +19618,7 @@ function TrainerDraftField({
         <SearchableOptionInput
           ariaLabel={field.label}
           disabled={effectiveDisabled}
+          emptyOptionLabel={emptyOptionLabel}
           id={inputId}
           onChange={onChange}
           options={options}
@@ -21755,7 +22331,8 @@ function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
     'Runtime Effects',
     'Runtime Stat Changes',
     'Runtime Flags',
-    'Timing'
+    'Timing',
+    'Boss Player Damage'
   ];
   const advancedOrder = [
     'Advanced Battle Behavior',
@@ -22189,6 +22766,7 @@ function getDynamaxAdventureFieldDisabledReason(
 }
 
 function GiftPokemonDraftField({
+  ariaDescribedBy,
   currentValue,
   disabled,
   disabledReason,
@@ -22196,10 +22774,13 @@ function GiftPokemonDraftField({
   draftValue,
   field,
   formOptionContext,
+  helpText,
   idPrefix = 'pokemon-instance',
+  labelText,
   onChange,
   preservedValue
 }: {
+  ariaDescribedBy?: string;
   currentValue: number | null;
   disabled: boolean;
   disabledReason?: string;
@@ -22207,7 +22788,9 @@ function GiftPokemonDraftField({
   draftValue: string;
   field: NumericEditableField;
   formOptionContext?: SpeciesFormOptionContext;
+  helpText?: string;
   idPrefix?: string;
+  labelText?: string;
   onChange: (value: string) => void;
   preservedValue?: number | null;
 }) {
@@ -22224,10 +22807,10 @@ function GiftPokemonDraftField({
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
   const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
   const { translateLiteral } = useLocalization();
-  const localizedFieldLabel = translateLiteral(field.label);
-  const localizedFieldHelpText = translateLiteral(
-    effectiveDisabledReason ?? getEditableFieldHelp(field)
-  );
+  const localizedFieldLabel = labelText ?? translateLiteral(field.label);
+  const localizedFieldHelpText = effectiveDisabledReason
+    ? translateLiteral(effectiveDisabledReason)
+    : helpText ?? translateLiteral(getEditableFieldHelp(field));
   const optionsWithPreservedValue =
     preservedValue === null || preservedValue === undefined
       ? options
@@ -22250,6 +22833,7 @@ function GiftPokemonDraftField({
       <span>{localizedFieldLabel}</span>
       {field.valueKind === 'boolean' ? (
         <select
+          aria-describedby={ariaDescribedBy}
           aria-label={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
@@ -22262,6 +22846,7 @@ function GiftPokemonDraftField({
         </select>
       ) : options.length > 0 ? (
         <SearchableOptionInput
+          ariaDescribedBy={ariaDescribedBy}
           ariaLabel={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
@@ -22276,6 +22861,7 @@ function GiftPokemonDraftField({
         />
       ) : (
         <input
+          aria-describedby={ariaDescribedBy}
           aria-label={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
@@ -28049,6 +28635,7 @@ function EncountersSection({
               onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
               pendingTableIds={pendingEncounterTableIds}
               selectedSlot={selectedSlot}
+              scriptedBossMoveOptions={workflow.scriptedBossMoveOptions}
               scriptedBosses={workflow.scriptedBosses}
               table={selectedTable}
               tables={workflow.tables}
@@ -28081,6 +28668,7 @@ function SelectedEncounterPanel({
   onUpdateEncounterSlotUpdates,
   pendingTableIds,
   selectedSlot,
+  scriptedBossMoveOptions,
   scriptedBosses,
   table,
   tables
@@ -28105,6 +28693,7 @@ function SelectedEncounterPanel({
   onUpdateEncounterSlotUpdates: (updates: EncounterSlotFieldUpdate[]) => Promise<boolean>;
   pendingTableIds: ReadonlySet<string>;
   selectedSlot: number | null;
+  scriptedBossMoveOptions: ScriptedBossMoveOption[];
   scriptedBosses: ScriptedBossProfile[];
   table: EncounterTableRecord | null;
   tables: EncounterTableRecord[];
@@ -28122,32 +28711,55 @@ function SelectedEncounterPanel({
   const [levelDraftsByScopeKey, setLevelDraftsByScopeKey] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [scriptedBossDraftsBySelectorId, setScriptedBossDraftsBySelectorId] = useState<
+    Record<string, string>
+  >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const { language, t, translateLiteral } = useLocalization();
+  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
+  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const isZaScriptedBossTable = Boolean(
+    isZaEncounterTable && table && isZaScriptedBossEncounterTable(table)
+  );
+  const scriptedBossProfile = isZaScriptedBossTable && encounterSlot
+    ? findScriptedBossProfile(
+        scriptedBosses,
+        encounterSlot.speciesId,
+        encounterSlot.form,
+        table ? getZaBossEncounterLineageKey(table) : null
+      )
+    : null;
+  const isVerifiedZaScriptedBoss = isZaScriptedBossTable && scriptedBossProfile !== null;
+  const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
   const defaultEncounterFields = useMemo(
     () =>
-      editableFields.map((field) => {
-        const numericField = toNumericEditableControlField(
-          field,
-          encounterSlot
-            ? getContextualFieldOptions(field, {
-                formOptions: encounterSlot.formOptions,
-                gameFamily: editorFamily,
-                species: encounterSlot.species,
-                speciesId: encounterSlot.speciesId
-              })
-            : undefined
-        );
-        const contextualField = localizeZaEncounterSpawnerField(
-          contextualizeZaEncounterField(numericField, encounterSlot, editorFamily),
-          editorFamily,
-          t
-        );
-        return editorFamily === 'za'
-          ? withPokemonInstanceIvPresetOptions(contextualField)
-          : contextualField;
-      }),
+      editableFields
+        .filter(
+          (field) =>
+            !isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)
+        )
+        .map((field) => {
+          const numericField = toNumericEditableControlField(
+            field,
+            encounterSlot
+              ? getContextualFieldOptions(field, {
+                  formOptions: encounterSlot.formOptions,
+                  gameFamily: editorFamily,
+                  species: encounterSlot.species,
+                  speciesId: encounterSlot.speciesId
+                })
+              : undefined
+          );
+          const contextualField = localizeZaEncounterSpawnerField(
+            contextualizeZaEncounterField(numericField, encounterSlot, editorFamily),
+            editorFamily,
+            t
+          );
+          return editorFamily === 'za'
+            ? withPokemonInstanceIvPresetOptions(contextualField)
+            : contextualField;
+        }),
     [
       editableFields,
       editorFamily,
@@ -28156,6 +28768,7 @@ function SelectedEncounterPanel({
       encounterSlot?.formOptions,
       encounterSlot?.species,
       encounterSlot?.speciesId,
+      isZaScriptedBossTable,
       t
     ]
   );
@@ -28419,25 +29032,107 @@ function SelectedEncounterPanel({
   );
   const encounterFields = useMemo(
     () =>
-      editableFields.map((field) => {
-        const numericField = toNumericEditableControlField(
-          field,
-          encounterSlot ? getContextualFieldOptions(field, encounterFormOptionContext) : undefined
-        );
-        const contextualField = localizeZaEncounterSpawnerField(
-          contextualizeZaEncounterField(numericField, encounterSlot, editorFamily),
-          editorFamily,
-          t
-        );
-        return editorFamily === 'za'
-          ? withPokemonInstanceIvPresetOptions(contextualField)
-          : contextualField;
-      }),
-    [editableFields, encounterFormOptionContext, encounterSlot, editorFamily, t]
+      editableFields
+        .filter(
+          (field) =>
+            !isZaScriptedBossTable || !zaEncounterMoveFieldNames.has(field.field)
+        )
+        .map((field) => {
+          const numericField = toNumericEditableControlField(
+            field,
+            encounterSlot
+              ? getContextualFieldOptions(field, encounterFormOptionContext)
+              : undefined
+          );
+          const contextualField = localizeZaEncounterSpawnerField(
+            contextualizeZaEncounterField(numericField, encounterSlot, editorFamily),
+            editorFamily,
+            t
+          );
+          return editorFamily === 'za'
+            ? withPokemonInstanceIvPresetOptions(contextualField)
+            : contextualField;
+        }),
+    [
+      editableFields,
+      encounterFormOptionContext,
+      encounterSlot,
+      editorFamily,
+      isZaScriptedBossTable,
+      t
+    ]
   );
   const encounterFieldGroups = useMemo(
     () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
     [encounterFields]
+  );
+  const scriptedBossActionEditorEntries = useMemo(() => {
+    if (!scriptedBossProfile) {
+      return [];
+    }
+
+    const seenSelectorIds = new Set<number>();
+    return scriptedBossProfile.actions.flatMap((action) => {
+      if (
+        action.selectorActionId === null ||
+        (action.moveId === null && !action.canEdit) ||
+        seenSelectorIds.has(action.selectorActionId)
+      ) {
+        return [];
+      }
+
+      seenSelectorIds.add(action.selectorActionId);
+      const options: EditableFieldOption[] = scriptedBossMoveOptions.map((option) => ({
+        label: `${option.moveId} ${option.name}`,
+        value: option.moveId
+      }));
+      if (
+        action.moveId !== null &&
+        !options.some((option) => option.value === action.moveId)
+      ) {
+        options.push({
+          label: `${action.moveId} ${action.name}`,
+          value: action.moveId
+        });
+        options.sort((left, right) => left.value - right.value);
+      }
+
+      return [
+        {
+          action,
+          field: {
+            field: `bossAction.${action.selectorActionId}.moveId`,
+            label: action.name,
+            maximumValue: null,
+            minimumValue: 0,
+            options,
+            valueKind: 'integer'
+          } satisfies NumericEditableField
+        }
+      ];
+    });
+  }, [scriptedBossMoveOptions, scriptedBossProfile]);
+  const scriptedBossDrafts = useMemo(
+    () =>
+      Object.fromEntries(
+        scriptedBossActionEditorEntries.map(({ action, field }) => [
+          field.field,
+          scriptedBossDraftsBySelectorId[action.selectorActionId!.toString()] ??
+            (action.moveId?.toString() ?? '')
+        ])
+      ),
+    [scriptedBossActionEditorEntries, scriptedBossDraftsBySelectorId]
+  );
+  const scriptedBossDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        scriptedBossActionEditorEntries.map(({ field }) => field),
+        scriptedBossDrafts,
+        (fieldName) =>
+          scriptedBossActionEditorEntries.find(({ field }) => field.field === fieldName)
+            ?.action.moveId ?? null
+      ),
+    [scriptedBossActionEditorEntries, scriptedBossDrafts]
   );
   const encounterDraftSummary = useMemo(
     () =>
@@ -28450,28 +29145,37 @@ function SelectedEncounterPanel({
       ),
     [selectedPlacementDrafts, encounterFields, encounterSlot, editorFamily]
   );
+  const combinedEncounterDraftSummary = useMemo(
+    () => ({
+      changedFields: [
+        ...encounterDraftSummary.changedFields,
+        ...scriptedBossDraftSummary.changedFields
+      ],
+      dirtyFieldCount:
+        encounterDraftSummary.dirtyFieldCount + scriptedBossDraftSummary.dirtyFieldCount,
+      invalidFields: [
+        ...encounterDraftSummary.invalidFields,
+        ...scriptedBossDraftSummary.invalidFields
+      ]
+    }),
+    [encounterDraftSummary, scriptedBossDraftSummary]
+  );
   useRegisterEditorDraftDirty(
     'encounters',
     countFieldDraftRecords(draftsBySlotKey) +
       countFieldDraftRecords(zaSlotDraftsBySlotKey) +
       countFieldDraftRecords(zaAppearanceDraftsByTableId) +
-      countFieldDraftRecords(levelDraftsByScopeKey) >
+      countFieldDraftRecords(levelDraftsByScopeKey) +
+      Object.keys(scriptedBossDraftsBySelectorId).length >
       0
   );
-  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
-  const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
-  const isZaScriptedBossTable = Boolean(
-    isZaEncounterTable && table && isZaScriptedBossEncounterTable(table)
-  );
-  const scriptedBossProfile = isZaScriptedBossTable && encounterSlot
-    ? findScriptedBossProfile(
-        scriptedBosses,
-        encounterSlot.speciesId,
-        encounterSlot.form,
-        table ? getZaBossEncounterLineageKey(table) : null
+  const selectedScriptedBossHasLocalDrafts = scriptedBossActionEditorEntries.some(
+    ({ action }) =>
+      Object.prototype.hasOwnProperty.call(
+        scriptedBossDraftsBySelectorId,
+        action.selectorActionId!.toString()
       )
-    : null;
-  const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
+  );
   const selectedEncounterHasLocalDrafts =
     (encounterDraftKey !== null && draftsBySlotKey[encounterDraftKey] !== undefined) ||
     (zaEncounterSlotDraftKey !== null &&
@@ -28479,12 +29183,17 @@ function SelectedEncounterPanel({
     (zaEncounterAppearanceDraftKey !== null &&
       zaAppearanceDraftsByTableId[zaEncounterAppearanceDraftKey] !== undefined) ||
     (encounterLevelDraftKey !== null &&
-      levelDraftsByScopeKey[encounterLevelDraftKey] !== undefined);
+      levelDraftsByScopeKey[encounterLevelDraftKey] !== undefined) ||
+    selectedScriptedBossHasLocalDrafts;
   const selectedEncounterRevertMessage = selectedEncounterHasLocalDrafts
     ? t('za.encounters.revertDraftBlocked')
     : encounterSlot?.revertToVanillaBlockedReason
       ? translateLiteral(encounterSlot.revertToVanillaBlockedReason)
-      : t('za.encounters.revertHelp');
+      : t(
+          isVerifiedZaScriptedBoss
+            ? 'za.encounters.bossActions.revertHelp'
+            : 'za.encounters.revertHelp'
+        );
   const canRevertSelectedZaEncounter =
     isZaEncounterTable &&
     onStageEncounterVanilla !== undefined &&
@@ -28586,7 +29295,8 @@ function SelectedEncounterPanel({
         !zaAppearanceCountFieldNames.includes(change.field)
     ),
     ...encounterLevelChanges,
-    ...zaAppearanceCountChanges
+    ...zaAppearanceCountChanges,
+    ...scriptedBossDraftSummary.changedFields
   ];
   const zaEncounterLevelZoneGroups = useMemo(
     () => (table && isZaEncounterTable ? getZaEncounterLevelZoneGroups(table, tables) : []),
@@ -28613,8 +29323,8 @@ function SelectedEncounterPanel({
     editSession !== null &&
     canEditEncounters &&
     !isEncounterUpdating &&
-    encounterDraftSummary.changedFields.length > 0 &&
-    encounterDraftSummary.invalidFields.length === 0 &&
+    combinedEncounterDraftSummary.changedFields.length > 0 &&
+    combinedEncounterDraftSummary.invalidFields.length === 0 &&
     !hasInvalidEncounterLevelPair &&
     !hasInvalidZaAppearanceCountPair;
   const workflowHasZaAlphaChanceField = editableFields.some(
@@ -28752,6 +29462,7 @@ function SelectedEncounterPanel({
               setZaSlotDraftsBySlotKey({});
               setZaAppearanceDraftsByTableId({});
               setLevelDraftsByScopeKey({});
+              setScriptedBossDraftsBySelectorId({});
             })
           }
           summary="No encounter slot selected."
@@ -29151,7 +29862,11 @@ function SelectedEncounterPanel({
                   <div className="za-encounter-ownership-summary">
                     <span>
                       <strong>{t('za.encounters.sharedRecordHeading')}</strong>
-                      {t('za.encounters.sharedRecordHelp')}
+                      {t(
+                        isVerifiedZaScriptedBoss
+                          ? 'za.encounters.bossActions.sharedRecordHelp'
+                          : 'za.encounters.sharedRecordHelp'
+                      )}
                     </span>
                     <span>
                       <strong>{t('za.encounters.selectedPlacementHeading')}</strong>
@@ -29161,6 +29876,88 @@ function SelectedEncounterPanel({
                 ) : null}
 
                 <div className="editable-field-groups">
+                  {isZaScriptedBossTable ? (
+                    <fieldset className="editable-field-group za-scripted-boss-field-group">
+                      <legend>{t('za.encounters.bossActions.heading')}</legend>
+                      <ScriptedBossEncounterActions
+                        profile={scriptedBossProfile}
+                        profiles={scriptedBosses}
+                        renderActionControl={(action: ScriptedBossAction) => {
+                          if (
+                            action.selectorActionId === null ||
+                            (action.moveId === null && !action.canEdit)
+                          ) {
+                            return null;
+                          }
+
+                          const entry = scriptedBossActionEditorEntries.find(
+                            (candidate) =>
+                              candidate.action.selectorActionId === action.selectorActionId
+                          );
+                          if (!entry) {
+                            return null;
+                          }
+
+                          const selectorKey = action.selectorActionId.toString();
+                          const draftValue =
+                            scriptedBossDraftsBySelectorId[selectorKey] ??
+                            (action.moveId?.toString() ?? '');
+                          const draftState = getTrainerFieldDraftState(
+                            draftValue,
+                            action.moveId,
+                            entry.field
+                          );
+
+                          return (
+                            <div className="za-scripted-boss-action-control">
+                              <TrainerDraftField
+                                currentValue={action.moveId}
+                                disabled={
+                                  !action.canEdit ||
+                                  !canEditEncounters ||
+                                  editSession === null ||
+                                  isEncounterUpdating
+                                }
+                                disabledReason={
+                                  !action.canEdit && action.lockReason
+                                    ? t(
+                                        `za.encounters.bossActions.lockReason.${action.lockReason}`
+                                      )
+                                    : undefined
+                                }
+                                draftState={draftState}
+                                draftValue={draftValue}
+                                emptyOptionLabel={
+                                  action.moveId === null
+                                    ? t('za.encounters.bossActions.invalidSelection')
+                                    : undefined
+                                }
+                                field={{
+                                  ...entry.field,
+                                  label: t('za.encounters.bossActions.replacementLabel')
+                                }}
+                                idPrefix={`boss-action-${action.selectorActionId}`}
+                                onChange={(value) =>
+                                  setScriptedBossDraftsBySelectorId((currentDrafts) => {
+                                    if (value.trim() === (action.moveId?.toString() ?? '')) {
+                                      return Object.fromEntries(
+                                        Object.entries(currentDrafts).filter(
+                                          ([candidateSelectorId]) =>
+                                            candidateSelectorId !== selectorKey
+                                        )
+                                      );
+                                    }
+
+                                    return { ...currentDrafts, [selectorKey]: value };
+                                  })
+                                }
+                              />
+                            </div>
+                          );
+                        }}
+                      />
+                    </fieldset>
+                  ) : null}
                   {encounterFieldGroups.map((group) => (
                     <fieldset
                       className={`editable-field-group ${
@@ -29175,13 +29972,8 @@ function SelectedEncounterPanel({
                           ? t('za.spawnSettings.slotGroup')
                           : group.group === 'Spawner Population'
                             ? t('za.spawnSettings.populationGroup')
-                            : group.group === 'Moves' && isZaScriptedBossTable
-                              ? t('za.encounters.bossActions.storageHeading')
-                              : translateLiteral(group.group)}
+                            : translateLiteral(group.group)}
                       </legend>
-                      {group.group === 'Moves' && isZaScriptedBossTable ? (
-                        <ScriptedBossEncounterActions profile={scriptedBossProfile} />
-                      ) : null}
                       <div className="editable-field-grid">
                         {group.fields.map((field) => {
                           const currentValue = getEditableEncounterFieldValue(
@@ -29444,13 +30236,9 @@ function SelectedEncounterPanel({
                       {group.group === 'Moves' && isZaEncounterTable ? (
                         <div className="field-group-action-row za-spawner-field-note">
                           <small className="editable-field-status">
-                            {isZaScriptedBossTable
-                              ? encounterSlot.hasExplicitMoves
-                                ? t('za.encounters.bossActions.storageExplicit')
-                                : t('za.encounters.bossActions.storageAutomatic')
-                              : encounterSlot.hasExplicitMoves
-                                ? t('za.encounters.movesExplicitHelp')
-                                : t('za.encounters.movesAutomaticHelp')}
+                            {encounterSlot.hasExplicitMoves
+                              ? t('za.encounters.movesExplicitHelp')
+                              : t('za.encounters.movesAutomaticHelp')}
                           </small>
                         </div>
                       ) : null}
@@ -29525,18 +30313,16 @@ function SelectedEncounterPanel({
                             t('za.encounters.advanced.notPresent')}
                         </dd>
                       </div>
-                      <div>
-                        <dt>
-                          {isZaScriptedBossTable
-                            ? t('za.encounters.bossActions.storageHeading')
-                            : t('za.encounters.advanced.moveStorage')}
-                        </dt>
-                        <dd>
-                          {encounterSlot.hasExplicitMoves
-                            ? t('za.encounters.advanced.explicitMoves')
-                            : t('za.encounters.advanced.automaticMoves')}
-                        </dd>
-                      </div>
+                      {!isZaScriptedBossTable ? (
+                        <div>
+                          <dt>{t('za.encounters.advanced.moveStorage')}</dt>
+                          <dd>
+                            {encounterSlot.hasExplicitMoves
+                              ? t('za.encounters.advanced.explicitMoves')
+                              : t('za.encounters.advanced.automaticMoves')}
+                          </dd>
+                        </div>
+                      ) : null}
                       <div className="za-encounter-advanced-wide">
                         <dt>{t('za.encounters.advanced.sharedConditions')}</dt>
                         <dd>
@@ -29660,6 +30446,18 @@ function SelectedEncounterPanel({
                               deleteFieldDraftRecord(currentDrafts, encounterLevelDraftKey)
                             );
                           }
+                          const stagedSelectorIds = new Set(
+                            scriptedBossActionEditorEntries.map(({ action }) =>
+                              action.selectorActionId!.toString()
+                            )
+                          );
+                          setScriptedBossDraftsBySelectorId((currentDrafts) =>
+                            Object.fromEntries(
+                              Object.entries(currentDrafts).filter(
+                                ([selectorId]) => !stagedSelectorIds.has(selectorId)
+                              )
+                            )
+                          );
                         }
                       }}
                       type="button"
@@ -29680,6 +30478,7 @@ function SelectedEncounterPanel({
                           setZaSlotDraftsBySlotKey({});
                           setZaAppearanceDraftsByTableId({});
                           setLevelDraftsByScopeKey({});
+                          setScriptedBossDraftsBySelectorId({});
                         })
                       }
                       type="button"
@@ -29688,7 +30487,7 @@ function SelectedEncounterPanel({
                       <span>Cancel</span>
                     </button>
                     <span className="draft-action-summary">
-                      {formatDraftSummary(encounterDraftSummary)}
+                      {formatDraftSummary(combinedEncounterDraftSummary)}
                     </span>
                   </EditorSessionBarActions>
                 ) : null}
@@ -41367,7 +42166,8 @@ function formatEvolutionArgumentSummary(evolution: PokemonEvolutionRecord) {
 function filterMoves(
   moves: MoveRecord[],
   searchText: string,
-  scriptedBosses: ScriptedBossProfile[] = []
+  scriptedBosses: ScriptedBossProfile[] = [],
+  localize?: (key: string) => string
 ) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -41399,7 +42199,7 @@ function filterMoves(
       move.recoil.toString(),
       move.rawHealing.toString(),
       move.provenance.sourceFile,
-      ...getScriptedBossMoveSearchValues(scriptedBosses, move.moveId),
+      ...getScriptedBossMoveSearchValues(scriptedBosses, move.moveId, localize),
       ...move.flags.flatMap((flag) => [flag.field, flag.label, flag.enabled ? 'enabled' : '']),
       ...move.statChanges.flatMap((statChange) => [
         statChange.slot.toString(),
@@ -42238,7 +43038,13 @@ function isZaScriptedBossEncounterTable(table: EncounterTableRecord) {
   }
 
   const rawSpawnerId = table.rawSpawnerId?.trim() ?? '';
-  return /^btl_spn_boss_/i.test(rawSpawnerId);
+  return (
+    /^btl_spn_boss_/i.test(rawSpawnerId) &&
+    !rawSpawnerId
+      .split('_')
+      .filter(Boolean)
+      .some((token) => /^follower/i.test(token))
+  );
 }
 
 function isZaRoseDedeStoryEncounterTable(table: EncounterTableRecord) {
@@ -43702,8 +44508,12 @@ function filterEncounterTables(
           ...(profile?.actions.flatMap((action) => [
             action.name,
             action.moveId?.toString() ?? '',
+            action.vanillaMoveId?.toString() ?? '',
             action.runtimeMoveId?.toString() ?? '',
-            action.kind
+            action.selectorActionId?.toString() ?? '',
+            action.kind,
+            action.runtimeState,
+            action.lockReason ?? ''
           ]) ?? [])
         ];
       })

@@ -1,17 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Diagnostics;
+using KM.Core.Projects;
 using KM.ZA.Data;
+using KM.ZA.Moves;
+using KM.ZA.Workflows;
 
 namespace KM.ZA.ScriptedBosses;
+
+public sealed record ZaScriptedBossHeatAvailabilityRecord(
+    int HeatLevel,
+    string State);
 
 public sealed record ZaScriptedBossActionRecord(
     string Key,
     string Kind,
+    int? SelectorActionId,
     int? MoveId,
+    int? VanillaMoveId,
     int? RuntimeMoveId,
     string Name,
     bool UsesBattleParameters,
-    bool UsesTimingParameters);
+    bool UsesTimingParameters,
+    bool CanEdit,
+    string RuntimeState,
+    string? LockReason,
+    IReadOnlyList<ZaScriptedBossHeatAvailabilityRecord> HeatAvailability,
+    string? HeatContext);
 
 public sealed record ZaScriptedBossProfileRecord(
     string Key,
@@ -22,12 +37,174 @@ public sealed record ZaScriptedBossProfileRecord(
     string Scope,
     IReadOnlyList<ZaScriptedBossActionRecord> Actions);
 
+public sealed record ZaScriptedBossMoveOptionRecord(
+    int MoveId,
+    int RuntimeMoveId,
+    string Name);
+
+internal sealed record ZaScriptedBossCatalogProjection(
+    IReadOnlyList<ZaScriptedBossProfileRecord> Profiles,
+    IReadOnlyList<ZaScriptedBossMoveOptionRecord> MoveOptions,
+    int SourceFileCount,
+    bool HasSelectorSource);
+
 internal static class ZaScriptedBossActionCatalog
 {
     public const string BattleMoveKind = "battle-move";
     public const string MovementHelperKind = "movement-helper";
     public const string ScriptedMechanicKind = "scripted-mechanic";
     public const string BaseRogueMegaScope = "base-rogue-mega";
+
+    public const string WorkingRuntimeState = "working";
+    public const string MissingBattleRuntimeState = "missing-battle";
+    public const string MissingTimingRuntimeState = "missing-timing";
+    public const string MissingBattleAndTimingRuntimeState = "missing-battle-and-timing";
+    public const string TimingOnlyRuntimeState = "timing-only";
+    public const string InvalidReferenceRuntimeState = "invalid-reference";
+    public const string UnavailableRuntimeState = "unavailable";
+    public const string NotApplicableRuntimeState = "not-applicable";
+
+    public const string AvailableHeatState = "available";
+    public const string ContextOnlyHeatState = "context-only";
+    public const string UnavailableHeatState = "unavailable";
+    public const string UnverifiedHeatState = "unverified";
+
+    public const string ControllerScriptLockReason = "controller-script";
+    public const string TimingChoreographyLockReason = "timing-choreography";
+    public const string SelectorUnavailableLockReason = "selector-unavailable";
+    public const string RuntimeCatalogUnavailableLockReason = "runtime-catalog-unavailable";
+
+    private const int BossMoveOffset = 2000;
+    private const int MaximumBaseMoveId = 999;
+    private const int Heat1 = 1;
+    private const int Heat2 = 2;
+    private const int Heat3 = 3;
+
+    // These profile-local schedules are projected from the base-game Rogue Mega controller
+    // graph. A selector can be shared by multiple species while retaining a different schedule
+    // in each species controller, so availability must never be inferred from the selector alone.
+    // Every covered species/move pair is listed explicitly so future catalog additions remain
+    // unverified by default. Banette is intentionally absent because its selectors are dispatched
+    // behind native warp behavior that the decoded action templates do not expose.
+    private static readonly IReadOnlyDictionary<int, IReadOnlySet<int>> VerifiedHeatScheduleMoves =
+        new Dictionary<int, IReadOnlySet<int>>
+        {
+            [3] = new HashSet<int> { 72, 73, 76, 331, 438, 482 },
+            [15] = new HashSet<int> { 42, 398, 679 },
+            [71] = new HashSet<int> { 22, 188, 331 },
+            [80] = new HashSet<int> { 60, 250, 352 },
+            [121] = new HashSet<int> { 56, 339, 352, 428, 453 },
+            [149] = new HashSet<int> { 19, 53, 63, 85, 200, 340, 403, 407, 542 },
+            [181] = new HashSet<int> { 87, 268, 406, 435, 784 },
+            [248] = new HashSet<int> { 89, 157, 200, 242, 328, 416, 444 },
+            [303] = new HashSet<int> { 14, 98, 242, 442, 583, 605 },
+            [323] = new HashSet<int> { 29, 414 },
+            [334] = new HashSet<int> { 239, 340, 406, 413, 585 },
+            [359] = new HashSet<int> { 163, 399, 403 },
+            [478] = new HashSet<int> { 59, 196, 247, 261, 556, 566 },
+            [689] = new HashSet<int> { 127, 157, 370, 612 },
+            [701] = new HashSet<int> { 280, 332, 403, 560 },
+        };
+
+    private static readonly IReadOnlySet<(int SpeciesId, int MoveId)> ContextOnlyActions =
+        new HashSet<(int SpeciesId, int MoveId)>
+        {
+            (303, 14), // Mawile: Swords Dance is invoked by after-stun choreography.
+        };
+
+    private static readonly IReadOnlySet<(int SpeciesId, int MoveId)> PostHeat2OnlyActions =
+        new HashSet<(int SpeciesId, int MoveId)>
+        {
+            (3, 482),   // Venusaur: Sludge Wave
+            (121, 56),  // Starmie: Hydro Pump
+            (121, 339), // Starmie: Bulk Up
+            (149, 19),  // Dragonite: Fly
+            (149, 63),  // Dragonite: Hyper Beam
+            (149, 407), // Dragonite: Dragon Rush
+            (181, 268), // Ampharos: Charge
+            (248, 89),  // Tyranitar: Earthquake
+            (248, 200), // Tyranitar: Outrage
+            (248, 416), // Tyranitar: Giga Impact
+            (334, 340), // Altaria: Bounce timing choreography
+            (334, 413), // Altaria: Brave Bird
+            (701, 280), // Hawlucha: Brick Break
+        };
+
+    private static readonly IReadOnlySet<(int SpeciesId, int MoveId)> Heat1OnlyActions =
+        new HashSet<(int SpeciesId, int MoveId)>
+        {
+            (149, 85), // Dragonite: Thunderbolt
+        };
+
+    private static readonly IReadOnlyDictionary<int, int> SelectorActionIds =
+        new Dictionary<int, int>
+        {
+            [14] = 17621,
+            [19] = 20451,
+            [22] = 17566,
+            [29] = 17567,
+            [42] = 17585,
+            [53] = 20456,
+            [56] = 22265,
+            [59] = 19951,
+            [60] = 17569,
+            [63] = 20452,
+            [72] = 17532,
+            [73] = 17537,
+            [76] = 17531,
+            [85] = 20453,
+            [87] = 17624,
+            [89] = 20951,
+            [98] = 17570,
+            [109] = 17631,
+            [127] = 17639,
+            [157] = 17640,
+            [163] = 17571,
+            [188] = 17572,
+            [196] = 19952,
+            [200] = 20952,
+            [239] = 20201,
+            [242] = 17623,
+            [247] = 17617,
+            [250] = 17573,
+            [261] = 19953,
+            [268] = 17625,
+            [280] = 17635,
+            [328] = 20955,
+            [331] = 17574,
+            [332] = 17636,
+            [339] = 22264,
+            [340] = 20205,
+            [352] = 17575,
+            [370] = 17641,
+            [398] = 17576,
+            [399] = 17577,
+            [403] = 17650,
+            [406] = 17626,
+            [407] = 20454,
+            [413] = 20203,
+            [414] = 17578,
+            [416] = 20953,
+            [421] = 17616,
+            [425] = 17618,
+            [428] = 22262,
+            [435] = 17627,
+            [438] = 22260,
+            [442] = 17695,
+            [444] = 20954,
+            [453] = 22263,
+            [482] = 22261,
+            [542] = 20455,
+            [556] = 19954,
+            [560] = 17637,
+            [566] = 17634,
+            [583] = 17622,
+            [585] = 20204,
+            [605] = 17620,
+            [612] = 22253,
+            [679] = 17580,
+            [784] = 17628,
+        };
 
     private static readonly IReadOnlyList<ProfileDefinition> Profiles =
     [
@@ -127,10 +304,185 @@ internal static class ZaScriptedBossActionCatalog
             BattleMove(453)),
     ];
 
+    public static ZaScriptedBossCatalogProjection Load(
+        OpenedProject project,
+        ZaWorkflowFileSource fileSource,
+        ZaTextLabelLookup labels,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(fileSource);
+        ArgumentNullException.ThrowIfNull(labels);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        ZaBossMoveSelectorDocument? activeSelectors = null;
+        ZaBossMoveSelectorDocument? baseSelectors = null;
+        IReadOnlySet<int>? battleMoveIds = null;
+        IReadOnlySet<int>? timingRuntimeMoveIds = null;
+        var sourceFileCount = 0;
+        var hasSelectorSource = false;
+
+        try
+        {
+            activeSelectors = ZaBossMoveSelectorDocument.Parse(
+                fileSource.Read(project, ZaDataPaths.BossMoveSelectorArray).Bytes);
+            baseSelectors = ZaBossMoveSelectorDocument.Parse(
+                fileSource.ReadBase(project, ZaDataPaths.BossMoveSelectorArray).Bytes);
+            sourceFileCount++;
+            hasSelectorSource = true;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or ArgumentException
+                or OverflowException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                $"Boss action move assignments are read-only because their selector data could not be verified: {exception.Message}",
+                $"romfs/{ZaDataPaths.BossMoveSelectorArray}",
+                expected: "Readable active and verified base boss move selector data"));
+        }
+
+        try
+        {
+            var battleTable = ZaRuntimeMoveData.ReadBattle(
+                fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray).Bytes);
+            var timingTable = ZaRuntimeMoveData.ReadTiming(
+                fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray).Bytes);
+            battleMoveIds = ZaRuntimeMoveData.BattleRows(battleTable)
+                .Where(row => row.VariantType == 2)
+                .GroupBy(row => checked((int)row.MoveId))
+                .Where(group => group.Count() == 1)
+                .Select(group => group.Key)
+                .ToHashSet();
+            timingRuntimeMoveIds = ZaRuntimeMoveData.TimingRows(timingTable)
+                .Select(row => checked((int)row.MoveId))
+                .ToHashSet();
+            sourceFileCount += 2;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or ArgumentException
+                or OverflowException)
+        {
+            diagnostics.Add(ZaWorkflowSupport.Warning(
+                $"Boss action replacements are unavailable because Boss Move runtime data could not be verified: {exception.Message}",
+                $"romfs/{ZaDataPaths.BattleMoveParameterArray}",
+                expected: "Readable Boss Move battle and timing parameter data"));
+        }
+
+        var moveOptions = battleMoveIds is null || timingRuntimeMoveIds is null
+            ? Array.Empty<ZaScriptedBossMoveOptionRecord>()
+            : battleMoveIds
+                .Where(moveId => moveId is >= 0 and <= MaximumBaseMoveId)
+                .Where(moveId => timingRuntimeMoveIds.Contains(ToRuntimeMoveId(moveId)))
+                .Order()
+                .Select(moveId => new ZaScriptedBossMoveOptionRecord(
+                    moveId,
+                    ToRuntimeMoveId(moveId),
+                    labels.Move(moveId)))
+                .ToArray();
+
+        return new ZaScriptedBossCatalogProjection(
+            Project(
+                labels,
+                activeSelectors,
+                baseSelectors,
+                battleMoveIds,
+                timingRuntimeMoveIds,
+                moveOptions.Any()),
+            moveOptions,
+            sourceFileCount,
+            hasSelectorSource);
+    }
+
     public static IReadOnlyList<ZaScriptedBossProfileRecord> Project(ZaTextLabelLookup labels)
     {
         ArgumentNullException.ThrowIfNull(labels);
+        return Project(labels, null, null, null, null, runtimeCatalogAvailable: false);
+    }
 
+    public static int ToRuntimeMoveId(int moveId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(moveId);
+        if (moveId > MaximumBaseMoveId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(moveId),
+                moveId,
+                $"Boss Move base IDs must be between 0 and {MaximumBaseMoveId}.");
+        }
+
+        return BossMoveOffset + moveId;
+    }
+
+    public static string CreateEditField(int selectorActionId)
+    {
+        return $"bossAction.{selectorActionId}.moveId";
+    }
+
+    public static bool TryParseEditField(string? field, out int selectorActionId)
+    {
+        selectorActionId = 0;
+        const string prefix = "bossAction.";
+        const string suffix = ".moveId";
+        return field is not null
+            && field.StartsWith(prefix, StringComparison.Ordinal)
+            && field.EndsWith(suffix, StringComparison.Ordinal)
+            && field.Length > prefix.Length + suffix.Length
+            && int.TryParse(
+                field.AsSpan(prefix.Length, field.Length - prefix.Length - suffix.Length),
+                out selectorActionId)
+            && selectorActionId > 0;
+    }
+
+    public static string CreateRecordId(int selectorActionId)
+    {
+        return $"boss-action:{selectorActionId}";
+    }
+
+    public static bool TryParseRecordId(string? recordId, out int selectorActionId)
+    {
+        selectorActionId = 0;
+        const string prefix = "boss-action:";
+        return recordId is not null
+            && recordId.StartsWith(prefix, StringComparison.Ordinal)
+            && int.TryParse(recordId.AsSpan(prefix.Length), out selectorActionId)
+            && selectorActionId > 0;
+    }
+
+    public static ZaScriptedBossProfileRecord? FindProfile(
+        IReadOnlyList<ZaScriptedBossProfileRecord> profiles,
+        string? rawSpawnerId,
+        int speciesId,
+        int form)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+
+        var lineageKey = CreateLineageKey(rawSpawnerId);
+        if (lineageKey is not null)
+        {
+            return profiles.FirstOrDefault(profile => string.Equals(
+                profile.LineageKey,
+                lineageKey,
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        return profiles.FirstOrDefault(profile =>
+            profile.SpeciesId == speciesId && profile.Form == form);
+    }
+
+    private static IReadOnlyList<ZaScriptedBossProfileRecord> Project(
+        ZaTextLabelLookup labels,
+        ZaBossMoveSelectorDocument? activeSelectors,
+        ZaBossMoveSelectorDocument? baseSelectors,
+        IReadOnlySet<int>? battleMoveIds,
+        IReadOnlySet<int>? timingRuntimeMoveIds,
+        bool runtimeCatalogAvailable)
+    {
         return Profiles
             .Select(profile =>
             {
@@ -143,17 +495,254 @@ internal static class ZaScriptedBossActionCatalog
                     ZaLabels.PokemonWithForm(profile.SpeciesId, profile.Form, speciesName),
                     profile.Scope,
                     profile.Actions
-                        .Select(action => new ZaScriptedBossActionRecord(
-                            action.Key,
-                            action.Kind,
-                            action.MoveId,
-                            action.MoveId is null ? null : checked(2000 + action.MoveId.Value),
-                            action.MoveId is null ? action.Name! : labels.Move(action.MoveId.Value),
-                            action.UsesBattleParameters,
-                            action.UsesTimingParameters))
+                        .Select(action => ProjectAction(
+                            profile.SpeciesId,
+                            action,
+                            labels,
+                            activeSelectors,
+                            baseSelectors,
+                            battleMoveIds,
+                            timingRuntimeMoveIds,
+                            runtimeCatalogAvailable))
                         .ToArray());
             })
             .ToArray();
+    }
+
+    private static ZaScriptedBossActionRecord ProjectAction(
+        int speciesId,
+        ActionDefinition action,
+        ZaTextLabelLookup labels,
+        ZaBossMoveSelectorDocument? activeSelectors,
+        ZaBossMoveSelectorDocument? baseSelectors,
+        IReadOnlySet<int>? battleMoveIds,
+        IReadOnlySet<int>? timingRuntimeMoveIds,
+        bool runtimeCatalogAvailable)
+    {
+        if (action.Kind == ScriptedMechanicKind)
+        {
+            return new ZaScriptedBossActionRecord(
+                action.Key,
+                action.Kind,
+                null,
+                null,
+                null,
+                null,
+                action.Name!,
+                action.UsesBattleParameters,
+                action.UsesTimingParameters,
+                CanEdit: false,
+                NotApplicableRuntimeState,
+                ControllerScriptLockReason,
+                HeatAvailability: [],
+                HeatContext: null);
+        }
+
+        ZaBossMoveSelectorRow? activeRow = null;
+        ZaBossMoveSelectorRow? baseRow = null;
+        var selectorVerified =
+            activeSelectors?.TryGetRow(action.SelectorActionId!.Value, out activeRow) == true
+            && activeRow.CanEdit
+            && baseSelectors?.TryGetRow(action.SelectorActionId.Value, out baseRow) == true
+            && baseRow.CanEdit
+            && baseRow.RuntimeMoveId == ToRuntimeMoveId(action.VanillaMoveId!.Value);
+        var runtimeMoveId = selectorVerified
+            ? activeRow!.RuntimeMoveId
+            : (int?)null;
+        var moveId = runtimeMoveId is >= BossMoveOffset and < BossMoveOffset + 1000
+            ? runtimeMoveId - BossMoveOffset
+            : (int?)null;
+        var runtimeState = selectorVerified
+            ? CreateRuntimeState(
+                action,
+                moveId,
+                runtimeMoveId,
+                battleMoveIds,
+                timingRuntimeMoveIds)
+            : UnavailableRuntimeState;
+        var canEdit = action.Kind == BattleMoveKind
+            && selectorVerified
+            && runtimeCatalogAvailable;
+        var lockReason = canEdit
+            ? null
+            : action.Kind == MovementHelperKind
+                ? TimingChoreographyLockReason
+                : !selectorVerified
+                    ? SelectorUnavailableLockReason
+                    : RuntimeCatalogUnavailableLockReason;
+        var name = moveId is null
+            ? labels.Move(action.VanillaMoveId!.Value)
+            : labels.Move(moveId.Value);
+
+        return new ZaScriptedBossActionRecord(
+            action.Key,
+            action.Kind,
+            action.SelectorActionId,
+            moveId,
+            action.VanillaMoveId,
+            runtimeMoveId,
+            name,
+            action.UsesBattleParameters,
+            action.UsesTimingParameters,
+            canEdit,
+            runtimeState,
+            lockReason,
+            ProjectHeatAvailability(speciesId, action),
+            ProjectHeatContext(speciesId, action));
+    }
+
+    private static string? ProjectHeatContext(int speciesId, ActionDefinition action)
+    {
+        return action.VanillaMoveId is not null
+            && ContextOnlyActions.Contains((speciesId, action.VanillaMoveId.Value))
+                ? "after-stun"
+                : null;
+    }
+
+    private static IReadOnlyList<ZaScriptedBossHeatAvailabilityRecord> ProjectHeatAvailability(
+        int speciesId,
+        ActionDefinition action)
+    {
+        if (action.VanillaMoveId is null)
+        {
+            return [];
+        }
+
+        var profileAction = (speciesId, action.VanillaMoveId.Value);
+        if (ContextOnlyActions.Contains(profileAction))
+        {
+            return
+            [
+                new ZaScriptedBossHeatAvailabilityRecord(Heat1, ContextOnlyHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat2, ContextOnlyHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat3, ContextOnlyHeatState),
+            ];
+        }
+
+        if (!VerifiedHeatScheduleMoves.TryGetValue(speciesId, out var verifiedMoves)
+            || !verifiedMoves.Contains(action.VanillaMoveId.Value))
+        {
+            return
+            [
+                new ZaScriptedBossHeatAvailabilityRecord(Heat1, UnverifiedHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat2, UnverifiedHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat3, UnverifiedHeatState),
+            ];
+        }
+
+        if (PostHeat2OnlyActions.Contains(profileAction))
+        {
+            return
+            [
+                new ZaScriptedBossHeatAvailabilityRecord(Heat1, UnavailableHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat2, AvailableHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat3, AvailableHeatState),
+            ];
+        }
+
+        if (Heat1OnlyActions.Contains(profileAction))
+        {
+            return
+            [
+                new ZaScriptedBossHeatAvailabilityRecord(Heat1, AvailableHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat2, UnavailableHeatState),
+                new ZaScriptedBossHeatAvailabilityRecord(Heat3, UnavailableHeatState),
+            ];
+        }
+
+        return
+        [
+            new ZaScriptedBossHeatAvailabilityRecord(Heat1, AvailableHeatState),
+            new ZaScriptedBossHeatAvailabilityRecord(Heat2, AvailableHeatState),
+            new ZaScriptedBossHeatAvailabilityRecord(Heat3, AvailableHeatState),
+        ];
+    }
+
+    private static string CreateRuntimeState(
+        ActionDefinition action,
+        int? moveId,
+        int? runtimeMoveId,
+        IReadOnlySet<int>? battleMoveIds,
+        IReadOnlySet<int>? timingRuntimeMoveIds)
+    {
+        if (moveId is null)
+        {
+            return InvalidReferenceRuntimeState;
+        }
+
+        if (battleMoveIds is null || timingRuntimeMoveIds is null)
+        {
+            return UnavailableRuntimeState;
+        }
+
+        var hasBattle = battleMoveIds.Contains(moveId.Value);
+        var hasTiming = runtimeMoveId is not null
+            && timingRuntimeMoveIds.Contains(runtimeMoveId.Value);
+        if (action.Kind == MovementHelperKind)
+        {
+            return hasTiming ? TimingOnlyRuntimeState : MissingTimingRuntimeState;
+        }
+
+        return (hasBattle, hasTiming) switch
+        {
+            (true, true) => WorkingRuntimeState,
+            (false, true) => MissingBattleRuntimeState,
+            (true, false) => MissingTimingRuntimeState,
+            _ => MissingBattleAndTimingRuntimeState,
+        };
+    }
+
+    private static string? CreateLineageKey(string? rawSpawnerId)
+    {
+        if (string.IsNullOrWhiteSpace(rawSpawnerId)
+            || !rawSpawnerId.StartsWith("btl_spn_boss_", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var tokens = rawSpawnerId["btl_spn_boss_".Length..]
+            .Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
+        if (tokens.Count == 0 || !tokens[0].All(char.IsDigit))
+        {
+            return null;
+        }
+
+        var species = tokens[0];
+        tokens.RemoveAt(0);
+        var followerIndex = tokens.FindIndex(token =>
+            token.StartsWith("follower", StringComparison.OrdinalIgnoreCase));
+        if (followerIndex >= 0)
+        {
+            tokens.RemoveRange(followerIndex, tokens.Count - followerIndex);
+        }
+
+        if (tokens.Count >= 2
+            && string.Equals(tokens[^2], "re", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(tokens[^1], "dim", StringComparison.OrdinalIgnoreCase))
+        {
+            tokens.RemoveRange(tokens.Count - 2, 2);
+        }
+        else if (tokens.Count > 0 && IsTerminalMode(tokens[^1]))
+        {
+            tokens.RemoveAt(tokens.Count - 1);
+        }
+
+        if (tokens.Count == 1 && tokens[0].All(char.IsDigit))
+        {
+            tokens.Clear();
+        }
+
+        return string.Join('_', new[] { "boss", species }.Concat(tokens)).ToLowerInvariant();
+    }
+
+    private static bool IsTerminalMode(string token)
+    {
+        return string.Equals(token, "re", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "y", StringComparison.OrdinalIgnoreCase)
+            || token.StartsWith("sim", StringComparison.OrdinalIgnoreCase)
+            || token.StartsWith("rus", StringComparison.OrdinalIgnoreCase)
+            || token.StartsWith("rush", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ProfileDefinition Profile(
@@ -171,9 +760,11 @@ internal static class ZaScriptedBossActionCatalog
 
     private static ActionDefinition BattleMove(int moveId)
     {
+        var selectorActionId = SelectorActionIds[moveId];
         return new ActionDefinition(
-            $"{BattleMoveKind}:{moveId}",
+            $"{BattleMoveKind}:{selectorActionId}",
             BattleMoveKind,
+            selectorActionId,
             moveId,
             null,
             UsesBattleParameters: true,
@@ -182,9 +773,11 @@ internal static class ZaScriptedBossActionCatalog
 
     private static ActionDefinition MovementHelper(int moveId)
     {
+        var selectorActionId = SelectorActionIds[moveId];
         return new ActionDefinition(
-            $"{MovementHelperKind}:{moveId}",
+            $"{MovementHelperKind}:{selectorActionId}",
             MovementHelperKind,
+            selectorActionId,
             moveId,
             null,
             UsesBattleParameters: false,
@@ -196,7 +789,8 @@ internal static class ZaScriptedBossActionCatalog
         return new ActionDefinition(
             $"{ScriptedMechanicKind}:{key}",
             ScriptedMechanicKind,
-            MoveId: null,
+            SelectorActionId: null,
+            VanillaMoveId: null,
             name,
             UsesBattleParameters: false,
             UsesTimingParameters: false);
@@ -212,7 +806,8 @@ internal static class ZaScriptedBossActionCatalog
     private sealed record ActionDefinition(
         string Key,
         string Kind,
-        int? MoveId,
+        int? SelectorActionId,
+        int? VanillaMoveId,
         string? Name,
         bool UsesBattleParameters,
         bool UsesTimingParameters);

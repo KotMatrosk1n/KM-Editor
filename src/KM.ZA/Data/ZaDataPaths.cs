@@ -16,6 +16,8 @@ public static class ZaDataPaths
         "param_ai/data/battle/personal_waza_param/personal_waza_param_array.bin";
     public const string MoveTimingParameterArray =
         "param_ai/data/ai/waza/waza_param/waza_param_array.bin";
+    public const string BossMoveSelectorArray =
+        "param_ai/data/ai/action/waza_select/waza_select_array.bin";
     public const string ItemDataArray = "world/exl/item_data/item_data/item_data.bin";
     public const string EvolutionItemConversionArray = "world/ik_data/battle/plib_item_conversion/plib_item_conversion_array.bin";
     public const string TrainerDataArray = "world/ik_data/trainer/trdata/trdata_array.bin";

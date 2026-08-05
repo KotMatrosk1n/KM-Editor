@@ -178,6 +178,12 @@ internal sealed class ZaEncountersWorkflowService
                 $"romfs/{ZaDataPaths.EncountDataArray}"));
         }
 
+        var scriptedBossCatalog = ZaScriptedBossActionCatalog.Load(
+            project,
+            fileSource,
+            labels,
+            diagnostics);
+
         var summary = ZaWorkflowSupport.CreateSummary(
             project,
             ZaWorkflowIds.Encounters,
@@ -192,10 +198,12 @@ internal sealed class ZaEncountersWorkflowService
             new ZaEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
-                new[] { encounterSource, spawnerSource, bossBattleSource }.Count(source => source is not null)),
+                new[] { encounterSource, spawnerSource, bossBattleSource }.Count(source => source is not null)
+                    + scriptedBossCatalog.SourceFileCount),
             diagnostics)
         {
-            ScriptedBosses = ZaScriptedBossActionCatalog.Project(labels),
+            ScriptedBosses = scriptedBossCatalog.Profiles,
+            ScriptedBossMoveOptions = scriptedBossCatalog.MoveOptions,
             PokemonAvailability = pokemonAvailability,
             OutzoneAvailability = outzoneAvailability,
         };

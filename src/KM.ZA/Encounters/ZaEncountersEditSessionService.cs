@@ -5,6 +5,8 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.ZA.Data;
+using KM.ZA.Moves;
+using KM.ZA.ScriptedBosses;
 using KM.ZA.Workflows;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -71,7 +73,7 @@ internal sealed class ZaEncountersEditSessionService
             return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(workflow, table, slotRecord, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(project, workflow, table, slotRecord, field, value, diagnostics);
         if (pendingEdit is null)
         {
             return new ZaEncountersEditResult(workflow, currentSession, diagnostics);
@@ -169,6 +171,7 @@ internal sealed class ZaEncountersEditSessionService
             }
 
             var pendingEdit = CreatePendingEdit(
+                project,
                 effectiveWorkflow,
                 table,
                 slot,
@@ -313,6 +316,7 @@ internal sealed class ZaEncountersEditSessionService
             }
 
             var pendingEdit = CreatePendingEdit(
+                project,
                 effectiveWorkflow,
                 effectiveTable,
                 effectiveSlot,
@@ -526,12 +530,10 @@ internal sealed class ZaEncountersEditSessionService
             }
 
             var semanticSources = normalizationState.SemanticSources;
-            var semanticSourceReferences = semanticSources
-                .Where(source => source.Layer is not null)
-                .Select(source => new ProjectFileReference(
-                    source.Layer!.Value,
-                    source.SourceIdentity))
-                .ToArray();
+            var bossActionSemanticSources = session.PendingEdits.Any(edit =>
+                    AffectsBossActionData(edit.Field))
+                ? CreateBossActionPlanSemanticSources(project)
+                : Array.Empty<PlanFingerprintSource>();
             var plannedVirtualPaths = session.PendingEdits
                 .Select(edit => GetSourcePathForField(edit.Field))
                 .Append(normalizationState.Result.HasChanges
@@ -545,6 +547,18 @@ internal sealed class ZaEncountersEditSessionService
             var writes = plannedVirtualPaths
                 .Select(virtualPath =>
                 {
+                    var plannedSemanticSources = string.Equals(
+                        virtualPath,
+                        ZaDataPaths.BossMoveSelectorArray,
+                        StringComparison.Ordinal)
+                        ? bossActionSemanticSources
+                        : semanticSources;
+                    var semanticSourceReferences = plannedSemanticSources
+                        .Where(source => source.Layer is not null)
+                        .Select(source => new ProjectFileReference(
+                            source.Layer!.Value,
+                            source.SourceIdentity))
+                        .ToArray();
                     var plannedEdits = session.PendingEdits
                         .Where(edit => string.Equals(
                             GetSourcePathForField(edit.Field),
@@ -597,7 +611,7 @@ internal sealed class ZaEncountersEditSessionService
                             paths,
                             virtualPath,
                             outputMode,
-                            semanticSources));
+                            plannedSemanticSources));
                 })
                 .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
                 .ToList();
@@ -638,6 +652,7 @@ internal sealed class ZaEncountersEditSessionService
         }
         catch (Exception exception) when (
             exception is IOException
+                or UnauthorizedAccessException
                 or InvalidOperationException
                 or ArgumentException
                 or InvalidDataException
@@ -714,9 +729,14 @@ internal sealed class ZaEncountersEditSessionService
             var writesEncounterData = session.PendingEdits.Any(edit => AffectsSharedPokemonData(edit.Field));
             var writesSpawnerData = session.PendingEdits.Any(edit => AffectsSpawnerData(edit.Field))
                 || normalizationState.Result.HasChanges;
+            var writesBossActionData = session.PendingEdits.Any(edit =>
+                AffectsBossActionData(edit.Field));
             var encounterSource = normalizationState.EncounterSource;
             var spawnerSource = normalizationState.SpawnerSource;
             var capturedSemanticSources = normalizationState.SemanticSources;
+            var bossActionSemanticSources = writesBossActionData
+                ? CreateBossActionPlanSemanticSources(project)
+                : Array.Empty<PlanFingerprintSource>();
             if ((writesEncounterData && !CapturedSourcesMatchPlan(
                     paths,
                     currentPlan,
@@ -728,7 +748,13 @@ internal sealed class ZaEncountersEditSessionService
                     currentPlan,
                     ZaDataPaths.PokemonSpawnerDataArray,
                     outputMode,
-                    capturedSemanticSources)))
+                    capturedSemanticSources))
+                || (writesBossActionData && !CapturedSourcesMatchPlan(
+                    paths,
+                    currentPlan,
+                    ZaDataPaths.BossMoveSelectorArray,
+                    outputMode,
+                    bossActionSemanticSources)))
             {
                 diagnostics.Add(ZaEditSessionSupport.CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -793,9 +819,22 @@ internal sealed class ZaEncountersEditSessionService
             var spawnerDocument = writesSpawnerData
                 ? normalizationState.SpawnerDocument
                 : null;
+            var bossActionSourceBytes = writesBossActionData
+                ? bossActionSemanticSources.Single(source => string.Equals(
+                    source.VirtualPath,
+                    ZaDataPaths.BossMoveSelectorArray,
+                    StringComparison.Ordinal)).Bytes
+                : null;
+            var bossActionDocument = bossActionSourceBytes is not null
+                ? ZaBossMoveSelectorDocument.Parse(bossActionSourceBytes)
+                : null;
             foreach (var edit in session.PendingEdits)
             {
-                if (AffectsSpawnerData(edit.Field))
+                if (AffectsBossActionData(edit.Field))
+                {
+                    ApplyBossActionEdit(workflow, bossActionDocument!, edit, diagnostics);
+                }
+                else if (AffectsSpawnerData(edit.Field))
                 {
                     ApplySpawnerEdit(workflow, spawnerDocument!, edit, diagnostics);
                 }
@@ -816,6 +855,28 @@ internal sealed class ZaEncountersEditSessionService
                 outputWrites.Add(new ZaWorkflowFileWrite(
                     ZaDataPaths.EncountDataArray,
                     encounterDocument.Write()));
+            }
+
+            if (bossActionDocument is not null && bossActionSourceBytes is not null)
+            {
+                var bossActionBytes = bossActionDocument.Write();
+                if (!VerifyBossActionOutput(
+                        bossActionSourceBytes,
+                        bossActionBytes,
+                        session.PendingEdits,
+                        diagnostics))
+                {
+                    return ZaEditSessionSupport.CreateApplyResult(
+                        applyId,
+                        appliedAt,
+                        currentPlan,
+                        writtenFiles,
+                        diagnostics);
+                }
+
+                outputWrites.Add(new ZaWorkflowFileWrite(
+                    ZaDataPaths.BossMoveSelectorArray,
+                    bossActionBytes));
             }
 
             if (spawnerDocument is not null)
@@ -862,6 +923,13 @@ internal sealed class ZaEncountersEditSessionService
             if (spawnerDocument is not null)
             {
                 writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(ZaDataPaths.PokemonSpawnerDataArray, outputMode));
+            }
+
+            if (bossActionDocument is not null)
+            {
+                writtenFiles.Add(ZaEditSessionSupport.GeneratedReference(
+                    ZaDataPaths.BossMoveSelectorArray,
+                    outputMode));
             }
 
             if (outputMode == ZaOutputMode.Standalone)
@@ -1165,6 +1233,48 @@ internal sealed class ZaEncountersEditSessionService
         return sources;
     }
 
+    private IReadOnlyList<PlanFingerprintSource> CreateBossActionPlanSemanticSources(
+        OpenedProject project)
+    {
+        var selectorSource = fileSource.Read(project, ZaDataPaths.BossMoveSelectorArray);
+        var baseSelectorSource = fileSource.ReadBase(project, ZaDataPaths.BossMoveSelectorArray);
+        var battleSource = fileSource.Read(project, ZaDataPaths.BattleMoveParameterArray);
+        var timingSource = fileSource.Read(project, ZaDataPaths.MoveTimingParameterArray);
+
+        _ = ZaBossMoveSelectorDocument.Parse(selectorSource.Bytes);
+        _ = ZaBossMoveSelectorDocument.Parse(baseSelectorSource.Bytes);
+        _ = ZaRuntimeMoveData.ReadBattle(battleSource.Bytes);
+        _ = ZaRuntimeMoveData.ReadTiming(timingSource.Bytes);
+
+        return
+        [
+            new PlanFingerprintSource(
+                ZaDataPaths.BossMoveSelectorArray,
+                selectorSource.Bytes,
+                selectorSource.SourceLayer.ToString(),
+                selectorSource.RelativePath,
+                selectorSource.SourceLayer),
+            new PlanFingerprintSource(
+                $"base:{ZaDataPaths.BossMoveSelectorArray}",
+                baseSelectorSource.Bytes,
+                $"Base:{baseSelectorSource.Origin}",
+                baseSelectorSource.RelativePath,
+                ProjectFileLayer.Base),
+            new PlanFingerprintSource(
+                ZaDataPaths.BattleMoveParameterArray,
+                battleSource.Bytes,
+                battleSource.SourceLayer.ToString(),
+                battleSource.RelativePath,
+                battleSource.SourceLayer),
+            new PlanFingerprintSource(
+                ZaDataPaths.MoveTimingParameterArray,
+                timingSource.Bytes,
+                timingSource.SourceLayer.ToString(),
+                timingSource.RelativePath,
+                timingSource.SourceLayer),
+        ];
+    }
+
     private sealed record PlanFingerprintSource(
         string VirtualPath,
         byte[] Bytes,
@@ -1206,7 +1316,8 @@ internal sealed class ZaEncountersEditSessionService
         hash.AppendData(value);
     }
 
-    private static PendingEdit? CreatePendingEdit(
+    private PendingEdit? CreatePendingEdit(
+        OpenedProject project,
         ZaEncountersWorkflow workflow,
         ZaEncounterTableRecord table,
         ZaEncounterSlotRecord slot,
@@ -1216,6 +1327,21 @@ internal sealed class ZaEncountersEditSessionService
         bool allowVerifiedVanillaSharedValue = false)
     {
         var normalizedField = field.Trim();
+        if (ZaScriptedBossActionCatalog.TryParseEditField(
+                normalizedField,
+                out var selectorActionId))
+        {
+            return CreateBossActionPendingEdit(
+                project,
+                workflow,
+                table,
+                slot,
+                selectorActionId,
+                normalizedField,
+                value,
+                diagnostics);
+        }
+
         var editableField = ResolveEditableField(
             workflow,
             normalizedField,
@@ -1302,6 +1428,170 @@ internal sealed class ZaEncountersEditSessionService
             parsedValue.Value.ToString(CultureInfo.InvariantCulture));
     }
 
+    private PendingEdit? CreateBossActionPendingEdit(
+        OpenedProject project,
+        ZaEncountersWorkflow workflow,
+        ZaEncounterTableRecord table,
+        ZaEncounterSlotRecord slot,
+        int selectorActionId,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsPrimaryBossController(table.RawSpawnerId))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Boss action edits must be staged from the primary Rogue Mega controller encounter.",
+                field,
+                "Selected primary btl_spn_boss_* controller"));
+            return null;
+        }
+
+        var profile = ZaScriptedBossActionCatalog.FindProfile(
+            workflow.ScriptedBosses,
+            table.RawSpawnerId,
+            slot.SpeciesId,
+            slot.Form);
+        var action = profile?.Actions.FirstOrDefault(candidate =>
+            candidate.SelectorActionId == selectorActionId);
+        if (profile is null || action is null)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "The selected Rogue Mega controller does not own this boss action selector.",
+                field,
+                "Selector action owned by the selected primary controller"));
+            return null;
+        }
+
+        if (!action.CanEdit
+            || !string.Equals(
+                action.Kind,
+                ZaScriptedBossActionCatalog.BattleMoveKind,
+                StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                CreateBossActionLockMessage(action),
+                field,
+                "Verified data-driven battle move selector"));
+            return null;
+        }
+
+        var parsedValue = ZaEditSessionSupport.TryParseInt(
+            value,
+            minimumValue: 0,
+            maximumValue: null,
+            field: field,
+            domain: ZaEditSessionSupport.EncountersDomain,
+            diagnostics: diagnostics);
+        if (parsedValue is null)
+        {
+            return null;
+        }
+
+        var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
+            candidate.MoveId == parsedValue.Value);
+        if (option is null)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "The requested move is not a verified working Boss Move replacement.",
+                field,
+                "Move with one Boss battle row and a matching Boss timing row"));
+            return null;
+        }
+
+        ZaWorkflowFile selectorSource;
+        try
+        {
+            selectorSource = fileSource.Read(project, ZaDataPaths.BossMoveSelectorArray);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or ArgumentException)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                $"Boss action selector data could not be captured for staging: {exception.Message}",
+                field,
+                "Readable effective boss move selector data"));
+            return null;
+        }
+
+        var affectedProfiles = workflow.ScriptedBosses
+            .Where(candidate => candidate.Actions.Any(candidateAction =>
+                candidateAction.SelectorActionId == selectorActionId))
+            .Select(candidate => candidate.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var impact = affectedProfiles.Length switch
+        {
+            0 => profile.Name,
+            1 => affectedProfiles[0],
+            _ => string.Join(", ", affectedProfiles),
+        };
+        var summary = $"Set Rogue Mega selector action {selectorActionId.ToString(CultureInfo.InvariantCulture)} "
+            + $"from {action.Name} to {option.Name}. Affected profiles: {impact}.";
+
+        return ZaEditSessionSupport.CreatePendingEdit(
+            ZaEditSessionSupport.EncountersDomain,
+            summary,
+            new ProjectFileReference(
+                selectorSource.SourceLayer,
+                selectorSource.RelativePath),
+            ZaScriptedBossActionCatalog.CreateRecordId(selectorActionId),
+            field,
+            parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static bool IsPrimaryBossController(string? rawSpawnerId)
+    {
+        if (string.IsNullOrWhiteSpace(rawSpawnerId)
+            || !rawSpawnerId.StartsWith(
+                "btl_spn_boss_",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !rawSpawnerId
+            .Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .Any(token => token.StartsWith(
+                "follower",
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string CreateBossActionLockMessage(
+        ZaScriptedBossActionRecord action)
+    {
+        return action.LockReason switch
+        {
+            ZaScriptedBossActionCatalog.ControllerScriptLockReason =>
+                "This boss action is hard-coded in the controller script and cannot be edited.",
+            ZaScriptedBossActionCatalog.TimingChoreographyLockReason =>
+                "This timing or movement helper is fixed by the controller choreography and cannot be edited.",
+            ZaScriptedBossActionCatalog.SelectorUnavailableLockReason =>
+                "This boss action selector could not be verified against the base game and is locked.",
+            ZaScriptedBossActionCatalog.RuntimeCatalogUnavailableLockReason =>
+                "Working Boss Move replacement data could not be verified, so this selector is locked.",
+            _ => "This boss action is locked and cannot be edited.",
+        };
+    }
+
+    private static ValidationDiagnostic CreateBossActionDiagnostic(
+        string message,
+        string? field,
+        string expected)
+    {
+        return ZaEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            message,
+            ZaEditSessionSupport.EncountersDomain,
+            file: $"romfs/{ZaDataPaths.BossMoveSelectorArray}",
+            field: field,
+            expected: expected);
+    }
+
     private static void ValidatePendingEdit(
         ZaEncountersWorkflow workflow,
         PendingEdit edit,
@@ -1315,6 +1605,18 @@ internal sealed class ZaEncountersEditSessionService
                 $"Pending edit domain '{edit.Domain}' is not supported by Pokemon Legends Z-A Wild Encounters.",
                 ZaEditSessionSupport.EncountersDomain,
                 expected: ZaEditSessionSupport.EncountersDomain));
+            return;
+        }
+
+        if (ZaScriptedBossActionCatalog.TryParseEditField(
+                edit.Field,
+                out var selectorActionId))
+        {
+            ValidateBossActionPendingEdit(
+                workflow,
+                edit,
+                selectorActionId,
+                diagnostics);
             return;
         }
 
@@ -1430,6 +1732,86 @@ internal sealed class ZaEncountersEditSessionService
                     edit.Field,
                     diagnostics);
             }
+        }
+    }
+
+    private static void ValidateBossActionPendingEdit(
+        ZaEncountersWorkflow workflow,
+        PendingEdit edit,
+        int selectorActionId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!ZaScriptedBossActionCatalog.TryParseRecordId(
+                edit.RecordId,
+                out var recordSelectorActionId)
+            || recordSelectorActionId != selectorActionId)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action edit has a mismatched or missing selector record ID.",
+                edit.Field,
+                ZaScriptedBossActionCatalog.CreateRecordId(selectorActionId)));
+            return;
+        }
+
+        var actions = workflow.ScriptedBosses
+            .SelectMany(profile => profile.Actions)
+            .Where(action => action.SelectorActionId == selectorActionId)
+            .ToArray();
+        if (actions.Length == 0)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action edit targets a selector that is not owned by a verified Rogue Mega controller.",
+                edit.Field,
+                "Known selector action from a verified Rogue Mega profile"));
+            return;
+        }
+
+        if (actions.Any(action =>
+                !action.CanEdit
+                || !string.Equals(
+                    action.Kind,
+                    ZaScriptedBossActionCatalog.BattleMoveKind,
+                    StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                CreateBossActionLockMessage(actions.First(action =>
+                    !action.CanEdit
+                    || !string.Equals(
+                        action.Kind,
+                        ZaScriptedBossActionCatalog.BattleMoveKind,
+                        StringComparison.Ordinal))),
+                edit.Field,
+                "Verified data-driven battle move selector"));
+            return;
+        }
+
+        var moveId = ZaEditSessionSupport.TryParseInt(
+            edit.NewValue,
+            minimumValue: 0,
+            maximumValue: null,
+            field: edit.Field,
+            domain: ZaEditSessionSupport.EncountersDomain,
+            diagnostics: diagnostics);
+        if (moveId is null)
+        {
+            return;
+        }
+
+        if (!workflow.ScriptedBossMoveOptions.Any(option => option.MoveId == moveId.Value))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action edit no longer selects a verified working Boss Move replacement.",
+                edit.Field,
+                "Move with one Boss battle row and a matching Boss timing row"));
+            return;
+        }
+
+        if (!HasSourceReference(edit, ZaDataPaths.BossMoveSelectorArray))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action edit is missing its selector source provenance.",
+                edit.Field,
+                $"Source reference for romfs/{ZaDataPaths.BossMoveSelectorArray}"));
         }
     }
 
@@ -1609,6 +1991,11 @@ internal sealed class ZaEncountersEditSessionService
         return AffectsSpawnerSlot(field) || AffectsAppearanceCounts(field);
     }
 
+    private static bool AffectsBossActionData(string? field)
+    {
+        return ZaScriptedBossActionCatalog.TryParseEditField(field, out _);
+    }
+
     private static bool TargetsSelectedOwnership(
         ZaEncountersWorkflow workflow,
         ZaEncounterTableRecord targetTable,
@@ -1694,6 +2081,20 @@ internal sealed class ZaEncountersEditSessionService
                     StringComparison.OrdinalIgnoreCase)));
     }
 
+    private static bool HasSourceReference(PendingEdit edit, string virtualPath)
+    {
+        var relativePath = $"romfs/{virtualPath}";
+        return edit.Sources.Any(source =>
+            string.Equals(
+                source.RelativePath.Replace('\\', '/'),
+                relativePath,
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                source.RelativePath.Replace('\\', '/'),
+                virtualPath,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool ValidateSpawnerFieldEditability(
         ZaEncounterSlotRecord slot,
         string? field,
@@ -1735,6 +2136,11 @@ internal sealed class ZaEncountersEditSessionService
 
     private static string GetSourcePathForField(string? field)
     {
+        if (AffectsBossActionData(field))
+        {
+            return ZaDataPaths.BossMoveSelectorArray;
+        }
+
         return AffectsSpawnerData(field)
             ? ZaDataPaths.PokemonSpawnerDataArray
             : ZaDataPaths.EncountDataArray;
@@ -2158,6 +2564,51 @@ internal sealed class ZaEncountersEditSessionService
             return workflow;
         }
 
+        if (ZaScriptedBossActionCatalog.TryParseEditField(
+                edit.Field,
+                out var selectorActionId)
+            && ZaScriptedBossActionCatalog.TryParseRecordId(
+                edit.RecordId,
+                out var recordSelectorActionId)
+            && selectorActionId == recordSelectorActionId)
+        {
+            var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
+                candidate.MoveId == value);
+            if (option is null
+                || !workflow.ScriptedBosses
+                    .SelectMany(profile => profile.Actions)
+                    .Where(action => action.SelectorActionId == selectorActionId)
+                    .All(action =>
+                        action.CanEdit
+                        && string.Equals(
+                            action.Kind,
+                            ZaScriptedBossActionCatalog.BattleMoveKind,
+                            StringComparison.Ordinal)))
+            {
+                return workflow;
+            }
+
+            return workflow with
+            {
+                ScriptedBosses = workflow.ScriptedBosses
+                    .Select(profile => profile with
+                    {
+                        Actions = profile.Actions
+                            .Select(action => action.SelectorActionId == selectorActionId
+                                ? action with
+                                {
+                                    MoveId = option.MoveId,
+                                    RuntimeMoveId = option.RuntimeMoveId,
+                                    Name = option.Name,
+                                    RuntimeState = ZaScriptedBossActionCatalog.WorkingRuntimeState,
+                                }
+                                : action)
+                            .ToArray(),
+                    })
+                    .ToArray(),
+            };
+        }
+
         if (AffectsSharedPokemonData(edit.Field)
             && TryResolvePokemonDataSourceIndex(workflow, edit.RecordId, out var sourceIndex))
         {
@@ -2532,6 +2983,209 @@ internal sealed class ZaEncountersEditSessionService
             ZaEditSessionSupport.EncountersDomain,
             field: field,
             expected: "Materialized 32-bit spawner scalar in the source data");
+    }
+
+    private static void ApplyBossActionEdit(
+        ZaEncountersWorkflow workflow,
+        ZaBossMoveSelectorDocument document,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!ZaScriptedBossActionCatalog.TryParseEditField(
+                edit.Field,
+                out var selectorActionId)
+            || !ZaScriptedBossActionCatalog.TryParseRecordId(
+                edit.RecordId,
+                out var recordSelectorActionId)
+            || selectorActionId != recordSelectorActionId
+            || !int.TryParse(
+                edit.NewValue,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out var moveId))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action edit is not valid for apply.",
+                edit.Field,
+                "Matching selector action record and verified Boss Move ID"));
+            return;
+        }
+
+        var option = workflow.ScriptedBossMoveOptions.FirstOrDefault(candidate =>
+            candidate.MoveId == moveId);
+        var ownedActions = workflow.ScriptedBosses
+            .SelectMany(profile => profile.Actions)
+            .Where(action => action.SelectorActionId == selectorActionId)
+            .ToArray();
+        if (option is null
+            || option.RuntimeMoveId != ZaScriptedBossActionCatalog.ToRuntimeMoveId(moveId)
+            || ownedActions.Length == 0
+            || ownedActions.Any(action =>
+                !action.CanEdit
+                || !string.Equals(
+                    action.Kind,
+                    ZaScriptedBossActionCatalog.BattleMoveKind,
+                    StringComparison.Ordinal)))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Pending boss action replacement is no longer verified or editable.",
+                edit.Field,
+                "Owned data-driven selector and working Boss Move replacement"));
+            return;
+        }
+
+        if (!document.TryGetRow(selectorActionId, out var sourceRow)
+            || ownedActions.Any(action => action.RuntimeMoveId != sourceRow.RuntimeMoveId))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Boss action selector ownership changed after the workflow was loaded.",
+                edit.Field,
+                "Selector row matching the reviewed controller action"));
+            return;
+        }
+
+        if (!document.TrySetRuntimeMoveId(
+                selectorActionId,
+                option.RuntimeMoveId,
+                out var error))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                string.IsNullOrWhiteSpace(error)
+                    ? "Boss action selector could not be updated safely."
+                    : $"Boss action selector could not be updated safely. {error}",
+                edit.Field,
+                "Exclusive materialized move ID storage for the selector action"));
+        }
+    }
+
+    private static bool VerifyBossActionOutput(
+        byte[] originalBytes,
+        byte[] outputBytes,
+        IEnumerable<PendingEdit> pendingEdits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var expectedEdits = pendingEdits
+            .Where(edit => AffectsBossActionData(edit.Field))
+            .Select(edit =>
+            {
+                var hasActionId = ZaScriptedBossActionCatalog.TryParseEditField(
+                    edit.Field,
+                    out var actionId);
+                var hasMoveId = int.TryParse(
+                    edit.NewValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out var moveId);
+                return (hasActionId, actionId, hasMoveId, moveId, edit.Field);
+            })
+            .ToArray();
+        if (expectedEdits.Length == 0
+            || expectedEdits.Any(edit => !edit.hasActionId || !edit.hasMoveId))
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Boss action output verification did not receive a complete selector change set.",
+                field: null,
+                expected: "Complete reviewed boss action edits"));
+            return false;
+        }
+
+        var conflictingEdit = expectedEdits
+            .GroupBy(edit => edit.actionId)
+            .FirstOrDefault(group => group
+                .Select(edit => edit.moveId)
+                .Distinct()
+                .Skip(1)
+                .Any());
+        if (conflictingEdit is not null)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Boss action output contains conflicting values for one selector action.",
+                conflictingEdit.First().Field,
+                "One final move assignment per selector action"));
+            return false;
+        }
+
+        var expectedRuntimeMoveIds = expectedEdits
+            .GroupBy(edit => edit.actionId)
+            .ToDictionary(
+                group => group.Key,
+                group => ZaScriptedBossActionCatalog.ToRuntimeMoveId(
+                    group.First().moveId));
+        var original = ZaBossMoveSelectorDocument.Parse(originalBytes);
+        var output = ZaBossMoveSelectorDocument.Parse(outputBytes);
+        if (originalBytes.Length != outputBytes.Length
+            || original.Rows.Count != output.Rows.Count)
+        {
+            diagnostics.Add(CreateBossActionDiagnostic(
+                "Boss action selector output changed the source table shape.",
+                field: null,
+                expected: "Byte-preserving selector table with unchanged row count"));
+            return false;
+        }
+
+        for (var index = 0; index < original.Rows.Count; index++)
+        {
+            var before = original.Rows[index];
+            var after = output.Rows[index];
+            if (before.GroupIndex != after.GroupIndex
+                || before.RowIndex != after.RowIndex
+                || before.ActionId != after.ActionId
+                || before.LotteryType != after.LotteryType)
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    "Boss action selector output changed fixed controller selector identity or ordering.",
+                    field: null,
+                    expected: "Unchanged selector action IDs, lottery types, and row ordering"));
+                return false;
+            }
+
+            var expectedRuntimeMoveId = expectedRuntimeMoveIds.GetValueOrDefault(
+                before.ActionId,
+                before.RuntimeMoveId);
+            if (after.RuntimeMoveId != expectedRuntimeMoveId)
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    $"Boss action selector {before.ActionId.ToString(CultureInfo.InvariantCulture)} "
+                        + "did not serialize the reviewed move assignment.",
+                    ZaScriptedBossActionCatalog.CreateEditField(before.ActionId),
+                    expectedRuntimeMoveId.ToString(CultureInfo.InvariantCulture)));
+                return false;
+            }
+        }
+
+        var allowedChangedBytePositions = new HashSet<int>();
+        foreach (var selectorActionId in expectedRuntimeMoveIds.Keys)
+        {
+            if (!original.TryGetRow(selectorActionId, out var row)
+                || row.MoveIdPosition is not { } moveIdPosition)
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    "Boss action selector output target is missing materialized move ID storage.",
+                    ZaScriptedBossActionCatalog.CreateEditField(selectorActionId),
+                    "Verified selector move ID field"));
+                return false;
+            }
+
+            for (var offset = 0; offset < sizeof(int); offset++)
+            {
+                allowedChangedBytePositions.Add(moveIdPosition + offset);
+            }
+        }
+
+        for (var index = 0; index < originalBytes.Length; index++)
+        {
+            if (originalBytes[index] != outputBytes[index]
+                && !allowedChangedBytePositions.Contains(index))
+            {
+                diagnostics.Add(CreateBossActionDiagnostic(
+                    "Boss action selector output changed bytes outside the reviewed move ID fields.",
+                    field: null,
+                    expected: "Only reviewed 32-bit selector move ID cells may change"));
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void ApplyEdit(

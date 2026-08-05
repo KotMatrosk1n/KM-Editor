@@ -25,6 +25,18 @@ export type MoveRelationalValidationIssue = {
   message: string;
 };
 
+export type MoveRuntimeTimingSelection = {
+  occurrence?: number | null;
+  timingMoveId?: number | null;
+};
+
+export type MoveRuntimeView = {
+  battleRow: MoveRecord['runtimeVariants'][number] | null;
+  playerDamageRows: MoveRecord['playerDamageRows'];
+  timingRow: MoveRecord['timingRows'][number] | null;
+  variant: number;
+};
+
 export const moveFieldsNotStagedAtomicallyMessage =
   'Move changes were not staged atomically. No move drafts were cleared.';
 
@@ -104,6 +116,12 @@ export function evaluateMoveFieldsUpdate({
 }
 
 export function getEditableMoveFieldValue(move: MoveRecord, field: string) {
+  const playerDamageAttackId = parseMovePlayerDamageField(field);
+  if (playerDamageAttackId !== null) {
+    return move.playerDamageRows.find((row) => row.attackId === playerDamageAttackId)
+      ?.playerDamage ?? null;
+  }
+
   if (field.startsWith('battle.')) {
     const [, variantText, member] = field.split('.', 3);
     const variant = move.runtimeVariants.find(
@@ -284,6 +302,11 @@ export function getEditableMoveFieldValue(move: MoveRecord, field: string) {
 }
 
 export function getMoveEditableFieldLabel(field: MoveEditableField) {
+  const playerDamageAttackId = parseMovePlayerDamageField(field.field);
+  if (playerDamageAttackId !== null) {
+    return `Attack ${playerDamageAttackId} player damage`;
+  }
+
   const fieldName =
     parseMoveTimingField(field.field)?.member ?? field.field.replace(/^battle\.\d+\./, '');
 
@@ -308,6 +331,10 @@ export function getMoveEditableFieldLabel(field: MoveEditableField) {
 }
 
 export function getMoveEditableFieldGroup(field: NumericMoveEditableField) {
+  if (parseMovePlayerDamageField(field.field) !== null) {
+    return 'Boss Player Damage';
+  }
+
   const timingField = parseMoveTimingField(field.field);
   if (timingField) {
     if (timingField.occurrence === null) {
@@ -623,6 +650,69 @@ export function formatMoveRuntimeVariantLabel(variant: number) {
     default:
       return `Variant ${variant}`;
   }
+}
+
+export function getMoveRuntimeVariants(move: MoveRecord) {
+  return Array.from(
+    new Set([
+      ...move.runtimeVariants.map((variant) => variant.variant),
+      ...move.timingRows.map((timing) => timing.variant),
+      ...(move.playerDamageRows.length > 0 ? [2] : [])
+    ])
+  ).sort((left, right) => left - right);
+}
+
+export function resolveMoveRuntimeVariant(
+  move: MoveRecord,
+  requestedVariant?: number | null
+) {
+  const variants = getMoveRuntimeVariants(move);
+  return requestedVariant !== null &&
+    requestedVariant !== undefined &&
+    variants.includes(requestedVariant)
+    ? requestedVariant
+    : variants[0] ?? null;
+}
+
+export function getMoveRuntimeView(
+  move: MoveRecord,
+  variant: number | null,
+  timingSelection?: MoveRuntimeTimingSelection
+): MoveRuntimeView | null {
+  if (variant === null || !getMoveRuntimeVariants(move).includes(variant)) {
+    return null;
+  }
+
+  const battleRow =
+    move.runtimeVariants.find((candidate) => candidate.variant === variant) ?? null;
+  const timingRows = move.timingRows.filter((candidate) => candidate.variant === variant);
+  const timingMoveId = timingSelection?.timingMoveId;
+  const matchingTimingRows =
+    timingMoveId === null
+      ? []
+      : timingMoveId === undefined
+        ? timingRows
+        : timingRows.filter((candidate) => candidate.timingMoveId === timingMoveId);
+  const occurrence = timingSelection?.occurrence;
+  const timingRow =
+    occurrence === null
+      ? null
+      : occurrence === undefined
+        ? matchingTimingRows[0] ?? null
+        : matchingTimingRows.find((candidate) => candidate.occurrence === occurrence) ?? null;
+
+  const playerDamageRows = variant === 2 ? move.playerDamageRows : [];
+  return { battleRow, playerDamageRows, timingRow, variant };
+}
+
+export function parseMovePlayerDamageField(field: string) {
+  const match = /^playerDamage\.([1-9]\d*)$/.exec(field);
+  if (!match) {
+    return null;
+  }
+
+  const attackId = Number(match[1]);
+  return Number.isSafeInteger(attackId) ? attackId : null;
 }
 
 export function formatMoveHitRange(hitMin: number, hitMax: number) {
