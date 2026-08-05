@@ -5,6 +5,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.ZA.Generated.Field.PokemonSpawner;
 using KM.ZA.Data;
+using KM.ZA.ScriptedBosses;
 using KM.ZA.Workflows;
 using System.Globalization;
 
@@ -194,6 +195,7 @@ internal sealed class ZaEncountersWorkflowService
                 new[] { encounterSource, spawnerSource, bossBattleSource }.Count(source => source is not null)),
             diagnostics)
         {
+            ScriptedBosses = ZaScriptedBossActionCatalog.Project(labels),
             PokemonAvailability = pokemonAvailability,
             OutzoneAvailability = outzoneAvailability,
         };

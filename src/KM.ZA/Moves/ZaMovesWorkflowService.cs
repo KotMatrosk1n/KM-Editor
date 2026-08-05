@@ -7,6 +7,7 @@ using KM.Core.Projects;
 using KM.Formats.ZA.Generated.BattleMoves;
 using KM.Formats.ZA.Generated.GameData;
 using KM.ZA.Data;
+using KM.ZA.ScriptedBosses;
 using KM.ZA.Workflows;
 using System.Globalization;
 
@@ -505,6 +506,7 @@ internal sealed class ZaMovesWorkflowService
             diagnostics)
         {
             ProjectileOptions = projectileOptions,
+            ScriptedBosses = ZaScriptedBossActionCatalog.Project(labels),
             ProjectileCatalogSources = projectileCatalogSources,
             SpawnLocators = spawnLocators,
         };

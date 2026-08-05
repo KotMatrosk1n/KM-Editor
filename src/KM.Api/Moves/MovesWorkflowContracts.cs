@@ -3,6 +3,7 @@
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
+using KM.Api.ScriptedBosses;
 using KM.Api.Workflows;
 
 namespace KM.Api.Moves;
@@ -202,6 +203,8 @@ public sealed record MovesWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics)
 {
     public IReadOnlyList<MoveEditableFieldOptionDto> ProjectileOptions { get; init; } = [];
+
+    public IReadOnlyList<ScriptedBossProfileDto> ScriptedBosses { get; init; } = [];
 }
 
 public sealed record LoadMovesWorkflowResponse(MovesWorkflowDto Workflow);

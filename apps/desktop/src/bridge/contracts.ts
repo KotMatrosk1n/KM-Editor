@@ -1351,6 +1351,26 @@ export const moveVanillaFieldValueSchema = z.strictObject({
   value: z.string()
 });
 
+export const scriptedBossActionSchema = z.strictObject({
+  key: z.string(),
+  kind: z.enum(['battle-move', 'movement-helper', 'scripted-mechanic']),
+  moveId: z.number().int().nonnegative().nullable(),
+  name: z.string(),
+  runtimeMoveId: z.number().int().nonnegative().nullable(),
+  usesBattleParameters: z.boolean(),
+  usesTimingParameters: z.boolean()
+});
+
+export const scriptedBossProfileSchema = z.strictObject({
+  actions: z.array(scriptedBossActionSchema),
+  form: z.number().int().nonnegative(),
+  key: z.string(),
+  lineageKey: z.string(),
+  name: z.string(),
+  scope: z.enum(['base-rogue-mega']),
+  speciesId: z.number().int().nonnegative()
+});
+
 export const moveRecordSchema = z.strictObject({
   accuracy: z.number().int().nonnegative(),
   canRevertToVanilla: z.boolean(),
@@ -1407,6 +1427,7 @@ export const movesWorkflowSchema = z.strictObject({
   editableFields: z.array(moveEditableFieldSchema),
   moves: z.array(moveRecordSchema),
   projectileOptions: z.array(moveEditableFieldOptionSchema).default([]),
+  scriptedBosses: z.array(scriptedBossProfileSchema).default([]),
   stats: movesWorkflowStatsSchema,
   summary: workflowSummarySchema
 });
@@ -3073,6 +3094,7 @@ export const encountersWorkflowStatsSchema = z.strictObject({
 export const encountersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(encounterEditableFieldSchema),
+  scriptedBosses: z.array(scriptedBossProfileSchema).default([]),
   stats: encountersWorkflowStatsSchema,
   summary: workflowSummarySchema,
   tables: z.array(encounterTableRecordSchema)
@@ -5268,6 +5290,8 @@ export type MoveFlagRecord = z.infer<typeof moveFlagRecordSchema>;
 export type MoveRecord = z.infer<typeof moveRecordSchema>;
 export type MoveStatChangeRecord = z.infer<typeof moveStatChangeRecordSchema>;
 export type MovesWorkflow = z.infer<typeof movesWorkflowSchema>;
+export type ScriptedBossAction = z.infer<typeof scriptedBossActionSchema>;
+export type ScriptedBossProfile = z.infer<typeof scriptedBossProfileSchema>;
 export type TextEditableField = z.infer<typeof textEditableFieldSchema>;
 export type TextEntryRecord = z.infer<typeof textEntryRecordSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;

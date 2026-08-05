@@ -3,6 +3,7 @@
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
+using KM.Api.ScriptedBosses;
 using KM.Api.Workflows;
 using System.Text.Json.Serialization;
 
@@ -215,7 +216,10 @@ public sealed record EncountersWorkflowDto(
     IReadOnlyList<EncounterTableRecordDto> Tables,
     IReadOnlyList<EncounterEditableFieldDto> EditableFields,
     EncountersWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public IReadOnlyList<ScriptedBossProfileDto> ScriptedBosses { get; init; } = [];
+}
 
 public sealed record LoadEncountersWorkflowResponse(EncountersWorkflowDto Workflow);
 

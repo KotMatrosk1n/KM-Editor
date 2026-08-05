@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.ZA.ScriptedBosses;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Encounters;
@@ -172,6 +173,8 @@ public sealed record ZaEncountersWorkflow(
     ZaEncountersWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
+    public IReadOnlyList<ZaScriptedBossProfileRecord> ScriptedBosses { get; init; } = [];
+
     internal ZaPokemonAvailability PokemonAvailability { get; init; } =
         ZaPokemonAvailability.Unfiltered;
 
