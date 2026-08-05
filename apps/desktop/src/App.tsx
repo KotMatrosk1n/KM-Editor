@@ -185,6 +185,7 @@ import {
   type RoyalCandyWorkflowRecord,
   type SaveBlockRecord,
   type SaveFileRecord,
+  type ScriptedBossProfile,
   type ShopEditableField,
   type ShopEditableFieldOption,
   type ShopRecord,
@@ -222,6 +223,13 @@ import {
   type ZaModMergerSource,
   type ZaModMergerWorkflow
 } from './bridge/contracts';
+import {
+  findScriptedBossProfile,
+  getScriptedBossOwners,
+  getScriptedBossMoveSearchValues,
+  ScriptedBossEncounterActions,
+  ScriptedBossMoveOwnership
+} from './features/scripted-bosses/ScriptedBossActions';
 import {
   type AngeFightAttackSelection,
   type AngeFightWorkflow
@@ -16507,7 +16515,11 @@ function MovesSection({
 }) {
   const { translateLiteral } = useLocalization();
   const moves = workflow?.moves ?? [];
-  const filteredMoves = useMemo(() => filterMoves(moves, searchText), [moves, searchText]);
+  const scriptedBosses = workflow?.scriptedBosses ?? [];
+  const filteredMoves = useMemo(
+    () => filterMoves(moves, searchText, scriptedBosses),
+    [moves, scriptedBosses, searchText]
+  );
   const selectedMove = useMemo(
     () =>
       filteredMoves.find((candidate) => candidate.moveId === selectedMoveId) ??
@@ -16628,6 +16640,7 @@ function MovesSection({
               onStageMoveVanilla={onStageMoveVanilla}
               onUpdateMoveFields={onUpdateMoveFields}
               projectileOptions={workflow.projectileOptions}
+              scriptedBosses={workflow.scriptedBosses}
             />
           </div>
         ) : (
@@ -16650,7 +16663,8 @@ function SelectedMovePanel({
   move,
   onStageMoveVanilla,
   onUpdateMoveFields,
-  projectileOptions
+  projectileOptions,
+  scriptedBosses
 }: {
   baselineValues: Record<string, number | null> | null;
   canEditMoves: boolean;
@@ -16665,6 +16679,7 @@ function SelectedMovePanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
   projectileOptions: Array<{ label: string; value: number }>;
+  scriptedBosses: ScriptedBossProfile[];
 }) {
   const [moveDraftsByMoveId, setMoveDraftsByMoveId] = useState<
     Record<string, Record<string, string>>
@@ -16700,6 +16715,9 @@ function SelectedMovePanel({
     runtimeVariantOptions.some((variant) => variant.variant === requestedRuntimeVariant)
       ? requestedRuntimeVariant
       : runtimeVariantOptions[0]?.variant ?? 0;
+  const hasScriptedBossOwner = move
+    ? getScriptedBossOwners(scriptedBosses, move.moveId).length > 0
+    : false;
   const timingProfileOptions = useMemo(
     () =>
       move
@@ -17015,6 +17033,9 @@ function SelectedMovePanel({
                     {t('moves.runtimeVariant.help')}
                   </p>
                 </fieldset>
+              ) : null}
+              {selectedRuntimeVariant === 2 || hasScriptedBossOwner ? (
+                <ScriptedBossMoveOwnership move={move} profiles={scriptedBosses} />
               ) : null}
               {move.hasRuntimeData && timingProfileOptions.length > 1 ? (
                 <fieldset className="editable-field-group">
@@ -27857,9 +27878,10 @@ function EncountersSection({
 }: EncountersSectionProps) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const allTables = workflow?.tables ?? [];
+  const scriptedBosses = workflow?.scriptedBosses ?? [];
   const filteredTables = useMemo(
-    () => filterEncounterTables(allTables, searchText),
-    [allTables, searchText]
+    () => filterEncounterTables(allTables, searchText, scriptedBosses),
+    [allTables, scriptedBosses, searchText]
   );
   const selectedTableFromId =
     filteredTables.find((table) => table.tableId === selectedTableId) ?? null;
@@ -28027,6 +28049,7 @@ function EncountersSection({
               onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
               pendingTableIds={pendingEncounterTableIds}
               selectedSlot={selectedSlot}
+              scriptedBosses={workflow.scriptedBosses}
               table={selectedTable}
               tables={workflow.tables}
             />
@@ -28058,6 +28081,7 @@ function SelectedEncounterPanel({
   onUpdateEncounterSlotUpdates,
   pendingTableIds,
   selectedSlot,
+  scriptedBosses,
   table,
   tables
 }: {
@@ -28081,6 +28105,7 @@ function SelectedEncounterPanel({
   onUpdateEncounterSlotUpdates: (updates: EncounterSlotFieldUpdate[]) => Promise<boolean>;
   pendingTableIds: ReadonlySet<string>;
   selectedSlot: number | null;
+  scriptedBosses: ScriptedBossProfile[];
   table: EncounterTableRecord | null;
   tables: EncounterTableRecord[];
 }) {
@@ -28435,6 +28460,17 @@ function SelectedEncounterPanel({
   );
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const isZaEncounterTable = table ? isPokemonLegendsZAEncounterTable(table) : false;
+  const isZaScriptedBossTable = Boolean(
+    isZaEncounterTable && table && isZaScriptedBossEncounterTable(table)
+  );
+  const scriptedBossProfile = isZaScriptedBossTable && encounterSlot
+    ? findScriptedBossProfile(
+        scriptedBosses,
+        encounterSlot.speciesId,
+        encounterSlot.form,
+        table ? getZaBossEncounterLineageKey(table) : null
+      )
+    : null;
   const isSwShEncounterTable = table !== null && !isSvEncounterTable && !isZaEncounterTable;
   const selectedEncounterHasLocalDrafts =
     (encounterDraftKey !== null && draftsBySlotKey[encounterDraftKey] !== undefined) ||
@@ -29139,8 +29175,13 @@ function SelectedEncounterPanel({
                           ? t('za.spawnSettings.slotGroup')
                           : group.group === 'Spawner Population'
                             ? t('za.spawnSettings.populationGroup')
-                            : translateLiteral(group.group)}
+                            : group.group === 'Moves' && isZaScriptedBossTable
+                              ? t('za.encounters.bossActions.storageHeading')
+                              : translateLiteral(group.group)}
                       </legend>
+                      {group.group === 'Moves' && isZaScriptedBossTable ? (
+                        <ScriptedBossEncounterActions profile={scriptedBossProfile} />
+                      ) : null}
                       <div className="editable-field-grid">
                         {group.fields.map((field) => {
                           const currentValue = getEditableEncounterFieldValue(
@@ -29403,9 +29444,13 @@ function SelectedEncounterPanel({
                       {group.group === 'Moves' && isZaEncounterTable ? (
                         <div className="field-group-action-row za-spawner-field-note">
                           <small className="editable-field-status">
-                            {encounterSlot.hasExplicitMoves
-                              ? t('za.encounters.movesExplicitHelp')
-                              : t('za.encounters.movesAutomaticHelp')}
+                            {isZaScriptedBossTable
+                              ? encounterSlot.hasExplicitMoves
+                                ? t('za.encounters.bossActions.storageExplicit')
+                                : t('za.encounters.bossActions.storageAutomatic')
+                              : encounterSlot.hasExplicitMoves
+                                ? t('za.encounters.movesExplicitHelp')
+                                : t('za.encounters.movesAutomaticHelp')}
                           </small>
                         </div>
                       ) : null}
@@ -29481,7 +29526,11 @@ function SelectedEncounterPanel({
                         </dd>
                       </div>
                       <div>
-                        <dt>{t('za.encounters.advanced.moveStorage')}</dt>
+                        <dt>
+                          {isZaScriptedBossTable
+                            ? t('za.encounters.bossActions.storageHeading')
+                            : t('za.encounters.advanced.moveStorage')}
+                        </dt>
                         <dd>
                           {encounterSlot.hasExplicitMoves
                             ? t('za.encounters.advanced.explicitMoves')
@@ -41315,7 +41364,11 @@ function formatEvolutionArgumentSummary(evolution: PokemonEvolutionRecord) {
   return `${evolution.argumentLabel} ${evolution.argumentValue || evolution.argument}`;
 }
 
-function filterMoves(moves: MoveRecord[], searchText: string) {
+function filterMoves(
+  moves: MoveRecord[],
+  searchText: string,
+  scriptedBosses: ScriptedBossProfile[] = []
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
@@ -41346,6 +41399,7 @@ function filterMoves(moves: MoveRecord[], searchText: string) {
       move.recoil.toString(),
       move.rawHealing.toString(),
       move.provenance.sourceFile,
+      ...getScriptedBossMoveSearchValues(scriptedBosses, move.moveId),
       ...move.flags.flatMap((flag) => [flag.field, flag.label, flag.enabled ? 'enabled' : '']),
       ...move.statChanges.flatMap((statChange) => [
         statChange.slot.toString(),
@@ -42176,6 +42230,15 @@ const zaRoseDedeStorySpawnerId = 'id_10rom_poke_spawner_rose_dede';
 function isZaBossEncounterTable(table: EncounterTableRecord) {
   const key = table.locationKey ?? table.location;
   return Boolean(table.bossBattleContextKey?.trim()) || /^boss_/i.test(key);
+}
+
+function isZaScriptedBossEncounterTable(table: EncounterTableRecord) {
+  if (!isPokemonLegendsZAEncounterTable(table)) {
+    return false;
+  }
+
+  const rawSpawnerId = table.rawSpawnerId?.trim() ?? '';
+  return /^btl_spn_boss_/i.test(rawSpawnerId);
 }
 
 function isZaRoseDedeStoryEncounterTable(table: EncounterTableRecord) {
@@ -43592,7 +43655,11 @@ function isPokemonLegendsZAEncounterTable(table: EncounterTableRecord) {
   return table.gameVersion === 'Pokemon Legends ZA';
 }
 
-function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
+function filterEncounterTables(
+  tables: EncounterTableRecord[],
+  searchText: string,
+  scriptedBosses: ScriptedBossProfile[] = []
+) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
   if (normalizedSearch.length === 0) {
@@ -43611,19 +43678,35 @@ function filterEncounterTables(tables: EncounterTableRecord[], searchText: strin
       table.tableLabel ?? '',
       table.tableDetails ?? '',
       table.provenance.sourceFile,
-      ...table.slots.flatMap((slot) => [
-        slot.slot.toString(),
-        slot.species,
-        slot.speciesId.toString(),
-        slot.form.toString(),
-        slot.levelMin.toString(),
-        slot.levelMax.toString(),
-        slot.weight.toString(),
-        slot.slotMaxCount?.toString() ?? '',
-        slot.appearanceMinCount?.toString() ?? '',
-        slot.appearanceMaxCount?.toString() ?? '',
-        slot.weather
-      ])
+      ...table.slots.flatMap((slot) => {
+        const profile = isZaScriptedBossEncounterTable(table)
+          ? findScriptedBossProfile(
+              scriptedBosses,
+              slot.speciesId,
+              slot.form,
+              getZaBossEncounterLineageKey(table)
+            )
+          : null;
+        return [
+          slot.slot.toString(),
+          slot.species,
+          slot.speciesId.toString(),
+          slot.form.toString(),
+          slot.levelMin.toString(),
+          slot.levelMax.toString(),
+          slot.weight.toString(),
+          slot.slotMaxCount?.toString() ?? '',
+          slot.appearanceMinCount?.toString() ?? '',
+          slot.appearanceMaxCount?.toString() ?? '',
+          slot.weather,
+          ...(profile?.actions.flatMap((action) => [
+            action.name,
+            action.moveId?.toString() ?? '',
+            action.runtimeMoveId?.toString() ?? '',
+            action.kind
+          ]) ?? [])
+        ];
+      })
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
 }

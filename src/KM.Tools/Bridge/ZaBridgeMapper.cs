@@ -10,6 +10,7 @@ using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
+using KM.Api.ScriptedBosses;
 using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
 using KM.Api.Text;
@@ -27,6 +28,7 @@ using KM.ZA.Moves;
 using KM.ZA.Placement;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
+using KM.ZA.ScriptedBosses;
 using KM.ZA.StaticEncounters;
 using KM.ZA.Text;
 using KM.ZA.TypeChart;
@@ -629,6 +631,7 @@ public static class ZaBridgeMapper
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
         {
             ProjectileOptions = workflow.ProjectileOptions.Select(ToDto).ToArray(),
+            ScriptedBosses = workflow.ScriptedBosses.Select(ToDto).ToArray(),
         };
     }
 
@@ -644,6 +647,30 @@ public static class ZaBridgeMapper
                 workflow.Stats.DialogueReferenceCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ScriptedBossProfileDto ToDto(ZaScriptedBossProfileRecord profile)
+    {
+        return new ScriptedBossProfileDto(
+            profile.Key,
+            profile.LineageKey,
+            profile.SpeciesId,
+            profile.Form,
+            profile.Name,
+            profile.Scope,
+            profile.Actions.Select(ToDto).ToArray());
+    }
+
+    private static ScriptedBossActionDto ToDto(ZaScriptedBossActionRecord action)
+    {
+        return new ScriptedBossActionDto(
+            action.Key,
+            action.Kind,
+            action.MoveId,
+            action.RuntimeMoveId,
+            action.Name,
+            action.UsesBattleParameters,
+            action.UsesTimingParameters);
     }
 
     private static ShopsWorkflowDto ToShopsWorkflowDto(ZaShopsWorkflow workflow)
@@ -732,7 +759,10 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalSlotCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            ScriptedBosses = workflow.ScriptedBosses.Select(ToDto).ToArray(),
+        };
     }
 
     private static EncounterTableRecordDto ToDto(ZaEncounterTableRecord table)

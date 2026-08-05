@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.ZA.ScriptedBosses;
 using KM.ZA.Workflows;
 
 namespace KM.ZA.Moves;
@@ -195,6 +196,8 @@ public sealed record ZaMovesWorkflow(
     IReadOnlyList<ValidationDiagnostic> Diagnostics)
 {
     public IReadOnlyList<ZaMoveEditableFieldOption> ProjectileOptions { get; init; } = [];
+
+    public IReadOnlyList<ZaScriptedBossProfileRecord> ScriptedBosses { get; init; } = [];
 
     internal IReadOnlyList<ProjectFileReference> ProjectileCatalogSources { get; init; } = [];
 
